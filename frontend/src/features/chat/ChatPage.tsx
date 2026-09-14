@@ -8,6 +8,8 @@ import {
   MessageCircle,
   Paperclip,
   Search,
+  ShieldCheck,
+  UsersRound,
   Send,
   Trash2,
   UserRoundPlus,
@@ -22,14 +24,19 @@ import { StudentShell } from "../../pages/student/StudentShell";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
   createChatConversation,
+  createChatGroup,
   deleteChatMessage,
   getChatConversations,
   getChatMessages,
+  getChatPolicy,
   getChatRecipients,
   markChatRead,
   reportChatMessage,
   sendChatMessage,
+  updateChatPolicy,
+  type ChatGroupType,
   type ChatMessage,
+  type ChatPolicy,
   type ChatRecipient,
 } from "./api";
 import "./chat.css";
@@ -104,6 +111,40 @@ function RecipientPicker({
   );
 }
 
+const groupNames: Record<ChatGroupType, string> = {
+  student_group: "Student group", parent_group: "Parent group", activity: "Activity/trip",
+  staff: "Staff group", child_support: "Child support", announcement: "Announcement",
+};
+function GovernanceDialog({ recipients, portal, onClose, onCreate, pending }: {
+  recipients: ChatRecipient[]; portal: Portal; onClose: () => void;
+  onCreate: (input: { title: string; group_type: ChatGroupType; member_ids: string[]; school_id?: string }) => void; pending: boolean;
+}) {
+  const [title,setTitle]=useState(""); const [kind,setKind]=useState<ChatGroupType>("student_group"); const [ids,setIds]=useState<string[]>([]);
+  const kinds: ChatGroupType[] = portal==="principal" ? ["student_group","parent_group","activity","staff","announcement"] : ["student_group","parent_group","activity"];
+  const roles: Record<string,string[]> = {student_group:["student","staff","admin"],parent_group:["guardian","staff","admin"],activity:["student","guardian","staff","admin"],staff:["staff","admin"],announcement:["student","guardian","staff","admin"]};
+  const eligible=recipients.filter((r)=>roles[kind]?.includes(r.membership_role));
+  return <div className="chat-picker-backdrop" role="presentation" onMouseDown={(e)=>{if(e.target===e.currentTarget)onClose();}}>
+    <form className="chat-picker chat-group-form" onSubmit={(e)=>{e.preventDefault();if(title.trim().length>=3&&ids.length)onCreate({title:title.trim(),group_type:kind,member_ids:ids,school_id:eligible.find(r=>ids.includes(r.id))?.school_id});}}>
+      <header><span><strong>Create governed group</strong><small>Only eligible school members can be selected</small></span><button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button></header>
+      <label className="chat-form-field"><span>Group name</span><input value={title} onChange={(e)=>setTitle(e.target.value)} minLength={3} maxLength={180} autoFocus /></label>
+      <label className="chat-form-field"><span>Group type</span><select value={kind} onChange={(e)=>{setKind(e.target.value as ChatGroupType);setIds([]);}}>{kinds.map((k)=><option key={k} value={k}>{groupNames[k]}</option>)}</select></label>
+      <div className="chat-member-list">{eligible.map((r)=><label className="chat-member-option" key={r.id}><input type="checkbox" checked={ids.includes(r.id)} onChange={()=>setIds(ids.includes(r.id)?ids.filter(x=>x!==r.id):[...ids,r.id])}/><span>{r.name}</span><small>{r.detail}</small></label>)}</div>
+      <footer className="chat-dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={pending||title.trim().length<3||!ids.length}>{pending?"Creating…":"Create group"}</button></footer>
+    </form>
+  </div>;
+}
+function PrivacyDialog({ policy, onClose, onSave, pending }: { policy?: ChatPolicy; onClose:()=>void; onSave:(input: Partial<Omit<ChatPolicy,"school_id"|"can_manage"|"privacy_notice_version">>)=>void; pending:boolean }) {
+  const [draft,setDraft]=useState(policy); useEffect(()=>setDraft(policy),[policy]);
+  return <div className="chat-picker-backdrop" role="presentation" onMouseDown={(e)=>{if(e.target===e.currentTarget)onClose();}}>
+    <section className="chat-picker chat-privacy-panel"><header><span><strong>Messaging privacy & safeguards</strong><small>Verified school relationships, reporting and retention</small></span><button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button></header>
+      <div className="chat-privacy-copy"><p><ShieldCheck size={18}/> Contacts are limited to approved school roles; phone numbers and email addresses stay private.</p><p><ShieldCheck size={18}/> Reports are reviewable only by authorised staff and audit logged.</p><p><ShieldCheck size={18}/> Messages follow school retention policy ({policy?.retention_days ?? 455} days).</p></div>
+      {draft?.can_manage ? <form className="chat-policy-controls" onSubmit={(e)=>{e.preventDefault();if(draft)onSave({student_teacher_direct_enabled:draft.student_teacher_direct_enabled,guardian_teacher_direct_enabled:draft.guardian_teacher_direct_enabled,student_group_replies:draft.student_group_replies,guardian_group_replies:draft.guardian_group_replies,attachments_enabled:draft.attachments_enabled,retention_days:draft.retention_days});}}>
+        {(["student_teacher_direct_enabled","guardian_teacher_direct_enabled","student_group_replies","guardian_group_replies","attachments_enabled"] as const).map((key)=><label key={key}><input type="checkbox" checked={draft[key]} onChange={(e)=>setDraft({...draft,[key]:e.target.checked})}/>{key.replaceAll("_"," ")}</label>)}<label>Retention days<input type="number" min={30} max={3650} value={draft.retention_days} onChange={(e)=>setDraft({...draft,retention_days:Number(e.target.value)})}/></label><button disabled={pending}>{pending?"Saving…":"Save policy"}</button>
+      </form> : <p className="chat-policy-hint">Only a school administrator can change these controls.</p>}
+    </section>
+  </div>;
+}
+
 function Bubble({
   message,
   onDelete,
@@ -148,6 +189,8 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const selectedId = params.get("conversation") ?? "";
   const studentId = portal === "parent" ? params.get("student_id") ?? undefined : undefined;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File>();
   const [search, setSearch] = useState("");
@@ -163,9 +206,10 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const recipientsQuery = useQuery({
     queryKey: ["chat", "recipients", studentId ?? "all"],
     queryFn: () => getChatRecipients(studentId),
-    enabled: pickerOpen,
+    enabled: pickerOpen || groupOpen,
     staleTime: 60_000,
   });
+  const policyQuery = useQuery({ queryKey: ["chat","policy"], queryFn: getChatPolicy, staleTime: 60_000 });
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedId],
     queryFn: () => getChatMessages(selectedId),
@@ -201,6 +245,8 @@ function ChatExperience({ portal }: { portal: Portal }) {
       chooseConversation(result.id);
     },
   });
+  const groupMutation = useMutation({ mutationFn: (input: { title:string; group_type:ChatGroupType; member_ids:string[]; school_id?:string }) => createChatGroup(input), onSuccess: async (r) => { setGroupOpen(false); await queryClient.invalidateQueries({queryKey:["chat","conversations"]}); chooseConversation(r.id); } });
+  const policyMutation = useMutation({ mutationFn: (input: Parameters<typeof updateChatPolicy>[0]) => updateChatPolicy(input), onSuccess: async () => { await queryClient.invalidateQueries({queryKey:["chat","policy"]}); setPrivacyOpen(false); } });
   const sendMutation = useMutation({
     mutationFn: () => sendChatMessage(selectedId, {
       body: draft,
@@ -256,7 +302,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
         <aside className="chat-conversations">
           <header>
             <span><strong>Messages</strong><small>Private school communication</small></span>
-            <button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button>
+            <span className="chat-header-actions">{portal === "teacher" || portal === "principal" ? <button type="button" onClick={() => setGroupOpen(true)} aria-label="Create group"><UsersRound size={18}/></button> : null}<button type="button" onClick={() => setPrivacyOpen(true)} aria-label="Messaging privacy"><ShieldCheck size={18}/></button><button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button></span>
           </header>
           <label className="chat-search">
             <Search size={16} />
@@ -307,7 +353,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
                 <button className="chat-back" type="button" onClick={closeConversation} aria-label="Back to conversations"><ArrowLeft size={19} /></button>
                 <span className="chat-avatar">{initials(selected?.title ?? "Chat")}</span>
                 <span><strong>{selected?.title ?? "Conversation"}</strong><small>{selected?.student_name ? `About ${selected.student_name}` : "School communication"}</small></span>
-                <i title="Secure school conversation">Secure</i>
+                <span className="chat-thread__meta">{selected?.group_type ? <b>{groupNames[selected.group_type]}</b> : null}<i title="Secure school conversation"><ShieldCheck size={13}/> Secure</i></span>
               </header>
               <div className="chat-messages" aria-live="polite">
                 {messagesQuery.isPending ? (
@@ -331,7 +377,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
                 )}
                 <div ref={endRef} />
               </div>
-              <form className="chat-composer" onSubmit={submit}>
+              {selected?.can_post === false ? <div className="chat-readonly"><ShieldCheck size={18}/><span><strong>Posting is restricted</strong><small>Only approved moderators can post.</small></span></div> : <form className="chat-composer" onSubmit={submit}>
                 {attachment ? (
                   <div className="chat-composer__file"><FileText size={15} /><span>{attachment.name}</span><button type="button" onClick={() => setAttachment(undefined)} aria-label="Remove attachment"><X size={15} /></button></div>
                 ) : null}
@@ -362,11 +408,13 @@ function ChatExperience({ portal }: { portal: Portal }) {
                   </button>
                 </div>
                 {sendMutation.isError ? <p>{sendMutation.error.message}</p> : null}
-              </form>
+              </form>}
             </>
           )}
         </section>
       </section>
+      {groupOpen ? <GovernanceDialog recipients={recipientsQuery.data?.results ?? []} portal={portal} pending={recipientsQuery.isPending || groupMutation.isPending} onClose={()=>setGroupOpen(false)} onCreate={(input)=>groupMutation.mutate(input)} /> : null}
+      {privacyOpen ? <PrivacyDialog policy={policyQuery.data} pending={policyMutation.isPending} onClose={()=>setPrivacyOpen(false)} onSave={(input)=>policyMutation.mutate(input)} /> : null}
       {pickerOpen ? (
         <RecipientPicker
           recipients={recipientsQuery.data?.results ?? []}

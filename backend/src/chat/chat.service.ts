@@ -34,6 +34,24 @@ const messageSchema = z.object({
 const reportSchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
+const groupSchema = z.object({
+  title: z.string().trim().min(3).max(180),
+  group_type: z.enum(["student_group", "parent_group", "activity", "staff", "child_support", "announcement"]),
+  member_ids: z.array(uuid).min(1).max(200),
+  school_id: uuid.optional(),
+  student_id: uuid.optional(),
+});
+const policySchema = z.object({
+  student_teacher_direct_enabled: z.boolean().optional(),
+  guardian_teacher_direct_enabled: z.boolean().optional(),
+  student_group_replies: z.boolean().optional(),
+  guardian_group_replies: z.boolean().optional(),
+  attachments_enabled: z.boolean().optional(),
+  enforce_communication_hours: z.boolean().optional(),
+  communication_start: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  communication_end: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  retention_days: z.number().int().min(30).max(3650).optional(),
+});
 const allowedAttachments = new Set([
   "image/jpeg",
   "image/png",
@@ -76,7 +94,7 @@ export class ChatService {
 
   async conversations(user: AuthUser) {
     const result = await sql<any>`
-      SELECT c.id, c.school_id, c.kind, c.context_student_id, c.created_at, c.updated_at,
+      SELECT c.id, c.school_id, c.kind, c.context_student_id, c.group_type, c.posting_mode, c.created_at, c.updated_at,
         COALESCE(NULLIF(c.title, ''), (
           SELECT concat_ws(' ', other_user.first_name, other_user.last_name)
           FROM chat_participants other_participant
@@ -122,7 +140,12 @@ export class ChatService {
           WHERE unread.conversation_id=c.id
             AND unread.sender_id<>${user.id}::uuid
             AND unread.created_at>COALESCE(cp.last_read_at, cp.joined_at)
-        ), 0)::int AS unread_count
+        ), 0)::int AS unread_count,
+        (SELECT count(*)::int FROM chat_participants members WHERE members.conversation_id=c.id AND members.is_active) AS member_count,
+        CASE WHEN c.posting_mode='moderators' THEN EXISTS (
+          SELECT 1 FROM chat_participants moderator WHERE moderator.conversation_id=c.id
+            AND moderator.user_id=${user.id}::uuid AND moderator.participant_role='moderator' AND moderator.is_active
+        ) ELSE true END AS can_post
       FROM chat_conversations c
       JOIN chat_participants cp ON cp.conversation_id=c.id
         AND cp.user_id=${user.id}::uuid AND cp.is_active
@@ -401,6 +424,18 @@ export class ChatService {
   ) {
     const conversation = await this.conversationForUser(user, conversationId);
     const data = messageSchema.parse(input);
+    const policy = await this.db.selectFrom("chat_policies").selectAll().where("school_id", "=", conversation.school_id).executeTakeFirst();
+    const participant = await this.db.selectFrom("chat_participants").select("participant_role").where("conversation_id", "=", conversationId).where("user_id", "=", user.id).executeTakeFirst();
+    if (conversation.posting_mode === "moderators" && participant?.participant_role !== "moderator") {
+      throw new ForbiddenException("Only group moderators can post in this conversation.");
+    }
+    if (policy?.attachments_enabled === false && upload) throw new ForbiddenException("Attachments are disabled by school policy.");
+    if (conversation.kind === "group" && user.role === "parent" && policy?.guardian_group_replies === false && participant?.participant_role !== "moderator") {
+      throw new ForbiddenException("Parent replies are disabled in this group.");
+    }
+    if (conversation.kind === "group" && user.role === "student" && policy?.student_group_replies === false && participant?.participant_role !== "moderator") {
+      throw new ForbiddenException("Student replies are disabled in this group.");
+    }
     if (!data.body && !upload) throw new BadRequestException("Enter a message or attach a file.");
     if (upload && (!allowedAttachments.has(upload.mimetype) || upload.data.length === 0 || upload.data.length > 10 * 1024 * 1024)) {
       throw new BadRequestException("Attachments must be an image, PDF, DOC, or DOCX file up to 10 MB.");
@@ -551,6 +586,46 @@ export class ChatService {
       status: "open",
     })).returning(["id", "status"]).executeTakeFirstOrThrow();
     return report;
+  }
+
+  async policyForUser(user: AuthUser) {
+    const membership = await this.db.selectFrom("school_memberships").select(["school_id", "role"]).where("user_id", "=", user.id).where("is_active", "=", true).executeTakeFirst();
+    if (!membership) throw new ForbiddenException("No active school membership.");
+    let policy = await this.db.selectFrom("chat_policies").selectAll().where("school_id", "=", membership.school_id).executeTakeFirst();
+    if (!policy) policy = await this.db.insertInto("chat_policies").values({ school_id: membership.school_id }).returningAll().executeTakeFirstOrThrow();
+    return { ...policy, can_manage: membership.role === "admin" };
+  }
+
+  async updatePolicy(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    const membership = await this.db.selectFrom("school_memberships").select(["school_id", "role"]).where("user_id", "=", user.id).where("is_active", "=", true).executeTakeFirst();
+    if (!membership || membership.role !== "admin") throw new ForbiddenException("Only school administrators can change chat policy.");
+    const data = policySchema.parse(body);
+    const updated = await this.db.updateTable("chat_policies").set({ ...data, updated_by: user.id, updated_at: new Date() }).where("school_id", "=", membership.school_id).returningAll().executeTakeFirstOrThrow();
+    await this.db.insertInto("audit_events").values({ action: "chat.policy.updated", actor_id: user.id, school_id: membership.school_id, target_type: "chat_policy", target_id: membership.school_id, request_id: request.requestId, ip_hash: null, metadata: data }).execute();
+    return { ...updated, can_manage: true };
+  }
+
+  async createGroup(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    const data = groupSchema.parse(body);
+    const membership = await this.db.selectFrom("school_memberships").select(["school_id", "role"]).where("user_id", "=", user.id).where("is_active", "=", true).where("role", "in", ["staff", "admin"]).executeTakeFirst();
+    if (!membership) throw new ForbiddenException("Only teachers and administrators can create groups.");
+    if ((data.group_type === "staff" || data.group_type === "announcement") && membership.role !== "admin") throw new ForbiddenException("Only administrators can create this group type.");
+    const schoolId = data.school_id ?? membership.school_id;
+    if (schoolId !== membership.school_id) throw new ForbiddenException("You can only create groups in your school.");
+    const members = await this.db.selectFrom("school_memberships").select(["user_id", "role"]).where("school_id", "=", schoolId).where("user_id", "in", data.member_ids).where("is_active", "=", true).execute();
+    if (members.length !== data.member_ids.length) throw new ForbiddenException("Every group member must be an active member of the school.");
+    const allowed: Record<string, string[]> = { student_group: ["student", "staff", "admin"], parent_group: ["guardian", "staff", "admin"], activity: ["student", "guardian", "staff", "admin"], staff: ["staff", "admin"], announcement: ["student", "guardian", "staff", "admin"], child_support: ["student", "guardian", "staff", "admin"] };
+    if (members.some((member) => !allowed[data.group_type].includes(member.role))) throw new ForbiddenException("One or more selected members are not eligible for this group type.");
+    const postingMode = data.group_type === "parent_group" || data.group_type === "announcement" ? "moderators" : "all";
+    const created = await this.db.transaction().execute(async (tx) => {
+      const conversation = await tx.insertInto("chat_conversations").values({ school_id: schoolId, kind: data.group_type === "announcement" ? "announcement" : "group", title: data.title, context_student_id: data.student_id ?? null, created_by: user.id, group_type: data.group_type, posting_mode: postingMode }).returning("id").executeTakeFirstOrThrow();
+      const rows = [{ conversation_id: conversation.id, user_id: user.id, participant_role: "moderator" as const }, ...data.member_ids.filter((id) => id !== user.id).map((id) => ({ conversation_id: conversation.id, user_id: id, participant_role: "member" as const }))];
+      await tx.insertInto("chat_participants").values(rows).execute();
+      await tx.insertInto("chat_messages").values({ conversation_id: conversation.id, sender_id: user.id, body: "Group created. Please keep communication respectful and school-related.", message_type: "system", client_id: randomUUID() }).execute();
+      await tx.insertInto("audit_events").values({ action: "chat.group.created", actor_id: user.id, school_id: schoolId, target_type: "chat_conversation", target_id: conversation.id, request_id: request.requestId, ip_hash: null, metadata: { group_type: data.group_type, member_count: rows.length } }).execute();
+      return conversation;
+    });
+    return { id: created.id };
   }
 
   async attachment(user: AuthUser, conversationId: string, messageId: string) {

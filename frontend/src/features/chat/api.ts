@@ -12,6 +12,28 @@ export interface ChatConversation {
   last_message: string | null;
   last_message_at: string;
   unread_count: number;
+  group_type: ChatGroupType | null;
+  posting_mode: "all" | "moderators";
+  participant_role: "member" | "moderator";
+  member_count: number;
+  can_post: boolean;
+}
+
+export type ChatGroupType = "student_group" | "parent_group" | "activity" | "staff" | "child_support" | "announcement";
+
+export interface ChatPolicy {
+  school_id: string;
+  student_teacher_direct_enabled: boolean;
+  guardian_teacher_direct_enabled: boolean;
+  student_group_replies: boolean;
+  guardian_group_replies: boolean;
+  attachments_enabled: boolean;
+  enforce_communication_hours: boolean;
+  communication_start: string;
+  communication_end: string;
+  retention_days: number;
+  privacy_notice_version: string;
+  can_manage: boolean;
 }
 
 export interface ChatRecipient {
@@ -117,4 +139,12 @@ export function reportChatMessage(conversationId: string, messageId: string, rea
     `/api/v1/chat/conversations/${conversationId}/messages/${messageId}/report/`,
     { method: "POST", body: JSON.stringify({ reason }) },
   );
+}
+
+export function createChatGroup(input: { title: string; group_type: ChatGroupType; member_ids: string[]; school_id?: string; student_id?: string }) {
+  return apiFetch<{ id: string }>("/api/v1/chat/groups/", { method: "POST", body: JSON.stringify(input) });
+}
+export function getChatPolicy() { return apiFetch<ChatPolicy>("/api/v1/chat/policy/"); }
+export function updateChatPolicy(input: Partial<Omit<ChatPolicy, "school_id" | "can_manage" | "privacy_notice_version">>) {
+  return apiFetch<ChatPolicy>("/api/v1/chat/policy/", { method: "PATCH", body: JSON.stringify(input) });
 }

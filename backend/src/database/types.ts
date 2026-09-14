@@ -88,8 +88,26 @@ export interface Database {
   chat_messages: ChatMessageTable;
   chat_attachments: ChatAttachmentTable;
   chat_message_reports: ChatMessageReportTable;
+  chat_policies: ChatPolicyTable;
 }
 
 export type UserRow = Selectable<UserTable>;
 export type NewUser = Insertable<UserTable>;
 export type UserUpdate = Updateable<UserTable>;
+
+
+export interface ChatPolicyTable {
+  school_id: string;
+  student_teacher_direct_enabled: Generated<boolean>;
+  guardian_teacher_direct_enabled: Generated<boolean>;
+  student_group_replies: Generated<boolean>;
+  guardian_group_replies: Generated<boolean>;
+  attachments_enabled: Generated<boolean>;
+  enforce_communication_hours: Generated<boolean>;
+  communication_start: Generated<TimeOnly>;
+  communication_end: Generated<TimeOnly>;
+  retention_days: Generated<number>;
+  privacy_notice_version: Generated<string>;
+  updated_by: string | null;
+  updated_at: Timestamp;
+}

@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, Param, Post, Query, Req, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
 import type { AuthenticatedRequest } from "../common/request.js";
@@ -37,6 +37,21 @@ export class ChatController {
   @Get("recipients/")
   recipients(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     return this.chat.recipients(request.authUser, studentId);
+  }
+
+  @Post("groups/")
+  createGroup(@Req() request: AuthenticatedRequest) {
+    return this.chat.createGroup(request.authUser, request.body, request);
+  }
+
+  @Get("policy/")
+  policy(@Req() request: AuthenticatedRequest) {
+    return this.chat.policyForUser(request.authUser);
+  }
+
+  @Patch("policy/")
+  updatePolicy(@Req() request: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
+    return this.chat.updatePolicy(request.authUser, body, request);
   }
 
   @Post("conversations/")
