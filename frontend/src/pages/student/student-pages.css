@@ -3107,3 +3107,5 @@
   .student-home-presence button { grid-column: 1 / -1; justify-content: center; }
   .student-home-actions > div { grid-template-columns: 1fr; }
 }
+
+.student-bottom-nav:has(.student-bottom-nav__item:nth-child(6)) .student-bottom-nav__item { width: min(16.4vw, 56px); font-size: 10px; }

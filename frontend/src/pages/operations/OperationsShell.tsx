@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
@@ -10,18 +10,20 @@ import "./operations-links.css";
 import "./operations-brand.css";
 
 type Portal = "teacher" | "principal";
-type Active = "home" | "attendance" | "timetable";
+type Active = "home" | "attendance" | "timetable" | "chat";
 
 const nav = {
   teacher: [
     { id: "home", label: "Today", path: "/teacher", icon: Home },
     { id: "attendance", label: "Attendance", path: "/teacher/attendance", icon: ClipboardCheck },
     { id: "timetable", label: "Timetable", path: "/teacher/timetable", icon: CalendarDays },
+    { id: "chat", label: "Messages", path: "/teacher/messages", icon: MessageCircle },
   ],
   principal: [
     { id: "home", label: "Overview", path: "/principal", icon: LayoutDashboard },
     { id: "attendance", label: "Attendance", path: "/principal/attendance", icon: BarChart3 },
     { id: "timetable", label: "Timetable", path: "/principal/timetable", icon: CalendarDays },
+    { id: "chat", label: "Messages", path: "/principal/messages", icon: MessageCircle },
   ],
 } as const;
 
@@ -37,7 +39,7 @@ export function OperationsShell({ portal, active, title, subtitle, children }: {
             <NavLink key={id} to={path} end={id === "home"} className={active === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
           ))}
         </nav>
-        <div className="operations-sidebar__scope"><span>Current scope</span><strong>Attendance &amp; Timetable</strong><small>Other School OS modules stay outside this release.</small></div>
+        <div className="operations-sidebar__scope"><span>Current scope</span><strong>School operations</strong><small>Attendance, timetable, and secure communication.</small></div>
       </aside>
       <div className="operations-workspace">
         <header className="operations-topbar">
