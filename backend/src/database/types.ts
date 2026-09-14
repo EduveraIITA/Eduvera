@@ -108,6 +108,6 @@ export interface ChatPolicyTable {
   communication_end: Generated<TimeOnly>;
   retention_days: Generated<number>;
   privacy_notice_version: Generated<string>;
-  updated_by: string | null;
-  updated_at: Timestamp;
+  updated_by: Generated<string | null>;
+  updated_at: Generated<Timestamp>;
 }
