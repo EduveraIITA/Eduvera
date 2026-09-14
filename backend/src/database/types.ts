@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from "kysely";
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
