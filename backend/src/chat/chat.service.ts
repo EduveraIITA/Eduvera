@@ -616,7 +616,7 @@ export class ChatService {
     if (members.length !== data.member_ids.length) throw new ForbiddenException("Every group member must be an active member of the school.");
     const allowed: Record<string, string[]> = { student_group: ["student", "staff", "admin"], parent_group: ["guardian", "staff", "admin"], activity: ["student", "guardian", "staff", "admin"], staff: ["staff", "admin"], announcement: ["student", "guardian", "staff", "admin"], child_support: ["student", "guardian", "staff", "admin"] };
     if (members.some((member) => !allowed[data.group_type].includes(member.role))) throw new ForbiddenException("One or more selected members are not eligible for this group type.");
-    const postingMode = data.group_type === "parent_group" || data.group_type === "announcement" ? "moderators" : "all";
+    const postingMode: "all" | "moderators" = data.group_type === "parent_group" || data.group_type === "announcement" ? "moderators" : "all";
     const created = await this.db.transaction().execute(async (tx) => {
       const conversation = await tx.insertInto("chat_conversations").values({ school_id: schoolId, kind: data.group_type === "announcement" ? "announcement" : "group", title: data.title, context_student_id: data.student_id ?? null, created_by: user.id, group_type: data.group_type, posting_mode: postingMode }).returning("id").executeTakeFirstOrThrow();
       const rows = [{ conversation_id: conversation.id, user_id: user.id, participant_role: "moderator" as const }, ...data.member_ids.filter((id) => id !== user.id).map((id) => ({ conversation_id: conversation.id, user_id: id, participant_role: "member" as const }))];
