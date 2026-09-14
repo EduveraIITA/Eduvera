@@ -150,3 +150,9 @@ export function getChatPolicy() { return apiFetch<ChatPolicy>("/api/v1/chat/poli
 export function updateChatPolicy(input: Partial<Omit<ChatPolicy, "school_id" | "can_manage" | "privacy_notice_version">>) {
   return apiFetch<ChatPolicy>("/api/v1/chat/policy/", { method: "PATCH", body: JSON.stringify(input) });
 }
+
+export function editChatMessage(conversationId: string, messageId: string, body: string) {
+  return apiFetch<{ id: string; edited: boolean }>(`/api/v1/chat/conversations/${conversationId}/messages/${messageId}/`, {
+    method: "PATCH", body: JSON.stringify({ body }),
+  });
+}

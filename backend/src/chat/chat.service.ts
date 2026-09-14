@@ -36,6 +36,7 @@ const messageSchema = z.object({
 const reportSchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
+const editMessageSchema = z.object({ body: z.string().trim().min(1).max(4000) });
 const groupSchema = z.object({
   title: z.string().trim().min(3).max(180),
   group_type: z.enum(["student_group", "parent_group", "activity", "staff", "child_support", "announcement"]),
@@ -94,7 +95,26 @@ export class ChatService {
     return conversation;
   }
 
+  private async ensureClassGroups(user: AuthUser) {
+    if (user.role !== "staff" && user.role !== "admin") return;
+    const sections = await sql<any>`SELECT cs.id, cs.school_id, cs.grade, cs.section
+      FROM class_sections cs JOIN school_memberships sm ON sm.school_id=cs.school_id
+      WHERE sm.user_id=${user.id}::uuid AND sm.is_active`.execute(this.db);
+    for (const section of sections.rows) {
+      const existing = await sql<any>`SELECT id FROM chat_conversations WHERE school_id=${section.school_id}::uuid AND group_type='student_group' AND context_student_id IS NULL AND title=${"Grade " + section.grade + " · " + section.section} LIMIT 1`.execute(this.db);
+      if (existing.rows[0]) continue;
+      await this.db.transaction().execute(async (tx) => {
+        const conversation = await tx.insertInto("chat_conversations").values({ school_id: section.school_id, kind: "group", title: "Grade " + section.grade + " · " + section.section, context_student_id: null, created_by: user.id, group_type: "student_group", posting_mode: "all" }).returning("id").executeTakeFirstOrThrow();
+        const students = await sql<any>`SELECT student_user.id FROM students student JOIN users student_user ON student_user.id=student.user_id JOIN enrollments enrollment ON enrollment.student_id=student.id AND enrollment.is_active WHERE student.class_section_id=${section.id}::uuid AND student_user.is_active`.execute(tx);
+        const rows = students.rows.map((student: { id: string }) => ({ conversation_id: conversation.id, user_id: student.id, participant_role: "member" as const }));
+        rows.push({ conversation_id: conversation.id, user_id: user.id, participant_role: "moderator" as const });
+        if (rows.length) await tx.insertInto("chat_participants").values(rows).execute();
+      });
+    }
+  }
+
   async conversations(user: AuthUser) {
+    await this.ensureClassGroups(user);
     const result = await sql<any>`
       SELECT c.id, c.school_id, c.kind, c.context_student_id, c.group_type, c.posting_mode, c.created_at, c.updated_at,
         COALESCE(NULLIF(c.title, ''), (
@@ -549,24 +569,18 @@ export class ChatService {
     return { conversation_id: conversationId, read_at: readAt };
   }
 
-  async deleteMessage(user: AuthUser, conversationId: string, messageId: string) {
+  async editMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown) {
     await this.conversationForUser(user, conversationId);
     if (!uuid.safeParse(messageId).success) throw new NotFoundException("Message not found.");
-    const message = await this.db.selectFrom("chat_messages").selectAll()
-      .where("id", "=", messageId)
-      .where("conversation_id", "=", conversationId)
-      .executeTakeFirst();
+    const data = editMessageSchema.parse(body);
+    const message = await this.db.selectFrom("chat_messages").selectAll().where("id", "=", messageId).where("conversation_id", "=", conversationId).executeTakeFirst();
     if (!message) throw new NotFoundException("Message not found.");
-    if (message.sender_id !== user.id) throw new ForbiddenException("You can only delete messages you sent.");
-    if (Date.now() - new Date(message.created_at).getTime() > 15 * 60_000) {
-      throw new BadRequestException("Messages can be deleted for 15 minutes after sending.");
+    if (message.sender_id !== user.id) throw new ForbiddenException("You can only edit messages you sent.");
+    if (message.message_type === "system" || Date.now() - new Date(message.created_at).getTime() > 2 * 60_000) {
+      throw new BadRequestException("Messages can only be edited for 2 minutes after sending.");
     }
-    await this.db.updateTable("chat_messages").set({
-      body: "",
-      is_deleted: true,
-      updated_at: new Date(),
-    }).where("id", "=", messageId).execute();
-    return { id: messageId, is_deleted: true };
+    await this.db.updateTable("chat_messages").set({ body: data.body, updated_at: new Date() }).where("id", "=", messageId).execute();
+    return { id: messageId, edited: true };
   }
 
   async reportMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown) {

@@ -1,6 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
 import type { AuthenticatedRequest } from "../common/request.js";
@@ -85,14 +85,10 @@ export class ChatController {
     return this.chat.markRead(request.authUser, conversationId);
   }
 
-  @Delete("conversations/:conversationId/messages/:messageId/")
+  @Patch("conversations/:conversationId/messages/:messageId/")
   @HttpCode(200)
-  remove(
-    @Req() request: AuthenticatedRequest,
-    @Param("conversationId") conversationId: string,
-    @Param("messageId") messageId: string,
-  ) {
-    return this.chat.deleteMessage(request.authUser, conversationId, messageId);
+  edit(@Req() request: AuthenticatedRequest, @Param("conversationId") conversationId: string, @Param("messageId") messageId: string) {
+    return this.chat.editMessage(request.authUser, conversationId, messageId, request.body);
   }
 
   @Post("conversations/:conversationId/messages/:messageId/report/")

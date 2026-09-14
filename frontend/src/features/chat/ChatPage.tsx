@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   UsersRound,
   Send,
-  Trash2,
   UserRoundPlus,
   X,
 } from "lucide-react";
@@ -27,7 +26,7 @@ import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
   createChatConversation,
   createChatGroup,
-  deleteChatMessage,
+  editChatMessage,
   getChatConversations,
   getChatMessages,
   getChatPolicy,
@@ -149,11 +148,11 @@ function PrivacyDialog({ policy, onClose, onSave, pending }: { policy?: ChatPoli
 
 function Bubble({
   message,
-  onDelete,
+  onEdit,
   onReport,
 }: {
   message: ChatMessage;
-  onDelete: () => void;
+  onEdit: () => void;
   onReport: () => void;
 }) {
   return (
@@ -173,8 +172,9 @@ function Bubble({
       <footer>
         <time>{messageTime(message.created_at)}</time>
         {message.is_mine ? <CheckCheck size={13} /> : null}
-        {!message.is_deleted && message.is_mine ? (
-          <button type="button" onClick={onDelete} aria-label="Delete message"><Trash2 size={12} /></button>
+        {message.is_mine && new Date(message.updated_at).getTime() > new Date(message.created_at).getTime() ? <small>Edited</small> : null}
+        {!message.is_deleted && message.is_mine && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000 ? (
+          <button type="button" onClick={onEdit} aria-label="Edit message">Edit</button>
         ) : null}
         {!message.is_deleted && !message.is_mine ? (
           <button type="button" onClick={onReport} aria-label="Report message"><Flag size={12} /></button>
@@ -193,6 +193,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState("");
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File>();
   const [search, setSearch] = useState("");
@@ -270,14 +271,13 @@ function ChatExperience({ portal }: { portal: Portal }) {
       ]);
     },
   });
-  const deleteMutation = useMutation({
-    mutationFn: (messageId: string) => deleteChatMessage(selectedId, messageId),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedId] }),
-      queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] }),
-    ]),
+  const editMutation = useMutation({
+    mutationFn: () => editChatMessage(selectedId, editingMessageId, draft),
+    onSuccess: async () => {
+      setEditingMessageId(""); setDraft("");
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedId] }), queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] })]);
+    },
   });
-
   const messages = messagesQuery.data?.results ?? [];
   const newestMessage = messages.at(-1)?.id ?? "";
   useEffect(() => {
@@ -294,7 +294,9 @@ function ChatExperience({ portal }: { portal: Portal }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if ((!draft.trim() && !attachment) || !selectedId || sendMutation.isPending) return;
+    if (!draft.trim() || !selectedId) return;
+    if (editingMessageId) { if (!editMutation.isPending) editMutation.mutate(); return; }
+    if (sendMutation.isPending) return;
     sendMutation.mutate();
   };
 
@@ -366,12 +368,17 @@ function ChatExperience({ portal }: { portal: Portal }) {
                   <Bubble
                     key={message.id}
                     message={message}
-                    onDelete={() => {
-                      if (window.confirm("Delete this message?")) deleteMutation.mutate(message.id);
+                    onEdit={() => {
+                      setEditingMessageId(message.id);
+                      setDraft(message.body);
+                      setAttachment(undefined);
                     }}
-                    onReport={() => {
+                    onReport={async () => {
                       const reason = window.prompt("Why are you reporting this message?");
-                      if (reason?.trim()) void reportChatMessage(selectedId, message.id, reason.trim());
+                      if (reason?.trim()) {
+                        try { await reportChatMessage(selectedId, message.id, reason.trim()); window.alert("Message reported to the school."); }
+                        catch (error) { window.alert(error instanceof Error ? error.message : "Could not report message."); }
+                      }
                     }}
                   />
                 )) : (
@@ -379,6 +386,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
                 )}
                 <div ref={endRef} />
               </div>
+              {editingMessageId ? <div className="chat-editing"><span>Editing message</span><button type="button" onClick={() => { setEditingMessageId(""); setDraft(""); }}>Cancel</button></div> : null}
               {selected?.can_post === false ? <div className="chat-readonly"><ShieldCheck size={18}/><span><strong>Posting is restricted</strong><small>Only approved moderators can post.</small></span></div> : <form className="chat-composer" onSubmit={submit}>
                 {attachment ? (
                   <div className="chat-composer__file"><FileText size={15} /><span>{attachment.name}</span><button type="button" onClick={() => setAttachment(undefined)} aria-label="Remove attachment"><X size={15} /></button></div>
@@ -405,7 +413,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
                       }
                     }}
                   />
-                  <button className="chat-send-button" type="submit" disabled={sendMutation.isPending || (!draft.trim() && !attachment)} aria-label="Send message">
+                  <button className="chat-send-button" type="submit" disabled={sendMutation.isPending || editMutation.isPending || (!draft.trim() && !attachment)} aria-label="Send message">
                     {sendMutation.isPending ? <LoaderCircle className="chat-spin" size={18} /> : <Send size={18} />}
                   </button>
                 </div>
