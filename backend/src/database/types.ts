@@ -104,10 +104,10 @@ export interface ChatPolicyTable {
   guardian_group_replies: Generated<boolean>;
   attachments_enabled: Generated<boolean>;
   enforce_communication_hours: Generated<boolean>;
-  communication_start: Generated<TimeOnly>;
-  communication_end: Generated<TimeOnly>;
+  communication_start: ColumnType<string, string | undefined, string>;
+  communication_end: ColumnType<string, string | undefined, string>;
   retention_days: Generated<number>;
   privacy_notice_version: Generated<string>;
-  updated_by: Generated<string | null>;
-  updated_at: Generated<Timestamp>;
+  updated_by: ColumnType<string | null, string | null | undefined, string | null>;
+  updated_at: Timestamp;
 }
