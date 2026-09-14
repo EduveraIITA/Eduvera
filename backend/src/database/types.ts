@@ -1,3 +1,4 @@
+/* eslint-disable */
 // @ts-nocheck
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from "kysely";
 

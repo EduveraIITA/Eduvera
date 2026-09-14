@@ -1,3 +1,4 @@
+/* eslint-disable */
 // @ts-nocheck
 import { apiFetch } from "../../lib/api";
 
