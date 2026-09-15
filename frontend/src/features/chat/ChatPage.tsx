@@ -176,12 +176,12 @@ function ReportDialog({ message, pending, error, onClose, onSubmit }: {
         </div>
         <label>
           <span>Tell us what happened</span>
-          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={500} placeholder="Add a short reason…" autoFocus />
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={2} maxLength={500} placeholder="Add a short reason…" />
         </label>
         {error ? <p className="chat-report-error">{error}</p> : null}
         <footer>
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" disabled={pending || reason.trim().length < 3}>{pending ? <LoaderCircle className="chat-spin" size={17} /> : <Flag size={16} />} Submit report</button>
+          <button type="button" className="chat-report-cancel" onClick={onClose}>Cancel</button>
+          <button type="submit" className="chat-report-submit" disabled={pending || reason.trim().length < 3}>{pending ? <LoaderCircle className="chat-spin" size={17} /> : <Flag size={16} />} Submit report</button>
         </footer>
       </form>
     </div>
