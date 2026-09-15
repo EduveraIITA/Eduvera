@@ -164,31 +164,19 @@ function MessageActionsDialog({ message, onClose, onEdit, onReport }: {
     <div className="chat-picker-backdrop chat-actions-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="chat-actions-sheet" role="dialog" aria-modal="true" aria-labelledby="message-actions-title">
-        <span className="chat-actions-sheet__handle" />
-        <header>
-          <span>
-            <strong id="message-actions-title">Message options</strong>
-            <small>{message.is_mine ? "Choose an action for your message" : `Message from ${message.sender_name}`}</small>
-          </span>
-          <button type="button" onClick={onClose} aria-label="Close message options"><X size={18} /></button>
-        </header>
-        <blockquote>{message.body || "Attachment"}</blockquote>
-        <div className="chat-actions-list">
-          {canEdit ? (
-            <button type="button" onClick={onEdit}>
-              <span className="chat-action-icon is-edit"><Pencil size={18} /></span>
-              <span><strong>Edit message</strong><small>Available for two minutes after sending</small></span>
-            </button>
-          ) : null}
-          {canReport ? (
-            <button type="button" className="is-report" onClick={onReport}>
-              <span className="chat-action-icon is-report"><Flag size={18} /></span>
-              <span><strong>Report message</strong><small>Send a private report to authorised school staff</small></span>
-            </button>
-          ) : null}
-        </div>
-        <button type="button" className="chat-actions-cancel" onClick={onClose}>Cancel</button>
+      <section className="chat-actions-menu" role="menu" aria-label="Message actions">
+        {canEdit ? (
+          <button type="button" role="menuitem" onClick={onEdit}>
+            <Pencil size={18} />
+            <span>Edit</span>
+          </button>
+        ) : null}
+        {canReport ? (
+          <button type="button" role="menuitem" className="is-flag" onClick={onReport}>
+            <Flag size={18} />
+            <span>Flag message</span>
+          </button>
+        ) : null}
       </section>
     </div>
   );
