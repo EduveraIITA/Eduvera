@@ -8,6 +8,7 @@ import {
   Flag,
   LoaderCircle,
   MessageCircle,
+  MoreHorizontal,
   Paperclip,
   Search,
   ShieldCheck,
@@ -243,6 +244,16 @@ function Bubble({
         <time>{messageTime(message.created_at)}</time>
         {message.is_mine ? <CheckCheck size={13} /> : null}
         {message.is_mine && new Date(message.updated_at).getTime() > new Date(message.created_at).getTime() ? <small>Edited</small> : null}
+        {!message.is_deleted && !message.is_mine ? (
+          <button
+            type="button"
+            className="chat-message-options"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => { event.stopPropagation(); cancelLongPress(); onReport(); }}
+            aria-label="Message options"
+            title="Message options"
+          ><MoreHorizontal size={15} /></button>
+        ) : null}
         {!message.is_deleted && message.is_mine && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000 ? (
           <button type="button" onClick={onEdit} aria-label="Edit message">Edit</button>
         ) : null}

@@ -51,3 +51,18 @@
 .chat-report-error{margin:0;color:#c4483f;font-size:.78rem}
 .chat-toast{position:fixed;z-index:1100;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;align-items:center;gap:7px;background:#183d35;color:white;padding:10px 14px;border-radius:999px;box-shadow:0 12px 32px rgba(0,0,0,.18);font-size:.8rem;white-space:nowrap}
 @media (min-width:700px){.chat-report-backdrop{align-items:center}.chat-report-sheet{border-radius:22px}}
+
+
+/* Message actions and report dialog polish */
+.chat-bubble footer{min-height:22px}
+.chat-message-options{width:28px;height:28px;margin:-4px -5px -4px auto;display:grid;place-items:center;border:1px solid transparent!important;border-radius:9px;background:transparent!important;color:var(--ink-muted)!important;opacity:.62;transition:opacity .15s ease,background .15s ease,border-color .15s ease}
+.chat-message-options:hover,.chat-message-options:focus-visible{opacity:1;background:var(--surface-muted)!important;border-color:var(--line)!important;color:var(--accent)!important;outline:none}
+.chat-report-sheet{padding:14px 18px 18px;gap:16px}
+.chat-report-sheet header{padding-bottom:2px}
+.chat-report-sheet blockquote{line-height:1.35}
+.chat-report-reasons{margin-top:-2px}
+.chat-report-sheet>label{gap:7px}
+.chat-report-sheet textarea{min-height:78px}
+.chat-report-sheet footer{position:sticky;bottom:0;margin:0 -2px -2px;padding-top:12px;border-top:1px solid var(--line);background:var(--surface)}
+.chat-report-sheet footer button{min-height:42px;padding:10px 15px}
+.chat-report-sheet footer button:last-child:disabled{opacity:.5;cursor:not-allowed}
