@@ -96,30 +96,49 @@ export class ChatService {
   }
 
   private async ensureClassGroups(user: AuthUser) {
-    if (user.role !== "staff" && user.role !== "admin") return;
-    const sections = await sql<any>`SELECT cs.id, cs.school_id, cs.grade, cs.section
+    const sections = await sql<any>`SELECT DISTINCT cs.id, cs.school_id, cs.grade, cs.section
       FROM class_sections cs JOIN school_memberships sm ON sm.school_id=cs.school_id
-      WHERE sm.user_id=${user.id}::uuid AND sm.is_active`.execute(this.db);
+      WHERE sm.user_id=${user.id}::uuid AND sm.is_active
+        AND (sm.role IN ('admin', 'staff') OR (sm.role='student' AND EXISTS (
+          SELECT 1 FROM students st JOIN enrollments e ON e.student_id=st.id
+          WHERE st.user_id=${user.id}::uuid AND e.is_active AND e.class_section_id=cs.id
+        ))) ORDER BY cs.id`.execute(this.db);
     for (const section of sections.rows) {
-      const existing = await sql<any>`SELECT id FROM chat_conversations WHERE school_id=${section.school_id}::uuid AND group_type='student_group' AND context_student_id IS NULL AND title=${"Grade " + section.grade + " · " + section.section} LIMIT 1`.execute(this.db);
-      if (existing.rows[0]) {
-        await this.db.insertInto("chat_participants").values({
-          conversation_id: existing.rows[0].id,
-          user_id: user.id,
-          participant_role: "moderator",
-          is_active: true,
-        }).onConflict((conflict) => conflict.columns(["conversation_id", "user_id"]).doUpdateSet({
-          participant_role: "moderator",
-          is_active: true,
-        })).execute();
-        continue;
-      }
       await this.db.transaction().execute(async (tx) => {
-        const conversation = await tx.insertInto("chat_conversations").values({ school_id: section.school_id, kind: "group", title: "Grade " + section.grade + " · " + section.section, context_student_id: null, created_by: user.id, group_type: "student_group", posting_mode: "all" }).returning("id").executeTakeFirstOrThrow();
-        const students = await sql<any>`SELECT student_user.id FROM students student JOIN users student_user ON student_user.id=student.user_id JOIN enrollments enrollment ON enrollment.student_id=student.id AND enrollment.is_active WHERE student.class_section_id=${section.id}::uuid AND student_user.is_active`.execute(tx);
-        const rows = students.rows.map((student: { id: string }) => ({ conversation_id: conversation.id, user_id: student.id, participant_role: "member" as const }));
-        rows.push({ conversation_id: conversation.id, user_id: user.id, participant_role: "moderator" as const });
-        if (rows.length) await tx.insertInto("chat_participants").values(rows).execute();
+        // Serialize creation per class so simultaneous first visits cannot create duplicates.
+        await sql`SELECT id FROM class_sections WHERE id=${section.id}::uuid FOR UPDATE`.execute(tx);
+        const title = "Grade " + section.grade + " · " + section.section;
+        const existing = await sql<any>`SELECT id FROM chat_conversations
+          WHERE school_id=${section.school_id}::uuid AND kind='group' AND group_type='student_group'
+            AND context_student_id IS NULL AND title=${title} ORDER BY created_at, id LIMIT 1`.execute(tx);
+        const conversation = existing.rows[0] ?? await tx.insertInto("chat_conversations").values({
+          school_id: section.school_id, kind: "group", title, context_student_id: null,
+          created_by: user.id, group_type: "student_group", posting_mode: "all",
+        }).returning("id").executeTakeFirstOrThrow();
+        // Current enrollments are the source of truth, including students added after creation.
+        const members = await sql<any>`SELECT DISTINCT u.id, 'member' AS participant_role
+          FROM enrollments e JOIN students st ON st.id=e.student_id
+          JOIN users u ON u.id=st.user_id AND u.is_active
+          JOIN school_memberships sm ON sm.user_id=u.id AND sm.school_id=${section.school_id}::uuid
+            AND sm.role='student' AND sm.is_active
+          WHERE e.class_section_id=${section.id}::uuid AND e.is_active
+          UNION SELECT DISTINCT u.id, 'moderator' AS participant_role
+          FROM school_memberships sm JOIN users u ON u.id=sm.user_id AND u.is_active
+          WHERE sm.school_id=${section.school_id}::uuid AND sm.is_active
+            AND (sm.role='admin' OR (sm.role='staff' AND EXISTS (
+              SELECT 1 FROM timetable_slots slot WHERE slot.class_section_id=${section.id}::uuid
+                AND slot.teacher_user_id=u.id
+            )))`.execute(tx);
+        const roles = new Map<string, string>();
+        for (const member of members.rows) {
+          if (roles.get(member.id) !== "moderator") roles.set(member.id, member.participant_role);
+        }
+        for (const [id, role] of roles) {
+          await tx.insertInto("chat_participants").values({conversation_id: conversation.id,
+            user_id: id, participant_role: role, is_active: true})
+            .onConflict((conflict) => conflict.columns(["conversation_id", "user_id"])
+              .doUpdateSet({participant_role: role, is_active: true})).execute();
+        }
       });
     }
   }

@@ -448,7 +448,8 @@ function ChatExperience({ portal }: { portal: Portal }) {
     });
   }, [newestMessage, queryClient, selectedId]);
   useEffect(() => {
-    if (newestMessage) endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    const scroller = endRef.current?.parentElement;
+    if (newestMessage && scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [newestMessage]);
   useEffect(() => {
     if (!reportNotice) return;

@@ -98,3 +98,11 @@
     box-shadow:none;
   }
 }
+
+/* Contain scrolling inside messenger instead of shifting the phone page. */
+.chat-thread,.chat-conversations{min-height:0;overflow:hidden}
+.chat-conversations{display:flex;flex-direction:column}
+.chat-conversations>header,.chat-conversations>.chat-search{flex-shrink:0}
+.chat-conversation-list{flex:1;min-height:0;height:auto}
+.chat-bubble{flex-shrink:0}
+@media(max-width:680px){.operations-mobile-nav{grid-template-columns:repeat(4,minmax(0,1fr))}}
