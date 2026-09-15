@@ -402,10 +402,13 @@ export class ChatService {
         message.created_at, message.updated_at,
         sender.first_name, sender.last_name, sender.role AS sender_role,
         attachment.id AS attachment_id, attachment.original_name,
-        attachment.content_type, attachment.size_bytes
+        attachment.content_type, attachment.size_bytes,
+        (report.id IS NOT NULL) AS is_reported_by_me
       FROM chat_messages message
       JOIN users sender ON sender.id=message.sender_id
       LEFT JOIN chat_attachments attachment ON attachment.message_id=message.id
+      LEFT JOIN chat_message_reports report
+        ON report.message_id=message.id AND report.reported_by=${user.id}::uuid
       WHERE message.conversation_id=${conversationId}::uuid
         AND (${beforeDate ?? null}::timestamptz IS NULL OR message.created_at<${beforeDate ?? null}::timestamptz)
       ORDER BY message.created_at DESC, message.id DESC
@@ -423,6 +426,7 @@ export class ChatService {
         reply_to_id: row.reply_to_id,
         is_deleted: row.is_deleted,
         is_mine: row.sender_id === user.id,
+        is_reported_by_me: Boolean(row.is_reported_by_me),
         created_at: row.created_at,
         updated_at: row.updated_at,
         attachment: row.attachment_id && !row.is_deleted ? {

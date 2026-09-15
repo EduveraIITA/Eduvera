@@ -57,3 +57,6 @@
 .chat-message-options:hover,.chat-message-options:focus-visible{opacity:1;background:var(--chat-soft,#eef3ff)!important;border-color:#d6def0!important;color:var(--chat-primary,#1d4ed8)!important;outline:none}
 @media (min-width:700px){.chat-report-backdrop{align-items:center}.chat-report-sheet{border-radius:24px;padding:14px 18px 18px;max-height:min(680px,calc(100dvh - 48px))}.chat-report-sheet footer{bottom:-18px;margin:0 -18px -18px;padding:12px 18px 18px}}
 @media (max-width:420px){.chat-report-sheet{gap:12px}.chat-report-reasons{gap:7px}.chat-report-reasons button{font-size:.68rem;padding:7px 8px}.chat-report-sheet header strong{font-size:.95rem}}
+
+
+.chat-message-flagged{width:28px;height:28px;margin:-4px -5px -4px auto;display:grid;place-items:center;border-radius:9px;color:#d6673d;background:#fff0e8}

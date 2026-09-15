@@ -69,6 +69,7 @@ export interface ChatMessage {
   reply_to_id: string | null;
   is_deleted: boolean;
   is_mine: boolean;
+  is_reported_by_me: boolean;
   created_at: string;
   updated_at: string;
   attachment: ChatAttachment | null;

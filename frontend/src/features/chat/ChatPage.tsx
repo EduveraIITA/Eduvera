@@ -203,7 +203,7 @@ function Bubble({
     longPressTimer.current = undefined;
   };
   const startLongPress = () => {
-    if (message.is_mine || message.is_deleted) return;
+    if (message.is_mine || message.is_deleted || message.is_reported_by_me) return;
     cancelLongPress();
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = undefined;
@@ -215,13 +215,13 @@ function Bubble({
 
   return (
     <article
-      className={[message.is_mine ? "chat-bubble is-mine" : "chat-bubble", !message.is_mine && !message.is_deleted ? "is-reportable" : ""].filter(Boolean).join(" ")}
+      className={[message.is_mine ? "chat-bubble is-mine" : "chat-bubble", !message.is_mine && !message.is_deleted && !message.is_reported_by_me ? "is-reportable" : ""].filter(Boolean).join(" ")}
       onPointerDown={startLongPress}
       onPointerUp={cancelLongPress}
       onPointerCancel={cancelLongPress}
       onPointerLeave={cancelLongPress}
       onContextMenu={(event) => {
-        if (!message.is_mine && !message.is_deleted) {
+        if (!message.is_mine && !message.is_deleted && !message.is_reported_by_me) {
           event.preventDefault();
           cancelLongPress();
           onReport();
@@ -244,7 +244,12 @@ function Bubble({
         <time>{messageTime(message.created_at)}</time>
         {message.is_mine ? <CheckCheck size={13} /> : null}
         {message.is_mine && new Date(message.updated_at).getTime() > new Date(message.created_at).getTime() ? <small>Edited</small> : null}
-        {!message.is_deleted && !message.is_mine ? (
+        {!message.is_deleted && !message.is_mine && message.is_reported_by_me ? (
+          <span className="chat-message-flagged" role="img" aria-label="Reported" title="Reported">
+            <Flag size={13} fill="currentColor" />
+          </span>
+        ) : null}
+        {!message.is_deleted && !message.is_mine && !message.is_reported_by_me ? (
           <button
             type="button"
             className="chat-message-options"
@@ -353,9 +358,19 @@ function ChatExperience({ portal }: { portal: Portal }) {
   });
   const reportMutation = useMutation({
     mutationFn: (reason: string) => reportChatMessage(selectedId, reportTarget?.id ?? "", reason),
-    onSuccess: () => {
+    onSuccess: async () => {
+      const reportedMessageId = reportTarget?.id;
+      if (reportedMessageId) {
+        queryClient.setQueryData(["chat", "messages", selectedId], (current: any) => current ? ({
+          ...current,
+          results: current.results.map((message: ChatMessage) => message.id === reportedMessageId
+            ? { ...message, is_reported_by_me: true }
+            : message),
+        }) : current);
+      }
       setReportTarget(undefined);
       setReportNotice("Report sent privately to the school.");
+      await queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedId] });
     },
   });
   const editMutation = useMutation({
