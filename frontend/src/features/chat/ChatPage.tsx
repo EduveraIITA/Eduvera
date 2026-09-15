@@ -10,6 +10,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Paperclip,
+  Pencil,
   Search,
   ShieldCheck,
   UsersRound,
@@ -147,6 +148,52 @@ function PrivacyDialog({ policy, onClose, onSave, pending }: { policy?: ChatPoli
   </div>;
 }
 
+function MessageActionsDialog({ message, onClose, onEdit, onReport }: {
+  message: ChatMessage;
+  onClose: () => void;
+  onEdit: () => void;
+  onReport: () => void;
+}) {
+  const canEdit = message.is_mine
+    && !message.is_deleted
+    && Boolean(message.body.trim())
+    && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000;
+  const canReport = !message.is_mine && !message.is_deleted && !message.is_reported_by_me;
+
+  return (
+    <div className="chat-picker-backdrop chat-actions-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section className="chat-actions-sheet" role="dialog" aria-modal="true" aria-labelledby="message-actions-title">
+        <span className="chat-actions-sheet__handle" />
+        <header>
+          <span>
+            <strong id="message-actions-title">Message options</strong>
+            <small>{message.is_mine ? "Choose an action for your message" : `Message from ${message.sender_name}`}</small>
+          </span>
+          <button type="button" onClick={onClose} aria-label="Close message options"><X size={18} /></button>
+        </header>
+        <blockquote>{message.body || "Attachment"}</blockquote>
+        <div className="chat-actions-list">
+          {canEdit ? (
+            <button type="button" onClick={onEdit}>
+              <span className="chat-action-icon is-edit"><Pencil size={18} /></span>
+              <span><strong>Edit message</strong><small>Available for two minutes after sending</small></span>
+            </button>
+          ) : null}
+          {canReport ? (
+            <button type="button" className="is-report" onClick={onReport}>
+              <span className="chat-action-icon is-report"><Flag size={18} /></span>
+              <span><strong>Report message</strong><small>Send a private report to authorised school staff</small></span>
+            </button>
+          ) : null}
+        </div>
+        <button type="button" className="chat-actions-cancel" onClick={onClose}>Cancel</button>
+      </section>
+    </div>
+  );
+}
+
 function ReportDialog({ message, pending, error, onClose, onSubmit }: {
   message: ChatMessage;
   pending: boolean;
@@ -190,24 +237,28 @@ function ReportDialog({ message, pending, error, onClose, onSubmit }: {
 
 function Bubble({
   message,
-  onEdit,
-  onReport,
+  onActions,
 }: {
   message: ChatMessage;
-  onEdit: () => void;
-  onReport: () => void;
+  onActions: () => void;
 }) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const canEdit = message.is_mine
+    && !message.is_deleted
+    && Boolean(message.body.trim())
+    && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000;
+  const canReport = !message.is_mine && !message.is_deleted && !message.is_reported_by_me;
+  const hasActions = canEdit || canReport;
   const cancelLongPress = () => {
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = undefined;
   };
   const startLongPress = () => {
-    if (message.is_mine || message.is_deleted || message.is_reported_by_me) return;
+    if (!hasActions) return;
     cancelLongPress();
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = undefined;
-      onReport();
+      onActions();
       if ("vibrate" in navigator) navigator.vibrate(35);
     }, 550);
   };
@@ -215,16 +266,16 @@ function Bubble({
 
   return (
     <article
-      className={[message.is_mine ? "chat-bubble is-mine" : "chat-bubble", !message.is_mine && !message.is_deleted && !message.is_reported_by_me ? "is-reportable" : ""].filter(Boolean).join(" ")}
+      className={[message.is_mine ? "chat-bubble is-mine" : "chat-bubble", hasActions ? "is-reportable" : ""].filter(Boolean).join(" ")}
       onPointerDown={startLongPress}
       onPointerUp={cancelLongPress}
       onPointerCancel={cancelLongPress}
       onPointerLeave={cancelLongPress}
       onContextMenu={(event) => {
-        if (!message.is_mine && !message.is_deleted && !message.is_reported_by_me) {
+        if (hasActions) {
           event.preventDefault();
           cancelLongPress();
-          onReport();
+          onActions();
         }
       }}
     >
@@ -249,24 +300,20 @@ function Bubble({
             <Flag size={13} fill="currentColor" />
           </span>
         ) : null}
-        {!message.is_deleted && !message.is_mine && !message.is_reported_by_me ? (
+        {hasActions ? (
           <button
             type="button"
             className="chat-message-options"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => { event.stopPropagation(); cancelLongPress(); onReport(); }}
+            onClick={(event) => { event.stopPropagation(); cancelLongPress(); onActions(); }}
             aria-label="Message options"
             title="Message options"
           ><MoreHorizontal size={15} /></button>
-        ) : null}
-        {!message.is_deleted && message.is_mine && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000 ? (
-          <button type="button" onClick={onEdit} aria-label="Edit message">Edit</button>
         ) : null}
       </footer>
     </article>
   );
 }
-
 function ChatExperience({ portal }: { portal: Portal }) {
   const auth = useOptionalAuth();
   const queryClient = useQueryClient();
@@ -278,6 +325,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState("");
   const [reportTarget, setReportTarget] = useState<ChatMessage>();
+  const [actionTarget, setActionTarget] = useState<ChatMessage>();
   const [reportNotice, setReportNotice] = useState("");
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File>();
@@ -475,12 +523,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
                   <Bubble
                     key={message.id}
                     message={message}
-                    onEdit={() => {
-                      setEditingMessageId(message.id);
-                      setDraft(message.body);
-                      setAttachment(undefined);
-                    }}
-                    onReport={() => setReportTarget(message)}
+                    onActions={() => setActionTarget(message)}
                   />
                 )) : (
                   <div className="chat-state chat-state--empty"><MessageCircle size={24} /><strong>Start the conversation</strong><span>Messages are visible only to approved participants.</span></div>
@@ -525,6 +568,20 @@ function ChatExperience({ portal }: { portal: Portal }) {
         </section>
       </section>
       {reportNotice ? <div className="chat-toast" role="status"><ShieldCheck size={17} />{reportNotice}</div> : null}
+      {actionTarget ? <MessageActionsDialog
+        message={actionTarget}
+        onClose={() => setActionTarget(undefined)}
+        onEdit={() => {
+          setEditingMessageId(actionTarget.id);
+          setDraft(actionTarget.body);
+          setAttachment(undefined);
+          setActionTarget(undefined);
+        }}
+        onReport={() => {
+          setReportTarget(actionTarget);
+          setActionTarget(undefined);
+        }}
+      /> : null}
       {reportTarget ? <ReportDialog message={reportTarget} pending={reportMutation.isPending} error={reportMutation.isError ? reportMutation.error.message : undefined} onClose={() => setReportTarget(undefined)} onSubmit={(reason) => reportMutation.mutate(reason)} /> : null}
       {groupOpen ? <GovernanceDialog recipients={recipientsQuery.data?.results ?? []} portal={portal} pending={recipientsQuery.isPending || groupMutation.isPending} onClose={()=>setGroupOpen(false)} onCreate={(input)=>groupMutation.mutate(input)} /> : null}
       {privacyOpen ? <PrivacyDialog policy={policyQuery.data} pending={policyMutation.isPending} onClose={()=>setPrivacyOpen(false)} onSave={(input)=>policyMutation.mutate(input)} /> : null}
