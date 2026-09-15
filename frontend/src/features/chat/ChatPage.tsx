@@ -148,8 +148,9 @@ function PrivacyDialog({ policy, onClose, onSave, pending }: { policy?: ChatPoli
   </div>;
 }
 
-function MessageActionsDialog({ message, onClose, onEdit, onReport }: {
+function MessageActionsDialog({ message, position, onClose, onEdit, onReport }: {
   message: ChatMessage;
+  position: { left: number; top: number };
   onClose: () => void;
   onEdit: () => void;
   onReport: () => void;
@@ -164,7 +165,12 @@ function MessageActionsDialog({ message, onClose, onEdit, onReport }: {
     <div className="chat-picker-backdrop chat-actions-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="chat-actions-menu" role="menu" aria-label="Message actions">
+      <section
+        className="chat-actions-menu"
+        role="menu"
+        aria-label="Message actions"
+        style={{ left: position.left, top: position.top }}
+      >
         {canEdit ? (
           <button type="button" role="menuitem" onClick={onEdit}>
             <Pencil size={18} />
@@ -228,9 +234,10 @@ function Bubble({
   onActions,
 }: {
   message: ChatMessage;
-  onActions: () => void;
+  onActions: (position: { left: number; top: number }) => void;
 }) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const bubbleRef = useRef<HTMLElement>(null);
   const canEdit = message.is_mine
     && !message.is_deleted
     && Boolean(message.body.trim())
@@ -241,12 +248,25 @@ function Bubble({
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = undefined;
   };
+  const openActions = () => {
+    const rect = bubbleRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuWidth = 154;
+    const menuHeight = 56;
+    const horizontal = message.is_mine ? rect.right - menuWidth : rect.left;
+    const left = Math.max(8, Math.min(horizontal, window.innerWidth - menuWidth - 8));
+    const below = rect.bottom + 6;
+    const top = below + menuHeight <= window.innerHeight - 8
+      ? below
+      : Math.max(8, rect.top - menuHeight - 6);
+    onActions({ left, top });
+  };
   const startLongPress = () => {
     if (!hasActions) return;
     cancelLongPress();
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = undefined;
-      onActions();
+      openActions();
       if ("vibrate" in navigator) navigator.vibrate(35);
     }, 550);
   };
@@ -254,6 +274,7 @@ function Bubble({
 
   return (
     <article
+      ref={bubbleRef}
       className={[message.is_mine ? "chat-bubble is-mine" : "chat-bubble", hasActions ? "is-reportable" : ""].filter(Boolean).join(" ")}
       onPointerDown={startLongPress}
       onPointerUp={cancelLongPress}
@@ -263,7 +284,7 @@ function Bubble({
         if (hasActions) {
           event.preventDefault();
           cancelLongPress();
-          onActions();
+          openActions();
         }
       }}
     >
@@ -293,7 +314,7 @@ function Bubble({
             type="button"
             className="chat-message-options"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => { event.stopPropagation(); cancelLongPress(); onActions(); }}
+            onClick={(event) => { event.stopPropagation(); cancelLongPress(); openActions(); }}
             aria-label="Message options"
             title="Message options"
           ><MoreHorizontal size={15} /></button>
@@ -313,7 +334,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState("");
   const [reportTarget, setReportTarget] = useState<ChatMessage>();
-  const [actionTarget, setActionTarget] = useState<ChatMessage>();
+  const [actionTarget, setActionTarget] = useState<{ message: ChatMessage; position: { left: number; top: number } }>();
   const [reportNotice, setReportNotice] = useState("");
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File>();
@@ -511,7 +532,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
                   <Bubble
                     key={message.id}
                     message={message}
-                    onActions={() => setActionTarget(message)}
+                    onActions={(position) => setActionTarget({ message, position })}
                   />
                 )) : (
                   <div className="chat-state chat-state--empty"><MessageCircle size={24} /><strong>Start the conversation</strong><span>Messages are visible only to approved participants.</span></div>
@@ -557,16 +578,17 @@ function ChatExperience({ portal }: { portal: Portal }) {
       </section>
       {reportNotice ? <div className="chat-toast" role="status"><ShieldCheck size={17} />{reportNotice}</div> : null}
       {actionTarget ? <MessageActionsDialog
-        message={actionTarget}
+        message={actionTarget.message}
+        position={actionTarget.position}
         onClose={() => setActionTarget(undefined)}
         onEdit={() => {
-          setEditingMessageId(actionTarget.id);
-          setDraft(actionTarget.body);
+          setEditingMessageId(actionTarget.message.id);
+          setDraft(actionTarget.message.body);
           setAttachment(undefined);
           setActionTarget(undefined);
         }}
         onReport={() => {
-          setReportTarget(actionTarget);
+          setReportTarget(actionTarget.message);
           setActionTarget(undefined);
         }}
       /> : null}

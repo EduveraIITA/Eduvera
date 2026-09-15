@@ -62,14 +62,13 @@
 .chat-message-flagged{width:28px;height:28px;margin:-4px -5px -4px auto;display:grid;place-items:center;border-radius:9px;color:#d6673d;background:#fff0e8}
 
 
-/* Compact WhatsApp-style long-press message menu */
-.chat-actions-backdrop{align-items:end;padding:16px;background:rgba(15,23,42,.42)}
-.chat-actions-menu{width:min(100%,300px);display:grid;overflow:hidden;border:1px solid var(--outline-variant,#c4c5d7);border-radius:16px;background:var(--surface-lowest,#fff);box-shadow:0 16px 42px rgba(15,23,42,.22)}
-.chat-actions-menu button{min-height:54px;display:flex;align-items:center;gap:13px;padding:0 16px;border:0;border-bottom:1px solid var(--outline-variant,#c4c5d7);color:var(--on-surface,#0b1c30);background:var(--surface-lowest,#fff);font-size:.88rem;font-weight:700;text-align:left}
+/* Translucent context tile, anchored beside the selected message */
+.chat-actions-backdrop{display:block;padding:0;background:transparent;backdrop-filter:none}
+.chat-actions-menu{position:fixed;z-index:101;width:154px;display:grid;overflow:hidden;border:1px solid rgba(116,118,134,.2);border-radius:14px;background:rgba(255,255,255,.78);box-shadow:0 10px 28px rgba(15,23,42,.16);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.chat-actions-menu button{min-height:52px;display:flex;align-items:center;gap:11px;padding:0 14px;border:0;border-bottom:1px solid rgba(116,118,134,.16);color:var(--on-surface,#0b1c30);background:transparent;font-size:.82rem;font-weight:750;text-align:left}
 .chat-actions-menu button:last-child{border-bottom:0}
-.chat-actions-menu button:hover,.chat-actions-menu button:focus-visible{background:var(--surface-low,#eff4ff);outline:none}
+.chat-actions-menu button:hover,.chat-actions-menu button:focus-visible{background:rgba(29,78,216,.08);outline:none}
 .chat-actions-menu button svg{color:var(--primary-bright,#1d4ed8)}
 .chat-actions-menu button.is-flag svg{color:#d6673d}
-@media (min-width:700px){.chat-actions-backdrop{align-items:center}.chat-actions-menu{width:280px}}
 .chat-bubble.is-mine .chat-message-options{color:rgba(255,255,255,.9)!important}
 .chat-bubble.is-mine .chat-message-options:hover,.chat-bubble.is-mine .chat-message-options:focus-visible{background:rgba(255,255,255,.14)!important;border-color:rgba(255,255,255,.28)!important;color:#fff!important}
