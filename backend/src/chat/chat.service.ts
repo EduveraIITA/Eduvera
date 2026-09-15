@@ -102,7 +102,18 @@ export class ChatService {
       WHERE sm.user_id=${user.id}::uuid AND sm.is_active`.execute(this.db);
     for (const section of sections.rows) {
       const existing = await sql<any>`SELECT id FROM chat_conversations WHERE school_id=${section.school_id}::uuid AND group_type='student_group' AND context_student_id IS NULL AND title=${"Grade " + section.grade + " · " + section.section} LIMIT 1`.execute(this.db);
-      if (existing.rows[0]) continue;
+      if (existing.rows[0]) {
+        await this.db.insertInto("chat_participants").values({
+          conversation_id: existing.rows[0].id,
+          user_id: user.id,
+          participant_role: "moderator",
+          is_active: true,
+        }).onConflict((conflict) => conflict.columns(["conversation_id", "user_id"]).doUpdateSet({
+          participant_role: "moderator",
+          is_active: true,
+        })).execute();
+        continue;
+      }
       await this.db.transaction().execute(async (tx) => {
         const conversation = await tx.insertInto("chat_conversations").values({ school_id: section.school_id, kind: "group", title: "Grade " + section.grade + " · " + section.section, context_student_id: null, created_by: user.id, group_type: "student_group", posting_mode: "all" }).returning("id").executeTakeFirstOrThrow();
         const students = await sql<any>`SELECT student_user.id FROM students student JOIN users student_user ON student_user.id=student.user_id JOIN enrollments enrollment ON enrollment.student_id=student.id AND enrollment.is_active WHERE student.class_section_id=${section.id}::uuid AND student_user.is_active`.execute(tx);

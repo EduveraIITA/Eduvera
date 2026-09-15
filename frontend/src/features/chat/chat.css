@@ -72,3 +72,29 @@
 .chat-actions-menu button.is-flag svg{color:#d6673d}
 .chat-bubble.is-mine .chat-message-options{color:rgba(255,255,255,.9)!important}
 .chat-bubble.is-mine .chat-message-options:hover,.chat-bubble.is-mine .chat-message-options:focus-visible{background:rgba(255,255,255,.14)!important;border-color:rgba(255,255,255,.28)!important;color:#fff!important}
+
+
+/* Keep chat fixed to the real mobile viewport; only the message list scrolls. */
+@media (max-width:760px){
+  .chat-layout,.parent-app .chat-layout,.student-app .chat-layout{
+    height:calc(100dvh - 200px);
+    min-height:0;
+  }
+  .parent-app .chat-layout{height:calc(100dvh - 256px)}
+  .chat-messages,.chat-conversation-list{overscroll-behavior:contain}
+}
+@media (max-width:680px){
+  .operations-app .operations-main:has(.chat-layout){
+    height:calc(100dvh - 141px);
+    min-height:0;
+    padding:0;
+    overflow:hidden;
+  }
+  .operations-app .chat-layout{
+    height:100%;
+    min-height:0;
+    border-width:0;
+    border-radius:0;
+    box-shadow:none;
+  }
+}
