@@ -455,3 +455,7 @@
   .chat-review-context>header small{display:none}
   .chat-review-actions{grid-template-columns:1fr 1fr}
 }
+
+/* Staff workspaces should use the browser width; the shared app frame remains
+   capped for student and parent mobile experiences. */
+.app-viewport:has(.operations-app .chat-layout){width:100%;max-width:none}
