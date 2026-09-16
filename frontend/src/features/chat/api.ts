@@ -70,15 +70,95 @@ export interface ChatMessage {
   is_deleted: boolean;
   is_mine: boolean;
   is_reported_by_me: boolean;
+  report_status: ChatReportStatus | null;
   created_at: string;
   updated_at: string;
   attachment: ChatAttachment | null;
+}
+
+
+
+export type ChatReportStatus = "open" | "under_review" | "resolved" | "dismissed";
+export type ChatModerationAction = "none" | "no_action" | "warning" | "restrict" | "escalate";
+
+export interface ChatReportContextMessage {
+  id: string;
+  body: string;
+  created_at: string;
+  sender_name: string;
+  is_flagged: boolean;
+}
+
+export interface ChatReport {
+  id: string;
+  message_id: string;
+  reported_by: string;
+  reason: string;
+  status: ChatReportStatus;
+  assigned_to: string | null;
+  reviewed_by: string | null;
+  resolution_note: string;
+  action_taken: ChatModerationAction;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  conversation_id: string;
+  conversation_title: string;
+  conversation_kind: "direct" | "group" | "announcement";
+  group_type: ChatGroupType | null;
+  message_body: string;
+  message_created_at: string;
+  sender_id: string;
+  sender_name: string;
+  reporter_name: string;
+  assignee_name: string | null;
+  reviewer_role: "admin" | "staff";
+  can_assign: boolean;
+  context_messages: ChatReportContextMessage[];
+}
+
+export interface ChatReportQueue {
+  results: ChatReport[];
+  summary: Record<ChatReportStatus, number>;
+}
+
+export interface ChatReportReviewer {
+  id: string;
+  name: string;
+  role: "admin" | "staff";
+}
+
+export interface ChatReportUpdate {
+  status?: "under_review" | "resolved" | "dismissed";
+  assigned_to?: string | null;
+  action?: ChatModerationAction;
+  note?: string;
+  restriction_days?: number;
 }
 
 function withQuery(path: string, values: Record<string, string | undefined>) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) if (value) query.set(key, value);
   return query.size ? `${path}?${query.toString()}` : path;
+}
+
+
+
+export function getChatReports(status?: ChatReportStatus) {
+  return apiFetch<ChatReportQueue>(
+    withQuery("/api/v1/chat/reports/", { status }),
+  );
+}
+
+export function getChatReportReviewers() {
+  return apiFetch<{ results: ChatReportReviewer[] }>("/api/v1/chat/reports/reviewers/");
+}
+
+export function updateChatReport(reportId: string, input: ChatReportUpdate) {
+  return apiFetch<ChatReport>(`/api/v1/chat/reports/${reportId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getChatConversations() {
@@ -129,12 +209,6 @@ export function sendChatMessage(
 
 export function markChatRead(conversationId: string) {
   return apiFetch(`/api/v1/chat/conversations/${conversationId}/read/`, { method: "POST" });
-}
-
-export function deleteChatMessage(conversationId: string, messageId: string) {
-  return apiFetch(`/api/v1/chat/conversations/${conversationId}/messages/${messageId}/`, {
-    method: "DELETE",
-  });
 }
 
 export function reportChatMessage(conversationId: string, messageId: string, reason: string) {

@@ -31,6 +31,26 @@ async function messageBody(request: AuthenticatedRequest): Promise<{ body: Recor
 export class ChatController {
   constructor(private readonly chat: ChatService) {}
 
+  @Get("reports/")
+  reports(@Req() request: AuthenticatedRequest, @Query("status") status?: string) {
+    return this.chat.reports(request.authUser, status);
+  }
+
+  @Get("reports/reviewers/")
+  reportReviewers(@Req() request: AuthenticatedRequest) {
+    return this.chat.reportReviewers(request.authUser);
+  }
+
+  @Patch("reports/:reportId/")
+  @HttpCode(200)
+  updateReport(
+    @Req() request: AuthenticatedRequest,
+    @Param("reportId") reportId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.chat.updateReport(request.authUser, reportId, body, request);
+  }
+
   @Get("conversations/")
   conversations(@Req() request: AuthenticatedRequest) {
     return this.chat.conversations(request.authUser);
@@ -98,7 +118,7 @@ export class ChatController {
     @Param("conversationId") conversationId: string,
     @Param("messageId") messageId: string,
   ) {
-    return this.chat.reportMessage(request.authUser, conversationId, messageId, request.body);
+    return this.chat.reportMessage(request.authUser, conversationId, messageId, request.body, request);
   }
 
   @Get("conversations/:conversationId/messages/:messageId/attachment/")

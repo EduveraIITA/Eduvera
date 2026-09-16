@@ -53,7 +53,8 @@ export interface ChatConversationTable { id: Generated<string>; school_id: strin
 export interface ChatParticipantTable { conversation_id: string; user_id: string; participant_role: Generated<"member" | "moderator">; joined_at: Timestamp; last_read_at: NullableTimestamp; is_muted: Generated<boolean>; is_active: Generated<boolean> }
 export interface ChatMessageTable { id: Generated<string>; conversation_id: string; sender_id: string; client_id: string | null; body: Generated<string>; message_type: Generated<"text" | "file" | "system">; reply_to_id: string | null; is_deleted: Generated<boolean>; created_at: Timestamp; updated_at: Timestamp }
 export interface ChatAttachmentTable { id: Generated<string>; message_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; created_at: Timestamp }
-export interface ChatMessageReportTable { id: Generated<string>; message_id: string; reported_by: string; reason: string; status: Generated<"open" | "reviewed" | "dismissed" | "actioned">; created_at: Timestamp }
+export interface ChatMessageReportTable { id: Generated<string>; message_id: string; reported_by: string; reason: string; status: Generated<"open" | "under_review" | "resolved" | "dismissed">; assigned_to: string | null; reviewed_by: string | null; resolution_note: Generated<string>; action_taken: Generated<"none" | "no_action" | "warning" | "restrict" | "escalate">; created_at: Timestamp; updated_at: Timestamp; resolved_at: NullableTimestamp }
+export interface ChatMessagingRestrictionTable { id: Generated<string>; school_id: string; user_id: string; report_id: string; reason: string; starts_at: Timestamp; expires_at: Timestamp; created_by: string; revoked_at: NullableTimestamp; created_at: Timestamp }
 
 export interface Database {
   users: UserTable;
@@ -90,6 +91,7 @@ export interface Database {
   chat_messages: ChatMessageTable;
   chat_attachments: ChatAttachmentTable;
   chat_message_reports: ChatMessageReportTable;
+  chat_messaging_restrictions: ChatMessagingRestrictionTable;
   chat_policies: ChatPolicyTable;
 }
 

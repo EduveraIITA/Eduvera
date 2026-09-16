@@ -33,15 +33,20 @@ import {
   getChatMessages,
   getChatPolicy,
   getChatRecipients,
+  getChatReports,
+  getChatReportReviewers,
   markChatRead,
   reportChatMessage,
   sendChatMessage,
   updateChatPolicy,
+  updateChatReport,
   type ChatGroupType,
+  type ChatReportUpdate,
   type ChatMessage,
   type ChatPolicy,
   type ChatRecipient,
 } from "./api";
+import { ModerationDialog } from "./ModerationDialog";
 import "./chat.css";
 
 function initials(name: string) {
@@ -305,7 +310,7 @@ function Bubble({
         {message.is_mine ? <CheckCheck size={13} /> : null}
         {message.is_mine && new Date(message.updated_at).getTime() > new Date(message.created_at).getTime() ? <small>Edited</small> : null}
         {!message.is_deleted && !message.is_mine && message.is_reported_by_me ? (
-          <span className="chat-message-flagged" role="img" aria-label="Reported" title="Reported">
+          <span className="chat-message-flagged" role="img" aria-label="Reported" title={"Report " + (message.report_status ?? "submitted").replaceAll("_", " ")}>
             <Flag size={13} fill="currentColor" />
           </span>
         ) : null}
@@ -332,6 +337,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [moderationOpen, setModerationOpen] = useState(params.get("moderation") === "reports");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [reportTarget, setReportTarget] = useState<ChatMessage>();
   const [actionTarget, setActionTarget] = useState<{ message: ChatMessage; position: { left: number; top: number } }>();
@@ -355,6 +361,20 @@ function ChatExperience({ portal }: { portal: Portal }) {
     staleTime: 60_000,
   });
   const policyQuery = useQuery({ queryKey: ["chat","policy"], queryFn: getChatPolicy, staleTime: 60_000 });
+  const canModerate = portal === "teacher" || portal === "principal";
+  const reportsQuery = useQuery({
+    queryKey: ["chat", "reports"],
+    queryFn: () => getChatReports(),
+    enabled: canModerate,
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+  });
+  const reviewersQuery = useQuery({
+    queryKey: ["chat", "report-reviewers"],
+    queryFn: getChatReportReviewers,
+    enabled: moderationOpen && portal === "principal",
+    staleTime: 60_000,
+  });
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedId],
     queryFn: () => getChatMessages(selectedId),
@@ -381,6 +401,18 @@ function ChatExperience({ portal }: { portal: Portal }) {
     next.delete("conversation");
     setParams(next);
   };
+  const openModeration = () => {
+    const next = new URLSearchParams(params);
+    next.set("moderation", "reports");
+    setParams(next);
+    setModerationOpen(true);
+  };
+  const closeModeration = () => {
+    const next = new URLSearchParams(params);
+    next.delete("moderation");
+    setParams(next);
+    setModerationOpen(false);
+  };
 
   const createMutation = useMutation({
     mutationFn: (recipient: ChatRecipient) => createChatConversation(recipient.id, studentId),
@@ -392,6 +424,16 @@ function ChatExperience({ portal }: { portal: Portal }) {
   });
   const groupMutation = useMutation({ mutationFn: (input: { title:string; group_type:ChatGroupType; member_ids:string[]; school_id?:string }) => createChatGroup(input), onSuccess: async (r) => { setGroupOpen(false); await queryClient.invalidateQueries({queryKey:["chat","conversations"]}); chooseConversation(r.id); } });
   const policyMutation = useMutation({ mutationFn: (input: Parameters<typeof updateChatPolicy>[0]) => updateChatPolicy(input), onSuccess: async () => { await queryClient.invalidateQueries({queryKey:["chat","policy"]}); setPrivacyOpen(false); } });
+  const moderationMutation = useMutation({
+    mutationFn: ({ reportId, input }: { reportId: string; input: ChatReportUpdate }) => updateChatReport(reportId, input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["chat", "reports"] }),
+        queryClient.invalidateQueries({ queryKey: ["chat", "messages"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+      ]);
+    },
+  });
   const sendMutation = useMutation({
     mutationFn: () => sendChatMessage(selectedId, {
       body: draft,
@@ -421,7 +463,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
         queryClient.setQueryData(["chat", "messages", selectedId], (current: any) => current ? ({
           ...current,
           results: current.results.map((message: ChatMessage) => message.id === reportedMessageId
-            ? { ...message, is_reported_by_me: true }
+            ? { ...message, is_reported_by_me: true, report_status: "open" }
             : message),
         }) : current);
       }
@@ -452,6 +494,9 @@ function ChatExperience({ portal }: { portal: Portal }) {
     if (newestMessage && scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [newestMessage]);
   useEffect(() => {
+    if (params.get("moderation") === "reports" && canModerate) setModerationOpen(true);
+  }, [canModerate, params]);
+  useEffect(() => {
     if (!reportNotice) return;
     const timer = setTimeout(() => setReportNotice(""), 3500);
     return () => clearTimeout(timer);
@@ -471,7 +516,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
         <aside className="chat-conversations">
           <header>
             <span><strong>Messages</strong><small>Private school communication</small></span>
-            <span className="chat-header-actions">{portal === "teacher" || portal === "principal" ? <button type="button" onClick={() => setGroupOpen(true)} aria-label="Create group"><UsersRound size={18}/></button> : null}<button type="button" onClick={() => setPrivacyOpen(true)} aria-label="Messaging privacy"><ShieldCheck size={18}/></button><button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button></span>
+            <span className="chat-header-actions">{portal === "teacher" || portal === "principal" ? <button type="button" onClick={() => setGroupOpen(true)} aria-label="Create group"><UsersRound size={18}/></button> : null}{canModerate ? <button type="button" className="chat-moderation-trigger" onClick={openModeration} aria-label="Open message reports" title="Message reports"><Flag size={18}/>{((reportsQuery.data?.summary.open ?? 0) + (reportsQuery.data?.summary.under_review ?? 0)) > 0 ? <b>{Math.min(99, (reportsQuery.data?.summary.open ?? 0) + (reportsQuery.data?.summary.under_review ?? 0))}</b> : null}</button> : null}<button type="button" onClick={() => setPrivacyOpen(true)} aria-label="Messaging privacy"><ShieldCheck size={18}/></button><button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button></span>
           </header>
           <label className="chat-search">
             <Search size={16} />
@@ -594,6 +639,17 @@ function ChatExperience({ portal }: { portal: Portal }) {
         }}
       /> : null}
       {reportTarget ? <ReportDialog message={reportTarget} pending={reportMutation.isPending} error={reportMutation.isError ? reportMutation.error.message : undefined} onClose={() => setReportTarget(undefined)} onSubmit={(reason) => reportMutation.mutate(reason)} /> : null}
+      {moderationOpen && canModerate ? <ModerationDialog
+        queue={reportsQuery.data}
+        reviewers={reviewersQuery.data?.results ?? []}
+        loading={reportsQuery.isPending}
+        pending={moderationMutation.isPending}
+        error={moderationMutation.isError ? moderationMutation.error.message : undefined}
+        loadError={reportsQuery.isError ? reportsQuery.error.message : undefined}
+        onClose={closeModeration}
+        onRefresh={() => void reportsQuery.refetch()}
+        onUpdate={(reportId, input) => moderationMutation.mutate({ reportId, input })}
+      /> : null}
       {groupOpen ? <GovernanceDialog recipients={recipientsQuery.data?.results ?? []} portal={portal} pending={recipientsQuery.isPending || groupMutation.isPending} onClose={()=>setGroupOpen(false)} onCreate={(input)=>groupMutation.mutate(input)} /> : null}
       {privacyOpen ? <PrivacyDialog policy={policyQuery.data} pending={policyMutation.isPending} onClose={()=>setPrivacyOpen(false)} onSave={(input)=>policyMutation.mutate(input)} /> : null}
       {pickerOpen ? (

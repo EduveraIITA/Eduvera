@@ -36,6 +36,14 @@ const messageSchema = z.object({
 const reportSchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
+const reportStatusSchema = z.enum(["open", "under_review", "resolved", "dismissed"]);
+const moderationUpdateSchema = z.object({
+  status: z.enum(["under_review", "resolved", "dismissed"]).optional(),
+  assigned_to: uuid.nullable().optional(),
+  action: z.enum(["none", "no_action", "warning", "restrict", "escalate"]).optional(),
+  note: z.string().trim().max(1000).optional().default(""),
+  restriction_days: z.number().int().min(1).max(30).optional(),
+});
 const editMessageSchema = z.object({ body: z.string().trim().min(1).max(4000) });
 const groupSchema = z.object({
   title: z.string().trim().min(3).max(180),
@@ -433,7 +441,8 @@ export class ChatService {
         sender.first_name, sender.last_name, sender.role AS sender_role,
         attachment.id AS attachment_id, attachment.original_name,
         attachment.content_type, attachment.size_bytes,
-        (report.id IS NOT NULL) AS is_reported_by_me
+        (report.id IS NOT NULL) AS is_reported_by_me,
+        report.status AS report_status
       FROM chat_messages message
       JOIN users sender ON sender.id=message.sender_id
       LEFT JOIN chat_attachments attachment ON attachment.message_id=message.id
@@ -457,6 +466,7 @@ export class ChatService {
         is_deleted: row.is_deleted,
         is_mine: row.sender_id === user.id,
         is_reported_by_me: Boolean(row.is_reported_by_me),
+        report_status: row.report_status ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
         attachment: row.attachment_id && !row.is_deleted ? {
@@ -481,6 +491,17 @@ export class ChatService {
     const conversation = await this.conversationForUser(user, conversationId);
     const data = messageSchema.parse(input);
     const policy = await this.db.selectFrom("chat_policies").selectAll().where("school_id", "=", conversation.school_id).executeTakeFirst();
+    const restriction = await this.db.selectFrom("chat_messaging_restrictions")
+      .select(["id", "expires_at"])
+      .where("school_id", "=", conversation.school_id)
+      .where("user_id", "=", user.id)
+      .where("revoked_at", "is", null)
+      .where("expires_at", ">", new Date())
+      .orderBy("expires_at", "desc")
+      .executeTakeFirst();
+    if (restriction) {
+      throw new ForbiddenException(`Messaging is restricted by school staff until ${new Date(restriction.expires_at).toLocaleString("en-IN")}.`);
+    }
     const participant = await this.db.selectFrom("chat_participants").select("participant_role").where("conversation_id", "=", conversationId).where("user_id", "=", user.id).executeTakeFirst();
     if (conversation.posting_mode === "moderators" && participant?.participant_role !== "moderator") {
       throw new ForbiddenException("Only group moderators can post in this conversation.");
@@ -617,8 +638,8 @@ export class ChatService {
     return { id: messageId, edited: true };
   }
 
-  async reportMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown) {
-    await this.conversationForUser(user, conversationId);
+  async reportMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown, request: AuthenticatedRequest) {
+    const conversation = await this.conversationForUser(user, conversationId);
     const data = reportSchema.parse(body);
     const message = await this.db.selectFrom("chat_messages").select(["id", "sender_id"])
       .where("id", "=", messageId)
@@ -626,16 +647,301 @@ export class ChatService {
       .executeTakeFirst();
     if (!message) throw new NotFoundException("Message not found.");
     if (message.sender_id === user.id) throw new BadRequestException("You cannot report your own message.");
-    const report = await this.db.insertInto("chat_message_reports").values({
-      message_id: messageId,
-      reported_by: user.id,
-      reason: data.reason,
-      status: "open",
-    }).onConflict((conflict) => conflict.columns(["message_id", "reported_by"]).doUpdateSet({
-      reason: data.reason,
-      status: "open",
-    })).returning(["id", "status"]).executeTakeFirstOrThrow();
+    const report = await this.db.transaction().execute(async (tx) => {
+      const saved = await tx.insertInto("chat_message_reports").values({
+        message_id: messageId,
+        reported_by: user.id,
+        reason: data.reason,
+        status: "open",
+      }).onConflict((conflict) => conflict.columns(["message_id", "reported_by"]).doUpdateSet({
+        reason: data.reason,
+        status: "open",
+        assigned_to: null,
+        reviewed_by: null,
+        resolution_note: "",
+        action_taken: "none",
+        updated_at: new Date(),
+        resolved_at: null,
+      })).returning(["id", "status"]).executeTakeFirstOrThrow();
+      const admins = await tx.selectFrom("school_memberships")
+        .select("user_id")
+        .where("school_id", "=", conversation.school_id)
+        .where("role", "=", "admin")
+        .where("is_active", "=", true)
+        .where("user_id", "!=", user.id)
+        .execute();
+      if (admins.length) {
+        await tx.insertInto("notifications").values(admins.map((admin) => ({
+          recipient_id: admin.user_id,
+          kind: "general" as const,
+          title: "New reported chat message",
+          body: "A message needs review in the safeguarding queue.",
+          link: "/principal/messages?moderation=reports",
+          metadata: { report_id: saved.id, conversation_id: conversationId },
+        }))).execute();
+      }
+      await tx.insertInto("audit_events").values({
+        action: "chat.report.created",
+        actor_id: user.id,
+        school_id: conversation.school_id,
+        target_type: "chat_message_report",
+        target_id: saved.id,
+        request_id: request.requestId,
+        ip_hash: null,
+        metadata: { conversation_id: conversationId, message_id: messageId },
+      }).execute();
+      return saved;
+    });
     return report;
+  }
+
+  async reports(user: AuthUser, status?: string) {
+    const parsedStatus = status ? reportStatusSchema.safeParse(status) : undefined;
+    if (parsedStatus && !parsedStatus.success) throw new BadRequestException("Invalid report status.");
+    const selectedStatus = parsedStatus?.success ? parsedStatus.data : null;
+    const result = await sql<any>`
+      SELECT report.id, report.message_id, report.reported_by, report.reason, report.status,
+        report.assigned_to, report.reviewed_by, report.resolution_note, report.action_taken,
+        report.created_at, report.updated_at, report.resolved_at,
+        conversation.id AS conversation_id, conversation.title AS conversation_title,
+        conversation.kind AS conversation_kind, conversation.group_type,
+        message.body AS message_body, message.created_at AS message_created_at,
+        message.sender_id, concat_ws(' ', sender.first_name, sender.last_name) AS sender_name,
+        concat_ws(' ', reporter.first_name, reporter.last_name) AS reporter_name,
+        concat_ws(' ', assignee.first_name, assignee.last_name) AS assignee_name,
+        current_membership.role AS reviewer_role,
+        COALESCE((
+          SELECT json_agg(context_row ORDER BY context_row.created_at)
+          FROM (
+            SELECT context_message.id, context_message.body, context_message.created_at,
+              concat_ws(' ', context_sender.first_name, context_sender.last_name) AS sender_name,
+              (context_message.id=message.id) AS is_flagged
+            FROM chat_messages context_message
+            JOIN users context_sender ON context_sender.id=context_message.sender_id
+            WHERE context_message.conversation_id=conversation.id
+              AND context_message.created_at<=message.created_at
+            ORDER BY context_message.created_at DESC, context_message.id DESC
+            LIMIT 5
+          ) context_row
+        ), '[]'::json) AS context_messages
+      FROM chat_message_reports report
+      JOIN chat_messages message ON message.id=report.message_id
+      JOIN chat_conversations conversation ON conversation.id=message.conversation_id
+      JOIN users sender ON sender.id=message.sender_id
+      JOIN users reporter ON reporter.id=report.reported_by
+      LEFT JOIN users assignee ON assignee.id=report.assigned_to
+      JOIN school_memberships current_membership ON current_membership.school_id=conversation.school_id
+        AND current_membership.user_id=${user.id}::uuid AND current_membership.is_active
+      WHERE (
+        current_membership.role='admin'
+        OR (current_membership.role='staff' AND report.assigned_to=${user.id}::uuid)
+      )
+        AND (${selectedStatus}::text IS NULL OR report.status=${selectedStatus})
+      ORDER BY CASE report.status WHEN 'open' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,
+        report.updated_at DESC, report.created_at DESC
+      LIMIT 100
+    `.execute(this.db);
+    const summaryResult = await sql<any>`
+      SELECT report.status, count(*)::int AS count
+      FROM chat_message_reports report
+      JOIN chat_messages message ON message.id=report.message_id
+      JOIN chat_conversations conversation ON conversation.id=message.conversation_id
+      JOIN school_memberships current_membership ON current_membership.school_id=conversation.school_id
+        AND current_membership.user_id=${user.id}::uuid AND current_membership.is_active
+      WHERE current_membership.role='admin'
+        OR (current_membership.role='staff' AND report.assigned_to=${user.id}::uuid)
+      GROUP BY report.status
+    `.execute(this.db);
+    const summary = { open: 0, under_review: 0, resolved: 0, dismissed: 0 };
+    for (const row of summaryResult.rows) summary[row.status as keyof typeof summary] = Number(row.count);
+    return {
+      results: result.rows.map((row) => ({
+        ...row,
+        can_assign: row.reviewer_role === "admin",
+        context_messages: Array.isArray(row.context_messages) ? row.context_messages : [],
+      })),
+      summary,
+    };
+  }
+
+  async reportReviewers(user: AuthUser) {
+    const result = await sql<any>`
+      SELECT DISTINCT target.id, concat_ws(' ', target.first_name, target.last_name) AS name,
+        target_membership.role
+      FROM school_memberships current_membership
+      JOIN school_memberships target_membership ON target_membership.school_id=current_membership.school_id
+        AND target_membership.is_active AND target_membership.role IN ('admin', 'staff')
+      JOIN users target ON target.id=target_membership.user_id AND target.is_active
+      WHERE current_membership.user_id=${user.id}::uuid
+        AND current_membership.is_active AND current_membership.role='admin'
+      ORDER BY name
+    `.execute(this.db);
+    return { results: result.rows };
+  }
+
+  async updateReport(user: AuthUser, reportId: string, body: unknown, request: AuthenticatedRequest) {
+    if (!uuid.safeParse(reportId).success) throw new NotFoundException("Report not found.");
+    const data = moderationUpdateSchema.parse(body);
+    const reportResult = await sql<any>`
+      SELECT report.*, message.sender_id, message.conversation_id,
+        conversation.school_id, current_membership.role AS reviewer_role,
+        sender_user.role AS sender_role, reporter_user.role AS reporter_role
+      FROM chat_message_reports report
+      JOIN chat_messages message ON message.id=report.message_id
+      JOIN users sender_user ON sender_user.id=message.sender_id
+      JOIN users reporter_user ON reporter_user.id=report.reported_by
+      JOIN chat_conversations conversation ON conversation.id=message.conversation_id
+      JOIN school_memberships current_membership ON current_membership.school_id=conversation.school_id
+        AND current_membership.user_id=${user.id}::uuid AND current_membership.is_active
+      WHERE report.id=${reportId}::uuid
+      LIMIT 1
+    `.execute(this.db);
+    const report = reportResult.rows[0];
+    if (!report) throw new NotFoundException("Report not found.");
+    const isAdmin = report.reviewer_role === "admin";
+    const isAssignedStaff = report.reviewer_role === "staff" && report.assigned_to === user.id;
+    if (!isAdmin && !isAssignedStaff) throw new ForbiddenException("This report is not assigned to you.");
+    const hasReviewerConflict = report.sender_id === user.id || report.reported_by === user.id;
+    if (report.status === "resolved" || report.status === "dismissed") {
+      throw new BadRequestException("This report is already closed.");
+    }
+
+    let assignee = report.assigned_to as string | null;
+    if (Object.prototype.hasOwnProperty.call(data, "assigned_to")) {
+      if (!isAdmin) throw new ForbiddenException("Only administrators can assign reports.");
+      assignee = data.assigned_to ?? null;
+      if (assignee) {
+        if (assignee === report.sender_id || assignee === report.reported_by) {
+          throw new BadRequestException("Choose an independent reviewer for this report.");
+        }
+        const eligible = await this.db.selectFrom("school_memberships")
+          .innerJoin("users", "users.id", "school_memberships.user_id")
+          .select(["users.id", "users.role"])
+          .where("school_memberships.school_id", "=", report.school_id)
+          .where("school_memberships.user_id", "=", assignee)
+          .where("school_memberships.role", "in", ["admin", "staff"])
+          .where("school_memberships.is_active", "=", true)
+          .where("users.is_active", "=", true)
+          .executeTakeFirst();
+        if (!eligible) throw new BadRequestException("Choose an authorised staff member.");
+      }
+    }
+
+    const requestedAction = data.action ?? "none";
+    if (hasReviewerConflict) {
+      const assignmentOnly = isAdmin && Boolean(data.assigned_to)
+        && data.assigned_to !== user.id && requestedAction === "none"
+        && (!data.status || data.status === "under_review");
+      if (!assignmentOnly) {
+        throw new ForbiddenException("Assign an independent staff member to review this report.");
+      }
+    }
+    let nextStatus = data.status ?? report.status;
+    if (requestedAction === "warning" || requestedAction === "restrict") nextStatus = "resolved";
+    if (requestedAction === "escalate") nextStatus = "under_review";
+    if (nextStatus === "under_review" && !assignee) assignee = user.id;
+    if (nextStatus === "dismissed") {
+      if (!data.note) throw new BadRequestException("Add a note before dismissing a report.");
+    }
+    if ((nextStatus === "resolved" || requestedAction === "warning" || requestedAction === "restrict" || requestedAction === "escalate") && !data.note) {
+      throw new BadRequestException("Add a review note before taking this action.");
+    }
+    if (requestedAction === "restrict" && !data.restriction_days) {
+      throw new BadRequestException("Choose a restriction period.");
+    }
+    const actionTaken = nextStatus === "dismissed" ? "no_action" : requestedAction;
+    const resolvedAt = nextStatus === "resolved" || nextStatus === "dismissed" ? new Date() : null;
+
+    const updated = await this.db.transaction().execute(async (tx) => {
+      const saved = await tx.updateTable("chat_message_reports").set({
+        status: nextStatus,
+        assigned_to: assignee,
+        reviewed_by: user.id,
+        resolution_note: data.note || report.resolution_note || "",
+        action_taken: actionTaken,
+        updated_at: new Date(),
+        resolved_at: resolvedAt,
+      }).where("id", "=", reportId).returningAll().executeTakeFirstOrThrow();
+
+      if (requestedAction === "restrict") {
+        const expiresAt = new Date(Date.now() + (data.restriction_days ?? 7) * 24 * 60 * 60 * 1000);
+        await tx.insertInto("chat_messaging_restrictions").values({
+          school_id: report.school_id,
+          user_id: report.sender_id,
+          report_id: reportId,
+          reason: data.note,
+          expires_at: expiresAt,
+          created_by: user.id,
+        }).execute();
+      }
+
+      const notifications: Array<Record<string, unknown>> = [];
+      if (assignee && assignee !== report.assigned_to && assignee !== user.id) {
+        const target = await tx.selectFrom("users").select(["id", "role"]).where("id", "=", assignee).executeTakeFirst();
+        if (target) notifications.push({
+          recipient_id: target.id, kind: "general", title: "Chat report assigned",
+          body: "A reported message has been assigned to you for review.",
+          link: `/${portalForRole(target.role)}/messages?moderation=reports`,
+          metadata: { report_id: reportId },
+        });
+      }
+      if (requestedAction === "warning") {
+        notifications.push({
+          recipient_id: report.sender_id, kind: "general", title: "Messaging conduct warning",
+          body: "School staff reviewed a message and issued a conduct warning.",
+          link: `/${portalForRole(report.sender_role)}/messages?conversation=${report.conversation_id}`,
+          metadata: { report_id: reportId, conversation_id: report.conversation_id },
+        });
+      }
+      if (requestedAction === "restrict") {
+        notifications.push({
+          recipient_id: report.sender_id, kind: "general", title: "Messaging temporarily restricted",
+          body: `School staff restricted messaging for ${data.restriction_days ?? 7} day(s).`,
+          link: "",
+          metadata: { report_id: reportId },
+        });
+      }
+      if (requestedAction === "escalate") {
+        const administrators = await tx.selectFrom("school_memberships")
+          .select("user_id")
+          .where("school_id", "=", report.school_id)
+          .where("role", "=", "admin")
+          .where("is_active", "=", true)
+          .where("user_id", "!=", user.id)
+          .execute();
+        notifications.push(...administrators.map((administrator) => ({
+          recipient_id: administrator.user_id, kind: "general", title: "Chat report escalated",
+          body: "A safeguarding review has been escalated for administrator attention.",
+          link: "/principal/messages?moderation=reports",
+          metadata: { report_id: reportId },
+        })));
+      }
+      if (nextStatus === "resolved" || nextStatus === "dismissed") {
+        notifications.push({
+          recipient_id: report.reported_by, kind: "general",
+          title: nextStatus === "resolved" ? "Message report resolved" : "Message report reviewed",
+          body: "Authorised school staff completed their review.",
+          link: `/${portalForRole(report.reporter_role)}/messages?conversation=${report.conversation_id}`,
+          metadata: { report_id: reportId, conversation_id: report.conversation_id },
+        });
+      }
+      if (notifications.length) await tx.insertInto("notifications").values(notifications as any).execute();
+      await tx.insertInto("audit_events").values({
+        action: "chat.report.reviewed",
+        actor_id: user.id,
+        school_id: report.school_id,
+        target_type: "chat_message_report",
+        target_id: reportId,
+        request_id: request.requestId,
+        ip_hash: null,
+        metadata: {
+          from_status: report.status, to_status: nextStatus, action_taken: actionTaken,
+          assigned_to: assignee, restriction_days: data.restriction_days ?? null,
+        },
+      }).execute();
+      return saved;
+    });
+    return updated;
   }
 
   async policyForUser(user: AuthUser) {
