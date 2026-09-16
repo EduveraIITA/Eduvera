@@ -696,6 +696,9 @@ export class ChatService {
   }
 
   async reports(user: AuthUser, status?: string) {
+    if (user.role !== "admin" && user.role !== "staff") {
+      throw new ForbiddenException("Only authorised school staff can access message reports.");
+    }
     const parsedStatus = status ? reportStatusSchema.safeParse(status) : undefined;
     if (parsedStatus && !parsedStatus.success) throw new BadRequestException("Invalid report status.");
     const selectedStatus = parsedStatus?.success ? parsedStatus.data : null;
@@ -765,6 +768,9 @@ export class ChatService {
   }
 
   async reportReviewers(user: AuthUser) {
+    if (user.role !== "admin") {
+      throw new ForbiddenException("Only school administrators can assign message reports.");
+    }
     const result = await sql<any>`
       SELECT DISTINCT target.id, concat_ws(' ', target.first_name, target.last_name) AS name,
         target_membership.role
