@@ -105,7 +105,7 @@
 .chat-conversations>header,.chat-conversations>.chat-search{flex-shrink:0}
 .chat-conversation-list{flex:1;min-height:0;height:auto}
 .chat-bubble{flex-shrink:0}
-@media(max-width:680px){.operations-mobile-nav{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:680px){.operations-mobile-nav{grid-template-columns:repeat(5,minmax(0,1fr))}}
 
 
 /* Safeguarding moderation queue */
@@ -458,4 +458,18 @@
 
 /* Staff workspaces should use the browser width; the shared app frame remains
    capped for student and parent mobile experiences. */
-.app-viewport:has(.operations-app .chat-layout){width:100%;max-width:none}
+.app-viewport:has(.operations-app .chat-layout),
+.app-viewport:has(.operations-app .chat-moderation-page){width:100%;max-width:none}
+
+/* Dedicated staff safeguarding workspace. */
+.operations-app .operations-main:has(.chat-moderation-page){max-width:none;padding:24px clamp(16px,3vw,38px) 40px}
+.chat-moderation-page{width:100%;min-width:0}
+.chat-moderation-page .chat-moderation--standalone{width:100%;height:calc(100dvh - 150px);min-height:620px;max-height:850px;border-radius:18px;box-shadow:0 8px 28px rgba(15,23,42,.08)}
+.chat-moderation__scope{justify-self:end;width:max-content;padding:6px 9px;border-radius:999px;background:#e5eeff;color:#1d4ed8;font-size:8px!important;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+
+@media(max-width:680px){
+  .operations-app .operations-main:has(.chat-moderation-page){height:calc(100dvh - 141px);padding:0;overflow:hidden}
+  .chat-moderation-page{height:100%}
+  .chat-moderation-page .chat-moderation--standalone{height:100%;min-height:0;max-height:none;border:0;border-radius:0;box-shadow:none}
+  .chat-moderation__scope{padding:5px 7px;font-size:7px!important}
+}

@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCheck,
-  Clock3,
   FileText,
   Flag,
   LoaderCircle,
@@ -13,7 +12,6 @@ import {
   Paperclip,
   Pencil,
   Search,
-  ShieldAlert,
   ShieldCheck,
   UsersRound,
   Send,
@@ -21,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useOptionalAuth, type Portal } from "../auth/AuthContext";
 import { getAccessibleStudents } from "../school/api";
 import { ParentShell } from "../../pages/parent/ParentShell";
@@ -35,20 +33,15 @@ import {
   getChatMessages,
   getChatPolicy,
   getChatRecipients,
-  getChatReports,
-  getChatReportReviewers,
   markChatRead,
   reportChatMessage,
   sendChatMessage,
   updateChatPolicy,
-  updateChatReport,
   type ChatGroupType,
-  type ChatReportUpdate,
   type ChatMessage,
   type ChatPolicy,
   type ChatRecipient,
 } from "./api";
-import { ModerationDialog } from "./ModerationDialog";
 import "./chat.css";
 
 function initials(name: string) {
@@ -339,7 +332,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [moderationOpen, setModerationOpen] = useState(params.get("moderation") === "reports");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [reportTarget, setReportTarget] = useState<ChatMessage>();
   const [actionTarget, setActionTarget] = useState<{ message: ChatMessage; position: { left: number; top: number } }>();
@@ -347,7 +339,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File>();
   const [search, setSearch] = useState("");
-  const [threadFilter, setThreadFilter] = useState<"all" | "unread" | "flagged">("all");
   const endRef = useRef<HTMLDivElement>(null);
   const readRef = useRef("");
 
@@ -364,20 +355,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
     staleTime: 60_000,
   });
   const policyQuery = useQuery({ queryKey: ["chat","policy"], queryFn: getChatPolicy, staleTime: 60_000 });
-  const canModerate = portal === "teacher" || portal === "principal";
-  const reportsQuery = useQuery({
-    queryKey: ["chat", "reports"],
-    queryFn: () => getChatReports(),
-    enabled: canModerate,
-    refetchInterval: 15_000,
-    staleTime: 5_000,
-  });
-  const reviewersQuery = useQuery({
-    queryKey: ["chat", "report-reviewers"],
-    queryFn: getChatReportReviewers,
-    enabled: moderationOpen && portal === "principal",
-    staleTime: 60_000,
-  });
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedId],
     queryFn: () => getChatMessages(selectedId),
@@ -386,24 +363,13 @@ function ChatExperience({ portal }: { portal: Portal }) {
   });
 
   const selected = conversationsQuery.data?.results.find((item) => item.id === selectedId);
-  const activeReports = (reportsQuery.data?.results ?? []).filter((report) => report.status === "open" || report.status === "under_review");
-  const activeReportCount = activeReports.length;
-  const highlightedReport = activeReports.find((report) => report.status === "open") ?? activeReports[0];
-  const selectedActiveReport = activeReports.find((report) => report.conversation_id === selectedId);
-  const flaggedConversationIds = useMemo(() => new Set(activeReports.map((report) => report.conversation_id)), [reportsQuery.data]);
-  const unreadTotal = (conversationsQuery.data?.results ?? []).reduce((total, item) => total + item.unread_count, 0);
   const conversations = useMemo(() => {
     const term = search.trim().toLowerCase();
     const all = conversationsQuery.data?.results ?? [];
-    const filtered = threadFilter === "unread"
-      ? all.filter((item) => item.unread_count > 0)
-      : threadFilter === "flagged"
-        ? all.filter((item) => flaggedConversationIds.has(item.id))
-        : all;
     return term
-      ? filtered.filter((item) => `${item.title} ${item.student_name ?? ""} ${item.last_message ?? ""}`.toLowerCase().includes(term))
-      : filtered;
-  }, [conversationsQuery.data, flaggedConversationIds, search, threadFilter]);
+      ? all.filter((item) => `${item.title} ${item.student_name ?? ""} ${item.last_message ?? ""}`.toLowerCase().includes(term))
+      : all;
+  }, [conversationsQuery.data, search]);
 
   const chooseConversation = (id: string) => {
     const next = new URLSearchParams(params);
@@ -415,19 +381,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
     next.delete("conversation");
     setParams(next);
   };
-  const openModeration = () => {
-    const next = new URLSearchParams(params);
-    next.set("moderation", "reports");
-    setParams(next);
-    setModerationOpen(true);
-  };
-  const closeModeration = () => {
-    const next = new URLSearchParams(params);
-    next.delete("moderation");
-    setParams(next);
-    setModerationOpen(false);
-  };
-
   const createMutation = useMutation({
     mutationFn: (recipient: ChatRecipient) => createChatConversation(recipient.id, studentId),
     onSuccess: async (result) => {
@@ -438,16 +391,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
   });
   const groupMutation = useMutation({ mutationFn: (input: { title:string; group_type:ChatGroupType; member_ids:string[]; school_id?:string }) => createChatGroup(input), onSuccess: async (r) => { setGroupOpen(false); await queryClient.invalidateQueries({queryKey:["chat","conversations"]}); chooseConversation(r.id); } });
   const policyMutation = useMutation({ mutationFn: (input: Parameters<typeof updateChatPolicy>[0]) => updateChatPolicy(input), onSuccess: async () => { await queryClient.invalidateQueries({queryKey:["chat","policy"]}); setPrivacyOpen(false); } });
-  const moderationMutation = useMutation({
-    mutationFn: ({ reportId, input }: { reportId: string; input: ChatReportUpdate }) => updateChatReport(reportId, input),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["chat", "reports"] }),
-        queryClient.invalidateQueries({ queryKey: ["chat", "messages"] }),
-        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
-      ]);
-    },
-  });
   const sendMutation = useMutation({
     mutationFn: () => sendChatMessage(selectedId, {
       body: draft,
@@ -508,9 +451,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
     if (newestMessage && scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [newestMessage]);
   useEffect(() => {
-    if (params.get("moderation") === "reports" && canModerate) setModerationOpen(true);
-  }, [canModerate, params]);
-  useEffect(() => {
     if (!reportNotice) return;
     const timer = setTimeout(() => setReportNotice(""), 3500);
     return () => clearTimeout(timer);
@@ -529,45 +469,13 @@ function ChatExperience({ portal }: { portal: Portal }) {
       <section className={selectedId ? "chat-layout has-selection" : "chat-layout"} aria-label="School messages">
         <aside className="chat-conversations">
           <header>
-            <span className="chat-hub-title">{canModerate ? <i>E</i> : null}<span><small>{canModerate ? "Cambridge Intl School" : "Private school communication"}</small><strong>Messages</strong></span></span>
-            <span className="chat-header-actions">{portal === "teacher" || portal === "principal" ? <button type="button" onClick={() => setGroupOpen(true)} aria-label="Create group"><UsersRound size={18}/></button> : null}{canModerate ? <button type="button" className="chat-moderation-trigger" onClick={openModeration} aria-label="Open message reports" title="Message reports"><Flag size={18}/>{activeReportCount > 0 ? <b>{Math.min(99, activeReportCount)}</b> : null}</button> : null}<button type="button" onClick={() => setPrivacyOpen(true)} aria-label="Messaging privacy"><ShieldCheck size={18}/></button><button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button></span>
+            <span className="chat-hub-title"><span><small>Private school communication</small><strong>Messages</strong></span></span>
+            <span className="chat-header-actions">{portal === "teacher" || portal === "principal" ? <button type="button" onClick={() => setGroupOpen(true)} aria-label="Create group"><UsersRound size={18}/></button> : null}<button type="button" onClick={() => setPrivacyOpen(true)} aria-label="Messaging privacy"><ShieldCheck size={18}/></button><button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button></span>
           </header>
-          {canModerate ? (
-            <div className="chat-hub-operations">
-              <nav className="chat-hub-scope" aria-label="Communication scope">
-                <button type="button" className={threadFilter === "all" ? "is-active" : ""} onClick={() => setThreadFilter("all")}>All communications</button>
-                <button type="button" className={threadFilter === "unread" ? "is-active" : ""} onClick={() => setThreadFilter("unread")}>Unread only {unreadTotal > 0 ? <b>{Math.min(99, unreadTotal)}</b> : null}</button>
-                <button type="button" className={threadFilter === "flagged" ? "is-active" : ""} onClick={() => setThreadFilter("flagged")}>Urgent safeguarding {activeReportCount > 0 ? <i /> : null}</button>
-              </nav>
-              <div className="chat-hub-metrics">
-                <span><small>Active</small><b>{conversationsQuery.data?.results.length ?? 0}</b></span>
-                <span className="is-safeguard"><small>Safeguard</small><b><Flag size={13} /> {activeReportCount} pending</b></span>
-                <span><small>Unread</small><b>{unreadTotal}</b></span>
-              </div>
-              {highlightedReport ? (
-                <section className="chat-priority-incident">
-                  <span className="chat-priority-incident__icon"><ShieldAlert size={19} /></span>
-                  <span>
-                    <small><b>Priority incident</b><time>{relativeTime(highlightedReport.created_at)}</time></small>
-                    <strong>{highlightedReport.reason}</strong>
-                    <p>{highlightedReport.sender_name}: “{highlightedReport.message_body || "Attachment"}”</p>
-                    <button type="button" onClick={openModeration}>Open safeguarding queue <ArrowLeft size={15} /></button>
-                  </span>
-                </section>
-              ) : null}
-            </div>
-          ) : null}
           <label className="chat-search">
             <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={canModerate ? "Search conversations, staff, or students…" : "Search conversations"} />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />
           </label>
-          {canModerate ? (
-            <nav className="chat-thread-filters" aria-label="Conversation filters">
-              <button type="button" className={threadFilter === "all" ? "is-active" : ""} onClick={() => setThreadFilter("all")}>All threads <b>{conversationsQuery.data?.results.length ?? 0}</b></button>
-              <button type="button" className={threadFilter === "flagged" ? "is-active" : ""} onClick={() => setThreadFilter("flagged")}>Flagged <b>{activeReportCount}</b></button>
-              <button type="button" className={threadFilter === "unread" ? "is-active" : ""} onClick={() => setThreadFilter("unread")}>Unread <b>{unreadTotal}</b></button>
-            </nav>
-          ) : null}
           <div className="chat-conversation-list">
             {conversationsQuery.isPending ? (
               <div className="chat-state"><LoaderCircle className="chat-spin" size={20} /><span>Loading conversations…</span></div>
@@ -577,12 +485,12 @@ function ChatExperience({ portal }: { portal: Portal }) {
               <button
                 type="button"
                 key={conversation.id}
-                className={[conversation.id === selectedId ? "is-active" : "", flaggedConversationIds.has(conversation.id) ? "is-flagged" : ""].filter(Boolean).join(" ")}
+                className={conversation.id === selectedId ? "is-active" : ""}
                 onClick={() => chooseConversation(conversation.id)}
               >
                 <span className="chat-avatar">{conversation.avatar_url ? <img src={conversation.avatar_url} alt="" /> : initials(conversation.title)}</span>
                 <span className="chat-conversation-copy">
-                  <span><strong>{conversation.title}</strong>{flaggedConversationIds.has(conversation.id) ? <i className="chat-thread-review"><Flag size={10} /> Review</i> : null}<time>{relativeTime(conversation.last_message_at)}</time></span>
+                  <span><strong>{conversation.title}</strong><time>{relativeTime(conversation.last_message_at)}</time></span>
                   {conversation.student_name ? <small className="chat-student-context">About {conversation.student_name}</small> : null}
                   <small>{conversation.last_message ?? "Start the conversation"}</small>
                 </span>
@@ -597,12 +505,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
               </div>
             )}
           </div>
-          {canModerate ? (
-            <div className="chat-compliance-note">
-              <ShieldCheck size={17} />
-              <span><strong>Institutional compliance</strong><small>Messages are archived with tamper-evident safeguarding records.</small></span>
-            </div>
-          ) : null}
           <button type="button" className="chat-new-floating" onClick={() => setPickerOpen(true)}><UserRoundPlus size={17} /> New message</button>
         </aside>
 
@@ -622,13 +524,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
                 <span><strong>{selected?.title ?? "Conversation"}</strong><small>{selected?.student_name ? `About ${selected.student_name}` : "School communication"}</small></span>
                 <span className="chat-thread__meta">{selected?.group_type ? <b>{groupNames[selected.group_type]}</b> : null}<i title="Secure school conversation"><ShieldCheck size={13}/> Secure</i></span>
               </header>
-              {canModerate && selectedActiveReport ? (
-                <button type="button" className="chat-thread-safeguard" onClick={openModeration}>
-                  <span><ShieldAlert size={18} /></span>
-                  <span><small>Safeguarding notice · #{selectedActiveReport.id.replaceAll("-", "").slice(-4).toUpperCase()}</small><strong>{selectedActiveReport.reason}</strong><p>Flagged message under pastoral review. Open the incident dossier and resolution log.</p></span>
-                  <ArrowLeft size={17} />
-                </button>
-              ) : null}
               <div className="chat-messages" aria-live="polite">
                 {messagesQuery.isPending ? (
                   <div className="chat-state"><LoaderCircle className="chat-spin" size={20} /><span>Loading messages…</span></div>
@@ -699,17 +594,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
         }}
       /> : null}
       {reportTarget ? <ReportDialog message={reportTarget} pending={reportMutation.isPending} error={reportMutation.isError ? reportMutation.error.message : undefined} onClose={() => setReportTarget(undefined)} onSubmit={(reason) => reportMutation.mutate(reason)} /> : null}
-      {moderationOpen && canModerate ? <ModerationDialog
-        queue={reportsQuery.data}
-        reviewers={reviewersQuery.data?.results ?? []}
-        loading={reportsQuery.isPending}
-        pending={moderationMutation.isPending}
-        error={moderationMutation.isError ? moderationMutation.error.message : undefined}
-        loadError={reportsQuery.isError ? reportsQuery.error.message : undefined}
-        onClose={closeModeration}
-        onRefresh={() => void reportsQuery.refetch()}
-        onUpdate={(reportId, input) => moderationMutation.mutate({ reportId, input })}
-      /> : null}
       {groupOpen ? <GovernanceDialog recipients={recipientsQuery.data?.results ?? []} portal={portal} pending={recipientsQuery.isPending || groupMutation.isPending} onClose={()=>setGroupOpen(false)} onCreate={(input)=>groupMutation.mutate(input)} /> : null}
       {privacyOpen ? <PrivacyDialog policy={policyQuery.data} pending={policyMutation.isPending} onClose={()=>setPrivacyOpen(false)} onSave={(input)=>policyMutation.mutate(input)} /> : null}
       {pickerOpen ? (
@@ -734,6 +618,9 @@ function ChatRoute({ portal }: { portal: Portal }) {
     enabled: portal === "parent",
     staleTime: 60_000,
   });
+  if ((portal === "teacher" || portal === "principal") && params.get("moderation") === "reports") {
+    return <Navigate to={`/${portal}/safeguarding`} replace />;
+  }
   const selectedStudent = students.data?.results.find((student) => student.id === studentId)
     ?? students.data?.results[0];
   const parentChild = selectedStudent ? {

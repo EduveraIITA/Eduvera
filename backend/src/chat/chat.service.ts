@@ -676,7 +676,7 @@ export class ChatService {
           kind: "general" as const,
           title: "New reported chat message",
           body: "A message needs review in the safeguarding queue.",
-          link: "/principal/messages?moderation=reports",
+          link: "/principal/safeguarding",
           metadata: { report_id: saved.id, conversation_id: conversationId },
         }))).execute();
       }
@@ -887,7 +887,7 @@ export class ChatService {
         if (target) notifications.push({
           recipient_id: target.id, kind: "general", title: "Chat report assigned",
           body: "A reported message has been assigned to you for review.",
-          link: `/${portalForRole(target.role)}/messages?moderation=reports`,
+          link: `/${portalForRole(target.role)}/safeguarding`,
           metadata: { report_id: reportId },
         });
       }
@@ -918,7 +918,7 @@ export class ChatService {
         notifications.push(...administrators.map((administrator) => ({
           recipient_id: administrator.user_id, kind: "general", title: "Chat report escalated",
           body: "A safeguarding review has been escalated for administrator attention.",
-          link: "/principal/messages?moderation=reports",
+          link: "/principal/safeguarding",
           metadata: { report_id: reportId },
         })));
       }

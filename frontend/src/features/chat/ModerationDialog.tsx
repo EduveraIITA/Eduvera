@@ -73,6 +73,8 @@ export function ModerationDialog({
   onClose,
   onRefresh,
   onUpdate,
+  standalone = false,
+  staffView = false,
 }: {
   queue?: ChatReportQueue;
   reviewers: ChatReportReviewer[];
@@ -80,9 +82,11 @@ export function ModerationDialog({
   pending: boolean;
   error?: string;
   loadError?: string;
-  onClose: () => void;
+  onClose?: () => void;
   onRefresh: () => void;
   onUpdate: (reportId: string, input: ChatReportUpdate) => void;
+  standalone?: boolean;
+  staffView?: boolean;
 }) {
   const [filter, setFilter] = useState<ReportFilter>("active");
   const [selectedId, setSelectedId] = useState("");
@@ -114,17 +118,17 @@ export function ModerationDialog({
   };
 
   return (
-    <div className="chat-picker-backdrop chat-moderation-backdrop" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose();
+    <div className={standalone ? "chat-moderation-page" : "chat-picker-backdrop chat-moderation-backdrop"} role={standalone ? undefined : "presentation"} onMouseDown={(event) => {
+      if (!standalone && event.target === event.currentTarget) onClose?.();
     }}>
-      <section className="chat-moderation" role="dialog" aria-modal="true" aria-labelledby="moderation-title">
+      <section className={standalone ? "chat-moderation chat-moderation--standalone" : "chat-moderation"} role={standalone ? "region" : "dialog"} aria-modal={standalone ? undefined : "true"} aria-labelledby="moderation-title">
         <header className="chat-moderation__header">
           <span className="chat-moderation__brand">E</span>
           <span>
             <small>Cambridge Intl School</small>
             <strong id="moderation-title">Reports &amp; Safeguarding</strong>
           </span>
-          <button type="button" onClick={onClose} aria-label="Close safeguarding queue"><X size={20} /></button>
+          {standalone ? <span className="chat-moderation__scope">{staffView ? "Assigned to me" : "School-wide"}</span> : <button type="button" onClick={onClose} aria-label="Close safeguarding queue"><X size={20} /></button>}
         </header>
 
         <section className="chat-moderation__intro">
@@ -134,8 +138,8 @@ export function ModerationDialog({
           </div>
           <div className="chat-moderation__heading">
             <span>
-              <h2>Message Reports &amp;<br />Safeguarding</h2>
-              <p>Review incidents, assign ownership and record a compliant outcome.</p>
+              <h2>{staffView ? <>My Assigned<br />Incidents</> : <>Message Reports &amp;<br />Safeguarding</>}</h2>
+              <p>{staffView ? "Review only the incidents assigned to you and record a compliant outcome." : "Review incidents, assign ownership and record a compliant outcome."}</p>
             </span>
             <span className="chat-moderation__sla"><Clock3 size={14} /> Target &lt; 4h</span>
           </div>
@@ -156,7 +160,7 @@ export function ModerationDialog({
         <div className="chat-moderation__body">
           <aside className="chat-moderation__list" aria-label="Safeguarding incidents">
             <div className="chat-moderation__list-title">
-              <span><ShieldAlert size={15} /> Incident queue</span>
+              <span><ShieldAlert size={15} /> {staffView ? "My assigned queue" : "Incident queue"}</span>
               <small>{reports.length} case{reports.length === 1 ? "" : "s"}</small>
             </div>
             {loading ? (
@@ -172,7 +176,7 @@ export function ModerationDialog({
               <div className="chat-moderation__empty">
                 <CheckCircle2 size={25} />
                 <strong>No {filter} reports</strong>
-                <span>{filter === "active" ? "The active pastoral queue is clear." : "No incidents have this status."}</span>
+                <span>{filter === "active" ? (staffView ? "You have no active assigned incidents." : "The active pastoral queue is clear.") : "No incidents have this status."}</span>
                 <button type="button" onClick={onRefresh}>Refresh</button>
               </div>
             ) : reports.map((report) => (

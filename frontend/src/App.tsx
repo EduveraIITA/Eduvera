@@ -76,6 +76,8 @@ const ParentChatRoute = lazy(async () => ({ default: (await import("./features/c
 const StudentChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).StudentChatRoute }));
 const TeacherChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).TeacherChatRoute }));
 const PrincipalChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).PrincipalChatRoute }));
+const TeacherSafeguardingRoute = lazy(async () => ({ default: (await import("./features/chat/SafeguardingPage")).TeacherSafeguardingRoute }));
+const PrincipalSafeguardingRoute = lazy(async () => ({ default: (await import("./features/chat/SafeguardingPage")).PrincipalSafeguardingRoute }));
 
 function PageLoader() {
   return (
@@ -159,10 +161,12 @@ export function App() {
               <Route path="/teacher/attendance" element={<PortalOnly portal="teacher"><TeacherAttendanceRoute /></PortalOnly>} />
               <Route path="/teacher/timetable" element={<PortalOnly portal="teacher"><TeacherTimetableRoute /></PortalOnly>} />
               <Route path="/teacher/messages" element={<PortalOnly portal="teacher"><TeacherChatRoute /></PortalOnly>} />
+              <Route path="/teacher/safeguarding" element={<PortalOnly portal="teacher"><TeacherSafeguardingRoute /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
               <Route path="/principal/messages" element={<PortalOnly portal="principal"><PrincipalChatRoute /></PortalOnly>} />
+              <Route path="/principal/safeguarding" element={<PortalOnly portal="principal"><PrincipalSafeguardingRoute /></PortalOnly>} />
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>
