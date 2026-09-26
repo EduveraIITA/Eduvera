@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 
 const port = 8022;
@@ -45,7 +45,9 @@ class BrowserSession {
 
   async login(identifier: string): Promise<Response> {
     await this.csrf();
-    return this.request("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password: "OmniDemo@2026" }) }, true);
+    const response = await this.request("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password: "OmniDemo@2026" }) }, true);
+    expect(response.status).toBe(200);
+    return response;
   }
 }
 
@@ -82,6 +84,12 @@ beforeAll(async () => {
     });
   }
   await waitForServer();
+});
+
+beforeEach(async () => {
+  // Each scenario has independent login attempts. A fast disposable database
+  // otherwise makes unrelated cases collectively hit the production limit.
+  await pool.query("DELETE FROM api_rate_limit_buckets");
 });
 
 afterAll(async () => {
