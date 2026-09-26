@@ -23,6 +23,7 @@ setInterval(() => {
 }, 60_000).unref();
 
 function rule(path: string): { limit: number; windowMs: number } {
+  if (path.replace(/\/$/, "").endsWith("/invitations/accept")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/auth/register/")) return { limit: 5, windowMs: 60 * 60_000 };
   if (path.endsWith("/auth/login/") || path.endsWith("/auth/demo-session/")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/ai/attendance/query/")) return { limit: 10, windowMs: 60_000 };

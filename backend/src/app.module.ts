@@ -8,9 +8,10 @@ import { ChatModule } from "./chat/chat.module.js";
 import { DatabaseModule } from "./database/database.module.js";
 import { SchoolModule } from "./school/school.module.js";
 import { SpaController } from "./spa.controller.js";
+import { OperationsModule } from "./operations/operations.module.js";
 
 @Module({
-  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule],
+  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, OperationsModule],
   controllers: [AppController, SpaController],
   providers: [
     { provide: APP_GUARD, useClass: SessionGuard },

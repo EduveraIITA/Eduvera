@@ -94,6 +94,9 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
             </span>
           </div>
           {error ? <span className="account-menu__error" role="alert">{error}</span> : null}
+          {auth.portals.includes("principal") ? <a className="account-menu__logout" role="menuitem" href="/staff/administration">School administration <ArrowRight size={14} /></a> : null}
+          <a className="account-menu__logout" role="menuitem" href="/staff/fees">Fees and receipts <ArrowRight size={14} /></a>
+          <a className="account-menu__logout" role="menuitem" href="/staff/security">School selection and account security <ArrowRight size={14} /></a>
           <button className="account-menu__logout" role="menuitem" type="button" disabled={pending} onClick={() => void signOut()}>
             <LogOut size={16} /> {pending ? "Signing out…" : "Sign out"} <ArrowRight size={14} />
           </button>

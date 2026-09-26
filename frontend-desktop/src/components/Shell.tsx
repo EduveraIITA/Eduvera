@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bell, BookOpen, CalendarDays, ClipboardCheck, FileText, LayoutGrid, LogOut, Moon, Sun } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, ClipboardCheck, FileText, LayoutGrid, LogOut, Moon, Sun, Settings, Wallet, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { normaliseNotifications, staffApi } from "../features/staff";
@@ -15,6 +15,9 @@ const NAV: NavItem[] = [
   { to: "/timetable", label: "Timetable", icon: CalendarDays, personas: ["principal", "parent", "student"] },
   { to: "/diary", label: "Diary", icon: BookOpen, personas: ["parent", "student"] },
   { to: "/notifications", label: "Notifications", icon: Bell, personas: ["principal", "teacher", "parent", "student"] },
+  { to: "/administration", label: "Administration", icon: Settings, personas: ["principal", "teacher"] },
+  { to: "/fees", label: "Fees", icon: Wallet, personas: ["principal", "teacher", "parent", "student"] },
+  { to: "/security", label: "Account security", icon: Shield, personas: ["principal", "teacher", "parent", "student"] },
 ];
 const PERSONA_LABEL: Record<Persona, string> = { principal: "Principal", teacher: "Teacher", parent: "Guardian", student: "Student" };
 const AREA_LABEL: Record<Persona, string> = { principal: "Leadership", teacher: "Teaching", parent: "Family", student: "Learner" };
@@ -30,7 +33,9 @@ function useTheme() {
 }
 
 export function Shell() {
-  const { user, persona, school, logout, demoMode } = useAuth();
+  const { user, persona, school, logout, demoMode, memberships, selectSchool, grants } = useAuth();
+  const [schoolError, setSchoolError] = useState("");
+  const schools = [...new Map(memberships.map((item) => [item.school_id, item])).values()];
   const { isDark, toggle } = useTheme();
   const location = useLocation();
   const unread = useQuery({
@@ -39,14 +44,19 @@ export function Shell() {
     select: (v) => normaliseNotifications(v).filter((n) => !n.read_at).length,
     staleTime: 30_000,
   });
-  const items = NAV.filter((n) => persona && n.personas.includes(persona));
+  const items = NAV.filter((n) => persona && n.personas.includes(persona)).filter((n) => {
+    if (persona !== "teacher") return true;
+    const permission = n.to === "/administration" ? "sis.manage" : n.to === "/fees" ? "fees.manage" : null;
+    return !permission || grants.some((grant) => grant.school_id === school?.school_id && grant.permission === permission);
+  });
   const current = items.find((n) => (n.to === "/" ? location.pathname === "/" : location.pathname.startsWith(n.to)));
 
   return (
     <div className="app">
       <aside className="side">
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="brand"><span className="dot" /><span className="name">{school?.school_name ?? "OmniSchool"}</span></div>
+          <div className="brand"><span className="dot" /><span className="name">{school?.school_name ?? "Eduera"}</span></div>
+          {schools.length > 1 ? <label className="school-chip">Active school<select className="input" value={user?.active_school_id ?? ""} onChange={async (event) => { try { await selectSchool(event.target.value); } catch (err) { setSchoolError((err as Error).message); } }}><option value="" disabled>Select a school</option>{schools.map((item) => <option key={item.school_id} value={item.school_id}>{item.school_name}</option>)}</select>{schoolError ? <span role="alert">{schoolError}</span> : null}</label> : null}
           <div className="school-chip">
             <div className="lbl">{persona ? AREA_LABEL[persona] : ""} portal</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.display_name}</div>

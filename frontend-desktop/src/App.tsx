@@ -13,6 +13,10 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { PrincipalHome } from "./pages/PrincipalHome";
 import { TeacherHome } from "./pages/TeacherHome";
 import { TimetablePage } from "./pages/TimetablePage";
+import { AdministrationPage } from "./pages/AdministrationPage";
+import { FeesPage } from "./pages/FeesPage";
+import { InvitationPage } from "./pages/InvitationPage";
+import { SecurityPage } from "./pages/SecurityPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 } },
@@ -63,9 +67,15 @@ export default function App() {
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/join" element={<InvitationPage />} />
               <Route element={<RequireStaff />}>
                 <Route element={<Shell />}>
                   <Route index element={<Home />} />
+                  <Route path="fees" element={<FeesPage />} />
+                  <Route path="security" element={<SecurityPage />} />
+                  <Route element={<Only personas={["principal", "teacher"]} />}>
+                    <Route path="administration" element={<AdministrationPage />} />
+                  </Route>
                   <Route path="attendance" element={<Attendance />} />
                   <Route element={<Only personas={["principal", "teacher"]} />}>
                     <Route path="attendance/:classId" element={<RegisterPage />} />

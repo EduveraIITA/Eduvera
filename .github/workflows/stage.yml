@@ -4,28 +4,32 @@ on:
   push:
     branches: [Stage]
   workflow_dispatch:
-    inputs:
-      seed:
-        description: "Re-apply the demo seed to the shared database (upsert; run on demand, not per push)"
-        type: boolean
-        default: false
 
 concurrency:
   group: stage
   cancel-in-progress: false
 
 jobs:
-  # Runs on GitHub: everything must typecheck, lint, build and pass tests
-  # against the shared Supabase database (repo secret DATABASE_URL) before
-  # anything is deployed. Migrations are idempotent (a no-op when nothing is
-  # pending) and the suite cleans up the rows it creates. The demo seed is
-  # already in the shared database; it is only re-applied when asked for.
+  # Verification never connects to the staging database. Each job gets a new
+  # PostgreSQL service, migrations and deterministic demo fixtures.
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eduera_test
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: eduera_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U eduera_test -d eduera_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+      DATABASE_URL: postgres://eduera_test:isolated-test-only@127.0.0.1:5432/eduera_test
+      COOKIE_SECRET: isolated-ci-cookie-secret-at-least-32-characters
+      TEST_DATABASE_ISOLATED: "true"
       DEMO_MODE: "true"
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +54,7 @@ jobs:
         working-directory: backend
         run: npm run db:migrate
 
-      - name: Backend · re-seed demo data (only when requested)
-        if: github.event_name == 'workflow_dispatch' && inputs.seed
+      - name: Backend · seed isolated test database
         working-directory: backend
         run: |
           python3 scripts/generate_school_data.py
