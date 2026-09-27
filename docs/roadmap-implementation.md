@@ -19,6 +19,28 @@ Implemented in this release:
 
 ## First-use sequence
 
+### Stage demo data
+
+The existing Cambridge demo school includes 200 students, guardian links, classes,
+attendance, timetable and diary examples. In `DEMO_MODE=true`, startup now adds
+16 clearly labelled `DEMO-V1-` invoices and eight fictional receipts for Aarav,
+Ananya, Rohan and Kavya. Each has a paid ₹12,000 invoice, a ₹12,000 invoice with
+₹6,000 received, an overdue ₹2,500 invoice, and an upcoming ₹3,000 invoice.
+Open `/staff/fees` as the existing demo principal, or use the student/parent
+accounts to see only their linked accounts. Administration uses the existing
+school records under `/staff/administration`.
+
+This additive seed requires the exact existing demo school and principal IDs;
+it does not create accounts, change passwords, reset attendance, grant access,
+or touch other schools. It is transactional and safe to repeat, including
+concurrent startup. Dates are relative to the first insert and never reset.
+`SEED_DEMO` remains independent: do not enable the full school reset to add
+these examples. To run manually: `DEMO_MODE=true node dist/database/seed-operations.js`.
+With demo mode disabled, the new seed does not connect or write.
+
+These are examples for the implemented administration/offline-fee release;
+they do not enable or implement the remaining roadmap modules listed below.
+
 1. Sign in as an existing school administrator; open **School administration** from the mobile account menu or desktop navigation.
 2. Optionally provision a new school. Select the school using the desktop school selector.
 3. Create a term and classes with exactly matching academic-year labels, then subjects.
