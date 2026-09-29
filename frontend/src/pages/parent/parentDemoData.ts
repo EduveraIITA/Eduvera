@@ -19,7 +19,7 @@ export const demoParentChild: ParentChildSummary = {
 
 export const fallbackHomeData: ParentHomeData = {
   child: demoParentChild,
-  idCard: { studentName: demoParentChild.name, avatarUrl: demoParentChild.avatarUrl, className: "Class 7A", rollNumber: demoParentChild.rollNumber, studentId: "CIS-2026-001", termLabel: "Term 1 • 2026", dateLabel: "Saturday, 12 September", attendancePercent: 92, attendanceThreshold: 85 },
+  idCard: { studentName: demoParentChild.name, avatarUrl: demoParentChild.avatarUrl, className: "Class 7A", rollNumber: demoParentChild.rollNumber, studentId: "CIS-2026-001", termLabel: "Term 1 - 2026", dateLabel: "Saturday, 12 September", attendancePercent: 92, attendanceThreshold: 85 },
   sibling: { id: "ananya-sharma", name: "Ananya", grade: "Grade 4", section: "B" },
   presence: { status: "In School", detail: "Gate 2 swipe at 07:48 AM" },
   pendingLeave: {
@@ -27,7 +27,7 @@ export const fallbackHomeData: ParentHomeData = {
     title: "Medical Leave Form",
     submittedLabel: "Submitted 2h ago",
     summary: "Viral Fever recuperation",
-    durationLabel: "2 Days (28 Oct – 29 Oct)",
+    durationLabel: "2 Days (28 Oct - 29 Oct)",
   },
   unreadDiaryCount: 1,
   diarySender: "Mrs. K. Sharma (Class Teacher)",
@@ -59,7 +59,7 @@ export const fallbackHomeData: ParentHomeData = {
     homeworkDetail: "Due tomorrow",
     duesStatus: "All Cleared",
     duesDetail: "Term 2 due Nov 15",
-    termLabel: "Term 1 (2026–27)",
+    termLabel: "Term 1 (2026-27)",
   },
   homeroomTeacher: { name: "Mrs. K. Sharma", availability: "Available until 3:30 PM" },
   transport: { passLabel: "Live Route & Bus Pass #14", pickupWindow: "Pickup window: 02:45 PM at Stop C" },
@@ -72,7 +72,7 @@ const calendarStatuses: AttendanceCalendarDay["status"][] = [
 
 export const fallbackAttendanceData: ParentAttendanceData = {
   child: demoParentChild,
-  termLabel: "Term 1 • 2026–27",
+  termLabel: "Term 1 - 2026-27",
   aggregatePercent: 94.2,
   trendPercent: 1.4,
   safeCushionDays: 12,
@@ -126,7 +126,7 @@ export const fallbackLeaveData: ParentLeaveData = {
     submittedLabel: "Submitted Today, 07:15 AM",
     category: "Medical / Viral Fever",
     durationLabel: "2 School Days",
-    rangeLabel: "28 Oct, Wed – 29 Oct, Thu",
+    rangeLabel: "28 Oct, Wed - 29 Oct, Thu",
     impactedPeriods: 14,
     studentNote: "Doctor has advised rest due to seasonal viral fever and mild throat infection. Prescription attached.",
     document: {
@@ -139,16 +139,16 @@ export const fallbackLeaveData: ParentLeaveData = {
     },
     initialGuardianRemark: "Doctor prescribed Aarav complete bed rest and medication for 48 hours.",
   },
-  academicYearLabel: "Academic Year ’26–’27",
+  academicYearLabel: "Academic Year '26-'27",
   history: [
     { id: "leave-dental", title: "Dental Appointment", dateLabel: "12 Sep 2026", durationLabel: "1 Day", approvedBy: "Mrs. K. Sharma", kind: "medical" },
-    { id: "leave-wedding", title: "Sister's Wedding", dateLabel: "18–19 Aug 2026", durationLabel: "2 Days", approvedBy: "Principal Office", kind: "family" },
+    { id: "leave-wedding", title: "Sister's Wedding", dateLabel: "18-19 Aug 2026", durationLabel: "2 Days", approvedBy: "Principal Office", kind: "family" },
   ],
 };
 
 export const fallbackDiaryData: ParentDiaryData = {
   child: demoParentChild,
-  termLabel: "Academic Term 1 • Week 12",
+  termLabel: "Academic Term 1 - Week 12",
   weekLabel: "Week 12",
   dateHeading: "Wednesday, 16 Sep 2026",
   selectedDayId: "2026-09-16",
@@ -160,7 +160,7 @@ export const fallbackDiaryData: ParentDiaryData = {
     { id: "2026-09-18", weekday: "Fri", day: 18 },
     { id: "2026-09-19", weekday: "Sat", day: 19 },
   ],
-  currentPeriod: { number: 3, stateLabel: "Period 3 in Session", dayRangeLabel: "08:30 AM – 02:45 PM", subject: "Mathematics", room: "Room 204", teacher: "Prof. Rajesh Mehta", untilLabel: "Until 10:45 AM" },
+  currentPeriod: { number: 3, stateLabel: "Period 3 in Session", dayRangeLabel: "08:30 AM - 02:45 PM", subject: "Mathematics", room: "Room 204", teacher: "Prof. Rajesh Mehta", untilLabel: "Until 10:45 AM" },
   packingItems: [
     { id: "lab-coat", label: "White Physics Lab Coat (Period 4)", detail: "Required", status: "required", packed: true },
     { id: "geometry-box", label: "Geometry Compass Box", detail: "Maths Ex 4.2", status: "normal", packed: true },
@@ -177,7 +177,7 @@ export const fallbackDiaryData: ParentDiaryData = {
   ],
   diaryEntries: [
     { id: "math-homework", subject: "Mathematics", kind: "Homework", tone: "primary", body: "Complete Exercise 4.2 (Linear Equations, Q1 to Q8) in Homework Notebook. Bring Geometry box tomorrow for angle bisector constructions.", author: "Prof. Rajesh Mehta", timeLabel: "10:30 AM", verified: true },
-    { id: "english-test", subject: "English Literature", kind: "Upcoming Test", tone: "danger", body: "Unit Test on Friday: Chapter 3 poem recitation and vocabulary definitions. Please ensure Aarav practices stanzas 1–4 orally.", author: "Mrs. Catherine Roy", timeLabel: "09:55 AM" },
+    { id: "english-test", subject: "English Literature", kind: "Upcoming Test", tone: "danger", body: "Unit Test on Friday: Chapter 3 poem recitation and vocabulary definitions. Please ensure Aarav practices stanzas 1-4 orally.", author: "Mrs. Catherine Roy", timeLabel: "09:55 AM" },
     { id: "sports-circular", subject: "Homeroom Notice", kind: "School Circular", tone: "neutral", body: "Annual Sports Day circular sent with student. Please review the 4×100m track relay consent form and return with signature by tomorrow morning.", author: "Class 7A Homeroom Desk" },
   ],
   guardian: { name: "Pooja Sharma", relationship: "Mother", verifiedId: "#PAR-9824" },

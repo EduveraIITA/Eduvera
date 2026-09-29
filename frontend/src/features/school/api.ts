@@ -1,8 +1,9 @@
 import { apiFetch } from "../../lib/api";
 import { schoolDateToday } from "../../lib/schoolTime";
+import type {PublishedDayNotice} from '../day-plans/DayPlanNotice';
 
 export interface ApiUser {
-  id: string;
+  id: string | null;
   display_name: string;
 }
 
@@ -63,6 +64,7 @@ export interface ApiGateEvent {
 }
 
 export interface ApiTimetableSlot {
+  cancelled?:boolean; materials?:string[]; day_plan_id?:string|null; plan_version?:number|null; notice?:string;date?:string|null;
   id: string;
   weekday: number;
   weekday_label: string;
@@ -139,6 +141,7 @@ export interface ApiSchoolContact {
 }
 
 export interface ParentHomeResponse {
+  day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
   siblings: ApiStudent[];
   campus_presence: ApiGateEvent | null;
@@ -231,6 +234,7 @@ export interface StudentAttendanceResponse {
 }
 
 export interface StudentHomeResponse {
+  day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
   term: { name: string; academic_year: string; threshold: string | number };
   date: string;
@@ -256,6 +260,7 @@ export interface StudentEligibilityResponse {
 }
 
 export interface StudentTimetableResponse {
+  day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
   mode: "day" | "week";
   selected_date: string;
@@ -277,7 +282,7 @@ export interface StudentLeaveApplyResponse {
     relationship: string;
     is_primary: boolean;
     can_authorize_leave: boolean;
-    guardian: { id: string; user_id: string; name: string; email: string; phone: string };
+    guardian: { id: string; user_id: string | null; name: string; email: string; phone: string };
   }>;
   recent_requests: ApiLeaveRequest[];
   constraints: LeaveConstraints;
@@ -398,33 +403,7 @@ export function getStudentTimetable(date?: string) {
 }
 
 export async function getParentTimetable(date?: string, studentId?: string): Promise<StudentTimetableResponse> {
-  const [home, timetable] = await Promise.all([
-    getParentHome(studentId),
-    apiFetch<{ results: ApiTimetableSlot[] }>(withQuery("/api/v1/students/timetable/", {
-      date,
-      student_id: studentId,
-    })),
-  ]);
-  const grouped = new Map<number, ApiTimetableSlot[]>();
-  for (const slot of timetable.results) {
-    const periods = grouped.get(slot.weekday) ?? [];
-    periods.push(slot);
-    grouped.set(slot.weekday, periods);
-  }
-  const selectedDate = date ?? schoolDateToday();
-  return {
-    student: home.student,
-    mode: "week",
-    selected_date: selectedDate,
-    class_name: home.student.current_enrollment.class_name,
-    days: [...grouped.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([weekday, periods]) => ({
-        weekday,
-        weekday_label: periods[0]?.weekday_label ?? `Day ${weekday}`,
-        periods: periods.sort((left, right) => left.period_number - right.period_number),
-      })),
-  };
+  return apiFetch<StudentTimetableResponse>(withQuery('/api/v1/screens/parent/timetable/week/',{date,student_id:studentId}));
 }
 
 export function getStudentLeaveStatus() {

@@ -25,9 +25,10 @@ const nav = {
   ],
 } as const;
 
-export function OperationsShell({ portal, active, title, subtitle, children }: { portal: Portal; active: Active; title: string; subtitle: string; children: ReactNode }) {
+export function OperationsShell({ portal, active, title, subtitle, children, schoolName: selectedSchoolName, contentHasHeading = false }: { portal: Portal; active: Active; title: string; subtitle: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean }) {
   const auth = useOptionalAuth();
-  const schoolName = auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
+  const Title = contentHasHeading ? "p" : "h1";
+  const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
   return (
     <div className={`operations-app operations-app--${portal}`}>
       <aside className="operations-sidebar">
@@ -37,12 +38,12 @@ export function OperationsShell({ portal, active, title, subtitle, children }: {
             <NavLink key={id} to={path} end={id === "home"} className={active === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
           ))}
         </nav>
-        <div className="operations-sidebar__scope"><span>Current scope</span><strong>Attendance &amp; Timetable</strong><small>Other School OS modules stay outside this release.</small></div>
+        <div className="operations-sidebar__scope"><span>Current term</span><strong>Term 1 · 2026-27</strong><small>Attendance and timetable records are live.</small></div>
       </aside>
       <div className="operations-workspace">
         <header className="operations-topbar">
           <SchoolBrand name={schoolName} className="operations-topbar__brand" />
-          <div><span>{subtitle}</span><h1>{title}</h1></div>
+          <div><span>{subtitle}</span><Title className="operations-topbar__title">{title}</Title></div>
           <div><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
         <main className="operations-main">{children}</main>

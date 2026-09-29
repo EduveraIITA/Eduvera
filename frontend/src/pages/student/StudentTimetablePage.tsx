@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { schoolClock } from "../../lib/schoolTime";
+import {DayPlanNotice,type PublishedDayNotice} from '../../features/day-plans/DayPlanNotice';
 import { StudentShell, type StudentRouteMap } from "./StudentShell";
 import { ParentShell } from "../parent/ParentShell";
 import type { ParentChildSummary, ParentPageAction } from "../parent/parentTypes";
@@ -18,7 +19,7 @@ import "./student-pages.css";
 
 const bellAlertStorageKey = "omnischool.timetable.bell-alerts";
 
-const weekdayKeys: Array<SchoolDayKey | undefined> = [undefined, "mon", "tue", "wed", "thu", "fri", "sat"];
+const weekdayKeys: SchoolDayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 function timeMinutes(value?: string) {
   if (!value) return undefined;
@@ -66,6 +67,7 @@ function kitForPeriod(period: TimetablePeriod) {
 }
 
 export interface StudentTimetablePageProps {
+  dayPlan?:PublishedDayNotice|null;selectedDate?:string;onDateChange?:(date:string)=>void;
   days?: TimetableDay[];
   audience?: "student" | "parent";
   child?: ParentChildSummary;
@@ -100,13 +102,14 @@ function TimetableShell({
 }
 
 export function StudentTimetablePage({
+  dayPlan,selectedDate,onDateChange,
   days = demoTimetableDays,
   audience = "student",
   child,
   onSelectChild,
   className = "Class 7A",
   studentName = "Aarav Sharma",
-  termLabel = "Academic Year 2026–27 • Term 1",
+  termLabel = "Academic Year 2026-27 - Term 1",
   routes,
   onBellAlertsChange,
 }: StudentTimetablePageProps) {
@@ -119,33 +122,33 @@ export function StudentTimetablePage({
   const currentSchoolClock = schoolClock(now);
   const todayKey = weekdayKeys[currentSchoolClock.weekday];
   const nowMinutes = currentSchoolClock.minutes;
-  const today = days.find((day) => day.key === todayKey);
+  const today = days.find((day) => day.key === todayKey&&(!day.isoDate||day.isoDate===currentSchoolClock.date));
   const currentPeriod = today?.periods.find((period) => {
     const starts = timeMinutes(period.time);
     const ends = timeMinutes(period.endTime);
-    return starts !== undefined && ends !== undefined && starts <= nowMinutes && nowMinutes < ends;
+    return !period.cancelled&&starts !== undefined && ends !== undefined && starts <= nowMinutes && nowMinutes < ends;
   });
   const nextPeriod = today?.periods.find((period) => {
     const starts = timeMinutes(period.time);
-    return starts !== undefined && starts > nowMinutes;
+    return !period.cancelled&&starts !== undefined && starts > nowMinutes;
   });
   const chartFocusPeriod = currentPeriod ?? nextPeriod;
   const bellPeriod = currentPeriod ?? nextPeriod;
   const bellTarget = currentPeriod ? timeMinutes(currentPeriod.endTime) : timeMinutes(nextPeriod?.time);
   const bellMinutes = bellTarget === undefined ? undefined : Math.max(0, bellTarget - nowMinutes);
   const periodColumns = useMemo(() => {
-    const maxPeriods = Math.max(0, ...days.map((day) => day.periods.length));
-    return Array.from({ length: maxPeriods }, (_, index) => index);
+    return [...new Set(days.flatMap(day=>day.periods.map(p=>Number(p.period.replace('P','')))))].filter(Number.isFinite).sort((a,b)=>a-b);
   }, [days]);
   const todayKit = useMemo(() => {
-    const source = today ?? days[0];
+    const source = selectedDate?days.find(d=>d.isoDate===selectedDate):today;
     const items = source?.periods
-      .map(kitForPeriod)
+      .filter(p=>!p.cancelled)
+      .flatMap(p=>p.materials??[kitForPeriod(p)])
       .filter((item): item is string => Boolean(item))
       .filter((item, index, all) => all.indexOf(item) === index)
-      .slice(0, 5) ?? [];
+      ?? [];
     return { day: source, items };
-  }, [days, today]);
+  }, [days, today,selectedDate]);
 
   useEffect(() => {
     if (!toast) return;
@@ -188,6 +191,11 @@ export function StudentTimetablePage({
     return (
       <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
         <div className="student-page-stack timetable-page">
+          <section className="timetable-intro">
+            <h1>{className} Timetable</h1>
+            {onDateChange?<label className="timetable-date-picker">School date<input type="date" value={selectedDate??currentSchoolClock.date} onChange={e=>{if(e.target.value)onDateChange(e.target.value);}}/></label>:null}
+          </section>
+          <DayPlanNotice plan={dayPlan}/>
           <section className="student-card student-empty-state timetable-empty-state">
             <BookOpen size={24} />
             <div><strong>No timetable published</strong><p>The school has not added periods for this week yet.</p></div>
@@ -202,42 +210,45 @@ export function StudentTimetablePage({
       <div className="student-page-stack timetable-page">
         <section className="timetable-intro">
           <header>
-            <div><h1>{className} Timetable</h1><p>{termLabel} • {studentName}</p></div>
+            <div><h1>{className} Timetable</h1><p>{termLabel} - {studentName}</p></div>
             <button className={bellAlerts ? "square-soft-button is-active" : "square-soft-button"} type="button" aria-pressed={bellAlerts} aria-label="Save bell reminder preference" onClick={toggleBellAlerts}><Clock3 size={23} /></button>
           </header>
+          {onDateChange?<label className="timetable-date-picker">School date<input type="date" value={selectedDate??currentSchoolClock.date} onChange={e=>{if(e.target.value)onDateChange(e.target.value);}}/></label>:null}
           {bellPeriod ? (
             <div className="next-bell-banner" aria-label="Today bell status">
               <span><BellRing size={19} /></span>
-              <span><small>{currentPeriod ? "Current period ends" : "Next bell"} <i /> <b>{bellMinutes ?? "—"} mins</b></small><strong>{bellPeriod.period} • {bellPeriod.subject}</strong></span>
+              <span><small>{currentPeriod ? "Current period ends" : "Next bell"} <i /> <b>{bellMinutes ?? "-"} mins</b></small><strong>{bellPeriod.period} - {bellPeriod.subject}</strong></span>
               <ChevronRight size={19} />
             </div>
           ) : null}
         </section>
 
+        <DayPlanNotice plan={dayPlan}/>
+
         <section className="student-card timetable-week-chart" aria-labelledby="week-chart-heading">
           <header>
-            <div><h2 id="week-chart-heading">Weekly period chart</h2><p>Rows are school days. Columns are class periods.</p></div>
-            <strong>{days.reduce((total, day) => total + day.periods.length, 0)} periods/wk</strong>
+            <div><h2 id="week-chart-heading">Weekly period chart</h2><p>Published schedule for this week</p></div>
+            <strong>{days.reduce((total, day) => total + day.periods.filter(p=>!p.cancelled).length, 0)} periods/wk</strong>
           </header>
           <div className="timetable-week-chart__scroller" ref={chartScrollerRef}>
             <table>
               <thead>
                 <tr>
                   <th scope="col">Day</th>
-                  {periodColumns.map((index) => <th key={index} scope="col">P{index + 1}</th>)}
+                  {periodColumns.map((index) => <th key={index} scope="col">P{index}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {days.map((day) => (
-                  <tr key={day.key} className={day.key === todayKey ? "is-today" : ""}>
+                  <tr key={day.isoDate??day.key} className={day.key === todayKey&&(!day.isoDate||day.isoDate===currentSchoolClock.date) ? "is-today" : ""}>
                     <th scope="row"><span>{day.shortLabel}</span><small>{day.date}</small></th>
                     {periodColumns.map((index) => {
-                      const period = day.periods[index];
+                      const period = day.periods.find(p=>p.period===`P${index}`);
                       const isCurrent = day.key === todayKey && period?.id === currentPeriod?.id;
                       const isChartFocus = day.key === todayKey && period?.id === chartFocusPeriod?.id;
                       return (
                         <td ref={isChartFocus ? focusCellRef : undefined} key={`${day.key}-${index}`} className={period ? `tone-${period.tone} ${isCurrent ? "is-current" : ""} ${isChartFocus ? "is-chart-focus" : ""}` : "is-empty"}>
-                          {period ? <button type="button" onClick={() => setSelectedPeriod({ day, period })} aria-label={`${period.subject}, ${day.longLabel} ${period.period}, ${periodRange(period)}`}><strong>{compactSubject(period.subject)}</strong><small>{period.period} • {period.time.replace(/\s(?:AM|PM)$/, "")}</small>{isCurrent ? <em>Now</em> : null}</button> : <span aria-label="No period scheduled">—</span>}
+                          {period ? <button type="button" className={period.cancelled?'is-cancelled':''} onClick={() => setSelectedPeriod({ day, period })} aria-label={`${period.cancelled?'Cancelled: ':''}${period.subject}, ${day.longLabel} ${period.period}, ${periodRange(period)}`}><strong>{compactSubject(period.subject)}</strong><small>{period.cancelled?'Cancelled':`${period.period} - ${period.time.replace(/\s(?:AM|PM)$/, "")}`}</small>{isCurrent ? <em>Now</em> : null}</button> : <span aria-label="No period scheduled">-</span>}
                         </td>
                       );
                     })}
@@ -251,7 +262,7 @@ export function StudentTimetablePage({
 
         {todayKit.items.length ? (
           <section className="student-card timetable-kit-card" aria-labelledby="timetable-kit-heading">
-            <header><div><h2 id="timetable-kit-heading">Today’s kit</h2><p>{todayKit.day?.longLabel ?? "Today"} essentials from the timetable.</p></div><strong>{todayKit.items.length}</strong></header>
+            <header><div><h2 id="timetable-kit-heading">{todayKit.day?.isoDate===currentSchoolClock.date?"Today's kit":"Materials to bring"}</h2><p>{todayKit.day?.longLabel ?? "Today"} · requested by your school.</p></div><strong>{todayKit.items.length}</strong></header>
             <div>{todayKit.items.map((item) => <span key={item}><Check size={13} />{item}</span>)}</div>
           </section>
         ) : null}
@@ -262,7 +273,7 @@ export function StudentTimetablePage({
             <div className="student-sheet__handle" />
             <header>
               <span className={`period-detail-icon tone-${selectedPeriod.period.tone}`}><BookOpen size={20} /></span>
-              <div><p>{selectedPeriod.day.longLabel} • {selectedPeriod.period.period}</p><h2 id="period-detail-heading">{selectedPeriod.period.subject}</h2></div>
+              <div><p>{selectedPeriod.day.longLabel} - {selectedPeriod.period.period}</p><h2 id="period-detail-heading">{selectedPeriod.period.subject}</h2></div>
               <button className="student-icon-button" type="button" onClick={() => setSelectedPeriod(null)} aria-label="Close period details"><X size={18} /></button>
             </header>
             <div className="period-detail-grid">
@@ -273,6 +284,7 @@ export function StudentTimetablePage({
               <span><strong>{selectedPeriod.period.teacher ?? "Faculty assignment pending"}</strong><small>Teacher</small></span>
               {selectedPeriod.period.detail ? <p>{selectedPeriod.period.detail}</p> : null}
               {selectedPeriod.period.flag ? <em>{selectedPeriod.period.flag}</em> : null}
+              {!selectedPeriod.period.cancelled&&selectedPeriod.period.materials?.length?<p>Bring: {selectedPeriod.period.materials.join(' · ')}</p>:null}
             </div>
           </section>
         </div>

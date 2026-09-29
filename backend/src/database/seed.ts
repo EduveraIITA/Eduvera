@@ -1,9 +1,16 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Pool } from "pg";
+import { assertPostgreSqlConnectionPolicy } from "./connection-policy.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required");
+const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? "development";
+assertPostgreSqlConnectionPolicy(connectionString, {
+  name: "DATABASE_URL",
+  purpose: "migrations",
+  requireRemoteTls: deploymentEnvironment === "stage" || deploymentEnvironment === "production",
+});
 
 const seedPath = resolve(process.argv[2] ?? process.env.SEED_SQL_PATH ?? "generated/medium-school.sql");
 const sql = await readFile(seedPath, "utf8");

@@ -198,21 +198,23 @@ export function ParentDiaryRoute() {
 }
 
 export function ParentTimetableRoute() {
+  const [params,setParams]=useSearchParams();const date=params.get('date')||undefined;
   const { studentId, selectStudent } = useSelectedStudent();
   const query = useQuery({
-    queryKey: ["school", "parent", "timetable", studentId ?? "default"],
-    queryFn: () => getParentTimetable(undefined, studentId),
+    queryKey: ["school", "parent", "timetable", studentId ?? "default",date],
+    queryFn: () => getParentTimetable(date, studentId),
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   return (
     <StudentTimetablePage
       audience="parent"
+      dayPlan={query.data.day_plan} selectedDate={query.data.selected_date} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
       child={adaptStudentSummary(query.data.student)}
       onSelectChild={selectStudent}
       className={query.data.class_name}
       studentName={query.data.student.user.display_name}
-      termLabel={`${query.data.student.current_enrollment.term.name} • ${query.data.student.current_enrollment.term.academic_year}`}
+      termLabel={`${query.data.student.current_enrollment.term.name} - ${query.data.student.current_enrollment.term.academic_year}`}
       days={adaptTimetable(query.data)}
     />
   );

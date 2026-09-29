@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, LoaderCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useOptionalAuth } from "../auth/AuthContext";
 import { apiFetch } from "../../lib/api";
 import "./notifications.css";
 
@@ -16,6 +17,12 @@ interface SchoolNotification {
   metadata?: Record<string, unknown>;
   read_at: string | null;
   created_at: string;
+}
+
+interface NotificationPage {
+  results: SchoolNotification[];
+  unread_count: number;
+  next_cursor: string | null;
 }
 
 interface NotificationCenterProps {
@@ -50,13 +57,16 @@ export function NotificationCenter({
 }: NotificationCenterProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const auth = useOptionalAuth();
+  const authUserId = auth?.user?.id ?? "anonymous";
+  const notificationsQueryKey = ["notifications", authUserId] as const;
   const anchor = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const query = useQuery({
-    queryKey: ["notifications"],
-    queryFn: () => apiFetch<{ results: SchoolNotification[] }>("/api/v1/notifications/"),
+    queryKey: notificationsQueryKey,
+    queryFn: () => apiFetch<NotificationPage>("/api/v1/notifications/"),
+    enabled: auth?.status === "authenticated",
     staleTime: 20_000,
-    refetchInterval: 60_000,
   });
   const readMutation = useMutation({
     mutationFn: (id: string) =>
@@ -64,11 +74,17 @@ export function NotificationCenter({
         method: "POST",
       }),
     onSuccess: (_result, id) => {
-      queryClient.setQueryData<{ results: SchoolNotification[] }>(["notifications"], (current) => ({
-        results: (current?.results ?? []).map((item) =>
-          item.id === id ? { ...item, read_at: new Date().toISOString() } : item,
-        ),
-      }));
+      queryClient.setQueryData<NotificationPage>(notificationsQueryKey, (current) => {
+        if (!current) return current;
+        const wasUnread = current.results.some((item) => item.id === id && !item.read_at);
+        return {
+          ...current,
+          unread_count: Math.max(0, current.unread_count - (wasUnread ? 1 : 0)),
+          results: current.results.map((item) =>
+            item.id === id ? { ...item, read_at: new Date().toISOString() } : item,
+          ),
+        };
+      });
     },
   });
 
@@ -89,8 +105,7 @@ export function NotificationCenter({
   }, [open]);
 
   const items = query.data?.results ?? [];
-  const fetchedUnreadCount = items.filter((item) => !item.read_at).length;
-  const unreadCount = query.data ? fetchedUnreadCount : (fallbackUnreadCount ?? 0);
+  const unreadCount = query.data?.unread_count ?? fallbackUnreadCount ?? 0;
 
   async function openNotification(item: SchoolNotification) {
     if (!item.read_at) await readMutation.mutateAsync(item.id);
@@ -118,6 +133,7 @@ export function NotificationCenter({
         aria-expanded={open}
         onClick={() => {
           onOpen?.();
+          if (!open && auth?.status === "authenticated") void query.refetch();
           setOpen((current) => !current);
         }}
       >
@@ -128,11 +144,11 @@ export function NotificationCenter({
       {open ? (
         <section className="notification-panel" role="dialog" aria-label="Notifications">
           <header>
-            <span><strong>Notifications</strong><small>{unreadCount ? `${unreadCount} unread` : "You’re all caught up"}</small></span>
+            <span><strong>Notifications</strong><small>{unreadCount ? `${unreadCount} unread` : "You're all caught up"}</small></span>
             {query.isFetching ? <LoaderCircle className="notification-spin" size={16} /> : <Check size={16} />}
           </header>
           {query.isPending ? (
-            <div className="notification-panel__state"><LoaderCircle className="notification-spin" size={18} /><span>Loading school updates…</span></div>
+            <div className="notification-panel__state"><LoaderCircle className="notification-spin" size={18} /><span>Loading school updates...</span></div>
           ) : query.isError ? (
             <div className="notification-panel__state notification-panel__state--error">
               <span>Updates could not be loaded.</span>

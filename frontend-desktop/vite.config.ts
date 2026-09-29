@@ -5,6 +5,8 @@ import { defineConfig } from "vite";
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "/staff/" : "/",
   plugins: [react()],
+  // Keep lazy chunks available to already-open local sessions across a rebuild.
+  build: { emptyOutDir: false },
   server: {
     host: "127.0.0.1",
     port: 5174,

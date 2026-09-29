@@ -118,7 +118,7 @@ const contacts = [
     name: "Kavita Mehta",
     phone: "+91 80 4567 1200",
     email: "kavita.mehta@cis.example",
-    availability: "Weekdays, 3:30–4:30 PM",
+    availability: "Weekdays, 3:30-4:30 PM",
   },
 ];
 
@@ -140,7 +140,7 @@ const home = {
   homework_items: Array.from({ length: 12 }, (_, index) => ({
     id: `homework-${index + 1}`,
     title: index === 0 ? "Algebra practice" : `Homework assignment ${index + 1}`,
-    body: index === 0 ? "Complete exercises 1–5." : "Review classwork.",
+    body: index === 0 ? "Complete exercises 1-5." : "Review classwork.",
     subject_name: "Mathematics",
     due_at: "2026-09-20T10:00:00.000Z",
     published_at: "2026-09-10T10:00:00.000Z",
@@ -210,7 +210,7 @@ export function schoolApiFixture(path: string): unknown {
           item_type_label: "Homework",
           subject: slot.subject,
           title: "Algebra practice",
-          body: "Complete exercises 6–12 and show each step.",
+          body: "Complete exercises 6-12 and show each step.",
           author_name: "Kavita Mehta",
           due_at: "2026-09-18T12:00:00.000Z",
           requires_acknowledgement: true,
@@ -278,6 +278,6 @@ export function schoolApiFixture(path: string): unknown {
     };
   }
   if (path === "/api/v1/screens/student/leave/status/") return { student, active: [leave], history: [] };
-  if (path.startsWith("/api/v1/screens/student/timetable/week/")) return timetable;
+  if (path.startsWith("/api/v1/screens/student/timetable/week/") || path.startsWith("/api/v1/screens/parent/timetable/week/")) return timetable;
   throw new Error(`No school API fixture for ${path}`);
 }

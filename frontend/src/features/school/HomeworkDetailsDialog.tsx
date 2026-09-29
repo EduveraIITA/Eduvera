@@ -55,7 +55,7 @@ export function HomeworkDetailsDialog({ items = [], total, onToggle, onClose }: 
             {onToggle && <button type="button" disabled={busy !== null} onClick={async () => {
               setBusy(item.id); setError("");
               try { await onToggle(item.id, tab === "pending"); } catch { setError("Could not update homework. Please try again."); } finally { setBusy(null); }
-            }}>{busy === item.id ? "Saving…" : tab === "pending" ? "Mark complete" : "Move to pending"}</button>}
+            }}>{busy === item.id ? "Saving..." : tab === "pending" ? "Mark complete" : "Move to pending"}</button>}
           </article>) : <p className="attendance-ranking__empty">{tab === "pending" ? "No pending homework." : "No homework marked complete yet."}</p>}
         </div>
         <footer>Completed means marked complete by the student or a linked guardian; it is not a school-verified submission.</footer>

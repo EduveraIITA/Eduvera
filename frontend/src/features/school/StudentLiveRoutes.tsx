@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate,useSearchParams } from "react-router-dom";
 import { shiftSchoolDate } from "../../lib/schoolTime";
 import { askAttendanceCopilot } from "../attendance/api";
 import { StudentAttendancePage } from "../../pages/student/StudentAttendancePage";
@@ -170,7 +170,7 @@ export function StudentLeaveNewRoute() {
       context={{
         studentName: response.student.user.display_name,
         className: response.student.current_enrollment.class_name,
-        termLabel: `${response.student.current_enrollment.term.name} • ${response.student.current_enrollment.term.academic_year}`,
+        termLabel: `${response.student.current_enrollment.term.name} - ${response.student.current_enrollment.term.academic_year}`,
         categories: response.categories.map((category) => ({
           value: category.value === "personal" ? "urgent" : category.value as StudentLeaveDraft["category"],
           label: category.label,
@@ -212,17 +212,19 @@ export function StudentLeaveStatusRoute() {
 }
 
 export function StudentTimetableRoute() {
+  const [params,setParams]=useSearchParams();const date=params.get('date')||undefined;
   const query = useQuery({
-    queryKey: ["school", "student", "timetable"],
-    queryFn: () => getStudentTimetable(),
+    queryKey: ["school", "student", "timetable",date],
+    queryFn: () => getStudentTimetable(date),
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   return (
     <StudentTimetablePage
+      dayPlan={query.data.day_plan} selectedDate={query.data.selected_date} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
       className={query.data.class_name}
       studentName={query.data.student.user.display_name}
-      termLabel={`${query.data.student.current_enrollment.term.name} • ${query.data.student.current_enrollment.term.academic_year}`}
+      termLabel={`${query.data.student.current_enrollment.term.name} - ${query.data.student.current_enrollment.term.academic_year}`}
       days={adaptTimetable(query.data)}
     />
   );

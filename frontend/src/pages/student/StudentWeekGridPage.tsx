@@ -57,7 +57,7 @@ function weekLabel(selectedDate?: string, offset = 0) {
   const end = new Date(start);
   end.setDate(start.getDate() + 5);
   const date = (value: Date) => value.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-  return `${date(start)} – ${date(end)} ${end.getFullYear()}`;
+  return `${date(start)} - ${date(end)} ${end.getFullYear()}`;
 }
 
 function currentDayForWeek(selectedDate?: string, offset = 0) {
@@ -179,7 +179,7 @@ export function StudentWeekGridPage({
     <StudentShell activeNav="classes" variant="edura" routes={routes} className={className}>
       <div className="student-page-stack week-grid-page">
         <section className="week-grid-title">
-          <header><div><h1>My Timetable</h1><p>Term schedule • {currentWeekLabel}</p></div><button className="square-soft-button" type="button" aria-label={onSyncCalendar ? "Sync calendar" : "Calendar sync unavailable"} disabled={!onSyncCalendar} onClick={syncCalendar}><RefreshCw size={20} /></button></header>
+          <header><div><h1>My Timetable</h1><p>Term schedule - {currentWeekLabel}</p></div><button className="square-soft-button" type="button" aria-label={onSyncCalendar ? "Sync calendar" : "Calendar sync unavailable"} disabled={!onSyncCalendar} onClick={syncCalendar}><RefreshCw size={20} /></button></header>
           <div className="segmented-control" role="tablist" aria-label="Timetable view">
             <button type="button" role="tab" aria-selected="false" onClick={onOpenDayView ?? (() => navigate("/student/timetable"))}>Day View</button>
             <button className="is-active" type="button" role="tab" aria-selected="true">Week Grid</button>
@@ -198,7 +198,7 @@ export function StudentWeekGridPage({
         <div className="schedule-by-day-heading"><h2>Schedule By Day</h2><span><i />Published timetable</span></div>
 
         <section className="student-card weekly-matrix" aria-labelledby="weekly-matrix-heading">
-          <header><span className="section-heading__icon"><Grid3X3 size={18} /></span><span><h2 id="weekly-matrix-heading">Weekly Period Matrix</h2><p>{periodCount} periods • Swipe horizontally</p></span><b><Sparkles size={14} />Scroll</b></header>
+          <header><span className="section-heading__icon"><Grid3X3 size={18} /></span><span><h2 id="weekly-matrix-heading">Weekly Period Matrix</h2><p>{periodCount} periods - Swipe horizontally</p></span><b><Sparkles size={14} />Scroll</b></header>
           <div className="weekly-matrix__scroller" tabIndex={0} aria-label="Horizontally scrollable weekly timetable">
             <table>
               <thead><tr><th>Day</th>{columns.map(({ key, period, time }) => <th key={key}>{period}{time && <small>{time.replace(/\s(?:AM|PM)$/, "")}</small>}</th>)}</tr></thead>
@@ -220,8 +220,8 @@ export function StudentWeekGridPage({
         <section className="student-card weekly-kit" aria-labelledby="weekly-kit-heading">
           <header><span className="section-heading__icon"><Shirt size={18} /></span><span><h2 id="weekly-kit-heading">Published Schedule Notes</h2><p>Derived from the current school timetable</p></span><b>Live data</b></header>
           <div className="weekly-kit__items">
-            {activitySchedule.length > 0 && <article><span><Shirt size={18} /></span><div><header><strong>Activity periods</strong><b>Published</b></header><p>{activitySchedule.join(" • ")}</p></div></article>}
-            {labSchedule.length > 0 && <article><span><FlaskConical size={18} /></span><div><header><strong>Lab periods</strong><b>Published</b></header><p>{labSchedule.join(" • ")}</p></div></article>}
+            {activitySchedule.length > 0 && <article><span><Shirt size={18} /></span><div><header><strong>Activity periods</strong><b>Published</b></header><p>{activitySchedule.join(" - ")}</p></div></article>}
+            {labSchedule.length > 0 && <article><span><FlaskConical size={18} /></span><div><header><strong>Lab periods</strong><b>Published</b></header><p>{labSchedule.join(" - ")}</p></div></article>}
             {activitySchedule.length === 0 && labSchedule.length === 0 && <article><span><Grid3X3 size={18} /></span><div><header><strong>No additional schedule notes</strong><b>Current</b></header><p>Only the published class periods are shown for this week.</p></div></article>}
           </div>
           <div className="weekly-kit__actions"><button type="button" onClick={download}><Download size={17} />Download PDF</button><button className={alertsEnabled ? "is-active" : ""} type="button" aria-pressed={alertsEnabled} aria-label="Save bell reminder preference" onClick={toggleAlerts}><BellRing size={17} />{alertsEnabled ? "Reminder Saved" : "Bell Reminder"}</button></div>

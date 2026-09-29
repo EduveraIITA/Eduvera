@@ -88,6 +88,11 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .lbl { font-size: 11px; line-height: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .muted { color: var(--muted); }
 .faint { color: var(--faint); }
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+}
 .dsp { font-size: clamp(22px, 2.3vw, 28px); line-height: 1.15; font-weight: 700; letter-spacing: -0.035em; }
 .big { font-weight: 700; line-height: 1.1; letter-spacing: -0.045em; }
 

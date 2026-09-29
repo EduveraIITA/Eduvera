@@ -2,6 +2,7 @@ import { Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res 
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
 import type { AuthenticatedRequest } from "../common/request.js";
+import { SchoolEventService } from "./school-event.service.js";
 import { SchoolService, type UploadInput } from "./school.service.js";
 
 async function bodyAndUpload(request: AuthenticatedRequest): Promise<{ body: Record<string, unknown>; upload?: UploadInput }> {
@@ -24,7 +25,7 @@ async function bodyAndUpload(request: AuthenticatedRequest): Promise<{ body: Rec
 @ApiCookieAuth()
 @Controller("api/v1")
 export class SchoolController {
-  constructor(private readonly school: SchoolService) {}
+  constructor(private readonly school: SchoolService, private readonly events: SchoolEventService) {}
 
   @Get("students/")
   async students(@Req() request: AuthenticatedRequest) {
@@ -56,17 +57,8 @@ export class SchoolController {
   @Get("attendance-records/")
   async attendanceRecords(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     const student = await this.school.studentForUser(request.authUser, studentId);
-    return { results: await this.school.attendanceRecords(student.id) };
-  }
-
-  @Post("attendance-records/")
-  async attendanceCreate(@Req() request: AuthenticatedRequest) {
-    return this.school.attendanceCreate(request.authUser, request.body);
-  }
-
-  @Patch("attendance-records/:id/")
-  async attendanceUpdate(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
-    return this.school.attendanceUpdate(request.authUser, id, request.body);
+    const enrollment = await this.school.enrollment(student.id);
+    return { results: await this.school.attendanceRecords(student.id, enrollment) };
   }
 
   @Get("leave-requests/")
@@ -128,8 +120,8 @@ export class SchoolController {
   }
 
   @Get("notifications/")
-  async notifications(@Req() request: AuthenticatedRequest) {
-    return { results: await this.school.notifications(request.authUser) };
+  async notifications(@Req() request: AuthenticatedRequest, @Query("limit") limit?: string, @Query("cursor") cursor?: string) {
+    return this.school.notifications(request.authUser, { limit, cursor });
   }
 
   @Post("notifications/:notificationId/read/")
@@ -218,6 +210,28 @@ export class SchoolController {
   @HttpCode(200)
   teacherAttendanceSave(@Req() request: AuthenticatedRequest) {
     return this.school.saveTeacherAttendance(request.authUser, request.body, request);
+  }
+
+  @Post("attendance-registers/:classSectionId/lock/")
+  @HttpCode(200)
+  attendanceRegisterLock(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
+    return this.school.setAttendanceRegisterLock(request.authUser, classSectionId, true, { ...(request.body ?? {}), date }, request);
+  }
+
+  @Delete("attendance-registers/:classSectionId/lock/")
+  @HttpCode(200)
+  attendanceRegisterUnlock(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
+    return this.school.setAttendanceRegisterLock(request.authUser, classSectionId, false, { ...(request.body ?? {}), date }, request);
+  }
+
+  @Get("attendance-registers/:classSectionId/history/")
+  attendanceRegisterHistory(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
+    return this.school.attendanceRegisterHistory(request.authUser, classSectionId, date ?? "");
+  }
+
+  @Get("events/stream/")
+  eventStream(@Req() request: AuthenticatedRequest, @Res() reply: FastifyReply) {
+    return this.events.openStream(request.authUser, reply, request);
   }
 
   @Get("screens/principal/home/")

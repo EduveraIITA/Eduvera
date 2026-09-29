@@ -3,6 +3,8 @@ name: Stage
 on:
   push:
     branches: [Stage]
+  pull_request:
+    branches: [Stage]
   workflow_dispatch:
     inputs:
       seed:
@@ -14,21 +16,45 @@ concurrency:
   group: stage
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
-  # Runs on GitHub: everything must typecheck, lint, build and pass tests
-  # against the shared Supabase database (repo secret DATABASE_URL) before
-  # anything is deployed. Migrations are idempotent (a no-op when nothing is
-  # pending) and the suite cleans up the rows it creates. The demo seed is
-  # already in the shared database; it is only re-applied when asked for.
+  # Verification is deliberately isolated from stage. Integration tests can
+  # mutate this disposable PostgreSQL service without touching shared data.
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: omnischool_test
+          POSTGRES_USER: omnischool_test
+          POSTGRES_PASSWORD: omnischool-test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username=omnischool_test --dbname=omnischool_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+      DATABASE_URL: postgresql://omnischool_test:omnischool-test-only-password@127.0.0.1:5432/omnischool_test
+      MIGRATION_DATABASE_URL: postgresql://omnischool_test:omnischool-test-only-password@127.0.0.1:5432/omnischool_test
+      EVENT_DATABASE_URL: postgresql://omnischool_test:omnischool-test-only-password@127.0.0.1:5432/omnischool_test
+      COOKIE_SECRET: integration-test-cookie-secret-at-least-32
       DEMO_MODE: "true"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repository secret scan
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.27.2
+        with:
+          args: git --redact --verbose .
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -46,20 +72,16 @@ jobs:
           npm run lint
           npm run build
 
-      - name: Backend · apply pending migrations
-        working-directory: backend
-        run: npm run db:migrate
-
-      - name: Backend · re-seed demo data (only when requested)
-        if: github.event_name == 'workflow_dispatch' && inputs.seed
+      - name: Backend · prepare isolated test database
         working-directory: backend
         run: |
+          npm run db:migrate
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
 
       - name: Backend · integration tests
         working-directory: backend
-        run: npx vitest run
+        run: npm test
 
       - name: Mobile app · install, typecheck, build, test
         working-directory: frontend
@@ -82,11 +104,14 @@ jobs:
   deploy:
     name: Deploy to Railway
     needs: verify
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'omnischool' }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+      RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
       STAGE_URL: ${{ vars.STAGE_URL }}
     steps:
       - uses: actions/checkout@v4
@@ -95,32 +120,99 @@ jobs:
           node-version: 22
 
       - name: Check deployment credentials
+        env:
+          STAGE_MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          STAGE_METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         run: |
+          set -eu
           if [ -z "$RAILWAY_TOKEN" ]; then
             echo "::error::RAILWAY_TOKEN secret is not set. Run deploy/railway-bootstrap.py once with a Railway account token to create the project and store this secret."
             exit 1
           fi
+          [ -n "$RAILWAY_PROJECT_ID" ] || { echo "::error::RAILWAY_PROJECT_ID repository variable is not set. Re-run deploy/railway-bootstrap.py."; exit 1; }
+          [ -n "$RAILWAY_SERVICE" ] || { echo "::error::RAILWAY_SERVICE repository variable is not set. Re-run deploy/railway-bootstrap.py."; exit 1; }
+          [ "$RAILWAY_ENVIRONMENT" = "stage" ] || { echo "::error::RAILWAY_ENVIRONMENT must be exactly 'stage'. Re-run deploy/railway-bootstrap.py."; exit 1; }
+          [ -n "$STAGE_URL" ] || { echo "::error::STAGE_URL repository variable is not set. Re-run deploy/railway-bootstrap.py."; exit 1; }
+          case "$STAGE_URL" in
+            https://*) ;;
+            *) echo "::error::STAGE_URL must be an HTTPS origin"; exit 1 ;;
+          esac
+          case "$STAGE_URL" in
+            */) echo "::error::STAGE_URL must not have a trailing slash"; exit 1 ;;
+          esac
+          if [ -z "$STAGE_MIGRATION_DATABASE_URL" ]; then
+            echo "::error::MIGRATION_DATABASE_URL secret is not set; stage migrations cannot run."
+            exit 1
+          fi
+          if [ -z "$STAGE_METRICS_TOKEN" ]; then
+            echo "::error::METRICS_TOKEN secret is not set; protected monitoring cannot be verified."
+            exit 1
+          fi
+
+      - name: Backend · install migration tooling
+        working-directory: backend
+        run: npm ci --ignore-scripts
+
+      - name: Backend · apply pending stage migrations
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          DEPLOYMENT_ENVIRONMENT: stage
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: npm run db:migrate
+
+      - uses: actions/setup-python@v5
+        if: github.event_name == 'workflow_dispatch' && inputs.seed
+        with:
+          python-version: "3.12"
+
+      - name: Backend · re-seed stage demo data (only when requested)
+        if: github.event_name == 'workflow_dispatch' && inputs.seed
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          DEPLOYMENT_ENVIRONMENT: stage
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: |
+          python3 scripts/generate_school_data.py
+          node --import tsx src/database/seed.ts
 
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@5.54.0
+
+      - name: Bind deployment to this commit
+        run: railway variable set "RELEASE_SHA=$GITHUB_SHA" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --skip-deploys
 
       - name: Deploy
-        run: railway up --service "$RAILWAY_SERVICE" --ci
+        run: railway up --project "$RAILWAY_PROJECT_ID" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --ci --message "GitHub $GITHUB_SHA"
 
-      - name: Health check the public URL
-        if: env.STAGE_URL != ''
+      - name: Verify deployed revision and public application
+        env:
+          STAGE_METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         run: |
-          echo "Waiting for $STAGE_URL/readyz"
+          set -eu
+          echo "Waiting for revision $GITHUB_SHA at $STAGE_URL"
           for i in $(seq 1 48); do
             body=$(curl -fsS "$STAGE_URL/readyz" 2>/dev/null || true)
-            if echo "$body" | grep -q '"ready"'; then
-              echo "API ready: $body"
-              echo "Mobile app  $STAGE_URL/        [$(curl -s -o /dev/null -w '%{http_code}' "$STAGE_URL/")]"
-              echo "Desktop     $STAGE_URL/staff/  [$(curl -s -o /dev/null -w '%{http_code}' "$STAGE_URL/staff/")]"
-              echo "API docs    $STAGE_URL/api/docs [$(curl -s -o /dev/null -w '%{http_code}' "$STAGE_URL/api/docs")]"
+            release=$(curl -fsS "$STAGE_URL/releasez" 2>/dev/null || true)
+            readiness=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).status || "")); } catch {}' "$body")
+            release_sha=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).release_sha || "")); } catch {}' "$release")
+            release_environment=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).environment || "")); } catch {}' "$release")
+            if [ "$readiness" = "ready" ] && [ "$release_sha" = "$GITHUB_SHA" ] && [ "$release_environment" = "stage" ]; then
+              mobile=$(curl -fsS "$STAGE_URL/")
+              staff=$(curl -fsS "$STAGE_URL/staff/")
+              schema=$(curl -fsS "$STAGE_URL/api/schema")
+              unauthenticated_metrics_status=$(curl -sS -o /dev/null -w '%{http_code}' "$STAGE_URL/metrics")
+              metrics=$(curl -fsS -H "Authorization: Bearer $STAGE_METRICS_TOKEN" "$STAGE_URL/metrics")
+              echo "$mobile" | grep -Fq '<title>Edura OS · OmniSchool</title>' || { echo "::error::Mobile SPA content check failed"; exit 1; }
+              echo "$staff" | grep -Fq '<title>OmniSchool · Staff</title>' || { echo "::error::Staff SPA content check failed"; exit 1; }
+              echo "$schema" | grep -Fq '"openapi"' || { echo "::error::OpenAPI content check failed"; exit 1; }
+              [ "$unauthenticated_metrics_status" = "401" ] || { echo "::error::Metrics endpoint is not rejecting unauthenticated requests"; exit 1; }
+              echo "$metrics" | grep -Fq 'omnischool_event_broker_ready' || { echo "::error::Protected metrics content check failed"; exit 1; }
+              echo "Verified API readiness, both SPAs, OpenAPI, protected metrics, and stage release $release_sha"
               exit 0
             fi
             sleep 5
           done
-          echo "::error::$STAGE_URL did not become ready in time"
+          echo "::error::$STAGE_URL did not serve ready revision $GITHUB_SHA in time"
           exit 1

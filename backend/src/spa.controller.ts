@@ -8,11 +8,39 @@ import { config } from "./config.js";
 @Controller()
 export class SpaController {
   @Public()
+  @Get("manifest.webmanifest")
+  async manifest(@Res() reply: FastifyReply) {
+    try {
+      const manifest = await readFile(join(config().spaDistDir, "manifest.webmanifest"));
+      return reply
+        .header("Cache-Control", "public, max-age=0")
+        .type("application/manifest+json; charset=utf-8")
+        .send(manifest);
+    } catch {
+      return reply.status(404).send();
+    }
+  }
+
+  @Public()
   @Get("favicon.svg")
   async favicon(@Res() reply: FastifyReply) {
     try {
       const icon = await readFile(join(config().spaDistDir, "favicon.svg"));
       return reply.type("image/svg+xml").send(icon);
+    } catch {
+      return reply.status(404).send();
+    }
+  }
+
+  @Public()
+  @Get("apple-touch-icon.svg")
+  async appleTouchIcon(@Res() reply: FastifyReply) {
+    try {
+      const icon = await readFile(join(config().spaDistDir, "apple-touch-icon.svg"));
+      return reply
+        .header("Cache-Control", "public, max-age=0")
+        .type("image/svg+xml")
+        .send(icon);
     } catch {
       return reply.status(404).send();
     }

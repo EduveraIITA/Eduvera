@@ -24,7 +24,9 @@ import { StudentIdentityCard } from "../student/StudentIdentityCard";
 import { AttendanceRankingDialog } from "../../features/school/AttendanceRankingDialog";
 import { HomeworkDetailsDialog } from "../../features/school/HomeworkDetailsDialog";
 import { ParentShell } from "./ParentShell";
+import { FollowupInbox } from "../../features/coordination/FollowupInbox";
 import type { ParentHomeData, ParentPageAction } from "./parentTypes";
+import {DayPlanNotice} from '../../features/day-plans/DayPlanNotice';
 import "./parent-pages.css";
 
 export interface ParentHomePageProps {
@@ -73,7 +75,7 @@ function MetricCard({
 }
 
 function MetricTrend({ value, label, higherIsBetter = true, suffix = "%", compact = false }: { value?: number | null; label: string; higherIsBetter?: boolean; suffix?: string; compact?: boolean }) {
-  if (value == null) return <span className="metric-trend metric-trend--neutral" aria-label="Trend unavailable">{compact ? "—" : "Trend unavailable"}</span>;
+  if (value == null) return <span className="metric-trend metric-trend--neutral" aria-label="Trend unavailable">{compact ? "-" : "Trend unavailable"}</span>;
   const tone = value === 0 ? "neutral" : (value > 0) === higherIsBetter ? "positive" : "negative";
   const Icon = value > 0 ? TrendingUp : value < 0 ? TrendingDown : Minus;
   return <span className={`metric-trend metric-trend--${tone}${compact ? " metric-trend--compact" : ""}`} aria-label={`${value > 0 ? "Up " : value < 0 ? "Down " : "No change, "}${Math.abs(value)}${suffix} ${label}`}><Icon size={14} aria-hidden="true" />{value > 0 ? "+" : ""}{value}{suffix}{compact ? null : <small>{label}</small>}</span>;
@@ -167,7 +169,7 @@ export function ParentHomePage({
       active="home"
       pageLabel="Home"
       child={data.child}
-      presenceStatus={data.presence.status === "In School" ? "in" : "away"}
+      presenceStatus={data.presence.status === "In School" ? "in" : data.presence.status === "Checked Out" ? "away" : undefined}
       onSelectChild={(childId) => { void switchToChild(childId); }}
       childOptions={children.length ? children : data.sibling ? [data.child, data.sibling] : [data.child]}
       selectedChildId={visibleChildId}
@@ -183,6 +185,8 @@ export function ParentHomePage({
           </div>
         </div>
         {switchError ? <p className="parent-id-stack__error" role="alert">{switchError}</p> : null}
+        <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student=${data.child.id}`}/>
+        <FollowupInbox context="guardian" studentId={data.child.id} />
 
         <section className="home-action-section" aria-labelledby="action-required-heading">
           <div className="section-eyebrow-row">
@@ -195,7 +199,7 @@ export function ParentHomePage({
             {!pendingLeave ? (
               <div className="completed-message">
                 <CheckCircle2 size={23} />
-                <div><strong>No guardian action required</strong><span>New leave sign-offs will appear here when the school receives them.</span></div>
+                <div><strong>No leave sign-off required</strong><span>New leave sign-offs will appear here when the school receives them.</span></div>
               </div>
             ) : (
               <div className="urgent-leave-card__body">
@@ -205,7 +209,7 @@ export function ParentHomePage({
                     <h3>{pendingLeave.title}</h3>
                     <span className="time-label">{pendingLeave.submittedLabel}</span>
                   </div>
-                  <p>{pendingLeave.summary} • <strong>{pendingLeave.durationLabel}</strong></p>
+                  <p>{pendingLeave.summary} - <strong>{pendingLeave.durationLabel}</strong></p>
                 </div>
                 <div className="button-row urgent-leave-card__actions">
                   <button className="button button--primary button--grow" type="button" onClick={() => openLeaveReview()}>
@@ -226,16 +230,16 @@ export function ParentHomePage({
         <section className="surface-card pulse-card" aria-labelledby="pulse-heading">
           <div className="card-heading-row">
             <h2 id="pulse-heading"><Clock3 size={20} />Academic Pulse</h2>
-            <span className={data.presence.status === "In School" ? "status-pill status-pill--success" : "status-pill status-pill--danger"}><CheckCircle2 size={14} />{data.presence.status}</span>
+            <span className={`status-pill ${data.presence.status === "In School" ? "status-pill--success" : data.presence.status === "Checked Out" ? "status-pill--danger" : "status-pill--neutral"}`}>{data.presence.status === "Not confirmed" ? <Clock3 size={14} /> : <CheckCircle2 size={14} />}{data.presence.status}</span>
           </div>
           {currentPeriod ? <div className="current-period">
             <div className="current-period__meta">
               <span className="period-badge">Period {currentPeriod.number}</span>
-              <span>{currentPeriod.startsAt} – {currentPeriod.endsAt}</span>
+              <span>{currentPeriod.startsAt} - {currentPeriod.endsAt}</span>
               <strong>{currentPeriod.remainingLabel}</strong>
             </div>
             <div className="current-period__subject">
-              <div><h3>{currentPeriod.subject} • {currentPeriod.topic}</h3><p>{currentPeriod.room} • {currentPeriod.teacher}</p></div>
+              <div><h3>{currentPeriod.subject} - {currentPeriod.topic}</h3><p>{currentPeriod.room} - {currentPeriod.teacher}</p></div>
               <span className="subject-icon"><Sigma size={21} /></span>
             </div>
             <div className="progress-track" aria-label={`${currentPeriod.progressPercent}% of period complete`}>
@@ -244,7 +248,7 @@ export function ParentHomePage({
           </div> : <div className="completed-message completed-message--neutral"><CalendarDays size={22} /><div><strong>No classes scheduled today</strong><span>The timetable has no periods for this date.</span></div></div>}
           {data.nextPeriod ? <div className="next-period">
             <ChevronRight size={17} />
-            <span>Next: <strong>Period {data.nextPeriod.number} • {data.nextPeriod.subject}</strong> ({data.nextPeriod.room})</span>
+            <span>Next: <strong>Period {data.nextPeriod.number} - {data.nextPeriod.subject}</strong> ({data.nextPeriod.room})</span>
             <time>{data.nextPeriod.startsAt}</time>
           </div> : null}
         </section>
@@ -285,7 +289,7 @@ export function ParentHomePage({
           <div className="surface-card shortcut-list">
             <button type="button" disabled={!onContactTeacher} aria-disabled={!onContactTeacher} onClick={() => void onContactTeacher?.()}>
               <span className="shortcut-icon"><Phone size={19} /></span>
-              <span><strong>{onContactTeacher ? "Contact Homeroom Teacher" : "Teacher contact unavailable"}</strong><small>{data.homeroomTeacher.name} • {data.homeroomTeacher.availability}</small></span>
+              <span><strong>{onContactTeacher ? "Contact Homeroom Teacher" : "Teacher contact unavailable"}</strong><small>{data.homeroomTeacher.name} - {data.homeroomTeacher.availability}</small></span>
               <ChevronRight size={21} />
             </button>
             <button type="button" onClick={() => navigate(parentPath("/parent/leave?tab=apply"))}>
@@ -295,7 +299,7 @@ export function ParentHomePage({
             </button>
             <button type="button" disabled aria-disabled="true" title="Transport self-service is planned for a later School OS module" aria-label={`${data.transport.passLabel}. ${data.transport.pickupWindow}. View only.`}>
               <span className="shortcut-icon"><Bus size={19} /></span>
-              <span><strong>{data.transport.passLabel}</strong><small className="green-text">{data.transport.pickupWindow} • View only</small></span>
+              <span><strong>{data.transport.passLabel}</strong><small className="green-text">{data.transport.pickupWindow} - View only</small></span>
             </button>
           </div>
         </section>

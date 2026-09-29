@@ -62,17 +62,17 @@ export const demoLeaveStatusData: StudentLeaveStatusData = {
   activeCount: 1,
   requestId: "REQ-2026-884",
   title: "Viral Fever & Recovery",
-  dates: "28 Oct – 29 Oct 2026 • Full School Days",
+  dates: "28 Oct - 29 Oct 2026 - Full School Days",
   duration: "2 Days",
   stages: [
     { id: "submitted", title: "Submitted by Student", detail: "27 Oct, 08:30 PM", state: "complete", note: "Application generated via Edura Student Portal" },
-    { id: "parent", title: "Parent Sign-Off", detail: "Pooja Sharma (Mother) • 27 Oct, 09:15 PM", state: "complete", badge: "Verified", note: "“Doctor prescribed Aarav complete bed rest and viral medication for 48 hours.”" },
+    { id: "parent", title: "Parent Sign-Off", detail: "Pooja Sharma (Mother) - 27 Oct, 09:15 PM", state: "complete", badge: "Verified", note: "Doctor prescribed complete bed rest and viral medication for 48 hours." },
     { id: "teacher", title: "Class Teacher Review", detail: "Mrs. K. Sharma (Homeroom Advisor)", state: "active", badge: "In Review" },
-    { id: "register", title: "Official Attendance Record", detail: "Auto-syncs ‘Excused Medical (EM)’ code to portal upon teacher approval", state: "pending" },
+    { id: "register", title: "Official Attendance Record", detail: "Auto-syncs 'Excused Medical (EM)' code to portal upon teacher approval", state: "pending" },
   ],
   history: [
     { id: "leave-dental", title: "Dental Appointment", dates: "12 Sep 2026", duration: "1 Day Excused", statusDetail: "Decision by Mrs. K. Sharma", status: "school_approved", statusLabel: "School approved" },
-    { id: "leave-wedding", title: "Sister’s Wedding", dates: "18 Aug – 19 Aug 2026", duration: "2 Days", statusDetail: "Decision by Mrs. K. Sharma", status: "school_approved", statusLabel: "School approved" },
+    { id: "leave-wedding", title: "Sister's Wedding", dates: "18 Aug - 19 Aug 2026", duration: "2 Days", statusDetail: "Decision by Mrs. K. Sharma", status: "school_approved", statusLabel: "School approved" },
   ],
 };
 
@@ -137,7 +137,7 @@ export function StudentLeaveStatusPage({
     } catch (error) {
       setWithdrawError(error instanceof Error && error.message.trim()
         ? error.message
-        : "We couldn’t withdraw this request. Please try again.");
+        : "We couldn't withdraw this request. Please try again.");
     } finally {
       setWithdrawing(false);
     }
@@ -189,7 +189,7 @@ export function StudentLeaveStatusPage({
               {confirmingWithdraw && (
                 <div className="inline-confirm" role="alertdialog" aria-labelledby="withdraw-title">
                   <div><strong id="withdraw-title">Withdraw this request?</strong><p>This will stop the current review and notify your parent.</p>{withdrawError && <p className="inline-confirm__error" role="alert">{withdrawError}</p>}</div>
-                  <span><button type="button" onClick={() => setConfirmingWithdraw(false)}>Keep request</button><button type="button" disabled={withdrawing} onClick={withdrawRequest}>{withdrawing ? "Withdrawing…" : "Withdraw"}</button></span>
+                  <span><button type="button" onClick={() => setConfirmingWithdraw(false)}>Keep request</button><button type="button" disabled={withdrawing} onClick={withdrawRequest}>{withdrawing ? "Withdrawing..." : "Withdraw"}</button></span>
                 </div>
               )}
             </div>
@@ -202,13 +202,13 @@ export function StudentLeaveStatusPage({
           <header><span><History size={19} /><h2 id="leave-history-heading">Past Excusal Ledger</h2></span><strong>{data.history.length} Records in Term 1</strong></header>
           <div className="student-card leave-history__list">
             {data.history.length === 0 ? (
-              <div className="student-empty-state"><History size={20} /><div><strong>No past requests</strong><p>Your term leave ledger is empty.</p></div></div>
+              <div className="student-empty-state"><History size={20} /><div><strong>No past requests</strong><p>Your completed leave requests will appear here.</p></div></div>
             ) : data.history.map((record, index) => {
               const tone = historyTone(record.status);
               return (
               <article key={record.id}>
                 <span className="history-icon">{index === 0 ? <Stethoscope size={19} /> : <Clock3 size={19} />}</span>
-                <div><h3>{record.title}</h3><p>{record.dates} • {record.duration}</p></div>
+                <div><h3>{record.title}</h3><p>{record.dates} - {record.duration}</p></div>
                 <span className={`history-status history-status--${tone}`}><b>{tone === "approved" ? <Check size={12} /> : tone === "pending" ? <Hourglass size={12} /> : <CircleX size={12} />}{record.statusLabel}</b><small>{record.statusDetail}</small></span>
               </article>
               );

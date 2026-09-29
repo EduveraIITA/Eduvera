@@ -72,12 +72,16 @@ const TeacherTimetableRoute = lazy(async () => ({ default: (await import("./feat
 const PrincipalHomeRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalHomeRoute }));
 const PrincipalAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalAttendanceRoute }));
 const PrincipalTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalTimetableRoute }));
+const PrincipalDayPlanPage = lazy(() => import('./features/day-plans/PrincipalDayPlanPage'));
+const TeacherDayPage = lazy(() => import('./features/day-plans/TeacherDayPage'));
+const PeoplePage = lazy(() => import("./features/people/PeoplePage"));
+const PeopleImportPage = lazy(() => import("./features/people/PeopleImportPage"));
 
 function PageLoader() {
   return (
     <div className="route-loader" role="status" aria-live="polite">
       <span className="route-loader__mark" aria-hidden="true" />
-      <span>Opening Edura OS…</span>
+      <span>Opening your school portal...</span>
     </div>
   );
 }
@@ -101,8 +105,8 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
     if (this.state.hasError) {
       return (
         <main className="route-error">
-          <span className="route-error__brand">Edura OS</span>
-          <h1>We couldn’t open this view.</h1>
+          <span className="route-error__brand">School portal</span>
+          <h1>We couldn't open this view.</h1>
           <p>Your data is safe. Reload the page to try again.</p>
           <button type="button" onClick={() => window.location.reload()}>
             Reload app
@@ -151,10 +155,15 @@ export function App() {
 
               <Route path="/teacher" element={<PortalOnly portal="teacher"><TeacherHomeRoute /></PortalOnly>} />
               <Route path="/teacher/attendance" element={<PortalOnly portal="teacher"><TeacherAttendanceRoute /></PortalOnly>} />
-              <Route path="/teacher/timetable" element={<PortalOnly portal="teacher"><TeacherTimetableRoute /></PortalOnly>} />
+              <Route path="/teacher/timetable" element={<PortalOnly portal="teacher"><TeacherDayPage /></PortalOnly>} />
+              <Route path="/teacher/timetable/weekly" element={<PortalOnly portal="teacher"><TeacherTimetableRoute /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
-              <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
+              <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
+              <Route path="/principal/timetable/day" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
+              <Route path="/principal/timetable/weekly" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
+              <Route path="/principal/students" element={<PortalOnly portal="principal"><PeoplePage /></PortalOnly>} />
+              <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>

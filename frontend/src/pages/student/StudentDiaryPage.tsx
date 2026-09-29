@@ -144,8 +144,8 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
           <div className="student-diary-hero__top">
             <div>
               <span>Student diary</span>
-              <h1 id="student-diary-heading">Today’s work desk</h1>
-              <p>{data.rangeLabel} • {data.termLabel}</p>
+              <h1 id="student-diary-heading">Today's work desk</h1>
+              <p>{data.rangeLabel} - {data.termLabel}</p>
             </div>
             <span className="student-diary-avatar">
               {data.avatarUrl ? <img src={data.avatarUrl} alt="" /> : compactName(data.studentName).slice(0, 2)}
@@ -193,10 +193,10 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
               <button type="button" onClick={() => setSelected(item)} aria-label={`Open ${item.title}`}>
                 <span className="student-diary-entry__icon">{iconForKind(item.kind, item.isCatchUp)}</span>
                 <span className="student-diary-entry__copy">
-                  <small>{item.subjectShort} • {item.kindLabel}{item.dueLabel ? ` • ${item.dueLabel}` : ""}</small>
+                  <small>{item.subjectShort} - {item.kindLabel}{item.dueLabel ? ` - ${item.dueLabel}` : ""}</small>
                   <strong>{item.title}</strong>
                   <p>{item.body}</p>
-                  <em>{item.author} • {item.publishedLabel}</em>
+                  <em>{item.author} - {item.publishedLabel}</em>
                 </span>
                 <span className={item.acknowledged ? "student-diary-status is-done" : item.requiresAcknowledgement ? "student-diary-status is-pending" : "student-diary-status"}>
                   {item.acknowledged ? <CheckCircle2 size={14} /> : null}
@@ -221,7 +221,7 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
             <header>
               <span className={`student-diary-entry__icon tone-${selected.kind}`}>{iconForKind(selected.kind, selected.isCatchUp)}</span>
               <div>
-                <p>{selected.subject} • {selected.kindLabel}</p>
+                <p>{selected.subject} - {selected.kindLabel}</p>
                 <h2 id="student-diary-detail-heading">{selected.title}</h2>
               </div>
               <button className="student-icon-button" type="button" onClick={() => setSelected(null)} aria-label="Close diary detail"><X size={18} /></button>

@@ -34,7 +34,7 @@ export function StudentModulesPage({ focus = "launcher" }: { focus?: ModuleId })
         <section className="module-hero">
           <span className="module-hero__eyebrow"><Sparkles size={14} /> Your school workspace</span>
           <h1>{selected ? `${selected.name} is on the roadmap` : "Everything for school, in one place"}</h1>
-          <p>{selected ? `${selected.description}. This module will appear here when your school enables it.` : "Open today’s connected tools and see what’s coming next as Edura grows into your complete School OS."}</p>
+          <p>{selected ? `${selected.description}. This module will appear here when your school enables it.` : "Open today's connected tools and see what's coming next as Edura grows into your complete School OS."}</p>
           {selected ? <button type="button" onClick={() => navigate("/student/apps")}><Grid2X2 size={17} /> View all modules</button> : null}
         </section>
 

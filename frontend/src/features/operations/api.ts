@@ -2,6 +2,19 @@ import { apiFetch } from "../../lib/api";
 import { schoolDateToday } from "../../lib/schoolTime";
 
 export type AttendanceStatus = "present" | "absent" | "late" | "excused" | "half_day";
+export type AttendanceRegisterState = "draft" | "submitted" | "locked";
+
+export interface AttendanceRegister {
+  state: AttendanceRegisterState;
+  revision: number;
+  submitted_by: string | null;
+  submitted_at: string | null;
+  submitted_by_name?: string | null;
+  locked_by: string | null;
+  locked_at: string | null;
+  reopened_by?: string | null;
+  reopened_at?: string | null;
+}
 
 export interface TeacherClassSummary {
   class_section_id: string;
@@ -11,14 +24,24 @@ export interface TeacherClassSummary {
   room_number: string;
   term_name: string;
   academic_year: string;
-  starts_at: string;
-  ends_at: string;
+  starts_at: string | null;
+  ends_at: string | null;
   student_count: number;
   marked_count: number;
   attending_count: number;
   absent_count: number;
   subjects: string[] | null;
-  submission_status: "not_started" | "in_progress" | "submitted";
+  submission_status: "not_started" | "in_progress" | "submitted" | "locked";
+  periods_today?: number;
+  assigned_teachers?: string[];
+  assignment_kind?: "regular" | "substitute";
+  submitted_by_name?: string | null;
+  submitted_at?: string | null;
+  submission_authorized?: boolean;
+  instructional?: boolean;
+  date_open?: boolean;
+  can_mark?: boolean;
+  availability_reason?: string | null;
 }
 
 export interface TeacherTimetableSlot {
@@ -55,9 +78,52 @@ export interface TeacherRosterStudent {
 
 export interface TeacherAttendanceResponse {
   date: string;
+  availability?: { can_mark: boolean; reason: string | null };
   class: { id: string; name: string; grade: string; section: string; room: string; board: string; term: string };
   periods: Array<{ id: string; period_number: number; starts_at: string; ends_at: string; display_title: string; room: string }>;
   roster: TeacherRosterStudent[];
+  register: AttendanceRegister;
+}
+
+export interface TeacherAttendanceRecordInput {
+  student_id: string;
+  status: AttendanceStatus;
+  remarks: string;
+}
+
+export interface TeacherAttendanceSaveInput {
+  records: TeacherAttendanceRecordInput[];
+  expected_revision: number;
+  photo_session_id?: string;
+  reason?: string;
+  idempotency_key: string;
+}
+
+export interface AttendanceRegisterHistoryResponse {
+  date: string;
+  class: TeacherAttendanceResponse["class"];
+  register: AttendanceRegister;
+  submissions: Array<{
+    id: string;
+    register_revision: number;
+    records_count: number;
+    changed_count: number;
+    created_at: string;
+    submitted_by_name: string;
+  }>;
+  revisions: Array<{
+    id: string;
+    student_id: string;
+    student_name: string;
+    previous_status: AttendanceStatus | null;
+    new_status: AttendanceStatus;
+    previous_remarks: string | null;
+    new_remarks: string;
+    reason: string;
+    register_revision: number;
+    created_at: string;
+    changed_by_name: string;
+  }>;
 }
 
 export interface PrincipalClassSummary extends TeacherClassSummary {
@@ -112,11 +178,36 @@ export function getTeacherAttendance(classSectionId: string, date = schoolDateTo
   return apiFetch<TeacherAttendanceResponse>(query("/api/v1/screens/teacher/attendance/", { class_section_id: classSectionId, date }));
 }
 
-export function saveTeacherAttendance(classSectionId: string, date: string, records: Array<{ student_id: string; status: AttendanceStatus; remarks: string }>) {
+export function saveTeacherAttendance(classSectionId: string, date: string, input: TeacherAttendanceSaveInput) {
   return apiFetch<TeacherAttendanceResponse>("/api/v1/teacher/attendance/bulk/", {
     method: "POST",
-    body: JSON.stringify({ class_section_id: classSectionId, date, records }),
+    headers: { "Idempotency-Key": input.idempotency_key },
+    body: JSON.stringify({
+      class_section_id: classSectionId,
+      date,
+      records: input.records,
+      expected_revision: input.expected_revision,
+      photo_session_id: input.photo_session_id,
+      reason: input.reason,
+    }),
   });
+}
+
+export function lockAttendanceRegister(classSectionId: string, date: string) {
+  return apiFetch<TeacherAttendanceResponse>(query(`/api/v1/attendance-registers/${encodeURIComponent(classSectionId)}/lock/`, { date }), {
+    method: "POST",
+  });
+}
+
+export function unlockAttendanceRegister(classSectionId: string, date: string, reason: string) {
+  return apiFetch<TeacherAttendanceResponse>(query(`/api/v1/attendance-registers/${encodeURIComponent(classSectionId)}/lock/`, { date }), {
+    method: "DELETE",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function getAttendanceRegisterHistory(classSectionId: string, date: string) {
+  return apiFetch<AttendanceRegisterHistoryResponse>(query(`/api/v1/attendance-registers/${encodeURIComponent(classSectionId)}/history/`, { date }));
 }
 
 export function getPrincipalHome(date = schoolDateToday()) {

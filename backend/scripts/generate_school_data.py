@@ -410,7 +410,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         (4, "11:30", "12:05"), (5, "12:15", "13:00"), (6, "13:05", "13:50"),
     ]
     subject_keys = [subject[0] for subject in SUBJECTS]
-    timetable_lookup: dict[tuple[str, int], list[str]] = {}
+    timetable_lookup: dict[tuple[str, int], list[tuple[int, str]]] = {}
     for class_index, (class_key, room) in enumerate(room_by_class.items()):
         timetable_lookup.update({(class_key, weekday): [] for weekday in range(1, 7)})
         for weekday in range(1, 7):
@@ -426,7 +426,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
                 subject_key = subject_keys[subject_index]
                 teacher_options = teacher_by_subject[subject_key]
                 teacher = teacher_options[0 if int(class_key[0]) <= 7 else 1]
-                timetable_lookup[(class_key, weekday)].append(subject_key)
+                timetable_lookup[(class_key, weekday)].append((period, subject_key))
                 dataset["timetable"].append((
                     deterministic_id(f"slot-{class_key}-{weekday}-{period}"), class_ids[class_key], term_id, subject_ids[subject_key],
                     weekday, period, starts_at, ends_at, "class", "", f"Room {room}", teacher["user_id"], teacher["designation"],
@@ -481,9 +481,9 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         excused = {key: 0 for key in subject_keys}
         for school_day, status in statuses.items():
             scheduled = timetable_lookup[(student["class_key"], school_day.isoweekday())]
-            for scheduled_index, subject_key in enumerate(scheduled):
+            for period, subject_key in scheduled:
                 held[subject_key] += 1
-                if status in {"present", "late"} or (status == "half_day" and scheduled_index < max(1, len(scheduled) // 2)):
+                if status in {"present", "late"} or (status == "half_day" and period < 4):
                     attended[subject_key] += 1
                 elif status == "excused":
                     excused[subject_key] += 1
@@ -722,7 +722,7 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
     )
     statements += insert_sql(
         "guardian_relationships", ["id", "guardian_id", "student_id", "relationship", "is_primary", "can_authorize_leave"], dataset["guardians"],
-        conflict=" ON CONFLICT(guardian_id,student_id) DO UPDATE SET relationship=excluded.relationship,is_primary=excluded.is_primary,can_authorize_leave=excluded.can_authorize_leave",
+        conflict=" ON CONFLICT(guardian_id,student_id) DO UPDATE SET relationship=excluded.relationship,is_primary=excluded.is_primary,can_authorize_leave=CASE WHEN guardian_relationships.authority_source='reviewed' THEN guardian_relationships.can_authorize_leave ELSE excluded.can_authorize_leave END",
     )
     statements += insert_sql(
         "academic_terms", ["id", "school_id", "academic_year", "name", "starts_on", "ends_on", "attendance_threshold", "is_active"], dataset["terms"],

@@ -1,0 +1,1 @@
+"""Photo-attendance service tests."""

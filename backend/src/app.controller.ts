@@ -1,10 +1,13 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Header, Headers, UnauthorizedException, ServiceUnavailableException } from "@nestjs/common";
+import { timingSafeEqual } from "node:crypto";
 import { Public } from "./common/decorators.js";
+import { config } from "./config.js";
 import { DatabaseService } from "./database/database.service.js";
+import { SchoolEventService } from "./school/school-event.service.js";
 
 @Controller()
 export class AppController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   @Public()
   @Get("healthz")
@@ -16,6 +19,23 @@ export class AppController {
   @Get("readyz")
   async ready() {
     await this.db.ping();
-    return { status: "ready", database: "ok" };
+    if (!this.events.isReady()) throw new ServiceUnavailableException("The event delivery connection is not ready.");
+    return { status: "ready", database: "ok", events: "ok" };
+  }
+
+  @Public()
+  @Get("metrics")
+  @Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+  metrics(@Headers("authorization") authorization?: string) {
+    const expected = config().METRICS_TOKEN;
+    if (expected) {
+      const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+      const expectedBytes = Buffer.from(expected);
+      const suppliedBytes = Buffer.from(supplied);
+      if (expectedBytes.length !== suppliedBytes.length || !timingSafeEqual(expectedBytes, suppliedBytes)) {
+        throw new UnauthorizedException("A valid monitoring token is required.");
+      }
+    }
+    return this.events.prometheusMetrics();
   }
 }

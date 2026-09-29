@@ -39,6 +39,12 @@ class MediumSchoolGeneratorTests(unittest.TestCase):
         self.assertTrue(sql.startswith("BEGIN;"))
         self.assertTrue(sql.rstrip().endswith("COMMIT;"))
 
+    def test_seed_preserves_school_reviewed_guardian_permissions(self) -> None:
+        sql = generator.render_sql(self.dataset, self.summary)
+        self.assertIn("WHEN guardian_relationships.authority_source='reviewed' THEN guardian_relationships.can_authorize_leave", sql)
+        self.assertNotIn("authority_revision=", sql)
+        self.assertNotIn("leave_valid_from=", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

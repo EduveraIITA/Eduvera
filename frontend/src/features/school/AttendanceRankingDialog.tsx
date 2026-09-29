@@ -69,21 +69,21 @@ export function AttendanceRankingDialog({ ranking, className, onClose, focusInde
           <div>
             <span className="attendance-ranking__eyebrow">Class attendance</span>
             <h2 id="attendance-ranking-title">{className} standings</h2>
-            <p id="attendance-ranking-description">{ranking?.asOf ? `Updated ${ranking.asOf} · ` : ""}{ranking?.cohortSize ?? 0} eligible students · Swipe to see everyone</p>
+            <p id="attendance-ranking-description">{ranking?.asOf ? `Updated ${ranking.asOf}. ` : ""}{ranking?.cohortSize ?? 0} eligible students</p>
           </div>
           <button ref={closeRef} type="button" className="attendance-ranking__close" aria-label="Close attendance standings" onClick={onClose}><X size={20} /></button>
         </header>
         <div className="attendance-ranking__list" ref={listRef} role="list" aria-label="All class attendance">
           {ranking?.students.length ? ranking.students.map((student, index) => (
             <div role="listitem" key={index} className={`attendance-ranking__row${student.current ? " attendance-ranking__row--current" : ""}`} aria-label={`${student.current ? `${currentLabel}, ` : ""}${student.name}, ${student.rank === null ? "not ranked" : `rank ${student.rank}`}, ${student.percent === null ? "no recorded attendance" : `${student.percent.toFixed(1)}% attendance`}`}>
-              <span className="attendance-ranking__position">{student.rank === null ? "—" : `#${student.rank}`}</span>
+              <span className="attendance-ranking__position">{student.rank === null ? "N/A" : `#${student.rank}`}</span>
               <Portrait student={student} />
               <span className="attendance-ranking__identity"><strong>{student.name}{student.current ? <em>{currentLabel}</em> : null}</strong><small>{student.held ? `${student.attended}/${student.held} days` : "No recorded days"}{student.streak ? ` · ${student.streak}d streak` : ""}</small></span>
-              <strong className="attendance-ranking__percent">{student.percent === null ? "—" : `${student.percent.toFixed(1)}%`}</strong>
+              <strong className="attendance-ranking__percent">{student.percent === null ? "N/A" : `${student.percent.toFixed(1)}%`}</strong>
             </div>
           )) : <p className="attendance-ranking__empty">Class standings will appear once attendance has been recorded and published.</p>}
         </div>
-        <footer>Classmates’ surnames are abbreviated. A rank requires at least five recorded school days.</footer>
+        <footer>Classmates' surnames are abbreviated. A rank requires at least five recorded school days.</footer>
       </section>
     </div>, document.body,
   );

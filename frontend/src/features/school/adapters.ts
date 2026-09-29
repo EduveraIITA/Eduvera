@@ -84,7 +84,7 @@ function formatShortDate(value: string) {
 }
 
 function formatTime(value?: string | null) {
-  if (!value) return "—";
+  if (!value) return "-";
   const time = value.includes("T") ? new Date(value) : undefined;
   if (time && !Number.isNaN(time.getTime())) {
     return new Intl.DateTimeFormat("en-IN", { hour: "2-digit", minute: "2-digit" }).format(time);
@@ -115,7 +115,8 @@ function relativeDueLabel(value?: string | null) {
 function roomLabel(value?: string | null) {
   const room = value?.trim();
   if (!room) return "Campus";
-  return /^room\b/i.test(room) ? room : `Room ${room}`;
+  // Prefix room codes, not named spaces such as the Activity Studio or Library.
+  return /^(?:[a-z]?\d+[a-z]?|[a-z])$/i.test(room) ? `Room ${room}` : room;
 }
 
 function isHomeroomContact(label: string) {
@@ -179,7 +180,7 @@ function titleFromReason(reason: string) {
 function formatLeaveRange(item: ApiLeaveRequest) {
   return item.starts_on === item.ends_on
     ? formatDate(item.starts_on)
-    : `${formatShortDate(item.starts_on)} – ${formatDate(item.ends_on)}`;
+    : `${formatShortDate(item.starts_on)} - ${formatDate(item.ends_on)}`;
 }
 
 function slotTone(slot: ApiTimetableSlot): TimetableTone {
@@ -200,7 +201,7 @@ function compactRequestTitle(item: ApiLeaveRequest) {
 
 export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
   const child = classDetails(response.student);
-  const schedule = response.today_schedule;
+  const schedule = response.today_schedule.filter(p=>!p.cancelled);
   const nowMinutes = indiaMinutesNow();
   const current = schedule.find((slot) => {
     const starts = clockMinutes(slot.starts_at);
@@ -213,9 +214,11 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
   const next = focusIndex >= 0 ? schedule[focusIndex + 1] : undefined;
   const leave = response.action_required;
   const attendance = Number(response.attendance.percentage);
+  const hasAttendance = response.attendance.total > response.attendance.excused;
   const primaryContact = response.contacts.find((contact) => isHomeroomContact(contact.label));
   return {
     child,
+    dayPlan:response.day_plan,
     ranking: adaptRanking(response.ranking),
     idCard: {
       studentName: child.name,
@@ -223,9 +226,10 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
       className: response.student.current_enrollment.class_name,
       rollNumber: child.rollNumber,
       studentId: response.student.admission_number,
-      termLabel: `${response.student.current_enrollment.term.name} • ${response.student.current_enrollment.term.academic_year}`,
+      termLabel: `${response.student.current_enrollment.term.name} - ${response.student.current_enrollment.term.academic_year}`,
       dateLabel: new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long" }).format(new Date()),
       attendancePercent: attendance,
+      attendanceRecorded: hasAttendance,
       attendanceThreshold: response.semester_metrics.attendance_threshold ?? 85,
     },
     sibling: response.siblings[0]
@@ -241,7 +245,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
           status: response.campus_presence.direction === "in" ? "In School" : "Checked Out",
           detail: `${response.campus_presence.gate} swipe at ${formatTime(response.campus_presence.occurred_at)}`,
         }
-      : { status: "Not on campus", detail: "No gate event recorded today" },
+      : { status: "Not confirmed", detail: "No gate event recorded today" },
     pendingLeave: leave
       ? {
           id: leave.id,
@@ -264,7 +268,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
           subject: focus.display_title,
           topic: focus.subject?.short_name && focus.subject.short_name !== focus.display_title
             ? focus.subject.short_name
-            : "Today’s lesson",
+            : "Today's lesson",
           room: roomLabel(focus.room),
           teacher: focus.teacher?.name ?? "Class faculty",
           progressPercent: current
@@ -282,8 +286,8 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
       : undefined,
     homeworkItems: response.homework_items?.map((item) => ({ id: item.id, title: item.title, body: item.body, subject: item.subject_name, dueAt: item.due_at, completedAt: item.completed_at })),
     metrics: {
-      attendance: `${attendance.toFixed(1)}%`,
-      attendanceStatus: attendance >= 85 ? "Safe Zone" : "Needs Attention",
+      attendance: hasAttendance ? `${attendance.toFixed(1)}%` : "—",
+      attendanceStatus: !hasAttendance ? "Not recorded" : attendance >= (response.semester_metrics.attendance_threshold ?? 85) ? "Safe Zone" : "Needs Attention",
       attendanceTrend: response.semester_metrics.attendance_trend_percent,
       attendanceRank: response.semester_metrics.attendance_rank,
       attendanceCohortSize: response.semester_metrics.attendance_cohort_size,
@@ -371,7 +375,7 @@ export function adaptParentAttendance(response: ParentAttendanceResponse): Paren
   return {
     child: classDetails(response.student),
     ranking: adaptRanking(response.ranking),
-    termLabel: `${response.term.name} • ${response.term.academic_year}`,
+    termLabel: `${response.term.name} - ${response.term.academic_year}`,
     aggregatePercent: Number(summary.percentage),
     trendPercent: attendanceTrend(response.calendar),
     safeCushionDays: safeBuffer(attended, summary.total, threshold),
@@ -500,8 +504,8 @@ export function adaptParentDiary(response: ParentDiaryResponse): ParentDiaryData
   const guardian = response.guardian;
   return {
     child: classDetails(response.student),
-    termLabel: `${response.student.current_enrollment.term.name} • ${response.student.current_enrollment.term.academic_year}`,
-    weekLabel: `${formatShortDate(response.date === days[0]?.id ? response.date : days[0]?.id ?? response.date)} – ${formatShortDate(`${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, "0")}-${String(saturday.getDate()).padStart(2, "0")}`)}`,
+    termLabel: `${response.student.current_enrollment.term.name} - ${response.student.current_enrollment.term.academic_year}`,
+    weekLabel: `${formatShortDate(response.date === days[0]?.id ? response.date : days[0]?.id ?? response.date)} - ${formatShortDate(`${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, "0")}-${String(saturday.getDate()).padStart(2, "0")}`)}`,
     dateHeading: new Intl.DateTimeFormat("en-IN", {
       weekday: "long",
       day: "2-digit",
@@ -516,11 +520,11 @@ export function adaptParentDiary(response: ParentDiaryResponse): ParentDiaryData
           stateLabel: current
             ? `Period ${focus.period_number} in Session`
             : upcoming ? "Next scheduled period" : selectedToday ? "School day complete" : "Schedule preview",
-          dayRangeLabel: `${formatTime(response.schedule[0]?.starts_at)} – ${formatTime(response.schedule.at(-1)?.ends_at)}`,
+          dayRangeLabel: `${formatTime(response.schedule[0]?.starts_at)} - ${formatTime(response.schedule.at(-1)?.ends_at)}`,
           subject: focus.display_title,
           room: roomLabel(focus.room),
           teacher: focus.teacher?.name ?? "Class faculty",
-          untilLabel: current ? `Until ${formatTime(focus.ends_at)}` : upcoming ? `Starts ${formatTime(focus.starts_at)}` : `${formatTime(focus.starts_at)} – ${formatTime(focus.ends_at)}`,
+          untilLabel: current ? `Until ${formatTime(focus.ends_at)}` : upcoming ? `Starts ${formatTime(focus.starts_at)}` : `${formatTime(focus.starts_at)} - ${formatTime(focus.ends_at)}`,
         }
       : undefined,
     packingItems: response.items
@@ -627,7 +631,7 @@ export function adaptStudentAttendance(response: StudentAttendanceResponse): Stu
 
 export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData {
   const nowMinutes = indiaMinutesNow();
-  const schedule: StudentHomePeriod[] = response.today_schedule.map((slot) => {
+  const schedule: StudentHomePeriod[] = response.today_schedule.filter(p=>!p.cancelled).map((slot) => {
     const starts = clockMinutes(slot.starts_at) ?? Number.POSITIVE_INFINITY;
     const ends = clockMinutes(slot.ends_at) ?? Number.POSITIVE_INFINITY;
     const state: StudentHomePeriod["state"] = starts <= nowMinutes && nowMinutes < ends
@@ -641,6 +645,7 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
       endsAt: formatTime(slot.ends_at),
       teacher: slot.teacher?.name ?? "Faculty assignment pending",
       room: roomLabel(slot.room),
+      materials:slot.materials,
       state,
     };
   });
@@ -654,11 +659,12 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
   }).format(parseLocalDate(response.date));
   return {
     studentName: response.student.user.display_name,
+    dayPlan:response.day_plan,
     avatarUrl: response.student.avatar_url || undefined,
     className: response.student.current_enrollment.class_name,
     rollNumber: String(response.student.current_enrollment.roll_number).padStart(2, "0"),
     studentId: response.student.admission_number,
-    termLabel: `${response.term.name} • ${response.term.academic_year}`,
+    termLabel: `${response.term.name} - ${response.term.academic_year}`,
     dateLabel,
     presence: attendance || presence
       ? {
@@ -668,10 +674,10 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
             : attendance?.check_in_at ? `Attendance marked at ${formatTime(attendance.check_in_at)}` : "Marked in the school attendance register",
           verified: Boolean(attendance || presence),
         }
-      : { label: "Not recorded yet", detail: "Waiting for today’s school attendance", verified: false },
+      : { label: "Not recorded yet", detail: "Waiting for today's school attendance", verified: false },
     attendancePercent: Number(response.attendance.percentage),
     attendanceThreshold: Number(response.term.threshold),
-    periodsToday: response.today_schedule.length,
+    periodsToday: schedule.length,
     activeLeaveCount: response.active_leave_count,
     unreadNotifications: response.unread_notifications,
     schedule,
@@ -679,7 +685,7 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
       id: item.id,
       title: item.title,
       detail: item.body,
-      label: `${item.item_type_label}${item.subject ? ` • ${item.subject.short_name}` : ""}`,
+      label: `${item.item_type_label}${item.subject ? ` - ${item.subject.short_name}` : ""}`,
     })),
   };
 }
@@ -706,7 +712,7 @@ function diaryItem(response: ApiDiaryItem): StudentDiaryItem {
     body: response.body,
     author: response.author_name,
     dueLabel: relativeDueLabel(response.due_at),
-    publishedLabel: `${formatShortDate(response.date)} • ${formatTime(response.published_at)}`,
+    publishedLabel: `${formatShortDate(response.date)} - ${formatTime(response.published_at)}`,
     requiresAcknowledgement: response.requires_acknowledgement,
     acknowledged: response.acknowledged,
     isCatchUp: diaryCatchUp(response),
@@ -742,8 +748,8 @@ export function adaptStudentDiary(response: StudentDiaryResponse): StudentDiaryD
     className: student.current_enrollment.class_name,
     rollNumber: String(student.current_enrollment.roll_number).padStart(2, "0"),
     studentId: student.admission_number,
-    termLabel: `${student.current_enrollment.term.name} • ${student.current_enrollment.term.academic_year}`,
-    rangeLabel: `${formatShortDate(response.date_from)} – ${formatShortDate(response.date_to)}`,
+    termLabel: `${student.current_enrollment.term.name} - ${student.current_enrollment.term.academic_year}`,
+    rangeLabel: `${formatShortDate(response.date_from)} - ${formatShortDate(response.date_to)}`,
     items: sortedItems,
   };
 }
@@ -754,7 +760,7 @@ export function adaptStudentEligibility(response: StudentEligibilityResponse): S
   return {
     studentName: response.student.user.display_name.split(" ")[0] ?? response.student.user.display_name,
     className: response.student.current_enrollment.class_name,
-    periodLabel: `${response.student.current_enrollment.term.name} • ${response.student.current_enrollment.term.academic_year}`,
+    periodLabel: `${response.student.current_enrollment.term.name} - ${response.student.current_enrollment.term.academic_year}`,
     subjectName: item.subject.name,
     policyName: response.policy.name,
     policyText: response.policy.text,
@@ -774,6 +780,7 @@ const dayKeys: Record<number, SchoolDayKey> = {
   4: "thu",
   5: "fri",
   6: "sat",
+  7: "sun",
 };
 
 export function adaptTimetable(response: StudentTimetableResponse): TimetableDay[] {
@@ -789,6 +796,7 @@ export function adaptTimetable(response: StudentTimetableResponse): TimetableDay
       shortLabel: day.weekday_label.slice(0, 3).toUpperCase(),
       longLabel: day.weekday_label,
       date: date.getDate(),
+      isoDate:day.periods[0]?.date??undefined,
       meta: `${day.periods.length} Periods`,
       periods: day.periods.map((slot) => ({
         id: slot.id,
@@ -799,6 +807,7 @@ export function adaptTimetable(response: StudentTimetableResponse): TimetableDay
         teacher: slot.teacher?.name,
         room: slot.room?.trim() ? roomLabel(slot.room) : undefined,
         detail: slot.teacher?.designation,
+        materials:slot.materials,cancelled:slot.cancelled,flag:slot.cancelled?'Cancelled':slot.day_plan_id?'Updated plan':undefined,
         tone: slotTone(slot),
       })),
     } satisfies TimetableDay;
@@ -867,7 +876,7 @@ export function adaptStudentLeaveStatus(response: StudentLeaveStatusResponse): S
     activeCount: response.active.length,
     requestId: active?.id ?? null,
     title: active ? titleFromReason(active.reason) : "",
-    dates: active ? `${formatLeaveRange(active)} • Full School Days` : "",
+    dates: active ? `${formatLeaveRange(active)} - Full School Days` : "",
     duration: active
       ? `${active.duration_days} ${active.duration_days === 1 ? "Day" : "Days"}`
       : "",

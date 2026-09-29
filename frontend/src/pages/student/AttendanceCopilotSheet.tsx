@@ -53,7 +53,7 @@ export function AttendanceCopilotSheet({ open, initialQuestion = promptSuggestio
     } catch (error) {
       setErrorMessage(error instanceof Error && error.message.trim()
         ? error.message
-        : "Copilot couldn’t answer just now.");
+        : "Copilot couldn't answer just now.");
       setState("error");
     }
   }
@@ -78,9 +78,9 @@ export function AttendanceCopilotSheet({ open, initialQuestion = promptSuggestio
             {promptSuggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuestion(suggestion); setAnswer(""); setErrorMessage(""); setState("idle"); }}>{suggestion}</button>)}
           </div>
           {state === "success" && <div className="copilot-answer" role="status"><Bot size={20} /><span><strong>Based on your live attendance</strong><p>{answer}</p></span></div>}
-          {state === "error" && <div className="copilot-error" role="alert"><strong>{errorMessage || "Copilot couldn’t answer just now."}</strong>{onAsk && <button type="button" onClick={() => void ask()}><RefreshCw size={15} />Retry</button>}</div>}
+          {state === "error" && <div className="copilot-error" role="alert"><strong>{errorMessage || "Copilot couldn't answer just now."}</strong>{onAsk && <button type="button" onClick={() => void ask()}><RefreshCw size={15} />Retry</button>}</div>}
           <button className="primary-action" type="submit" disabled={!question.trim() || state === "loading"}>
-            {state === "loading" ? <><span className="button-spinner" />Checking attendance…</> : <><Send size={18} />{state === "success" ? "Ask another question" : "Ask Copilot"}</>}
+            {state === "loading" ? <><span className="button-spinner" />Checking attendance...</> : <><Send size={18} />{state === "success" ? "Ask another question" : "Ask Copilot"}</>}
           </button>
         </form>
       </section>

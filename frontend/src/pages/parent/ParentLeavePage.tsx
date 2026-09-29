@@ -52,14 +52,14 @@ function LeaveHistory({ data }: { data: ParentLeaveData }) {
   return (
     <section className="leave-history" aria-labelledby="leave-history-heading">
       <div className="leave-history__heading">
-        <h2 id="leave-history-heading"><History size={18} />Recent Excusals Ledger</h2>
+        <h2 id="leave-history-heading"><History size={18} />Recent leave requests</h2>
         <span>{data.academicYearLabel}</span>
       </div>
       <div className="leave-history__list">
         {data.history.length === 0 ? (
           <div className="surface-card parent-empty-state">
             <History size={22} />
-            <div><strong>No past leave requests</strong><span>Completed requests will appear in this term ledger.</span></div>
+            <div><strong>No past leave requests</strong><span>Completed requests will appear here.</span></div>
           </div>
         ) : data.history.map((item) => {
           const Icon = item.kind === "medical" ? Stethoscope : UsersRound;
@@ -189,10 +189,10 @@ export function ParentLeavePage({
       <div className="parent-stack leave-page">
         <div className="leave-tabs" role="tablist" aria-label="Leave views">
           <button className={tab === "pending" ? "is-active" : ""} type="button" role="tab" aria-selected={tab === "pending"} onClick={() => setTab("pending")}>
-            {request ? <span className="alert-dot" /> : null}Pending Sign-Off ({request ? 1 : 0})
+            {request ? <span className="alert-dot" /> : null}Pending ({request ? 1 : 0})
           </button>
-          <button className={tab === "history" ? "is-active" : ""} type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>Active & History ({data.history.length})</button>
-          <button className={tab === "apply" ? "is-active" : ""} type="button" role="tab" aria-selected={tab === "apply"} onClick={() => setTab("apply")}>+ Apply for {data.child.name.split(" ")[0]}</button>
+          <button className={tab === "history" ? "is-active" : ""} type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>History ({data.history.length})</button>
+          <button className={tab === "apply" ? "is-active" : ""} type="button" role="tab" aria-selected={tab === "apply"} onClick={() => setTab("apply")}>+ Apply leave</button>
         </div>
 
         {tab === "pending" && request ? (
@@ -205,9 +205,9 @@ export function ParentLeavePage({
 
             <article className="surface-card leave-request-card">
               <div className="leave-request-card__intro">
-                <div className="leave-request-card__status"><span>Awaiting Parent Endorsement</span><strong>{request.id}</strong></div>
+                <div className="leave-request-card__status"><span>Awaiting guardian approval</span><strong>Ref {request.id.replaceAll("-", "").slice(-6).toUpperCase()}</strong></div>
                 <h1>{request.title}</h1>
-                <p>Class {data.child.grade.replace("Grade ", "")}{data.child.section} • Roll No. {data.child.rollNumber} • {request.submittedLabel}</p>
+                <p>Class {data.child.grade.replace("Grade ", "")}{data.child.section} - Roll No. {data.child.rollNumber} - {request.submittedLabel}</p>
               </div>
 
               <div className="leave-request-card__body">
@@ -222,7 +222,7 @@ export function ParentLeavePage({
 
                 <section className="leave-note-block">
                   <h2>{data.child.name.split(" ")[0]}'s Submitted Note</h2>
-                  <blockquote>“{request.studentNote}”</blockquote>
+                  <blockquote>"{request.studentNote}"</blockquote>
                 </section>
 
                 <section className="leave-document-block">
@@ -230,7 +230,7 @@ export function ParentLeavePage({
                   {request.document ? (
                     <div className="document-row">
                       <span className="pdf-icon"><FileText size={19} /></span>
-                      <div><strong>{request.document.name}</strong><small>{request.document.sizeLabel}{request.document.issuer ? ` • ${request.document.issuer}` : ""}</small></div>
+                      <div><strong>{request.document.name}</strong><small>{request.document.sizeLabel}{request.document.issuer ? ` - ${request.document.issuer}` : ""}</small></div>
                       <button type="button" disabled={!request.document.canOpen || !onOpenDocument} onClick={() => void onOpenDocument?.(request.document!.id)}>
                         {request.document.canOpen && onOpenDocument ? "Open file" : "File unavailable"}
                       </button>
@@ -245,14 +245,14 @@ export function ParentLeavePage({
                   {authorizationState === "success" ? (
                     <div className="authorization-success" role="status">
                       <CheckCircle2 size={28} />
-                      <strong>Authorized & Dispatched</strong>
+                      <strong>Authorization submitted</strong>
                       <span>Successfully forwarded to the school attendance team for review.</span>
                     </div>
                   ) : (
                     <>
                       <div className="authorization-panel__heading">
-                        <h2 id="authorization-heading"><PenLine size={18} />Your Digital Authorization</h2>
-                        <span>Step 1 of 2</span>
+                        <h2 id="authorization-heading"><PenLine size={18} />Guardian authorization</h2>
+                        <span>School review follows</span>
                       </div>
                       <label htmlFor="guardian-remark">Parent Remark to Class Teacher (Editable)</label>
                       <textarea id="guardian-remark" rows={3} value={guardianRemark} maxLength={300} onChange={(event) => setGuardianRemark(event.target.value)} />
@@ -262,7 +262,7 @@ export function ParentLeavePage({
                       </label>
                       <button className="button button--primary authorization-button" type="button" disabled={!data.canAuthorize || !consent || authorizationState === "submitting"} onClick={() => void authorize()}>
                         {authorizationState === "submitting" ? <LoaderCircle className="spin" size={18} /> : null}
-                        {authorizationState === "submitting" ? "Transmitting Authorization…" : data.canAuthorize ? "Authorize & Forward to School" : "Authorization unavailable"}
+                        {authorizationState === "submitting" ? "Transmitting Authorization..." : data.canAuthorize ? "Authorize & Forward to School" : "Authorization unavailable"}
                         {authorizationState !== "submitting" ? <ArrowRight size={18} /> : null}
                       </button>
                       {authorizationState === "error" ? <p className="form-error" role="alert">Authorization could not be sent. Please try again.</p> : null}
@@ -324,7 +324,7 @@ export function ParentLeavePage({
                   <label htmlFor="parent-leave-to">To date<input id="parent-leave-to" type="date" value={draft.toDate} min={draft.fromDate} onChange={(event) => setDraft((current) => ({ ...current, toDate: event.target.value }))} /></label>
                 </div>
                 <label htmlFor="parent-leave-reason">Reason or symptoms</label>
-                <textarea id="parent-leave-reason" rows={4} maxLength={300} value={draft.reason} onChange={(event) => setDraft((current) => ({ ...current, reason: event.target.value }))} placeholder="Add details for the school attendance record…" />
+                <textarea id="parent-leave-reason" rows={4} maxLength={300} value={draft.reason} onChange={(event) => setDraft((current) => ({ ...current, reason: event.target.value }))} placeholder="Add details for the school attendance record..." />
                 <div className="field-counter">{draft.reason.length}/300</div>
                 {duration > (leaveConstraints?.maxDurationDays ?? 31) ? <p className="form-error" role="alert">A single request cannot exceed {leaveConstraints?.maxDurationDays ?? 31} calendar days.</p> : null}
                 <div className="parent-leave-upload">
@@ -337,7 +337,7 @@ export function ParentLeavePage({
                 </div>
                 <button className="button button--primary" type="button" disabled={!isDraftValid || draftState === "submitting"} onClick={() => void createLeave()}>
                   {draftState === "submitting" ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}
-                  {draftState === "submitting" ? "Submitting…" : "Submit Leave Request"}
+                  {draftState === "submitting" ? "Submitting..." : "Submit Leave Request"}
                 </button>
                 {draftError ? <p className="form-error" role="alert">{draftError}</p> : null}
               </>

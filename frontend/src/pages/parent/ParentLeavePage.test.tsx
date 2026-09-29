@@ -48,7 +48,7 @@ describe("ParentLeavePage", () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText("Authorized & Dispatched")).toBeVisible();
+    expect(await screen.findByText("Authorization submitted")).toBeVisible();
     expect(screen.getByText(/Successfully forwarded to the school attendance team/i)).toBeVisible();
   });
 

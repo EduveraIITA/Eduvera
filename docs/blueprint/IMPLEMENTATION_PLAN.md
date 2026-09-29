@@ -1,0 +1,718 @@
+# School Operations Blueprint implementation
+
+Baseline: [School_Operations_Blueprint.pdf](../../School_Operations_Blueprint.pdf),
+v1.0, 15 September 2026, supplied by Abhishek. The repository-root PDF is the primary
+blueprint reference; consult its relevant sections for each development increment.
+Explicit user decisions and documented architecture decisions clarify its application.
+
+This is the implementation record, not a claim that the entire blueprint is complete.
+The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
+scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,
+not reconstructed companion artifacts. Field discovery, school sign-off and operational/legal
+decisions cannot be replaced by synthetic software tests.
+
+## Accepted direction
+
+- Preserve the existing blue/mint palette, Plus Jakarta Sans, shared app bars, child switching,
+  mobile navigation and existing React UX. Extend established components and semantic tokens.
+- Build an adult-operated daily coordination loop; a child does not need a phone to participate.
+- Preserve NestJS/Fastify + PostgreSQL + transactional outbox + authorized SSE. Use explicit
+  Nest modules for new domains; avoid growing the existing SchoolService further.
+- Keep observation, attendance, request approval, response, task closure and physical handover
+  distinct. Missing attendance is not absence. A reply is not consent or an attendance correction.
+- Keep current React/Vite web clients for this increment. Next.js/Expo are future client decisions,
+  not prerequisites for a working web coordination loop. See ADR-001 below.
+- Use the local synthetic school for review. Do not silently switch to Supabase credentials.
+- Ask Abhishek to review working UI after substantial changes, before continuing UI expansion.
+
+## Repository audit and dependency order
+
+| Order / requirement | Existing base | Remaining implementation and acceptance |
+| --- | --- | --- |
+| B0: Reproducible preview | Compiled bundles existed; previous runtime had manual patches and stopped | Restore locked dependencies, compile source, managed local restart, readiness and restart drill |
+| B1: People and authority | School-scoped account-optional people; individual and reviewed bulk enrollment; dated guardian leave-signing permission | Other purpose-specific grants, account invitations, transfer/withdrawal; no merge by phone/name |
+| B2: Daily plan | Weekly baseline plus dated, versioned daily plans; notices/materials; coverage responses; shared family schedule; conflict checks and outbox updates | Local UI acceptance and school-operating validation; resource catalogue/advanced authoring remains later timetable scope |
+| B3: Attendance | Full-roster commands, revision checks, idempotency, correction history, calendar, leave | Source-rich observations, offline queue with expiry and review/quarantine, paper capture, print reconciliation; retain unrecorded/unknown states |
+| B4: Attendance follow-up | Attendance facts and parent/teacher screens | First local slice implemented below: explicit owner/deadline, guardian reply, assisted response, outcome, event update |
+| B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes | Dedicated action inbox aggregating obligations; notice creation/audiences; delivery-attempt versus acknowledgment versus decision states; explicit non-app routing |
+| B6: Pilot readiness | Scoped documents, auth/CSRF, event replay and tests | Scoped object storage, malware scanning, non-owner RLS runtime roles/context, privileged auth, recovery drill, accessibility/device validation, release evidence |
+| C1: Departure coordination | No trusted operational release implementation | Departure plans and revisions; collection authority; verification/approval/readiness/execution; current-authority checks and fallback; separate school sign-off |
+| C2: Restricted care | No care domain | Assigned confidential referrals, alternate reporting route, audited restricted access and documented outcomes; never broad-feed allegations |
+| C3: Transport pilot | Some existing read-only placeholder surfaces | Explicit service boundary, route/trip/leg rosters, manual observations, unresolved rider reconciliation and staffed closure; independent readiness gate |
+| D1: Repeatable operations | Basic timetable conflict checks | Staff coverage tasks, approved device adapters, quarantine, provider health, onboarding templates |
+| D2: Bounded policy | Attendance threshold/calendar configuration | Typed versioned draft/rehearsal/approval/activation workflow, scoped precedence, equal-priority conflict rejection, explanations and prospective rollback |
+| E1: Finance | No authoritative fee ledger; existing labels need review | Obligations, integer minor units, allocations, receipts, verified callbacks, reversals, reconciliation; never gate collection on unpaid fees |
+| E2: Academic/admin breadth | Diary/homework completion; timetable editing | Admission conversion, assessments/results, office requests/documents/lost property; extend only after core acceptance |
+| F1: Intelligence | Provider-neutral read-only attendance assistant | Evidence/freshness, scoped retrieval tests, safe drafting, policy rehearsal; no authority, diagnosis, release or autonomous reconciliation |
+
+B1 and B3 still have foundational gaps; B2 has a locally implemented workflow awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
+and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
+
+## Section coverage
+
+| PDF sections | Delivery evidence / decision |
+| --- | --- |
+| 1-4: Definition, principles, boundaries, outcomes | Above baseline and staged roadmap; operational-obligation metric definitions remain to be field validated |
+| 5-6: Roles and experience | Existing role shells retained; new follow-ups use deliberate guardian/staff contexts; purpose grants and office/transport/care roles remain B1/C |
+| 7-9: Domains, invariants, observations | New CoordinationModule; separate journal; tenant FK; actor and effective/recording time; source observation adapters remain B3/D |
+| 10: Closed loops | WF-LOCAL-001 below; remaining domain state machines scheduled C/E |
+| 11-12: Configuration, non-app and offline | Assisted follow-up channel implemented; policy lifecycle and secured device queue remain B3/D2 |
+| 13-15: Architecture, concurrency, tenancy | Retain modular Node backend; transaction + outbox, replay, scope checks, command receipts; runtime-role RLS and purpose grants remain B1/B6 |
+| 16-18: Privacy, finance, AI | Restricted-data boundaries recorded; no real provider/finance/safeguarding enablement in this slice |
+| 19: Measurable targets | Targets are not measured SLAs. 100k-student workload, latency and recovery tests remain unproven |
+| 20-22: Discovery, SDLC, people | This traceability record and UI checkpoints; school sponsor/process owner and independent review not yet assigned |
+| 23-24: Verification, deployment | Local tests and managed preview; physical school drills and production rollout not performed |
+| 25-27: Roadmap, decisions, definition | Dependency sequence above; preserve human verification and narrow release gates |
+
+## WF-LOCAL-001: Attendance-to-guardian follow-up
+
+Actors: assigned teacher or administrator; linked guardian. A principal can see school-scoped
+follow-ups. A teacher sees only currently assigned students. A teacher's unrelated parent
+context grants no staff access. No student action or device is required.
+
+1. Teacher opens a saved absent, late or half-day attendance record and explicitly raises a
+   question with a due time. The creator owns the follow-up. No automatic case for an unmarked register.
+2. Guardian sees the child's follow-up on Home and responds. The state becomes `in_review`.
+3. Staff can instead record a phone, paper or in-person response, naming the linked guardian,
+   time received, staff recorder and entry time. This is an attributed statement, not a consent artifact.
+4. Owner or administrator records `absence_explained`, `record_corrected`, or `query_withdrawn`
+   with an explanation. A claimed correction requires an actually newer attendance revision.
+5. Closure does not rewrite attendance or imply any physical supervision, handover, consent,
+   fee payment or receipt. Closing a notification never closes the case.
+
+Invariants:
+
+- INV-LOCAL-001: tenant/student/attendance/date links agree, enforced in PostgreSQL.
+- INV-LOCAL-002: current membership, account, assigned class and guardian scope are checked;
+  write transactions lock relevant authority rows and revalidate before accepting a command.
+- INV-LOCAL-003: one open follow-up per attendance record; one command outcome per actor/key.
+- INV-LOCAL-004: duplicate key/same payload replays; changed payload or stale revision conflicts.
+- INV-LOCAL-005: factual attendance changes only through the attendance correction API.
+- INV-LOCAL-006: ordinary response content stays in the scoped thread; SSE contains IDs/revision only.
+- INV-LOCAL-007: closed cases reject new replies; school review is separate from guardian response.
+
+Implementation: `backend/src/coordination`, migration `007_attendance_followups.sql`,
+`frontend/src/features/coordination`. Both browser bundles recognize coordination invalidations,
+so an SSE leader in the staff bundle can relay them to the responsive web app.
+
+Current boundaries: follow-ups now support students and guardians without login accounts;
+staff can record assisted responses. App delivery still requires an authorized linked account.
+No SMS/WhatsApp was sent or integrated. No offline write is represented as confirmed.
+No care/medical details should be entered in this routine thread. Dedicated action navigation,
+coverage/reassignment and reminders are subsequent B4/B5 extensions.
+
+## WF-LOCAL-002: Reviewed student and guardian enrollment
+
+Implemented first B1 slice: principal **Students & guardians** at `/principal/students`.
+This extends the existing responsive principal shell without replacing its theme or navigation.
+
+1. Administrator selects the school, student details, active class/term and effective start date.
+2. Add a guardian identity without requiring a login, or search and explicitly select an existing
+   same-school guardian. Shared names/phones produce warnings, never automatic merges.
+3. Review the complete proposed relationship and enrollment. Explicitly confirm verification
+   before saving. Reviewing creates no student, guardian, enrollment or account.
+4. Commit rechecks current administrator authority, tenant scope, dates, admission number,
+   roll availability and register state in a transaction. Repeated commits return the same student.
+5. Save person, student, guardian relationship and enrollment together, with audit and outbox.
+   No attendance marks or login accounts are fabricated. The student enters rosters only from
+   the enrollment date. Affected submitted registers return to draft with a roster-change audit;
+   locked registers block the enrollment until reopened or a valid later date is chosen.
+
+Implementation: `backend/src/people`, migrations 008–010, `frontend/src/features/people`.
+PostgreSQL enforces same-school person/student/guardian links; admissions are case-insensitively
+unique per school. Table ownership matches the existing runtime tables, without PUBLIC grants.
+Existing logins retain their links; optional accounts are separate from canonical person details.
+The API retains its legacy display-name container for compatibility and adds explicit `person`
+and nullable `account` fields. Login-free identities work in teacher rosters, parent child data,
+attendance event generation and assisted follow-ups.
+
+Boundaries: this is individual enrollment, not a completed admissions/import or authority system.
+The legacy leave-authorization flag is explicit and defaults off; a guardian relationship does
+not grant collection authority. Account provisioning, purpose grants beyond leave signing,
+enrollment end dates and transfer/withdrawal remain open. Bulk enrollment is covered by WF-LOCAL-004. Individual reviews expire after
+one hour and committed review payloads are cleared; automated expired-draft retention cleanup
+is still required before production. Non-owner RLS execution remains a B6 release gate.
+
+## WF-LOCAL-003: Guardian leave-signing authority
+
+Principal directory → guardian **Manage permissions** → **Review permission** → dated grant
+or immediate revocation → school-verified reason → review → explicit confirmation.
+The existing React shell, palette and typography remain unchanged.
+
+- Purpose is strictly **sign leave requests**. This is not collection permission or revocation
+  of the family relationship, record access, account, staff membership or existing signatures.
+- Start/end dates use the school timezone; the end date is inclusive. New grants cannot be
+  backdated. Expired and future grants cannot sign; an end date is optional. Expiry is checked
+  at use, without a polling loop or a scheduled database mutation. An already-open UI may
+  need navigation/focus/manual refresh to update a time-bound label; the server remains authoritative.
+- Current school administrator membership is required at every command. Changes lock the
+  relationship and authority rows, reject stale revisions, and persist prior/new settings,
+  actor, verification statement, reason and an idempotent command receipt in one transaction
+  with audit and an ID-only outbox event. History is read-only in the application, latest 50 shown.
+- Leave submission and guardian actions now check current effective authority inside the
+  transaction under a relationship lock, including after waiting behind a revocation. Previous
+  signatures are retained rather than silently undone. Date-aware eligibility also drives the
+  parent leave screen and eligible-guardian notifications.
+- Lost-response retries reuse the same command even if SSE has already delivered its new
+  revision. A changed payload/key reuse is rejected. Unsubmitted stale forms must be reviewed again.
+- Legacy grants retain their settings and are labelled **not yet reverified here**. Enrollment
+  still defaults leave permission off. Seed upserts preserve reviewed permissions and their dates.
+
+Implementation: migration `011_guardian_leave_authority.sql`,
+`backend/src/people/guardian-authority.service.ts`, `GuardianAuthorityPanel.tsx` and the existing
+SchoolService leave command boundary. The module is deliberately not a generic authorization
+engine; additional purposes require their own enforcement and acceptance work.
+
+## WF-LOCAL-004: Complete reviewed bulk enrollment
+
+Delivered as a substantial onboarding workflow, not an isolated import button:
+
+1. Principal opens **Students & guardians → Import students**, downloads the CSV template,
+   selects an existing active school term and uploads/pastes up to 500 student rows / 512 KB.
+2. A resumable 24-hour draft is saved; no operational student or guardian records are created.
+   Upload retries deduplicate by actor/school/key and reject changed content under the same key.
+3. Validation checks required data, calendar dates, class/term scope, admission numbers,
+   per-class rolls, existing records, explicit family groups and attendance-register state.
+4. Staff edit individual rows, select a verified existing guardian, or skip unwanted/duplicate
+   students. Repeated names/phones never merge records automatically. An explicit family key
+   creates one shared guardian only when all included rows agree on that identity.
+5. The final review shows included/excluded counts, new/reused guardians, identity warnings and
+   submitted registers requiring review. Explicit confirmation binds to the draft revision and
+   a fingerprint of the current validation state. Changed school data requires a new review.
+6. The entire included batch saves atomically: people, students, guardians, primary family links,
+   effective-date enrollments, empty subject-attendance totals, audits and outbox events.
+   No login accounts, leave-signing permission or factual attendance marks are generated.
+7. A persisted receipt and private CSV report are available through paginated import history.
+   Committed raw rows are cleared. Discarded/expired drafts clear uploaded personal details;
+   a 15-minute bounded retention sweep and direct expired-draft reads perform cleanup.
+
+The mutation uses bounded batched inserts and ordered admission/class/guardian/register locks.
+Duplicate commands replay the existing receipt. Locked registers block the batch; submitted
+registers reopen once per affected register, keeping all marks and an audit of the roster change.
+Historical teacher rosters exclude new students before their enrollment dates. Draft changes
+emit administrator-only, ID-only events; commits coalesce roster invalidations by affected class.
+No polling or outside provider is required.
+
+Implementation: migration 012; `backend/src/people/import-*` and `people-import.*`;
+`frontend/src/features/people/PeopleImportPage.tsx` and focused upload/review/editor components.
+Detailed scope, CSV contract and limitations: [Bulk enrollment guide](BULK_IMPORT.md).
+
+## ADR-001: Preserve the current web clients
+
+Status: adopted for local implementation, 15 September 2026.
+The PDF recommends Next.js/Expo as a starting point without auditing this repository. The
+existing app already uses React, TypeScript, Vite and a same-origin Nest backend. The user
+explicitly asks to preserve UI/UX. Replacing routing/build frameworks now adds migration work
+without enabling the first daily loop. Retain them; evaluate native offline storage separately.
+
+## Review checkpoints
+
+1. Attendance follow-up: teacher creation, parent reply, assisted response and outcome review.
+2. People/import/authority and day-plan changes: inspect role-specific workflows before approval.
+3. Offline/paper operation: demonstrate pending, conflict and revoked-access scenarios.
+4. Departure/care/transport: review documented authority and physical fallback before implementation
+   is enabled for a live pilot. Synthetic tests are not a physical-safety approval.
+5. Finance/intelligence: independent contracts and permission tests before widening scope.
+
+Do not silently change navigation or theme at any checkpoint. Record actual user acceptance
+and keep open work visible. No release dates or production-complete claim are inferred here.
+
+## Local verification — 15 September 2026
+
+- Backend: source build and lint passed; 68 tests passed, including nine coordination
+  integration tests for scope, graph integrity, duplicate commands, stale/concurrent replies,
+  assisted attribution, closure rules and unchanged factual attendance.
+- Responsive frontend: source build and lint passed; 78 tests passed. Staff desktop bundle:
+  source build and seven tests passed. The new inbox is in the responsive teacher/principal
+  shells, not yet in the separate `/staff` desktop workspace.
+- Browser: signed in as the demo teacher, raised a follow-up from Aarav's saved 25 August
+  absence, signed in as the linked parent and replied, then returned as the owner and resolved
+  it. The three attributed journal entries persisted. PostgreSQL confirmed that attendance
+  stayed `absent` at its original revision. The example is available under **Resolved**.
+- Responsive checks at 320, 768, 1024 and 1440 px: no horizontal page overflow in the new
+  inbox; phone and desktop layouts visually inspected. Native iPhone/Safari device acceptance
+  and a full assistive-technology audit are still required.
+- Runtime recovery: an open SSE stream exposed a shutdown-order deadlock. Moved stream
+  closure into `beforeApplicationShutdown`, added a regression test, then repeated SIGTERM
+  with the browser connected. launchd replaced PID 13282 with 13324; `/readyz` returned
+  database/events OK and the browser resumed live updates. The readiness test now waits
+  for readiness rather than only HTTP liveness, avoiding a broker-startup race.
+- Local launchd registration lasts for this macOS login session. It cannot provide availability
+  while the Mac sleeps, PostgreSQL stops, or the machine is off. No ngrok deployment in this slice.
+- UI checkpoint: awaiting Abhishek's validation. No school/pilot acceptance is implied.
+
+Lifecycle reference for the recovery fix: [NestJS lifecycle events](https://docs.nestjs.com/fundamentals/lifecycle-events).
+
+## People/enrollment verification — 15 September 2026
+
+- Backend build and lint passed; 83 tests passed, including 15 people integration cases for
+  account-free enrollment, scoped relationship constraints, explicit guardian reuse, pagination,
+  duplicate/concurrent commands, revoked authority, expired reviews, effective-date rosters,
+  submitted-register invalidation and locked-register rejection.
+- Responsive frontend build and lint passed; all 83 tests passed, including enrollment review,
+  retry/guardian selection, event invalidation and empty-attendance presentation. The separate
+  staff desktop build and seven tests passed; its event protocol recognizes people updates.
+- Browser enrollment saved synthetic **Ishaan Deshmukh**, admission **CIS-2026-0201**, Class 7A,
+  roll 26, starting 15 September, with guardian **Nandita Deshmukh**. Neither has a login account.
+  The current teacher register displays 26 students and Ishaan remains **Not marked**.
+- Local database check: 201 students, 201 guardian relationships, zero students missing a
+  guardian and zero students missing enrollment. Existing records were retained. A private
+  pre-migration backup is in `.runtime/pre-people-20260915-2215.sql`.
+- Enrollment/review layouts checked at 320, 768, 1024 and 1440 px without horizontal overflow;
+  phone and desktop screenshots inspected. Physical iPhone acceptance remains outstanding.
+- New students with no attendance history show **Not recorded**, not a failing 0% score.
+  Missing gate evidence shows neutral **Not confirmed**, not an off-campus assertion.
+- Local managed preview restarted for this increment. No ngrok or production deployment.
+- User authorized continuing development; explicit UI acceptance of this new flow is pending.
+
+## Guardian-authority verification — 15 September 2026
+
+- Backend build/lint and all 89 tests passed. Six new integration cases cover account-free
+  grants, actor/school scope, revoked administrator membership, optimistic revision conflicts,
+  concurrent retry deduplication, inclusive dates/expiry, actual leave commands, retained past
+  signatures and a signing query demonstrably waiting behind a revocation lock.
+- Frontend build/lint and all 88 tests passed, including five permission-panel cases for
+  confirmation, same-key retry after a newer SSE revision, stale forms, dates/cancellation,
+  focus and load failure. All four Python data-generator tests passed, including preserving
+  reviewed permissions during reseeding.
+- Reviewed the working local form and confirmation at 320, 768, 1024 and 1440 px; no horizontal
+  overflow. Phone and desktop screenshots inspected. Physical-device and assistive-technology
+  acceptance are still pending.
+- Migration applied to the backed-up local database. Private restore point:
+  `.runtime/pre-authority-20260915-2247.sql`. `/readyz` reports database/events OK.
+- The safety reviewer blocked saving the proposed Nandita/Ishaan preview grant without explicit
+  user approval. No preview authority change was made; persistence and real leave enforcement
+  were verified in the isolated test database. UI confirmation remains for the user to validate.
+- Bulk import and the remainder of B1 are not yet complete. No ngrok or production deployment.
+
+## Bulk-enrollment verification — 15 September 2026
+
+- Backend source build/lint and **114 tests** passed: 17 dedicated import integration cases,
+  seven CSV parser/export cases, plus an authenticated HTTP contract test for role, session,
+  CSRF and private CSV downloads. Tests commit both 200- and 500-student batches in a separate
+  synthetic school and assert complete family/enrollment graphs, no accounts/authority grants,
+  no invented attendance, idempotent retries, conflict rollback and class-coalesced events.
+- Frontend source build/lint and **99 tests** passed, including 11 import interaction cases for
+  upload, retry, row correction, explicit guardian selection, skip/cancel, pagination, review
+  verification and stale confirmation protection.
+- Actual local browser flow: uploaded a three-row synthetic CSV; fixed Ved Kulkarni's invalid
+  date, skipped already-enrolled Aarav, confirmed two siblings. Kaira (7A / roll 27) and Ved
+  (7B / roll 26) share one new guardian, Madhuri Kulkarni, with no account or signing authority.
+  Import receipt: `b1624c66-6a90-4979-a837-7440f108f5eb`. The school now has 203 students,
+  zero students without guardian links, and zero students without enrollments.
+- A separate three-row correction draft is available for UI validation; it has intentional
+  invalid/duplicate rows and creates no additional students until confirmed.
+- Responsive overflow checks at 320, 768, 1024 and 1440 px passed. Phone form and desktop
+  validation table were visually inspected. Physical iPhone and full assistive-tech acceptance
+  remain open. The existing school header, navigation, palette and typography were preserved.
+- Migration 012 applied to local PostgreSQL after private backup
+  `.runtime/pre-bulk-import-20260915-2332.sql`. Managed localhost preview updated; no ngrok or
+  production deployment. These local tests are not evidence for a production-scale SLA.
+- This completes the bounded CSV bulk-enrollment workflow, not all of Stage B or the blueprint.
+  Next substantial milestone: daily plans and timetable-change coordination, with a complete
+  staff-to-family change flow. Account invitations and other authority purposes remain explicit gaps.
+
+## WF-LOCAL-003: Daily plan and coverage coordination — 16 September 2026
+
+Blueprint traceability: sections 6–10 (adult-operated school day, timetable domain and closed
+loops), 11–15 (non-app participation, versions, tenancy and reliable commands), and Stage B.
+The dated plan is an exception to the weekly baseline, not a replacement timetable generator.
+
+- The principal selects a school, class and date, prepares a private draft, adjusts periods,
+  teacher, room, linked subject and materials, and records the reason and family notice.
+  Saved drafts can be resumed or discarded without changing the currently shared schedule.
+- Review/publish validates teacher and room conflicts, within-class overlaps, current teacher
+  memberships, the school calendar, optimistic revision and the underlying weekly baseline.
+  Started periods cannot be rewritten. Prior published versions are retained; a revision's
+  author, reason and publication time are visible in history.
+- Changed teaching arrangements request a teacher response. Accepting, declining, and an
+  office-recorded phone/paper/in-person response are separate from student attendance.
+  Assisted responses retain the actual receiving time, channel, note and recording actor.
+  The publishing administrator owns unresolved coverage; the day desk highlights affected classes.
+- A newly assigned substitute gets the class register only after accepting and only for that
+  assigned date. Decline, cancellation or superseding reassignment removes that additional
+  access. Existing weekly-teacher permissions remain unchanged. Register writes recheck scope
+  inside the transaction; outbox audiences and replay also recognize accepted substitutes.
+- Student/parent Home and Timetable consume the same dated schedule. Notices and materials
+  appear only after publication; cancelled periods are excluded from the live day and kit.
+  Subject attendance projections use the linked subjects from effective dated periods, excluding
+  cancelled slots. Publishing or responding never invents an attendance mark.
+- Publication, private in-app notices and events commit atomically. Command receipts deduplicate
+  retries; current membership and family relationships are rechecked before event delivery.
+  No periodic 30-second refresh was added. Weekly edits invalidate daily-plan caches and cannot
+  create conflicts with published day allocations.
+- The principal and teacher use the existing school header/navigation and blue/mint tokens.
+  Native dialogs provide focus containment, Escape dismissal, labelled controls and focus return.
+  Unsaved drafts warn on page exit and school/date/class changes. Published plans can be printed.
+
+### Verification and local handoff
+
+- Backend build/lint and **133 tests** pass, including 19 daily-plan integration cases against
+  an isolated PostgreSQL database. Coverage includes publish/discard, shared family data, private
+  drafts, conflicting/concurrent commands, retries, revoked authority, assisted attribution,
+  superseded responses, weekly-source staleness, date-scoped register permissions, event audience
+  revalidation and dated subject-attendance projections.
+- Responsive frontend build/lint and **116 tests** pass; the staff desktop build and **7 tests**
+  also pass. Frontend tests cover period editing, linked subjects/materials, save/publish confirmation,
+  retry keys, stale edits, discard, coverage responses, cancelled periods, event invalidation
+  the first-draft baseline regression, Sunday dates and named-room labels. There are **256 passing automated tests** across the three bundles.
+- Browser: prepared a Class 7A / 16 September Mathematics cover draft. The safety reviewer
+  requested explicit approval for publication; Abhishek approved publishing this specific demo
+  plan. Published version 1, with Period 1 assigned to Kavita Mehta in the Activity Studio and
+  Graph notebook/Ruler as materials. The already-open parent timetable updated via SSE without
+  reload. Kavita accepted in the teacher UI, and the principal screen changed live to **Teacher
+  confirmed**. Aarav's Home and Timetable showed the same notice; the actual checklist included
+  both materials and its check/uncheck interaction worked. Test packing was reset afterwards.
+- A rebuild during this walkthrough exposed an old lazy-chunk URL in an already-open session.
+  Both Vite clients now retain hashed assets between local builds; the old tab was reloaded once.
+  After a subsequent build, an already-open principal session successfully lazy-loaded the weekly
+  editor and returned to the published plan; its previous asset URL still returned HTTP 200.
+  Remote releases still need deployment-level multi-version asset retention (fresh container
+  images do not inherit files from the previous image).
+- Principal draft and period editor checked on a 320 px phone viewport; overall layout measured
+  at 320, 768, 1024 and 1440 px without horizontal page overflow. Teacher day and parent timetable
+  visually checked at 390 px. Physical iPhone/Safari and full assistive-technology acceptance remain open.
+- Local migrations 013–016 applied after a private backup at
+  `.runtime/pre-day-plans-20260916-0053.sql`. Existing synthetic school data retained. The managed
+  local preview is updated; no ngrok, remote database migration, git push or production deployment.
+  Final database check: **203 students**, zero missing guardian relationships, zero missing
+  enrollments. Plan `05c5a956-74c2-42f8-ad55-6190cec378e7` is at published version 1 / revision 4,
+  with an accepted app response (response revision 1) and no draft. All four day-plan events
+  were published by the worker. Class 7A still has zero attendance marks for 16 September.
+  `/readyz` reports database/events OK;
+  launchd reports the managed preview running after restart (PID 53090 at verification).
+- Local review starts at `/principal/timetable`, with the weekly editor still available at
+  `/principal/timetable/weekly`. Teachers use `/teacher/timetable`; family routes stay unchanged.
+- Next blueprint foundation: B3 attendance observation/offline/paper reconciliation. Do not
+  widen into departure, transport or restricted care before their separate authority and safety gates.
+- This completes the bounded implementation, not all Stage B, a production-scale SLA, or school
+  operational acceptance. Await Abhishek's UI validation before further UI expansion.
+
+## Teacher timetable UI upgrade — 16 September 2026
+
+Implemented as an extension of WF-LOCAL-003, not a new scheduling domain.
+
+- Replaced the teacher timetable's plain date input with a horizontally scrollable day strip.
+  Teachers can step one week backward/forward, return to today and select any visible date.
+- Added month and year views backed by a staff-authorized summary endpoint. The endpoint derives
+  daily and yearly workload numbers from `effective_school_schedule`, including published dated
+  plan overrides, coverage responses, cancellations and empty days.
+- The month view shows the selected month's daily period load. The year view rolls the same
+  authoritative daily summaries into monthly totals, keeping the page useful for workload scanning
+  without introducing a separate projection table. These aggregate views expand in the date
+  navigation area above the selected day's schedule, so the daily timetable card stays focused
+  only on that day.
+- Preserved the existing operations shell, blue/mint tokens, navigation and timetable list.
+  The new controls use labelled buttons, visible focus states and large touch targets.
+
+Verification:
+
+- `npm --prefix frontend test -- day-plans.test.tsx`: 16 passing tests, including teacher
+  calendar range and aggregation helpers.
+- `DATABASE_URL=postgresql://abhishekyadav@127.0.0.1:5432/omnischool_node_test npm --prefix backend test -- day-plans.integration.test.ts`:
+  19 passing integration tests, including the real teacher summary counts for an accepted
+  coverage assignment.
+- `npm --prefix frontend run build`: TypeScript and Vite production build passed.
+- Managed local preview restarted; `/readyz` reports database/events OK, launchd reports the
+  preview running. Browser check on `/teacher/timetable` showed the day strip, month/year views,
+  the published 16 September schedule and no console errors or page-level overflow at the
+  available viewport. Physical iPhone and full assistive-technology acceptance remain pending.
+
+## Teacher attendance UI polish and live review runtime — 16 September 2026
+
+Implemented as a design-quality pass on the existing attendance register, not a
+new attendance workflow.
+
+- Reworked `/teacher/attendance` into the established student/parent visual language:
+  a blue register hero, clear class context, polished register status cards, compact
+  attendance counters, softer roster cards, neutral unmarked rows, photo avatars,
+  labelled search, and mobile-first controls.
+- Preserved the existing register behavior: full-roster marking, revision/status
+  metadata, principal lock/history actions, follow-up constraints and attendance
+  submission guards.
+- Changed the managed local preview so `http://127.0.0.1:8000` is now the live Vite
+  app with hot React/CSS updates, while the compiled NestJS API runs behind it on
+  `http://127.0.0.1:8001`. This keeps the review URL stable while avoiding rebuilds
+  for frontend UI edits.
+
+Verification:
+
+- `npm --prefix frontend test -- TeacherAttendancePage.test.tsx`: 6 passing tests.
+- `npm --prefix frontend run build`: TypeScript and Vite production build passed.
+- `node --check scripts/preview-server.mjs` and `node --check scripts/local-preview.mjs` passed.
+- Managed live preview restarted once to swap runtime modes. `curl -I http://127.0.0.1:8000/readyz`
+  returned HTTP 200 and `curl -I http://127.0.0.1:8000/@vite/client` returned HTTP 200.
+- Browser check on `/teacher/attendance?class_section_id=581087ee-9894-4b69-ad7c-f02861129c8b&date=2026-09-16`
+  showed the refreshed register. A follow-up CSS contrast edit to the hero status pill
+  appeared in the already-open browser without restarting, confirming HMR for frontend
+  edits. Physical iPhone acceptance remains pending.
+
+## Teacher register interaction and layout revision — 16 September 2026
+
+Abhishek rejected the previous attendance UI pass. This revision replaces its tall
+blue hero and repeated status cards with a compact class/date summary and inline
+totals, following the existing family-portal tokens and blueprint section 6.
+
+- Student rows expose one-tap Present/Absent choices, with Late, Excused, Half day
+  and Not marked available through the same accessible native status selector.
+  Optional remarks open on request; failed photos fall back to initials.
+- All students / Not marked / Exceptions filters and search operate on the current
+  editable roster. Submission still includes the entire class, including students
+  hidden by filters. No blank mark is inferred as presence or absence.
+- A fixed submit bar sits above the existing phone navigation and within the staff
+  workspace on desktop. Locking, correction reasons, concurrent-change handling,
+  retry keys, history and guardian follow-ups retain their existing behavior.
+- Removed the superseded teacher-specific CSS and isolated the new register styles.
+  The shared shell supports a page-owned heading without duplicate H1s.
+
+Verification:
+
+- Eight register tests pass, including quick marks/hidden-note preservation across
+  filters, complete-roster submission, locked controls and existing lifecycle cases.
+- Frontend lint and production build pass. Readiness returns database/events OK.
+- Browser exercised Present, Late, note open/close and explicit reset to Not marked;
+  these unsaved test changes were reset, and no attendance was submitted to the demo DB.
+- Checked 320, 390, 768, 1024 and 1440 px layouts for page overflow. A 320 px filter
+  overflow was corrected and rechecked (client and scroll widths equal).
+- Frontend edits appeared through hot reload without a service restart. The local
+  attendance screen is left open for Abhishek's UI review. Physical iPhone and full
+  assistive-technology acceptance remain pending.
+
+## Teacher timetable date-strip refinement — 16 September 2026
+
+- Removed the standalone Today and previous/next-week controls at Abhishek's request.
+  The date strip opens centered on the active date (today on the default route),
+  supports horizontal scrolling, and recenters after date selection or resizing.
+- Week, Month and Year share one equal-width control row below the strip. Week
+  opens the existing weekly timetable; month/year aggregate views expand above
+  the selected day's teaching schedule.
+- The introductory headline, description and separate weekly link were removed.
+  Following visual review, the selector uses a continuous blue date band with the
+  shared student-home gradient and a uniform contrast overlay, transparent adjacent
+  dates and one white selected-date pill. A small month/year context replaces the
+  old headline. The dark nested tiles and boxed blue buttons were removed.
+- Week/Month/Year sit in a quiet white footer; expanded month/year totals are a
+  separate white section rather than nested inside the blue selector. Scroll-edge
+  fades soften clipped dates, and interactive targets remain at least 44 px high.
+- Date chips use the existing blue theme and full-date accessible labels. Pending
+  totals show a loading state rather than incorrectly labelling missing data as free.
+- Verified centering at initial load and after selecting 17 September, and verified
+  month/year placement in the browser. Frontend build and 16 day-plan tests passed.
+  Local Vite preview updates live without a service restart.
+- The follow-up visual pass verified date selection to 16 September, month/year
+  toggles, and no page overflow at 320, 440, 768, 1024 and 1440 px. Selected dates
+  remained centered within 0.3 px across these checks. Lint and all 16 day-plan
+  tests pass; the revised local timetable is available for user validation.
+
+## Experimental photo-assisted attendance — 16 September 2026
+
+This is an explicit user-directed deviation from the blueprint's initial privacy baseline and
+Stage-D sequencing. It is implemented as a feature-flagged local experiment, not approved as a
+production biometric capability. A real-student pilot still requires school privacy/legal review,
+purpose-specific authorization, a non-biometric alternative, accuracy calibration, liveness and
+operating procedures. The UI and API make no accuracy or liveness claim.
+
+- Adapted the MIT-licensed Attendance Lab inference core into a private Python sidecar. Copied
+  capabilities are limited to image validation, tiled YuNet detection, SFace embeddings,
+  conservative one-to-one matching, encrypted local templates and seven-day analysis evidence.
+  The prototype UI, database, credentials, test images and local data were not copied. Model
+  binaries remain ignored and are obtained with manifest/hash verification.
+- NestJS owns authenticated school/class scope, current staff assignment, principal-only reference
+  enrollment, authorization references, audit events and final attendance. PostgreSQL stores only
+  opaque provider identifiers and analysis provenance, not raw photos or embedding vectors. The
+  sidecar is loopback/private-network only and uses a generated service token plus an encrypted
+  SQLite store. The original classroom photo is not retained by the platform.
+- A teacher opens **Take from photo** inside the existing class register, captures or selects one
+  image, and reviews every roster row. Only strong one-to-one matches can suggest Present. Missing,
+  unmatched and low-quality faces remain unmarked; photo processing never infers absence. All rows
+  must be explicitly marked before returning to the register, and the result remains an unsaved
+  draft until the normal revision-checked bulk submit succeeds.
+- Principals see a separate **Reference setup** tab with an authorization reference, explicit
+  authority acknowledgement, roster coverage and per-student enrollment. Teachers cannot enroll
+  references. The ordinary manual register is always available if setup or inference is unavailable.
+- Migration 017 adds tenant/class/person-constrained bindings, profiles and seven-day analysis
+  sessions. A successful register submission links and atomically marks its source photo session
+  applied; mismatched, expired, already-applied or cross-school sessions are rejected. Existing
+  register idempotency, locks, corrections, events and audit behavior remain authoritative.
+- The managed local preview now keeps the private sidecar alive alongside NestJS and the hot Vite
+  client. A project-local Python environment avoids macOS launch-service access stalls. Docker
+  Compose has the same service boundary, persistent encrypted data/model volumes and health gate.
+
+Verification:
+
+- Photo sidecar: **6 tests passed**, including private-route authentication, no prototype web UI,
+  no accuracy claim, zero-face behavior and the invariant that not-seen is never absence.
+- Backend: lint/build pass; the isolated clean PostgreSQL suite passes **134 tests** (133 existing
+  cases plus the photo proposal-mapping invariant). Migration 017 was applied to the local demo
+  database and to the isolated test fixture.
+- Frontend: lint/build pass and **120 tests pass**, including reviewed photo marks remaining an
+  unsaved draft and carrying their source session into the audited register submission.
+- Runtime: `/readyz` reports database/events OK. The private health endpoint reports OpenCV,
+  verified model files present, seven-day retention and `accuracy_validated=false`. The actual
+  teacher register showed the new entry point and safe zero-reference fallback. The principal
+  view showed the authorization-gated, principal-only roster enrollment flow. The themed dialog
+  was visually inspected at the current phone-sized viewport without horizontal overflow.
+- No real biometric reference was enrolled and no attendance was submitted during verification.
+  Physical iPhone/camera capture, real classroom calibration, assistive-technology acceptance,
+  privacy/legal approval and production operations remain open release gates. Await Abhishek's UI
+  validation before widening or enabling this outside the local review environment.
+
+## Attendance register action polish — 17 September 2026
+
+- Kept the existing theme, class summary, roster, shared navigation and attendance lifecycle.
+  On phone layouts, Take from photo and Mark all present now share an equal-width action row
+  below the section heading instead of stacking against its right edge.
+- Replaced inherited full-width management-button styling with scoped, compact History and
+  Lock/Unlock controls. Icons and labels stay together; all four actions retain 44 px target
+  heights, keyboard focus styling and existing permission/disabled behavior.
+- Verified no page or action-label overflow at 320, 390, 768, 1024 and 1440 px. Reviewed the
+  live phone layout and opened/closed history and the photo dialog. The nine existing register
+  tests, frontend lint and production build pass. Local readiness reports database/events OK.
+- Changes appeared through Vite hot reload without restarting services. No register was
+  submitted or locked, and no student data was changed. Local UI is available for user review;
+  physical-device and assistive-technology validation remain separate acceptance checks.
+
+## Live mobile preview tunnel — 17 September 2026
+
+- Repointed the reserved ngrok URL from the old attendance-lab process to the active local
+  Eduvera preview on port 8000. Vite now accepts the reserved ngrok host during local review,
+  so phone sessions reach the hot React dev server instead of receiving a host-header 403.
+- Verified `http://127.0.0.1:8000` returns HTTP 200, the ngrok inspector reports
+  `https://dalene-miraculous-sweepingly.ngrok-free.dev` forwarding to `http://localhost:8000`,
+  and the public URL returns HTTP 200. The tunnel is intentionally a running local review
+  session, not a production deployment.
+
+## Photo roll-call mobile sheet polish — 17 September 2026
+
+- Changed the photo roll-call dialog to match the existing class schedule bottom-sheet behavior
+  on phone widths: bottom aligned, edge-to-edge, top grab handle, safe-area aware height and
+  internal scrolling. Desktop/tablet keeps the centered modal treatment.
+- Verified in the live browser at 320 x 760 and 390 x 844 with no horizontal overflow and exact
+  viewport-width sheet geometry. At 768 x 900 it returns to the 720 px centered modal. Frontend
+  lint, the nine attendance-register tests and the production build pass.
+
+## Reference photo source choices — 17 September 2026
+
+- Principal reference setup now offers separate Camera and Upload actions for each student.
+  Camera keeps the user-facing camera capture hint; Upload opens the normal photo/file chooser.
+  Successful enrollment shows a short animated Added tick on the student row after the setup
+  data refreshes.
+- Verified the reference setup tab at 390 px: the actions are side-by-side, equal width and
+  there is no horizontal overflow. Frontend lint, the nine attendance-register tests and the
+  production build pass. No biometric reference sample was enrolled during verification.
+
+## Reference enrollment angle handling — 17 September 2026
+
+- Separated broad face detection from the stricter classroom matching quality gate. The
+  principal-authorized reference path now accepts a usable three-quarter left/right angle at a
+  lower detector confidence and wider landmark asymmetry without changing classroom automatic
+  match thresholds, absence safeguards or the one-person-only rule.
+- Zero-face and multi-face failures now use plain, actionable guidance. Internal labels such as
+  `weak_detection` and messages such as `expected exactly one face, found 0` are no longer shown
+  to school staff. Full profiles are still rejected because the active five-landmark model needs
+  both eyes for a dependable reference embedding.
+- Added sidecar coverage for a usable lower-confidence enrollment angle and a zero-face failure;
+  all **8 photo-attendance tests pass**. The live React/API/photo sidecar and reserved ngrok tunnel
+  were restarted together, and the public app returned HTTP 200. A real side-view student photo
+  was not retained or reused for automated verification.
+
+## Photo review evidence and proposal repair — 17 September 2026
+
+- Traced the broken face cards to the provider returning raw JPEG base64 while the web client
+  requires an image data URL. The NestJS boundary now normalizes provider thumbnails to
+  `data:image/jpeg;base64,...`; the React evidence card also has a themed, non-broken fallback if
+  evidence cannot be decoded.
+- Traced the missing Present suggestion to a clear enrolled face scoring 0.784 at the detector
+  stage while the default detector floor was 0.88. The detector floor is now 0.75. Identity
+  similarity, match margin, duplicate-face protection and teacher review remain unchanged, so
+  lowering this detector-confidence gate does not allow unmatched classmates to be guessed.
+- Only students with authorized reference samples can receive automatic Present suggestions.
+  Unmatched/not-seen students deliberately stay unmarked; the teacher must review every roster row,
+  return reviewed marks to the register, and submit through the existing audited register flow.
+- Added provider regression coverage for a clear face above the revised detector floor and backend
+  coverage for raw-base64 thumbnail normalization. Photo sidecar **9 tests pass**; the targeted
+  backend service test, frontend lint and production build pass. The local web/API/photo stack was
+  restarted and `/healthz` returned OK. The real classroom photo was not retained or replayed by
+  the implementation verification.
+
+## Nested detection suppression and local vision cross-check — 20 September 2026
+
+- Investigated a real demo analysis without retaining or printing biometric pixels. The correct
+  full-face detection was approximately 1083×1329 px; a second 336×443 px detection was completely
+  contained inside it and corresponded to the subject's nose. Standard IoU NMS did not suppress it
+  because the inner region was small relative to the outer face.
+- Added asymmetric nested-detection suppression after ordinary NMS. A smaller detection is removed
+  only when at least 90% contained by a box roughly three times larger; this targets facial-region
+  artifacts without merging ordinary partially overlapping classmates. A regression case verifies
+  that the larger full-face box wins even when the nested artifact has the higher detector score.
+- Reconnected the existing provider-neutral analysis-mode field through React, NestJS and the
+  private photo service. Setup now reports local vision-model availability, and the capture sheet
+  offers an accessible **Local AI cross-check** option. In local development it uses the installed
+  Ollama `qwen3-vl:4b-instruct` model; unavailable or malformed model output fails safely to manual
+  review. LLM output remains a proposal and cannot infer absence, bypass full-roster review, or
+  submit the authoritative register.
+- The local analysis timeout is aligned to five minutes for the on-device vision model. Photo
+  service **11 tests pass**, including nested suppression and an end-to-end local-LLM request;
+  the backend targeted test/build, frontend lint and production build pass. Local `/healthz` and
+  the approved dummy-data ngrok URL returned HTTP 200 after restart. Physical UI inspection is
+  awaiting an unlocked host and user validation on the phone.
+
+## Local vision-model fallback — 20 September 2026
+
+- Fixed a local photo-attendance failure where Ollama could be running with a text-only model and
+  return `Multimodal data provided, but model does not support multimodal requests`. The photo
+  sidecar now checks model image capabilities when available and, more importantly, catches this
+  provider error during analysis.
+- A failed or non-image-capable local AI cross-check no longer fails the whole photo roll-call.
+  The system falls back to the existing face-embedding proposals, returns a staff-facing warning,
+  and keeps the full roster review requirement. It still never infers absence from a photo.
+- Verification: frontend production build passed; backend production build passed from the
+  hydrated preview copy; a direct sidecar regression covered normal vision mode, non-vision model
+  status and the exact multimodal provider error. The live local preview was restarted and both
+  `http://127.0.0.1:8000/login` and the reserved ngrok `/login` returned HTTP 200.
+- Follow-up correction: separated the photo-attendance vision model from the backend text copilot
+  model. Local preview and Compose now pass `qwen3-vl:4b-instruct` to the photo sidecar through
+  `PHOTO_ATTENDANCE_OLLAMA_MODEL`, while `OLLAMA_MODEL=qwen3:8b` remains available for text-only
+  assistant work. The running sidecar reported `supports_images=true` for `qwen3-vl:4b-instruct`;
+  local and ngrok `/login` returned HTTP 200 after restart.
+
+## Dated attendance eligibility and register integrity — 20 September 2026
+
+- Replaced term-wide teacher assignments as the daily attendance source with the effective
+  timetable for the selected school date. A teacher now sees and can act only on an active
+  class/activity period assigned to them, or accepted dated cover. Administrators retain
+  school-wide oversight only for classes that actually have an attendance-eligible period.
+- Enforced the same rule at every write boundary. Direct/stale register URLs are read-only,
+  photo analysis cannot start, the transactional bulk-save path rechecks the effective schedule
+  after locking the class/register context, and overdue-alert generation ignores cancelled or
+  unscheduled lessons. Future dates and empty rosters remain non-actionable.
+- Daily teacher/principal summaries, due/submitted counts, empty states and monthly/yearly period
+  totals now derive from the same dated schedule semantics. Existing records are never silently
+  deleted: records without a lesson stay visible for principal review as schedule mismatches.
+- Added a second integrity check for the saved submitter. A submitted register counts complete
+  only when its submitter is an active administrator or matches the current dated teacher/accepted
+  cover assignment. The local Saturday Class 6A legacy record is therefore shown as an
+  **Assignment mismatch**, remains auditable, and no longer inflates the submitted count.
+- Verification: frontend targeted suites pass **17 tests**, frontend production build and lint
+  pass, backend build and lint pass, photo/event service suites pass **4 tests**, and the focused
+  PostgreSQL integration suite passes all **4** dated-schedule, future-date, authorized-submit and
+  overdue-alert cases. Live browser review confirmed Sunday shows zero due registers for teacher
+  and principal, a stale teacher link is fully read-only, Thursday shows only three genuinely
+  assigned classes, and Saturday surfaces the legacy assignment mismatch. Local and reserved
+  ngrok `/login` endpoints both returned HTTP 200 after restart.
+
+## Persistent local mobile-review supervisor — 21 September 2026
+
+- Consolidated the React dev server, NestJS API, private photo-attendance worker and reserved
+  ngrok tunnel under the detached `preview-daemon` supervisor. The supervisor remains attached to
+  PID 1 for the current macOS session and stops the whole stack if a required child exits, avoiding
+  a misleading tunnel that serves only part of the application.
+- Isolated backend and photo-service execution under the OS temporary directory so iCloud-backed
+  `Documents` hydration cannot stall dependency discovery after screen lock. Dependency installs
+  are content-hash cached; backend source edits are mirrored into the runtime automatically.
+- Replaced `tsx` execution with a TypeScript build/watch plus Node watch process because NestJS
+  constructor injection requires emitted decorator metadata. This repaired the frontend shell
+  loading while `/api/v1/auth/session/` returned 500.
+- Verification: the detached supervisor is running with PPID 1; local web and photo health return
+  HTTP 200; the local and public session endpoints return HTTP 200; and a teacher/staff demo session
+  is created successfully through `https://dalene-miraculous-sweepingly.ngrok-free.dev`.

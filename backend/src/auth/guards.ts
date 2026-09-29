@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
 import { config } from "../config.js";
@@ -15,7 +15,7 @@ export function signedCookie(request: FastifyRequest, name: string): string | un
 
 @Injectable()
 export class SessionGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly auth: AuthService) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector, private readonly auth: AuthService) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [context.getHandler(), context.getClass()])) return true;
     const request = context.switchToHttp().getRequest<RequestWithContext>();
@@ -30,7 +30,7 @@ export class SessionGuard implements CanActivate {
 
 @Injectable()
 export class CsrfGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;

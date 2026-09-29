@@ -144,7 +144,7 @@ describe("implemented application routes", () => {
     await interact.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Class 7A standings" })).not.toBeInTheDocument();
     expect(ownStanding).toHaveFocus();
-    await interact.click(screen.getByRole("button", { name: /Top Attendees • Class 7A/ }));
+    await interact.click(screen.getByRole("button", { name: /Top Attendees - Class 7A/ }));
     expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
     await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
     await interact.click(screen.getByRole("button", { name: "View all class attendance from your percentage" }));
@@ -257,7 +257,7 @@ describe("implemented application routes", () => {
     expect(homeworkTrend.querySelector("svg.lucide-trending-up")).toBeInTheDocument();
   });
 
-  it("switches the parent ID card across all accessible children and marks off-campus red", async () => {
+  it("switches the parent ID card across all accessible children and keeps missing gate evidence unconfirmed", async () => {
     useInstantCardTransitions();
     const interact = userEvent.setup();
     const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
@@ -273,13 +273,13 @@ describe("implemented application routes", () => {
       return original(path);
     });
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
-    expect((await screen.findAllByText("Not on campus"))[0]).toBeVisible();
+    expect((await screen.findAllByText("Not confirmed"))[0]).toBeVisible();
     expect(document.querySelector(".child-switcher")).not.toBeInTheDocument();
-    expect(document.querySelector(".status-pill--danger")).toBeInTheDocument();
+    expect(screen.getAllByText("Not confirmed")[0]).toHaveClass("status-pill--neutral");
     expect(document.querySelector(".child-status-card")).not.toBeInTheDocument();
     const chooseChild = await screen.findByRole("button", { name: "Choose child profile" });
     await waitFor(() => expect(document.querySelector(".parent-id-stack.has-three-or-more")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /Aarav Sharma • Class/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Aarav Sharma - Class/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Switch to Ananya/ })).not.toBeInTheDocument();
     fireEvent.click(chooseChild);
     expect(screen.getByRole("dialog", { name: "Select child profile" })).toBeVisible();
@@ -323,11 +323,37 @@ describe("implemented application routes", () => {
     expect(screen.queryByRole("dialog", { name: "Select child profile" })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ }, { timeout: 5000 })).toBeVisible();
     await waitFor(() => expect(toggle).toBeEnabled(), { timeout: 5000 });
-    expect(screen.queryByText("Syncing school records…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Syncing school records...")).not.toBeInTheDocument();
     await interact.click(toggle);
     expect(await screen.findByRole("button", { name: /Open digital student ID for Aarav Sharma/ }, { timeout: 5000 })).toBeVisible();
-    expect(screen.queryByText("Syncing school records…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Syncing school records...")).not.toBeInTheDocument();
   }, 12000);
+
+  it("uses the avatar child switcher across parent pages instead of page-level dropdowns", async () => {
+    const interact = userEvent.setup();
+    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    const first = (schoolApiFixture("/api/v1/students/") as { results: Array<{ id: string; user: { display_name: string }; admission_number: string }> }).results[0]!;
+    const second = { ...first, id: "student-2", admission_number: "CIS-002", user: { ...first.user, display_name: "Ananya Sharma" } };
+    const third = { ...first, id: "student-3", admission_number: "CIS-003", user: { ...first.user, display_name: "Rohan Sharma" } };
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/v1/students/") return Promise.resolve({ results: [first, second, third] });
+      if (path.startsWith("/api/v1/screens/parent/attendance/")) {
+        const selected = path.includes("student-2") ? second : path.includes("student-3") ? third : first;
+        return Promise.resolve({ ...(schoolApiFixture(path) as object), student: selected });
+      }
+      return original(path);
+    });
+
+    render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Today's Presence Pulse" })).toBeVisible();
+    expect(document.querySelector(".child-switcher")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Aarav Sharma - Class/ })).not.toBeInTheDocument();
+    const chooseChild = await screen.findByRole("button", { name: "Choose child profile" });
+    await interact.click(chooseChild);
+    expect(screen.getByRole("dialog", { name: "Select child profile" })).toBeVisible();
+    await interact.click(screen.getByRole("button", { name: "View Ananya Sharma's parent dashboard" }));
+    expect(await screen.findByText("Ananya Sharma - Class 7A")).toBeVisible();
+  }, 15000);
 
   it("keeps the parent dashboard visible when the selected child's record is still loading", async () => {
     const interact = userEvent.setup();
@@ -350,7 +376,7 @@ describe("implemented application routes", () => {
     expect(await screen.findByRole("button", { name: /Open digital student ID for Aarav Sharma/ })).toBeVisible();
     await interact.click(screen.getByRole("link", { name: "Select next child" }));
     await waitFor(() => expect(secondFetchRequested).toBe(true));
-    expect(screen.queryByText("Syncing school records…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Syncing school records...")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Open digital student ID for Aarav Sharma/ })).toBeVisible();
     finishSecondFetch({ ...(schoolApiFixture("/api/v1/screens/parent/home/?student_id=student-2") as object), student: second, siblings: [first] });
     expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ })).toBeVisible();
@@ -430,7 +456,7 @@ describe("authentication and route authorization", () => {
     mockSession(["student"]);
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
-    expect(screen.getByText("Today’s presence")).toBeVisible();
+    expect(screen.getByText("Today's presence")).toBeVisible();
   });
 
   it("holds a newly registered account outside tenant data until membership exists", async () => {

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {DayPlanNotice,type PublishedDayNotice} from '../../features/day-plans/DayPlanNotice';
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -24,6 +25,7 @@ import { StudentIdentityCard } from "./StudentIdentityCard";
 import "./student-pages.css";
 
 export interface StudentHomePeriod {
+  materials?:string[];
   id: string;
   period: number;
   subject: string;
@@ -42,6 +44,7 @@ export interface StudentHomeDiaryItem {
 }
 
 export interface StudentHomeData {
+  dayPlan?:PublishedDayNotice|null;
   studentName: string;
   avatarUrl?: string;
   className: string;
@@ -103,13 +106,8 @@ function kitForPeriod(period: StudentHomePeriod): string | null {
 function todaysKit(schedule: StudentHomePeriod[]): StudentHomeKitItem[] {
   const seen = new Map<string, StudentHomeKitItem>();
   for (const period of schedule) {
-    const label = kitForPeriod(period);
-    if (!label || seen.has(label)) continue;
-    seen.set(label, {
-      id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
-      label,
-      detail: `For ${period.subject}`,
-    });
+    const labels=period.materials??[kitForPeriod(period)];
+    for(const label of labels){if(!label||seen.has(label))continue;seen.set(label,{id:`material-${label.toLowerCase()}`,label,detail:`For ${period.subject}`});}
   }
   if (!seen.has("School ID")) {
     seen.set("School ID", { id: "school-id", label: "School ID", detail: "Keep it ready for entry" });
@@ -202,17 +200,18 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
     <StudentShell activeNav="home" section="Home" className={data.className} notificationCount={data.unreadNotifications}>
       <div className="student-page-stack student-home-page">
         <StudentIdentityCard identity={data} eyebrow={greeting()} />
+        <DayPlanNotice plan={data.dayPlan} href="/student/timetable"/>
 
         <section className={`student-home-presence ${data.presence.verified ? "is-verified" : ""}`} aria-label="Today's attendance status">
           <span className="student-home-presence__icon"><CheckCircle2 size={22} /></span>
-          <span><small>Today’s presence</small><strong>{data.presence.label}</strong><em>{data.presence.detail}</em></span>
+          <span><small>Today's presence</small><strong>{data.presence.label}</strong><em>{data.presence.detail}</em></span>
           <button type="button" onClick={() => navigate("/student/attendance")}>Details <ChevronRight size={16} /></button>
         </section>
 
         {focusPeriod ? (
           <section className="student-home-period-focus" aria-labelledby="student-home-class-heading">
             <header>
-              <div><h2 id="student-home-class-heading">Today’s flow</h2></div>
+              <div><h2 id="student-home-class-heading">Today's flow</h2></div>
               <button type="button" onClick={() => navigate("/student/timetable")}>Timetable <ArrowRight size={15} /></button>
             </header>
             <div className="student-home-period-rail" ref={periodRailRef} aria-label="Previous current and next periods">
@@ -279,7 +278,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
         </section>
 
         <section className="student-card student-home-diary" aria-labelledby="student-home-diary-heading">
-          <header><div><span>Class desk</span><h2 id="student-home-diary-heading">Today’s diary</h2></div><span>{data.diary.length} items</span></header>
+          <header><div><span>Class desk</span><h2 id="student-home-diary-heading">Today's diary</h2></div><span>{data.diary.length} items</span></header>
           {data.diary.length ? data.diary.map((item) => (
             <article key={item.id}><span><BookOpenText size={18} /></span><div><strong>{item.title}</strong><p>{item.detail}</p><small>{item.label}</small></div></article>
           )) : <div className="student-home-empty"><BookOpenText size={20} /><span><strong>No diary updates today</strong><small>Teacher notes and homework will appear here.</small></span></div>}
@@ -315,13 +314,13 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
                     >
                       <span><small>P{period.period}</small><strong>{period.startsAt}</strong></span>
                       <i />
-                      <span><strong>{period.subject}</strong><small>{period.room} • {period.teacher}</small></span>
+                      <span><strong>{period.subject}</strong><small>{period.room} - {period.teacher}</small></span>
                       {period.state === "current" ? <b>Now</b> : period.state === "complete" ? <CheckCircle2 size={16} /> : null}
                     </article>
                   ))}
                 </div>
               ) : (
-                <div className="student-home-empty"><CalendarClock size={20} /><span><strong>No periods published</strong><small>Your school has not published today’s schedule.</small></span></div>
+                <div className="student-home-empty"><CalendarClock size={20} /><span><strong>No periods published</strong><small>Your school has not published today's schedule.</small></span></div>
               )}
               <button className="student-home-schedule-sheet__timetable" type="button" onClick={() => navigate("/student/timetable")}>
                 Open weekly timetable <ArrowRight size={15} />

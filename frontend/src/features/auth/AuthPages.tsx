@@ -52,7 +52,7 @@ function AuthLayout({ eyebrow, title, description, children }: {
             <span><BookOpenCheck size={17} /><b>One source of truth</b></span>
           </div>
         </div>
-        <p className="auth-story__footnote">Secure school workspace • Built for families</p>
+        <p className="auth-story__footnote">Secure school workspace - Built for families</p>
       </section>
 
       <section className="auth-panel">
@@ -162,7 +162,7 @@ export function LoginPage() {
           <PasswordInput value={password} onChange={setPassword} />
         </label>
         <button className="auth-primary-button" type="submit" disabled={pending !== null}>
-          {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in…</> : <>Sign in <ArrowRight size={18} /></>}
+          {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
       </form>
 
@@ -243,7 +243,7 @@ export function SignupPage() {
       <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <fieldset className="auth-role-picker">
-          <legend>I’m joining as</legend>
+          <legend>I'm joining as</legend>
           <div>
             <button type="button" className={form.role === "parent" ? "is-selected" : ""} aria-pressed={form.role === "parent"} onClick={() => update("role", "parent")}>
               <UsersRound size={18} /><span><b>Parent</b><small>Family portal</small></span>{form.role === "parent" ? <Check size={15} /> : null}
@@ -261,7 +261,7 @@ export function SignupPage() {
         <label className="auth-field"><span>Create password</span><PasswordInput value={form.password} onChange={(value) => update("password", value)} autoComplete="new-password" /><small>Use at least 10 characters with a mix of letters and numbers.</small></label>
         <label className="auth-field"><span>Confirm password</span><PasswordInput value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" /></label>
         <button className="auth-primary-button" type="submit" disabled={pending}>
-          {pending ? <><LoaderCircle className="auth-spin" size={18} /> Creating account…</> : <>Create secure account <ArrowRight size={18} /></>}
+          {pending ? <><LoaderCircle className="auth-spin" size={18} /> Creating account...</> : <>Create secure account <ArrowRight size={18} /></>}
         </button>
       </form>
       <p className="auth-privacy"><ShieldCheck size={14} /> Your account sees no student records until school membership is approved.</p>
@@ -307,7 +307,7 @@ export function PendingOnboardingPage() {
         </ol>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <button className="auth-primary-button" type="button" disabled={checking} onClick={() => void checkAccess()}>
-          {checking ? <><LoaderCircle className="auth-spin" size={18} /> Checking access…</> : <><RefreshCw size={18} /> Check access again</>}
+          {checking ? <><LoaderCircle className="auth-spin" size={18} /> Checking access...</> : <><RefreshCw size={18} /> Check access again</>}
         </button>
         <button className="auth-text-button" type="button" onClick={() => void auth.logout()}>Sign out and use another account</button>
       </div>

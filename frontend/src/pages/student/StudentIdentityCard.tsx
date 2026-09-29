@@ -12,6 +12,7 @@ export interface StudentIdentity {
   termLabel: string;
   dateLabel: string;
   attendancePercent: number;
+  attendanceRecorded?: boolean;
   attendanceThreshold: number;
 }
 
@@ -37,7 +38,8 @@ export function StudentIdentityCard({
   const swiped = useRef(false);
   const initials = identity.studentName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const crest = schoolName.split(/\s+/).filter(Boolean).map((word) => word[0]).join("").slice(0, 3).toUpperCase();
-  const tone = identity.attendancePercent >= identity.attendanceThreshold
+  const attendanceRecorded = identity.attendanceRecorded !== false;
+  const tone = !attendanceRecorded ? "" : identity.attendancePercent >= identity.attendanceThreshold
     ? "is-green"
     : identity.attendancePercent >= identity.attendanceThreshold - 10 ? "is-yellow" : "is-orange";
   const qrPayload = useMemo(() => JSON.stringify({
@@ -78,8 +80,8 @@ export function StudentIdentityCard({
       <header><span>{identity.dateLabel}</span><span><BadgeCheck size={14} /> Active student</span></header>
       <div className="student-home-id-card__identity">
         <span className="student-home-avatar" aria-hidden="true">{identity.avatarUrl ? <img src={identity.avatarUrl} alt="" /> : initials}</span>
-        <span className="student-home-id-card__copy"><small>{eyebrow}</small>{primaryHeading ? <h1 id="student-home-heading">{identity.studentName}</h1> : <strong className="student-home-id-card__name">{identity.studentName}</strong>}<p>{identity.className} • Roll {identity.rollNumber}</p></span>
-        <span className={`student-home-attendance-score ${tone}`} aria-label={`Attendance ${Math.round(identity.attendancePercent)} percent`}><strong>{Math.round(identity.attendancePercent)}%</strong><small>Attendance</small></span>
+        <span className="student-home-id-card__copy"><small>{eyebrow}</small>{primaryHeading ? <h1 id="student-home-heading">{identity.studentName}</h1> : <strong className="student-home-id-card__name">{identity.studentName}</strong>}<p>{identity.className} - Roll {identity.rollNumber}</p></span>
+        <span className={`student-home-attendance-score ${tone}`} aria-label={attendanceRecorded ? `Attendance ${Math.round(identity.attendancePercent)} percent` : "Attendance not recorded"}><strong>{attendanceRecorded ? `${Math.round(identity.attendancePercent)}%` : "—"}</strong><small>Attendance</small></span>
       </div>
       <footer>
         <span><small>Student ID</small><strong>{identity.studentId}</strong></span>
@@ -92,7 +94,7 @@ export function StudentIdentityCard({
       <button className="student-id-view__close" type="button" onClick={() => setIdOpen(false)} aria-label="Close digital student ID"><X size={20} /></button>
       <section className="student-id-view__card">
         <header><span className="student-id-view__crest">{crest}</span><span><strong>{schoolName}</strong><small>Digital Student Identity</small></span><BadgeCheck size={22} /></header>
-        <div className="student-id-view__identity"><span>{identity.avatarUrl ? <img src={identity.avatarUrl} alt="" /> : initials}</span><div><small>Student name</small><h2 id="digital-student-id-heading">{identity.studentName}</h2><p>{identity.className} • Roll {identity.rollNumber}</p></div></div>
+        <div className="student-id-view__identity"><span>{identity.avatarUrl ? <img src={identity.avatarUrl} alt="" /> : initials}</span><div><small>Student name</small><h2 id="digital-student-id-heading">{identity.studentName}</h2><p>{identity.className} - Roll {identity.rollNumber}</p></div></div>
         <div className="student-id-view__details"><span><small>Admission number</small><strong>{identity.studentId}</strong></span><span><small>Academic term</small><strong>{identity.termLabel}</strong></span></div>
         <div className="student-id-view__qr">
           {qrCodeUrl ? <img src={qrCodeUrl} alt={`QR code for ${identity.studentName}, student ID ${identity.studentId}`} /> : <span aria-label="Generating identity QR code" />}

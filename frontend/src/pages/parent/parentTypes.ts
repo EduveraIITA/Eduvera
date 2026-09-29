@@ -13,6 +13,7 @@ export interface ParentChildSummary {
 }
 
 export interface ParentHomeData {
+  dayPlan?:import('../../features/day-plans/DayPlanNotice').PublishedDayNotice|null;
   ranking?: AttendanceRankingData;
   homeworkItems?: Array<{ id: string; title: string; body: string; subject: string | null; dueAt: string | null; completedAt: string | null }>;
   child: ParentChildSummary;
@@ -25,6 +26,7 @@ export interface ParentHomeData {
     termLabel: string;
     dateLabel: string;
     attendancePercent: number;
+    attendanceRecorded?: boolean;
     attendanceThreshold: number;
   };
   sibling?: { id: string; name: string; grade: string; section: string };

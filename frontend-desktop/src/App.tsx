@@ -4,6 +4,7 @@ import { Shell } from "./components/Shell";
 import { ToastProvider } from "./components/ui";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { AttendanceIndex, RegisterPage } from "./pages/AttendancePage";
+import { SchoolEventBridge } from "./features/school/SchoolEventBridge";
 import { ParentAttendancePage, StudentAttendancePage } from "./pages/FamilyAttendance";
 import { ParentHome, StudentHome } from "./pages/FamilyHome";
 import { FamilyDiaryPage, FamilyTimetablePage, ParentLeavePage, StudentLeavePage } from "./pages/FamilyPages";
@@ -59,6 +60,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <SchoolEventBridge />
         <ToastProvider>
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Routes>

@@ -5,7 +5,6 @@ import {
   BookOpen,
   CalendarDays,
   CalendarX2,
-  ChevronDown,
   Home,
   ListChecks,
 } from "lucide-react";
@@ -67,7 +66,7 @@ export function ParentShell({
   const [selectorOpen, setSelectorOpen] = useState(false);
   const childProfilesRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!selectorOpen || active !== "home") return;
+    if (!selectorOpen) return;
     const closeOutside = (event: PointerEvent) => {
       if (!childProfilesRef.current?.contains(event.target as Node)) setSelectorOpen(false);
     };
@@ -80,7 +79,7 @@ export function ParentShell({
       document.removeEventListener("pointerdown", closeOutside);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [selectorOpen, active]);
+  }, [selectorOpen]);
   const studentsQuery = useQuery({
     queryKey: ["school", "accessible-students"],
     queryFn: getAccessibleStudents,
@@ -114,7 +113,7 @@ export function ParentShell({
           <SchoolBrand name={schoolName} className="parent-brand" />
           <div className="parent-header__actions">
             <NotificationCenter buttonClassName="icon-button" iconSize={20} />
-            {active === "home" && selectableChildren.length > 1 ? (
+            {selectableChildren.length > 1 ? (
               <div className="parent-child-profiles" ref={childProfilesRef}>
                 <button className="parent-child-profiles__trigger" type="button"
                   aria-label={selectableChildren.length === 2 ? "Switch to other child" : "Choose child profile"}
@@ -150,29 +149,10 @@ export function ParentShell({
         </div>
         <div className="parent-header__context">
           {active !== "home" ? (
-          <div className="child-switcher-wrap">
-            <button
-              className="child-switcher"
-              type="button"
-              aria-expanded={selectorOpen}
-              aria-haspopup={selectableChildren.length > 1 ? "listbox" : undefined}
-              onClick={() => selectableChildren.length > 1 && setSelectorOpen((current) => !current)}
-            >
+            <span className="parent-header__child-context">
               <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : presenceStatus === "away" ? "presence-dot presence-dot--away" : "presence-dot"} />
-              <span>{child.name} • Class {child.grade.replace("Grade ", "")}{child.section}</span>
-              {selectableChildren.length > 1 ? <ChevronDown size={15} /> : null}
-            </button>
-            {selectorOpen && selectableChildren.length > 1 ? (
-              <div className="child-menu" role="listbox" aria-label="Select child">
-                {selectableChildren.map((option) => (
-                  <button key={option.id} type="button" role="option" aria-selected={option.id === child.id} onClick={() => void chooseChild(option.id)}>
-                    <strong>{option.name}</strong>
-                    <span>{option.grade} • Section {option.section}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+              <span>{child.name} - Class {child.grade.replace("Grade ", "")}{child.section}</span>
+            </span>
           ) : null}
           <span className="parent-header__page">{pageLabel}</span>
         </div>

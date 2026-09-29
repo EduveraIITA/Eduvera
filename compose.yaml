@@ -2,9 +2,15 @@ name: omnischool
 
 # These defaults are for a local demo only. Supply managed secrets and disable
 # demo seeding outside a developer or review environment.
+x-omnischool-image: &omnischool-image
+  image: omnischool-local:latest
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+
 services:
   db:
-    image: postgres:18-bookworm
+    image: postgres:17-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-omnischool}
@@ -23,26 +29,87 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  web:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    init: true
+  migrate:
+    <<: *omnischool-image
     depends_on:
       db:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      DEPLOYMENT_ENVIRONMENT: development
+      MIGRATION_DATABASE_URL: postgresql://${POSTGRES_USER:-omnischool}:${POSTGRES_PASSWORD:-omnischool-demo-only-password}@db:5432/${POSTGRES_DB:-omnischool}
+    entrypoint: ["node", "dist/database/migrate.js"]
+    restart: "no"
+
+  seed:
+    <<: *omnischool-image
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      DEPLOYMENT_ENVIRONMENT: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-omnischool}:${POSTGRES_PASSWORD:-omnischool-demo-only-password}@db:5432/${POSTGRES_DB:-omnischool}
+    entrypoint: ["node", "dist/database/seed.js", "/app/seed-data/medium-school.sql"]
+    restart: "no"
+
+  photo-attendance:
+    build:
+      context: services/photo-attendance
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      ATTENDANCE_API_TOKEN: ${PHOTO_ATTENDANCE_API_TOKEN:-compose-demo-photo-token-change-before-deployment}
+      DATA_DIR: /app/data
+      MODELS_DIR: /app/models
+      SESSION_RETENTION_DAYS: ${PHOTO_ATTENDANCE_RETENTION_DAYS:-7}
+      ALLOWED_HOSTS: photo-attendance,localhost,127.0.0.1
+      OLLAMA_URL: ${PHOTO_ATTENDANCE_OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${PHOTO_ATTENDANCE_OLLAMA_MODEL:-qwen3-vl:4b-instruct}
+    volumes:
+      - photo-attendance-data:/app/data
+      - photo-attendance-models:/app/models
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+
+  web:
+    <<: *omnischool-image
+    restart: unless-stopped
+    init: true
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      photo-attendance:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DEPLOYMENT_ENVIRONMENT: development
       HOST: 0.0.0.0
       PORT: 8000
       DATABASE_URL: postgresql://${POSTGRES_USER:-omnischool}:${POSTGRES_PASSWORD:-omnischool-demo-only-password}@db:5432/${POSTGRES_DB:-omnischool}
+      EVENT_DATABASE_URL: postgresql://${POSTGRES_USER:-omnischool}:${POSTGRES_PASSWORD:-omnischool-demo-only-password}@db:5432/${POSTGRES_DB:-omnischool}
+      EVENT_WORKER_INTERVAL_MS: ${EVENT_WORKER_INTERVAL_MS:-500}
+      EVENT_BATCH_SIZE: ${EVENT_BATCH_SIZE:-100}
+      EVENT_REPLAY_LIMIT: ${EVENT_REPLAY_LIMIT:-250}
+      SSE_MAX_CONNECTIONS: ${SSE_MAX_CONNECTIONS:-10000}
+      SSE_MAX_CONNECTIONS_PER_SESSION: ${SSE_MAX_CONNECTIONS_PER_SESSION:-1}
       COOKIE_SECRET: ${COOKIE_SECRET:-compose-demo-cookie-secret-change-before-deployment}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUST_PROXY: ${TRUST_PROXY:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:8000,http://localhost:8000}
       DEMO_MODE: ${DEMO_MODE:-true}
-      SEED_DEMO: ${SEED_DEMO:-true}
       SPA_DIST_DIR: /app/frontend-dist
       UPLOAD_DIR: /app/storage/leave-documents
       AI_PROVIDER: ${AI_PROVIDER:-ollama}
@@ -52,6 +119,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
       AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-30000}
+      PHOTO_ATTENDANCE_ENABLED: ${PHOTO_ATTENDANCE_ENABLED:-true}
+      PHOTO_ATTENDANCE_BASE_URL: http://photo-attendance:8100/api
+      PHOTO_ATTENDANCE_API_TOKEN: ${PHOTO_ATTENDANCE_API_TOKEN:-compose-demo-photo-token-change-before-deployment}
+      PHOTO_ATTENDANCE_TIMEOUT_MS: ${PHOTO_ATTENDANCE_TIMEOUT_MS:-120000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
@@ -77,3 +148,5 @@ services:
 volumes:
   postgres-data:
   leave-documents:
+  photo-attendance-data:
+  photo-attendance-models:

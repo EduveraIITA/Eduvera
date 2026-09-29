@@ -4,12 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f8f9ff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Edura OS" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="description" content="Edura OS attendance, leave, diary, and timetable portal for students and families." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Edura OS · OmniSchool</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const standalone = window.navigator.standalone === true
+          || window.matchMedia("(display-mode: standalone)").matches
+          || window.matchMedia("(display-mode: fullscreen)").matches;
+        if (!standalone) return;
+        document.addEventListener("click", (event) => {
+          if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+          if (!anchor || anchor.target || anchor.hasAttribute("download")) return;
+          const rawHref = anchor.getAttribute("href");
+          if (!rawHref || rawHref.startsWith("#")) return;
+          const destination = new URL(anchor.href, window.location.href);
+          if (destination.origin !== window.location.origin || !["http:", "https:"].includes(destination.protocol)) return;
+          const next = `${destination.pathname}${destination.search}${destination.hash}`;
+          const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+          if (next === current) return;
+          event.preventDefault();
+          window.history.pushState({}, "", next);
+          window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

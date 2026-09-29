@@ -2,13 +2,13 @@
   width: 37px;
   height: 37px;
   color: #fff;
-  background: #1249b8;
+  background: var(--edura-brand);
 }
 
 .operations-brand .school-brand__name {
-  color: #174bb9;
-  font-size: 16px;
-  font-weight: 600;
+  color: var(--edura-ink);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .operations-topbar__brand { display: none; }
