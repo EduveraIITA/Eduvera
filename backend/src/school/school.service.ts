@@ -468,7 +468,7 @@ export class SchoolService {
 
   async timetable(enrollment: Pick<EnrollmentContext, "class_section_id" | "term_id">, weekday?: number, date?: string) {
     const result = await sql<any>`
-      SELECT ts.*, s.code, s.name AS subject_name, s.short_name,
+      SELECT ts.*, s.code, s.name AS subject_name, s.short_name, s.color AS subject_color,
         u.first_name AS teacher_first_name, u.last_name AS teacher_last_name
       FROM ${date?sql`effective_school_schedule((SELECT school_id FROM class_sections WHERE id=${enrollment.class_section_id}::uuid),${date}::date)`:sql`timetable_slots`} ts LEFT JOIN subjects s ON s.id=ts.subject_id
       LEFT JOIN users u ON u.id=ts.teacher_user_id
@@ -481,7 +481,7 @@ export class SchoolService {
       period_number: row.period_number, starts_at: row.starts_at, ends_at: row.ends_at,
       slot_type: row.slot_type, slot_type_label: String(row.slot_type).replace(/^./, (v: string) => v.toUpperCase()),
       display_title: row.day_plan_id?row.title:row.subject_name ?? row.title, title: row.title, room: row.room,
-      subject: row.subject_id ? { id: row.subject_id, code: row.code, name: row.subject_name, short_name: row.short_name } : null,
+      subject: row.subject_id ? { id: row.subject_id, code: row.code, name: row.subject_name, short_name: row.short_name, color: row.subject_color } : null,
       teacher: row.teacher_user_id ? { id: row.teacher_user_id, name: `${row.teacher_first_name} ${row.teacher_last_name}`.trim(), designation: row.teacher_designation } : null,
       cancelled: row.cancelled ?? false, materials: row.materials ?? [], day_plan_id: row.day_plan_id ?? null,
       plan_version: row.plan_version ?? null, notice: row.notice ?? '', date: date ?? null,
@@ -537,8 +537,15 @@ export class SchoolService {
     const result = await sql<any>`
       SELECT lr.*, ru.first_name AS requester_first, ru.last_name AS requester_last,
         gu.first_name AS guardian_first, gu.last_name AS guardian_last,
-        du.first_name AS decider_first, du.last_name AS decider_last
+        du.first_name AS decider_first, du.last_name AS decider_last,
+        COALESCE(su.first_name, sp.first_name, '') AS student_first, COALESCE(su.last_name, sp.last_name, '') AS student_last,
+        st.admission_number, st.avatar_url AS student_avatar, cs.grade AS class_grade, cs.section AS class_section
       FROM leave_requests lr JOIN users ru ON ru.id=lr.requested_by
+      JOIN students st ON st.id=lr.student_id
+      LEFT JOIN users su ON su.id=st.user_id
+      LEFT JOIN school_people sp ON sp.id=st.id
+      LEFT JOIN enrollments e ON e.student_id=st.id AND e.term_id=lr.term_id AND e.is_active
+      LEFT JOIN class_sections cs ON cs.id=e.class_section_id
       LEFT JOIN users gu ON gu.id=lr.guardian_authorized_by
       LEFT JOIN users du ON du.id=lr.decided_by WHERE lr.id=${leaveId}::uuid
     `.execute(this.db);
@@ -557,6 +564,12 @@ export class SchoolService {
     const origin = request ? `${request.protocol}://${request.headers.host}` : "";
     return {
       id: row.id, student_id: row.student_id, term_id: row.term_id,
+      student: {
+        id: row.student_id, name: `${row.student_first} ${row.student_last}`.trim(), display_name: `${row.student_first} ${row.student_last}`.trim(),
+        admission_number: row.admission_number, avatar_url: row.student_avatar,
+        class_name: row.class_grade ? `Class ${row.class_grade}${row.class_section}` : null,
+      },
+      class_name: row.class_grade ? `Class ${row.class_grade}${row.class_section}` : null,
       category: row.category, category_label: categoryLabels[row.category] ?? row.category,
       starts_on: dateOnly(row.starts_on), ends_on: dateOnly(row.ends_on),
       duration_days: daysInclusive(row.starts_on, row.ends_on), reason: row.reason,
@@ -590,12 +603,21 @@ export class SchoolService {
   }
 
   async leaveList(user: AuthUser, studentId?: string, status?: string, request?: FastifyRequest) {
-    const student = await this.studentForUser(user, studentId);
     const valid = ["draft", "pending_guardian", "authorized", "declined", "school_approved", "school_rejected", "withdrawn"];
     if (status && !valid.includes(status)) throw new BadRequestException("Unknown leave status.");
-    let query = this.db.selectFrom("leave_requests").select("id").where("student_id", "=", student.id);
+    let query = this.db.selectFrom("leave_requests").select("id");
+    // Staff and leadership see the whole school's queue unless they ask for one student;
+    // students and guardians are always scoped to a student they may see.
+    const staff = studentId ? null : await this.db.selectFrom("school_memberships").select("school_id")
+      .where("user_id", "=", user.id).where("role", "in", ["staff", "admin"]).where("is_active", "=", true).executeTakeFirst();
+    if (staff) {
+      query = query.where("student_id", "in", this.db.selectFrom("students").select("id").where("school_id", "=", staff.school_id));
+    } else {
+      const student = await this.studentForUser(user, studentId);
+      query = query.where("student_id", "=", student.id);
+    }
     if (status) query = query.where("status", "=", status as LeaveStatus);
-    const rows = await query.orderBy("created_at", "desc").execute();
+    const rows = await query.orderBy("created_at", "desc").limit(200).execute();
     return Promise.all(rows.map((row) => this.leaveDto(row.id, request)));
   }
 

@@ -1,0 +1,64 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  BookOpen, Bot, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck, FileSpreadsheet,
+  MessageCircle, ReceiptIndianRupee, Settings2, ShieldAlert, ShieldCheck, Users, UsersRound,
+} from "lucide-react";
+import type { Portal } from "../auth/AuthContext";
+
+export type ToolTone = "blue" | "teal" | "violet" | "amber" | "rose" | "slate";
+
+export interface Tool {
+  id: string;
+  name: string;
+  description: string;
+  icon: LucideIcon;
+  tone: ToolTone;
+  /** Mobile route. Absent means the tool is not on mobile yet. */
+  path?: string;
+  /** Where the tool currently lives when it is not on mobile. */
+  planned?: "desktop" | "roadmap";
+}
+
+/* Every tool a role can reach from More. The bottom nav carries the daily five;
+   this is everything else, plus what is still desktop-only so people know
+   where it will land. Order = how often a person reaches for it. */
+const TOOLS: Record<Portal, Tool[]> = {
+  parent: [
+    { id: "calendar", name: "Calendar", description: "Month at a glance: attendance, approved leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/parent/calendar" },
+    { id: "leave", name: "Leave", description: "Authorise requests and apply for planned leave", icon: CalendarX2, tone: "violet", path: "/parent/leave" },
+    { id: "diary", name: "Diary", description: "Homework, notes and announcements from teachers", icon: BookOpen, tone: "rose", path: "/parent/diary" },
+    { id: "messages", name: "Messages", description: "Homeroom and school office conversations", icon: MessageCircle, tone: "teal", path: "/parent/messages" },
+    { id: "fees", name: "Fees & receipts", description: "Invoices, receipts and outstanding balance", icon: ReceiptIndianRupee, tone: "amber", planned: "desktop" },
+    { id: "security", name: "Account security", description: "Signed-in devices and password", icon: ShieldCheck, tone: "slate", planned: "desktop" },
+  ],
+  student: [
+    { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/student/calendar" },
+    { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas and eligibility", icon: CalendarCheck2, tone: "teal", path: "/student/attendance" },
+    { id: "copilot", name: "Attendance Copilot", description: "Ask policy and projection questions using your own data", icon: Bot, tone: "violet", path: "/student/copilot" },
+    { id: "leave", name: "Leave", description: "Apply for leave and track approval", icon: CalendarX2, tone: "rose", path: "/student/leave" },
+    { id: "diary", name: "Diary", description: "Homework, teacher notes and announcements", icon: BookOpen, tone: "amber", path: "/student/diary" },
+    { id: "fees", name: "Fees", description: "Invoices, receipts and payment history", icon: ReceiptIndianRupee, tone: "slate", planned: "desktop" },
+  ],
+  teacher: [
+    { id: "classes", name: "My classes", description: "Every class you teach, today's register status and the live roster", icon: Users, tone: "blue", path: "/teacher/classes" },
+    { id: "calendar", name: "Calendar", description: "Month view of teaching days, periods and registers", icon: CalendarRange, tone: "teal", path: "/teacher/calendar" },
+    { id: "weekly", name: "Weekly timetable", description: "Your published schedule, day by day", icon: CalendarDays, tone: "violet", path: "/teacher/timetable/weekly" },
+    { id: "registers", name: "Registers", description: "Take and review attendance for your lessons", icon: ClipboardCheck, tone: "amber", path: "/teacher/attendance" },
+    { id: "safeguarding", name: "Safeguarding", description: "Report and review welfare concerns", icon: ShieldAlert, tone: "rose", path: "/teacher/safeguarding" },
+  ],
+  principal: [
+    { id: "calendar", name: "Calendar", description: "Month view of school days, coverage and registers", icon: CalendarRange, tone: "blue", path: "/principal/calendar" },
+    { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },
+    { id: "import", name: "Import students", description: "Bulk enrol from a spreadsheet with review before commit", icon: FileSpreadsheet, tone: "amber", path: "/principal/students/import" },
+    { id: "weekly", name: "Master timetable", description: "Weekly grid with staffing and clash control", icon: CalendarDays, tone: "violet", path: "/principal/timetable/weekly" },
+    { id: "safeguarding", name: "Safeguarding", description: "Moderation queue and welfare reports", icon: ShieldAlert, tone: "rose", path: "/principal/safeguarding" },
+    { id: "administration", name: "School administration", description: "Terms, classes, invitations and school access", icon: Settings2, tone: "slate", planned: "desktop" },
+    { id: "fees", name: "Fee ledger", description: "Post invoices and record offline receipts", icon: ReceiptIndianRupee, tone: "slate", planned: "desktop" },
+  ],
+};
+
+export const moreRoute: Record<Portal, string> = { parent: "/parent/more", student: "/student/apps", teacher: "/teacher/more", principal: "/principal/more" };
+
+export function toolsFor(portal: Portal): Tool[] {
+  return TOOLS[portal];
+}

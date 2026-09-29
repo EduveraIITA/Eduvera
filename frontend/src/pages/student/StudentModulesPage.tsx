@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   Bot,
   CalendarCheck2,
+  CalendarRange,
   Clock3,
   Grid2X2,
   LockKeyhole,
@@ -16,6 +17,7 @@ import "./student-modules.css";
 type ModuleId = "launcher" | "fees" | "diary";
 
 const modules = [
+  { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, status: "Live", path: "/student/calendar", tone: "blue" },
   { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas, and eligibility", icon: CalendarCheck2, status: "Live", path: "/student/attendance", tone: "blue" },
   { id: "copilot", name: "Attendance Copilot", description: "Ask policy and projection questions using your own data", icon: Bot, status: "Live", path: "/student/copilot", tone: "teal" },
   { id: "classes", name: "Classes & Leave", description: "Timetable, leave applications, and approval status", icon: BookOpenCheck, status: "Live", path: "/student/timetable", tone: "violet" },

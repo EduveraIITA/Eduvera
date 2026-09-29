@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import {
-  AppWindow,
   BookOpen,
   Bot,
   CalendarDays,
   ClipboardCheck,
   Home,
+  LayoutGrid,
   MessageCircle,
+  MoreHorizontal,
   WalletCards,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
@@ -67,7 +68,7 @@ const schoolNav = [
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
   { key: "copilot" as const, label: "Copilot", icon: Bot },
   { key: "fees" as const, label: "Fees", icon: WalletCards },
-  { key: "launcher" as const, label: "Launcher", icon: AppWindow },
+  { key: "launcher" as const, label: "More", icon: MoreHorizontal },
   { key: "chat" as const, label: "Messages", icon: MessageCircle },
 ];
 
@@ -76,7 +77,7 @@ const eduraNav = [
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
   { key: "classes" as const, label: "Classes", icon: CalendarDays },
   { key: "diary" as const, label: "Diary", icon: BookOpen },
-  { key: "launcher" as const, label: "Launcher", icon: AppWindow },
+  { key: "launcher" as const, label: "More", icon: MoreHorizontal },
   { key: "chat" as const, label: "Messages", icon: MessageCircle },
 ];
 
@@ -109,6 +110,7 @@ export function StudentShell({
             fallbackUnreadCount={notificationCount}
             onOpen={onNotifications}
           />
+          <Link className="student-icon-button" to={routeMap.launcher} aria-label="More tools"><LayoutGrid size={21} /></Link>
           <AccountMenu buttonClassName="student-profile-button" ariaLabel="Open profile" iconSize={21} onOpen={onProfile} />
         </div>
       </header>

@@ -25,8 +25,11 @@ export interface TeacherAttendance {
   roster: RosterStudent[];
 }
 
-export interface PrincipalClass extends ClassSummary {
-  id: string; name: string; timetable_slots: number; unassigned_slots: number; late_count: number; attendance_percentage: number;
+/* Principal classes carry `id`/`name` (not class_section_id/class_name) and no period times. */
+export interface PrincipalClass {
+  id: string; name: string; grade: string; section: string; room_number: string; term_name: string; academic_year: string;
+  student_count: number; marked_count: number; attending_count: number; absent_count: number; late_count: number;
+  timetable_slots: number; unassigned_slots: number; attendance_percentage: number; submission_status: "not_started" | "in_progress" | "submitted";
 }
 export interface PrincipalHome {
   date: string; principal: { id: string; name: string };
@@ -43,10 +46,10 @@ export interface PrincipalTimetable {
 }
 
 export interface LeaveRequest {
-  id: string; category: string; starts_on: string; ends_on?: string; duration_days: number; status: string;
-  reason?: string; requested_by_name: string; guardian_authorized_by_name: string | null; guardian_authorized_at: string | null;
+  id: string; category: string; category_label?: string; starts_on: string; ends_on?: string; duration_days: number; status: string; status_label?: string;
+  reason?: string; submitted_at?: string | null; requested_by_name: string; guardian_authorized_by_name: string | null; guardian_authorized_at: string | null;
   decided_by_name: string | null; decided_at: string | null;
-  student?: { id: string; name?: string; display_name?: string; class_name?: string };
+  student?: { id: string; name?: string; display_name?: string; class_name?: string | null; admission_number?: string; avatar_url?: string | null };
   student_name?: string; class_name?: string;
   documents: Array<{ id: string; size_bytes: number; file_url: string; created_at: string }>;
   audit_log: Array<{ id: string; from_status: string | null; to_status?: string; actor_name: string; created_at: string; note?: string }>;
