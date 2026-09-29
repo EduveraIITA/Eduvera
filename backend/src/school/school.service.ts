@@ -196,6 +196,7 @@ export class SchoolService {
           WHERE m.user_id=${user.id}::uuid AND m.school_id=st.school_id
             AND m.role='staff' AND m.is_active
         )
+      )
       ORDER BY st.id
     `.execute(this.db);
     return Promise.all(ids.rows.map(async (row) => this.studentDto(await this.studentForUser(user, row.id))));
