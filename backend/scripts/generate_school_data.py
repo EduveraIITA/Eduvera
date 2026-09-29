@@ -1273,6 +1273,10 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
     annual_event_id = deterministic_id("campus-event-annual-function-2026")
     picnic_event_id = deterministic_id("campus-event-class-7a-picnic-2026")
     class_test_event_id = deterministic_id("campus-event-class-7a-mathematics-test-2026")
+    class_7a_id = deterministic_id("class-7a")
+    annual_main_session_id = deterministic_id("campus-event-annual-function-main-2026")
+    class_test_session_id = deterministic_id("campus-event-class-7a-mathematics-test-session-2026")
+    principal_id = deterministic_id("user-meera-principal")
     statements = [
         "BEGIN;",
         "SET LOCAL statement_timeout = '120s';",
@@ -1364,11 +1368,22 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
             "id", "school_id", "student_id", "reference", "description", "amount_paise", "due_on", "created_by", "created_at",
         ], dataset["campus_event_fee_invoices"], conflict=" ON CONFLICT DO NOTHING",
     )
-    statements += insert_sql(
-        "fee_payments", [
-            "id", "school_id", "invoice_id", "amount_paise", "method", "reference", "idempotency_key", "recorded_by", "created_at",
-        ], dataset["campus_event_fee_payments"], conflict=" ON CONFLICT DO NOTHING",
-    )
+    payment_columns = [
+        "id", "school_id", "invoice_id", "amount_paise", "method", "reference", "idempotency_key", "recorded_by", "created_at",
+    ]
+    # Payment balance validation also runs before conflict handling. Do not
+    # present an already-posted immutable payment to that trigger on re-seed.
+    for payment in dataset["campus_event_fee_payments"]:
+        values_sql = ",".join(sql_value(value) for value in payment)
+        statements.append(f"""
+INSERT INTO fee_payments({','.join(payment_columns)})
+SELECT {values_sql}
+WHERE NOT EXISTS (
+  SELECT 1 FROM fee_payments existing
+  WHERE existing.id='{payment[0]}'::uuid OR existing.idempotency_key='{payment[6]}'::uuid
+)
+ON CONFLICT DO NOTHING;
+""")
     # Demo events are inserted after every identity/scope dependency.  They are
     # deliberately immutable on a re-seed so review activity is never reset.
     statements += insert_sql(
@@ -1414,12 +1429,97 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
             "school_id", "event_id", "session_id", "student_id", "participation_requirement",
         ], dataset["campus_event_session_participants"], conflict=" ON CONFLICT DO NOTHING",
     )
-    statements += insert_sql(
-        "campus_event_consent_authorities", [
-            "id", "school_id", "relationship_id", "status", "valid_from", "valid_until", "source", "provenance",
-            "revision", "granted_by", "granted_at", "revoked_by", "revoked_at", "revocation_reason",
-        ], dataset["campus_event_consent_authorities"], conflict=" ON CONFLICT DO NOTHING",
-    )
+    authority_columns = [
+        "id", "school_id", "relationship_id", "status", "valid_from", "valid_until", "source", "provenance",
+        "revision", "granted_by", "granted_at", "revoked_by", "revoked_at", "revocation_reason",
+    ]
+    # The authority grant validator is a BEFORE INSERT trigger, so ON CONFLICT
+    # alone is not repeat-safe: the trigger fires before PostgreSQL can discard
+    # the duplicate. Guard every immutable grant by relationship history first.
+    for authority in dataset["campus_event_consent_authorities"]:
+        values_sql = ",".join(sql_value(value) for value in authority)
+        statements.append(f"""
+INSERT INTO campus_event_consent_authorities({','.join(authority_columns)})
+SELECT {values_sql}
+WHERE NOT EXISTS (
+  SELECT 1 FROM campus_event_consent_authorities existing
+  WHERE existing.school_id='{authority[1]}'::uuid
+    AND existing.relationship_id='{authority[2]}'::uuid
+)
+ON CONFLICT DO NOTHING;
+""")
+    # A review database may contain legitimate students enrolled after the
+    # deterministic 200-student fixture was first loaded. Reconcile those
+    # students into upcoming class-scoped invitations without overwriting any
+    # family decision or inventing attendance. Completed/locked events are
+    # historical evidence and are intentionally never reconciled. Optional
+    # event additions remain pending and stay out of session rosters.
+    statements.append(f"""
+INSERT INTO campus_event_participants(
+  school_id,event_id,student_id,participation_requirement,rsvp_status,fee_invoice_id,
+  invited_at,rsvp_by,rsvp_at
+)
+SELECT '{school_id}'::uuid,'{picnic_event_id}'::uuid,enrollment.student_id,'optional','pending',NULL,now(),NULL,NULL
+FROM enrollments enrollment
+JOIN academic_terms term ON term.id=enrollment.term_id
+JOIN campus_events event ON event.id='{picnic_event_id}'::uuid AND event.school_id='{school_id}'::uuid
+JOIN schools school ON school.id=event.school_id
+WHERE enrollment.class_section_id='{class_7a_id}'::uuid AND enrollment.is_active
+  AND event.status='published' AND event.starts_at>now()
+  AND enrollment.enrolled_on<=(event.starts_at AT TIME ZONE school.timezone)::date
+  AND (event.starts_at AT TIME ZONE school.timezone)::date BETWEEN term.starts_on AND term.ends_on
+ON CONFLICT(event_id,student_id) DO NOTHING;
+
+INSERT INTO campus_event_participants(
+  school_id,event_id,student_id,participation_requirement,rsvp_status,fee_invoice_id,
+  invited_at,rsvp_by,rsvp_at
+)
+SELECT '{school_id}'::uuid,'{class_test_event_id}'::uuid,enrollment.student_id,'mandatory','pending',NULL,now(),NULL,NULL
+FROM enrollments enrollment
+JOIN academic_terms term ON term.id=enrollment.term_id
+JOIN campus_events event ON event.id='{class_test_event_id}'::uuid AND event.school_id='{school_id}'::uuid
+JOIN schools school ON school.id=event.school_id
+JOIN campus_event_sessions session
+  ON session.event_id=event.id AND session.id='{class_test_session_id}'::uuid
+WHERE enrollment.class_section_id='{class_7a_id}'::uuid AND enrollment.is_active
+  AND event.status='published' AND event.starts_at>now() AND session.state='open'
+  AND enrollment.enrolled_on<=(event.starts_at AT TIME ZONE school.timezone)::date
+  AND (event.starts_at AT TIME ZONE school.timezone)::date BETWEEN term.starts_on AND term.ends_on
+ON CONFLICT(event_id,student_id) DO NOTHING;
+
+INSERT INTO campus_event_session_participants(
+  school_id,event_id,session_id,student_id,participation_requirement
+)
+SELECT '{school_id}'::uuid,'{class_test_event_id}'::uuid,'{class_test_session_id}'::uuid,
+  participant.student_id,'mandatory'
+FROM campus_event_participants participant
+WHERE participant.event_id='{class_test_event_id}'::uuid
+ON CONFLICT(session_id,student_id) DO NOTHING;
+
+INSERT INTO campus_event_consent_authorities(
+  id,school_id,relationship_id,status,valid_from,valid_until,source,provenance,
+  revision,granted_by,granted_at,revoked_by,revoked_at,revocation_reason
+)
+SELECT md5('eduvera:demo:event-consent:' || relationship.id::text)::uuid,
+  relationship.school_id,relationship.id,'active',
+  COALESCE((SELECT min(term.starts_on) FROM academic_terms term
+    WHERE term.school_id=relationship.school_id AND term.is_active),current_date),
+  NULL,'enrollment','Primary guardian relationship verified during repeat-safe demo reconciliation.',
+  1,'{principal_id}'::uuid,now(),NULL,NULL,NULL
+FROM campus_event_participants participant
+JOIN LATERAL (
+  SELECT candidate.* FROM guardian_relationships candidate
+  WHERE candidate.school_id=participant.school_id AND candidate.student_id=participant.student_id
+  ORDER BY candidate.is_primary DESC,candidate.created_at,candidate.id
+  LIMIT 1
+) relationship ON true
+WHERE participant.event_id='{picnic_event_id}'::uuid
+  AND NOT EXISTS (
+    SELECT 1 FROM campus_event_consent_authorities authority
+    WHERE authority.school_id=relationship.school_id AND authority.relationship_id=relationship.id
+  )
+ON CONFLICT(id) DO NOTHING;
+""")
     statements += insert_sql(
         "campus_event_consents", [
             "school_id", "event_id", "student_id", "relationship_id", "authority_id", "status", "note",
@@ -1453,9 +1553,7 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
     expected_days = summary["school_days"]
     expected_attendance = summary["attendance_records"]
     expected_subject_rows = summary["subject_attendance_rows"]
-    expected_event_participants = summary["campus_event_participants"]
     expected_event_attendance = summary["campus_event_attendance_records"]
-    expected_session_participants = summary["campus_event_session_participants"]
     expected_picnic_invoices = summary["picnic_fee_invoices"]
     expected_picnic_payments = summary["picnic_fee_payments"]
     statements.append(f"""
@@ -1527,17 +1625,35 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Seed integrity failure: independent event requirement dimensions are incorrect';
   END IF;
-  IF (
-    SELECT count(*) FROM campus_event_participants
-    WHERE event_id IN ('{annual_event_id}'::uuid,'{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
-  ) <> {expected_event_participants} THEN
-    RAISE EXCEPTION 'Seed integrity failure: campus event participant rosters are incomplete';
+  IF EXISTS (
+    SELECT 1 FROM omnischool_seed_student_ids seeded
+    WHERE NOT EXISTS (
+      SELECT 1 FROM campus_event_participants participant
+      WHERE participant.event_id='{annual_event_id}'::uuid AND participant.student_id=seeded.id
+    )
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: generated annual-event roster is incomplete';
   END IF;
-  IF (
-    SELECT count(*) FROM campus_event_session_participants
-    WHERE event_id IN ('{annual_event_id}'::uuid,'{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
-  ) <> {expected_session_participants} THEN
-    RAISE EXCEPTION 'Seed integrity failure: event session rosters are incomplete';
+  IF EXISTS (
+    SELECT 1 FROM campus_event_participants participant
+    WHERE participant.event_id='{annual_event_id}'::uuid
+      AND NOT EXISTS (
+        SELECT 1 FROM campus_event_session_participants roster
+        WHERE roster.event_id=participant.event_id
+          AND roster.session_id='{annual_main_session_id}'::uuid
+          AND roster.student_id=participant.student_id
+      )
+  ) OR EXISTS (
+    SELECT 1 FROM campus_event_participants participant
+    WHERE participant.event_id='{class_test_event_id}'::uuid
+      AND NOT EXISTS (
+        SELECT 1 FROM campus_event_session_participants roster
+        WHERE roster.event_id=participant.event_id
+          AND roster.session_id='{class_test_session_id}'::uuid
+          AND roster.student_id=participant.student_id
+      )
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: mandatory event session rosters are incomplete';
   END IF;
   IF EXISTS (
     SELECT 1 FROM campus_event_session_participants roster
@@ -1548,36 +1664,56 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Seed integrity failure: an optional session roster includes an unaccepted RSVP';
   END IF;
-  IF (
-    SELECT count(*) FROM campus_event_participants participant
-    WHERE participant.event_id='{picnic_event_id}'::uuid
-  ) <> (
-    SELECT count(*) FROM enrollments enrollment
-    WHERE enrollment.class_section_id='{deterministic_id("class-7a")}'::uuid AND enrollment.is_active
+  IF EXISTS (
+    SELECT 1
+    FROM enrollments enrollment
+    JOIN academic_terms term ON term.id=enrollment.term_id
+    JOIN campus_events event ON event.id='{picnic_event_id}'::uuid
+    JOIN schools school ON school.id=event.school_id
+    WHERE enrollment.class_section_id='{class_7a_id}'::uuid AND enrollment.is_active
+      AND event.status='published' AND event.starts_at>now()
+      AND enrollment.enrolled_on<=(event.starts_at AT TIME ZONE school.timezone)::date
+      AND (event.starts_at AT TIME ZONE school.timezone)::date BETWEEN term.starts_on AND term.ends_on
+      AND NOT EXISTS (
+        SELECT 1 FROM campus_event_participants participant
+        WHERE participant.event_id=event.id AND participant.student_id=enrollment.student_id
+      )
+  ) OR EXISTS (
+    SELECT 1
+    FROM enrollments enrollment
+    JOIN academic_terms term ON term.id=enrollment.term_id
+    JOIN campus_events event ON event.id='{class_test_event_id}'::uuid
+    JOIN schools school ON school.id=event.school_id
+    JOIN campus_event_sessions session
+      ON session.event_id=event.id AND session.id='{class_test_session_id}'::uuid
+    WHERE enrollment.class_section_id='{class_7a_id}'::uuid AND enrollment.is_active
+      AND event.status='published' AND event.starts_at>now() AND session.state='open'
+      AND enrollment.enrolled_on<=(event.starts_at AT TIME ZONE school.timezone)::date
+      AND (event.starts_at AT TIME ZONE school.timezone)::date BETWEEN term.starts_on AND term.ends_on
+      AND NOT EXISTS (
+        SELECT 1 FROM campus_event_participants participant
+        WHERE participant.event_id=event.id AND participant.student_id=enrollment.student_id
+      )
   ) THEN
-    RAISE EXCEPTION 'Seed integrity failure: picnic roster does not match active Class 7A enrollment';
-  END IF;
-  IF (
-    SELECT count(*) FROM campus_event_participants participant
-    WHERE participant.event_id='{class_test_event_id}'::uuid
-  ) <> (
-    SELECT count(*) FROM enrollments enrollment
-    WHERE enrollment.class_section_id='{deterministic_id("class-7a")}'::uuid AND enrollment.is_active
-  ) THEN
-    RAISE EXCEPTION 'Seed integrity failure: class-test roster does not match active Class 7A enrollment';
+    RAISE EXCEPTION 'Seed integrity failure: an eligible Class 7A event participant is missing';
   END IF;
   IF EXISTS (
     SELECT 1 FROM campus_event_participants participant
-    LEFT JOIN guardian_relationships relationship
-      ON relationship.student_id=participant.student_id AND relationship.school_id=participant.school_id
-    LEFT JOIN campus_event_consent_authorities authority
-      ON authority.relationship_id=relationship.id AND authority.school_id=relationship.school_id
-      AND authority.status='active'
+    LEFT JOIN LATERAL (
+      SELECT candidate.* FROM guardian_relationships candidate
+      WHERE candidate.student_id=participant.student_id AND candidate.school_id=participant.school_id
+      ORDER BY candidate.is_primary DESC,candidate.created_at,candidate.id
+      LIMIT 1
+    ) relationship ON true
     WHERE participant.event_id='{picnic_event_id}'::uuid
-    GROUP BY participant.student_id
-    HAVING count(DISTINCT relationship.id)<>1 OR count(DISTINCT authority.id)<>1
+      AND (
+        relationship.id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM campus_event_consent_authorities authority
+          WHERE authority.relationship_id=relationship.id AND authority.school_id=relationship.school_id
+        )
+      )
   ) THEN
-    RAISE EXCEPTION 'Seed integrity failure: a picnic participant is missing one guardian consent authority';
+    RAISE EXCEPTION 'Seed integrity failure: a picnic participant is missing guardian consent-authority history';
   END IF;
   IF (
     SELECT count(*) FROM fee_invoices invoice
