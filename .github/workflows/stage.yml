@@ -125,7 +125,6 @@ jobs:
 
       - name: Check deployment credentials
         env:
-          STAGE_MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL || secrets.DATABASE_URL }}
           STAGE_METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         run: |
           set -eu
@@ -144,10 +143,6 @@ jobs:
           case "$STAGE_URL" in
             */) echo "::error::STAGE_URL must not have a trailing slash"; exit 1 ;;
           esac
-          if [ -z "$STAGE_MIGRATION_DATABASE_URL" ]; then
-            echo "::error::MIGRATION_DATABASE_URL secret is not set; stage migrations cannot run."
-            exit 1
-          fi
           if [ -z "$STAGE_METRICS_TOKEN" ]; then
             echo "::warning::METRICS_TOKEN secret is not set; deployment will continue and protected metrics auth verification will be skipped."
           fi
@@ -156,13 +151,14 @@ jobs:
         working-directory: backend
         run: npm ci --ignore-scripts
 
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.54.0
+
       - name: Backend · apply pending stage migrations
         working-directory: backend
-        env:
-          NODE_ENV: production
-          DEPLOYMENT_ENVIRONMENT: stage
-          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL || secrets.DATABASE_URL }}
-        run: npm run db:migrate
+        run: |
+          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
+            sh -c 'test -n "$EVENT_DATABASE_URL" || { echo "::error::EVENT_DATABASE_URL is not configured on the Railway service"; exit 1; }; export MIGRATION_DATABASE_URL="$EVENT_DATABASE_URL"; export NODE_ENV=production; export DEPLOYMENT_ENVIRONMENT=stage; npm run db:migrate'
 
       - uses: actions/setup-python@v5
         if: github.event_name == 'workflow_dispatch' && inputs.seed
@@ -180,9 +176,6 @@ jobs:
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
           DEMO_MODE=true node --import tsx src/database/seed-operations.ts
-
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli@5.54.0
 
       - name: Bind deployment to this commit
         run: railway variable set "RELEASE_SHA=$GITHUB_SHA" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --skip-deploys
