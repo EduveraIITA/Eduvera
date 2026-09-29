@@ -505,6 +505,9 @@ describe("authentication and route authorization", () => {
     render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Sign in to your school" })).toBeVisible();
     expect(screen.getByRole("button", { name: /Parent view/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Student view/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Teacher view/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Principal view/i })).toBeVisible();
   });
 
   it("redirects a student away from parent-only records", async () => {

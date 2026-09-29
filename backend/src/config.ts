@@ -109,8 +109,8 @@ export function loadConfig() {
     if (publicUrl.protocol !== "https:" || publicUrl.origin !== value.PUBLIC_URL || !allowedOrigins.includes(publicUrl.origin)) {
       throw new Error("PUBLIC_URL must be an exact HTTPS origin included in ALLOWED_ORIGINS");
     }
-    if (value.DEMO_MODE) {
-      throw new Error("DEMO_MODE must be false in managed stage and production deployments");
+    if (deploymentEnvironment === "production" && value.DEMO_MODE) {
+      throw new Error("DEMO_MODE must be false in production deployments");
     }
   }
   if (value.PHOTO_ATTENDANCE_ENABLED && value.PHOTO_ATTENDANCE_API_TOKEN.length < 24) {

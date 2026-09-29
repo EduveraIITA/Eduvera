@@ -56,8 +56,10 @@ development defaults.
 | Teacher | `kavita.staff` | `OmniDemo@2026` | `/teacher` |
 | Principal | `meera.principal` | `OmniDemo@2026` | `/principal` |
 
-The login screen also offers explicit parent/student demo buttons when
-`DEMO_MODE=true`. Routes never silently impersonate a demo user. Public signup
+The login screen also offers explicit parent, student, teacher, and principal
+demo buttons when `DEMO_MODE=true`. The shared Railway Stage test server keeps
+this flag enabled; production rejects it at startup. Routes never silently
+impersonate a demo user. Public signup
 creates a secure account in `pending_school_membership`; it exposes no school or
 student records until an administrator links it to a school.
 

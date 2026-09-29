@@ -259,7 +259,9 @@ def set_variables(
         "PUBLIC_URL": public_url,
         "DEPLOYMENT_ENVIRONMENT": "stage",
         "RELEASE_SHA": "bootstrap-pending",
-        "DEMO_MODE": "false",
+        # Railway is the shared Stage test server, so its seeded role personas
+        # remain available. Production still rejects DEMO_MODE=true at startup.
+        "DEMO_MODE": "true",
         "RATE_LIMIT_STORE": "postgres",
         "AI_PROVIDER": "mock",
         "LOG_LEVEL": "info",

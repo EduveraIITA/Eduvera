@@ -128,11 +128,14 @@ describe("managed deployment configuration", () => {
     expect(() => loadConfig()).toThrow();
   });
 
-  it("does not expose passwordless demo impersonation in stage", () => {
+  it("allows explicit demo access in the managed Stage test environment", () => {
     setProductionEnvironment();
     process.env.DEPLOYMENT_ENVIRONMENT = "stage";
     process.env.DEMO_MODE = "true";
-    expect(() => loadConfig()).toThrow(/DEMO_MODE.*stage/);
+    expect(loadConfig()).toMatchObject({
+      DEPLOYMENT_ENVIRONMENT: "stage",
+      DEMO_MODE: true,
+    });
   });
 
   it("rejects ambiguous or reused managed secrets", () => {
