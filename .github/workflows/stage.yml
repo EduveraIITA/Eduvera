@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       seed:
-        description: "Re-apply the demo seed to the shared database (upsert; run on demand, not per push)"
+        description: Re-seed the Stage demo data after migrations
+        required: false
         type: boolean
         default: false
 
@@ -20,8 +21,9 @@ permissions:
   contents: read
 
 jobs:
-  # Verification is deliberately isolated from stage. Integration tests can
-  # mutate this disposable PostgreSQL service without touching shared data.
+  # Verification never connects to the staging database. Each job gets a new
+  # PostgreSQL service, migrations and deterministic demo fixtures. Integration
+  # tests may mutate it without touching shared Stage data.
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -44,6 +46,7 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://omnischool_test:omnischool-test-only-password@127.0.0.1:5432/omnischool_test
       EVENT_DATABASE_URL: postgresql://omnischool_test:omnischool-test-only-password@127.0.0.1:5432/omnischool_test
       COOKIE_SECRET: integration-test-cookie-secret-at-least-32
+      TEST_DATABASE_ISOLATED: "true"
       DEMO_MODE: "true"
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +81,7 @@ jobs:
           npm run db:migrate
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
+          node --import tsx src/database/seed-operations.ts
 
       - name: Backend · integration tests
         working-directory: backend
@@ -176,6 +180,7 @@ jobs:
         run: |
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
+          DEMO_MODE=true node --import tsx src/database/seed-operations.ts
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@5.54.0

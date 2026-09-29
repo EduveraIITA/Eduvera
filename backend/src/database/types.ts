@@ -48,7 +48,7 @@ export interface HomeworkCompletionTable { item_id: string; student_id: string; 
 export interface DiaryNoteTable { id: Generated<string>; item_id: string; student_id: string; author_id: string; body: string; created_at: Timestamp }
 export interface NotificationTable { id: Generated<string>; recipient_id: string; kind: "attendance" | "leave" | "diary" | "general"; title: string; body: string; link: Generated<string>; metadata: Json; dedupe_key: Generated<string | null>; read_at: NullableTimestamp; created_at: Timestamp }
 export interface SchoolContactTable { id: Generated<string>; school_id: string; label: string; name: string; phone: Generated<string>; email: Generated<string>; availability: Generated<string>; priority: Generated<number> }
-export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string> }
+export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string>; active_school_id: Generated<string | null> }
 export interface AuditEventTable { id: Generated<string>; action: string; actor_id: string | null; school_id: string | null; target_type: Generated<string>; target_id: string | null; request_id: string; ip_hash: string | null; metadata: Json; created_at: Timestamp }
 export interface AiConversationTable { id: Generated<string>; owner_id: string; student_id: string; title: string; status: Generated<"active" | "archived">; created_at: Timestamp; updated_at: Timestamp }
 export interface AiMessageTable { id: Generated<string>; conversation_id: string; role: "user" | "assistant"; content: string; citations: Json; provider: string; model: string; status: Generated<"complete" | "error">; latency_ms: number | null; created_at: Timestamp }
@@ -89,6 +89,12 @@ export interface EventMaintenanceLeaseTable {
 export interface PhotoAttendanceClassBindingTable { id: Generated<string>; school_id: string; class_section_id: string; provider_class_id: string; created_by: string; created_at: Timestamp; updated_at: Timestamp }
 export interface PhotoAttendanceProfileTable { id: Generated<string>; school_id: string; class_section_id: string; student_id: string; provider_class_id: string; provider_student_id: string; sample_count: Generated<number>; model_id: string | null; authorization_reference: string; enrolled_by: string; enrolled_at: Timestamp; updated_at: Timestamp; revoked_at: NullableTimestamp }
 export interface PhotoAttendanceSessionTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; period: string; provider_session_id: string; captured_by: string; capture_authorization_reference: string; state: Generated<"analyzed" | "applied" | "discarded" | "expired">; roster_count: number; detected_faces: Generated<number>; proposed_present: Generated<number>; model_id: string; analysis_summary: Json; observed_at: Timestamp; received_at: Timestamp; expires_at: Timestamp; applied_at: NullableTimestamp; applied_submission_id: string | null; created_at: Timestamp; updated_at: Timestamp }
+export interface ChatConversationTable { id: Generated<string>; school_id: string; kind: Generated<"direct" | "group" | "announcement">; title: Generated<string>; context_student_id: string | null; group_type: Generated<"student_group" | "parent_group" | "activity" | "staff" | "child_support" | "announcement" | null>; posting_mode: Generated<"all" | "moderators">; created_by: string; last_message_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
+export interface ChatParticipantTable { conversation_id: string; user_id: string; participant_role: Generated<"member" | "moderator">; joined_at: Timestamp; last_read_at: NullableTimestamp; is_muted: Generated<boolean>; is_active: Generated<boolean> }
+export interface ChatMessageTable { id: Generated<string>; conversation_id: string; sender_id: string; client_id: string | null; body: Generated<string>; message_type: Generated<"text" | "file" | "system">; reply_to_id: string | null; is_deleted: Generated<boolean>; created_at: Timestamp; updated_at: Timestamp }
+export interface ChatAttachmentTable { id: Generated<string>; message_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; created_at: Timestamp }
+export interface ChatMessageReportTable { id: Generated<string>; message_id: string; reported_by: string; reason: string; status: Generated<"open" | "under_review" | "resolved" | "dismissed">; assigned_to: string | null; reviewed_by: string | null; resolution_note: Generated<string>; action_taken: Generated<"none" | "no_action" | "warning" | "restrict" | "escalate">; created_at: Timestamp; updated_at: Timestamp; resolved_at: NullableTimestamp }
+export interface ChatMessagingRestrictionTable { id: Generated<string>; school_id: string; user_id: string; report_id: string; reason: string; starts_at: Timestamp; expires_at: Timestamp; created_by: string; revoked_at: NullableTimestamp; created_at: Timestamp }
 
 export interface Database {
   school_people: SchoolPersonTable;
@@ -132,8 +138,32 @@ export interface Database {
   photo_attendance_class_bindings: PhotoAttendanceClassBindingTable;
   photo_attendance_profiles: PhotoAttendanceProfileTable;
   photo_attendance_sessions: PhotoAttendanceSessionTable;
+  chat_conversations: ChatConversationTable;
+  chat_participants: ChatParticipantTable;
+  chat_messages: ChatMessageTable;
+  chat_attachments: ChatAttachmentTable;
+  chat_message_reports: ChatMessageReportTable;
+  chat_messaging_restrictions: ChatMessagingRestrictionTable;
+  chat_policies: ChatPolicyTable;
 }
 
 export type UserRow = Selectable<UserTable>;
 export type NewUser = Insertable<UserTable>;
 export type UserUpdate = Updateable<UserTable>;
+
+
+export interface ChatPolicyTable {
+  school_id: string;
+  student_teacher_direct_enabled: Generated<boolean>;
+  guardian_teacher_direct_enabled: Generated<boolean>;
+  student_group_replies: Generated<boolean>;
+  guardian_group_replies: Generated<boolean>;
+  attachments_enabled: Generated<boolean>;
+  enforce_communication_hours: Generated<boolean>;
+  communication_start: ColumnType<string, string | undefined, string>;
+  communication_end: ColumnType<string, string | undefined, string>;
+  retention_days: Generated<number>;
+  privacy_notice_version: Generated<string>;
+  updated_by: ColumnType<string | null, string | null | undefined, string | null>;
+  updated_at: Timestamp;
+}

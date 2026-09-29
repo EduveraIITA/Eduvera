@@ -98,6 +98,18 @@ export class AuthController {
   }
 
   @ApiCookieAuth()
+  @Post("active-school/")
+  @HttpCode(200)
+  selectSchool(@Req() request: AuthenticatedRequest) { return this.auth.selectSchool(request.authUser, request.sessionHash, request.body); }
+
+  @Get("sessions/")
+  sessions(@Req() request: AuthenticatedRequest) { return this.auth.sessions(request.authUser, request.sessionHash); }
+
+  @Post("sessions/revoke-others/")
+  @HttpCode(200)
+  revokeOthers(@Req() request: AuthenticatedRequest) { return this.auth.revokeOtherSessions(request.authUser, request.sessionHash); }
+
+  @ApiCookieAuth()
   @Get("me/")
   me(@Req() request: AuthenticatedRequest) {
     return this.auth.me(request.authUser);

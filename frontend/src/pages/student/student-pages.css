@@ -2656,9 +2656,11 @@
 .student-home-id-card > footer strong { overflow: hidden; margin-top: 2px; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .student-home-id-card > footer i { width: 54px; height: 22px; opacity: .7; background: repeating-linear-gradient(90deg,#fff 0 2px,transparent 2px 4px,#fff 4px 5px,transparent 5px 8px); }
 
-.student-id-view { position: fixed; z-index: 42; top: calc(64px + env(safe-area-inset-top, 0px)); right: max(0px, calc((100vw - 780px) / 2)); bottom: calc(64px + env(safe-area-inset-bottom, 0px)); left: max(0px, calc((100vw - 780px) / 2)); display: flex; padding: 22px; align-items: center; justify-content: center; flex-direction: column; background: rgba(8,18,42,.72); backdrop-filter: blur(16px); animation: student-id-view-in .2s cubic-bezier(.16,1,.3,1); }
-.student-id-view__close { position: absolute; top: 16px; right: 16px; display: grid; width: 40px; height: 40px; border: 1px solid rgba(255,255,255,.18); border-radius: var(--edura-radius-card); place-items: center; color: #fff; background: rgba(255,255,255,.1); cursor: pointer; }
-.student-id-view__card { position: relative; overflow: hidden; width: min(100%, 390px); padding: 22px; border: 1px solid rgba(255,255,255,.24); border-radius: var(--edura-radius-feature); color: #fff; background: linear-gradient(145deg,#164ed0,#245fdc 54%,#0b756c 150%); box-shadow: 0 28px 70px rgba(0,0,0,.38); }
+.student-id-view { position: fixed; z-index: 60; top: calc(64px + env(safe-area-inset-top, 0px)); right: max(0px, calc((100vw - 780px) / 2)); bottom: calc(64px + env(safe-area-inset-bottom, 0px)); left: max(0px, calc((100vw - 780px) / 2)); display: flex; overflow-y: auto; overscroll-behavior: contain; padding: 64px 22px 22px; align-items: center; justify-content: safe center; flex-direction: column; background: rgba(8,18,42,.72); backdrop-filter: blur(16px); animation: student-id-view-in .2s ease-out; }
+.student-id-view--parent { top: calc(116px + max(0px, env(safe-area-inset-top, 0px) - 12px)); bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+.student-id-view__close { position: absolute; z-index: 3; top: 12px; right: 16px; display: grid; width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.75); border-radius: 13px; place-items: center; color: #123b86; background: #fff; box-shadow: 0 5px 18px rgba(0,0,0,.24); cursor: pointer; }
+.student-id-view__close:focus-visible { outline: 3px solid #a7d4ff; outline-offset: 3px; }
+.student-id-view__card { position: relative; overflow: hidden; flex: 0 0 auto; width: min(100%, 390px); padding: 22px; border: 1px solid rgba(255,255,255,.24); border-radius: 26px; color: #fff; background: linear-gradient(145deg,#164ed0,#245fdc 54%,#0b756c 150%); box-shadow: 0 28px 70px rgba(0,0,0,.38); }
 .student-id-view__card::after { position: absolute; top: -70px; right: -70px; width: 210px; height: 210px; border-radius: 50%; background: rgba(255,255,255,.08); box-shadow: 0 0 0 35px rgba(255,255,255,.025),0 0 0 70px rgba(255,255,255,.018); content: ""; }
 .student-id-view__card > * { position: relative; z-index: 1; }
 .student-id-view__card > header { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 10px; }
@@ -3203,3 +3205,5 @@
 .timetable-date-picker input:focus-visible { outline:2px solid var(--edura-brand-bright); outline-offset:3px; }
 .timetable-week-chart button.is-cancelled strong { text-decoration:line-through; color:var(--edura-ink-muted); }
 .timetable-week-chart button.is-cancelled small { color:var(--edura-danger); }
+
+.student-bottom-nav:has(.student-bottom-nav__item:nth-child(6)) .student-bottom-nav__item { width: min(16.4vw, 56px); font-size: 10px; }

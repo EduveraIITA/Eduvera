@@ -141,6 +141,7 @@ export class SchoolService {
       LEFT JOIN users account ON account.id = st.user_id
       JOIN schools sc ON sc.id = st.school_id
       WHERE (${requestedId ?? null}::uuid IS NULL OR st.id = ${requestedId ?? null}::uuid)
+        AND (${user.active_school_id ?? null}::uuid IS NULL OR st.school_id=${user.active_school_id ?? null}::uuid)
         AND (
           (st.user_id = ${user.id}::uuid AND EXISTS (
             SELECT 1 FROM school_memberships m WHERE m.user_id = ${user.id}::uuid
@@ -180,7 +181,7 @@ export class SchoolService {
 
   async accessibleStudentDtos(user: AuthUser) {
     const ids = await sql<{ id: string }>`
-      SELECT DISTINCT st.id FROM students st WHERE
+      SELECT DISTINCT st.id FROM students st WHERE (${user.active_school_id ?? null}::uuid IS NULL OR st.school_id=${user.active_school_id ?? null}::uuid) AND (
         (st.user_id = ${user.id}::uuid AND EXISTS (SELECT 1 FROM school_memberships m WHERE m.user_id=${user.id}::uuid AND m.school_id=st.school_id AND m.role='student' AND m.is_active))
         OR EXISTS (SELECT 1 FROM parents p JOIN guardian_relationships gr ON gr.guardian_id=p.id JOIN school_memberships m ON m.user_id=p.user_id AND m.school_id=st.school_id AND m.role='guardian' AND m.is_active WHERE p.user_id=${user.id}::uuid AND gr.student_id=st.id)
         OR EXISTS (SELECT 1 FROM school_memberships m WHERE m.user_id=${user.id}::uuid AND m.school_id=st.school_id AND m.role='admin' AND m.is_active)
@@ -271,8 +272,13 @@ export class SchoolService {
   private async requireSchoolRole(user: AuthUser, roles: Array<"staff" | "admin">, schoolId?: string) {
     let query = this.db.selectFrom("school_memberships").select(["id", "school_id", "role"])
       .where("user_id", "=", user.id).where("role", "in", roles).where("is_active", "=", true);
-    if (schoolId) query = query.where("school_id", "=", schoolId);
-    const membership = await query.orderBy("created_at").executeTakeFirst();
+    const scopedSchoolId = schoolId ?? user.active_school_id;
+    if (scopedSchoolId) query = query.where("school_id", "=", scopedSchoolId);
+    const memberships = await query.orderBy("role").execute();
+    if (!scopedSchoolId && new Set(memberships.map((m) => m.school_id)).size > 1) {
+      throw new BadRequestException("Select an active school before opening this workspace.");
+    }
+    const membership = memberships[0];
     if (!membership) throw new ForbiddenException(`An active ${roles.join(" or ")} membership is required.`);
     return membership;
   }

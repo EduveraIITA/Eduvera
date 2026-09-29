@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { sql } from "kysely";
@@ -29,6 +29,7 @@ function publicUser(user: AuthUser) {
     last_name: user.last_name,
     display_name: `${user.first_name} ${user.last_name}`.trim() || user.username,
     role: user.role,
+    active_school_id: user.active_school_id ?? null,
   };
 }
 
@@ -63,7 +64,7 @@ export class AuthService {
     const row = await this.db.selectFrom("auth_sessions as s")
       .innerJoin("users as u", "u.id", "s.user_id")
       .select([
-        "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at",
+        "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at", "s.active_school_id",
         "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.role", "u.is_active",
       ])
       .where("s.token_hash", "=", tokenHash).executeTakeFirst();
@@ -89,6 +90,7 @@ export class AuthService {
         last_name: row.last_name,
         role: row.role,
         is_active: row.is_active,
+        active_school_id: row.active_school_id,
       },
     };
   }
@@ -174,6 +176,26 @@ export class AuthService {
     await this.db.deleteFrom("auth_sessions").where("token_hash", "=", tokenHash).execute();
   }
 
+  async selectSchool(user: AuthUser, sessionHash: string, body: unknown) {
+    const { school_id } = z.object({ school_id: z.string().uuid() }).parse(body);
+    const membership = await this.db.selectFrom("school_memberships").select("id").where("user_id", "=", user.id)
+      .where("school_id", "=", school_id).where("is_active", "=", true).executeTakeFirst();
+    if (!membership) throw new ForbiddenException("An active membership in the selected school is required.");
+    await this.db.updateTable("auth_sessions").set({ active_school_id: school_id }).where("token_hash", "=", sessionHash).where("user_id", "=", user.id).execute();
+    return { active_school_id: school_id };
+  }
+
+  async sessions(user: AuthUser, current: string) {
+    const rows = await this.db.selectFrom("auth_sessions").select(["token_hash", "user_agent", "created_at", "last_seen_at", "expires_at"])
+      .where("user_id", "=", user.id).where("expires_at", ">", new Date()).orderBy("last_seen_at", "desc").execute();
+    return { results: rows.map(({ token_hash, ...row }) => ({ ...row, current: token_hash === current })) };
+  }
+
+  async revokeOtherSessions(user: AuthUser, current: string) {
+    await this.db.deleteFrom("auth_sessions").where("user_id", "=", user.id).where("token_hash", "!=", current).execute();
+    return { revoked: true };
+  }
+
   async me(user: AuthUser) {
     const memberships = await this.db.selectFrom("school_memberships as m")
       .innerJoin("schools as s", "s.id", "m.school_id")
@@ -184,10 +206,13 @@ export class AuthService {
       .innerJoin("parents as p", "p.id", "gr.guardian_id")
       .select("gr.student_id as id").where("p.user_id", "=", user.id).execute();
     const ids = new Set([...own, ...linked].map((row) => row.id));
+    const grants = await sql<{ school_id: string; permission: string }>`SELECT g.school_id,g.permission FROM school_permission_grants g JOIN school_memberships m
+      ON m.school_id=g.school_id AND m.user_id=g.user_id WHERE m.user_id=${user.id}::uuid AND m.role='staff' AND m.is_active`.execute(this.db);
     return {
       user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || null },
       students: [...ids].map((id) => ({ id })),
       memberships,
+      permission_grants: grants.rows,
       demo_mode: config().DEMO_MODE,
     };
   }

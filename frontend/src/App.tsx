@@ -76,6 +76,12 @@ const PrincipalDayPlanPage = lazy(() => import('./features/day-plans/PrincipalDa
 const TeacherDayPage = lazy(() => import('./features/day-plans/TeacherDayPage'));
 const PeoplePage = lazy(() => import("./features/people/PeoplePage"));
 const PeopleImportPage = lazy(() => import("./features/people/PeopleImportPage"));
+const ParentChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).ParentChatRoute }));
+const StudentChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).StudentChatRoute }));
+const TeacherChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).TeacherChatRoute }));
+const PrincipalChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).PrincipalChatRoute }));
+const TeacherSafeguardingRoute = lazy(async () => ({ default: (await import("./features/chat/SafeguardingPage")).TeacherSafeguardingRoute }));
+const PrincipalSafeguardingRoute = lazy(async () => ({ default: (await import("./features/chat/SafeguardingPage")).PrincipalSafeguardingRoute }));
 
 function PageLoader() {
   return (
@@ -138,6 +144,7 @@ export function App() {
               <Route path="/parent/leave" element={<PortalOnly portal="parent"><ParentLeaveRoute /></PortalOnly>} />
               <Route path="/parent/diary" element={<PortalOnly portal="parent"><ParentDiaryRoute /></PortalOnly>} />
               <Route path="/parent/timetable" element={<PortalOnly portal="parent"><ParentTimetableRoute /></PortalOnly>} />
+              <Route path="/parent/messages" element={<PortalOnly portal="parent"><ParentChatRoute /></PortalOnly>} />
 
               <Route path="/student" element={<PortalOnly portal="student"><StudentHomeRoute /></PortalOnly>} />
               <Route path="/student/attendance" element={<PortalOnly portal="student"><StudentAttendanceRoute /></PortalOnly>} />
@@ -152,11 +159,14 @@ export function App() {
               <Route path="/student/apps" element={<PortalOnly portal="student"><StudentModulesPage /></PortalOnly>} />
               <Route path="/student/fees" element={<PortalOnly portal="student"><StudentModulesPage focus="fees" /></PortalOnly>} />
               <Route path="/student/diary" element={<PortalOnly portal="student"><StudentDiaryRoute /></PortalOnly>} />
+              <Route path="/student/messages" element={<PortalOnly portal="student"><StudentChatRoute /></PortalOnly>} />
 
               <Route path="/teacher" element={<PortalOnly portal="teacher"><TeacherHomeRoute /></PortalOnly>} />
               <Route path="/teacher/attendance" element={<PortalOnly portal="teacher"><TeacherAttendanceRoute /></PortalOnly>} />
               <Route path="/teacher/timetable" element={<PortalOnly portal="teacher"><TeacherDayPage /></PortalOnly>} />
               <Route path="/teacher/timetable/weekly" element={<PortalOnly portal="teacher"><TeacherTimetableRoute /></PortalOnly>} />
+              <Route path="/teacher/messages" element={<PortalOnly portal="teacher"><TeacherChatRoute /></PortalOnly>} />
+              <Route path="/teacher/safeguarding" element={<PortalOnly portal="teacher"><TeacherSafeguardingRoute /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
@@ -164,6 +174,8 @@ export function App() {
               <Route path="/principal/timetable/weekly" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
               <Route path="/principal/students" element={<PortalOnly portal="principal"><PeoplePage /></PortalOnly>} />
               <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
+              <Route path="/principal/messages" element={<PortalOnly portal="principal"><PrincipalChatRoute /></PortalOnly>} />
+              <Route path="/principal/safeguarding" element={<PortalOnly portal="principal"><PrincipalSafeguardingRoute /></PortalOnly>} />
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>

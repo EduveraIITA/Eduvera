@@ -5,6 +5,8 @@ import { Link, MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { OperationsShell } from "./pages/operations/OperationsShell";
+import { ParentShell, type ParentRoute } from "./pages/parent/ParentShell";
+import { demoParentChild } from "./pages/parent/parentDemoData";
 import { schoolApiFixture } from "./test/schoolApiFixtures";
 
 const { apiFetchMock } = vi.hoisted(() => ({ apiFetchMock: vi.fn() }));
@@ -126,6 +128,21 @@ describe("implemented application routes", () => {
     await user.click(screen.getByRole("button", { name: "Close digital student ID" }));
     await user.click(screen.getByRole("link", { name: "Attendance" }));
     expect(await screen.findByText("Overall Aggregate")).toBeVisible();
+  }, 12000);
+
+  it("opens the parent's full student ID above the card deck with a visible close control", async () => {
+    const interact = userEvent.setup();
+    render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
+    await interact.click(await screen.findByRole("button", { name: /Open digital student ID for Aarav Sharma/ }));
+    const dialog = screen.getByRole("dialog", { name: "Aarav Sharma" });
+    expect(dialog).toBeVisible();
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog).toHaveClass("student-id-view--parent");
+    expect(within(dialog).getByText("Digital Student Identity")).toBeVisible();
+    const close = within(dialog).getByRole("button", { name: "Close digital student ID" });
+    expect(close).toBeVisible();
+    await interact.click(close);
+    expect(screen.queryByRole("dialog", { name: "Aarav Sharma" })).not.toBeInTheDocument();
   });
 
   it("opens the full attendance standings from each top student and the student's own row", async () => {
@@ -352,8 +369,46 @@ describe("implemented application routes", () => {
     await interact.click(chooseChild);
     expect(screen.getByRole("dialog", { name: "Select child profile" })).toBeVisible();
     await interact.click(screen.getByRole("button", { name: "View Ananya Sharma's parent dashboard" }));
-    expect(await screen.findByText("Ananya Sharma - Class 7A")).toBeVisible();
+    expect(await screen.findByText("Ananya Sharma · Class 7A")).toBeVisible();
   }, 15000);
+
+  it.each(["attendance", "leave", "diary", "timetable"] as ParentRoute[])("keeps the child profile switch in the header on %s", async (active) => {
+    const switchChild = vi.fn();
+    const childOptions = [demoParentChild, { ...demoParentChild, id: "student-2", name: "Ananya Sharma" }];
+    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint === "/api/v1/students/"
+      ? Promise.resolve({ results: childOptions.map((option) => ({ id: option.id, user: { display_name: option.name }, current_enrollment: { grade: "7", section: "A" }, avatar_url: option.avatarUrl })) })
+      : original(endpoint));
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[`/parent/${active}`]}>
+      <ParentShell active={active} pageLabel={active} child={demoParentChild} childOptions={childOptions} onSelectChild={switchChild}><span>Page content</span></ParentShell>
+    </MemoryRouter></QueryClientProvider>);
+    const toggle = screen.getByRole("button", { name: "Switch to other child" });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle.closest(".parent-header__actions")).toBeInTheDocument();
+    expect(document.querySelector(".child-switcher")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Parent portal navigation" })).toContainElement(screen.getByRole("link", { name: "Home" }));
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("dialog", { name: "Select child profile" })).not.toBeInTheDocument();
+    expect(switchChild).toHaveBeenCalledWith("student-2");
+  });
+
+  it("shows a child picker on the Attendance page when there are more than two children", async () => {
+    const switchChild = vi.fn();
+    const childOptions = [demoParentChild, { ...demoParentChild, id: "student-2", name: "Ananya Sharma" }, { ...demoParentChild, id: "student-3", name: "Rohan Sharma" }];
+    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint === "/api/v1/students/"
+      ? Promise.resolve({ results: childOptions.map((option) => ({ id: option.id, user: { display_name: option.name }, current_enrollment: { grade: "7", section: "A" }, avatar_url: option.avatarUrl })) })
+      : original(endpoint));
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/parent/attendance"]}>
+      <ParentShell active="attendance" pageLabel="Attendance" child={demoParentChild} childOptions={childOptions} onSelectChild={switchChild}><span>Page content</span></ParentShell>
+    </MemoryRouter></QueryClientProvider>);
+    const picker = await screen.findByRole("button", { name: "Choose child profile" });
+    await waitFor(() => expect(picker).toBeEnabled());
+    fireEvent.click(picker);
+    const dialog = screen.getByRole("dialog", { name: "Select child profile" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "View Rohan Sharma's parent dashboard" }));
+    expect(switchChild).toHaveBeenCalledWith("student-3");
+  });
 
   it("keeps the parent dashboard visible when the selected child's record is still loading", async () => {
     const interact = userEvent.setup();

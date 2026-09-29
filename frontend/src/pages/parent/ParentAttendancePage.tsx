@@ -221,7 +221,7 @@ export function ParentAttendancePage({
 
         <section className="attendance-actions" aria-label="Attendance actions">
           <button className="button button--primary" type="button" onClick={() => void requestLeave()}>
-            <PlusCircle size={18} />+ Request Leave / Medical Slip
+            <PlusCircle size={18} />Request Leave / Medical Slip
           </button>
           <button className="button button--white" type="button" disabled={!onMessageTeacher || messageState === "sending" || messageState === "sent"} onClick={() => void messageTeacher()}>
             {messageState === "sending" ? <LoaderCircle className="spin" size={18} /> : messageState === "sent" ? <CheckCircle2 size={18} /> : <MessageSquareText size={18} />}

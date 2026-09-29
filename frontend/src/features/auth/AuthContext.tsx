@@ -23,6 +23,7 @@ export interface AuthUser {
   display_name: string;
   role: AccountRole;
   avatar_url?: string | null;
+  active_school_id?: string | null;
 }
 
 export interface SchoolMembership {
@@ -123,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState({
         status: "authenticated",
         user: profile.user,
-        memberships: profile.memberships,
+        memberships: profile.user.active_school_id ? profile.memberships.filter((m) => m.school_id === profile.user.active_school_id) : profile.memberships,
         demoMode: profile.demo_mode,
         serviceError: null,
       });

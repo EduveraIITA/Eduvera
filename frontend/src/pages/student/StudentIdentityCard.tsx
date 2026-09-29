@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toDataURL } from "qrcode";
 import { BadgeCheck, X } from "lucide-react";
 import "./student-pages.css";
@@ -23,6 +24,7 @@ export function StudentIdentityCard({
   showSwitchButton = true,
   eyebrow = "Student identity",
   primaryHeading = true,
+  modalInset = "student",
 }: {
   identity: StudentIdentity;
   schoolName?: string;
@@ -30,6 +32,7 @@ export function StudentIdentityCard({
   showSwitchButton?: boolean;
   eyebrow?: string;
   primaryHeading?: boolean;
+  modalInset?: "student" | "parent";
 }) {
   const [idOpen, setIdOpen] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
@@ -90,7 +93,7 @@ export function StudentIdentityCard({
       </footer>
     </section>
     {switchChild && showSwitchButton ? <button className="parent-id-switch" type="button" onClick={switchChild.onSelect}>Switch to {switchChild.name}</button> : null}
-    {idOpen ? <div className="student-id-view" role="dialog" aria-modal="true" aria-labelledby="digital-student-id-heading">
+    {idOpen ? createPortal(<div className={`student-id-view${modalInset === "parent" ? " student-id-view--parent" : ""}`} role="dialog" aria-modal="true" aria-labelledby="digital-student-id-heading">
       <button className="student-id-view__close" type="button" onClick={() => setIdOpen(false)} aria-label="Close digital student ID"><X size={20} /></button>
       <section className="student-id-view__card">
         <header><span className="student-id-view__crest">{crest}</span><span><strong>{schoolName}</strong><small>Digital Student Identity</small></span><BadgeCheck size={22} /></header>
@@ -102,6 +105,6 @@ export function StudentIdentityCard({
         </div>
       </section>
       <p>Show this screen when your school asks for student identification.</p>
-    </div> : null}
+    </div>, document.body) : null}
   </>;
 }

@@ -716,3 +716,21 @@ Verification:
 - Verification: the detached supervisor is running with PPID 1; local web and photo health return
   HTTP 200; the local and public session endpoints return HTTP 200; and a teacher/staff demo session
   is created successfully through `https://dalene-miraculous-sweepingly.ngrok-free.dev`.
+
+## Stage feature-line integration — 29 September 2026
+
+- Integrated the latest `origin/Stage` administration, fees, governed chat and safeguarding work
+  with this branch's attendance, timetable, people, day-plan, event-delivery and photo-attendance
+  modules. Both backend module graphs and all mobile routes remain registered; teacher attendance
+  access keeps the stricter dated-assignment rule.
+- Kept Stage's already-published chat/operations migration filenames unchanged so previously
+  applied migration checksums remain valid. The independent attendance/event migrations coexist
+  under their distinct full filenames and are serialized by the existing advisory-locked runner.
+- Preserved release-time migrations and explicit demo seeding in the Stage workflow; container
+  startup remains schema read-only. The repeat-safe operations seed now runs in isolated CI and
+  only during an explicitly requested Stage re-seed.
+- Verification from an index-backed local copy: backend build, typecheck and lint pass; **37**
+  backend unit/safety tests pass; mobile typecheck, lint and production build pass with **134**
+  tests; desktop typecheck and production build pass. Database integration remains delegated to
+  the workflow's disposable PostgreSQL service because no isolated local PostgreSQL server was
+  available during this merge.

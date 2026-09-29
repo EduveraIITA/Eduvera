@@ -7,6 +7,7 @@ import {
   CalendarX2,
   Home,
   ListChecks,
+  MessageCircle,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
@@ -17,7 +18,7 @@ import { demoParentChild } from "./parentDemoData";
 import type { ParentChildSummary, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
-export type ParentRoute = "home" | "attendance" | "leave" | "diary" | "timetable";
+export type ParentRoute = "home" | "attendance" | "leave" | "diary" | "timetable" | "chat";
 
 function ChildPortrait({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
   return avatarUrl ? <img src={avatarUrl} alt="" /> : <span aria-hidden="true">{name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>;
@@ -34,6 +35,7 @@ const parentRoutes: Array<{
   { id: "leave", label: "Leave", path: "/parent/leave", icon: CalendarX2 },
   { id: "diary", label: "Diary", path: "/parent/diary", icon: BookOpen },
   { id: "timetable", label: "Timetable", path: "/parent/timetable", icon: CalendarDays },
+  { id: "chat", label: "Messages", path: "/parent/messages", icon: MessageCircle },
 ];
 
 export interface ParentShellProps {
@@ -148,13 +150,11 @@ export function ParentShell({
           </div>
         </div>
         <div className="parent-header__context">
-          {active !== "home" ? (
-            <span className="parent-header__child-context">
-              <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : presenceStatus === "away" ? "presence-dot presence-dot--away" : "presence-dot"} />
-              <span>{child.name} - Class {child.grade.replace("Grade ", "")}{child.section}</span>
-            </span>
-          ) : null}
           <span className="parent-header__page">{pageLabel}</span>
+          {active !== "home" ? <span className="parent-header__child-label">
+            <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : presenceStatus === "away" ? "presence-dot presence-dot--away" : "presence-dot"} />
+            <span className="parent-header__child-name">{child.name} · Class {child.grade.replace("Grade ", "")}{child.section}</span>
+          </span> : null}
         </div>
       </header>
 

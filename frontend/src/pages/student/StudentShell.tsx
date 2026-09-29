@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Home,
+  MessageCircle,
   WalletCards,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
@@ -23,7 +24,8 @@ export type StudentNavKey =
   | "diary"
   | "copilot"
   | "fees"
-  | "launcher";
+  | "launcher"
+  | "chat";
 
 export interface StudentRouteMap {
   home: string;
@@ -33,6 +35,7 @@ export interface StudentRouteMap {
   copilot: string;
   fees: string;
   launcher: string;
+  chat: string;
 }
 
 export const defaultStudentRoutes: StudentRouteMap = {
@@ -43,6 +46,7 @@ export const defaultStudentRoutes: StudentRouteMap = {
   copilot: "/student/copilot",
   fees: "/student/fees",
   launcher: "/student/apps",
+  chat: "/student/messages",
 };
 
 export interface StudentShellProps {
@@ -64,6 +68,7 @@ const schoolNav = [
   { key: "copilot" as const, label: "Copilot", icon: Bot },
   { key: "fees" as const, label: "Fees", icon: WalletCards },
   { key: "launcher" as const, label: "Launcher", icon: AppWindow },
+  { key: "chat" as const, label: "Messages", icon: MessageCircle },
 ];
 
 const eduraNav = [
@@ -72,6 +77,7 @@ const eduraNav = [
   { key: "classes" as const, label: "Classes", icon: CalendarDays },
   { key: "diary" as const, label: "Diary", icon: BookOpen },
   { key: "launcher" as const, label: "Launcher", icon: AppWindow },
+  { key: "chat" as const, label: "Messages", icon: MessageCircle },
 ];
 
 export function StudentShell({

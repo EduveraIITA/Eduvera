@@ -54,7 +54,9 @@ class BrowserSession {
 
   async login(identifier: string): Promise<Response> {
     await this.csrf();
-    return this.request("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password: "OmniDemo@2026" }) }, true);
+    const response = await this.request("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password: "OmniDemo@2026" }) }, true);
+    expect(response.status).toBe(200);
+    return response;
   }
 }
 
@@ -122,7 +124,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   // Keep authentication and endpoint throttles independent across cases. This
-  // table belongs to the disposable database enforced above.
+  // disposable table is isolated from Stage and prevents unrelated fast test
+  // scenarios from collectively reaching the production limit.
   await pool.query("DELETE FROM api_rate_limit_buckets");
 });
 
@@ -1357,7 +1360,7 @@ describe("OmniSchool API", () => {
     if (schoolDay.getUTCDay() === 0) schoolDay.setUTCDate(schoolDay.getUTCDate() - 2);
     const date = schoolDay.toISOString().slice(0, 10);
     const home = await school.teacherHomeScreen(user, date);
-    const selectedClass = home.classes[0];
+    const selectedClass = home.classes[0]!;
     expect(selectedClass).toBeDefined();
     const screen = await school.teacherAttendanceScreen(user, selectedClass.class_section_id, date);
     const payload = {

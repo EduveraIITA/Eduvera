@@ -60,7 +60,7 @@ describe('Reviewed bulk student enrollment',()=>{
   });
   it('saves a 200-student batch with complete shared-family graphs, no accounts and no marks',async()=>{
     const before=await count(),users=(await pool.query('SELECT count(*)::int AS n FROM users')).rows[0].n;
-    const values=Array.from({length:200},(_,i)=>row({first_name:['Aarav','Ananya','Kavya','Rohan'][i%4],guardian_key:`cohort-family-${Math.floor(i/2)}`,guardian_first_name:`Guardian${Math.floor(i/2)}`,guardian_last_name:'Patil',guardian_phone:`91${String(9800000000+Math.floor(i/2))}`,class:i<100?'7A':'7B'}));
+    const values=Array.from({length:200},(_,i)=>row({first_name:['Aarav','Ananya','Kavya','Rohan'][i%4]!,guardian_key:`cohort-family-${Math.floor(i/2)}`,guardian_first_name:`Guardian${Math.floor(i/2)}`,guardian_last_name:'Patil',guardian_phone:`91${String(9800000000+Math.floor(i/2))}`,class:i<100?'7A':'7B'}));
     const id=await upload(values);const result=await commit(id);expect(result).toMatchObject({students:200,guardians_created:100,guardians_reused:0,skipped:0});expect(await count()).toBe(before+200);
     const ids=result!.enrolled.map(r=>r.student_id);
     expect((await pool.query('SELECT s.id FROM students s LEFT JOIN guardian_relationships g ON g.student_id=s.id LEFT JOIN enrollments e ON e.student_id=s.id WHERE s.id=ANY($1::uuid[]) AND (g.id IS NULL OR e.id IS NULL)',[ids])).rows).toHaveLength(0);

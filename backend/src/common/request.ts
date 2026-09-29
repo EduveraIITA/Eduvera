@@ -10,6 +10,7 @@ export interface AuthUser {
   last_name: string;
   role: UserRole;
   is_active: boolean;
+  active_school_id?: string | null;
 }
 
 export type AuthenticatedRequest = FastifyRequest & {
