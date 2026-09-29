@@ -147,18 +147,8 @@ jobs:
             echo "::warning::METRICS_TOKEN secret is not set; deployment will continue and protected metrics auth verification will be skipped."
           fi
 
-      - name: Backend · install migration tooling
-        working-directory: backend
-        run: npm ci --ignore-scripts
-
       - name: Install Railway CLI
         run: npm install -g @railway/cli@5.54.0
-
-      - name: Backend · apply pending stage migrations
-        working-directory: backend
-        run: |
-          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
-            sh -c 'test -n "$EVENT_DATABASE_URL" || { echo "::error::EVENT_DATABASE_URL is not configured on the Railway service"; exit 1; }; export MIGRATION_DATABASE_URL="$EVENT_DATABASE_URL"; export NODE_ENV=production; export DEPLOYMENT_ENVIRONMENT=stage; npm run db:migrate'
 
       - uses: actions/setup-python@v5
         if: github.event_name == 'workflow_dispatch' && inputs.seed
