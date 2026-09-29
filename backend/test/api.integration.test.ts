@@ -1236,7 +1236,40 @@ describe("OmniSchool API", () => {
   it("exposes future register availability without allowing an early submission", async () => {
     const browser = new BrowserSession();
     expect((await browser.login("kavita.staff")).status).toBe(200);
-    const date = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    // Pick the next date that is both in the future in the school's timezone and
+    // actually has a lesson for this teacher. Using UTC + 24h flakes when CI
+    // runs after local midnight but before UTC midnight.
+    const futureSchoolDay = (await pool.query<{ date: string }>(`
+      WITH teacher_school AS (
+        SELECT school.id, school.timezone
+        FROM users teacher
+        JOIN school_memberships membership ON membership.user_id=teacher.id AND membership.is_active
+        JOIN schools school ON school.id=membership.school_id
+        WHERE teacher.username='kavita.staff'
+        LIMIT 1
+      )
+      SELECT candidate::date::text AS date
+      FROM teacher_school school
+      CROSS JOIN LATERAL generate_series(
+        (now() AT TIME ZONE school.timezone)::date + 1,
+        (now() AT TIME ZONE school.timezone)::date + 14,
+        interval '1 day'
+      ) candidate
+      WHERE EXISTS (
+        SELECT 1
+        FROM effective_school_schedule(school.id, candidate::date) slot
+        JOIN users teacher ON teacher.id=slot.teacher_user_id
+        WHERE teacher.username='kavita.staff'
+          AND slot.weekday=EXTRACT(ISODOW FROM candidate::date)::int
+          AND slot.slot_type IN ('class','activity')
+          AND NOT slot.cancelled
+          AND slot.coverage_status IN ('not_required','accepted')
+      )
+      ORDER BY candidate
+      LIMIT 1
+    `)).rows[0];
+    expect(futureSchoolDay).toBeTruthy();
+    const date = futureSchoolDay.date;
     const home = await json(await browser.request(`/api/v1/screens/teacher/home/?date=${date}`));
     expect(home.classes.length).toBeGreaterThan(0);
     expect(home.classes.every((row: any) => row.date_open === false)).toBe(true);
