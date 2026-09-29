@@ -121,6 +121,7 @@ export function StudentShell({
             key={key}
             to={routeMap[key]}
             end={key === "home"}
+            aria-current={activeNav === key ? "page" : undefined}
             className={({ isActive }) => `student-bottom-nav__item ${activeNav === key || isActive ? "is-active" : ""}`}
           >
             {({ isActive }) => {

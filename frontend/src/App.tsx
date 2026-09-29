@@ -82,6 +82,20 @@ const TeacherChatRoute = lazy(async () => ({ default: (await import("./features/
 const PrincipalChatRoute = lazy(async () => ({ default: (await import("./features/chat/ChatPage")).PrincipalChatRoute }));
 const TeacherSafeguardingRoute = lazy(async () => ({ default: (await import("./features/chat/SafeguardingPage")).TeacherSafeguardingRoute }));
 const PrincipalSafeguardingRoute = lazy(async () => ({ default: (await import("./features/chat/SafeguardingPage")).PrincipalSafeguardingRoute }));
+const PrincipalEventsRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).PrincipalEventsRoute }));
+const PrincipalEventDetailRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).PrincipalEventDetailRoute }));
+const PrincipalEventCreateRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).PrincipalEventCreateRoute }));
+const PrincipalEventEditRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).PrincipalEventEditRoute }));
+const PrincipalEventRegisterRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).PrincipalEventRegisterRoute }));
+const TeacherEventsRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).TeacherEventsRoute }));
+const TeacherEventDetailRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).TeacherEventDetailRoute }));
+const TeacherEventCreateRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).TeacherEventCreateRoute }));
+const TeacherEventEditRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).TeacherEventEditRoute }));
+const TeacherEventRegisterRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).TeacherEventRegisterRoute }));
+const ParentEventsRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).ParentEventsRoute }));
+const ParentEventDetailRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).ParentEventDetailRoute }));
+const StudentEventsRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).StudentEventsRoute }));
+const StudentEventDetailRoute = lazy(async () => ({ default: (await import("./features/campus-events/CampusEventRoutes")).StudentEventDetailRoute }));
 
 function PageLoader() {
   return (
@@ -145,6 +159,8 @@ export function App() {
               <Route path="/parent/diary" element={<PortalOnly portal="parent"><ParentDiaryRoute /></PortalOnly>} />
               <Route path="/parent/timetable" element={<PortalOnly portal="parent"><ParentTimetableRoute /></PortalOnly>} />
               <Route path="/parent/messages" element={<PortalOnly portal="parent"><ParentChatRoute /></PortalOnly>} />
+              <Route path="/parent/events" element={<PortalOnly portal="parent"><ParentEventsRoute /></PortalOnly>} />
+              <Route path="/parent/events/:eventId" element={<PortalOnly portal="parent"><ParentEventDetailRoute /></PortalOnly>} />
 
               <Route path="/student" element={<PortalOnly portal="student"><StudentHomeRoute /></PortalOnly>} />
               <Route path="/student/attendance" element={<PortalOnly portal="student"><StudentAttendanceRoute /></PortalOnly>} />
@@ -160,6 +176,8 @@ export function App() {
               <Route path="/student/fees" element={<PortalOnly portal="student"><StudentModulesPage focus="fees" /></PortalOnly>} />
               <Route path="/student/diary" element={<PortalOnly portal="student"><StudentDiaryRoute /></PortalOnly>} />
               <Route path="/student/messages" element={<PortalOnly portal="student"><StudentChatRoute /></PortalOnly>} />
+              <Route path="/student/events" element={<PortalOnly portal="student"><StudentEventsRoute /></PortalOnly>} />
+              <Route path="/student/events/:eventId" element={<PortalOnly portal="student"><StudentEventDetailRoute /></PortalOnly>} />
 
               <Route path="/teacher" element={<PortalOnly portal="teacher"><TeacherHomeRoute /></PortalOnly>} />
               <Route path="/teacher/attendance" element={<PortalOnly portal="teacher"><TeacherAttendanceRoute /></PortalOnly>} />
@@ -167,6 +185,11 @@ export function App() {
               <Route path="/teacher/timetable/weekly" element={<PortalOnly portal="teacher"><TeacherTimetableRoute /></PortalOnly>} />
               <Route path="/teacher/messages" element={<PortalOnly portal="teacher"><TeacherChatRoute /></PortalOnly>} />
               <Route path="/teacher/safeguarding" element={<PortalOnly portal="teacher"><TeacherSafeguardingRoute /></PortalOnly>} />
+              <Route path="/teacher/events" element={<PortalOnly portal="teacher"><TeacherEventsRoute /></PortalOnly>} />
+              <Route path="/teacher/events/new" element={<PortalOnly portal="teacher"><TeacherEventCreateRoute /></PortalOnly>} />
+              <Route path="/teacher/events/:eventId" element={<PortalOnly portal="teacher"><TeacherEventDetailRoute /></PortalOnly>} />
+              <Route path="/teacher/events/:eventId/edit" element={<PortalOnly portal="teacher"><TeacherEventEditRoute /></PortalOnly>} />
+              <Route path="/teacher/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="teacher"><TeacherEventRegisterRoute /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
@@ -176,6 +199,11 @@ export function App() {
               <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
               <Route path="/principal/messages" element={<PortalOnly portal="principal"><PrincipalChatRoute /></PortalOnly>} />
               <Route path="/principal/safeguarding" element={<PortalOnly portal="principal"><PrincipalSafeguardingRoute /></PortalOnly>} />
+              <Route path="/principal/events" element={<PortalOnly portal="principal"><PrincipalEventsRoute /></PortalOnly>} />
+              <Route path="/principal/events/new" element={<PortalOnly portal="principal"><PrincipalEventCreateRoute /></PortalOnly>} />
+              <Route path="/principal/events/:eventId" element={<PortalOnly portal="principal"><PrincipalEventDetailRoute /></PortalOnly>} />
+              <Route path="/principal/events/:eventId/edit" element={<PortalOnly portal="principal"><PrincipalEventEditRoute /></PortalOnly>} />
+              <Route path="/principal/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="principal"><PrincipalEventRegisterRoute /></PortalOnly>} />
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>

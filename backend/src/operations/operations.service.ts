@@ -348,11 +348,42 @@ export class OperationsService {
           WHERE p.user_id=${user.id}::uuid AND gr.student_id=s.id AND m.role='guardian' AND m.is_active))`.execute(this.db);
       if (!family.rows.length) await this.authorize(user, schoolId, "fees.manage");
     } else await this.authorize(user, schoolId, "fees.manage");
-    const invoices = await sql`SELECT i.*,u.first_name,u.last_name,s.admission_number,COALESCE(p.paid_paise,0)::int AS paid_paise,
-      (i.amount_paise-COALESCE(p.paid_paise,0))::int AS balance_paise
-      FROM fee_invoices i JOIN students s ON s.id=i.student_id JOIN users u ON u.id=s.user_id
-      LEFT JOIN (SELECT invoice_id,sum(amount_paise) AS paid_paise FROM fee_payments GROUP BY invoice_id) p ON p.invoice_id=i.id
-      WHERE i.school_id=${schoolId}::uuid AND (${studentId ?? null}::uuid IS NULL OR i.student_id=${studentId ?? null}::uuid) ORDER BY i.due_on,i.created_at`.execute(this.db);
+    const invoices = await sql`SELECT invoice.*,person.first_name,person.last_name,student.admission_number,
+      totals.paid_paise,totals.credited_paise,totals.refunded_paise,
+      calculation.adjusted_amount_paise,calculation.net_paid_paise,
+      calculation.balance_paise,calculation.refund_due_paise,
+      CASE
+        WHEN calculation.refund_due_paise>0 AND totals.refunded_paise>0 THEN 'partially_refunded'
+        WHEN calculation.refund_due_paise>0 THEN 'refund_due'
+        WHEN totals.credited_paise>0 AND totals.refunded_paise>0 THEN 'refunded'
+        WHEN totals.credited_paise>0 THEN 'credited'
+        WHEN calculation.balance_paise=0 THEN 'paid'
+        ELSE 'collectible'
+      END AS collection_state
+      FROM fee_invoices invoice
+      JOIN students student ON student.id=invoice.student_id AND student.school_id=invoice.school_id
+      JOIN school_people person ON person.id=student.person_id AND person.school_id=student.school_id
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE((SELECT sum(payment.amount_paise) FROM fee_payments payment
+            WHERE payment.school_id=invoice.school_id AND payment.invoice_id=invoice.id),0)::int AS paid_paise,
+          COALESCE((SELECT sum(credit.amount_paise) FROM fee_invoice_credits credit
+            WHERE credit.school_id=invoice.school_id AND credit.invoice_id=invoice.id),0)::int AS credited_paise,
+          COALESCE((SELECT sum(refund.amount_paise) FROM fee_refunds refund
+            WHERE refund.school_id=invoice.school_id AND refund.invoice_id=invoice.id),0)::int AS refunded_paise
+      ) totals ON true
+      LEFT JOIN LATERAL (
+        SELECT GREATEST(invoice.amount_paise-totals.credited_paise,0)::int AS adjusted_amount_paise,
+          GREATEST(totals.paid_paise-totals.refunded_paise,0)::int AS net_paid_paise
+      ) base ON true
+      LEFT JOIN LATERAL (
+        SELECT GREATEST(base.adjusted_amount_paise-base.net_paid_paise,0)::int AS balance_paise,
+          GREATEST(base.net_paid_paise-base.adjusted_amount_paise,0)::int AS refund_due_paise,
+          base.adjusted_amount_paise,base.net_paid_paise
+      ) calculation ON true
+      WHERE invoice.school_id=${schoolId}::uuid
+        AND (${studentId ?? null}::uuid IS NULL OR invoice.student_id=${studentId ?? null}::uuid)
+      ORDER BY invoice.due_on,invoice.created_at`.execute(this.db);
     const payments = await sql`SELECT p.id,p.invoice_id,p.amount_paise,p.method,p.reference,p.created_at FROM fee_payments p JOIN fee_invoices i ON i.id=p.invoice_id
       WHERE p.school_id=${schoolId}::uuid AND (${studentId ?? null}::uuid IS NULL OR i.student_id=${studentId ?? null}::uuid) ORDER BY p.created_at DESC`.execute(this.db);
     return { currency: "INR", invoices: invoices.rows, payments: payments.rows, online_payments_enabled: false };
@@ -383,10 +414,31 @@ export class OperationsService {
         if (row.invoice_id !== invoiceId || row.amount_paise !== data.amount_paise || row.method !== data.method || row.reference !== data.reference) throw new ConflictException("Idempotency key was already used with different payment details.");
         return row;
       }
-      const invoice = await sql<{ amount_paise: number }>`SELECT amount_paise FROM fee_invoices WHERE id=${invoiceId}::uuid AND school_id=${schoolId}::uuid FOR UPDATE`.execute(db);
-      if (!invoice.rows[0]) throw new NotFoundException();
-      const paid = await sql<{ amount: string }>`SELECT COALESCE(sum(amount_paise),0)::text AS amount FROM fee_payments WHERE invoice_id=${invoiceId}::uuid`.execute(db);
-      if (data.amount_paise > invoice.rows[0].amount_paise - Number(paid.rows[0]!.amount)) throw new BadRequestException("Payment exceeds the outstanding invoice balance.");
+      const invoice = await sql<{
+        amount_paise: number;
+        paid_paise: number;
+        credited_paise: number;
+        refunded_paise: number;
+      }>`SELECT invoice.amount_paise,
+          COALESCE((SELECT sum(payment.amount_paise) FROM fee_payments payment
+            WHERE payment.school_id=invoice.school_id AND payment.invoice_id=invoice.id),0)::int AS paid_paise,
+          COALESCE((SELECT sum(credit.amount_paise) FROM fee_invoice_credits credit
+            WHERE credit.school_id=invoice.school_id AND credit.invoice_id=invoice.id),0)::int AS credited_paise,
+          COALESCE((SELECT sum(refund.amount_paise) FROM fee_refunds refund
+            WHERE refund.school_id=invoice.school_id AND refund.invoice_id=invoice.id),0)::int AS refunded_paise
+        FROM fee_invoices invoice
+        WHERE invoice.id=${invoiceId}::uuid AND invoice.school_id=${schoolId}::uuid
+        FOR UPDATE OF invoice`.execute(db);
+      const ledger = invoice.rows[0];
+      if (!ledger) throw new NotFoundException();
+      const adjusted = Math.max(ledger.amount_paise - ledger.credited_paise, 0);
+      const netPaid = Math.max(ledger.paid_paise - ledger.refunded_paise, 0);
+      const collectible = Math.max(adjusted - netPaid, 0);
+      if (!collectible) {
+        if (ledger.credited_paise) throw new ConflictException("This invoice has been credited and has no collectible balance.");
+        throw new BadRequestException("This invoice has no outstanding balance.");
+      }
+      if (data.amount_paise > collectible) throw new BadRequestException("Payment exceeds the outstanding invoice balance.");
       const result = await sql`INSERT INTO fee_payments(school_id,invoice_id,amount_paise,method,reference,idempotency_key,recorded_by)
         VALUES (${schoolId}::uuid,${invoiceId}::uuid,${data.amount_paise},${data.method},${data.reference},${data.idempotency_key}::uuid,${user.id}::uuid) RETURNING *`.execute(db);
       return result.rows[0];

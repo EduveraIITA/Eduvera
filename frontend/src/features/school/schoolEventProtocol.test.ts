@@ -125,7 +125,13 @@ describe("school event protocol", () => {
     const result = resolveSchoolEvent(data, "attendance.updated", "user-1");
     expect(result.usedFallback).toBe(true);
     expect(result.invalidations).toEqual(FULL_SYNC_INVALIDATIONS);
-    expect(result.invalidations).toContainEqual({ queryKey: ["principal-register-history"] });
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["principal-register-history"] },
+      { queryKey: ["campus-events"] },
+      { queryKey: ["campus-event"] },
+      { queryKey: ["campus-event-register"] },
+      { queryKey: ["campus-event-finance"] },
+    ]));
   });
 
   it("coalesces repeated invalidations into one 75ms batch", async () => {
@@ -151,5 +157,22 @@ describe("school event protocol", () => {
     const result = resolveSchoolEvent(eventData("coordination.updated", { student_id: "student-1", refresh: ["coordination"] }), "coordination.updated", "guardian-1");
     expect(result.usedFallback).toBe(false);
     expect(result.invalidations).toEqual([{ queryKey: ["school", "coordination"] }]);
+  });
+
+  it("refreshes event lists, details, registers and notifications for campus event updates", () => {
+    const result = resolveSchoolEvent(
+      eventData("campus_event.updated", { student_id: "student-1" }),
+      "campus_event.updated",
+      "guardian-1",
+    );
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual([
+      { queryKey: ["campus-events"] },
+      { queryKey: ["campus-event"] },
+      { queryKey: ["campus-event-register"] },
+      { queryKey: ["campus-event-finance"] },
+      { queryKey: ["notifications", "guardian-1"] },
+    ]);
   });
 });

@@ -734,3 +734,38 @@ Verification:
   tests; desktop typecheck and production build pass. Database integration remains delegated to
   the workflow's disposable PostgreSQL service because no isolated local PostgreSQL server was
   available during this merge.
+
+## Campus events and activities — 30 September 2026
+
+- Added school-scoped event drafts, publishing, cancellation and completion for excursions,
+  annual functions, sports, workshops, competitions, assemblies, PTMs, clubs and other school
+  activities. Teachers can create assigned class tests within their dated class/subject scope.
+  Event participation and event-session attendance remain explicitly separate from the daily
+  academic attendance register.
+- Principal operations cover audiences, independently configured mandatory/optional participation,
+  RSVP, purpose-specific guardian consent, staff duties, programme sessions, subgroup rosters,
+  packing requirements and event attendance. Family views expose only linked-child participation
+  and per-session attendance. Cursor pagination uses an explicit Load more action rather than an
+  unbounded background fetch, and event routes preserve each role's established primary navigation.
+- Paid optional events create the authoritative invoice only after acceptance. A pre-event family
+  withdrawal removes the place, preserves the invoice/payment record and appends a full credit.
+  Collected money becomes refund due; authorized finance staff record a manual cash, bank-transfer
+  or cheque refund with amount, reference and reason. No gateway refund is claimed. Event
+  cancellation uses the same immutable credit/refund reconciliation path and is deliberately
+  blocked after the event starts; a post-start abort/reconciliation workflow is a separate release.
+- Migration 019 adds append-only withdrawal, invoice-credit and refund facts with integer paise,
+  school-scoped references, over-credit/over-refund guards, audit, idempotency and outbox delivery.
+  Broad event invalidations contain no child identity; linked-family notifications retain their
+  private context. Ordinary event staff receive only coarse payment readiness, while authorized
+  finance users and the linked family can see the relevant ledger-derived amounts.
+- The final clean-copy backend campus-event, authorization, finance, migration and privacy gate
+  passes **34 tests**; backend typecheck, lint, production build and the **8-case** repeat-safe seed
+  verification pass. Responsive frontend typecheck, lint and production build pass, alongside
+  **37 focused event/API/realtime/navigation tests** run serially to avoid the workspace worker
+  startup issue.
+- UI checkpoint: principal/teacher operations plus parent/student event and reconciliation screens
+  are ready for Abhishek's review. Physical-phone and assistive-technology acceptance remain open.
+- Release boundaries remain explicit: generic events do not yet perform the new symmetric
+  participant-level collision pass against an already-published class test; accountless assisted
+  event consent/RSVP needs a school-approved purpose-authority and attribution design; and the
+  repository-wide non-owner PostgreSQL runtime/RLS context remains the existing B6 release gate.

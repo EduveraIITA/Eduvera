@@ -14,6 +14,7 @@ export const SCHOOL_EVENT_TYPES = [
   "notification.created",
   "leave.updated",
   "timetable.updated",
+  "campus_event.updated",
 ] as const;
 
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
@@ -40,6 +41,7 @@ export const REFRESH_TARGETS = [
   "principal.attendance-history",
   "principal.timetable",
   "notifications",
+  "campus-events",
 ] as const;
 
 export type RefreshTarget = (typeof REFRESH_TARGETS)[number];
@@ -105,6 +107,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
     "teacher.home",
     "principal.timetable",
   ],
+  "campus_event.updated": ["campus-events", "notifications"],
 };
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
@@ -116,6 +119,10 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["principal-register-history"] },
   { queryKey: ["principal-timetable"] },
   { queryKey: ["notifications"] },
+  { queryKey: ["campus-events"] },
+  { queryKey: ["campus-event"] },
+  { queryKey: ["campus-event-register"] },
+  { queryKey: ["campus-event-finance"] },
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -206,6 +213,7 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "principal.attendance-history": return [scopedOperationsInvalidation("principal-register-history", payload)];
     case "principal.timetable": return [{ queryKey: ["principal-timetable"] }];
     case "notifications": return [{ queryKey: userId ? ["notifications", userId] : ["notifications"] }];
+    case "campus-events": return [{ queryKey: ["campus-events"] }, { queryKey: ["campus-event"] }, { queryKey: ["campus-event-register"] }, { queryKey: ["campus-event-finance"] }];
   }
 }
 

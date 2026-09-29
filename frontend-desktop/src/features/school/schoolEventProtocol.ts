@@ -14,6 +14,7 @@ export const SCHOOL_EVENT_TYPES = [
   "notification.created",
   "leave.updated",
   "timetable.updated",
+  "campus_event.updated",
 ] as const;
 
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
@@ -40,6 +41,7 @@ export const REFRESH_TARGETS = [
   "principal.attendance-history",
   "principal.timetable",
   "notifications",
+  "campus-events",
 ] as const;
 
 export type RefreshTarget = (typeof REFRESH_TARGETS)[number];
@@ -97,6 +99,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
   "notification.created": ["notifications"],
   "leave.updated": ["student.home", "student.leave", "parent.home", "parent.leave", "teacher.home", "principal.home", "notifications"],
   "timetable.updated": ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable"],
+  "campus_event.updated": ["campus-events", "notifications"],
 };
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
@@ -116,6 +119,11 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["parent-attendance"] },
   { queryKey: ["subject-attendance"] },
   { queryKey: ["student-attendance"] },
+  { queryKey: ["campus-events"] },
+  { queryKey: ["campus-event"] },
+  { queryKey: ["campus-event-register"] },
+  { queryKey: ["campus-event-finance"] },
+  { queryKey: ["fees"] },
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -236,6 +244,13 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "principal.attendance-history": return [{ queryKey: ["register-history"] }];
     case "principal.timetable": return [{ queryKey: ["principal-timetable"] }];
     case "notifications": return [{ queryKey: ["notifications"] }];
+    case "campus-events": return [
+      { queryKey: ["campus-events"] },
+      { queryKey: ["campus-event"] },
+      { queryKey: ["campus-event-register"] },
+      { queryKey: ["campus-event-finance"] },
+      { queryKey: ["fees"] },
+    ];
   }
 }
 

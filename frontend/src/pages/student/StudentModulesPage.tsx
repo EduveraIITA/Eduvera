@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   Bot,
   CalendarCheck2,
+  CalendarRange,
   Clock3,
   Grid2X2,
   LockKeyhole,
@@ -19,6 +20,7 @@ const modules = [
   { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas, and eligibility", icon: CalendarCheck2, status: "Live", path: "/student/attendance", tone: "blue" },
   { id: "copilot", name: "Attendance Copilot", description: "Ask policy and projection questions using your own data", icon: Bot, status: "Live", path: "/student/copilot", tone: "teal" },
   { id: "classes", name: "Classes & Leave", description: "Timetable, leave applications, and approval status", icon: BookOpenCheck, status: "Live", path: "/student/timetable", tone: "violet" },
+  { id: "events", name: "Events & Activities", description: "Invitations, schedules, responses, consent, and preparation", icon: CalendarRange, status: "Live", path: "/student/events", tone: "teal" },
   { id: "fees", name: "Fees", description: "Invoices, receipts, and payment history", icon: ReceiptIndianRupee, status: "Planned", path: null, tone: "amber" },
   { id: "diary", name: "Student Diary", description: "Homework, teacher notes, and announcements", icon: Clock3, status: "Live", path: "/student/diary", tone: "rose" },
 ] as const;

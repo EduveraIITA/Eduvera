@@ -18,7 +18,7 @@ import { demoParentChild } from "./parentDemoData";
 import type { ParentChildSummary, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
-export type ParentRoute = "home" | "attendance" | "leave" | "diary" | "timetable" | "chat";
+export type ParentRoute = "home" | "attendance" | "leave" | "diary" | "timetable" | "chat" | "events";
 
 function ChildPortrait({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
   return avatarUrl ? <img src={avatarUrl} alt="" /> : <span aria-hidden="true">{name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>;
@@ -62,6 +62,7 @@ export function ParentShell({
   childSwitchDisabled = false,
 }: ParentShellProps) {
   const auth = useOptionalAuth();
+  const navigationActive = active === "events" ? "home" : active;
   const schoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name ?? "Cambridge International School";
   const [searchParams] = useSearchParams();
   const selectedStudentId = searchParams.get("student_id");
@@ -151,7 +152,7 @@ export function ParentShell({
         </div>
         <div className="parent-header__context">
           <span className="parent-header__page">{pageLabel}</span>
-          {active !== "home" ? <span className="parent-header__child-label">
+          {active !== "home" && active !== "events" ? <span className="parent-header__child-label">
             <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : presenceStatus === "away" ? "presence-dot presence-dot--away" : "presence-dot"} />
             <span className="parent-header__child-name">{child.name} · Class {child.grade.replace("Grade ", "")}{child.section}</span>
           </span> : null}
@@ -163,7 +164,7 @@ export function ParentShell({
       <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
         {parentRoutes.map((item) => {
           const Icon = item.icon;
-          const isActive = active === item.id;
+          const isActive = navigationActive === item.id;
           return (
             <NavLink
               key={item.id}

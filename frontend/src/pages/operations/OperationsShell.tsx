@@ -10,7 +10,7 @@ import "./operations-links.css";
 import "./operations-brand.css";
 
 type Portal = "teacher" | "principal";
-type Active = "home" | "attendance" | "timetable" | "chat" | "safeguarding";
+type Active = "home" | "attendance" | "timetable" | "chat" | "safeguarding" | "events";
 
 const nav = {
   teacher: [
@@ -31,6 +31,7 @@ const nav = {
 
 export function OperationsShell({ portal, active, title, subtitle, children, schoolName: selectedSchoolName, contentHasHeading = false }: { portal: Portal; active: Active; title: string; subtitle: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean }) {
   const auth = useOptionalAuth();
+  const navigationActive = active === "events" ? "home" : active;
   const Title = contentHasHeading ? "p" : "h1";
   const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
   return (
@@ -39,7 +40,7 @@ export function OperationsShell({ portal, active, title, subtitle, children, sch
         <SchoolBrand name={schoolName} className="operations-brand" />
         <nav aria-label={`${portal} portal navigation`}>
           {nav[portal].map(({ id, label, path, icon: Icon }) => (
-            <NavLink key={id} to={path} end={id === "home"} className={active === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
+            <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
           ))}
         </nav>
         <div className="operations-sidebar__scope"><span>Current scope</span><strong>School operations</strong><small>Attendance, timetable, and secure communication.</small></div>
@@ -52,7 +53,7 @@ export function OperationsShell({ portal, active, title, subtitle, children, sch
         </header>
         <main className="operations-main">{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
-          {nav[portal].map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} className={active === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
+          {nav[portal].map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>
       </div>
     </div>

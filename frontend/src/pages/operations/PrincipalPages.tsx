@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowRight, CalendarCheck, CheckCircle2, Clock3, LoaderCircle, Pencil, Plus, School, Trash2, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarCheck, CalendarDays, CheckCircle2, Clock3, LoaderCircle, Pencil, Plus, School, Trash2, UsersRound } from "lucide-react";
 import type { NewTimetableSlot, PrincipalHomeResponse, PrincipalTimetableResponse } from "../../features/operations/api";
 import { OperationsShell } from "./OperationsShell";
 import { AttendanceWorkspacePage } from "./AttendanceWorkspacePage";
@@ -17,6 +17,7 @@ export function PrincipalHomePage({ data, date, onDateChange }: { data: Principa
   return <OperationsShell portal="principal" active="home" title="School operations overview" subtitle={`${data.principal.name} - Principal workspace`}>
     <div className="operations-stack">
       <Link className="operations-action-link" to="/principal/students"><UsersRound size={18}/>Students & guardians<ArrowRight size={16}/></Link>
+      <Link className="operations-action-link" to="/principal/events"><CalendarDays size={18}/>Events & activities<ArrowRight size={16}/></Link>
       <FollowupInbox context="staff" />
       <section className="operations-hero operations-hero--principal"><div><span>Live school pulse</span><h2>{data.summary.classes_total ? `${data.summary.attendance_percentage}% attendance recorded` : "No registers due"}</h2><p>{data.summary.classes_total ? "Track register completion, intervene on exceptions, and protect timetable quality from one desk." : "No scheduled class attendance is required for the selected date."}</p></div><label>Date<input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label></section>
       <section className="operations-metrics"><article><span><UsersRound size={19}/></span><small>Students marked</small><strong>{data.summary.marked}/{data.summary.students}</strong><em>{data.summary.attending} attending</em></article><article><span><CalendarCheck size={19}/></span><small>Register coverage</small><strong>{coverage}%</strong><em>{data.summary.classes_submitted}/{data.summary.classes_total} classes submitted</em></article><article><span><AlertTriangle size={19}/></span><small>Absent today</small><strong>{data.summary.absent}</strong><em>{data.summary.late} late arrivals</em></article><article><span><School size={19}/></span><small>At-risk students</small><strong>{data.exceptions.length}</strong><em>Below class threshold</em></article></section>

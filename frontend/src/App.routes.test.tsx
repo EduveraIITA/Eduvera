@@ -118,6 +118,44 @@ describe("implemented application routes", () => {
     expect(screen.getByRole("heading", { name: "Attendance" })).toBeVisible();
   });
 
+  it("keeps one established primary navigation destination selected on every event portal", async () => {
+    for (const [path, roles, navLabel, pageHeading] of [
+      ["/parent/events", ["guardian"], "Home", "Events & activities"],
+      ["/student/events", ["student"], "Launcher", "Events & activities"],
+      ["/teacher/events", ["staff"], "Today", "Your upcoming school activities"],
+    ] as const) {
+      cleanup();
+      mockSession([...roles]);
+      const original = apiFetchMock.getMockImplementation() as (endpoint: string) => Promise<unknown>;
+      apiFetchMock.mockImplementation((endpoint: string) => endpoint.startsWith("/api/v1/campus-events?")
+        ? Promise.resolve({ items: [], next_cursor: null })
+        : original(endpoint));
+      render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
+
+      expect(await screen.findByRole("heading", { name: pageHeading })).toBeVisible();
+      expect(screen.getAllByRole("link", { name: navLabel }).some((link) => link.getAttribute("aria-current") === "page" || link.classList.contains("is-active"))).toBe(true);
+    }
+  });
+
+  it("loads the next event page from the server without changing the active tab", async () => {
+    mockSession(["staff"]);
+    const original = apiFetchMock.getMockImplementation() as (endpoint: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => {
+      if (endpoint.startsWith("/api/v1/campus-events?")) {
+        return Promise.resolve(endpoint.includes("cursor=event-cursor-1")
+          ? { items: [], next_cursor: null }
+          : { items: [], next_cursor: "event-cursor-1" });
+      }
+      return original(endpoint);
+    });
+    render(<MemoryRouter initialEntries={["/teacher/events?view=draft"]}><App /></MemoryRouter>);
+
+    expect(await screen.findByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
+    await waitFor(() => expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).includes("cursor=event-cursor-1"))).toBe(true));
+    expect(screen.getByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("keeps student home distinct and routes Attendance from its navigation", async () => {
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={["/student"]}><App /></MemoryRouter>);

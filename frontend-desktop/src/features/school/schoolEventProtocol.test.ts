@@ -86,4 +86,35 @@ describe("desktop school event protocol", () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
     batcher.cancel();
   });
+
+  it("refreshes event finance and the fee ledger after a campus-event finance update", () => {
+    const result = resolveSchoolEvent(eventData("campus_event.updated", {
+      event_id: "event-1",
+      change_kind: "refund_recorded",
+      refresh: ["campus-events", "notifications"],
+    }), "campus_event.updated");
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["campus-events"] },
+      { queryKey: ["campus-event"] },
+      { queryKey: ["campus-event-register"] },
+      { queryKey: ["campus-event-finance"] },
+      { queryKey: ["fees"] },
+      { queryKey: ["notifications"] },
+    ]));
+  });
+
+  it("includes campus-event and fee caches in full-sync recovery", () => {
+    const result = resolveSchoolEvent("not-json", "campus_event.updated");
+
+    expect(result.usedFallback).toBe(true);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["campus-events"] },
+      { queryKey: ["campus-event"] },
+      { queryKey: ["campus-event-register"] },
+      { queryKey: ["campus-event-finance"] },
+      { queryKey: ["fees"] },
+    ]));
+  });
 });

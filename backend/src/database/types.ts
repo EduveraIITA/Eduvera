@@ -89,6 +89,95 @@ export interface EventMaintenanceLeaseTable {
 export interface PhotoAttendanceClassBindingTable { id: Generated<string>; school_id: string; class_section_id: string; provider_class_id: string; created_by: string; created_at: Timestamp; updated_at: Timestamp }
 export interface PhotoAttendanceProfileTable { id: Generated<string>; school_id: string; class_section_id: string; student_id: string; provider_class_id: string; provider_student_id: string; sample_count: Generated<number>; model_id: string | null; authorization_reference: string; enrolled_by: string; enrolled_at: Timestamp; updated_at: Timestamp; revoked_at: NullableTimestamp }
 export interface PhotoAttendanceSessionTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; period: string; provider_session_id: string; captured_by: string; capture_authorization_reference: string; state: Generated<"analyzed" | "applied" | "discarded" | "expired">; roster_count: number; detected_faces: Generated<number>; proposed_present: Generated<number>; model_id: string; analysis_summary: Json; observed_at: Timestamp; received_at: Timestamp; expires_at: Timestamp; applied_at: NullableTimestamp; applied_submission_id: string | null; created_at: Timestamp; updated_at: Timestamp }
+export interface CampusEventTable {
+  id: Generated<string>; school_id: string;
+  event_type: "annual_function" | "excursion" | "sports" | "workshop" | "competition" | "assembly" | "ptm" | "club" | "class_test" | "other";
+  subject_id: string | null;
+  status: Generated<"draft" | "published" | "cancelled" | "completed">;
+  title: string; description: Generated<string>; venue: Generated<string>;
+  starts_at: Timestamp; ends_at: Timestamp;
+  audience_mode: "school" | "class_sections" | "students";
+  participation_requirement: "optional" | "mandatory";
+  requires_rsvp: Generated<boolean>; requires_guardian_consent: Generated<boolean>;
+  payment_required: Generated<boolean>; payment_amount_paise: number | null; payment_due_on: DateOnly | null;
+  payment_currency: Generated<"INR">; academic_attendance_impact: Generated<"none">;
+  revision: Generated<number>; created_by: string; published_by: string | null;
+  published_at: NullableTimestamp; cancelled_by: string | null; cancelled_at: NullableTimestamp;
+  cancellation_reason: string | null; completed_by: string | null; completed_at: NullableTimestamp;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface ClassSectionStaffAssignmentTable {
+  id: Generated<string>; school_id: string; class_section_id: string; user_id: string;
+  role: "class_teacher" | "subject_teacher"; subject_id: string | null;
+  valid_from: DateOnly; valid_until: DateOnly | null; assigned_by: string; created_at: Timestamp;
+}
+export interface CampusEventClassSectionTable { school_id: string; event_id: string; class_section_id: string }
+export interface CampusEventSelectedStudentTable { school_id: string; event_id: string; student_id: string }
+export interface CampusEventStaffTable { school_id: string; event_id: string; user_id: string; role: "organizer" | "duty_staff" | "attendance_taker"; assigned_at: Timestamp }
+export interface CampusEventSessionTable {
+  id: Generated<string>; school_id: string; event_id: string; title: string;
+  session_type: "general" | "rehearsal" | "departure" | "activity" | "return";
+  venue: Generated<string>; starts_at: Timestamp; ends_at: Timestamp;
+  attendance_mode: "none" | "check_in" | "check_in_out";
+  state: Generated<"open" | "locked">; revision: Generated<number>;
+  locked_by: string | null; locked_at: NullableTimestamp; lock_reason: string | null; reopened_by: string | null;
+  reopened_at: NullableTimestamp; reopen_reason: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusEventSessionSelectedStudentTable { school_id: string; event_id: string; session_id: string; student_id: string }
+export interface CampusEventParticipantTable {
+  school_id: string; event_id: string; student_id: string;
+  participation_requirement: "optional" | "mandatory";
+  rsvp_status: Generated<"pending" | "accepted" | "declined">;
+  fee_invoice_id: string | null;
+  invited_at: Timestamp; rsvp_by: string | null; rsvp_at: NullableTimestamp;
+}
+export interface CampusEventSessionParticipantTable { school_id: string; event_id: string; session_id: string; student_id: string; participation_requirement: "optional" | "mandatory" }
+export interface CampusEventConsentAuthorityTable {
+  id: Generated<string>; school_id: string; relationship_id: string;
+  status: Generated<"active">; valid_from: DateOnly; valid_until: DateOnly | null;
+  source: "enrollment" | "reviewed" | "policy"; provenance: string; revision: Generated<number>;
+  granted_by: string; granted_at: Timestamp; revoked_by: string | null; revoked_at: NullableTimestamp;
+  revocation_reason: string | null;
+}
+export interface CampusEventConsentAuthorityRevocationTable {
+  school_id: string; authority_id: string; relationship_id: string; revision: number;
+  revoked_by: string; revoked_at: Timestamp; reason: string; request_id: string;
+}
+export interface CampusEventConsentTable {
+  school_id: string; event_id: string; student_id: string; relationship_id: string; authority_id: string;
+  status: "granted" | "denied" | "withdrawn"; note: Generated<string>; decided_by: string;
+  decided_at: Timestamp; revision: Generated<number>;
+}
+export interface CampusEventConsentRevisionTable {
+  id: Generated<number>; school_id: string; event_id: string; student_id: string;
+  relationship_id: string; authority_id: string;
+  previous_status: CampusEventConsentTable["status"] | null; new_status: CampusEventConsentTable["status"];
+  previous_note: string | null; new_note: Generated<string>; revision: number;
+  decided_by: string; request_id: string; created_at: Timestamp;
+}
+export interface CampusEventChecklistItemTable { id: Generated<string>; school_id: string; event_id: string; label: string; required: Generated<boolean>; sort_order: Generated<number> }
+export interface CampusEventChecklistCompletionTable { school_id: string; event_id: string; item_id: string; student_id: string; completed_by: string; completed_at: Timestamp }
+export interface CampusEventAttendanceRecordTable {
+  id: Generated<string>; school_id: string; event_id: string; session_id: string; student_id: string;
+  status: "not_recorded" | "present" | "late" | "excused" | "no_show" | "checked_out";
+  note: Generated<string>; checked_in_at: NullableTimestamp; checked_out_at: NullableTimestamp;
+  revision: Generated<number>; marked_by: string; marked_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusEventAttendanceRevisionTable {
+  id: Generated<number>; school_id: string; event_id: string; session_id: string; student_id: string;
+  attendance_record_id: string; previous_status: CampusEventAttendanceRecordTable["status"] | null;
+  new_status: CampusEventAttendanceRecordTable["status"]; previous_note: string | null;
+  new_note: Generated<string>; previous_checked_in_at: NullableTimestamp; new_checked_in_at: NullableTimestamp;
+  previous_checked_out_at: NullableTimestamp; new_checked_out_at: NullableTimestamp;
+  reason: string; revision: number; changed_by: string;
+  request_id: string; created_at: Timestamp;
+}
+export interface CampusEventCommandTable { school_id: string; actor_id: string; command_key: string; operation: string; request_hash: string; result: Json; created_at: Timestamp }
+export interface FeeInvoiceTable { id: Generated<string>; school_id: string; student_id: string; reference: string; description: string; amount_paise: number; due_on: DateOnly; created_by: string; created_at: Timestamp }
+export interface FeePaymentTable { id: Generated<string>; school_id: string; invoice_id: string; amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; idempotency_key: string; recorded_by: string; created_at: Timestamp }
+export interface CampusEventParticipantWithdrawalTable { id: Generated<string>; school_id: string; event_id: string; student_id: string; reason: string; idempotency_key: string; request_hash: string; withdrawn_by: string; withdrawn_at: Timestamp }
+export interface FeeInvoiceCreditTable { id: Generated<string>; school_id: string; invoice_id: string; event_id: string; student_id: string; participant_withdrawal_id: string | null; amount_paise: number; source: "event_cancelled" | "participant_withdrawn"; reason: string; idempotency_key: string; request_hash: string; recorded_by: string; created_at: Timestamp }
+export interface FeeRefundTable { id: Generated<string>; school_id: string; invoice_id: string; credit_id: string; event_id: string; student_id: string; amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; reason: string; idempotency_key: string; request_hash: string; recorded_by: string; created_at: Timestamp }
 export interface ChatConversationTable { id: Generated<string>; school_id: string; kind: Generated<"direct" | "group" | "announcement">; title: Generated<string>; context_student_id: string | null; group_type: Generated<"student_group" | "parent_group" | "activity" | "staff" | "child_support" | "announcement" | null>; posting_mode: Generated<"all" | "moderators">; created_by: string; last_message_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
 export interface ChatParticipantTable { conversation_id: string; user_id: string; participant_role: Generated<"member" | "moderator">; joined_at: Timestamp; last_read_at: NullableTimestamp; is_muted: Generated<boolean>; is_active: Generated<boolean> }
 export interface ChatMessageTable { id: Generated<string>; conversation_id: string; sender_id: string; client_id: string | null; body: Generated<string>; message_type: Generated<"text" | "file" | "system">; reply_to_id: string | null; is_deleted: Generated<boolean>; created_at: Timestamp; updated_at: Timestamp }
@@ -138,6 +227,29 @@ export interface Database {
   photo_attendance_class_bindings: PhotoAttendanceClassBindingTable;
   photo_attendance_profiles: PhotoAttendanceProfileTable;
   photo_attendance_sessions: PhotoAttendanceSessionTable;
+  campus_events: CampusEventTable;
+  class_section_staff_assignments: ClassSectionStaffAssignmentTable;
+  campus_event_class_sections: CampusEventClassSectionTable;
+  campus_event_selected_students: CampusEventSelectedStudentTable;
+  campus_event_staff: CampusEventStaffTable;
+  campus_event_sessions: CampusEventSessionTable;
+  campus_event_session_selected_students: CampusEventSessionSelectedStudentTable;
+  campus_event_participants: CampusEventParticipantTable;
+  campus_event_session_participants: CampusEventSessionParticipantTable;
+  campus_event_consent_authorities: CampusEventConsentAuthorityTable;
+  campus_event_consent_authority_revocations: CampusEventConsentAuthorityRevocationTable;
+  campus_event_consents: CampusEventConsentTable;
+  campus_event_consent_revisions: CampusEventConsentRevisionTable;
+  campus_event_checklist_items: CampusEventChecklistItemTable;
+  campus_event_checklist_completions: CampusEventChecklistCompletionTable;
+  campus_event_attendance_records: CampusEventAttendanceRecordTable;
+  campus_event_attendance_revisions: CampusEventAttendanceRevisionTable;
+  campus_event_commands: CampusEventCommandTable;
+  campus_event_participant_withdrawals: CampusEventParticipantWithdrawalTable;
+  fee_invoices: FeeInvoiceTable;
+  fee_payments: FeePaymentTable;
+  fee_invoice_credits: FeeInvoiceCreditTable;
+  fee_refunds: FeeRefundTable;
   chat_conversations: ChatConversationTable;
   chat_participants: ChatParticipantTable;
   chat_messages: ChatMessageTable;

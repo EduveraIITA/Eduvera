@@ -109,12 +109,14 @@ interface RegisterEventInput {
 
 interface UserEventInput {
   schoolId: string;
-  eventType: "leave.updated" | "notification.created" | "timetable.updated" | "coordination.updated" | "people.updated" | "day_plan.updated";
+  eventType: "leave.updated" | "notification.created" | "timetable.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated";
   aggregateType: string;
   aggregateId: string;
   audienceUserIds: string[];
   payload: Record<string, unknown>;
   idempotencyKey: string;
+  notificationUserIds?: string[];
+  notificationPayload?: Record<string, unknown> | null;
 }
 
 function parsePayload(value: unknown): unknown {
@@ -425,6 +427,8 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       aggregate_type: input.aggregateType, aggregate_id: input.aggregateId,
       audience_user_ids: [...new Set(input.audienceUserIds)], payload: input.payload,
       idempotency_key: input.idempotencyKey,
+      notification_user_ids: [...new Set(input.notificationUserIds ?? [])],
+      notification_payload: (input.notificationPayload ?? null) as any,
     }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
   }
 
@@ -973,7 +977,9 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           RETURNING e.*
         ), inserted_notifications AS (
           INSERT INTO notifications (recipient_id, kind, title, body, link, metadata, dedupe_key)
-          SELECT recipients.recipient_id, 'attendance',
+          SELECT recipients.recipient_id,
+            CASE WHEN c.notification_payload->>'kind' IN ('attendance','leave','diary','general')
+              THEN c.notification_payload->>'kind' ELSE 'general' END,
             COALESCE(c.notification_payload->>'title', 'Attendance updated'),
             COALESCE(c.notification_payload->>'body', 'A school attendance record changed.'),
             CASE u.role

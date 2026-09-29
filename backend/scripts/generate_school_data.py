@@ -316,6 +316,346 @@ def local_timestamp(day: date, hour: int, minute: int) -> str:
     return min(stamp, ceiling).isoformat()
 
 
+def scheduled_timestamp(day: date, hour: int, minute: int) -> str:
+    """An unclamped school-local timestamp for scheduled future or historical events."""
+    return datetime.combine(day, time(hour, minute), tzinfo=IST).isoformat()
+
+
+def add_campus_event_fixtures(
+    dataset: dict[str, list[tuple[Any, ...]]],
+    students: Sequence[dict[str, Any]],
+    guardians: Sequence[dict[str, Any]],
+    staff: Sequence[dict[str, Any]],
+    principal: dict[str, Any],
+    class_ids: dict[str, str],
+    subject_ids: dict[str, str],
+    school_id: str,
+    academic_year: str,
+) -> dict[str, int]:
+    """Add three complete, relationally coherent event workflows.
+
+    The completed Annual Function demonstrates event attendance without
+    rewriting academic attendance.  The upcoming Class 7A excursion
+    demonstrates purpose-specific guardian consent and a preparation checklist.
+    Kavita Mehta's Class 7A Mathematics test demonstrates an assigned teacher's
+    subject-linked class event and its mandatory event register.
+    Missing RSVP, consent or event attendance remains missing rather than being
+    inferred as a decline, denial or no-show.
+    """
+    start_year = int(academic_year[:4])
+    annual_day = date(start_year, 8, 22)
+    annual_rehearsal_day = annual_day - timedelta(days=1)
+    picnic_day = date(start_year, 10, 10)
+    class_test_day = date(start_year, 10, 1)
+    class_test_day += timedelta(days=(3 - class_test_day.weekday()) % 7)  # Thursday, Mathematics P1 for 7A.
+    principal_id = principal["user_id"]
+    staff_by_key = {person["key"]: person for person in staff}
+    guardian_by_student = {guardian["student_id"]: guardian for guardian in guardians}
+
+    annual_id = deterministic_id("campus-event-annual-function-2026")
+    picnic_id = deterministic_id("campus-event-class-7a-picnic-2026")
+    class_test_id = deterministic_id("campus-event-class-7a-mathematics-test-2026")
+    annual_rehearsal_id = deterministic_id("campus-event-annual-function-rehearsal-2026")
+    annual_main_id = deterministic_id("campus-event-annual-function-main-2026")
+    picnic_departure_id = deterministic_id("campus-event-class-7a-picnic-departure-2026")
+    picnic_activity_id = deterministic_id("campus-event-class-7a-picnic-activity-2026")
+    picnic_return_id = deterministic_id("campus-event-class-7a-picnic-return-2026")
+    class_test_session_id = deterministic_id("campus-event-class-7a-mathematics-test-session-2026")
+
+    annual_created = scheduled_timestamp(annual_day - timedelta(days=24), 10, 0)
+    annual_published = scheduled_timestamp(annual_day - timedelta(days=14), 11, 30)
+    annual_completed = scheduled_timestamp(annual_day, 21, 0)
+    picnic_created = scheduled_timestamp(picnic_day - timedelta(days=20), 9, 15)
+    picnic_published = scheduled_timestamp(picnic_day - timedelta(days=16), 12, 0)
+    class_test_created = scheduled_timestamp(class_test_day - timedelta(days=8), 15, 30)
+    class_test_published = scheduled_timestamp(class_test_day - timedelta(days=6), 16, 0)
+
+    dataset["campus_events"].extend([
+        (
+            annual_id, school_id, "annual_function", "completed", "Annual Function 2026 - Udaan",
+            "The school's annual music, theatre and student showcase. Attendance is expected for the school roster and recorded only in the event register.",
+            "School Amphitheatre", scheduled_timestamp(annual_rehearsal_day, 15, 0), scheduled_timestamp(annual_day, 21, 0),
+            "school", "mandatory", False, False, False, "none", 3, principal_id, principal_id,
+            annual_published, None, None, None, principal_id, annual_completed, annual_created, annual_completed,
+        ),
+        (
+            picnic_id, school_id, "excursion", "published", "Class 7A Discovery Picnic",
+            "An optional supervised learning visit to Bannerghatta Biological Park. RSVP, guardian consent, the trip fee and required kit must be ready before departure.",
+            "Bannerghatta Biological Park", scheduled_timestamp(picnic_day, 6, 30), scheduled_timestamp(picnic_day, 18, 0),
+            "class_sections", "optional", True, True, True, "none", 2, principal_id, principal_id,
+            picnic_published, None, None, None, None, None, picnic_created, picnic_published,
+        ),
+        (
+            class_test_id, school_id, "class_test", "published", "Class 7A Mathematics Unit Test",
+            "A 45-minute classroom assessment on fractions, decimals and ratio. Bring a sharpened pencil, ruler and geometry box.",
+            "Room 204", scheduled_timestamp(class_test_day, 9, 0), scheduled_timestamp(class_test_day, 9, 45),
+            "class_sections", "mandatory", False, False, False, "none", 2,
+            staff_by_key["kavita"]["user_id"], staff_by_key["kavita"]["user_id"], class_test_published,
+            None, None, None, None, None, class_test_created, class_test_published,
+        ),
+    ])
+    # Payment configuration and the optional subject link are rendered as the
+    # final tuple fields. Keeping the subject last preserves the established
+    # validation indexes while still exercising the database payment invariant.
+    dataset["campus_events"][0] += (None, None, "INR", None)
+    dataset["campus_events"][1] += (185000, (picnic_day - timedelta(days=7)).isoformat(), "INR", None)
+    dataset["campus_events"][2] += (None, None, "INR", subject_ids["mat"])
+    dataset["campus_event_class_sections"].extend([
+        (school_id, picnic_id, class_ids["7a"]),
+        (school_id, class_test_id, class_ids["7a"]),
+    ])
+
+    annual_staff = [
+        (staff_by_key["leena"]["user_id"], "organizer"),
+        (staff_by_key["priya"]["user_id"], "duty_staff"),
+        (staff_by_key["kavita"]["user_id"], "attendance_taker"),
+    ]
+    picnic_staff = [
+        (staff_by_key["kavita"]["user_id"], "organizer"),
+        (staff_by_key["vikram"]["user_id"], "duty_staff"),
+        (staff_by_key["sunita"]["user_id"], "attendance_taker"),
+    ]
+    dataset["campus_event_staff"].extend(
+        [(school_id, annual_id, user_id, role, annual_published) for user_id, role in annual_staff]
+        + [(school_id, picnic_id, user_id, role, picnic_published) for user_id, role in picnic_staff]
+        + [
+            (school_id, class_test_id, staff_by_key["kavita"]["user_id"], "organizer", class_test_published),
+        ]
+    )
+
+    dataset["campus_event_sessions"].extend([
+        (
+            annual_rehearsal_id, school_id, annual_id, "Performer dress rehearsal", "rehearsal", "School Amphitheatre",
+            scheduled_timestamp(annual_rehearsal_day, 15, 0), scheduled_timestamp(annual_rehearsal_day, 17, 30),
+            "check_in", "locked", 2, staff_by_key["kavita"]["user_id"],
+            scheduled_timestamp(annual_rehearsal_day, 17, 45), None, None, None, annual_published,
+            scheduled_timestamp(annual_rehearsal_day, 17, 45),
+        ),
+        (
+            annual_main_id, school_id, annual_id, "Annual cultural programme", "general", "School Amphitheatre",
+            scheduled_timestamp(annual_day, 16, 30), scheduled_timestamp(annual_day, 20, 30),
+            "check_in", "locked", 2, staff_by_key["kavita"]["user_id"],
+            scheduled_timestamp(annual_day, 20, 45), None, None, None, annual_published,
+            scheduled_timestamp(annual_day, 20, 45),
+        ),
+        (
+            picnic_departure_id, school_id, picnic_id, "Departure muster", "departure", "North Gate",
+            scheduled_timestamp(picnic_day, 6, 45), scheduled_timestamp(picnic_day, 7, 30),
+            "check_in", "open", 1, None, None, None, None, None, picnic_published, picnic_published,
+        ),
+        (
+            picnic_activity_id, school_id, picnic_id, "Park learning trail", "activity", "Bannerghatta Biological Park",
+            scheduled_timestamp(picnic_day, 10, 0), scheduled_timestamp(picnic_day, 14, 30),
+            "check_in", "open", 1, None, None, None, None, None, picnic_published, picnic_published,
+        ),
+        (
+            picnic_return_id, school_id, picnic_id, "Return and guardian handover", "return", "North Gate",
+            scheduled_timestamp(picnic_day, 16, 45), scheduled_timestamp(picnic_day, 17, 45),
+            "check_in_out", "open", 1, None, None, None, None, None, picnic_published, picnic_published,
+        ),
+        (
+            class_test_session_id, school_id, class_test_id, "Mathematics unit test", "general", "Room 204",
+            scheduled_timestamp(class_test_day, 9, 0), scheduled_timestamp(class_test_day, 9, 45),
+            "check_in", "open", 1, None, None, None, None, None, class_test_published, class_test_published,
+        ),
+    ])
+
+    annual_attendance_count = 0
+    annual_rehearsal_count = 0
+    for student in students:
+        dataset["campus_event_participants"].append((
+            school_id, annual_id, student["student_id"], "mandatory", "pending", None,
+            annual_published, None, None,
+        ))
+        dataset["campus_event_session_participants"].append((
+            school_id, annual_id, annual_main_id, student["student_id"], "mandatory",
+        ))
+        main_status = (
+            "no_show"
+            if student["roll"] % 19 == 0
+            else "late"
+            if student["roll"] % 11 == 0
+            else "excused"
+            if student["roll"] % 17 == 0
+            else "present"
+        )
+        main_note = (
+            "No check-in was recorded before the register was locked."
+            if main_status == "no_show"
+            else "Checked in after the opening welcome."
+            if main_status == "late"
+            else "The event coordinator recorded an approved exception."
+            if main_status == "excused"
+            else "Checked in at the amphitheatre entrance."
+        )
+        attendance_id = deterministic_id(f"campus-event-attendance-annual-main-{student['key']}")
+        marked_at = scheduled_timestamp(annual_day, 20, 35)
+        marker = staff_by_key["kavita"]["user_id"]
+        checked_in_at = (
+            scheduled_timestamp(annual_day, 16, 50)
+            if main_status == "late"
+            else scheduled_timestamp(annual_day, 16, 15)
+            if main_status == "present"
+            else None
+        )
+        dataset["campus_event_attendance"].append((
+            attendance_id, school_id, annual_id, annual_main_id, student["student_id"], main_status,
+            main_note, checked_in_at, None, 1, marker, marked_at, marked_at,
+        ))
+        dataset["campus_event_attendance_revisions"].append((
+            school_id, annual_id, annual_main_id, student["student_id"], attendance_id, None, main_status,
+            None, main_note, None, checked_in_at, None, None, "Initial event register entry.", 1, marker,
+            deterministic_id(f"campus-event-attendance-request-annual-main-{student['key']}"), marked_at,
+        ))
+        annual_attendance_count += 1
+
+        if student["class_key"] != "7a" or student["roll"] > 15:
+            continue
+        rehearsal_status = "late" if student["roll"] % 9 == 0 else "present"
+        rehearsal_note = "Joined after the first stage call." if rehearsal_status == "late" else "Performer check-in completed."
+        rehearsal_attendance_id = deterministic_id(f"campus-event-attendance-annual-rehearsal-{student['key']}")
+        rehearsal_marked_at = scheduled_timestamp(annual_rehearsal_day, 17, 35)
+        rehearsal_checked_in_at = scheduled_timestamp(
+            annual_rehearsal_day, 15, 20 if rehearsal_status == "late" else 0,
+        )
+        dataset["campus_event_session_selected_students"].append((
+            school_id, annual_id, annual_rehearsal_id, student["student_id"],
+        ))
+        dataset["campus_event_session_participants"].append((
+            school_id, annual_id, annual_rehearsal_id, student["student_id"], "mandatory",
+        ))
+        dataset["campus_event_attendance"].append((
+            rehearsal_attendance_id, school_id, annual_id, annual_rehearsal_id, student["student_id"], rehearsal_status,
+            rehearsal_note, rehearsal_checked_in_at, None, 1, marker, rehearsal_marked_at, rehearsal_marked_at,
+        ))
+        dataset["campus_event_attendance_revisions"].append((
+            school_id, annual_id, annual_rehearsal_id, student["student_id"], rehearsal_attendance_id, None,
+            rehearsal_status, None, rehearsal_note, None, rehearsal_checked_in_at, None, None,
+            "Initial event register entry.", 1, marker,
+            deterministic_id(f"campus-event-attendance-request-annual-rehearsal-{student['key']}"), rehearsal_marked_at,
+        ))
+        annual_rehearsal_count += 1
+
+    picnic_students = [student for student in students if student["class_key"] == "7a"]
+    picnic_checklist = [
+        ("House T-shirt and student identity card", True),
+        ("Labelled water bottle", True),
+        ("Packed lunch and two snacks", True),
+        ("Cap and light rain jacket", True),
+    ]
+    checklist_ids: list[str] = []
+    for sort_order, (label, required) in enumerate(picnic_checklist, start=1):
+        item_id = deterministic_id(f"campus-event-class-7a-picnic-checklist-{sort_order}")
+        checklist_ids.append(item_id)
+        dataset["campus_event_checklist_items"].append((item_id, school_id, picnic_id, label, required, sort_order))
+
+    granted_consents = 0
+    checklist_completions = 0
+    for student in picnic_students:
+        guardian = guardian_by_student[student["student_id"]]
+        if student["key"] in {"aarav", "ananya"}:
+            rsvp_status = "accepted"
+        elif student["key"] == "rohan":
+            rsvp_status = "pending"
+        elif student["key"] == "kavya":
+            rsvp_status = "declined"
+        elif student["roll"] <= 18:
+            rsvp_status = "accepted"
+        elif student["roll"] <= 23:
+            rsvp_status = "pending"
+        else:
+            rsvp_status = "declined"
+        rsvp_by = guardian["user_id"] if rsvp_status != "pending" else None
+        rsvp_at = scheduled_timestamp(picnic_day - timedelta(days=11), 19, student["roll"] % 50) if rsvp_by else None
+        fee_invoice_id = deterministic_id(f"campus-event-class-7a-picnic-invoice-{student['key']}") if rsvp_status == "accepted" else None
+        fee_is_paid = rsvp_status == "accepted" and (student["key"] == "aarav" or student["roll"] % 2 == 0)
+        if fee_invoice_id:
+            fee_reference = f"EVT-PICNIC-7A-{student['roll']:02d}"
+            dataset["campus_event_fee_invoices"].append((
+                fee_invoice_id, school_id, student["student_id"], fee_reference,
+                "Class 7A Discovery Picnic - Bannerghatta", 185000, picnic_day - timedelta(days=7),
+                principal_id, picnic_published,
+            ))
+            if fee_is_paid:
+                dataset["campus_event_fee_payments"].append((
+                    deterministic_id(f"campus-event-class-7a-picnic-payment-{student['key']}"), school_id,
+                    fee_invoice_id, 185000, "bank_transfer", f"{fee_reference}-PAID",
+                    deterministic_id(f"campus-event-class-7a-picnic-payment-command-{student['key']}"),
+                    principal_id, scheduled_timestamp(picnic_day - timedelta(days=6), 10, student["roll"] % 50),
+                ))
+        dataset["campus_event_participants"].append((
+            school_id, picnic_id, student["student_id"], "optional", rsvp_status, fee_invoice_id,
+            picnic_published, rsvp_by, rsvp_at,
+        ))
+        # Optional event invitations are broader than the operational session roster.
+        # Only an explicit acceptance makes this student expected for attendance.
+        if rsvp_status == "accepted":
+            for session_id in (picnic_departure_id, picnic_activity_id, picnic_return_id):
+                dataset["campus_event_session_participants"].append((
+                    school_id, picnic_id, session_id, student["student_id"], "optional",
+                ))
+
+        authority_id = deterministic_id(f"campus-event-consent-authority-{student['key']}")
+        dataset["campus_event_consent_authorities"].append((
+            authority_id, school_id, guardian["relationship_id"], "active", date(start_year, 4, 1), None,
+            "enrollment", "Primary guardian relationship verified for school event consent.", 1,
+            principal_id, picnic_created, None, None, None,
+        ))
+
+        consent_status: str | None
+        if student["key"] in {"aarav", "ananya"} or (rsvp_status == "accepted" and student["roll"] <= 14):
+            consent_status = "granted"
+        elif rsvp_status == "declined":
+            consent_status = "denied"
+        else:
+            consent_status = None
+        if consent_status is None:
+            continue
+
+        consent_at = scheduled_timestamp(picnic_day - timedelta(days=10), 20, student["roll"] % 50)
+        consent_note = (
+            "Approved for the supervised Class 7A excursion."
+            if consent_status == "granted"
+            else "Family is unavailable for the excursion date."
+        )
+        dataset["campus_event_consents"].append((
+            school_id, picnic_id, student["student_id"], guardian["relationship_id"], authority_id,
+            consent_status, consent_note, guardian["user_id"], consent_at, 1,
+        ))
+        if consent_status != "granted" or rsvp_status != "accepted":
+            continue
+        granted_consents += 1
+        completed_item_count = len(checklist_ids) if student["key"] == "aarav" else 3 if student["roll"] % 2 == 0 else 2
+        for item_id in checklist_ids[:completed_item_count]:
+            dataset["campus_event_checklist_completions"].append((
+                school_id, picnic_id, item_id, student["student_id"], guardian["user_id"],
+                scheduled_timestamp(picnic_day - timedelta(days=4), 18, student["roll"] % 50),
+            ))
+            checklist_completions += 1
+
+    for student in picnic_students:
+        dataset["campus_event_participants"].append((
+            school_id, class_test_id, student["student_id"], "mandatory", "pending", None,
+            class_test_published, None, None,
+        ))
+        dataset["campus_event_session_participants"].append((
+            school_id, class_test_id, class_test_session_id, student["student_id"], "mandatory",
+        ))
+
+    return {
+        "campus_events": 3,
+        "campus_event_sessions": 6,
+        "campus_event_participants": len(students) + len(picnic_students) * 2,
+        "campus_event_attendance_records": annual_attendance_count + annual_rehearsal_count,
+        "picnic_participants": len(picnic_students),
+        "picnic_granted_consents": granted_consents,
+        "picnic_checklist_completions": checklist_completions,
+        "picnic_fee_invoices": len(dataset["campus_event_fee_invoices"]),
+        "picnic_fee_payments": len(dataset["campus_event_fee_payments"]),
+        "campus_event_session_participants": len(dataset["campus_event_session_participants"]),
+    }
+
+
 def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str, list[tuple[Any, ...]]], dict[str, Any]]:
     rng = random.Random(seed)
     academic_year, term_start, term_end = academic_year_for(as_of)
@@ -354,6 +694,12 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         "schools", "users", "memberships", "students", "parents", "guardians", "terms", "sections", "enrollments",
         "subjects", "subject_attendance", "attendance", "gate_events", "timetable", "policies", "leaves", "leave_audits",
         "diary", "diary_acknowledgements", "diary_notes", "notifications", "contacts",
+        "campus_events", "campus_event_class_sections", "campus_event_selected_students", "campus_event_staff",
+        "campus_event_sessions", "campus_event_participants", "campus_event_consent_authorities",
+        "campus_event_consents", "campus_event_checklist_items", "campus_event_checklist_completions",
+        "campus_event_attendance", "campus_event_attendance_revisions", "class_staff_assignments",
+        "campus_event_session_selected_students", "campus_event_session_participants",
+        "campus_event_fee_invoices", "campus_event_fee_payments",
     ]}
     dataset["schools"].append((school_id, SCHOOL_NAME, SCHOOL_CODE))
 
@@ -431,6 +777,25 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
                     deterministic_id(f"slot-{class_key}-{weekday}-{period}"), class_ids[class_key], term_id, subject_ids[subject_key],
                     weekday, period, starts_at, ends_at, "class", "", f"Room {room}", teacher["user_id"], teacher["designation"],
                 ))
+
+    assignment_created_at = scheduled_timestamp(term_start, 9, 0)
+    for class_key, teacher in homeroom_teacher.items():
+        dataset["class_staff_assignments"].append((
+            deterministic_id(f"class-staff-assignment-{class_key}-class-teacher-{teacher['key']}"),
+            school_id, class_ids[class_key], teacher["user_id"], "class_teacher", None,
+            term_start, term_end, principal["user_id"], assignment_created_at,
+        ))
+    subject_assignments = {
+        (row[1], row[11], row[3])
+        for row in dataset["timetable"]
+        if row[8] == "class"
+    }
+    for class_id, teacher_id, subject_id in sorted(subject_assignments):
+        dataset["class_staff_assignments"].append((
+            deterministic_id(f"class-staff-assignment-{class_id}-{teacher_id}-{subject_id}"),
+            school_id, class_id, teacher_id, "subject_teacher", subject_id,
+            term_start, term_end, principal["user_id"], assignment_created_at,
+        ))
 
     attendance_by_student: dict[str, dict[date, str]] = {}
     for student_index, student in enumerate(students):
@@ -611,6 +976,9 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         (deterministic_id("contact-office"), school_id, "School Office", "Student Services", "+91 80 4567 1000", "office@cambridge.example.test", "Weekdays, 8:00 AM–5:00 PM", 3),
     ])
 
+    campus_event_summary = add_campus_event_fixtures(
+        dataset, students, guardians, staff, principal, class_ids, subject_ids, school_id, academic_year,
+    )
     validate_dataset(dataset, students, guardians, staff, class_ids, days)
     summary = {
         "school": SCHOOL_NAME,
@@ -625,10 +993,12 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         "attendance_records": len(dataset["attendance"]),
         "subject_attendance_rows": len(dataset["subject_attendance"]),
         "timetable_slots": len(dataset["timetable"]),
+        "class_staff_assignments": len(dataset["class_staff_assignments"]),
         "gate_events": len(dataset["gate_events"]),
         "leave_requests": len(dataset["leaves"]),
         "diary_items": len(dataset["diary"]),
         "notifications": len(dataset["notifications"]),
+        **campus_event_summary,
         "relationship_invariants": {
             "students_without_guardian": 0,
             "students_without_enrollment": 0,
@@ -687,9 +1057,222 @@ def validate_dataset(
         occupied_teachers.add(teacher_key)
         occupied_rooms.add(room_key)
 
+    annual_id = deterministic_id("campus-event-annual-function-2026")
+    picnic_id = deterministic_id("campus-event-class-7a-picnic-2026")
+    class_test_id = deterministic_id("campus-event-class-7a-mathematics-test-2026")
+    event_ids = {row[0] for row in dataset["campus_events"]}
+    if event_ids != {annual_id, picnic_id, class_test_id}:
+        raise ValueError("The event fixture must contain the Annual Function, Class 7A picnic and Mathematics test.")
+    events_by_id = {row[0]: row for row in dataset["campus_events"]}
+    if events_by_id[annual_id][3] != "completed" or any(events_by_id[event_id][3] != "published" for event_id in (picnic_id, class_test_id)):
+        raise ValueError("The Annual Function must be completed and the picnic and class test must be published.")
+    if any(row[14] != "none" for row in dataset["campus_events"]):
+        raise ValueError("Campus event attendance must not contribute to academic attendance.")
+    if events_by_id[annual_id][10:14] != ("mandatory", False, False, False):
+        raise ValueError("The Annual Function must be mandatory, free and require neither RSVP nor guardian consent.")
+    if events_by_id[picnic_id][10:14] != ("optional", True, True, True):
+        raise ValueError("The optional picnic must independently require RSVP, guardian consent and payment.")
+    if events_by_id[class_test_id][10:14] != ("mandatory", False, False, False):
+        raise ValueError("The Mathematics class test must be mandatory, free and need no guardian consent.")
+    if events_by_id[class_test_id][-1] != deterministic_id("subject-mat"):
+        raise ValueError("The class test must be explicitly linked to Mathematics.")
+    if events_by_id[annual_id][-4:-1] != (None, None, "INR") or events_by_id[class_test_id][-4:-1] != (None, None, "INR"):
+        raise ValueError("Free events must not fabricate a payment amount or due date.")
+    if events_by_id[picnic_id][-4:-1] != (185000, date(2026, 10, 3).isoformat(), "INR"):
+        raise ValueError("The paid picnic must define its INR fee and due date at event level.")
+
+    participant_rows = dataset["campus_event_participants"]
+    annual_participants = {row[2] for row in participant_rows if row[1] == annual_id}
+    picnic_participants = {row[2] for row in participant_rows if row[1] == picnic_id}
+    class_test_participants = {row[2] for row in participant_rows if row[1] == class_test_id}
+    class_7a_students = {student["student_id"] for student in students if student["class_key"] == "7a"}
+    if annual_participants != student_ids:
+        raise ValueError("The school-wide Annual Function must invite every generated student.")
+    if picnic_participants != class_7a_students or class_test_participants != class_7a_students:
+        raise ValueError("The Class 7A picnic and Mathematics test rosters must match active Class 7A students.")
+    if any((row[7] is None) != (row[8] is None) for row in participant_rows):
+        raise ValueError("An RSVP actor and time must either both be recorded or both remain unknown.")
+    expected_requirement = {annual_id: "mandatory", picnic_id: "optional", class_test_id: "mandatory"}
+    if any(row[3] != expected_requirement[row[1]] for row in participant_rows):
+        raise ValueError("Participant requirements must agree with their event policy.")
+
+    invoices_by_id = {row[0]: row for row in dataset["campus_event_fee_invoices"]}
+    payments_by_invoice: dict[str, int] = {}
+    for payment in dataset["campus_event_fee_payments"]:
+        payments_by_invoice[payment[2]] = payments_by_invoice.get(payment[2], 0) + payment[3]
+    for participant in participant_rows:
+        _, event_id, student_id, _, rsvp_status, fee_invoice_id, *_ = participant
+        if event_id == picnic_id and rsvp_status == "accepted":
+            if fee_invoice_id is None or fee_invoice_id not in invoices_by_id:
+                raise ValueError("Every accepted paid-picnic RSVP must link to a real fee invoice.")
+            invoice = invoices_by_id[fee_invoice_id]
+            if invoice[2] != student_id or invoice[5] != 185000:
+                raise ValueError("Picnic fee invoice must belong to the participant for the configured amount.")
+            paid = payments_by_invoice.get(fee_invoice_id, 0)
+            if paid not in {0, invoice[5]}:
+                raise ValueError("Picnic fee fixture must be either pending or fully paid.")
+        elif fee_invoice_id is not None:
+            raise ValueError("Only an accepted paid-picnic participant may have an event fee invoice.")
+    paid_invoice_ids = {invoice_id for invoice_id, paid in payments_by_invoice.items() if paid == invoices_by_id[invoice_id][5]}
+    pending_invoice_ids = set(invoices_by_id) - paid_invoice_ids
+    if not paid_invoice_ids or not pending_invoice_ids:
+        raise ValueError("The picnic fixture must include both paid and pending fee obligations.")
+
+    guardian_relationship_by_student = {guardian["student_id"]: guardian["relationship_id"] for guardian in guardians}
+    active_authority_by_relationship = {
+        row[2]: row[0] for row in dataset["campus_event_consent_authorities"] if row[3] == "active"
+    }
+    if {
+        relationship_id for student_id, relationship_id in guardian_relationship_by_student.items()
+        if student_id in picnic_participants
+    } != set(active_authority_by_relationship):
+        raise ValueError("Every picnic participant must have one purpose-specific active consent authority.")
+    for consent in dataset["campus_event_consents"]:
+        _, event_id, student_id, relationship_id, authority_id, *_ = consent
+        if event_id != picnic_id or student_id not in picnic_participants:
+            raise ValueError("Event consent must belong to a picnic participant.")
+        if guardian_relationship_by_student[student_id] != relationship_id:
+            raise ValueError("Event consent relationship must belong to the same student.")
+        if active_authority_by_relationship.get(relationship_id) != authority_id:
+            raise ValueError("Event consent must use the student's active purpose-specific authority.")
+    consent_by_student = {row[2]: row for row in dataset["campus_event_consents"] if row[1] == picnic_id}
+    picnic_rows_by_student = {row[2]: row for row in participant_rows if row[1] == picnic_id}
+    if not any(row[5] == "granted" for row in consent_by_student.values()) or not any(row[5] == "denied" for row in consent_by_student.values()):
+        raise ValueError("The picnic fixture must include both granted and denied guardian decisions.")
+    if not any(student_id not in consent_by_student for student_id in picnic_participants):
+        raise ValueError("The picnic fixture must preserve pending consent as the absence of a decision.")
+    if any(row[4] == "pending" and student_id in consent_by_student for student_id, row in picnic_rows_by_student.items()):
+        raise ValueError("A pending RSVP must not fabricate a guardian consent decision.")
+
+    sessions_by_id = {row[0]: row for row in dataset["campus_event_sessions"]}
+    for session in sessions_by_id.values():
+        event = events_by_id[session[2]]
+        if not (event[7] <= session[6] < session[7] <= event[8]):
+            raise ValueError("Every event session must fall inside its event window.")
+        if session[2] == annual_id and session[9] != "locked":
+            raise ValueError("Completed Annual Function registers must be locked.")
+        if session[2] == picnic_id and session[9] != "open":
+            raise ValueError("Upcoming picnic registers must remain open.")
+        if session[2] == class_test_id and session[9] != "open":
+            raise ValueError("Upcoming class-test register must remain open.")
+
+    participant_lookup = {(row[1], row[2]): row for row in participant_rows}
+    session_participant_lookup = {
+        (row[1], row[2], row[3]): row for row in dataset["campus_event_session_participants"]
+    }
+    selected_rehearsal_students = {
+        row[3] for row in dataset["campus_event_session_selected_students"]
+        if row[1] == annual_id and row[2] == deterministic_id("campus-event-annual-function-rehearsal-2026")
+    }
+    rehearsal_roster = {
+        row[3] for row in dataset["campus_event_session_participants"]
+        if row[1] == annual_id and row[2] == deterministic_id("campus-event-annual-function-rehearsal-2026")
+    }
+    if selected_rehearsal_students != rehearsal_roster or len(rehearsal_roster) != 15:
+        raise ValueError("The Annual Function rehearsal must have an explicit 15-student performer roster.")
+    main_roster = {
+        row[3] for row in dataset["campus_event_session_participants"]
+        if row[1] == annual_id and row[2] == deterministic_id("campus-event-annual-function-main-2026")
+    }
+    if main_roster != student_ids:
+        raise ValueError("The main mandatory Annual Function session must expect the complete school roster.")
+    accepted_picnic_students = {
+        row[2] for row in participant_rows
+        if row[1] == picnic_id and row[4] == "accepted"
+    }
+    for session in sessions_by_id.values():
+        if session[2] not in {picnic_id, class_test_id}:
+            continue
+        rows = [row for row in dataset["campus_event_session_participants"] if row[2] == session[0]]
+        expected = "optional" if session[2] == picnic_id else "mandatory"
+        expected_students = accepted_picnic_students if session[2] == picnic_id else class_7a_students
+        if {row[3] for row in rows} != expected_students or any(row[4] != expected for row in rows):
+            raise ValueError("Each upcoming Class 7A session must have the correct accepted or mandatory roster.")
+    if any(
+        participant_lookup[(row[1], row[3])][4] != "accepted"
+        for row in dataset["campus_event_session_participants"]
+        if row[4] == "optional"
+    ):
+        raise ValueError("Every optional session-roster participant must have an accepted RSVP.")
+    attendance_ids: set[str] = set()
+    for attendance in dataset["campus_event_attendance"]:
+        attendance_id, _, event_id, session_id, student_id, status, *_ = attendance
+        participant = participant_lookup.get((event_id, student_id))
+        if (
+            participant is None
+            or session_id not in sessions_by_id
+            or sessions_by_id[session_id][2] != event_id
+            or (event_id, session_id, student_id) not in session_participant_lookup
+        ):
+            raise ValueError("Every event attendance record must resolve to its participant and session.")
+        if participant[3] == "optional" and participant[4] != "accepted" and status == "no_show":
+            raise ValueError("Only an accepted optional participant can be marked no-show.")
+        if event_id != annual_id:
+            raise ValueError("Future picnic and class-test sessions must not fabricate attendance observations.")
+        checked_in_at, checked_out_at = attendance[7], attendance[8]
+        if (status in {"present", "late"}) != (checked_in_at is not None) or checked_out_at is not None:
+            raise ValueError("Seeded event attendance timestamps must match the recorded status and capture mode.")
+        attendance_ids.add(attendance_id)
+    if len(attendance_ids) != len(dataset["campus_event_attendance"]):
+        raise ValueError("Event attendance identifiers must be unique.")
+    revision_record_ids = {row[4] for row in dataset["campus_event_attendance_revisions"]}
+    if revision_record_ids != attendance_ids or len(revision_record_ids) != len(dataset["campus_event_attendance_revisions"]):
+        raise ValueError("Every seeded event attendance mark must have one append-only initial revision.")
+
+    checklist_items = {row[0]: row for row in dataset["campus_event_checklist_items"]}
+    if not checklist_items or any(not row[4] for row in checklist_items.values()):
+        raise ValueError("Every picnic kit item must be explicitly required.")
+    for completion in dataset["campus_event_checklist_completions"]:
+        _, event_id, item_id, student_id, *_ = completion
+        if event_id != picnic_id or student_id not in picnic_participants or checklist_items.get(item_id, (None, None, None))[2] != picnic_id:
+            raise ValueError("Checklist completion must belong to the same picnic and participant.")
+        if consent_by_student.get(student_id, (None,) * 6)[5] != "granted" or picnic_rows_by_student[student_id][4] != "accepted":
+            raise ValueError("Kit completion is available only for an accepted, consented picnic participant.")
+    completion_counts: dict[str, int] = {}
+    for completion in dataset["campus_event_checklist_completions"]:
+        completion_counts[completion[3]] = completion_counts.get(completion[3], 0) + 1
+    if not any(count == len(checklist_items) for count in completion_counts.values()) or not any(count < len(checklist_items) for count in completion_counts.values()):
+        raise ValueError("The picnic fixture must include both complete and incomplete kit checklists.")
+
+    assignments = dataset["class_staff_assignments"]
+    subject_assignment_keys = {
+        (row[2], row[3], row[5]) for row in assignments if row[4] == "subject_teacher"
+    }
+    for timetable_row in dataset["timetable"]:
+        if timetable_row[8] == "class" and (timetable_row[1], timetable_row[11], timetable_row[3]) not in subject_assignment_keys:
+            raise ValueError("Every teaching timetable row must have a matching dated subject assignment.")
+    homeroom_classes = {row[2] for row in assignments if row[4] == "class_teacher"}
+    if homeroom_classes != set(class_ids.values()):
+        raise ValueError("Every generated class must have one explicit class-teacher assignment.")
+
+    kavita_id = deterministic_id("user-kavita")
+    mathematics_id = deterministic_id("subject-mat")
+    class_7a_id = class_ids["7a"]
+    if (class_7a_id, kavita_id, mathematics_id) not in subject_assignment_keys:
+        raise ValueError("Kavita Mehta must hold the dated Class 7A Mathematics assignment.")
+    if (school_id := events_by_id[class_test_id][1]) != deterministic_id(SCHOOL_KEY):
+        raise ValueError("The class test must belong to the generated school.")
+    if (school_id, class_test_id, class_7a_id) not in set(dataset["campus_event_class_sections"]):
+        raise ValueError("The Mathematics class test must be scoped to Class 7A.")
+    if not any(
+        row[1] == class_test_id and row[2] == kavita_id and row[3] == "organizer"
+        for row in dataset["campus_event_staff"]
+    ):
+        raise ValueError("Kavita Mehta must organize the Class 7A Mathematics test.")
+    class_test_start = datetime.fromisoformat(events_by_id[class_test_id][7])
+    if not any(
+        row[1] == class_7a_id and row[3] == mathematics_id and row[4] == class_test_start.isoweekday()
+        and row[6] == class_test_start.strftime("%H:%M") and row[11] == kavita_id
+        for row in dataset["timetable"]
+    ):
+        raise ValueError("The Class 7A Mathematics test must align with Kavita Mehta's timetable slot.")
+
 
 def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any]) -> str:
     school_id = deterministic_id(SCHOOL_KEY)
+    annual_event_id = deterministic_id("campus-event-annual-function-2026")
+    picnic_event_id = deterministic_id("campus-event-class-7a-picnic-2026")
+    class_test_event_id = deterministic_id("campus-event-class-7a-mathematics-test-2026")
     statements = [
         "BEGIN;",
         "SET LOCAL statement_timeout = '120s';",
@@ -753,6 +1336,12 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
         conflict=" ON CONFLICT(class_section_id,term_id,weekday,period_number) DO UPDATE SET subject_id=excluded.subject_id,starts_at=excluded.starts_at,ends_at=excluded.ends_at,slot_type=excluded.slot_type,title=excluded.title,room=excluded.room,teacher_user_id=excluded.teacher_user_id,teacher_designation=excluded.teacher_designation",
     )
     statements += insert_sql(
+        "class_section_staff_assignments", [
+            "id", "school_id", "class_section_id", "user_id", "role", "subject_id", "valid_from", "valid_until",
+            "assigned_by", "created_at",
+        ], dataset["class_staff_assignments"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
         "attendance_records", ["id", "student_id", "class_section_id", "date", "status", "check_in_at", "check_out_at", "remarks", "marked_by"], dataset["attendance"],
         conflict=" ON CONFLICT(student_id,date) DO UPDATE SET class_section_id=excluded.class_section_id,status=excluded.status,check_in_at=excluded.check_in_at,check_out_at=excluded.check_out_at,remarks=excluded.remarks,marked_by=excluded.marked_by,updated_at=now()", batch_size=750,
     )
@@ -770,11 +1359,105 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
     statements += insert_sql("diary_notes", ["id", "item_id", "student_id", "author_id", "body", "created_at"], dataset["diary_notes"], conflict=" ON CONFLICT(id) DO UPDATE SET body=excluded.body,author_id=excluded.author_id,created_at=excluded.created_at")
     statements += insert_sql("notifications", ["id", "recipient_id", "kind", "title", "body", "link", "metadata", "read_at", "created_at"], dataset["notifications"], conflict=" ON CONFLICT(id) DO UPDATE SET recipient_id=excluded.recipient_id,kind=excluded.kind,title=excluded.title,body=excluded.body,link=excluded.link,metadata=excluded.metadata,read_at=excluded.read_at,created_at=excluded.created_at")
     statements += insert_sql("school_contacts", ["id", "school_id", "label", "name", "phone", "email", "availability", "priority"], dataset["contacts"], conflict=" ON CONFLICT(id) DO UPDATE SET label=excluded.label,name=excluded.name,phone=excluded.phone,email=excluded.email,availability=excluded.availability,priority=excluded.priority")
+    statements += insert_sql(
+        "fee_invoices", [
+            "id", "school_id", "student_id", "reference", "description", "amount_paise", "due_on", "created_by", "created_at",
+        ], dataset["campus_event_fee_invoices"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "fee_payments", [
+            "id", "school_id", "invoice_id", "amount_paise", "method", "reference", "idempotency_key", "recorded_by", "created_at",
+        ], dataset["campus_event_fee_payments"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    # Demo events are inserted after every identity/scope dependency.  They are
+    # deliberately immutable on a re-seed so review activity is never reset.
+    statements += insert_sql(
+        "campus_events", [
+            "id", "school_id", "event_type", "status", "title", "description", "venue", "starts_at", "ends_at",
+            "audience_mode", "participation_requirement", "requires_rsvp", "requires_guardian_consent",
+            "payment_required", "academic_attendance_impact", "revision", "created_by", "published_by",
+            "published_at", "cancelled_by", "cancelled_at", "cancellation_reason", "completed_by", "completed_at",
+            "created_at", "updated_at", "payment_amount_paise", "payment_due_on", "payment_currency", "subject_id",
+        ], dataset["campus_events"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_class_sections", ["school_id", "event_id", "class_section_id"],
+        dataset["campus_event_class_sections"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_selected_students", ["school_id", "event_id", "student_id"],
+        dataset["campus_event_selected_students"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_staff", ["school_id", "event_id", "user_id", "role", "assigned_at"],
+        dataset["campus_event_staff"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_sessions", [
+            "id", "school_id", "event_id", "title", "session_type", "venue", "starts_at", "ends_at",
+            "attendance_mode", "state", "revision", "locked_by", "locked_at", "reopened_by", "reopened_at",
+            "reopen_reason", "created_at", "updated_at",
+        ], dataset["campus_event_sessions"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_session_selected_students", ["school_id", "event_id", "session_id", "student_id"],
+        dataset["campus_event_session_selected_students"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_participants", [
+            "school_id", "event_id", "student_id", "participation_requirement", "rsvp_status", "fee_invoice_id",
+            "invited_at", "rsvp_by", "rsvp_at",
+        ], dataset["campus_event_participants"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_session_participants", [
+            "school_id", "event_id", "session_id", "student_id", "participation_requirement",
+        ], dataset["campus_event_session_participants"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_consent_authorities", [
+            "id", "school_id", "relationship_id", "status", "valid_from", "valid_until", "source", "provenance",
+            "revision", "granted_by", "granted_at", "revoked_by", "revoked_at", "revocation_reason",
+        ], dataset["campus_event_consent_authorities"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_consents", [
+            "school_id", "event_id", "student_id", "relationship_id", "authority_id", "status", "note",
+            "decided_by", "decided_at", "revision",
+        ], dataset["campus_event_consents"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_checklist_items", ["id", "school_id", "event_id", "label", "required", "sort_order"],
+        dataset["campus_event_checklist_items"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_checklist_completions", [
+            "school_id", "event_id", "item_id", "student_id", "completed_by", "completed_at",
+        ], dataset["campus_event_checklist_completions"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_attendance_records", [
+            "id", "school_id", "event_id", "session_id", "student_id", "status", "note", "checked_in_at", "checked_out_at", "revision",
+            "marked_by", "marked_at", "updated_at",
+        ], dataset["campus_event_attendance"], conflict=" ON CONFLICT DO NOTHING",
+    )
+    statements += insert_sql(
+        "campus_event_attendance_revisions", [
+            "school_id", "event_id", "session_id", "student_id", "attendance_record_id", "previous_status",
+            "new_status", "previous_note", "new_note", "previous_checked_in_at", "new_checked_in_at",
+            "previous_checked_out_at", "new_checked_out_at", "reason", "revision", "changed_by", "request_id", "created_at",
+        ], dataset["campus_event_attendance_revisions"], conflict=" ON CONFLICT DO NOTHING",
+    )
 
     expected_students = summary["students"]
     expected_days = summary["school_days"]
     expected_attendance = summary["attendance_records"]
     expected_subject_rows = summary["subject_attendance_rows"]
+    expected_event_participants = summary["campus_event_participants"]
+    expected_event_attendance = summary["campus_event_attendance_records"]
+    expected_session_participants = summary["campus_event_session_participants"]
+    expected_picnic_invoices = summary["picnic_fee_invoices"]
+    expected_picnic_payments = summary["picnic_fee_payments"]
     statements.append(f"""
 DO $$
 DECLARE
@@ -814,12 +1497,188 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Seed integrity failure: a class timetable slot has no active teacher';
   END IF;
+  IF (
+    SELECT count(*) FROM campus_events
+    WHERE school_id='{school_id}'::uuid AND id IN (
+      '{annual_event_id}'::uuid,'{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid
+    )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Seed integrity failure: all three demo campus events were not loaded';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_events
+    WHERE id IN ('{annual_event_id}'::uuid,'{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
+      AND academic_attendance_impact<>'none'
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: campus event attendance must remain separate from academic attendance';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM campus_events
+    WHERE id='{annual_event_id}'::uuid AND participation_requirement='mandatory'
+      AND NOT requires_rsvp AND NOT requires_guardian_consent AND NOT payment_required
+  ) OR NOT EXISTS (
+    SELECT 1 FROM campus_events
+    WHERE id='{picnic_event_id}'::uuid AND participation_requirement='optional'
+      AND requires_rsvp AND requires_guardian_consent AND payment_required
+  ) OR NOT EXISTS (
+    SELECT 1 FROM campus_events
+    WHERE id='{class_test_event_id}'::uuid AND participation_requirement='mandatory'
+      AND NOT requires_rsvp AND NOT requires_guardian_consent AND NOT payment_required
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: independent event requirement dimensions are incorrect';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_participants
+    WHERE event_id IN ('{annual_event_id}'::uuid,'{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
+  ) <> {expected_event_participants} THEN
+    RAISE EXCEPTION 'Seed integrity failure: campus event participant rosters are incomplete';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_session_participants
+    WHERE event_id IN ('{annual_event_id}'::uuid,'{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
+  ) <> {expected_session_participants} THEN
+    RAISE EXCEPTION 'Seed integrity failure: event session rosters are incomplete';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_event_session_participants roster
+    JOIN campus_event_participants participant
+      ON participant.school_id=roster.school_id AND participant.event_id=roster.event_id
+      AND participant.student_id=roster.student_id
+    WHERE roster.participation_requirement='optional' AND participant.rsvp_status<>'accepted'
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: an optional session roster includes an unaccepted RSVP';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_participants participant
+    WHERE participant.event_id='{picnic_event_id}'::uuid
+  ) <> (
+    SELECT count(*) FROM enrollments enrollment
+    WHERE enrollment.class_section_id='{deterministic_id("class-7a")}'::uuid AND enrollment.is_active
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: picnic roster does not match active Class 7A enrollment';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_participants participant
+    WHERE participant.event_id='{class_test_event_id}'::uuid
+  ) <> (
+    SELECT count(*) FROM enrollments enrollment
+    WHERE enrollment.class_section_id='{deterministic_id("class-7a")}'::uuid AND enrollment.is_active
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: class-test roster does not match active Class 7A enrollment';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_event_participants participant
+    LEFT JOIN guardian_relationships relationship
+      ON relationship.student_id=participant.student_id AND relationship.school_id=participant.school_id
+    LEFT JOIN campus_event_consent_authorities authority
+      ON authority.relationship_id=relationship.id AND authority.school_id=relationship.school_id
+      AND authority.status='active'
+    WHERE participant.event_id='{picnic_event_id}'::uuid
+    GROUP BY participant.student_id
+    HAVING count(DISTINCT relationship.id)<>1 OR count(DISTINCT authority.id)<>1
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: a picnic participant is missing one guardian consent authority';
+  END IF;
+  IF (
+    SELECT count(*) FROM fee_invoices invoice
+    JOIN campus_event_participants participant ON participant.fee_invoice_id=invoice.id
+    WHERE participant.event_id='{picnic_event_id}'::uuid
+      AND invoice.school_id=participant.school_id AND invoice.student_id=participant.student_id
+  ) <> {expected_picnic_invoices} THEN
+    RAISE EXCEPTION 'Seed integrity failure: paid picnic fee invoices are incomplete or cross-linked';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_event_participants participant
+    WHERE participant.event_id='{picnic_event_id}'::uuid
+      AND ((participant.rsvp_status='accepted')<>(participant.fee_invoice_id IS NOT NULL))
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: picnic fee obligation does not match accepted RSVP';
+  END IF;
+  IF (
+    SELECT count(*) FROM fee_payments payment
+    JOIN campus_event_participants participant ON participant.fee_invoice_id=payment.invoice_id
+    WHERE participant.event_id='{picnic_event_id}'::uuid
+  ) <> {expected_picnic_payments} THEN
+    RAISE EXCEPTION 'Seed integrity failure: picnic fee payment examples are incomplete';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_event_checklist_items item
+    WHERE item.event_id='{picnic_event_id}'::uuid AND NOT item.required
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: picnic kit contains a non-required item';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_session_selected_students selected
+    WHERE selected.event_id='{annual_event_id}'::uuid
+      AND selected.session_id='{deterministic_id("campus-event-annual-function-rehearsal-2026")}'::uuid
+  ) <> 15 OR (
+    SELECT count(*) FROM campus_event_session_participants participant
+    WHERE participant.event_id='{annual_event_id}'::uuid
+      AND participant.session_id='{deterministic_id("campus-event-annual-function-rehearsal-2026")}'::uuid
+      AND participant.participation_requirement='mandatory'
+  ) <> 15 THEN
+    RAISE EXCEPTION 'Seed integrity failure: Annual Function rehearsal roster is incomplete';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_event_sessions session
+    WHERE session.event_id='{annual_event_id}'::uuid AND session.attendance_mode<>'none' AND session.state<>'locked'
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: completed Annual Function registers are not locked';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_attendance_records
+    WHERE event_id='{annual_event_id}'::uuid
+  ) <> {expected_event_attendance} THEN
+    RAISE EXCEPTION 'Seed integrity failure: Annual Function attendance is incomplete';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM campus_event_attendance_records
+    WHERE event_id IN ('{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: a future event contains fabricated attendance';
+  END IF;
+  IF (
+    SELECT count(*) FROM campus_event_attendance_revisions revision
+    JOIN campus_event_attendance_records attendance ON attendance.id=revision.attendance_record_id
+    WHERE attendance.event_id='{annual_event_id}'::uuid
+  ) <> {expected_event_attendance} THEN
+    RAISE EXCEPTION 'Seed integrity failure: event attendance revision history is incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM campus_events event
+    JOIN campus_event_class_sections scope
+      ON scope.school_id=event.school_id AND scope.event_id=event.id
+    JOIN class_section_staff_assignments assignment
+      ON assignment.school_id=scope.school_id AND assignment.class_section_id=scope.class_section_id
+      AND assignment.user_id=event.created_by AND assignment.subject_id=event.subject_id
+      AND assignment.role='subject_teacher'
+      AND (event.starts_at AT TIME ZONE 'Asia/Kolkata')::date
+        BETWEEN assignment.valid_from AND COALESCE(assignment.valid_until,'infinity'::date)
+    JOIN timetable_slots slot
+      ON slot.class_section_id=scope.class_section_id AND slot.subject_id=event.subject_id
+      AND slot.teacher_user_id=event.created_by
+      AND slot.weekday=extract(isodow FROM event.starts_at AT TIME ZONE 'Asia/Kolkata')::integer
+      AND slot.starts_at=(event.starts_at AT TIME ZONE 'Asia/Kolkata')::time
+    WHERE event.id='{class_test_event_id}'::uuid AND event.event_type='class_test'
+      AND event.subject_id='{deterministic_id("subject-mat")}'::uuid
+      AND scope.class_section_id='{deterministic_id("class-7a")}'::uuid
+      AND event.created_by='{deterministic_id("user-kavita")}'::uuid
+  ) THEN
+    RAISE EXCEPTION 'Seed integrity failure: class test is not linked to Kavita Mehta, Class 7A and Mathematics';
+  END IF;
 END $$;
 ANALYZE users;
 ANALYZE students;
 ANALYZE enrollments;
 ANALYZE attendance_records;
 ANALYZE timetable_slots;
+ANALYZE class_section_staff_assignments;
+ANALYZE campus_events;
+ANALYZE campus_event_participants;
+ANALYZE campus_event_session_participants;
+ANALYZE campus_event_attendance_records;
+ANALYZE fee_invoices;
+ANALYZE fee_payments;
 COMMIT;
 """.strip())
     return "\n\n".join(statements) + "\n"

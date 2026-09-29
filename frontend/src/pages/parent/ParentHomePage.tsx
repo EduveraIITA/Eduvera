@@ -287,6 +287,11 @@ export function ParentHomePage({
         <section aria-labelledby="shortcuts-heading">
           <div className="section-eyebrow-row"><h2 id="shortcuts-heading">Shortcuts & Desk</h2></div>
           <div className="surface-card shortcut-list">
+            <button type="button" onClick={() => navigate(parentPath("/parent/events"))}>
+              <span className="shortcut-icon"><CalendarDays size={19} /></span>
+              <span><strong>Events & Activities</strong><small>Invitations, consent, schedules, and preparation</small></span>
+              <ChevronRight size={21} />
+            </button>
             <button type="button" disabled={!onContactTeacher} aria-disabled={!onContactTeacher} onClick={() => void onContactTeacher?.()}>
               <span className="shortcut-icon"><Phone size={19} /></span>
               <span><strong>{onContactTeacher ? "Contact Homeroom Teacher" : "Teacher contact unavailable"}</strong><small>{data.homeroomTeacher.name} - {data.homeroomTeacher.availability}</small></span>
