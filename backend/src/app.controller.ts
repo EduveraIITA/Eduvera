@@ -1,5 +1,6 @@
-import { Controller, Get, Header, Headers, UnauthorizedException, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, Headers, Res, UnauthorizedException, ServiceUnavailableException } from "@nestjs/common";
 import { timingSafeEqual } from "node:crypto";
+import type { FastifyReply } from "fastify";
 import { Public } from "./common/decorators.js";
 import { config } from "./config.js";
 import { DatabaseService } from "./database/database.service.js";
@@ -25,8 +26,10 @@ export class AppController {
 
   @Public()
   @Get("metrics")
-  @Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-  metrics(@Headers("authorization") authorization?: string) {
+  metrics(
+    @Headers("authorization") authorization: string | undefined,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
     const expected = config().METRICS_TOKEN;
     if (expected) {
       const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -36,6 +39,10 @@ export class AppController {
         throw new UnauthorizedException("A valid monitoring token is required.");
       }
     }
+    // Set the Prometheus content type only after authorization succeeds. Setting
+    // it with @Header forced JSON error bodies through Fastify's text serializer,
+    // turning an intended 401 into a 500 response.
+    reply.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
     return this.events.prometheusMetrics();
   }
 }

@@ -17,6 +17,7 @@ import {
 const port = 8022;
 const base = requireManagedTestApiBaseUrl(process.env.API_BASE_URL, `http://127.0.0.1:${port}`);
 const databaseUrl = requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL);
+const metricsToken = "integration-test-metrics-token-long-enough";
 const pool = new Pool({ connectionString: databaseUrl, max: 2, application_name: "omnischool_tests" });
 let server: ChildProcess | undefined;
 const cleanupLeaves: string[] = [];
@@ -112,6 +113,7 @@ beforeAll(async () => {
       PORT: String(port),
       HOST: "127.0.0.1",
       COOKIE_SECRET: "integration-test-cookie-secret-at-least-32",
+      METRICS_TOKEN: metricsToken,
       DEMO_MODE: "true",
       AI_PROVIDER: "mock",
       SPA_DIST_DIR: join(process.cwd(), "no-spa"),
@@ -160,6 +162,20 @@ describe("OmniSchool API", () => {
   it("reports liveness and PostgreSQL readiness", async () => {
     expect(await json(await fetch(`${base}/healthz`))).toEqual({ status: "ok", service: "omnischool-api" });
     expect(await json(await fetch(`${base}/readyz`))).toEqual({ status: "ready", database: "ok", events: "ok" });
+  });
+
+  it("protects monitoring metrics without converting authorization errors into 500s", async () => {
+    const anonymous = await fetch(`${base}/metrics`);
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get("content-type")).toContain("application/json");
+    expect((await json(anonymous)).error).toMatchObject({ status: 401, code: "request_error" });
+
+    const authorized = await fetch(`${base}/metrics`, {
+      headers: { Authorization: `Bearer ${metricsToken}` },
+    });
+    expect(authorized.status).toBe(200);
+    expect(authorized.headers.get("content-type")).toContain("text/plain");
+    expect(await authorized.text()).toContain("omnischool_event_broker_ready");
   });
 
   it("isolates the maintenance lease from the publication cursor and browser roles", async () => {
