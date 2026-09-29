@@ -15,7 +15,7 @@ on:
 
 concurrency:
   group: stage
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
