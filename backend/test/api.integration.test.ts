@@ -1269,6 +1269,7 @@ describe("OmniSchool API", () => {
       LIMIT 1
     `)).rows[0];
     expect(futureSchoolDay).toBeTruthy();
+    if (!futureSchoolDay) throw new Error("Expected a future scheduled school day for kavita.staff");
     const date = futureSchoolDay.date;
     const home = await json(await browser.request(`/api/v1/screens/teacher/home/?date=${date}`));
     expect(home.classes.length).toBeGreaterThan(0);
