@@ -124,8 +124,6 @@ jobs:
           node-version: 22
 
       - name: Check deployment credentials
-        env:
-          STAGE_METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         run: |
           set -eu
           if [ -z "$RAILWAY_TOKEN" ]; then
@@ -143,12 +141,106 @@ jobs:
           case "$STAGE_URL" in
             */) echo "::error::STAGE_URL must not have a trailing slash"; exit 1 ;;
           esac
-          if [ -z "$STAGE_METRICS_TOKEN" ]; then
-            echo "::warning::METRICS_TOKEN secret is not set; deployment will continue and protected metrics auth verification will be skipped."
-          fi
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@5.54.0
+
+      - name: Repair and validate Stage runtime configuration
+        run: |
+          set -eu
+          umask 077
+
+          db_file="$RUNNER_TEMP/stage-database-url"
+          cookie_file="$RUNNER_TEMP/stage-cookie-secret"
+          metrics_file="$RUNNER_TEMP/stage-metrics-token"
+          session_file="$RUNNER_TEMP/stage-session-database-url"
+
+          # Pull the existing service values into ephemeral runner files without
+          # printing any credential to the Actions log.
+          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
+            sh -c 'printf "%s" "${DATABASE_URL:-}" > "$1"; printf "%s" "${COOKIE_SECRET:-}" > "$2"; printf "%s" "${METRICS_TOKEN:-}" > "$3"' \
+            sh "$db_file" "$cookie_file" "$metrics_file"
+
+          [ -s "$db_file" ] || { echo "::error::DATABASE_URL is not configured on the Railway service"; exit 1; }
+
+          # DATABASE_URL may be Supabase transaction pooling (:6543). Events and
+          # migrations require a persistent session. Supabase's same pooler host
+          # provides session mode on :5432. Refuse to rewrite any unknown pooler.
+          node - "$db_file" "$session_file" <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync(process.argv[2], "utf8").trim();
+          let url;
+          try {
+            url = new URL(source);
+          } catch {
+            throw new Error("Railway DATABASE_URL is not a valid PostgreSQL URL");
+          }
+          if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
+            throw new Error("Railway DATABASE_URL is not a valid PostgreSQL URL");
+          }
+          const pgbouncer = url.searchParams.get("pgbouncer")?.toLowerCase() === "true";
+          const transactionPooling = url.port === "6543" || pgbouncer;
+          if (transactionPooling) {
+            if (!url.hostname.toLowerCase().endsWith(".pooler.supabase.com")) {
+              throw new Error("DATABASE_URL uses transaction pooling on an unknown provider; refusing to guess a session URL");
+            }
+            url.port = "5432";
+            url.searchParams.delete("pgbouncer");
+          }
+          if (!url.searchParams.get("sslmode")) url.searchParams.set("sslmode", "require");
+          fs.writeFileSync(process.argv[3], url.toString(), { mode: 0o600 });
+          NODE
+
+          cookie_secret="$(cat "$cookie_file")"
+          case "$cookie_secret" in
+            *[[:space:]]*|*development-only*|*change-me*|*replace-with*|*generate-a*|*compose-demo*|*omnidemo*) cookie_secret="" ;;
+          esac
+          if [ "${#cookie_secret}" -lt 32 ]; then
+            cookie_secret="$(openssl rand -hex 32)"
+          fi
+
+          metrics_token="$(cat "$metrics_file")"
+          case "$metrics_token" in
+            *[[:space:]]*|*development-only*|*change-me*|*replace-with*|*generate-a*|*compose-demo*|*omnidemo*) metrics_token="" ;;
+          esac
+          if [ "${#metrics_token}" -lt 32 ] || [ "$metrics_token" = "$cookie_secret" ]; then
+            metrics_token="$(openssl rand -hex 32)"
+          fi
+
+          session_url="$(cat "$session_file")"
+          railway variable set \
+            "EVENT_DATABASE_URL=$session_url" \
+            "COOKIE_SECRET=$cookie_secret" \
+            "METRICS_TOKEN=$metrics_token" \
+            "COOKIE_SECURE=true" \
+            "TRUST_PROXY=true" \
+            "ALLOWED_ORIGINS=$STAGE_URL" \
+            "PUBLIC_URL=$STAGE_URL" \
+            "DEPLOYMENT_ENVIRONMENT=stage" \
+            "DEMO_MODE=false" \
+            "RATE_LIMIT_STORE=postgres" \
+            "AI_PROVIDER=mock" \
+            "PORT=8000" \
+            --service "$RAILWAY_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys
+
+          printf "%s" "$cookie_secret" > "$cookie_file"
+          printf "%s" "$metrics_token" > "$metrics_file"
+          echo "Stage runtime configuration repaired without exposing secret values."
+
+      - name: Backend · install migration tooling
+        working-directory: backend
+        run: npm ci --ignore-scripts
+
+      - name: Backend · apply pending Stage migrations
+        working-directory: backend
+        run: |
+          set -eu
+          export MIGRATION_DATABASE_URL="$(cat "$RUNNER_TEMP/stage-session-database-url")"
+          export NODE_ENV=production
+          export DEPLOYMENT_ENVIRONMENT=stage
+          npm run db:migrate
 
       - uses: actions/setup-python@v5
         if: github.event_name == 'workflow_dispatch' && inputs.seed
@@ -158,11 +250,11 @@ jobs:
       - name: Backend · re-seed stage demo data (only when requested)
         if: github.event_name == 'workflow_dispatch' && inputs.seed
         working-directory: backend
-        env:
-          NODE_ENV: production
-          DEPLOYMENT_ENVIRONMENT: stage
-          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
         run: |
+          set -eu
+          export NODE_ENV=production
+          export DEPLOYMENT_ENVIRONMENT=stage
+          export DATABASE_URL="$(cat "$RUNNER_TEMP/stage-session-database-url")"
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
           DEMO_MODE=true node --import tsx src/database/seed-operations.ts
@@ -174,10 +266,9 @@ jobs:
         run: railway up --project "$RAILWAY_PROJECT_ID" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --ci --message "GitHub $GITHUB_SHA"
 
       - name: Verify deployed revision and public application
-        env:
-          STAGE_METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         run: |
           set -eu
+          STAGE_METRICS_TOKEN="$(cat "$RUNNER_TEMP/stage-metrics-token")"
           echo "Waiting for revision $GITHUB_SHA at $STAGE_URL"
           for i in $(seq 1 48); do
             body=$(curl -fsS "$STAGE_URL/readyz" 2>/dev/null || true)
@@ -194,16 +285,21 @@ jobs:
               echo "$staff" | grep -Fq '<title>OmniSchool · Staff</title>' || { echo "::error::Staff SPA content check failed"; exit 1; }
               echo "$schema" | grep -Fq '"openapi"' || { echo "::error::OpenAPI content check failed"; exit 1; }
               [ "$unauthenticated_metrics_status" = "401" ] || { echo "::error::Metrics endpoint is not rejecting unauthenticated requests"; exit 1; }
-              if [ -n "$STAGE_METRICS_TOKEN" ]; then
-                metrics=$(curl -fsS -H "Authorization: Bearer $STAGE_METRICS_TOKEN" "$STAGE_URL/metrics")
-                echo "$metrics" | grep -Fq 'omnischool_event_broker_ready' || { echo "::error::Protected metrics content check failed"; exit 1; }
-                echo "Verified API readiness, both SPAs, OpenAPI, protected metrics, and stage release $release_sha"
-              else
-                echo "Verified API readiness, both SPAs, OpenAPI, unauthenticated metrics protection, and stage release $release_sha"
-              fi
+              metrics=$(curl -fsS -H "Authorization: Bearer $STAGE_METRICS_TOKEN" "$STAGE_URL/metrics")
+              echo "$metrics" | grep -Fq 'omnischool_event_broker_ready' || { echo "::error::Protected metrics content check failed"; exit 1; }
+              echo "Verified API readiness, both SPAs, OpenAPI, protected metrics, and stage release $release_sha"
               exit 0
             fi
             sleep 5
           done
           echo "::error::$STAGE_URL did not serve ready revision $GITHUB_SHA in time"
           exit 1
+
+      - name: Remove temporary deployment secrets
+        if: always()
+        run: |
+          rm -f \
+            "$RUNNER_TEMP/stage-database-url" \
+            "$RUNNER_TEMP/stage-session-database-url" \
+            "$RUNNER_TEMP/stage-cookie-secret" \
+            "$RUNNER_TEMP/stage-metrics-token"
