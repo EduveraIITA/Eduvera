@@ -15,6 +15,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
+import { postgresClientConnectionConfig } from "../database/connection-policy.js";
 import type { Database } from "../database/types.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -696,8 +697,15 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
 
   private async connectBroker(): Promise<void> {
     if (this.shuttingDown) return;
+    const settings = config();
+    const eventConnectionString = settings.EVENT_DATABASE_URL ?? settings.DATABASE_URL;
+    const connection = postgresClientConnectionConfig(eventConnectionString, {
+      name: settings.EVENT_DATABASE_URL ? "EVENT_DATABASE_URL" : "DATABASE_URL",
+      purpose: "events",
+      requireRemoteTls: settings.DEPLOYMENT_ENVIRONMENT === "stage" || settings.DEPLOYMENT_ENVIRONMENT === "production",
+    });
     const client = new PgClient({
-      connectionString: config().EVENT_DATABASE_URL ?? config().DATABASE_URL,
+      ...connection,
       application_name: `omnischool_event_broker_${process.pid}`,
       keepAlive: true,
       connectionTimeoutMillis: config().EVENT_BROKER_CONNECT_TIMEOUT_MS,

@@ -2,17 +2,17 @@ import { readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Pool } from "pg";
-import { assertPostgreSqlConnectionPolicy } from "./connection-policy.js";
+import { postgresClientConnectionConfig } from "./connection-policy.js";
 
 const connectionString = process.env.MIGRATION_DATABASE_URL;
 if (!connectionString) throw new Error("MIGRATION_DATABASE_URL is required");
 const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? "development";
-assertPostgreSqlConnectionPolicy(connectionString, {
+const connection = postgresClientConnectionConfig(connectionString, {
   name: "MIGRATION_DATABASE_URL",
   purpose: "migrations",
   requireRemoteTls: deploymentEnvironment === "stage" || deploymentEnvironment === "production",
 });
-const pool = new Pool({ connectionString, max: 1, application_name: "omnischool_migrator" });
+const pool = new Pool({ ...connection, max: 1, application_name: "omnischool_migrator" });
 const migrationsDir = resolve(process.cwd(), "migrations");
 const client = await pool.connect();
 let locked = false;

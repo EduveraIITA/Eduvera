@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
-import { assertPostgreSqlConnectionPolicy } from "../src/database/connection-policy.js";
+import { assertPostgreSqlConnectionPolicy, postgresClientConnectionConfig } from "../src/database/connection-policy.js";
 
 const originalEnvironment = { ...process.env };
 
@@ -31,6 +31,27 @@ describe("PostgreSQL connection policy", () => {
       purpose: "migrations",
       requireRemoteTls: true,
     })).toThrow(/persistent session/);
+  });
+
+  it("maps sslmode=require to encrypted node-postgres TLS without certificate verification", () => {
+    const value = "postgresql://events:secret@aws-0-region.pooler.supabase.com:5432/postgres?sslmode=require";
+    const clientConfig = postgresClientConnectionConfig(value, {
+      name: "EVENT_DATABASE_URL",
+      purpose: "events",
+      requireRemoteTls: true,
+    });
+    expect(clientConfig.ssl).toEqual({ rejectUnauthorized: false });
+    expect(clientConfig.connectionString).not.toContain("sslmode");
+  });
+
+  it("leaves certificate-verifying SSL modes under node-postgres control", () => {
+    const value = "postgresql://events:secret@db.example.com:5432/postgres?sslmode=verify-full";
+    const clientConfig = postgresClientConnectionConfig(value, {
+      name: "EVENT_DATABASE_URL",
+      purpose: "events",
+      requireRemoteTls: true,
+    });
+    expect(clientConfig).toEqual({ connectionString: value });
   });
 
   it("requires TLS for remote managed connections but not loopback development", () => {
