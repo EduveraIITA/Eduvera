@@ -707,9 +707,10 @@ Verification:
   ngrok tunnel under the detached `preview-daemon` supervisor. The supervisor remains attached to
   PID 1 for the current macOS session and stops the whole stack if a required child exits, avoiding
   a misleading tunnel that serves only part of the application.
-- Isolated backend and photo-service execution under the OS temporary directory so iCloud-backed
-  `Documents` hydration cannot stall dependency discovery after screen lock. Dependency installs
-  are content-hash cached; backend source edits are mirrored into the runtime automatically.
+- Isolated frontend, backend and photo-service execution under the OS temporary directory so
+  iCloud-backed `Documents` hydration cannot stall dependency discovery after screen lock.
+  Dependency installs are content-hash cached; frontend/backend source edits are mirrored into
+  the runtime automatically, and transient Python caches are excluded from runtime copies.
 - Replaced `tsx` execution with a TypeScript build/watch plus Node watch process because NestJS
   constructor injection requires emitted decorator metadata. This repaired the frontend shell
   loading while `/api/v1/auth/session/` returned 500.
@@ -763,6 +764,11 @@ Verification:
   verification pass. Responsive frontend typecheck, lint and production build pass, alongside
   **37 focused event/API/realtime/navigation tests** run serially to avoid the workspace worker
   startup issue.
+- The local PostgreSQL review tenant was migrated and loaded successfully with **203 students and
+  203 guardian relationships**, including the three legitimate post-fixture students. The event
+  reconciliation seed was then run again successfully: immutable payments/consent authorities are
+  guarded before their validation triggers, upcoming Class 7A rosters reconcile to **27 students**,
+  and completed/locked event history is not expanded by later enrollments.
 - UI checkpoint: principal/teacher operations plus parent/student event and reconciliation screens
   are ready for Abhishek's review. Physical-phone and assistive-technology acceptance remain open.
 - Release boundaries remain explicit: generic events do not yet perform the new symmetric

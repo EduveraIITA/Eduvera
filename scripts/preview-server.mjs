@@ -1,9 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
-import { loadEnvFile } from "node:process";
 import { homedir, tmpdir } from "node:os";
-import { dirname, resolve, sep } from "node:path";
+import { basename, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -13,10 +12,23 @@ const photoAttendanceRoot = resolve(root, "services/photo-attendance");
 const runtimeRoot = resolve(root, ".runtime");
 const scratchRoot = resolve(tmpdir(), "eduvera-preview-runtime");
 const backendRunRoot = process.env.PREVIEW_BACKEND_ROOT || resolve(scratchRoot, "backend");
-const frontendRunRoot = process.env.PREVIEW_FRONTEND_ROOT || frontendRoot;
+const frontendRunRoot = process.env.PREVIEW_FRONTEND_ROOT || resolve(scratchRoot, "frontend");
 const photoAttendanceRunRoot = process.env.PREVIEW_PHOTO_ROOT || resolve(scratchRoot, "photo-attendance");
 const photoDataRoot = process.env.PREVIEW_PHOTO_DATA_ROOT || resolve(runtimeRoot, "photo-attendance");
-loadEnvFile(resolve(backendRoot, ".env"));
+// `process.loadEnvFile()` has failed intermittently when this supervisor runs
+// under launchd from macOS Documents. Read the small local env file directly
+// so the managed preview does not enter a restart loop while the app is idle.
+for (const rawLine of readFileSync(resolve(backendRoot, ".env"), "utf8").split(/\r?\n/u)) {
+  const line = rawLine.trim();
+  if (!line || line.startsWith("#") || !line.includes("=")) continue;
+  const separator = line.indexOf("=");
+  const key = line.slice(0, separator).trim();
+  let value = line.slice(separator + 1).trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1);
+  }
+  if (!(key in process.env)) process.env[key] = value;
+}
 // This entry point is only for the local review environment.
 const database = new URL(process.env.DATABASE_URL);
 if (!["127.0.0.1", "localhost", "[::1]"].includes(database.hostname)) {
@@ -37,7 +49,13 @@ mkdirSync(scratchRoot, { recursive: true });
 
 function replaceDirectory(source, destination) {
   rmSync(destination, { recursive: true, force: true });
-  cpSync(source, destination, { recursive: true });
+  cpSync(source, destination, {
+    recursive: true,
+    filter: (entry) => {
+      const name = basename(entry);
+      return name !== "__pycache__" && name !== ".DS_Store" && !name.endsWith(".pyc");
+    },
+  });
 }
 
 function copyFile(source, destination) {
@@ -72,6 +90,25 @@ if (!process.env.PREVIEW_BACKEND_ROOT) {
   // can leave controller dependencies undefined. Build once before starting,
   // then keep tsc and Node's native watcher running for live backend edits.
   runSetup("npm", ["run", "build", "--silent"], backendRunRoot);
+}
+
+if (!process.env.PREVIEW_FRONTEND_ROOT) {
+  mkdirSync(frontendRunRoot, { recursive: true });
+  replaceDirectory(resolve(frontendRoot, "src"), resolve(frontendRunRoot, "src"));
+  replaceDirectory(resolve(frontendRoot, "public"), resolve(frontendRunRoot, "public"));
+  for (const file of [
+    "package.json", "package-lock.json", "index.html", "vite.config.ts", "vitest.config.ts",
+    "eslint.config.js", "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json", "tsconfig.test.json",
+  ]) {
+    copyFile(resolve(frontendRoot, file), resolve(frontendRunRoot, file));
+  }
+  const dependencyKey = fileHash(resolve(frontendRoot, "package-lock.json"));
+  const dependencyMarker = resolve(frontendRunRoot, ".dependencies-ready");
+  if (!existsSync(dependencyMarker) || readFileSync(dependencyMarker, "utf8").trim() !== dependencyKey) {
+    rmSync(resolve(frontendRunRoot, "node_modules"), { recursive: true, force: true });
+    runSetup("npm", ["ci", "--no-audit", "--no-fund"], frontendRunRoot);
+    writeFileSync(dependencyMarker, `${dependencyKey}\n`, { mode: 0o600 });
+  }
 }
 
 if (!process.env.PREVIEW_PHOTO_ROOT) {
@@ -236,6 +273,8 @@ startProcess("photo-attendance", photoPython, ["-m", "uvicorn", "app.main:app", 
 // production build or service restart. The watcher remains a child of this
 // supervisor, so an actual process failure still restarts the whole stack.
 mirrorSourceChanges(resolve(backendRoot, "src"), resolve(backendRunRoot, "src"));
+mirrorSourceChanges(resolve(frontendRoot, "src"), resolve(frontendRunRoot, "src"));
+mirrorSourceChanges(resolve(frontendRoot, "public"), resolve(frontendRunRoot, "public"));
 startProcess("api-compiler", resolve(backendRunRoot, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json", "--watch", "--preserveWatchOutput"], { env: backendEnv, cwd: backendRunRoot });
 startProcess("api", process.execPath, ["--watch", "dist/main.js"], { env: backendEnv, cwd: backendRunRoot });
 startProcess("web", "npm", ["--prefix", frontendRunRoot, "run", "dev", "--", "--host", "127.0.0.1", "--port", "8000", "--strictPort"], { env: frontendEnv });
