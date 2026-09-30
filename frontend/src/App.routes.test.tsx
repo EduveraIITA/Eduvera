@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter } from "react-router-dom";
@@ -6,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { OperationsShell } from "./pages/operations/OperationsShell";
 import { ParentShell, type ParentRoute } from "./pages/parent/ParentShell";
+import { StudentShell } from "./pages/student/StudentShell";
 import { demoParentChild } from "./pages/parent/parentDemoData";
 import { schoolApiFixture } from "./test/schoolApiFixtures";
 
@@ -105,6 +107,24 @@ describe("implemented application routes", () => {
     expect(container.querySelectorAll(".school-brand__crest")).toHaveLength(2);
     container.querySelectorAll(".school-brand__crest").forEach((crest) => expect(crest).toHaveTextContent("CIS"));
     container.querySelectorAll(".school-brand__name").forEach((name) => expect(name).toHaveTextContent("Cambridge International School"));
+  });
+
+  it("keeps mobile navigation to four destinations and no duplicate header More shortcut", () => {
+    const wrap = (content: ReactNode) => render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>{content}</MemoryRouter></QueryClientProvider>);
+    wrap(<StudentShell activeNav="home"><span /></StudentShell>);
+    expect(document.querySelectorAll(".student-bottom-nav a")).toHaveLength(4);
+    expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
+    cleanup();
+    wrap(<ParentShell active="home" pageLabel="Home"><span /></ParentShell>);
+    expect(document.querySelectorAll(".parent-bottom-nav a")).toHaveLength(4);
+    expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
+    cleanup();
+    for (const portal of ["teacher", "principal"] as const) {
+      wrap(<OperationsShell portal={portal} active="home" title="Today" subtitle="School"><span /></OperationsShell>);
+      expect(document.querySelectorAll(".operations-mobile-nav a")).toHaveLength(4);
+      expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it("opens Copilot from its visible navigation destination", async () => {
@@ -355,7 +375,7 @@ describe("implemented application routes", () => {
     fireEvent.touchEnd(ananyaCard, { changedTouches: [{ clientX: 80 }] });
     await interact.click(await screen.findByRole("button", { name: /Open digital student ID for Rohan Sharma/ }, { timeout: 5000 }));
     expect(screen.getByRole("dialog", { name: "Rohan Sharma" })).toHaveTextContent("CIS-003");
-  }, 30000);
+  }, 45000);
 
   it("switches directly between two child profiles without opening a menu", async () => {
     useInstantCardTransitions();

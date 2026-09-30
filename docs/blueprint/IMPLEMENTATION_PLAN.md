@@ -797,3 +797,12 @@ Verification:
   service; the local test command has no `DATABASE_URL` and therefore cannot run those suites.
 - Stage deployment verification remains pending until its push-triggered CI workflow and Railway
   health gate complete; this line does not claim a successful deployment before that evidence.
+- The first push (`d95b7cf`) passed the secret scan and isolated backend integration tests but
+  did not deploy: mobile CI failed on two timing-sensitive parent-home tests and one event-time
+  assertion that depended on the runner's timezone. Event and attendance times are now rendered
+  in `Asia/Kolkata`, and the mobile test runner uses bounded worker concurrency and realistic
+  timeouts. The follow-up full CI and Railway health gate are still pending.
+- Mobile navigation now shows at most four tabs per role, including More; teacher/principal
+  messages and safeguarding, parent timetable/leave, and student diary/messages remain reachable
+  in More. Removed the redundant More shortcut beside each top-bar avatar and added a regression
+  test for the four-tab/header rule.

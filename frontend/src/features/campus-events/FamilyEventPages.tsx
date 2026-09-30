@@ -256,7 +256,7 @@ const attendanceLabels = {
 } as const;
 
 function attendanceTime(value: string) {
-  return new Date(value).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  return new Date(value).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 }
 
 function FamilySessionAttendance({ session, studentId }: { session: CampusEventDto["sessions"][number]; studentId: string }) {

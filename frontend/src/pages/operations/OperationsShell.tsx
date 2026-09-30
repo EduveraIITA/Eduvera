@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
-import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, LayoutGrid, MessageCircle, MoreHorizontal, ShieldAlert } from "lucide-react";
+import { NavLink } from "react-router-dom";
+import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
@@ -30,10 +30,12 @@ const nav = {
     { id: "more", label: "More", path: "/principal/more", icon: MoreHorizontal },
   ],
 } as const;
+const mobileNavIds = new Set(["home", "attendance", "timetable", "more"]);
 
 export function OperationsShell({ portal, active, title, subtitle, children, schoolName: selectedSchoolName, contentHasHeading = false }: { portal: Portal; active: Active; title: string; subtitle: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean }) {
   const auth = useOptionalAuth();
   const navigationActive = active === "events" ? "more" : active;
+  const mobileActive = mobileNavIds.has(navigationActive) ? navigationActive : "more";
   const Title = contentHasHeading ? "p" : "h1";
   const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
   return (
@@ -51,11 +53,11 @@ export function OperationsShell({ portal, active, title, subtitle, children, sch
         <header className="operations-topbar">
           <SchoolBrand name={schoolName} className="operations-topbar__brand" />
           <div><span>{subtitle}</span><Title className="operations-topbar__title">{title}</Title></div>
-          <div><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><Link className="operations-icon-button" to={`/${portal}/more`} aria-label="More tools"><LayoutGrid size={20} /></Link><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
+          <div><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
         <main className="operations-main">{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
-          {nav[portal].map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
+          {nav[portal].filter(({ id }) => mobileNavIds.has(id)).map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={mobileActive === id ? "page" : undefined} className={mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>
       </div>
     </div>

@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Link, NavLink, useSearchParams } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   CalendarDays,
   CalendarX2,
   Home,
-  LayoutGrid,
   ListChecks,
   MessageCircle,
   MoreHorizontal,
@@ -66,6 +65,7 @@ export function ParentShell({
 }: ParentShellProps) {
   const auth = useOptionalAuth();
   const navigationActive = active === "events" ? "more" : active;
+  const mobileActive = ["home", "attendance", "diary"].includes(navigationActive) ? navigationActive : "more";
   const schoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name ?? "Cambridge International School";
   const [searchParams] = useSearchParams();
   const selectedStudentId = searchParams.get("student_id");
@@ -150,7 +150,6 @@ export function ParentShell({
                 ) : null}
               </div>
             ) : null}
-            <Link className="icon-button" to={selectedStudentId ? `/parent/more?student_id=${encodeURIComponent(selectedStudentId)}` : "/parent/more"} aria-label="More tools"><LayoutGrid size={20} /></Link>
             <AccountMenu buttonClassName="profile-button" ariaLabel="Open parent profile" iconSize={20} />
           </div>
         </div>
@@ -166,9 +165,9 @@ export function ParentShell({
       <main className="parent-main">{children}</main>
 
       <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
-        {parentRoutes.map((item) => {
+        {parentRoutes.filter((item) => ["home", "attendance", "diary", "more"].includes(item.id)).map((item) => {
           const Icon = item.icon;
-          const isActive = navigationActive === item.id;
+          const isActive = mobileActive === item.id;
           return (
             <NavLink
               key={item.id}

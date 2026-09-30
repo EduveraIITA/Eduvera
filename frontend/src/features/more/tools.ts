@@ -25,6 +25,7 @@ export interface Tool {
 const TOOLS: Record<Portal, Tool[]> = {
   parent: [
     { id: "calendar", name: "Calendar", description: "Month at a glance: attendance, approved leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/parent/calendar" },
+    { id: "timetable", name: "Timetable", description: "Your child's published periods and teachers", icon: CalendarDays, tone: "blue", path: "/parent/timetable" },
     { id: "leave", name: "Leave", description: "Authorise requests and apply for planned leave", icon: CalendarX2, tone: "violet", path: "/parent/leave" },
     { id: "diary", name: "Diary", description: "Homework, notes and announcements from teachers", icon: BookOpen, tone: "rose", path: "/parent/diary" },
     { id: "events", name: "Events & activities", description: "Invitations, consent and preparation for your children", icon: CalendarDays, tone: "teal", path: "/parent/events" },
@@ -38,6 +39,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "copilot", name: "Attendance Copilot", description: "Ask policy and projection questions using your own data", icon: Bot, tone: "violet", path: "/student/copilot" },
     { id: "leave", name: "Leave", description: "Apply for leave and track approval", icon: CalendarX2, tone: "rose", path: "/student/leave" },
     { id: "diary", name: "Diary", description: "Homework, teacher notes and announcements", icon: BookOpen, tone: "amber", path: "/student/diary" },
+    { id: "messages", name: "Messages", description: "School and teacher conversations", icon: MessageCircle, tone: "teal", path: "/student/messages" },
     { id: "fees", name: "Fees", description: "Invoices, receipts and payment history", icon: ReceiptIndianRupee, tone: "slate", planned: "desktop" },
   ],
   teacher: [
@@ -45,6 +47,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "calendar", name: "Calendar", description: "Month view of teaching days, periods and registers", icon: CalendarRange, tone: "teal", path: "/teacher/calendar" },
     { id: "weekly", name: "Weekly timetable", description: "Your published schedule, day by day", icon: CalendarDays, tone: "violet", path: "/teacher/timetable/weekly" },
     { id: "registers", name: "Registers", description: "Take and review attendance for your lessons", icon: ClipboardCheck, tone: "amber", path: "/teacher/attendance" },
+    { id: "messages", name: "Messages", description: "School and family conversations", icon: MessageCircle, tone: "teal", path: "/teacher/messages" },
     { id: "events", name: "Events & class tests", description: "Plan class tests and activities, review responses and take event attendance", icon: CalendarDays, tone: "teal", path: "/teacher/events" },
     { id: "safeguarding", name: "Safeguarding", description: "Report and review welfare concerns", icon: ShieldAlert, tone: "rose", path: "/teacher/safeguarding" },
   ],
@@ -54,6 +57,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "events", name: "Events & activities", description: "Publish school activities, manage consent and event attendance", icon: CalendarDays, tone: "blue", path: "/principal/events" },
     { id: "import", name: "Import students", description: "Bulk enrol from a spreadsheet with review before commit", icon: FileSpreadsheet, tone: "amber", path: "/principal/students/import" },
     { id: "weekly", name: "Master timetable", description: "Weekly grid with staffing and clash control", icon: CalendarDays, tone: "violet", path: "/principal/timetable/weekly" },
+    { id: "messages", name: "Messages", description: "School and family conversations", icon: MessageCircle, tone: "teal", path: "/principal/messages" },
     { id: "safeguarding", name: "Safeguarding", description: "Moderation queue and welfare reports", icon: ShieldAlert, tone: "rose", path: "/principal/safeguarding" },
     { id: "administration", name: "School administration", description: "Terms, classes, invitations and school access", icon: Settings2, tone: "slate", planned: "desktop" },
     { id: "fees", name: "Fee ledger", description: "Post invoices and record offline receipts", icon: ReceiptIndianRupee, tone: "slate", planned: "desktop" },

@@ -1,15 +1,11 @@
 import type { ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import {
-  BookOpen,
   Bot,
   CalendarDays,
   ClipboardCheck,
   Home,
-  LayoutGrid,
-  MessageCircle,
   MoreHorizontal,
-  WalletCards,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
@@ -67,18 +63,14 @@ const schoolNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
   { key: "copilot" as const, label: "Copilot", icon: Bot },
-  { key: "fees" as const, label: "Fees", icon: WalletCards },
   { key: "launcher" as const, label: "More", icon: MoreHorizontal },
-  { key: "chat" as const, label: "Messages", icon: MessageCircle },
 ];
 
 const eduraNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
   { key: "classes" as const, label: "Classes", icon: CalendarDays },
-  { key: "diary" as const, label: "Diary", icon: BookOpen },
   { key: "launcher" as const, label: "More", icon: MoreHorizontal },
-  { key: "chat" as const, label: "Messages", icon: MessageCircle },
 ];
 
 export function StudentShell({
@@ -94,6 +86,7 @@ export function StudentShell({
   const auth = useOptionalAuth();
   const routeMap = { ...defaultStudentRoutes, ...routes };
   const navItems = variant === "school" ? schoolNav : eduraNav;
+  const mobileActive = navItems.some((item) => item.key === activeNav) ? activeNav : "launcher";
   const studentSchools = auth?.memberships.filter((membership) => membership.role === "student") ?? [];
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;
   const resolvedSchoolName = schoolName ?? membershipSchoolName;
@@ -110,7 +103,6 @@ export function StudentShell({
             fallbackUnreadCount={notificationCount}
             onOpen={onNotifications}
           />
-          <Link className="student-icon-button" to={routeMap.launcher} aria-label="More tools"><LayoutGrid size={21} /></Link>
           <AccountMenu buttonClassName="student-profile-button" ariaLabel="Open profile" iconSize={21} onOpen={onProfile} />
         </div>
       </header>
@@ -123,11 +115,11 @@ export function StudentShell({
             key={key}
             to={routeMap[key]}
             end={key === "home"}
-            aria-current={activeNav === key ? "page" : undefined}
-            className={({ isActive }) => `student-bottom-nav__item ${activeNav === key || isActive ? "is-active" : ""}`}
+            aria-current={mobileActive === key ? "page" : undefined}
+            className={({ isActive }) => `student-bottom-nav__item ${mobileActive === key || isActive ? "is-active" : ""}`}
           >
             {({ isActive }) => {
-              const selected = activeNav === key || isActive;
+              const selected = mobileActive === key || isActive;
               return (
                 <>
                   <Icon size={22} strokeWidth={selected ? 2.35 : 1.9} />
