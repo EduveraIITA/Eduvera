@@ -67,7 +67,7 @@ interface RouteSmokeCase {
 }
 
 const implementedScreenRoutes: RouteSmokeCase[] = [
-  { path: "/parent/home", heading: "What needs you" },
+  { path: "/parent/home", heading: "Academic Pulse" },
   { path: "/parent/attendance", heading: "Today's Presence Pulse" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
@@ -228,7 +228,7 @@ describe("implemented application routes", () => {
 
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
 
-    expect(await screen.findByRole("region", { name: "What needs you" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: /Review and sign the leave request/ })).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Attendance follow-ups" })).toBeVisible();
     expect(screen.getAllByRole("heading", { name: "Attendance follow-ups" })).toHaveLength(1);
   });
