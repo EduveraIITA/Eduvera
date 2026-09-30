@@ -203,6 +203,49 @@ describe("implemented application routes", () => {
     expect(screen.queryByRole("dialog", { name: "Aarav Sharma" })).not.toBeInTheDocument();
   });
 
+  it("keeps attendance follow-ups inside the guardian action section", async () => {
+    const original = apiFetchMock.getMockImplementation() as (endpoint: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint.startsWith("/api/v1/coordination/follow-ups?")
+      ? Promise.resolve({
+          results: [{
+            id: "followup-1",
+            student_id: "student-1",
+            student_name: "Aarav Sharma",
+            owner_name: "Kavita Mehta",
+            attendance_date: "2026-09-16",
+            question: "Please confirm the reason for today's absence.",
+            due_at: "2026-09-17T12:00:00.000Z",
+            overdue: false,
+            state: "awaiting_response",
+            revision: 1,
+            outcome: null,
+            updated_at: "2026-09-16T09:00:00.000Z",
+            created_at: "2026-09-16T09:00:00.000Z",
+          }],
+          next_cursor: null,
+        })
+      : original(endpoint));
+
+    render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
+
+    const guardianActions = await screen.findByRole("region", { name: "Action Required" });
+    expect(await within(guardianActions).findByRole("heading", { name: "Attendance follow-ups" })).toBeVisible();
+    expect(screen.getAllByRole("heading", { name: "Attendance follow-ups" })).toHaveLength(1);
+  });
+
+  it("does not show the guardian attendance panel without an open follow-up", async () => {
+    const original = apiFetchMock.getMockImplementation() as (endpoint: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint.startsWith("/api/v1/coordination/follow-ups?")
+      ? Promise.resolve({ results: [], next_cursor: null })
+      : original(endpoint));
+
+    render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
+
+    await waitFor(() => expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).startsWith("/api/v1/coordination/follow-ups?"))).toBe(true));
+    expect(screen.queryByRole("heading", { name: "Attendance follow-ups" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No open attendance follow-ups")).not.toBeInTheDocument();
+  });
+
   it("opens the full attendance standings from each top student and the student's own row", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);

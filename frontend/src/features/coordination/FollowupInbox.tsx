@@ -6,13 +6,13 @@ import { getFollowups, type FollowupContext } from "./api";
 import { FollowupThread } from "./FollowupThread";
 import "./followups.css";
 
-export function FollowupInbox(props: { context: FollowupContext; studentId?: string }) {
+export function FollowupInbox(props: { context: FollowupContext; studentId?: string; hideWithoutOpenFollowups?: boolean }) {
   const auth = useOptionalAuth();
   if (auth?.status !== "authenticated") return null;
   return <Inbox key={`${auth.user?.id}:${props.studentId ?? "all"}`} {...props} userId={auth.user!.id} />;
 }
 
-function Inbox({ context, studentId, userId }: { context: FollowupContext; studentId?: string; userId: string }) {
+function Inbox({ context, studentId, userId, hideWithoutOpenFollowups = false }: { context: FollowupContext; studentId?: string; userId: string; hideWithoutOpenFollowups?: boolean }) {
   const [filter, setFilter] = useState<"open" | "resolved">("open");
   const [selected, setSelected] = useState<string | null>(null);
   const query = useInfiniteQuery({
@@ -22,6 +22,7 @@ function Inbox({ context, studentId, userId }: { context: FollowupContext; stude
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
   const records = query.data?.pages.flatMap((page) => page.results) ?? [];
+  if (hideWithoutOpenFollowups && filter === "open" && (query.isPending || query.isError || records.length === 0)) return null;
   return <section className="followup-panel" id="attendance-followups" aria-label="Attendance follow-ups">
     <header className="followup-panel__heading"><div><span className="followup-eyebrow">School & home</span><h2><MessageSquare size={20} />Attendance follow-ups</h2></div>
       <div className="followup-filters" aria-label="Follow-up status">

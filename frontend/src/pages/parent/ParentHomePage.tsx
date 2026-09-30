@@ -186,7 +186,6 @@ export function ParentHomePage({
         </div>
         {switchError ? <p className="parent-id-stack__error" role="alert">{switchError}</p> : null}
         <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student=${data.child.id}`}/>
-        <FollowupInbox context="guardian" studentId={data.child.id} />
 
         <section className="home-action-section" aria-labelledby="action-required-heading">
           <div className="section-eyebrow-row">
@@ -195,6 +194,7 @@ export function ParentHomePage({
               <span className="status-pill status-pill--danger">1 Pending Sign</span>
             ) : null}
           </div>
+          <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
           <article className="surface-card urgent-leave-card" aria-live="polite">
             {!pendingLeave ? (
               <div className="completed-message">

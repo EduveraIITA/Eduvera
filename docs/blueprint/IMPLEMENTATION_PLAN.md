@@ -101,6 +101,10 @@ No SMS/WhatsApp was sent or integrated. No offline write is represented as confi
 No care/medical details should be entered in this routine thread. Dedicated action navigation,
 coverage/reassignment and reminders are subsequent B4/B5 extensions.
 
+The guardian Home screen places the attendance follow-up inbox inside **Guardian Actions** and
+does not render the inbox until the selected child has an open follow-up. Staff inboxes retain
+their explicit loading, error and empty states for operational visibility.
+
 ## WF-LOCAL-002: Reviewed student and guardian enrollment
 
 Implemented first B1 slice: principal **Students & guardians** at `/principal/students`.
