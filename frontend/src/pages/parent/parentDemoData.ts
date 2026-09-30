@@ -19,6 +19,7 @@ export const demoParentChild: ParentChildSummary = {
 
 export const fallbackHomeData: ParentHomeData = {
   child: demoParentChild,
+  homeActions: [],
   idCard: { studentName: demoParentChild.name, avatarUrl: demoParentChild.avatarUrl, className: "Class 7A", rollNumber: demoParentChild.rollNumber, studentId: "CIS-2026-001", termLabel: "Term 1 - 2026", dateLabel: "Saturday, 12 September", attendancePercent: 92, attendanceThreshold: 85 },
   sibling: { id: "ananya-sharma", name: "Ananya", grade: "Grade 4", section: "B" },
   presence: { status: "In School", detail: "Gate 2 swipe at 07:48 AM" },

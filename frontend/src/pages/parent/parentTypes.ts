@@ -1,4 +1,5 @@
 import type { AttendanceRankingData } from "../../features/school/AttendanceRankingDialog";
+import type { HomeAction } from "../../features/home-actions/types";
 
 export type ParentPageAction = void | Promise<void>;
 
@@ -17,6 +18,7 @@ export interface ParentHomeData {
   ranking?: AttendanceRankingData;
   homeworkItems?: Array<{ id: string; title: string; body: string; subject: string | null; dueAt: string | null; completedAt: string | null }>;
   child: ParentChildSummary;
+  homeActions: HomeAction[];
   idCard: {
     studentName: string;
     avatarUrl?: string;

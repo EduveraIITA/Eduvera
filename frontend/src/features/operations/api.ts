@@ -1,5 +1,6 @@
 import { apiFetch } from "../../lib/api";
 import { schoolDateToday } from "../../lib/schoolTime";
+import type { HomeAction } from "../home-actions/types";
 
 export type AttendanceStatus = "present" | "absent" | "late" | "excused" | "half_day";
 export type AttendanceRegisterState = "draft" | "submitted" | "locked";
@@ -62,6 +63,7 @@ export interface TeacherHomeResponse {
   teacher: { id: string; name: string; role: "staff" | "admin" };
   classes: TeacherClassSummary[];
   weekly_timetable: TeacherTimetableSlot[];
+  home_actions: HomeAction[];
 }
 
 export interface TeacherRosterStudent {
@@ -150,6 +152,7 @@ export interface PrincipalHomeResponse {
   };
   classes: PrincipalClassSummary[];
   exceptions: Array<{ id: string; admission_number: string; name: string; class_section_id: string; class_name: string; recorded_days: number; percentage: number; threshold: number }>;
+  home_actions: HomeAction[];
 }
 
 export interface PrincipalTimetableResponse {

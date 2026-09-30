@@ -37,6 +37,64 @@ interface EnrollmentContext {
   academic_year: string; term_name: string; starts_on: string; ends_on: string; attendance_threshold: string;
 }
 
+export type HomeActionPriority = "urgent" | "high" | "normal" | "info";
+export type HomeActionKind =
+  | "event_rsvp"
+  | "event_consent"
+  | "event_payment"
+  | "event_checklist"
+  | "event_upcoming"
+  | "leave_signature"
+  | "diary_acknowledgement"
+  | "attendance_register"
+  | "attendance_followup"
+  | "event_duty";
+
+export interface HomeAction {
+  id: string;
+  kind: HomeActionKind;
+  priority: HomeActionPriority;
+  title: string;
+  detail: string;
+  status_label: string;
+  action_label: string;
+  href: string;
+  source_id: string;
+  occurs_at: string | null;
+  due_at: string | null;
+}
+
+interface FamilyEventActionRow {
+  event_id: string;
+  title: string;
+  starts_at: Date;
+  payment_due_on: string | null;
+  requires_rsvp: boolean;
+  requires_guardian_consent: boolean;
+  payment_required: boolean;
+  participation_requirement: "mandatory" | "optional";
+  rsvp_status: "pending" | "accepted" | "declined";
+  consent_status: "pending" | "granted" | "denied" | "withdrawn";
+  invoice_amount_paise: number;
+  paid_paise: number;
+  required_items: number;
+  required_completed: number;
+}
+
+function actionPriority(action: HomeAction): number {
+  return { urgent: 0, high: 1, normal: 2, info: 3 }[action.priority];
+}
+
+function sortHomeActions(actions: HomeAction[]): HomeAction[] {
+  return actions.sort((left, right) => {
+    const priority = actionPriority(left) - actionPriority(right);
+    if (priority) return priority;
+    const leftTime = Date.parse(left.due_at ?? left.occurs_at ?? "9999-12-31T00:00:00.000Z");
+    const rightTime = Date.parse(right.due_at ?? right.occurs_at ?? "9999-12-31T00:00:00.000Z");
+    return leftTime - rightTime || left.id.localeCompare(right.id);
+  });
+}
+
 export interface UploadInput { filename: string; mimetype: string; data: Buffer }
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -129,6 +187,188 @@ function encodeNotificationCursor(row: { created_at: Date | string; id: string }
 @Injectable()
 export class SchoolService {
   constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
+
+  private async familyHomeActions(
+    user: AuthUser,
+    student: StudentContext,
+    audience: "guardian" | "student",
+  ): Promise<HomeAction[]> {
+    const rows = (await sql<FamilyEventActionRow>`
+      SELECT event.id AS event_id,event.title,event.starts_at,event.payment_due_on,
+        event.requires_rsvp,event.requires_guardian_consent,event.payment_required,
+        participant.participation_requirement,participant.rsvp_status,
+        COALESCE(consent.status,'pending') AS consent_status,
+        COALESCE(invoice.amount_paise,0)::int AS invoice_amount_paise,
+        COALESCE((SELECT sum(payment.amount_paise)::int FROM fee_payments payment
+          WHERE payment.invoice_id=invoice.id),0)::int AS paid_paise,
+        (SELECT count(*)::int FROM campus_event_checklist_items item
+          WHERE item.event_id=event.id AND item.required) AS required_items,
+        (SELECT count(*)::int FROM campus_event_checklist_completions completion
+          JOIN campus_event_checklist_items item ON item.id=completion.item_id AND item.required
+          WHERE completion.event_id=event.id AND completion.student_id=participant.student_id) AS required_completed
+      FROM campus_event_participants participant
+      JOIN campus_events event ON event.id=participant.event_id AND event.school_id=participant.school_id
+      LEFT JOIN campus_event_consents consent ON consent.event_id=event.id AND consent.student_id=participant.student_id
+      LEFT JOIN fee_invoices invoice ON invoice.id=participant.fee_invoice_id
+      WHERE participant.student_id=${student.id}::uuid
+        AND participant.school_id=${student.school_id}::uuid
+        AND event.status='published' AND event.ends_at>=now()
+        AND (
+          (${audience}='student' AND EXISTS(SELECT 1 FROM students scoped_student
+            WHERE scoped_student.id=participant.student_id AND scoped_student.user_id=${user.id}::uuid))
+          OR (${audience}='guardian' AND EXISTS(
+            SELECT 1 FROM guardian_relationships relationship
+            JOIN parents parent ON parent.id=relationship.guardian_id
+            WHERE relationship.school_id=participant.school_id
+              AND relationship.student_id=participant.student_id AND parent.user_id=${user.id}::uuid
+          ))
+        )
+      ORDER BY event.starts_at,event.id
+      LIMIT 8
+    `.execute(this.db)).rows;
+    const now = Date.now();
+    const prefix = audience === "guardian" ? "/parent" : "/student";
+    const href = (eventId: string) => audience === "guardian"
+      ? `${prefix}/events/${eventId}?student_id=${encodeURIComponent(student.id)}`
+      : `${prefix}/events/${eventId}`;
+    const actions = rows.map<HomeAction | null>((row) => {
+      const startsAt = new Date(row.starts_at).toISOString();
+      const hoursUntil = (Date.parse(startsAt) - now) / 3_600_000;
+      const accepted = row.participation_requirement === "mandatory" || row.rsvp_status === "accepted";
+      const participationReady = accepted && (!row.requires_guardian_consent || row.consent_status === "granted");
+      const imminent = hoursUntil <= 48;
+      if (row.requires_rsvp && row.rsvp_status === "pending") {
+        const guardianDecision = audience === "student" && row.payment_required;
+        return {
+          id: `event-rsvp:${row.event_id}`,
+          kind: "event_rsvp",
+          priority: imminent ? "urgent" : "high",
+          title: guardianDecision ? `Guardian response needed for ${row.title}` : `Respond to ${row.title}`,
+          detail: guardianDecision
+            ? "A linked guardian must accept or decline this paid activity."
+            : "Accept or decline the invitation so the school can plan the participant roster.",
+          status_label: imminent ? "Starts soon" : "RSVP pending",
+          action_label: guardianDecision ? "View event" : "Respond now",
+          href: href(row.event_id), source_id: row.event_id, occurs_at: startsAt, due_at: startsAt,
+        };
+      }
+      if (accepted && row.requires_guardian_consent && row.consent_status === "pending") {
+        return {
+          id: `event-consent:${row.event_id}`,
+          kind: "event_consent",
+          priority: imminent ? "urgent" : "high",
+          title: `Guardian consent needed for ${row.title}`,
+          detail: audience === "guardian"
+            ? "Review the event details and record the guardian decision."
+            : "A linked guardian needs to review and record the consent decision.",
+          status_label: imminent ? "Starts soon" : "Consent pending",
+          action_label: audience === "guardian" ? "Review consent" : "View details",
+          href: href(row.event_id), source_id: row.event_id, occurs_at: startsAt, due_at: startsAt,
+        };
+      }
+      if (participationReady && audience === "guardian" && row.payment_required
+          && row.invoice_amount_paise > row.paid_paise) {
+        return {
+          id: `event-payment:${row.event_id}`,
+          kind: "event_payment",
+          priority: row.payment_due_on && row.payment_due_on < new Date().toISOString().slice(0, 10) ? "urgent" : "high",
+          title: `Event fee due for ${row.title}`,
+          detail: `Review the outstanding school ledger balance of ₹${Math.ceil((row.invoice_amount_paise - row.paid_paise) / 100).toLocaleString("en-IN")}.`,
+          status_label: row.payment_due_on ? `Due ${row.payment_due_on}` : "Fee pending",
+          action_label: "View fee",
+          href: href(row.event_id), source_id: row.event_id, occurs_at: startsAt,
+          due_at: row.payment_due_on ? `${row.payment_due_on}T18:29:59.000Z` : startsAt,
+        };
+      }
+      if (participationReady && row.required_items > row.required_completed) {
+        const remaining = row.required_items - row.required_completed;
+        return {
+          id: `event-checklist:${row.event_id}`,
+          kind: "event_checklist",
+          priority: imminent ? "urgent" : "normal",
+          title: `Prepare for ${row.title}`,
+          detail: `${remaining} required ${remaining === 1 ? "item is" : "items are"} still unchecked.`,
+          status_label: `${row.required_completed}/${row.required_items} ready`,
+          action_label: "Open checklist",
+          href: href(row.event_id), source_id: row.event_id, occurs_at: startsAt, due_at: startsAt,
+        };
+      }
+      if (row.rsvp_status === "declined" || ["denied", "withdrawn"].includes(row.consent_status)) return null;
+      return {
+        id: `event-upcoming:${row.event_id}`,
+        kind: "event_upcoming",
+        priority: "info",
+        title: row.title,
+        detail: "A school event has been published for this student.",
+        status_label: imminent ? "Coming up" : "Upcoming event",
+        action_label: "View event",
+        href: href(row.event_id), source_id: row.event_id, occurs_at: startsAt, due_at: null,
+      };
+    });
+    return sortHomeActions(actions.filter((action): action is HomeAction => action !== null)).slice(0, 4);
+  }
+
+  private async followupHomeActions(user: AuthUser, context: "staff" | "guardian", studentId?: string): Promise<HomeAction[]> {
+    const rows = (await sql<{
+      id: string; student_id: string; student_name: string; attendance_date: string;
+      question: string; due_at: Date; state: "awaiting_response" | "in_review";
+      class_section_id: string;
+    }>`
+      SELECT followup.id,followup.student_id,concat_ws(' ',person.first_name,person.last_name) AS student_name,
+        followup.attendance_date,followup.question,followup.due_at,followup.state,record.class_section_id
+      FROM attendance_followups followup
+      JOIN students student ON student.id=followup.student_id
+      JOIN school_people person ON person.id=student.person_id
+      JOIN attendance_records record ON record.id=followup.attendance_record_id
+      WHERE followup.state<>'resolved'
+        AND coordination_actor_authorized(followup.school_id,followup.student_id,${user.id}::uuid,${context})
+        AND (${studentId ?? null}::uuid IS NULL OR followup.student_id=${studentId ?? null}::uuid)
+        AND (${context}='guardian' OR followup.owner_user_id=${user.id}::uuid)
+      ORDER BY (followup.due_at<now()) DESC,followup.due_at,followup.id
+      LIMIT 4
+    `.execute(this.db)).rows;
+    const now = Date.now();
+    return rows.map((row) => {
+      const dueAt = new Date(row.due_at).toISOString();
+      const guardianTurn = context === "guardian" && row.state === "awaiting_response";
+      const staffTurn = context === "staff" && row.state === "in_review";
+      return {
+        id: `attendance-followup:${row.id}`,
+        kind: "attendance_followup",
+        priority: Date.parse(dueAt) < now ? "urgent" : guardianTurn || staffTurn ? "high" : "normal",
+        title: guardianTurn ? `Reply about ${row.student_name}'s attendance` : staffTurn ? `Review ${row.student_name}'s response` : `Attendance follow-up for ${row.student_name}`,
+        detail: row.question,
+        status_label: Date.parse(dueAt) < now ? "Overdue" : row.state === "in_review" ? "School review" : "Awaiting response",
+        action_label: guardianTurn ? "Reply" : staffTurn ? "Review response" : "Open follow-up",
+        href: context === "guardian" ? "#attendance-followups" : "#attendance-followups",
+        source_id: row.id, occurs_at: `${row.attendance_date}T12:00:00.000Z`, due_at: dueAt,
+      } satisfies HomeAction;
+    });
+  }
+
+  private async staffEventHomeActions(user: AuthUser, schoolId: string, portal: "teacher" | "principal"): Promise<HomeAction[]> {
+    const rows = (await sql<{ id: string; title: string; starts_at: Date; venue: string; role: string | null }>`
+      SELECT event.id,event.title,event.starts_at,event.venue,staff.role
+      FROM campus_events event
+      LEFT JOIN campus_event_staff staff ON staff.event_id=event.id AND staff.user_id=${user.id}::uuid
+      WHERE event.school_id=${schoolId}::uuid AND event.status='published' AND event.ends_at>=now()
+        AND (${portal}='principal' OR staff.user_id IS NOT NULL)
+      ORDER BY event.starts_at,event.id LIMIT 3
+    `.execute(this.db)).rows;
+    return rows.map((row) => ({
+      id: `event-duty:${row.id}`,
+      kind: "event_duty",
+      priority: row.role ? "normal" : "info",
+      title: row.title,
+      detail: row.role
+        ? `${row.role.replace("_", " ")} duty${row.venue ? ` at ${row.venue}` : ""}.`
+        : `Upcoming school event${row.venue ? ` at ${row.venue}` : ""}.`,
+      status_label: row.role ? "Assigned event duty" : "Upcoming event",
+      action_label: row.role ? "Open duty" : "Review event",
+      href: `/${portal}/events/${row.id}`,
+      source_id: row.id, occurs_at: new Date(row.starts_at).toISOString(), due_at: null,
+    }));
+  }
 
   async studentForUser(user: AuthUser, requestedId?: string): Promise<StudentContext> {
     const result = await sql<StudentContext>`
@@ -1072,10 +1312,34 @@ export class SchoolService {
       .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id).executeTakeFirst();
     if (!item) throw new NotFoundException("Diary item not found.");
     if (!item.requires_acknowledgement) throw new BadRequestException("This diary item does not require acknowledgement.");
-    const existing = await this.db.selectFrom("diary_acknowledgements").selectAll().where("item_id", "=", itemId).where("student_id", "=", student.id).executeTakeFirst();
-    if (existing) return { data: { id: existing.id, acknowledged_by_name: `${user.first_name} ${user.last_name}`.trim(), acknowledged_at: existing.acknowledged_at }, created: false };
-    const created = await this.db.insertInto("diary_acknowledgements").values({ item_id: itemId, student_id: student.id, acknowledged_by: user.id }).returningAll().executeTakeFirstOrThrow();
-    return { data: { id: created.id, acknowledged_by_name: `${user.first_name} ${user.last_name}`.trim(), acknowledged_at: created.acknowledged_at }, created: true };
+    return this.db.transaction().execute(async (tx) => {
+      const existing = await tx.selectFrom("diary_acknowledgements").selectAll().where("item_id", "=", itemId).where("student_id", "=", student.id).executeTakeFirst();
+      if (existing) return { data: { id: existing.id, acknowledged_by_name: `${user.first_name} ${user.last_name}`.trim(), acknowledged_at: existing.acknowledged_at }, created: false };
+      const created = await tx.insertInto("diary_acknowledgements").values({ item_id: itemId, student_id: student.id, acknowledged_by: user.id }).returningAll().executeTakeFirstOrThrow();
+      const audience = (await sql<{ user_id: string }>`
+        SELECT audience.user_id FROM (
+          SELECT scoped_student.user_id FROM students scoped_student WHERE scoped_student.id=${student.id}::uuid
+          UNION
+          SELECT parent.user_id FROM guardian_relationships relationship
+          JOIN parents parent ON parent.id=relationship.guardian_id
+          WHERE relationship.student_id=${student.id}::uuid AND relationship.school_id=${student.school_id}::uuid
+        ) audience WHERE audience.user_id IS NOT NULL
+      `.execute(tx)).rows.map((row) => row.user_id);
+      await this.events.enqueueUserEvent(tx, {
+        schoolId: student.school_id,
+        eventType: "diary.updated",
+        aggregateType: "diary_acknowledgement",
+        aggregateId: created.id,
+        audienceUserIds: audience,
+        payload: {
+          diary_item_id: itemId,
+          student_id: student.id,
+          refresh: ["student.home", "student.diary", "parent.home", "parent.diary"],
+        },
+        idempotencyKey: `diary-acknowledgement:${created.id}`,
+      });
+      return { data: { id: created.id, acknowledged_by_name: `${user.first_name} ${user.last_name}`.trim(), acknowledged_at: created.acknowledged_at }, created: true };
+    });
   }
 
   async setHomeworkCompleted(user: AuthUser, itemId: string, studentId: string | undefined, completed: boolean) {
@@ -1152,7 +1416,7 @@ export class SchoolService {
     const student = await this.studentForUser(user, studentId);
     const [, enrollment] = await Promise.all([this.requireRole(user, student, "guardian"), this.enrollment(student.id)]);
     const schoolDate = enrollment.school_date;
-    const [summary, campus, schedule, diary, contacts, siblings, unread, pending, homework, recentAttendance, ranking, homeworkItems] = await Promise.all([
+    const [summary, campus, schedule, diary, contacts, siblings, unread, pending, homework, recentAttendance, ranking, homeworkItems, eventActions, followupActions] = await Promise.all([
       this.attendanceSummary(student.id, enrollment),
       this.latestGate(student.id, schoolDate),
       this.timetable(enrollment, isoWeekday(schoolDate),schoolDate),
@@ -1180,6 +1444,8 @@ export class SchoolService {
         .where("item.class_section_id", "=", enrollment.class_section_id).where("item.term_id", "=", enrollment.term_id)
         .where("item.item_type", "=", "homework").where("item.published_at", "<=", new Date())
         .orderBy("item.published_at", "desc").execute(),
+      this.familyHomeActions(user, student, "guardian"),
+      this.followupHomeActions(user, "guardian", student.id),
     ]);
     const sampleSize = Math.min(10, Math.floor(recentAttendance.length / 2));
     const attendanceScore = (statuses: typeof recentAttendance) => statuses.reduce((score, item) =>
@@ -1190,11 +1456,41 @@ export class SchoolService {
     const recentHomework = Number(homework?.recent ?? 0);
     const previousHomework = Number(homework?.previous ?? 0);
     const actionRequired = pending ? await this.leaveDto(pending.id) : null;
+    const diaryAcknowledgements = diary.filter((item) => item.requires_acknowledgement && !item.acknowledged);
+    const localActions: HomeAction[] = [
+      ...(actionRequired ? [{
+        id: `leave-signature:${actionRequired.id}`,
+        kind: "leave_signature" as const,
+        priority: "urgent" as const,
+        title: "Review and sign the leave request",
+        detail: `${actionRequired.category_label} leave for ${daysInclusive(actionRequired.starts_on, actionRequired.ends_on)} ${daysInclusive(actionRequired.starts_on, actionRequired.ends_on) === 1 ? "day" : "days"}.`,
+        status_label: "Guardian decision needed",
+        action_label: "Review request",
+        href: `/parent/leave?leave_id=${encodeURIComponent(actionRequired.id)}&student_id=${encodeURIComponent(student.id)}`,
+        source_id: actionRequired.id,
+        occurs_at: actionRequired.submitted_at ? new Date(actionRequired.submitted_at).toISOString() : null,
+        due_at: `${dateOnly(actionRequired.starts_on)}T00:00:00.000Z`,
+      }] : []),
+      ...(diaryAcknowledgements.length ? [{
+        id: `diary-acknowledgement:${diaryAcknowledgements[0]!.id}`,
+        kind: "diary_acknowledgement" as const,
+        priority: "normal" as const,
+        title: diaryAcknowledgements.length === 1 ? "A diary note needs acknowledgement" : `${diaryAcknowledgements.length} diary notes need acknowledgement`,
+        detail: diaryAcknowledgements[0]!.title,
+        status_label: "Unread school note",
+        action_label: "Open diary",
+        href: `/parent/diary?student_id=${encodeURIComponent(student.id)}`,
+        source_id: diaryAcknowledgements[0]!.id,
+        occurs_at: new Date(diaryAcknowledgements[0]!.published_at).toISOString(),
+        due_at: diaryAcknowledgements[0]!.due_at ? new Date(diaryAcknowledgements[0]!.due_at).toISOString() : null,
+      }] : []),
+    ];
     return {
       student: await this.studentDto(student, enrollment), siblings: siblings.filter((item) => item.id !== student.id),
       campus_presence: campus, attendance: summary,
       ranking,
       action_required: actionRequired,
+      home_actions: sortHomeActions([...localActions, ...followupActions, ...eventActions]).slice(0, 6),
       today_schedule: schedule, day_plan:await this.dayPlanSummary(enrollment.class_section_id,schoolDate), diary_preview: diary.slice(0, 3), unread_notifications: Number(unread?.count ?? 0),
       homework_items: homeworkItems,
       semester_metrics: {
@@ -1294,7 +1590,7 @@ export class SchoolService {
     const student = await this.studentForUser(user, studentId);
     const [, enrollment] = await Promise.all([this.requireRole(user, student, "student"), this.enrollment(student.id)]);
     const schoolDate = enrollment.school_date;
-    const [attendance, records, campus, schedule, diary, activeLeaves, unread] = await Promise.all([
+    const [attendance, records, campus, schedule, diary, activeLeaves, unread, homeActions] = await Promise.all([
       this.attendanceSummary(student.id, enrollment),
       this.attendanceRecords(student.id, enrollment),
       this.latestGate(student.id, schoolDate),
@@ -1304,6 +1600,7 @@ export class SchoolService {
         .where("student_id", "=", student.id).where("status", "in", ["pending_guardian", "authorized"]).executeTakeFirst(),
       this.db.selectFrom("notifications").select(sql<string>`count(*)::text`.as("count"))
         .where("recipient_id", "=", user.id).where("read_at", "is", null).executeTakeFirst(),
+      this.familyHomeActions(user, student, "student"),
     ]);
     return {
       student: await this.studentDto(student, enrollment),
@@ -1322,6 +1619,22 @@ export class SchoolService {
       diary_preview: diary.slice(0, 4),
       active_leave_count: Number(activeLeaves?.count ?? 0),
       unread_notifications: Number(unread?.count ?? 0),
+      home_actions: sortHomeActions([
+        ...diary.filter((item) => item.requires_acknowledgement && !item.acknowledged).slice(0, 1).map((item) => ({
+          id: `diary-acknowledgement:${item.id}`,
+          kind: "diary_acknowledgement" as const,
+          priority: "normal" as const,
+          title: "A diary note needs acknowledgement",
+          detail: item.title,
+          status_label: "Unread school note",
+          action_label: "Open diary",
+          href: "/student/diary",
+          source_id: item.id,
+          occurs_at: new Date(item.published_at).toISOString(),
+          due_at: item.due_at ? new Date(item.due_at).toISOString() : null,
+        })),
+        ...homeActions,
+      ]).slice(0, 5),
     };
   }
 
@@ -1407,11 +1720,31 @@ export class SchoolService {
         AND (${membership.role}='admin' OR ts.teacher_user_id=${user.id}::uuid)
       ORDER BY ts.weekday, ts.period_number, cs.grade, cs.section
     `.execute(this.db);
+    const [followupActions, eventActions] = await Promise.all([
+      this.followupHomeActions(user, "staff"),
+      this.staffEventHomeActions(user, membership.school_id, "teacher"),
+    ]);
+    const registerActions: HomeAction[] = classes
+      .filter((item) => item.can_mark !== false && !["submitted", "locked"].includes(item.submission_status))
+      .map((item) => ({
+        id: `attendance-register:${item.class_section_id}:${selectedDate}`,
+        kind: "attendance_register",
+        priority: item.submission_status === "in_progress" ? "high" : "normal",
+        title: `${item.class_name} attendance is ${item.submission_status === "in_progress" ? "unfinished" : "due"}`,
+        detail: `${item.marked_count}/${item.student_count} students marked${item.subjects?.length ? ` for ${item.subjects.join(", ")}` : ""}.`,
+        status_label: item.submission_status === "in_progress" ? "Finish register" : "Not started",
+        action_label: item.submission_status === "in_progress" ? "Continue attendance" : "Take attendance",
+        href: `/teacher/attendance?class_section_id=${encodeURIComponent(item.class_section_id)}&date=${selectedDate}`,
+        source_id: item.class_section_id,
+        occurs_at: item.starts_at ? `${selectedDate}T${String(item.starts_at).slice(0, 8)}` : null,
+        due_at: item.ends_at ? `${selectedDate}T${String(item.ends_at).slice(0, 8)}` : null,
+      }));
     return {
       date: selectedDate,
       teacher: { id: user.id, name: `${user.first_name} ${user.last_name}`.trim(), role: membership.role },
       classes,
       weekly_timetable: weekly.rows.map((row) => ({ ...row, class_name: `Class ${row.grade}${row.section}`, weekday_label: weekdayLabels[row.weekday] })),
+      home_actions: sortHomeActions([...followupActions, ...registerActions, ...eventActions]).slice(0, 6),
     };
   }
 
@@ -2045,12 +2378,54 @@ export class SchoolService {
       absent: result.absent + Number(row.absent_count), late: result.late + Number(row.late_count),
       excused: result.excused + Number(row.excused_count),
     }), { students: 0, marked: 0, scored: 0, attending: 0, absent: 0, late: 0, excused: 0 });
+    const [followupActions, eventActions] = await Promise.all([
+      this.followupHomeActions(user, "staff"),
+      this.staffEventHomeActions(user, membership.school_id, "principal"),
+    ]);
+    const pendingRegisters = dueRows
+      .filter((row) => !["submitted", "locked"].includes(classContext.get(row.id)?.submission_status ?? "not_started"))
+      .map((row) => {
+        const context = classContext.get(row.id)!;
+        const status = context.submission_status ?? "not_started";
+        return {
+          id: `attendance-register:${row.id}:${selectedDate}`,
+          kind: "attendance_register",
+          priority: status === "in_progress" ? "high" : "normal",
+          title: `${`Class ${row.grade}${row.section}`} register is ${status === "in_progress" ? "unfinished" : "due"}`,
+          detail: `${Number(row.marked_count)}/${Number(row.student_count)} students marked.`,
+          status_label: status === "in_progress" ? "Partly marked" : "Not started",
+          action_label: "Review register",
+          href: `/principal/attendance?class_section_id=${encodeURIComponent(row.id)}&date=${selectedDate}`,
+          source_id: row.id,
+          occurs_at: context.starts_at ? `${selectedDate}T${String(context.starts_at).slice(0, 8)}` : null,
+          due_at: context.ends_at ? `${selectedDate}T${String(context.ends_at).slice(0, 8)}` : null,
+        } satisfies HomeAction;
+      });
+    const unfinishedRegisterCount = pendingRegisters.filter((action) => action.priority === "high").length;
+    const registerActions: HomeAction[] = pendingRegisters.length === 0 ? [] : pendingRegisters.length === 1
+      ? pendingRegisters
+      : [{
+          id: `attendance-registers:${membership.school_id}:${selectedDate}`,
+          kind: "attendance_register",
+          priority: unfinishedRegisterCount > 0 ? "high" : "normal",
+          title: `${pendingRegisters.length} attendance registers need attention`,
+          detail: unfinishedRegisterCount > 0
+            ? `${unfinishedRegisterCount} partly marked, ${pendingRegisters.length - unfinishedRegisterCount} not started.`
+            : `${pendingRegisters.length} registers have not been started.`,
+          status_label: unfinishedRegisterCount > 0 ? "Attendance in progress" : "Attendance due",
+          action_label: "Review registers",
+          href: `/principal/attendance?date=${selectedDate}`,
+          source_id: membership.school_id,
+          occurs_at: null,
+          due_at: `${selectedDate}T23:59:59`,
+        }];
     return {
       date: selectedDate,
       principal: { id: user.id, name: `${user.first_name} ${user.last_name}`.trim() },
       summary: { ...totals, attendance_percentage: totals.scored ? Math.round(totals.attending * 10_000 / totals.scored) / 100 : 0, classes_total: dueRows.length, classes_submitted: dueRows.filter((row) => ["submitted", "locked"].includes(row.register_state) && classContext.get(row.id)?.submission_authorized !== false).length },
       classes: operationalRows.map((row) => ({ ...classContext.get(row.id), ...row, name: `Class ${row.grade}${row.section}`, submission_status: classContext.get(row.id)?.submission_status ?? "not_started", attendance_percentage: Number(row.scored_count) ? Math.round(Number(row.attending_count) * 10_000 / Number(row.scored_count)) / 100 : 0 })),
       exceptions: exceptions.rows.map((row) => ({ ...row, name: `${row.first_name} ${row.last_name}`.trim(), class_name: `Class ${row.grade}${row.section}`, percentage: Number(row.percentage), threshold: Number(row.attendance_threshold) })),
+      home_actions: sortHomeActions([...followupActions, ...registerActions, ...eventActions]).slice(0, 6),
     };
   }
 

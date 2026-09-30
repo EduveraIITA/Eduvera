@@ -117,6 +117,23 @@ describe("school event protocol", () => {
     ]));
   });
 
+  it("removes completed diary actions from linked family home caches", () => {
+    const result = resolveSchoolEvent(
+      eventData("diary.updated", { student_id: "student-1" }),
+      "diary.updated",
+      "guardian-1",
+    );
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual([
+      { queryKey: ["school", "student", "home"] },
+      { queryKey: ["school", "student", "diary"] },
+      { queryKey: ["school", "parent", "home", "student-1"] },
+      { queryKey: ["school", "parent", "home", "default"] },
+      { queryKey: ["school", "parent", "diary", "student-1"] },
+      { queryKey: ["school", "parent", "diary", "default"] },
+    ]);
+  });
+
   it("refreshes the administration catalog and dependent timetable after a catalog edit", () => {
     const result = resolveSchoolEvent(
       eventData("administration.updated", { refresh: ["principal.administration", "principal.timetable"] }),
@@ -185,6 +202,11 @@ describe("school event protocol", () => {
       { queryKey: ["campus-event"] },
       { queryKey: ["campus-event-register"] },
       { queryKey: ["campus-event-finance"] },
+      { queryKey: ["school", "student", "home"] },
+      { queryKey: ["school", "parent", "home", "student-1"] },
+      { queryKey: ["school", "parent", "home", "default"] },
+      { queryKey: ["teacher-home"] },
+      { queryKey: ["principal-home"] },
       { queryKey: ["notifications", "guardian-1"] },
     ]);
   });

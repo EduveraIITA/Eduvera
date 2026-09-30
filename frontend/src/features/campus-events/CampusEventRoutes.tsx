@@ -51,6 +51,10 @@ function useEventInvalidation() {
       ...(eventId ? [client.invalidateQueries({ queryKey: ["campus-event", eventId] })] : []),
       ...(eventId ? [client.invalidateQueries({ queryKey: ["campus-event-finance", eventId] })] : []),
       client.invalidateQueries({ queryKey: ["notifications"] }),
+      client.invalidateQueries({ queryKey: ["school", "parent", "home"] }),
+      client.invalidateQueries({ queryKey: ["school", "student", "home"] }),
+      client.invalidateQueries({ queryKey: ["teacher-home"] }),
+      client.invalidateQueries({ queryKey: ["principal-home"] }),
     ]);
   };
 }

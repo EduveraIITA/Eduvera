@@ -863,3 +863,22 @@ Verification:
   subjects**. The new isolated-PostgreSQL conflict/audit/outbox integration case is committed for
   CI but was not run against the shared local demo database. Physical-phone UI acceptance remains
   open.
+
+## Role-aware Home action inbox — 1 October 2026
+
+- Replaced permanent empty action panels with a role-scoped, priority-sorted Home action projection.
+  Parent and student views derive the next event step from RSVP, guardian consent, fee balance and
+  required checklist state; declined or withdrawn participation no longer leaks into preparation
+  actions. Leave signatures and diary acknowledgements share the same queue.
+- Teacher Home exposes only assigned attendance registers, owned attendance follow-ups and assigned
+  event duties. Principal Home consolidates all incomplete registers into one operational action so
+  event and coordination work is not crowded out. Empty action, follow-up, diary and class modules
+  are omitted rather than showing reassuring placeholders.
+- Domain records remain authoritative. The Home queue contains links and summaries only, and each
+  mutation still executes in its owning leave, diary, coordination, attendance, fee or event module.
+  Diary acknowledgement now writes its outbox event in the same transaction; campus-event and
+  coordination events invalidate only affected Home caches over the existing SSE channel.
+- Verified against the seeded local database for parent, student, teacher and principal personas.
+  Backend/frontend typechecks, lint and production builds pass. The focused Home, realtime protocol
+  and route suite passes **60 tests**. `/readyz` reports database/events OK; physical-phone visual
+  acceptance of the new Home hierarchy remains open.

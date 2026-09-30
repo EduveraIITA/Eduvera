@@ -2,14 +2,12 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  BookOpen,
   Bus,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
   Clock3,
   ClipboardList,
-  PenLine,
   Phone,
   PieChart,
   Sigma,
@@ -25,6 +23,7 @@ import { AttendanceRankingDialog } from "../../features/school/AttendanceRanking
 import { HomeworkDetailsDialog } from "../../features/school/HomeworkDetailsDialog";
 import { ParentShell } from "./ParentShell";
 import { FollowupInbox } from "../../features/coordination/FollowupInbox";
+import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
 import type { ParentHomeData, ParentPageAction } from "./parentTypes";
 import {DayPlanNotice} from '../../features/day-plans/DayPlanNotice';
 import "./parent-pages.css";
@@ -147,22 +146,12 @@ export function ParentHomePage({
   const selectedStudentId = searchParams.get("student_id");
   const parentPath = (path: string) =>
     selectedStudentId ? `${path}${path.includes("?") ? "&" : "?"}student_id=${encodeURIComponent(selectedStudentId)}` : path;
-  const pendingLeave = data.pendingLeave;
   const currentPeriod = data.currentPeriod;
   const homeworkRecent = data.metrics.homeworkRecent;
   const homeworkPrevious = data.metrics.homeworkPrevious;
   const homeworkTrend = homeworkRecent === undefined || homeworkPrevious === undefined ? null
     : homeworkPrevious ? Math.round((homeworkRecent - homeworkPrevious) * 100 / homeworkPrevious)
       : homeworkRecent ? homeworkRecent : 0;
-
-  const openLeaveReview = (clarification = false) => {
-    if (!pendingLeave) return;
-    const params = new URLSearchParams();
-    params.set("leave_id", pendingLeave.id);
-    if (selectedStudentId) params.set("student_id", selectedStudentId);
-    if (clarification) params.set("clarify", "1");
-    void navigate(`/parent/leave?${params.toString()}`);
-  };
 
   return (
     <ParentShell
@@ -187,45 +176,8 @@ export function ParentHomePage({
         {switchError ? <p className="parent-id-stack__error" role="alert">{switchError}</p> : null}
         <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student=${data.child.id}`}/>
 
-        <section className="home-action-section" aria-labelledby="action-required-heading">
-          <div className="section-eyebrow-row">
-            <h2 id="action-required-heading">{pendingLeave ? <span className="alert-dot" /> : null}{pendingLeave ? "Action Required" : "Guardian Actions"}</h2>
-            {pendingLeave ? (
-              <span className="status-pill status-pill--danger">1 Pending Sign</span>
-            ) : null}
-          </div>
-          <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
-          <article className="surface-card urgent-leave-card" aria-live="polite">
-            {!pendingLeave ? (
-              <div className="completed-message">
-                <CheckCircle2 size={23} />
-                <div><strong>No leave sign-off required</strong><span>New leave sign-offs will appear here when the school receives them.</span></div>
-              </div>
-            ) : (
-              <div className="urgent-leave-card__body">
-                <div className="action-icon action-icon--danger"><PenLine size={23} /></div>
-                <div className="urgent-leave-card__content">
-                  <div className="title-row title-row--spread">
-                    <h3>{pendingLeave.title}</h3>
-                    <span className="time-label">{pendingLeave.submittedLabel}</span>
-                  </div>
-                  <p>{pendingLeave.summary} - <strong>{pendingLeave.durationLabel}</strong></p>
-                </div>
-                <div className="button-row urgent-leave-card__actions">
-                  <button className="button button--primary button--grow" type="button" onClick={() => openLeaveReview()}>
-                    <CheckCircle2 size={17} /><span>Review &amp; Sign</span>
-                  </button>
-                  <button className="button button--soft" type="button" onClick={() => openLeaveReview(true)}>Ask clarification</button>
-                </div>
-              </div>
-            )}
-          </article>
-          <button className="surface-card diary-unread-card" type="button" onClick={() => navigate(parentPath("/parent/diary"))}>
-            <span className="action-icon"><BookOpen size={19} /></span>
-            <span><strong>{data.unreadDiaryCount > 0 ? `${data.unreadDiaryCount} Unread Diary Note${data.unreadDiaryCount === 1 ? "" : "s"}` : "No unread diary notes"}</strong><small>{data.unreadDiaryCount > 0 ? `From ${data.diarySender}` : data.diarySender}</small></span>
-            <ChevronRight size={20} />
-          </button>
-        </section>
+        <HomeActionDeck actions={data.homeActions} title="What needs you" />
+        <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
 
         <section className="surface-card pulse-card" aria-labelledby="pulse-heading">
           <div className="card-heading-row">

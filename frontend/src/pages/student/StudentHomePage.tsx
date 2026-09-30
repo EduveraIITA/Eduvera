@@ -22,6 +22,8 @@ import {
 import { schoolClock } from "../../lib/schoolTime";
 import { StudentShell } from "./StudentShell";
 import { StudentIdentityCard } from "./StudentIdentityCard";
+import type { HomeAction } from "../../features/home-actions/types";
+import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
 import "./student-pages.css";
 
 export interface StudentHomePeriod {
@@ -64,6 +66,7 @@ export interface StudentHomeData {
   unreadNotifications: number;
   schedule: StudentHomePeriod[];
   diary: StudentHomeDiaryItem[];
+  homeActions: HomeAction[];
 }
 
 interface StudentHomeKitItem {
@@ -201,6 +204,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
       <div className="student-page-stack student-home-page">
         <StudentIdentityCard identity={data} eyebrow={greeting()} />
         <DayPlanNotice plan={data.dayPlan} href="/student/timetable"/>
+        <HomeActionDeck actions={data.homeActions} title="What needs you" />
 
         <section className={`student-home-presence ${data.presence.verified ? "is-verified" : ""}`} aria-label="Today's attendance status">
           <span className="student-home-presence__icon"><CheckCircle2 size={22} /></span>
@@ -277,12 +281,12 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
           </div>
         </section>
 
-        <section className="student-card student-home-diary" aria-labelledby="student-home-diary-heading">
+        {data.diary.length ? <section className="student-card student-home-diary" aria-labelledby="student-home-diary-heading">
           <header><div><span>Class desk</span><h2 id="student-home-diary-heading">Today's diary</h2></div><span>{data.diary.length} items</span></header>
-          {data.diary.length ? data.diary.map((item) => (
+          {data.diary.map((item) => (
             <article key={item.id}><span><BookOpenText size={18} /></span><div><strong>{item.title}</strong><p>{item.detail}</p><small>{item.label}</small></div></article>
-          )) : <div className="student-home-empty"><BookOpenText size={20} /><span><strong>No diary updates today</strong><small>Teacher notes and homework will appear here.</small></span></div>}
-        </section>
+          ))}
+        </section> : null}
 
         {scheduleOpen ? (
           <div className="student-sheet-backdrop" onClick={() => setScheduleOpen(false)}>

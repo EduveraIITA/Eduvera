@@ -1,4 +1,4 @@
-.followup-panel { background: var(--edura-surface); color: var(--edura-ink); border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); padding: 1.25rem; box-shadow: var(--shadow-card); min-width: 0; }
+.followup-panel { background: var(--edura-surface); color: var(--edura-ink); border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); padding: 1.25rem; box-shadow: var(--shadow-card); min-width: 0; scroll-margin-top: 96px; }
 .followup-panel__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .followup-panel h2 { font-size: 1.125rem; line-height: 1.5; margin: .25rem 0 0; display: flex; align-items: center; gap: .5rem; }
 .followup-eyebrow { color: var(--edura-ink-muted); font-size: .75rem; font-weight: 700; }

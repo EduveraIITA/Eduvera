@@ -1,6 +1,7 @@
 import { apiFetch } from "../../lib/api";
 import { schoolDateToday } from "../../lib/schoolTime";
 import type {PublishedDayNotice} from '../day-plans/DayPlanNotice';
+import type { HomeAction } from "../home-actions/types";
 
 export interface ApiUser {
   id: string | null;
@@ -148,6 +149,7 @@ export interface ParentHomeResponse {
   attendance: ApiAttendanceSummary;
   ranking?: ApiAttendanceRanking;
   action_required: ApiLeaveRequest | null;
+  home_actions: HomeAction[];
   today_schedule: ApiTimetableSlot[];
   diary_preview: ApiDiaryItem[];
   unread_notifications: number;
@@ -245,6 +247,7 @@ export interface StudentHomeResponse {
   diary_preview: ApiDiaryItem[];
   active_leave_count: number;
   unread_notifications: number;
+  home_actions: HomeAction[];
 }
 
 export interface StudentEligibilityResponse {

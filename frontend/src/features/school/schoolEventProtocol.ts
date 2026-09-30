@@ -4,6 +4,7 @@ export const SCHOOL_EVENT_TYPES = [
   "day_plan.updated",
   "people.updated",
   "coordination.updated",
+  "diary.updated",
   "attendance.updated",
   "attendance.register.draft",
   "attendance.register.submitted",
@@ -78,7 +79,8 @@ const targetSet = new Set<string>(REFRESH_TARGETS);
 const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
   "day_plan.updated": ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "notifications"],
   "people.updated": ["people", "teacher.home", "teacher.attendance", "principal.home", "principal.attendance", "parent.home"],
-  "coordination.updated": ["coordination"],
+  "coordination.updated": ["coordination", "parent.home", "teacher.home", "principal.home", "notifications"],
+  "diary.updated": ["student.home", "student.diary", "parent.home", "parent.diary"],
   "attendance.updated": [
     "student.home",
     "student.attendance",
@@ -110,7 +112,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
     "principal.timetable",
   ],
   "administration.updated": ["principal.administration", "principal.timetable", "principal.home", "teacher.home", "student.home", "student.timetable", "parent.home", "parent.timetable"],
-  "campus_event.updated": ["campus-events", "notifications"],
+  "campus_event.updated": ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications"],
 };
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [

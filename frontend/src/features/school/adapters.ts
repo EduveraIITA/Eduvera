@@ -218,6 +218,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
   const primaryContact = response.contacts.find((contact) => isHomeroomContact(contact.label));
   return {
     child,
+    homeActions: response.home_actions ?? [],
     dayPlan:response.day_plan,
     ranking: adaptRanking(response.ranking),
     idCard: {
@@ -659,6 +660,7 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
   }).format(parseLocalDate(response.date));
   return {
     studentName: response.student.user.display_name,
+    homeActions: response.home_actions ?? [],
     dayPlan:response.day_plan,
     avatarUrl: response.student.avatar_url || undefined,
     className: response.student.current_enrollment.class_name,

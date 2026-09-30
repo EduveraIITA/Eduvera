@@ -113,7 +113,11 @@ export class CoordinationService {
         coordination_actor_authorized(m.school_id,${row.student_id}::uuid,m.user_id,'guardian'))`.execute(db)).rows.map((r) => r.user_id);
     await this.events.enqueueUserEvent(db, { schoolId: row.school_id, eventType: "coordination.updated", aggregateType: "attendance_followup",
       aggregateId: row.id, audienceUserIds: audience, idempotencyKey: `followup:${row.id}:${row.revision}`,
-      payload: { student_id: row.student_id, revision: row.revision, refresh: ["coordination"] } });
+      payload: {
+        student_id: row.student_id,
+        revision: row.revision,
+        refresh: ["coordination", "parent.home", "teacher.home", "principal.home", "notifications"],
+      } });
     return { id: row.id, revision: row.revision };
   }
 

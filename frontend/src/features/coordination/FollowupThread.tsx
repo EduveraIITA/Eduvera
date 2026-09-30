@@ -43,7 +43,12 @@ function ResponseForm({ data, context, onRefresh }: { data: FollowupDetail; cont
       if (attempt.current?.body !== fingerprint) attempt.current = { body: fingerprint, id: crypto.randomUUID() };
       await addFollowupEntry(data.id, { ...input, idempotency_key: attempt.current.id });
       setBody(""); setSaved(kind === "resolved" ? "Outcome recorded." : "Response saved. Awaiting school review."); attempt.current = null;
-      await cache.invalidateQueries({ queryKey: ["school", "coordination"] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["school", "coordination"] }),
+        cache.invalidateQueries({ queryKey: ["school", "parent", "home"] }),
+        cache.invalidateQueries({ queryKey: ["teacher-home"] }),
+        cache.invalidateQueries({ queryKey: ["principal-home"] }),
+      ]);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save the response. Your text is still here."); }
     finally { setBusy(false); }
   };

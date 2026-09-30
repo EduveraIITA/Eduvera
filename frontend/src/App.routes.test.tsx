@@ -67,7 +67,7 @@ interface RouteSmokeCase {
 }
 
 const implementedScreenRoutes: RouteSmokeCase[] = [
-  { path: "/parent/home", heading: "Action Required" },
+  { path: "/parent/home", heading: "What needs you" },
   { path: "/parent/attendance", heading: "Today's Presence Pulse" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
@@ -203,7 +203,7 @@ describe("implemented application routes", () => {
     expect(screen.queryByRole("dialog", { name: "Aarav Sharma" })).not.toBeInTheDocument();
   });
 
-  it("keeps attendance follow-ups inside the guardian action section", async () => {
+  it("shows one attendance follow-up module beside the prioritized action deck", async () => {
     const original = apiFetchMock.getMockImplementation() as (endpoint: string) => Promise<unknown>;
     apiFetchMock.mockImplementation((endpoint: string) => endpoint.startsWith("/api/v1/coordination/follow-ups?")
       ? Promise.resolve({
@@ -228,8 +228,8 @@ describe("implemented application routes", () => {
 
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
 
-    const guardianActions = await screen.findByRole("region", { name: "Action Required" });
-    expect(await within(guardianActions).findByRole("heading", { name: "Attendance follow-ups" })).toBeVisible();
+    expect(await screen.findByRole("region", { name: "What needs you" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Attendance follow-ups" })).toBeVisible();
     expect(screen.getAllByRole("heading", { name: "Attendance follow-ups" })).toHaveLength(1);
   });
 

@@ -33,6 +33,7 @@ import type {
 import { ApiError } from "../../lib/api";
 import { OperationsShell } from "./OperationsShell";
 import { FollowupInbox } from "../../features/coordination/FollowupInbox";
+import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
 import { CreateAttendanceFollowup } from "../../features/coordination/CreateAttendanceFollowup";
 import { TeacherDayPanel } from "../../features/day-plans/TeacherDayPage";
 import { AttendanceStudentRow } from "./AttendanceStudentRow";
@@ -112,7 +113,8 @@ export function TeacherHomePage({
             />
           </label>
         </section>
-        <section
+        <HomeActionDeck actions={data.home_actions ?? []} title="Your priority queue" />
+        {dueClasses.length ? <section
           className="operations-metrics"
           aria-label="Teacher attendance summary"
         >
@@ -153,10 +155,10 @@ export function TeacherHomePage({
             <strong>{totals.attending}</strong>
             <em>Present, late, or half day</em>
           </article>
-        </section>
-        <FollowupInbox context="staff" />
+        </section> : null}
+        <FollowupInbox context="staff" hideWithoutOpenFollowups />
         <TeacherDayPanel date={date} compact />
-        <section className="operations-panel">
+        {data.classes.length ? <section className="operations-panel">
           <header>
             <div>
               <span>Attendance register</span>
@@ -222,7 +224,7 @@ export function TeacherHomePage({
               </div>
             )}
           </div>
-        </section>
+        </section> : null}
         <section className="operations-panel operations-schedule-preview">
           <header>
             <div>
