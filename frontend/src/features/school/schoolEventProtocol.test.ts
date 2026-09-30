@@ -117,6 +117,19 @@ describe("school event protocol", () => {
     ]));
   });
 
+  it("refreshes the administration catalog and dependent timetable after a catalog edit", () => {
+    const result = resolveSchoolEvent(
+      eventData("administration.updated", { refresh: ["principal.administration", "principal.timetable"] }),
+      "administration.updated",
+      "principal-1",
+    );
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual([
+      { queryKey: ["office", "administration"] },
+      { queryKey: ["principal-timetable"] },
+    ]);
+  });
+
   it.each([
     "not json",
     eventData("attendance.updated", { refresh: ["untrusted.cache"] }),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { date, invoiceSchema, parseStudentCsv, paymentSchema, rolloverSchema, studentSchema, termSchema } from "../src/operations/schemas.js";
+import { catalogMutationSchema, date, invoiceSchema, parseStudentCsv, paymentSchema, rolloverSchema, studentSchema, subjectSchema, termSchema } from "../src/operations/schemas.js";
 
 const classId = "75bd2dce-2416-459a-a57b-413bb56835a6";
 const termId = "75bd2dce-2416-459a-a57b-413bb56835a7";
@@ -31,5 +31,19 @@ describe("school operations validation", () => {
   it("rejects same-term and duplicate-source promotions", () => {
     expect(rolloverSchema.safeParse({ source_term_id: termId, target_term_id: termId, mappings: [{ from_class_id: classId, to_class_id: studentId }] }).success).toBe(false);
     expect(rolloverSchema.safeParse({ source_term_id: termId, target_term_id: studentId, mappings: [{ from_class_id: classId, to_class_id: studentId }, { from_class_id: classId, to_class_id: termId }] }).success).toBe(false);
+  });
+  it("normalizes subject presentation and validates catalogue edit controls", () => {
+    expect(subjectSchema.parse({ code: "math", name: "Mathematics", short_name: "Maths", color: "#1d4ed8", icon: "calculator" })).toMatchObject({
+      code: "MATH",
+      color: "#1D4ED8",
+      icon: "calculator",
+    });
+    expect(subjectSchema.safeParse({ code: "MATH", name: "Mathematics", short_name: "Maths", color: "blue", icon: "sparkles" }).success).toBe(false);
+    expect(catalogMutationSchema.parse({ expected_revision: 2, confirmed: true, change_reason: "Room allocation reviewed" })).toEqual({
+      expected_revision: 2,
+      confirmed: true,
+      change_reason: "Room allocation reviewed",
+    });
+    expect(catalogMutationSchema.safeParse({ expected_revision: 0 }).success).toBe(false);
   });
 });

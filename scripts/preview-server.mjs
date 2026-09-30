@@ -18,7 +18,8 @@ const photoDataRoot = process.env.PREVIEW_PHOTO_DATA_ROOT || resolve(runtimeRoot
 // `process.loadEnvFile()` has failed intermittently when this supervisor runs
 // under launchd from macOS Documents. Read the small local env file directly
 // so the managed preview does not enter a restart loop while the app is idle.
-for (const rawLine of readFileSync(resolve(backendRoot, ".env"), "utf8").split(/\r?\n/u)) {
+const localEnvFile = process.env.PREVIEW_ENV_FILE || resolve(backendRoot, ".env");
+for (const rawLine of readFileSync(localEnvFile, "utf8").split(/\r?\n/u)) {
   const line = rawLine.trim();
   if (!line || line.startsWith("#") || !line.includes("=")) continue;
   const separator = line.indexOf("=");

@@ -810,3 +810,56 @@ Verification:
   messages and safeguarding, parent timetable/leave, and student diary/messages remain reachable
   in More. Removed the redundant More shortcut beside each top-bar avatar and added a regression
   test for the four-tab/header rule.
+
+## Responsive school administration and fees — 30 September 2026
+
+- The principal More catalogue now opens responsive **School administration** and **Fee ledger**
+  routes in the established operations shell. Administration includes academic terms/classes/
+  subjects, reviewed class promotion, existing student/guardian enrolment and import links,
+  invitations, member permissions, audit history and new-school provisioning. Existing backend
+  permission, transaction and audit boundaries remain authoritative for every command.
+- Principal fees show ledger-derived adjusted billed, received, outstanding and refund due,
+  student filtering, immutable invoice posting, confirmed offline cash/bank/cleared-cheque
+  receipts and a printable statement. Parent/student More pages now expose linked-child
+  read-only invoices and receipts through the existing family-scoped fee endpoint. This is
+  **not** an online payment gateway or completed bank reconciliation workflow.
+- The operations overview and invoice picker now include accountless canonical students;
+  the overview guardian list also reads canonical school people rather than requiring a login.
+  An isolated-database integration case covers accountless invoice eligibility, but was not
+  run in the local live review database because that test mutates records. The local demo
+  administrator API returned 203 students in administration and the fee picker, and 16
+  invoices; linked demo parent and student fee reads each returned HTTP 200 with one invoice.
+- Responsive frontend typecheck, lint and production build pass; the 42 route tests and five
+  backend operations unit tests pass. Backend typecheck and build pass. The managed local
+  preview returned HTTP 200 for `/principal/fees`, and `/readyz` reported database/events OK.
+  Visual acceptance on the user's phone remains open; no Stage/Railway deployment is claimed.
+- Mobile principal administration now uses a compact school overview, current-term context,
+  sticky icon tabs, task-first setup links and collapsed high-consequence workflows for class
+  promotion and school creation. Access management separates invitations from members and keeps
+  every existing authorization, confirmation and audit path intact.
+- Mobile fees now leads with collectible balance and supporting ledger totals, separates invoice
+  and receipt registers, exposes invoice and print tasks as large controls, and presents each
+  invoice as an actionable balance card. The linked-family read-only ledger retains its compact
+  invoice layout. The refreshed frontend passes typecheck, lint, production build and all **163**
+  tests; the live local routes `/principal/administration`, `/principal/fees` and the shared office
+  stylesheet each return HTTP 200. Physical-phone visual acceptance remains open.
+- Academic setup is now a persistent catalogue workflow rather than an inline demo form. Terms,
+  classes and subjects open in an accessible desktop dialog/mobile bottom sheet, preserve the
+  selected record, expose dependency counts, and save all supported fields. Term availability and
+  subject timetable color/icon are editable. Member access editing now uses the same immediately
+  visible sheet instead of rendering below the long staff directory. Linked-record changes require
+  an explicit impact review and reason; academic-year transitions remain new records instead of
+  rewriting history.
+- Migration `021_school_catalog_concurrency.sql` adds catalogue revisions, accountable editor/time
+  fields and structured operations-audit metadata. Updates use optimistic concurrency, retain
+  stable record IDs, reject no-op/stale writes, append target/reason/dependency context to audit,
+  and enqueue `administration.updated` in the same transaction for authorized event-driven cache
+  refresh. Hard deletion is deliberately not exposed because referenced timetable, enrollment and
+  attendance history must remain intact.
+- Verification after this change: backend typecheck, lint and production build pass with the
+  focused catalogue validation test; frontend typecheck, lint, production build and all **169**
+  tests pass. The local migration is applied, `/readyz` reports database/events OK, and the live
+  administration read model returns HTTP 200 with **203 students, 1 term, 8 classes and 8
+  subjects**. The new isolated-PostgreSQL conflict/audit/outbox integration case is committed for
+  CI but was not run against the shared local demo database. Physical-phone UI acceptance remains
+  open.

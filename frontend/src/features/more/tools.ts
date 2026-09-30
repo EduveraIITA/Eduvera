@@ -30,7 +30,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "diary", name: "Diary", description: "Homework, notes and announcements from teachers", icon: BookOpen, tone: "rose", path: "/parent/diary" },
     { id: "events", name: "Events & activities", description: "Invitations, consent and preparation for your children", icon: CalendarDays, tone: "teal", path: "/parent/events" },
     { id: "messages", name: "Messages", description: "Homeroom and school office conversations", icon: MessageCircle, tone: "teal", path: "/parent/messages" },
-    { id: "fees", name: "Fees & receipts", description: "Invoices, receipts and outstanding balance", icon: ReceiptIndianRupee, tone: "amber", planned: "desktop" },
+    { id: "fees", name: "Fees & receipts", description: "Invoices, receipts and outstanding balance", icon: ReceiptIndianRupee, tone: "amber", path: "/parent/fees" },
     { id: "security", name: "Account security", description: "Signed-in devices and password", icon: ShieldCheck, tone: "slate", planned: "desktop" },
   ],
   student: [
@@ -40,7 +40,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "leave", name: "Leave", description: "Apply for leave and track approval", icon: CalendarX2, tone: "rose", path: "/student/leave" },
     { id: "diary", name: "Diary", description: "Homework, teacher notes and announcements", icon: BookOpen, tone: "amber", path: "/student/diary" },
     { id: "messages", name: "Messages", description: "School and teacher conversations", icon: MessageCircle, tone: "teal", path: "/student/messages" },
-    { id: "fees", name: "Fees", description: "Invoices, receipts and payment history", icon: ReceiptIndianRupee, tone: "slate", planned: "desktop" },
+    { id: "fees", name: "Fees", description: "Invoices, receipts and payment history", icon: ReceiptIndianRupee, tone: "amber", path: "/student/fees" },
   ],
   teacher: [
     { id: "classes", name: "My classes", description: "Every class you teach, today's register status and the live roster", icon: Users, tone: "blue", path: "/teacher/classes" },
@@ -59,8 +59,8 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "weekly", name: "Master timetable", description: "Weekly grid with staffing and clash control", icon: CalendarDays, tone: "violet", path: "/principal/timetable/weekly" },
     { id: "messages", name: "Messages", description: "School and family conversations", icon: MessageCircle, tone: "teal", path: "/principal/messages" },
     { id: "safeguarding", name: "Safeguarding", description: "Moderation queue and welfare reports", icon: ShieldAlert, tone: "rose", path: "/principal/safeguarding" },
-    { id: "administration", name: "School administration", description: "Terms, classes, invitations and school access", icon: Settings2, tone: "slate", planned: "desktop" },
-    { id: "fees", name: "Fee ledger", description: "Post invoices and record offline receipts", icon: ReceiptIndianRupee, tone: "slate", planned: "desktop" },
+    { id: "administration", name: "School administration", description: "Terms, classes, invitations and school access", icon: Settings2, tone: "slate", path: "/principal/administration" },
+    { id: "fees", name: "Fee ledger", description: "Post invoices and record offline receipts", icon: ReceiptIndianRupee, tone: "amber", path: "/principal/fees" },
   ],
 };
 

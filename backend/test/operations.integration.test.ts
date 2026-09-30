@@ -17,6 +17,7 @@ suite("school operations against disposable PostgreSQL", () => {
   let studentId: string;
   let termId: string;
   let classId: string;
+  let subjectId: string;
   let invoiceId: string;
   let inviteToken: string;
   const suffix = randomUUID();
@@ -62,12 +63,43 @@ suite("school operations against disposable PostgreSQL", () => {
     expect(term.status).toBe(201); termId = term.data.id;
     const section = await schoolRequest("catalog/classes", { grade: "5", section: "A", academic_year: "2030-31" });
     expect(section.status).toBe(201); classId = section.data.id;
-    expect((await schoolRequest("catalog/subjects", { code: "ENG", name: "English", short_name: "Eng" })).status).toBe(201);
+    const subject = await schoolRequest("catalog/subjects", { code: "ENG", name: "English", short_name: "Eng" });
+    expect(subject.status).toBe(201); subjectId = subject.data.id;
     const input = { email: studentEmail, first_name: "Mira", last_name: "Sen", admission_number: "S1", class_section_id: classId, term_id: termId, roll_number: 1 };
     expect((await schoolRequest("students", { ...input, class_section_id: randomUUID() })).status).toBe(400);
     const student = await schoolRequest("students", input); expect(student.status).toBe(201); studentId = student.data.id;
     expect((await schoolRequest("students", input)).status).toBe(409);
     expect((await schoolRequest(`students/${studentId}`, { first_name: "Mira", last_name: "Sen", admission_number: "S1", date_of_birth: "2020-02-30" }, "PATCH")).status).toBe(400);
+  });
+  it("protects linked catalogue edits with impact review, revision conflicts, audit context and an outbox event", async () => {
+    const overview = await schoolRequest("administration");
+    expect(overview.status).toBe(200);
+    const section = overview.data.classes.find((item: { id: string }) => item.id === classId);
+    expect(section).toMatchObject({ revision: 1, enrollment_count: 1 });
+    const changed = { academic_year: section.academic_year, grade: section.grade, section: section.section, board: "CBSE", room_number: "205" };
+    expect((await schoolRequest(`catalog/classes/${classId}`, changed, "PATCH")).status).toBe(400);
+    expect((await schoolRequest(`catalog/classes/${classId}`, { ...changed, expected_revision: 1 }, "PATCH")).status).toBe(400);
+    const saved = await schoolRequest(`catalog/classes/${classId}`, { ...changed, expected_revision: 1, confirmed: true, change_reason: "Reviewed room allocation" }, "PATCH");
+    expect(saved.status).toBe(200);
+    expect(saved.data).toMatchObject({ room_number: "205", revision: 2, enrollment_count: 1 });
+    expect((await schoolRequest(`catalog/classes/${classId}`, { ...changed, room_number: "206", expected_revision: 1, confirmed: true, change_reason: "Stale room allocation" }, "PATCH")).status).toBe(409);
+
+    const audit = await pool.query("SELECT target_id,metadata FROM school_operations_audit WHERE school_id=$1 AND action='classes.updated' ORDER BY created_at DESC LIMIT 1", [school]);
+    expect(audit.rows[0]).toMatchObject({ target_id: classId, metadata: { catalog_kind: "classes", revision: 2, reason: "Reviewed room allocation" } });
+    const event = await pool.query("SELECT event_type,aggregate_id,payload FROM event_outbox WHERE school_id=$1 AND aggregate_id=$2 ORDER BY created_at DESC LIMIT 1", [school, classId]);
+    expect(event.rows[0]).toMatchObject({ event_type: "administration.updated", aggregate_id: classId, payload: { catalog_kind: "classes", revision: 2 } });
+
+    const subject = overview.data.subjects.find((item: { id: string }) => item.id === subjectId);
+    const subjectSaved = await schoolRequest(`catalog/subjects/${subjectId}`, {
+      code: subject.code,
+      name: subject.name,
+      short_name: subject.short_name,
+      color: "#7C3AED",
+      icon: "languages",
+      expected_revision: subject.revision,
+    }, "PATCH");
+    expect(subjectSaved.status).toBe(200);
+    expect(subjectSaved.data).toMatchObject({ color: "#7C3AED", icon: "languages", revision: 2 });
   });
   it("validates and atomically imports CSV, with duplicate protection", async () => {
     const header = "email,first_name,last_name,admission_number,class_section_id,term_id,roll_number";
@@ -125,5 +157,17 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await schoolRequest(`fees/invoices/${invoiceId}/payments`, { amount_paise: 100, method: "cash", reference: "fraud", idempotency_key: randomUUID() })).status).toBe(403);
     const sessions = await request("auth/sessions/"); expect(sessions.data.results[0].current).toBe(true); expect(sessions.data.results[0].token_hash).toBeUndefined();
     expect((await request("auth/sessions/revoke-others/", {})).status).toBe(200);
+  });
+  it("includes accountless students in administration and invoice selection", async () => {
+    const person = await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Accountless','Learner') RETURNING id", [school]);
+    const student = await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id", [school, person.rows[0].id, `NOLOGIN-${suffix.slice(0, 8)}`]);
+    cookies.clear(); await request("auth/csrf/");
+    expect((await request("auth/login/", { identifier: email, password })).status).toBe(200);
+    const overview = await schoolRequest("administration");
+    expect(overview.status).toBe(200);
+    expect(overview.data.students).toContainEqual(expect.objectContaining({ id: student.rows[0].id, first_name: "Accountless" }));
+    const eligible = await schoolRequest("fees/students");
+    expect(eligible.status).toBe(200);
+    expect(eligible.data.results).toContainEqual(expect.objectContaining({ id: student.rows[0].id, first_name: "Accountless" }));
   });
 });

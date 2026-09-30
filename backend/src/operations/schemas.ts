@@ -28,7 +28,18 @@ export const classSchema = z.object({
   academic_year: z.string().regex(/^\d{4}-\d{2}(?:\d{2})?$/), grade: text(16), section: text(16),
   board: z.string().trim().max(100).default(""), room_number: z.string().trim().max(32).default(""),
 });
-export const subjectSchema = z.object({ code: text(16), name: text(100), short_name: text(40) });
+export const subjectSchema = z.object({
+  code: text(16).transform((value) => value.toUpperCase()),
+  name: text(100),
+  short_name: text(40),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Choose a valid six-digit subject color.").transform((value) => value.toUpperCase()).default("#1D4ED8"),
+  icon: z.enum(["book-open", "calculator", "flask-conical", "languages", "palette", "dumbbell", "laptop", "globe-2"]).default("book-open"),
+});
+export const catalogMutationSchema = z.object({
+  expected_revision: z.number().int().positive().optional(),
+  confirmed: z.boolean().default(false),
+  change_reason: z.string().trim().max(240).default(""),
+});
 export const enrollmentSchema = z.object({ student_id: uuid, class_section_id: uuid, term_id: uuid, roll_number: z.number().int().min(1).max(32767) });
 export const rolloverSchema = z.object({
   source_term_id: uuid, target_term_id: uuid,

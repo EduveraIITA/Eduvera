@@ -6,7 +6,7 @@ import { hashPassword, validatePassword, verifyPassword } from "../auth/password
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
-import { classSchema, enrollmentSchema, guardianSchema, invoiceSchema, parseStudentCsv, paymentSchema, personSchema, rolloverSchema, studentSchema, studentUpdateSchema, subjectSchema, termSchema, uuid } from "./schemas.js";
+import { catalogMutationSchema, classSchema, enrollmentSchema, guardianSchema, invoiceSchema, parseStudentCsv, paymentSchema, personSchema, rolloverSchema, studentSchema, studentUpdateSchema, subjectSchema, termSchema, uuid } from "./schemas.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type Permission = "sis.manage" | "fees.manage";
@@ -47,12 +47,19 @@ export class OperationsService {
     return result.rows[0];
   }
 
-  private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetId?: string) {
-    await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id)
-      VALUES (${schoolId}::uuid,${user.id}::uuid,${action},${targetId ?? null}::uuid)`.execute(db);
+  private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetId?: string, metadata: Record<string, unknown> = {}) {
+    await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
+      VALUES (${schoolId}::uuid,${user.id}::uuid,${action},${targetId ?? null}::uuid,${JSON.stringify(metadata)}::jsonb)`.execute(db);
   }
 
-  private async mutate<T>(user: AuthUser, schoolId: string, permission: Permission, action: string, work: (db: Transaction<Database>) => Promise<T>): Promise<T> {
+  private async mutate<T>(
+    user: AuthUser,
+    schoolId: string,
+    permission: Permission,
+    action: string,
+    work: (db: Transaction<Database>) => Promise<T>,
+    auditDetails?: (result: T) => { targetId?: string; metadata?: Record<string, unknown> },
+  ): Promise<T> {
     try {
       return await this.db.transaction().execute(async (db) => {
         // Serialize administrative and financial writes within one school. This
@@ -60,7 +67,9 @@ export class OperationsService {
         await sql`SELECT pg_advisory_xact_lock(hashtextextended(${schoolId},0))`.execute(db);
         await this.authorize(user, schoolId, permission, db);
         const result = await work(db);
-        await this.audit(db, user, schoolId, action);
+        const details = auditDetails?.(result);
+        const inferredTargetId = typeof result === "object" && result !== null && "id" in result && typeof result.id === "string" ? result.id : undefined;
+        await this.audit(db, user, schoolId, action, details?.targetId ?? inferredTargetId, details?.metadata);
         return result;
       });
     } catch (error) {
@@ -73,56 +82,182 @@ export class OperationsService {
     await this.authorize(user, schoolId, "sis.manage");
     const [school, students, terms, classes, subjects, members, guardians, enrollments, audit, invitations, grants] = await Promise.all([
       this.db.selectFrom("schools").selectAll().where("id", "=", schoolId).executeTakeFirstOrThrow(),
-      sql`SELECT s.id,s.admission_number,s.date_of_birth,u.first_name,u.last_name,u.email,u.is_active,u.onboarding_pending
-        FROM students s JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid ORDER BY s.admission_number`.execute(this.db),
-      this.db.selectFrom("academic_terms").selectAll().where("school_id", "=", schoolId).orderBy("starts_on", "desc").execute(),
-      this.db.selectFrom("class_sections").selectAll().where("school_id", "=", schoolId).orderBy("grade").orderBy("section").execute(),
-      this.db.selectFrom("subjects").selectAll().where("school_id", "=", schoolId).orderBy("name").execute(),
+      sql`SELECT s.id,s.admission_number,s.date_of_birth,p.first_name,p.last_name,
+        COALESCE(u.email,p.contact_email) AS email,u.is_active,u.onboarding_pending
+        FROM students s JOIN school_people p ON p.id=s.person_id AND p.school_id=s.school_id
+        LEFT JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid ORDER BY s.admission_number`.execute(this.db),
+      sql`SELECT term.*,
+        (SELECT count(*)::int FROM enrollments enrollment WHERE enrollment.term_id=term.id) AS enrollment_count,
+        (SELECT count(*)::int FROM timetable_slots slot WHERE slot.term_id=term.id) AS timetable_count,
+        (SELECT count(*)::int FROM attendance_registers register WHERE register.term_id=term.id) AS register_count
+        FROM academic_terms term WHERE term.school_id=${schoolId}::uuid ORDER BY term.starts_on DESC`.execute(this.db),
+      sql`SELECT section.*,
+        (SELECT count(*)::int FROM enrollments enrollment WHERE enrollment.class_section_id=section.id) AS enrollment_count,
+        (SELECT count(*)::int FROM timetable_slots slot WHERE slot.class_section_id=section.id) AS timetable_count,
+        (SELECT count(*)::int FROM class_section_staff_assignments assignment WHERE assignment.class_section_id=section.id) AS assignment_count
+        FROM class_sections section WHERE section.school_id=${schoolId}::uuid ORDER BY section.grade,section.section`.execute(this.db),
+      sql`SELECT subject.*,
+        (SELECT count(*)::int FROM timetable_slots slot WHERE slot.subject_id=subject.id) AS timetable_count,
+        (SELECT count(*)::int FROM subject_attendance attendance WHERE attendance.subject_id=subject.id) AS attendance_count,
+        (SELECT count(*)::int FROM diary_items diary WHERE diary.subject_id=subject.id) AS diary_count,
+        (SELECT count(*)::int FROM day_plan_periods plan_period WHERE plan_period.subject_id=subject.id) AS day_plan_count
+        FROM subjects subject WHERE subject.school_id=${schoolId}::uuid ORDER BY subject.name`.execute(this.db),
       sql`SELECT m.id,m.user_id,m.role,m.is_active,u.first_name,u.last_name,u.email FROM school_memberships m JOIN users u ON u.id=m.user_id
         WHERE m.school_id=${schoolId}::uuid ORDER BY u.first_name`.execute(this.db),
-      sql`SELECT gr.id,gr.student_id,gr.relationship,gr.is_primary,gr.can_authorize_leave,p.phone,u.first_name,u.last_name,u.email
-        FROM guardian_relationships gr JOIN parents p ON p.id=gr.guardian_id JOIN users u ON u.id=p.user_id
-        JOIN students s ON s.id=gr.student_id WHERE s.school_id=${schoolId}::uuid`.execute(this.db),
+      sql`SELECT gr.id,gr.student_id,gr.relationship,gr.is_primary,gr.can_authorize_leave,parent.phone,
+        person.first_name,person.last_name,COALESCE(u.email,person.contact_email) AS email
+        FROM guardian_relationships gr JOIN parents parent ON parent.id=gr.guardian_id
+        JOIN students s ON s.id=gr.student_id
+        JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id AND profile.school_id=s.school_id
+        JOIN school_people person ON person.id=profile.person_id AND person.school_id=s.school_id
+        LEFT JOIN users u ON u.id=parent.user_id WHERE s.school_id=${schoolId}::uuid`.execute(this.db),
       sql`SELECT e.* FROM enrollments e JOIN students s ON s.id=e.student_id WHERE s.school_id=${schoolId}::uuid`.execute(this.db),
-      sql`SELECT a.id,a.action,a.created_at,u.first_name,u.last_name FROM school_operations_audit a JOIN users u ON u.id=a.actor_id
+      sql`SELECT a.id,a.action,a.target_id,a.metadata,a.created_at,u.first_name,u.last_name FROM school_operations_audit a JOIN users u ON u.id=a.actor_id
         WHERE a.school_id=${schoolId}::uuid ORDER BY a.created_at DESC LIMIT 100`.execute(this.db),
       sql`SELECT id,email,role,expires_at,accepted_at,revoked_at FROM school_invitations WHERE school_id=${schoolId}::uuid ORDER BY created_at DESC LIMIT 100`.execute(this.db),
       sql`SELECT user_id,permission FROM school_permission_grants WHERE school_id=${schoolId}::uuid`.execute(this.db),
     ]);
-    return { school, students: students.rows, terms, classes, subjects, members: members.rows, guardians: guardians.rows, enrollments: enrollments.rows, audit: audit.rows, invitations: invitations.rows, grants: grants.rows };
+    return { school, students: students.rows, terms: terms.rows, classes: classes.rows, subjects: subjects.rows, members: members.rows, guardians: guardians.rows, enrollments: enrollments.rows, audit: audit.rows, invitations: invitations.rows, grants: grants.rows };
+  }
+
+  private async catalogUsage(db: Db, kind: "terms" | "classes" | "subjects", id: string) {
+    if (kind === "terms") {
+      const result = await sql<{ enrollment_count: number; timetable_count: number; register_count: number }>`SELECT
+        (SELECT count(*)::int FROM enrollments WHERE term_id=${id}::uuid) AS enrollment_count,
+        (SELECT count(*)::int FROM timetable_slots WHERE term_id=${id}::uuid) AS timetable_count,
+        (SELECT count(*)::int FROM attendance_registers WHERE term_id=${id}::uuid) AS register_count`.execute(db);
+      const counts = result.rows[0]!;
+      return { ...counts, total: counts.enrollment_count + counts.timetable_count + counts.register_count };
+    }
+    if (kind === "classes") {
+      const result = await sql<{ enrollment_count: number; timetable_count: number; assignment_count: number }>`SELECT
+        (SELECT count(*)::int FROM enrollments WHERE class_section_id=${id}::uuid) AS enrollment_count,
+        (SELECT count(*)::int FROM timetable_slots WHERE class_section_id=${id}::uuid) AS timetable_count,
+        (SELECT count(*)::int FROM class_section_staff_assignments WHERE class_section_id=${id}::uuid) AS assignment_count`.execute(db);
+      const counts = result.rows[0]!;
+      return { ...counts, total: counts.enrollment_count + counts.timetable_count + counts.assignment_count };
+    }
+    const result = await sql<{ timetable_count: number; attendance_count: number; diary_count: number; day_plan_count: number }>`SELECT
+      (SELECT count(*)::int FROM timetable_slots WHERE subject_id=${id}::uuid) AS timetable_count,
+      (SELECT count(*)::int FROM subject_attendance WHERE subject_id=${id}::uuid) AS attendance_count,
+      (SELECT count(*)::int FROM diary_items WHERE subject_id=${id}::uuid) AS diary_count,
+      (SELECT count(*)::int FROM day_plan_periods WHERE subject_id=${id}::uuid) AS day_plan_count`.execute(db);
+    const counts = result.rows[0]!;
+    return { ...counts, total: counts.timetable_count + counts.attendance_count + counts.diary_count + counts.day_plan_count };
+  }
+
+  private async enqueueCatalogUpdate(
+    db: Transaction<Database>,
+    schoolId: string,
+    kind: "terms" | "classes" | "subjects",
+    row: { id: string; revision: number },
+    action: "created" | "updated",
+  ) {
+    const audience = await sql<{ user_id: string }>`SELECT DISTINCT membership.user_id
+      FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${schoolId}::uuid AND membership.is_active`.execute(db);
+    const aggregateType = { terms: "term", classes: "class", subjects: "subject" }[kind];
+    await db.insertInto("event_outbox").values({
+      school_id: schoolId,
+      event_type: "administration.updated",
+      aggregate_type: aggregateType,
+      aggregate_id: row.id,
+      audience_user_ids: audience.rows.map((item) => item.user_id),
+      payload: {
+        school_id: schoolId,
+        catalog_kind: kind,
+        action,
+        revision: row.revision,
+        refresh: ["principal.administration", "principal.timetable", "principal.home", "teacher.home", "student.home", "student.timetable", "parent.home", "parent.timetable"],
+      },
+      idempotency_key: `administration:${kind}:${row.id}:${row.revision}:${action}`,
+      notification_user_ids: [],
+      notification_payload: null,
+    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
   }
 
   async saveCatalog(user: AuthUser, schoolId: string, kind: string, body: unknown, id?: string) {
     if (id) uuid.parse(id);
-    return this.mutate(user, schoolId, "sis.manage", `${kind}.${id ? "updated" : "created"}`, async (db) => {
+    if (kind !== "terms" && kind !== "classes" && kind !== "subjects") throw new NotFoundException();
+    const catalogKind = kind;
+    const controls = catalogMutationSchema.parse(body);
+    if (id && controls.expected_revision === undefined) throw new BadRequestException("Refresh this record before editing it.");
+    let auditMetadata: Record<string, unknown> = { catalog_kind: catalogKind };
+    return this.mutate(user, schoolId, "sis.manage", `${catalogKind}.${id ? "updated" : "created"}`, async (db) => {
+      const requireReviewedImpact = (usage: { total: number }) => {
+        if (!usage.total) return;
+        if (!controls.confirmed) throw new BadRequestException(`This record is linked to ${usage.total} school records. Review the impact before saving.`);
+        if (controls.change_reason.length < 8) throw new BadRequestException("Explain why this linked school record is changing.");
+      };
+      const comparable = (value: unknown) => {
+        if (typeof value === "string") return value;
+        if (typeof value === "number" || typeof value === "boolean") return value.toString();
+        return "";
+      };
+      const changed = (current: Record<string, unknown>, values: Record<string, unknown>, fields: string[]) => fields.some((field) => comparable(current[field]) !== comparable(values[field]));
+
       if (kind === "terms") {
         const data = termSchema.parse(body);
         if (id) {
           const current = await db.selectFrom("academic_terms").selectAll().where("id", "=", id).where("school_id", "=", schoolId).executeTakeFirst();
           if (!current) throw new NotFoundException();
+          if (current.revision !== controls.expected_revision) throw new ConflictException("This term changed after you opened it. Refresh and review the latest values.");
           if (current.academic_year !== data.academic_year) throw new BadRequestException("Create a new term to change the academic year.");
-          return db.updateTable("academic_terms").set({ ...data, attendance_threshold: String(data.attendance_threshold) }).where("id", "=", id).returningAll().executeTakeFirstOrThrow();
+          const values = { ...data, attendance_threshold: data.attendance_threshold.toFixed(2) };
+          if (!changed(current, values, ["name", "starts_on", "ends_on", "attendance_threshold", "is_active"])) throw new BadRequestException("No term changes were detected.");
+          const usage = await this.catalogUsage(db, catalogKind, id); requireReviewedImpact(usage);
+          const row = await db.updateTable("academic_terms").set({ ...values, updated_by: user.id }).where("id", "=", id).where("revision", "=", controls.expected_revision).returningAll().executeTakeFirst();
+          if (!row) throw new ConflictException("This term changed while it was being saved. Refresh and try again.");
+          auditMetadata = { catalog_kind: catalogKind, revision: row.revision, reason: controls.change_reason, usage };
+          await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "updated");
+          return { ...row, ...usage };
         }
-        return db.insertInto("academic_terms").values({ ...data, school_id: schoolId, attendance_threshold: String(data.attendance_threshold) }).returningAll().executeTakeFirstOrThrow();
+        const row = await db.insertInto("academic_terms").values({ ...data, school_id: schoolId, attendance_threshold: data.attendance_threshold.toFixed(2), updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+        auditMetadata = { catalog_kind: catalogKind, revision: row.revision };
+        await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "created");
+        return { ...row, enrollment_count: 0, timetable_count: 0, register_count: 0, total: 0 };
       }
       if (kind === "classes") {
         const data = classSchema.parse(body);
         if (id) {
           const current = await db.selectFrom("class_sections").selectAll().where("id", "=", id).where("school_id", "=", schoolId).executeTakeFirst();
           if (!current) throw new NotFoundException();
+          if (current.revision !== controls.expected_revision) throw new ConflictException("This class changed after you opened it. Refresh and review the latest values.");
           if (current.academic_year !== data.academic_year) throw new BadRequestException("Create a new class for the next academic year.");
-          return db.updateTable("class_sections").set(data).where("id", "=", id).returningAll().executeTakeFirstOrThrow();
+          if (!changed(current, data, ["grade", "section", "board", "room_number"])) throw new BadRequestException("No class changes were detected.");
+          const usage = await this.catalogUsage(db, catalogKind, id); requireReviewedImpact(usage);
+          const row = await db.updateTable("class_sections").set({ ...data, updated_by: user.id }).where("id", "=", id).where("revision", "=", controls.expected_revision).returningAll().executeTakeFirst();
+          if (!row) throw new ConflictException("This class changed while it was being saved. Refresh and try again.");
+          auditMetadata = { catalog_kind: catalogKind, revision: row.revision, reason: controls.change_reason, usage };
+          await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "updated");
+          return { ...row, ...usage };
         }
-        return db.insertInto("class_sections").values({ ...data, school_id: schoolId }).returningAll().executeTakeFirstOrThrow();
+        const row = await db.insertInto("class_sections").values({ ...data, school_id: schoolId, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+        auditMetadata = { catalog_kind: catalogKind, revision: row.revision };
+        await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "created");
+        return { ...row, enrollment_count: 0, timetable_count: 0, assignment_count: 0, total: 0 };
       }
-      if (kind === "subjects") {
-        const data = subjectSchema.parse(body);
-        const row = id ? await db.updateTable("subjects").set(data).where("id", "=", id).where("school_id", "=", schoolId).returningAll().executeTakeFirst()
-          : await db.insertInto("subjects").values({ ...data, school_id: schoolId }).returningAll().executeTakeFirstOrThrow();
-        if (!row) throw new NotFoundException();
-        return row;
+      const data = subjectSchema.parse(body);
+      if (id) {
+        const current = await db.selectFrom("subjects").selectAll().where("id", "=", id).where("school_id", "=", schoolId).executeTakeFirst();
+        if (!current) throw new NotFoundException();
+        if (current.revision !== controls.expected_revision) throw new ConflictException("This subject changed after you opened it. Refresh and review the latest values.");
+        if (!changed(current, data, ["code", "name", "short_name", "color", "icon"])) throw new BadRequestException("No subject changes were detected.");
+        const usage = await this.catalogUsage(db, catalogKind, id); requireReviewedImpact(usage);
+        const row = await db.updateTable("subjects").set({ ...data, updated_by: user.id }).where("id", "=", id).where("revision", "=", controls.expected_revision).returningAll().executeTakeFirst();
+        if (!row) throw new ConflictException("This subject changed while it was being saved. Refresh and try again.");
+        auditMetadata = { catalog_kind: catalogKind, revision: row.revision, reason: controls.change_reason, usage };
+        await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "updated");
+        return { ...row, ...usage };
       }
-      throw new NotFoundException();
+      const row = await db.insertInto("subjects").values({ ...data, school_id: schoolId, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+      auditMetadata = { catalog_kind: catalogKind, revision: row.revision };
+      await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "created");
+      return { ...row, timetable_count: 0, attendance_count: 0, diary_count: 0, day_plan_count: 0, total: 0 };
+    }, (result) => {
+      const targetId = typeof result === "object" && result !== null && "id" in result && typeof result.id === "string" ? result.id : undefined;
+      return { ...(targetId ? { targetId } : {}), metadata: auditMetadata };
     });
   }
 
@@ -324,7 +459,7 @@ export class OperationsService {
         AND email=(SELECT lower(email) FROM users WHERE id=${member.user_id}::uuid) AND accepted_at IS NULL AND revoked_at IS NULL`.execute(db);
       await sql`DELETE FROM school_permission_grants WHERE school_id=${schoolId}::uuid AND user_id=${member.user_id}::uuid`.execute(db);
       if (data.is_active) for (const permission of new Set(data.permissions)) await sql`INSERT INTO school_permission_grants(school_id,user_id,permission) VALUES (${schoolId}::uuid,${member.user_id}::uuid,${permission})`.execute(db);
-      return { updated: true };
+      return { id: member.id, updated: true };
     });
   }
 
@@ -391,7 +526,9 @@ export class OperationsService {
 
   async feeStudents(user: AuthUser, schoolId: string) {
     await this.authorize(user, schoolId, "fees.manage");
-    const result = await sql`SELECT s.id,s.admission_number,u.first_name,u.last_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid ORDER BY s.admission_number`.execute(this.db);
+    const result = await sql`SELECT s.id,s.admission_number,p.first_name,p.last_name FROM students s
+      JOIN school_people p ON p.id=s.person_id AND p.school_id=s.school_id
+      WHERE s.school_id=${schoolId}::uuid ORDER BY s.admission_number`.execute(this.db);
     return { results: result.rows };
   }
 
