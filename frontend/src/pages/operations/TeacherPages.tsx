@@ -155,7 +155,6 @@ export function TeacherHomePage({
           </article>
         </section>
         <FollowupInbox context="staff" />
-        <Link className="operations-action-link" to="/teacher/events"><CalendarDays size={18} />Events & class tests<ArrowRight size={16} /></Link>
         <TeacherDayPanel date={date} compact />
         <section className="operations-panel">
           <header>

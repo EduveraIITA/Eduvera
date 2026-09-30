@@ -108,7 +108,7 @@ describe("campus event family workflows", () => {
     const onLoadMore = vi.fn();
     render(<MemoryRouter><FamilyEventListPage audience="parent" events={[eventFixture()]} hasMore onLoadMore={onLoadMore} /></MemoryRouter>);
 
-    expect(screen.getByTestId("parent-shell")).toHaveAttribute("data-active", "home");
+    expect(screen.getByTestId("parent-shell")).toHaveAttribute("data-active", "events");
     await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
@@ -297,7 +297,7 @@ describe("campus event family workflows", () => {
 
     expect(screen.getByText("Checked out")).toBeVisible();
     expect(screen.getByText(/In 10:35 am · Out 3:15 pm/i)).toBeVisible();
-    expect(screen.getByTestId("parent-shell")).toHaveAttribute("data-active", "home");
+    expect(screen.getByTestId("parent-shell")).toHaveAttribute("data-active", "events");
   });
 
   it("shows a student when they are not expected in a subset session", () => {
@@ -327,7 +327,7 @@ describe("campus event planning", () => {
     const onViewChange = vi.fn();
     render(<MemoryRouter><OperationsEventListPage portal="principal" events={[eventFixture()]} view="draft" hasMore onLoadMore={onLoadMore} onViewChange={onViewChange} /></MemoryRouter>);
 
-    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-active", "home");
+    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-active", "events");
     expect(screen.getByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
     await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
     expect(onLoadMore).toHaveBeenCalledOnce();

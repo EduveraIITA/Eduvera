@@ -120,9 +120,9 @@ describe("implemented application routes", () => {
 
   it("keeps one established primary navigation destination selected on every event portal", async () => {
     for (const [path, roles, navLabel, pageHeading] of [
-      ["/parent/events", ["guardian"], "Home", "Events & activities"],
-      ["/student/events", ["student"], "Launcher", "Events & activities"],
-      ["/teacher/events", ["staff"], "Today", "Your upcoming school activities"],
+      ["/parent/events", ["guardian"], "More", "Events & activities"],
+      ["/student/events", ["student"], "More", "Events & activities"],
+      ["/teacher/events", ["staff"], "More", "Your upcoming school activities"],
     ] as const) {
       cleanup();
       mockSession([...roles]);

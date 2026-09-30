@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { NavLink, useSearchParams } from "react-router-dom";
+import { Link, NavLink, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   CalendarDays,
   CalendarX2,
   Home,
+  LayoutGrid,
   ListChecks,
   MessageCircle,
+  MoreHorizontal,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
@@ -18,7 +20,7 @@ import { demoParentChild } from "./parentDemoData";
 import type { ParentChildSummary, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
-export type ParentRoute = "home" | "attendance" | "leave" | "diary" | "timetable" | "chat" | "events";
+export type ParentRoute = "home" | "attendance" | "leave" | "diary" | "timetable" | "chat" | "events" | "more";
 
 function ChildPortrait({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
   return avatarUrl ? <img src={avatarUrl} alt="" /> : <span aria-hidden="true">{name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>;
@@ -36,6 +38,7 @@ const parentRoutes: Array<{
   { id: "diary", label: "Diary", path: "/parent/diary", icon: BookOpen },
   { id: "timetable", label: "Timetable", path: "/parent/timetable", icon: CalendarDays },
   { id: "chat", label: "Messages", path: "/parent/messages", icon: MessageCircle },
+  { id: "more", label: "More", path: "/parent/more", icon: MoreHorizontal },
 ];
 
 export interface ParentShellProps {
@@ -62,7 +65,7 @@ export function ParentShell({
   childSwitchDisabled = false,
 }: ParentShellProps) {
   const auth = useOptionalAuth();
-  const navigationActive = active === "events" ? "home" : active;
+  const navigationActive = active === "events" ? "more" : active;
   const schoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name ?? "Cambridge International School";
   const [searchParams] = useSearchParams();
   const selectedStudentId = searchParams.get("student_id");
@@ -147,6 +150,7 @@ export function ParentShell({
                 ) : null}
               </div>
             ) : null}
+            <Link className="icon-button" to={selectedStudentId ? `/parent/more?student_id=${encodeURIComponent(selectedStudentId)}` : "/parent/more"} aria-label="More tools"><LayoutGrid size={20} /></Link>
             <AccountMenu buttonClassName="profile-button" ariaLabel="Open parent profile" iconSize={20} />
           </div>
         </div>

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
-import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, ShieldAlert } from "lucide-react";
+import { Link, NavLink } from "react-router-dom";
+import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, LayoutGrid, MessageCircle, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
@@ -10,7 +10,7 @@ import "./operations-links.css";
 import "./operations-brand.css";
 
 type Portal = "teacher" | "principal";
-type Active = "home" | "attendance" | "timetable" | "chat" | "safeguarding" | "events";
+type Active = "home" | "attendance" | "timetable" | "chat" | "safeguarding" | "more" | "events";
 
 const nav = {
   teacher: [
@@ -19,6 +19,7 @@ const nav = {
     { id: "timetable", label: "Timetable", path: "/teacher/timetable", icon: CalendarDays },
     { id: "chat", label: "Messages", path: "/teacher/messages", icon: MessageCircle },
     { id: "safeguarding", label: "Safeguarding", path: "/teacher/safeguarding", icon: ShieldAlert },
+    { id: "more", label: "More", path: "/teacher/more", icon: MoreHorizontal },
   ],
   principal: [
     { id: "home", label: "Overview", path: "/principal", icon: LayoutDashboard },
@@ -26,12 +27,13 @@ const nav = {
     { id: "timetable", label: "Timetable", path: "/principal/timetable", icon: CalendarDays },
     { id: "chat", label: "Messages", path: "/principal/messages", icon: MessageCircle },
     { id: "safeguarding", label: "Safeguarding", path: "/principal/safeguarding", icon: ShieldAlert },
+    { id: "more", label: "More", path: "/principal/more", icon: MoreHorizontal },
   ],
 } as const;
 
 export function OperationsShell({ portal, active, title, subtitle, children, schoolName: selectedSchoolName, contentHasHeading = false }: { portal: Portal; active: Active; title: string; subtitle: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean }) {
   const auth = useOptionalAuth();
-  const navigationActive = active === "events" ? "home" : active;
+  const navigationActive = active === "events" ? "more" : active;
   const Title = contentHasHeading ? "p" : "h1";
   const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
   return (
@@ -49,7 +51,7 @@ export function OperationsShell({ portal, active, title, subtitle, children, sch
         <header className="operations-topbar">
           <SchoolBrand name={schoolName} className="operations-topbar__brand" />
           <div><span>{subtitle}</span><Title className="operations-topbar__title">{title}</Title></div>
-          <div><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
+          <div><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><Link className="operations-icon-button" to={`/${portal}/more`} aria-label="More tools"><LayoutGrid size={20} /></Link><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
         <main className="operations-main">{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>

@@ -43,7 +43,7 @@ export function OperationsEventListPage({
   return (
     <OperationsShell
       portal={portal}
-      active="home"
+      active="events"
       title="Events & activities"
       subtitle={portal === "principal" ? "Whole-school event operations" : "Assigned event duties"}
       contentHasHeading

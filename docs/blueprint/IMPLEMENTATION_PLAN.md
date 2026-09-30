@@ -781,3 +781,19 @@ Verification:
   participant-level collision pass against an already-published class test; accountless assisted
   event consent/RSVP needs a school-approved purpose-authority and attribution design; and the
   repository-wide non-owner PostgreSQL runtime/RLS context remains the existing B6 release gate.
+
+## Stage navigation and deployment integration — 30 September 2026
+
+- Merged Stage's mobile More, Calendar and Teacher Classes routes and desktop design-system update
+  with the campus-event routes. Teacher and principal event entry points now live in More rather
+  than duplicate home-page actions; parent events are also reachable from More, and event screens
+  keep More selected in each role's navigation.
+- Reconciled Stage's desktop fee-ledger presentation with the event-credit accounting rules:
+  adjusted billed, outstanding and refund-due figures remain ledger-derived, credited invoices
+  cannot accept further payments, and the displayed collection state reflects refunds.
+- Verified mobile, desktop and backend typechecks and production builds; desktop's 11 tests,
+  the 23 focused campus-event UI tests, and the event-navigation route test pass. Backend lint and
+  52 non-database tests pass. Full backend integration still requires CI's isolated PostgreSQL
+  service; the local test command has no `DATABASE_URL` and therefore cannot run those suites.
+- Stage deployment verification remains pending until its push-triggered CI workflow and Railway
+  health gate complete; this line does not claim a successful deployment before that evidence.

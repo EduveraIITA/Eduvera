@@ -38,7 +38,7 @@ function FamilyFrame({
   children: ReactNode;
 }) {
   return audience === "parent" ? (
-    <ParentShell active="home" pageLabel="Events" child={child} onSelectChild={onSelectChild}>
+    <ParentShell active="events" pageLabel="Events" child={child} onSelectChild={onSelectChild}>
       {children}
     </ParentShell>
   ) : (

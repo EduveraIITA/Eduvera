@@ -155,7 +155,7 @@ export function EventEditorPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="home" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" contentHasHeading>
       <form className="campus-event-editor" onSubmit={submit}>
         <header className="campus-event-editor__header">
           <div><Link to={event ? `${prefix}/events/${event.id}` : `${prefix}/events`}><ArrowLeft size={17} />Back to events</Link><span>Event planning</span><h1>{event ? event.title : "Create a school event"}</h1><p>Build the invitation, safeguards, sessions and attendance plan before publishing.</p></div>

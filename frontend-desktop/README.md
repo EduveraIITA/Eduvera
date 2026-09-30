@@ -20,15 +20,21 @@ Navigation is derived from the user's school membership, never from a fixed menu
 |------------|-----------|---------------------------------------------------------------|
 | `admin`    | Principal | Overview, Attendance, Leave requests, Timetable, Notifications |
 | `staff`    | Teacher   | Overview (your day), Attendance, Leave requests, Notifications |
+| `guardian` | Parent    | Home, Attendance, Leave, Diary, Timetable, Notifications       |
+| `student`  | Student   | Home, Attendance, Leave, Diary, Timetable, Notifications       |
 
-Parents and students are turned away at sign-in and pointed at the mobile app.
-
-Demo accounts (password `OmniDemo@2026`): `meera.principal`, `kavita.staff`.
+Demo accounts (password `OmniDemo@2026`): `meera.principal`, `kavita.staff`, `pooja.parent`, `aarav.student`.
 
 ## Design
 
-Follows the finalised theme: Plus Jakarta Sans with Noto companions declared for
-non-Latin scripts, IBM Plex Mono for identifiers, a fixed semantic palette where status
-is always colour + shape + word, and light/dark from one token set (`src/theme.css`).
-Leadership opens on exceptions; teaching opens on the day; every decision is
-attributed to the person who made it.
+Implements the Edura OS desktop design (`src/theme.css`): a Material-3 tonal palette
+(surface tiers, primary `#0037b0`, primary-container `#1d4ed8`, tertiary for "good",
+error for "critical"), Plus Jakarta Sans on a fixed type scale (display / headline /
+label / body utility classes `t-*`), borderless cards lifted by a 1px shadow, tiles in
+surface-container-low, a fixed 256px white sidebar with the brand tile, context switcher,
+"School desk" group and School help, and a 64px translucent header with the academic
+session pill, bell and user menu. Icons are lucide (SVG, tree-shaken) standing in for the
+design's Material Symbols so no icon font is downloaded. Status is always colour + shape +
+word; light/dark come from one token set. Leadership opens on exceptions; teaching opens
+on the day; families open on an answer; every decision is attributed to the person who
+made it.

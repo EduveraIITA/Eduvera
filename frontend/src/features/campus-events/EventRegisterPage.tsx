@@ -160,7 +160,7 @@ export function EventRegisterPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="home" title={`${register.event.title} attendance`} subtitle="Event register" contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={`${register.event.title} attendance`} subtitle="Event register" contentHasHeading>
       <div className="campus-event-register-page">
         <nav className="campus-event-back"><Link to={`${prefix}/events/${register.event.id}`}><ArrowLeft size={17} />Back to event</Link></nav>
         <section className="campus-event-register-hero">

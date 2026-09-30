@@ -1210,7 +1210,7 @@
     display: grid;
     height: calc(64px + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.055);
     backdrop-filter: blur(16px);
@@ -1228,6 +1228,14 @@
   }
   .operations-mobile-nav a.is-active {
     color: var(--op-blue);
+  }
+  .operations-mobile-nav a span {
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0 2px;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .operations-hero {
     min-height: 0;

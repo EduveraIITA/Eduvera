@@ -82,7 +82,7 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
   };
 
   return (
-    <OperationsShell portal={portal} active="home" title={event.title} subtitle="Events & activities" contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={event.title} subtitle="Events & activities" contentHasHeading>
       <div className="campus-event-detail-page operations-stack">
         <nav className="campus-event-back" aria-label="Event navigation"><Link to={`${prefix}/events`}><ArrowLeft size={17} />All events</Link></nav>
         <section className={`campus-event-detail-hero campus-event-detail-hero--${event.event_type}`}>
