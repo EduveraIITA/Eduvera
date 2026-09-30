@@ -882,3 +882,21 @@ Verification:
   Backend/frontend typechecks, lint and production builds pass. The focused Home, realtime protocol
   and route suite passes **60 tests**. `/readyz` reports database/events OK; physical-phone visual
   acceptance of the new Home hierarchy remains open.
+
+## Role-aware Home hierarchy — 1 October 2026
+
+- Reworked the teacher Home first as the design pilot, then applied the approved hierarchy to parent,
+  student and principal Home while preserving each role's established navigation and identity patterns.
+  Teacher and principal use the cobalt feature surface for current operational state, progress and the
+  single highest-priority action. Parent and student retain the blue digital identity card and attach the
+  single live action as a separate accessible dock, so tapping the card still opens student identity.
+- Lower-priority work moves into a quiet, single-heading `Later` list. Empty action, follow-up and
+  principal exception modules do not reserve space. Principal totals no longer compete with exceptions
+  and register workload, while parent term metrics now read as one grouped surface rather than four
+  unrelated cards.
+- Attendance progress is represented once, with the full register rows remaining authoritative and
+  directly actionable. Detailed follow-ups still render only when open, and timetable detail remains
+  one tap away. The established Eduvera type, cobalt accent, shell, headers and navigation are unchanged.
+- The teacher pilot received user visual approval. Cross-role typecheck, focused tests, production build
+  and local route health are the acceptance checks for the expanded implementation; phone review of
+  parent, student and principal Home remains the final visual gate.

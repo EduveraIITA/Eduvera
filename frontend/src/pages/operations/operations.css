@@ -200,6 +200,178 @@
   display: grid;
   gap: 18px;
 }
+
+.teacher-home {
+  width: min(100%, 920px);
+  margin-inline: auto;
+  gap: 16px;
+}
+.principal-home {
+  width: min(100%, 1120px);
+  margin-inline: auto;
+  gap: 16px;
+}
+.principal-home__hero .home-action-spotlight { margin-top: 18px; }
+.principal-home .principal-class-coverage > header h2,
+.principal-home .principal-exceptions > header h2 { margin: 0; font-size: 17px; }
+.teacher-home__day {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--edura-radius-card);
+  color: #fff;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(129, 241, 220, 0.24), transparent 32%),
+    linear-gradient(132deg, var(--op-blue) 0%, var(--op-blue-bright) 100%);
+  box-shadow: 0 16px 36px rgba(0, 55, 176, 0.18);
+}
+.teacher-home__day::after {
+  position: absolute;
+  z-index: -1;
+  right: -98px;
+  bottom: -138px;
+  width: 290px;
+  height: 290px;
+  border: 42px solid rgba(255, 255, 255, 0.055);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+.teacher-home__day > header,
+.teacher-home__day-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.teacher-home__day > header > div { min-width: 0; }
+.teacher-home__day > header > div > span {
+  display: block;
+  margin-bottom: 2px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.teacher-home__day h2 {
+  overflow: hidden;
+  font-size: 18px;
+  letter-spacing: -.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+}
+.teacher-home__day label {
+  position: relative;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: background var(--edura-motion), transform var(--edura-motion);
+}
+.teacher-home__day label:hover { background: rgba(255, 255, 255, 0.2); }
+.teacher-home__day label:active { transform: scale(0.95); }
+.teacher-home__day label:focus-within { outline: 3px solid rgba(255, 255, 255, 0.42); outline-offset: 2px; }
+.teacher-home__day label input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.teacher-home__day-summary { margin-top: 23px; align-items: end; }
+.teacher-home__day-summary > div { display: grid; gap: 3px; }
+.teacher-home__day-summary strong { font-size: clamp(25px, 4vw, 32px); line-height: 1.1; letter-spacing: -.04em; }
+.teacher-home__day-summary span { color: rgba(255, 255, 255, 0.74); font-size: 12px; }
+.teacher-home__day-summary > b { color: #9cf2df; font-size: 17px; }
+.teacher-home__day-summary > svg { color: #9cf2df; }
+.teacher-home__progress {
+  height: 4px;
+  margin-top: 15px;
+  overflow: hidden;
+  border-radius: var(--edura-radius-pill);
+  background: rgba(255, 255, 255, 0.18);
+}
+.teacher-home__progress i { display: block; height: 100%; border-radius: inherit; background: #8cebdc; box-shadow: 0 0 16px rgba(140, 235, 220, 0.32); transition: width var(--edura-motion); }
+.teacher-home__primary-action,
+.teacher-home__caught-up {
+  display: grid;
+  min-height: 64px;
+  margin-top: 18px;
+  padding: 11px 13px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--edura-radius-control);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.teacher-home__primary-action {
+  text-decoration: none;
+  transition: background var(--edura-motion), border-color var(--edura-motion), transform var(--edura-motion);
+}
+.teacher-home__primary-action:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.19);
+}
+.teacher-home__primary-action:active { transform: scale(0.992); }
+.teacher-home__primary-action:focus-visible { outline: 3px solid rgba(255, 255, 255, 0.48); outline-offset: 3px; }
+.teacher-home__primary-action > span:first-child,
+.teacher-home__caught-up > span { min-width: 0; display: grid; gap: 1px; }
+.teacher-home__primary-action small,
+.teacher-home__caught-up small {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.teacher-home__primary-action strong,
+.teacher-home__caught-up strong {
+  overflow: hidden;
+  font-size: 13px;
+  letter-spacing: -.012em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.teacher-home__primary-action-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.teacher-home__primary-action-cta svg { transition: transform var(--edura-motion); }
+.teacher-home__primary-action:hover .teacher-home__primary-action-cta svg { transform: translateX(2px); }
+.teacher-home__caught-up { grid-template-columns: auto minmax(0, 1fr); }
+.teacher-home__caught-up > svg { color: #9cf2df; }
+.teacher-home__caught-up small { font-weight: 600; letter-spacing: 0; text-transform: none; }
+.teacher-home__classes { border: 1px solid var(--op-border); box-shadow: none; }
+.teacher-home__classes > header { min-height: 56px; padding-block: 12px; }
+.teacher-home__classes > header h2 { margin: 0; font-size: 17px; }
+.teacher-home__classes .teacher-class-list > article { min-height: 70px; }
 .operations-hero {
   position: relative;
   display: flex;
@@ -1201,6 +1373,10 @@
   .operations-main {
     padding: 16px 14px 28px;
   }
+  .teacher-home__day { padding: 18px; }
+  .teacher-home__day-summary { margin-top: 20px; }
+  .teacher-home__primary-action,
+  .teacher-home__caught-up { margin-top: 16px; }
   .operations-mobile-nav {
     position: fixed;
     z-index: 45;
@@ -1387,6 +1563,11 @@
   .operations-main {
     padding-inline: 12px;
   }
+  .teacher-home__primary-action-cta {
+    font-size: 0;
+    gap: 0;
+  }
+  .teacher-home__primary-action-cta svg { width: 18px; height: 18px; }
   .operations-metrics article > span {
     display: none;
   }
@@ -1434,5 +1615,15 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .teacher-home__day label,
+  .teacher-home__primary-action,
+  .teacher-home__caught-up {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.2);
   }
 }

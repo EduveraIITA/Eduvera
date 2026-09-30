@@ -23,7 +23,7 @@ import { schoolClock } from "../../lib/schoolTime";
 import { StudentShell } from "./StudentShell";
 import { StudentIdentityCard } from "./StudentIdentityCard";
 import type { HomeAction } from "../../features/home-actions/types";
-import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
+import { HomeActionDeck, HomeActionSpotlight } from "../../features/home-actions/HomeActionDeck";
 import "./student-pages.css";
 
 export interface StudentHomePeriod {
@@ -162,6 +162,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
       : "is-orange";
   const kitItems = useMemo(() => todaysKit(data.schedule), [data.schedule]);
   const packedCount = kitItems.filter((item) => checkedKit[item.id]).length;
+  const [primaryAction, ...remainingActions] = data.homeActions;
   useEffect(() => {
     window.localStorage.setItem(kitStorageKey, JSON.stringify(checkedKit));
   }, [checkedKit, kitStorageKey]);
@@ -202,9 +203,12 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
   return (
     <StudentShell activeNav="home" section="Home" className={data.className} notificationCount={data.unreadNotifications}>
       <div className="student-page-stack student-home-page">
-        <StudentIdentityCard identity={data} eyebrow={greeting()} />
+        <div className="student-home-anchor">
+          <StudentIdentityCard identity={data} eyebrow={greeting()} />
+          {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
+        </div>
         <DayPlanNotice plan={data.dayPlan} href="/student/timetable"/>
-        <HomeActionDeck actions={data.homeActions} title="What needs you" />
+        <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
 
         <section className={`student-home-presence ${data.presence.verified ? "is-verified" : ""}`} aria-label="Today's attendance status">
           <span className="student-home-presence__icon"><CheckCircle2 size={22} /></span>

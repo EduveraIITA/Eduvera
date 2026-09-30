@@ -60,12 +60,30 @@ function ActionLink({ action, primary = false }: { action: HomeAction; primary?:
   return <Link className={className} to={action.href}>{content}</Link>;
 }
 
-export function HomeActionDeck({ actions, title = "For you" }: { actions: HomeAction[]; title?: string }) {
+export function HomeActionSpotlight({ action, tone = "surface" }: { action: HomeAction; tone?: "surface" | "brand" }) {
+  const Icon = icons[action.kind];
+  const formattedDate = dateLabel(action);
+  const className = `home-action-spotlight home-action-spotlight--${tone} is-${action.priority}`;
+  const content = <>
+    <span className="home-action-spotlight__icon" aria-hidden="true"><Icon size={20} /></span>
+    <span className="home-action-spotlight__content">
+      <span className="home-action-spotlight__meta"><b>{action.status_label}</b>{formattedDate ? <time dateTime={action.due_at ?? action.occurs_at ?? undefined}>{formattedDate}</time> : null}</span>
+      <strong>{action.title}</strong>
+      <small>{action.detail}</small>
+    </span>
+    <span className="home-action-spotlight__cta">{action.action_label}<ArrowRight size={16} aria-hidden="true" /></span>
+  </>;
+  return action.href.startsWith("#")
+    ? <a className={className} href={action.href}>{content}</a>
+    : <Link className={className} to={action.href}>{content}</Link>;
+}
+
+export function HomeActionDeck({ actions, title = "For you", variant = "default" }: { actions: HomeAction[]; title?: string; variant?: "default" | "quiet" }) {
   if (!actions.length) return null;
   const [primary, ...secondary] = actions;
-  return <section className="home-action-deck" aria-labelledby="home-action-deck-heading">
+  return <section className={`home-action-deck${variant === "quiet" ? " home-action-deck--quiet" : ""}`} aria-labelledby="home-action-deck-heading">
     <header>
-      <div><span>Next best actions</span><h2 id="home-action-deck-heading">{title}</h2></div>
+      <div>{variant === "default" ? <span>Next best actions</span> : null}<h2 id="home-action-deck-heading">{title}</h2></div>
       <b>{actions.length}</b>
     </header>
     {primary ? <ActionLink action={primary} primary /> : null}

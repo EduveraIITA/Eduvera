@@ -18,8 +18,6 @@ import {
   Save,
   Search,
   UnlockKeyhole,
-  UserCheck,
-  UsersRound,
 } from "lucide-react";
 import type {
   AttendanceRegister,
@@ -34,8 +32,8 @@ import { ApiError } from "../../lib/api";
 import { OperationsShell } from "./OperationsShell";
 import { FollowupInbox } from "../../features/coordination/FollowupInbox";
 import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
+import type { HomeAction } from "../../features/home-actions/types";
 import { CreateAttendanceFollowup } from "../../features/coordination/CreateAttendanceFollowup";
-import { TeacherDayPanel } from "../../features/day-plans/TeacherDayPage";
 import { AttendanceStudentRow } from "./AttendanceStudentRow";
 import { PhotoAttendanceDialog } from "./PhotoAttendanceDialog";
 import "./attendance-register.css";
@@ -56,6 +54,27 @@ const statusLabels: Record<AttendanceStatus, string> = {
   half_day: "Half day",
 };
 
+function TeacherPrimaryAction({ action }: { action: HomeAction }) {
+  const content = (
+    <>
+      <span>
+        <small>{action.status_label}</small>
+        <strong>{action.title}</strong>
+      </span>
+      <span className="teacher-home__primary-action-cta">
+        {action.action_label}
+        <ArrowRight size={16} aria-hidden="true" />
+      </span>
+    </>
+  );
+
+  return action.href.startsWith("#") ? (
+    <a className="teacher-home__primary-action" href={action.href}>{content}</a>
+  ) : (
+    <Link className="teacher-home__primary-action" to={action.href}>{content}</Link>
+  );
+}
+
 export function TeacherHomePage({
   data,
   date,
@@ -68,14 +87,6 @@ export function TeacherHomePage({
   const dueClasses = data.classes.filter((item) =>
     item.can_mark !== false || item.submission_status === "submitted" || item.submission_status === "locked"
   );
-  const totals = dueClasses.reduce(
-    (value, item) => ({
-      students: value.students + Number(item.student_count),
-      marked: value.marked + Number(item.marked_count),
-      attending: value.attending + Number(item.attending_count),
-    }),
-    { students: 0, marked: 0, attending: 0 },
-  );
   const submitted = dueClasses.filter(
     (item) =>
       item.submission_authorized !== false && (
@@ -83,6 +94,15 @@ export function TeacherHomePage({
         item.submission_status === "locked"
       ),
   ).length;
+  const selectedDateLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(`${date}T12:00:00+05:30`));
+  const registerProgress = dueClasses.length ? Math.round((submitted * 100) / dueClasses.length) : 100;
+  const homeActions = data.home_actions ?? [];
+  const [primaryAction, ...remainingActions] = homeActions;
   return (
     <OperationsShell
       portal="teacher"
@@ -90,83 +110,49 @@ export function TeacherHomePage({
       title={`Good morning, ${data.teacher.name.split(" ")[0]}`}
       subtitle="Teaching operations"
     >
-      <div className="operations-stack">
-        <section className="operations-hero operations-hero--teacher">
-          <div>
-            <span>Teaching desk</span>
-            <h2>
-              {data.classes.length} scheduled{" "}
-              {data.classes.length === 1 ? "class" : "classes"}
-            </h2>
-            <p>
-              {data.classes.length
-                ? "Take attendance for today’s lessons and accepted cover, then review any exceptions."
-                : "No lesson or accepted cover requires attendance for this date."}
-            </p>
-          </div>
-          <label>
-            Date
+      <div className="operations-stack teacher-home">
+        <section className="teacher-home__day" aria-labelledby="teacher-home-day-heading">
+          <header>
+            <div>
+              <span>{date === new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()) ? "Today" : "Selected day"}</span>
+              <h2 id="teacher-home-day-heading">{selectedDateLabel}</h2>
+            </div>
+            <label>
+              <span className="sr-only">Choose date</span>
+              <CalendarDays size={18} aria-hidden="true" />
             <input
               type="date"
+              aria-label="Choose date"
               value={date}
               onChange={(event) => onDateChange(event.target.value)}
             />
-          </label>
-        </section>
-        <HomeActionDeck actions={data.home_actions ?? []} title="Your priority queue" />
-        {dueClasses.length ? <section
-          className="operations-metrics"
-          aria-label="Teacher attendance summary"
-        >
-          <article>
-            <span>
-              <CalendarDays size={19} />
-            </span>
-            <small>Classes</small>
-            <strong>{dueClasses.length}</strong>
-            <em>{submitted} registers complete</em>
-          </article>
-          <article>
-            <span>
-              <UsersRound size={19} />
-            </span>
-            <small>Students</small>
-            <strong>{totals.students}</strong>
-            <em>Across today’s scheduled classes</em>
-          </article>
-          <article>
-            <span>
-              <ClipboardCheck size={19} />
-            </span>
-            <small>Marked</small>
-            <strong>{totals.marked}</strong>
-            <em>
-              {totals.students
-                ? Math.round((totals.marked * 100) / totals.students)
-                : 0}
-              % register coverage
-            </em>
-          </article>
-          <article>
-            <span>
-              <UserCheck size={19} />
-            </span>
-            <small>Attending</small>
-            <strong>{totals.attending}</strong>
-            <em>Present, late, or half day</em>
-          </article>
-        </section> : null}
-        <FollowupInbox context="staff" hideWithoutOpenFollowups />
-        <TeacherDayPanel date={date} compact />
-        {data.classes.length ? <section className="operations-panel">
-          <header>
+            </label>
+          </header>
+          <div className="teacher-home__day-summary">
             <div>
-              <span>Attendance register</span>
-              <h2>Scheduled classes</h2>
+              <strong>{data.classes.length ? `${data.classes.length} ${data.classes.length === 1 ? "class" : "classes"}` : "No classes"}</strong>
+              <span>{dueClasses.length ? `${submitted} of ${dueClasses.length} attendance registers complete` : "Nothing requires attendance today"}</span>
             </div>
-            <b>
-              {submitted}/{dueClasses.length} submitted
-            </b>
+            {dueClasses.length ? <b>{registerProgress}%</b> : <CheckCircle2 size={25} aria-label="Day clear" />}
+          </div>
+          {dueClasses.length ? <div className="teacher-home__progress" aria-label={`${registerProgress}% of attendance registers complete`}><i style={{ width: `${registerProgress}%` }} /></div> : null}
+          {primaryAction ? (
+            <TeacherPrimaryAction action={primaryAction} />
+          ) : (
+            <div className="teacher-home__caught-up" role="status">
+              <CheckCircle2 size={20} aria-hidden="true" />
+              <span>
+                <strong>You’re all caught up</strong>
+                <small>No action needs your attention right now.</small>
+              </span>
+            </div>
+          )}
+        </section>
+        <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
+        {data.classes.length ? <section className="operations-panel teacher-home__classes">
+          <header>
+            <h2>Today’s classes</h2>
+            <Link className="operations-action-link" to="/teacher/timetable">Timetable <ChevronRight size={16} /></Link>
           </header>
           <div className="teacher-class-list">
             {data.classes.length ? (
@@ -225,30 +211,7 @@ export function TeacherHomePage({
             )}
           </div>
         </section> : null}
-        <section className="operations-panel operations-schedule-preview">
-          <header>
-            <div>
-              <span>Weekly view</span>
-              <h2>Your timetable</h2>
-            </div>
-            <Link className="operations-action-link" to="/teacher/timetable">
-              Open timetable <ArrowRight size={15} />
-            </Link>
-          </header>
-          <div>
-            {data.weekly_timetable.slice(0, 6).map((slot) => (
-              <article key={slot.id}>
-                <b>{slot.weekday_label.slice(0, 3)}</b>
-                <span>
-                  <strong>{slot.subject_name}</strong>
-                  <small>
-                    {slot.class_name} - {time(slot.starts_at)} - {slot.room}
-                  </small>
-                </span>
-              </article>
-            ))}
-          </div>
-        </section>
+        <FollowupInbox context="staff" hideWithoutOpenFollowups />
       </div>
     </OperationsShell>
   );

@@ -1,11 +1,11 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowRight, CalendarCheck, CheckCircle2, Clock3, LoaderCircle, Pencil, Plus, School, Trash2, UsersRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarCheck, CalendarDays, CheckCircle2, Clock3, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import type { NewTimetableSlot, PrincipalHomeResponse, PrincipalTimetableResponse } from "../../features/operations/api";
 import { OperationsShell } from "./OperationsShell";
 import { AttendanceWorkspacePage } from "./AttendanceWorkspacePage";
 import { FollowupInbox } from "../../features/coordination/FollowupInbox";
-import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
+import { HomeActionDeck, HomeActionSpotlight } from "../../features/home-actions/HomeActionDeck";
 
 function time(value: string) {
   const [hour = "0", minute = "00"] = value.split(":");
@@ -14,16 +14,35 @@ function time(value: string) {
 }
 
 export function PrincipalHomePage({ data, date, onDateChange }: { data: PrincipalHomeResponse; date: string; onDateChange: (date: string) => void }) {
-  const coverage = data.summary.classes_total ? Math.round(data.summary.classes_submitted * 100 / data.summary.classes_total) : 0;
-  return <OperationsShell portal="principal" active="home" title="School operations overview" subtitle={`${data.principal.name} - Principal workspace`}>
-    <div className="operations-stack">
-      <Link className="operations-action-link" to="/principal/students"><UsersRound size={18}/>Students & guardians<ArrowRight size={16}/></Link>
-      <HomeActionDeck actions={data.home_actions ?? []} title="School priorities" />
+  const coverage = data.summary.classes_total ? Math.round(data.summary.classes_submitted * 100 / data.summary.classes_total) : 100;
+  const selectedDateLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(`${date}T12:00:00+05:30`));
+  const [primaryAction, ...remainingActions] = data.home_actions ?? [];
+  return <OperationsShell portal="principal" active="home" title="School operations" subtitle={`${data.principal.name} - Principal workspace`}>
+    <div className="operations-stack principal-home">
+      <section className="teacher-home__day principal-home__hero" aria-labelledby="principal-home-heading">
+        <header>
+          <div><span>School pulse</span><h2 id="principal-home-heading">{selectedDateLabel}</h2></div>
+          <label><span className="sr-only">Choose date</span><CalendarDays size={18} aria-hidden="true" /><input type="date" aria-label="Choose date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label>
+        </header>
+        <div className="teacher-home__day-summary">
+          <div>
+            <strong>{data.summary.classes_total ? `${data.summary.classes_submitted} of ${data.summary.classes_total} registers` : "No registers due"}</strong>
+            <span>{data.summary.classes_total ? `${data.summary.marked} of ${data.summary.students} students marked, ${data.summary.absent} absent and ${data.summary.late} late` : "No scheduled attendance is required for this date"}</span>
+          </div>
+          {data.summary.classes_total ? <b>{coverage}%</b> : <CheckCircle2 size={25} aria-label="Day clear" />}
+        </div>
+        {data.summary.classes_total ? <div className="teacher-home__progress" aria-label={`${coverage}% of class registers submitted`}><i style={{ width: `${coverage}%` }} /></div> : null}
+        {primaryAction ? <HomeActionSpotlight action={primaryAction} tone="brand" /> : <div className="teacher-home__caught-up" role="status"><CheckCircle2 size={20} aria-hidden="true" /><span><strong>Operations are clear</strong><small>No school action needs your attention right now.</small></span></div>}
+      </section>
+      <HomeActionDeck actions={remainingActions.slice(0, 4)} title="Later" variant="quiet" />
       <FollowupInbox context="staff" hideWithoutOpenFollowups />
-      <section className="operations-hero operations-hero--principal"><div><span>Live school pulse</span><h2>{data.summary.classes_total ? `${data.summary.attendance_percentage}% attendance recorded` : "No registers due"}</h2><p>{data.summary.classes_total ? "Track register completion, intervene on exceptions, and protect timetable quality from one desk." : "No scheduled class attendance is required for the selected date."}</p></div><label>Date<input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label></section>
-      <section className="operations-metrics"><article><span><UsersRound size={19}/></span><small>Students marked</small><strong>{data.summary.marked}/{data.summary.students}</strong><em>{data.summary.attending} attending</em></article><article><span><CalendarCheck size={19}/></span><small>Register coverage</small><strong>{coverage}%</strong><em>{data.summary.classes_submitted}/{data.summary.classes_total} classes submitted</em></article><article><span><AlertTriangle size={19}/></span><small>Absent today</small><strong>{data.summary.absent}</strong><em>{data.summary.late} late arrivals</em></article><article><span><School size={19}/></span><small>At-risk students</small><strong>{data.exceptions.length}</strong><em>Below class threshold</em></article></section>
-      <section className="operations-panel principal-class-coverage"><header><div><span>Daily control</span><h2>Class register coverage</h2></div><Link className="operations-action-link" to={`/principal/attendance?date=${date}`}>Open attendance desk <ArrowRight size={15}/></Link></header>{data.classes.length ? <div className="principal-table"><div className="principal-table__head"><span>Class</span><span>Register</span><span>Attendance</span><span>Timetable</span><span/></div>{data.classes.map((item) => { const assignmentMismatch = item.submission_authorized === false; const scheduleMismatch = item.can_mark === false && (item.marked_count > 0 || item.submission_status !== "not_started"); const mismatch = assignmentMismatch || scheduleMismatch; return <article key={item.id}><span><strong>{item.name}</strong><small>{item.room_number || "Room pending"}</small></span><span><b className={`submission-chip is-${mismatch ? "upcoming" : item.can_mark === false ? "upcoming" : item.submission_status}`}>{assignmentMismatch ? "assignment mismatch" : scheduleMismatch ? "schedule mismatch" : item.can_mark === false ? "upcoming" : item.submission_status.replace("_", " ")}</b><small>{item.marked_count}/{item.student_count} marked</small></span><span><strong>{item.attendance_percentage}%</strong><small>{item.absent_count} absent - {item.late_count} late</small></span><span><strong>{item.timetable_slots} slots</strong><small>{item.unassigned_slots ? `${item.unassigned_slots} unassigned` : "Fully assigned"}</small></span>{item.can_mark === false && !mismatch ? <span className="teacher-class-list__inactive">Opens on this date</span> : <Link className="operations-action-link" to={`/principal/attendance?class_section_id=${item.id}&date=${date}`}>{mismatch ? "Review record" : "Review"} <ArrowRight size={15}/></Link>}</article>; })}</div> : <div className="operations-empty"><CalendarCheck size={24}/><div><strong>No class registers due</strong><p>The published timetable has no attendance-eligible lessons for this date.</p></div></div>}</section>
-      <section className="operations-panel principal-exceptions"><header><div><span>Early intervention</span><h2>Attendance exceptions</h2></div><b>Minimum 5 recorded days</b></header>{data.exceptions.length ? <div>{data.exceptions.map((student) => <article key={student.id}><span className="exception-score">{student.percentage}%</span><span><strong>{student.name}</strong><small>{student.class_name} - {student.admission_number}</small></span><span><small>School threshold</small><strong>{student.threshold}%</strong></span></article>)}</div> : <div className="operations-empty"><CheckCircle2 size={24}/><div><strong>No threshold exceptions</strong><p>Every eligible student is currently above the attendance threshold.</p></div></div>}</section>
+      {data.exceptions.length ? <section className="operations-panel principal-exceptions"><header><h2>Attendance exceptions</h2><b>Minimum 5 recorded days</b></header><div>{data.exceptions.map((student) => <article key={student.id}><span className="exception-score">{student.percentage}%</span><span><strong>{student.name}</strong><small>{student.class_name} - {student.admission_number}</small></span><span><small>School threshold</small><strong>{student.threshold}%</strong></span></article>)}</div></section> : null}
+      <section className="operations-panel principal-class-coverage"><header><h2>Class register coverage</h2><Link className="operations-action-link" to={`/principal/attendance?date=${date}`}>Attendance desk <ArrowRight size={15}/></Link></header>{data.classes.length ? <div className="principal-table"><div className="principal-table__head"><span>Class</span><span>Register</span><span>Attendance</span><span>Timetable</span><span/></div>{data.classes.map((item) => { const assignmentMismatch = item.submission_authorized === false; const scheduleMismatch = item.can_mark === false && (item.marked_count > 0 || item.submission_status !== "not_started"); const mismatch = assignmentMismatch || scheduleMismatch; return <article key={item.id}><span><strong>{item.name}</strong><small>{item.room_number || "Room pending"}</small></span><span><b className={`submission-chip is-${mismatch ? "upcoming" : item.can_mark === false ? "upcoming" : item.submission_status}`}>{assignmentMismatch ? "assignment mismatch" : scheduleMismatch ? "schedule mismatch" : item.can_mark === false ? "upcoming" : item.submission_status.replace("_", " ")}</b><small>{item.marked_count}/{item.student_count} marked</small></span><span><strong>{item.attendance_percentage}%</strong><small>{item.absent_count} absent - {item.late_count} late</small></span><span><strong>{item.timetable_slots} slots</strong><small>{item.unassigned_slots ? `${item.unassigned_slots} unassigned` : "Fully assigned"}</small></span>{item.can_mark === false && !mismatch ? <span className="teacher-class-list__inactive">Opens on this date</span> : <Link className="operations-action-link" to={`/principal/attendance?class_section_id=${item.id}&date=${date}`}>{mismatch ? "Review record" : "Review"} <ArrowRight size={15}/></Link>}</article>; })}</div> : <div className="operations-empty"><CalendarCheck size={24}/><div><strong>No class registers due</strong><p>The published timetable has no attendance-eligible lessons for this date.</p></div></div>}</section>
     </div>
   </OperationsShell>;
 }

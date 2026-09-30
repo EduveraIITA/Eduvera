@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import { HomeActionDeck } from "./HomeActionDeck";
+import { HomeActionDeck, HomeActionSpotlight } from "./HomeActionDeck";
 import type { HomeAction } from "./types";
 
 const action: HomeAction = {
@@ -37,5 +37,18 @@ describe("HomeActionDeck", () => {
   it("uses an in-page destination for an attendance follow-up", () => {
     render(<MemoryRouter><HomeActionDeck actions={[{ ...action, id: "attendance-followup:1", kind: "attendance_followup", href: "#attendance-followups", action_label: "Reply" }]} /></MemoryRouter>);
     expect(screen.getByRole("link", { name: /Reply/i })).toHaveAttribute("href", "#attendance-followups");
+  });
+
+  it("keeps the quiet variant to one visible heading", () => {
+    const view = render(<MemoryRouter><HomeActionDeck actions={[action]} title="Later" variant="quiet" /></MemoryRouter>);
+    expect(view.getByRole("heading", { name: "Later" })).toBeInTheDocument();
+    expect(view.container).not.toHaveTextContent("Next best actions");
+  });
+
+  it("renders a standalone primary action with one destination", () => {
+    const view = render(<MemoryRouter><HomeActionSpotlight action={action} tone="brand" /></MemoryRouter>);
+    const spotlight = within(view.container);
+    expect(spotlight.getByRole("link", { name: /Respond to Science Museum Visit/i })).toHaveAttribute("href", action.href);
+    expect(spotlight.getByText("Respond now")).toBeInTheDocument();
   });
 });

@@ -23,7 +23,7 @@ import { AttendanceRankingDialog } from "../../features/school/AttendanceRanking
 import { HomeworkDetailsDialog } from "../../features/school/HomeworkDetailsDialog";
 import { ParentShell } from "./ParentShell";
 import { FollowupInbox } from "../../features/coordination/FollowupInbox";
-import { HomeActionDeck } from "../../features/home-actions/HomeActionDeck";
+import { HomeActionDeck, HomeActionSpotlight } from "../../features/home-actions/HomeActionDeck";
 import type { ParentHomeData, ParentPageAction } from "./parentTypes";
 import {DayPlanNotice} from '../../features/day-plans/DayPlanNotice';
 import "./parent-pages.css";
@@ -152,6 +152,7 @@ export function ParentHomePage({
   const homeworkTrend = homeworkRecent === undefined || homeworkPrevious === undefined ? null
     : homeworkPrevious ? Math.round((homeworkRecent - homeworkPrevious) * 100 / homeworkPrevious)
       : homeworkRecent ? homeworkRecent : 0;
+  const [primaryAction, ...remainingActions] = data.homeActions;
 
   return (
     <ParentShell
@@ -165,18 +166,21 @@ export function ParentHomePage({
       childSwitchDisabled={Boolean(activeTransition)}
     >
       <div className="parent-stack home-page">
-        <div className={`parent-id-stack${childCount > 1 ? " has-multiple" : ""}${childCount > 2 ? " has-three-or-more" : ""}${activeTransition ? ` is-${activeTransition.phase} direction-${activeTransition.direction}` : ""}`} aria-busy={activeTransition?.phase === "preparing"}>
-          {activeTransition?.phase === "animating" && activeTransition.incoming ? <div className="parent-id-stack__incoming" aria-hidden="true" inert>
-            <StudentIdentityCard identity={activeTransition.incoming.idCard} schoolName={schoolName} primaryHeading={false} showSwitchButton={false} modalInset="parent" />
-          </div> : null}
-          <div className="parent-id-stack__active">
-            <StudentIdentityCard identity={activeTransition?.phase === "completed" ? activeTransition.incoming?.idCard ?? data.idCard : data.idCard} schoolName={schoolName} primaryHeading={false} showSwitchButton={false} modalInset="parent" switchChild={nextChild && onSelectChild ? { name: nextChild.name.split(" ")[0] ?? nextChild.name, onSelect: () => { void switchToChild(nextChild.id, "left"); }, onSwipe: swipeCard } : undefined} />
+        <div className="parent-home-anchor">
+          <div className={`parent-id-stack${childCount > 1 ? " has-multiple" : ""}${childCount > 2 ? " has-three-or-more" : ""}${activeTransition ? ` is-${activeTransition.phase} direction-${activeTransition.direction}` : ""}`} aria-busy={activeTransition?.phase === "preparing"}>
+            {activeTransition?.phase === "animating" && activeTransition.incoming ? <div className="parent-id-stack__incoming" aria-hidden="true" inert>
+              <StudentIdentityCard identity={activeTransition.incoming.idCard} schoolName={schoolName} primaryHeading={false} showSwitchButton={false} modalInset="parent" />
+            </div> : null}
+            <div className="parent-id-stack__active">
+              <StudentIdentityCard identity={activeTransition?.phase === "completed" ? activeTransition.incoming?.idCard ?? data.idCard : data.idCard} schoolName={schoolName} primaryHeading={false} showSwitchButton={false} modalInset="parent" switchChild={nextChild && onSelectChild ? { name: nextChild.name.split(" ")[0] ?? nextChild.name, onSelect: () => { void switchToChild(nextChild.id, "left"); }, onSwipe: swipeCard } : undefined} />
+            </div>
           </div>
+          {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
         </div>
         {switchError ? <p className="parent-id-stack__error" role="alert">{switchError}</p> : null}
         <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student=${data.child.id}`}/>
 
-        <HomeActionDeck actions={data.homeActions} title="What needs you" />
+        <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
         <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
 
         <section className="surface-card pulse-card" aria-labelledby="pulse-heading">
@@ -207,7 +211,7 @@ export function ParentHomePage({
 
         <section aria-labelledby="metrics-heading">
           <div className="section-eyebrow-row">
-            <h2 id="metrics-heading">Semester Metrics</h2>
+            <h2 id="metrics-heading">This term</h2>
             <span className="section-link-label">{data.metrics.termLabel}</span>
           </div>
           <div className="metric-grid">
@@ -237,7 +241,7 @@ export function ParentHomePage({
         </section>
 
         <section aria-labelledby="shortcuts-heading">
-          <div className="section-eyebrow-row"><h2 id="shortcuts-heading">Shortcuts & Desk</h2></div>
+          <div className="section-eyebrow-row"><h2 id="shortcuts-heading">Tools</h2></div>
           <div className="surface-card shortcut-list">
             <button type="button" onClick={() => navigate(parentPath("/parent/events"))}>
               <span className="shortcut-icon"><CalendarDays size={19} /></span>

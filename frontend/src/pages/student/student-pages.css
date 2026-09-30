@@ -2596,6 +2596,9 @@
 
 /* Student home */
 .student-home-page { gap: 16px; }
+.student-home-anchor { display: grid; }
+.student-home-anchor > .student-home-id-card { position: relative; z-index: 1; }
+.student-home-anchor > .home-action-spotlight { position: relative; z-index: 2; margin: 12px 0 0; }
 .student-home-welcome { display: flex; min-height: 92px; padding: 12px 4px 6px; align-items: center; justify-content: space-between; gap: 16px; }
 .student-home-welcome > div { min-width: 0; }
 .student-home-welcome > div > span { color: var(--student-teal); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
