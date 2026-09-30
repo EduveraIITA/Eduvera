@@ -508,7 +508,6 @@ export class CampusEventsService {
                 OR (assignment.role='class_teacher' AND EXISTS(SELECT 1 FROM timetable_slots slot
                   WHERE slot.class_section_id=section.id AND slot.subject_id=subject.id)))
           ))
-        )
       ) scope ON true
       WHERE subject.school_id=${schoolId}::uuid
       GROUP BY subject.id,subject.name,subject.short_name

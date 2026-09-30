@@ -771,6 +771,12 @@ Verification:
   and completed/locked event history is not expanded by later enrollments.
 - UI checkpoint: principal/teacher operations plus parent/student event and reconciliation screens
   are ready for Abhishek's review. Physical-phone and assistive-technology acceptance remain open.
+- Principal event creation was blocked by malformed SQL in the subject catalog's lateral query.
+  Removed the extra closing parenthesis and added a principal/teacher catalog integration case.
+  Verified the live principal and teacher catalog APIs each return HTTP 200, the local and ngrok
+  `/principal/events/new` routes each return HTTP 200, and backend typecheck passes. The new
+  automated integration case could not run locally because the existing disposable test database
+  role lacks `campus_events` access; the real local review database endpoint was exercised instead.
 - Release boundaries remain explicit: generic events do not yet perform the new symmetric
   participant-level collision pass against an already-published class test; accountless assisted
   event consent/RSVP needs a school-approved purpose-authority and attribution design; and the

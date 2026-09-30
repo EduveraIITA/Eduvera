@@ -192,6 +192,26 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     };
   }
 
+  it("loads the event editor catalog for a principal and an assigned teacher", async () => {
+    const principalCatalog = await service.catalog(principal.authUser, schoolId);
+    expect(principalCatalog.class_sections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: classId }),
+    ]));
+    expect(principalCatalog.subjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: subjectId, class_section_ids: expect.arrayContaining([classId]) }),
+    ]));
+    expect(principalCatalog.students.length).toBeGreaterThan(0);
+
+    const teacherCatalog = await service.catalog(teacher.authUser, schoolId);
+    expect(teacherCatalog.class_sections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: classId }),
+    ]));
+    expect(teacherCatalog.subjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: subjectId, class_section_ids: expect.arrayContaining([classId]) }),
+    ]));
+    expect(teacherCatalog.students).toEqual([]);
+  });
+
   it("allows the assigned Mathematics teacher while denying an unrelated teacher", async () => {
     await expect(service.create(unrelatedTeacher, classTest())).rejects.toThrow(/assigned class teacher|assigned subject teacher|school administrator/i);
     const academicBefore = Number((await pool.query("SELECT count(*)::text AS value FROM attendance_records")).rows[0].value);
