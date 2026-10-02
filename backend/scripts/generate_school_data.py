@@ -710,7 +710,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         "campus_event_fee_invoices", "campus_event_fee_payments",
     ]}
     dataset["schools"].append((school_id, SCHOOL_NAME, SCHOOL_CODE))
-    dataset["calendar_days"].append((deterministic_id("calendar-gandhi-jayanti"), school_id, date(int(academic_year[:4]), 10, 2), False, "Gandhi Jayanti"))
+    dataset["calendar_days"].append((deterministic_id("calendar-gandhi-jayanti"), school_id, date(int(academic_year[:4]), 10, 2), False, "Gandhi Jayanti", "public_holiday"))
 
     def add_user(user_id: str, username: str, email: str, first: str, last: str, role: str, membership_role: str) -> None:
         dataset["users"].append((user_id, username, email, shared_hash, first, last, role, True, PROFILE_AVATARS.get(username, "")))
@@ -1301,8 +1301,8 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
         conflict=" ON CONFLICT(id) DO UPDATE SET name=excluded.name,code=excluded.code",
     )
     statements += insert_sql(
-        "school_calendar_days", ["id", "school_id", "date", "is_instructional", "label"], dataset["calendar_days"],
-        conflict=" ON CONFLICT(school_id,date) DO UPDATE SET is_instructional=excluded.is_instructional,label=excluded.label,updated_at=now()",
+        "school_calendar_days", ["id", "school_id", "date", "is_instructional", "label", "kind"], dataset["calendar_days"],
+        conflict=" ON CONFLICT(school_id,date) DO UPDATE SET is_instructional=excluded.is_instructional,label=excluded.label,kind=excluded.kind,updated_at=now()",
     )
     statements += insert_sql(
         "users", ["id", "username", "email", "password_hash", "first_name", "last_name", "role", "is_active", "avatar_url"], dataset["users"],

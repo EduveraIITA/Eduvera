@@ -2,7 +2,7 @@
 -- exceptions remain dated overrides of the repeating weekly baseline.
 
 ALTER TABLE school_calendar_days
-  ADD COLUMN IF NOT EXISTS kind varchar(32) NOT NULL DEFAULT 'other_closure',
+  ADD COLUMN IF NOT EXISTS kind varchar(32) NOT NULL DEFAULT 'public_holiday',
   ADD COLUMN IF NOT EXISTS reason varchar(500) NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -10,7 +10,7 @@ ALTER TABLE school_calendar_days
 
 UPDATE school_calendar_days
 SET kind=CASE WHEN is_instructional THEN 'instructional_override' ELSE 'public_holiday' END
-WHERE kind='other_closure';
+WHERE kind='other_closure' OR is_instructional;
 
 DO $$
 BEGIN
