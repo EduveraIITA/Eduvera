@@ -99,6 +99,36 @@ async function waitForPublishedEvent(eventId: string): Promise<{
   throw new Error(`Event ${eventId} was not published with a delivery sequence`);
 }
 
+async function latestScheduledDateForTeacher(username: string): Promise<string> {
+  const result = await pool.query<{ date: string }>(`
+    SELECT candidate::date::text AS date
+    FROM users teacher
+    JOIN school_memberships membership
+      ON membership.user_id=teacher.id AND membership.is_active
+    JOIN schools school ON school.id=membership.school_id
+    CROSS JOIN LATERAL generate_series(
+      (now() AT TIME ZONE school.timezone)::date - 14,
+      (now() AT TIME ZONE school.timezone)::date,
+      interval '1 day'
+    ) candidate
+    WHERE teacher.username=$1
+      AND EXISTS (
+        SELECT 1
+        FROM effective_school_schedule(school.id, candidate::date) slot
+        WHERE slot.teacher_user_id=teacher.id
+          AND slot.weekday=EXTRACT(ISODOW FROM candidate::date)::int
+          AND slot.slot_type IN ('class','activity')
+          AND NOT slot.cancelled
+          AND slot.coverage_status IN ('not_required','accepted')
+      )
+    ORDER BY candidate DESC
+    LIMIT 1
+  `, [username]);
+  const date = result.rows[0]?.date;
+  if (!date) throw new Error(`Expected a recent scheduled school day for ${username}`);
+  return date;
+}
+
 beforeAll(async () => {
   const identity = await pool.query<{ database_name: string }>("SELECT current_database() AS database_name");
   assertIsolatedTestDatabaseName(identity.rows[0]?.database_name ?? "");
@@ -1093,6 +1123,8 @@ describe("OmniSchool API", () => {
       WHERE e.student_id=$1 AND e.is_active AND day::date>=current_date
         AND EXISTS (SELECT 1 FROM timetable_slots slot WHERE slot.class_section_id=e.class_section_id
           AND slot.term_id=e.term_id AND slot.weekday=extract(isodow FROM day) AND slot.slot_type='class')
+        AND NOT EXISTS (SELECT 1 FROM school_calendar_days calendar
+          WHERE calendar.school_id=term.school_id AND calendar.date=day::date AND NOT calendar.is_instructional)
         AND NOT EXISTS (SELECT 1 FROM attendance_records a WHERE a.student_id=e.student_id AND a.date=day::date)
         AND NOT EXISTS (SELECT 1 FROM leave_requests l WHERE l.student_id=e.student_id AND day::date BETWEEN l.starts_on AND l.ends_on)
       ORDER BY day LIMIT 1
@@ -1324,13 +1356,7 @@ describe("OmniSchool API", () => {
     await pool.query("DELETE FROM api_rate_limit_buckets");
     const browser = new BrowserSession();
     expect((await browser.login("kavita.staff")).status).toBe(200);
-    // Teachers have no classes at weekends, so ask for the most recent school day (Mon-Fri, IST).
-    const schoolDay = (() => {
-      const now = new Date(Date.now() + 5.5 * 3_600_000); // Asia/Kolkata, the seed's calendar
-      const back = [1, 2, 3, 4, 5, 6, 0].indexOf(now.getUTCDay()) >= 5 ? now.getUTCDay() === 6 ? 1 : 2 : 0;
-      now.setUTCDate(now.getUTCDate() - back);
-      return now.toISOString().slice(0, 10);
-    })();
+    const schoolDay = await latestScheduledDateForTeacher("kavita.staff");
     const home = await json(await browser.request(`/api/v1/screens/teacher/home/?date=${schoolDay}`));
     expect(home.teacher).toMatchObject({ name: "Kavita Mehta", role: "staff" });
     expect(home.classes.length).toBeGreaterThan(0);
@@ -1424,10 +1450,7 @@ describe("OmniSchool API", () => {
       SELECT id, username, email, first_name, last_name, role, is_active
       FROM users WHERE username='kavita.staff'
     `)).rows[0]!;
-    const schoolDay = new Date(Date.now() + 5.5 * 3_600_000);
-    if (schoolDay.getUTCDay() === 6) schoolDay.setUTCDate(schoolDay.getUTCDate() - 1);
-    if (schoolDay.getUTCDay() === 0) schoolDay.setUTCDate(schoolDay.getUTCDate() - 2);
-    const date = schoolDay.toISOString().slice(0, 10);
+    const date = await latestScheduledDateForTeacher("kavita.staff");
     const home = await school.teacherHomeScreen(user, date);
     const selectedClass = home.classes[0]!;
     expect(selectedClass).toBeDefined();
@@ -1520,10 +1543,7 @@ describe("OmniSchool API", () => {
     const principal = new BrowserSession();
     expect((await teacher.login("kavita.staff")).status).toBe(200);
     expect((await principal.login("meera.principal")).status).toBe(200);
-    const schoolDate = new Date(Date.now() + 5.5 * 3_600_000);
-    if (schoolDate.getUTCDay() === 6) schoolDate.setUTCDate(schoolDate.getUTCDate() - 1);
-    if (schoolDate.getUTCDay() === 0) schoolDate.setUTCDate(schoolDate.getUTCDate() - 2);
-    const date = schoolDate.toISOString().slice(0, 10);
+    const date = await latestScheduledDateForTeacher("kavita.staff");
     const home = await json(await teacher.request(`/api/v1/screens/teacher/home/?date=${date}`));
     const classId = home.classes[0].class_section_id;
     let register = await json(await teacher.request(`/api/v1/screens/teacher/attendance/?class_section_id=${classId}&date=${date}`));
@@ -1562,7 +1582,8 @@ describe("OmniSchool API", () => {
     const student = new BrowserSession(); await student.login("aarav.student");
     expect((await student.request("/api/v1/screens/principal/home/")).status).toBe(403);
     const principal = new BrowserSession(); expect((await principal.login("meera.principal")).status).toBe(200);
-    const overview = await json(await principal.request("/api/v1/screens/principal/home/"));
+    const schoolDate = await latestScheduledDateForTeacher("kavita.staff");
+    const overview = await json(await principal.request(`/api/v1/screens/principal/home/?date=${schoolDate}`));
     expect(overview.summary).toMatchObject({ students: 200, classes_total: 8 });
     expect(overview.classes).toHaveLength(8);
     const timetable = await json(await principal.request("/api/v1/screens/principal/timetable/"));

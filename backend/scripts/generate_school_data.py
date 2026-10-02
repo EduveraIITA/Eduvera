@@ -106,6 +106,7 @@ def attendance_days(as_of: date) -> list[date]:
     start = as_of - timedelta(days=60)
     school_holidays = {
         date(as_of.year, 8, 15),
+        date(as_of.year, 10, 2),
     }
     return [
         start + timedelta(days=offset)

@@ -704,12 +704,14 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     }) as CampusEventDto;
     const sessionId = published.sessions[0]!.id;
     const observedAt = new Date().toISOString();
+    const receiptWindowStart = (await pool.query<{ at: Date }>("SELECT clock_timestamp() AS at")).rows[0]!.at;
     const marked = await service.attendance(request(principal.authUser), draft.id, sessionId, {
       school_id: schoolId,
       expected_revision: 1,
       idempotency_key: randomUUID(),
       records: [{ student_id: aaravId, status: "present", note: "", observed_at: observedAt }],
     });
+    const receiptWindowEnd = (await pool.query<{ at: Date }>("SELECT clock_timestamp() AS at")).rows[0]!.at;
     expect(marked.session.revision).toBe(2);
     expect(marked.rows.find((row) => row.student_id === aaravId)?.attendance_status).toBe("present");
     const stored = (await pool.query<{ status: string; checked_in_at: Date; marked_at: Date }>(`
@@ -718,7 +720,8 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     `, [draft.id, sessionId, aaravId])).rows[0]!;
     expect(stored.status).toBe("present");
     expect(stored.checked_in_at.toISOString()).toBe(observedAt);
-    expect(stored.marked_at.getTime()).toBeGreaterThanOrEqual(new Date(observedAt).getTime());
+    expect(stored.marked_at.getTime()).toBeGreaterThanOrEqual(receiptWindowStart.getTime());
+    expect(stored.marked_at.getTime()).toBeLessThanOrEqual(receiptWindowEnd.getTime());
 
     const checkedOutAt = new Date().toISOString();
     const checkedOut = await service.attendance(request(principal.authUser), draft.id, sessionId, {

@@ -1824,13 +1824,13 @@ export class CampusEventsService {
         const record = before ? (await sql<{ id: string; revision: number }>`
           UPDATE campus_event_attendance_records SET status=${row.status},note=${row.note},
             readiness_contradiction_note=${row.readiness_contradiction_note},checked_in_at=${checkedIn},checked_out_at=${checkedOut},
-            revision=revision+1,marked_by=${req.authUser.id}::uuid,marked_at=now(),updated_at=now()
+            revision=revision+1,marked_by=${req.authUser.id}::uuid,marked_at=clock_timestamp(),updated_at=clock_timestamp()
           WHERE id=${before.id}::uuid RETURNING id,revision
         `.execute(db)).rows[0]! : (await sql<{ id: string; revision: number }>`
           INSERT INTO campus_event_attendance_records(school_id,event_id,session_id,student_id,status,note,
-            readiness_contradiction_note,checked_in_at,checked_out_at,marked_by)
+            readiness_contradiction_note,checked_in_at,checked_out_at,marked_by,marked_at,updated_at)
           VALUES(${event.school_id}::uuid,${event.id}::uuid,${session.id}::uuid,${row.student_id}::uuid,${row.status},${row.note},
-            ${row.readiness_contradiction_note},${checkedIn},${checkedOut},${req.authUser.id}::uuid)
+            ${row.readiness_contradiction_note},${checkedIn},${checkedOut},${req.authUser.id}::uuid,clock_timestamp(),clock_timestamp())
           RETURNING id,revision
         `.execute(db)).rows[0]!;
         await sql`INSERT INTO campus_event_attendance_revisions(school_id,event_id,session_id,student_id,attendance_record_id,
