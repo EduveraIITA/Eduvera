@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, BookOpenCheck, CalendarClock, CalendarOff, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Copy, Pencil, Plus, Settings2 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { CopyTimetableDayInput, CurriculumTargetInput, NewTimetableSlot, PrincipalTimetableResponse, SchoolClosureInput } from "../../features/operations/api";
@@ -79,9 +79,6 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
   const [copying, setCopying] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [targetSubjectId, setTargetSubjectId] = useState<string | null>(null);
-  const swipeStart = useRef<{ x: number; y: number } | null>(null);
-  const suppressDayClick = useRef(false);
-  const [swipeDirection, setSwipeDirection] = useState<"previous" | "next" | null>(null);
   const [message, setMessage] = useState("");
   const selectedTerm = data.terms.find((term) => term.id === data.selected_term_id);
   const coverageOpen = params.get("settings") === "coverage";
@@ -115,8 +112,6 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
   const selectedWeek = requestedWeek && requestedWeek >= firstWeek && requestedWeek <= lastWeek ? requestedWeek : referenceWeek;
   const selectedDate = addDays(selectedWeek, weekday - 1);
   const selectedException = data.calendar_exceptions.find((item) => item.date === selectedDate && !item.is_instructional);
-  const selectedWeekNumber = Math.floor((new Date(`${selectedWeek}T12:00:00Z`).getTime() - new Date(`${firstWeek}T12:00:00Z`).getTime()) / 604_800_000) + 1;
-  const totalWeeks = Math.floor((new Date(`${lastWeek}T12:00:00Z`).getTime() - new Date(`${firstWeek}T12:00:00Z`).getTime()) / 604_800_000) + 1;
 
   const updateUrl = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -143,34 +138,6 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
     if (nextFocusedDate < selectedTerm.starts_on) setWeekday(weekdayFor(selectedTerm.starts_on));
     if (nextFocusedDate > selectedTerm.ends_on) setWeekday(weekdayFor(selectedTerm.ends_on));
     setMessage("");
-  };
-
-  const startWeekSwipe = (event: ReactPointerEvent<HTMLElement>) => {
-    swipeStart.current = { x: event.clientX, y: event.clientY };
-    suppressDayClick.current = false;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-
-  const moveWeekSwipe = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!swipeStart.current) return;
-    const horizontal = event.clientX - swipeStart.current.x;
-    const vertical = event.clientY - swipeStart.current.y;
-    if (Math.abs(horizontal) < 22 || Math.abs(horizontal) <= Math.abs(vertical)) {
-      setSwipeDirection(null);
-      return;
-    }
-    suppressDayClick.current = true;
-    setSwipeDirection(horizontal > 0 ? "previous" : "next");
-  };
-
-  const finishWeekSwipe = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!swipeStart.current) return;
-    const horizontal = event.clientX - swipeStart.current.x;
-    const vertical = event.clientY - swipeStart.current.y;
-    swipeStart.current = null;
-    setSwipeDirection(null);
-    if (Math.abs(horizontal) >= 58 && Math.abs(horizontal) > Math.abs(vertical) * 1.25) switchWeek(horizontal > 0 ? -1 : 1);
-    window.setTimeout(() => { suppressDayClick.current = false; }, 0);
   };
 
   const startNew = () => {
@@ -228,24 +195,13 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
               </nav>
             </div>
           </header>
-          <div className="timetable-builder__week-position" aria-label={`Week ${selectedWeekNumber} of ${totalWeeks}`}>
-            <span>{shortDateLabel(selectedWeek)}</span><strong>Week {selectedWeekNumber}</strong><span>{shortDateLabel(addDays(selectedWeek, 5))}</span>
-          </div>
-          <nav
-            className={`timetable-builder__days${swipeDirection ? ` is-pulling-${swipeDirection}` : ""}`}
-            aria-label="Dates in selected week. Swipe horizontally to change week."
-            onPointerDown={startWeekSwipe}
-            onPointerMove={moveWeekSwipe}
-            onPointerUp={finishWeekSwipe}
-            onPointerCancel={() => { swipeStart.current = null; setSwipeDirection(null); }}
-          >
+          <nav className="timetable-builder__days" aria-label="School week">
             {DAYS.map((day, index) => {
               const dayNumber = index + 1;
               const date = addDays(selectedWeek, index);
               const count = classSlots.filter((item) => item.weekday === dayNumber).length;
-              const closure = data.calendar_exceptions.find((item) => item.date === date && !item.is_instructional);
               const outsideTerm = date < selectedTerm.starts_on || date > selectedTerm.ends_on;
-              return <button key={day} type="button" disabled={outsideTerm} className={weekday === dayNumber ? "is-active" : ""} aria-current={weekday === dayNumber ? "date" : undefined} onClick={() => { if (suppressDayClick.current) return; setWeekday(dayNumber); setMessage(""); }}><span>{day.slice(0, 3)}</span><strong>{new Date(`${date}T12:00:00Z`).getUTCDate()}</strong><small>{closure ? "Closed" : `${count} period${count === 1 ? "" : "s"}`}</small></button>;
+              return <button key={day} type="button" disabled={outsideTerm} className={weekday === dayNumber ? "is-active" : ""} aria-current={weekday === dayNumber ? "date" : undefined} aria-label={`${day}, ${dateLabel(date)}, ${count} period${count === 1 ? "" : "s"}`} onClick={() => { setWeekday(dayNumber); setMessage(""); }}><span>{day.slice(0, 3)}</span><strong>{count}</strong></button>;
             })}
           </nav>
         </section>

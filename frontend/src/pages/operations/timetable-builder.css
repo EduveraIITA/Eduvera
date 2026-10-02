@@ -183,55 +183,32 @@
 }
 .timetable-builder__week-controls nav button.is-current { padding-inline: .7rem; }
 .timetable-builder__week-controls nav button:disabled { opacity: .42; cursor: default; }
-.timetable-builder__week-position {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: .75rem;
-  margin-bottom: .5rem;
-  color: var(--edura-ink-muted);
-  font-size: .65rem;
-}
-.timetable-builder__week-position::before,
-.timetable-builder__week-position::after { content: ""; height: 1px; background: var(--edura-border); }
-.timetable-builder__week-position span:first-child { grid-column: 1; grid-row: 1; justify-self: start; padding-right: .25rem; background: var(--edura-surface); }
-.timetable-builder__week-position strong { grid-column: 2; grid-row: 1; color: var(--edura-brand); font-size: .7rem; }
-.timetable-builder__week-position span:last-child { grid-column: 3; grid-row: 1; justify-self: end; padding-left: .25rem; background: var(--edura-surface); }
-.timetable-builder__week-position::before { grid-column: 1; grid-row: 1; }
-.timetable-builder__week-position::after { grid-column: 3; grid-row: 1; }
-.timetable-builder__week-position span { position: relative; z-index: 1; }
 .timetable-builder__days {
   display: grid;
   grid-template-columns: repeat(6,minmax(0,1fr));
-  gap: .15rem;
   padding: .35rem;
   border: 1px solid var(--edura-border);
   border-radius: var(--edura-radius-card);
   background: var(--edura-surface-soft);
-  touch-action: pan-y;
-  transition: transform 180ms ease;
 }
-.timetable-builder__days.is-pulling-previous { transform: translateX(12px); }
-.timetable-builder__days.is-pulling-next { transform: translateX(-12px); }
 .timetable-builder__days button {
-  min-height: 62px;
+  min-height: 48px;
   display: grid;
   grid-template-columns: auto auto;
   align-items: center;
   justify-content: center;
-  gap: .15rem .4rem;
-  padding: .45rem .15rem;
+  gap: .45rem;
+  padding: .5rem;
   border: 0;
   border-radius: var(--edura-radius-control);
-  background: var(--edura-surface);
+  background: transparent;
   color: var(--edura-ink-muted);
 }
 .timetable-builder__days button:disabled { opacity: .35; cursor: default; }
 .timetable-builder__days button.is-active { color: var(--edura-surface); background: var(--edura-brand-bright); }
 .timetable-builder__days span { font-size: .75rem; font-weight: 800; }
-.timetable-builder__days strong { font-size: .95rem; }
-.timetable-builder__days small { grid-column: 1/-1; color: var(--edura-ink-muted); font-size: .58rem; white-space: nowrap; }
-.timetable-builder__days button.is-active small { color: rgb(255 255 255 / .78); }
+.timetable-builder__days strong { min-width: 1.35rem; height: 1.35rem; display: grid; place-items: center; border-radius: 50%; background: rgb(11 28 48 / .06); font-size: .68rem; }
+.timetable-builder__days button.is-active strong { background: rgb(255 255 255 / .18); }
 .timetable-builder__alert,
 .timetable-builder__clear { min-height: 44px; display: flex; align-items: center; gap: .65rem; padding: .75rem 1rem; border-radius: var(--edura-radius-control); font-size: .78rem; }
 .timetable-builder__alert { color: var(--edura-warning); background: var(--edura-warning-soft); }
@@ -386,7 +363,7 @@
   .timetable-builder__week-controls { justify-content: space-between; }
   .timetable-builder__week-controls label { flex: 1; }
   .timetable-builder__week-controls input { width: 100%; max-width: none; }
-  .timetable-builder__days { grid-template-columns: repeat(6,minmax(3.25rem,1fr)); overflow: hidden; }
+  .timetable-builder__days { grid-template-columns: repeat(6,4.3rem); overflow-x: auto; scrollbar-width: none; }
   .timetable-builder__days::-webkit-scrollbar { display: none; }
   .timetable-builder__schedule > header { align-items: flex-start; flex-direction: column; }
   .timetable-builder__schedule > header > div:last-child { width: 100%; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }

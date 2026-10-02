@@ -1181,17 +1181,18 @@ Verification:
   coverage is now a secondary `Coverage targets` setting rather than a peer timetable view, and the
   redundant subject selector has been removed. Every configured subject is visible for the selected
   class and opens its existing revisioned target editor directly.
-- Added term-bounded week navigation with previous/next controls, a native date jump, a centered term
-  week number and the visible start/end dates above the six-day rail. The selected week and class are
-  URL state. A deliberate horizontal pull on the rail uses a short resisted movement before snapping
-  to the adjacent week; taps and vertical page scrolling remain separate interactions.
-- Week cells now expose actual dates, period counts and school closures. The focused schedule keeps
-  baseline editing explicit as a repeating instructional-week pattern, while `Adjust date` carries
-  the selected class and date into the dated-plan workflow. A closure is explained without deleting
-  or hiding its preserved recurring pattern.
-- The authenticated localhost preview was checked at a 393 x 852 mobile viewport. All six days fit
-  without horizontal clipping; an actual drag advanced 28 September-3 October to 5-10 October and
-  updated the URL and focused date. Coverage settings, direct target rows, schedule actions and the
-  closure state were also visually checked. Frontend typecheck, lint and production build pass; all
-  **201** frontend tests pass, including focused week navigation, date jump, swipe and target-editing
-  coverage. Physical-phone acceptance remains open.
+- Added term-bounded week navigation with previous/next controls and a native date jump. The selected
+  week and class are URL state. The focused schedule keeps baseline editing explicit as a repeating
+  instructional-week pattern, while `Adjust date` carries the selected class and date into the dated-
+  plan workflow. A closure is explained without deleting or hiding its preserved recurring pattern.
+- Follow-up mobile acceptance restored the original compact weekday-and-period-count rail. Week
+  changes are now deliberately limited to the visible previous/next buttons and native date picker;
+  the redundant start/week/end divider and horizontal swipe gesture were removed. The selected
+  date remains available to assistive technology on each weekday control and closures remain
+  explained in the selected-day content.
+- The authenticated localhost preview was checked at the mobile breakpoint after the follow-up. The
+  compact scrollable day rail, visible date picker and arrow controls were inspected visually.
+  Coverage settings, direct target rows, schedule actions and closure explanations remain unchanged.
+  Frontend typecheck, lint and production build pass; all **201** frontend tests pass, including
+  focused week navigation, date jump, compact-rail and target-editing coverage. Physical-phone
+  acceptance remains open.
