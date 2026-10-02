@@ -1174,3 +1174,24 @@ Verification:
 - The upstream implementation record and detailed acceptance evidence remain in
   [FEE_PAY_REVIEW.md](FEE_PAY_REVIEW.md). The merged workflow is revalidated by Stage CI against its
   isolated PostgreSQL service before migrations and Railway deployment.
+
+## Principal timetable week navigation and coverage settings — 3 October 2026
+
+- Restored the weekly plan as the principal timetable manager's primary workflow. Curriculum
+  coverage is now a secondary `Coverage targets` setting rather than a peer timetable view, and the
+  redundant subject selector has been removed. Every configured subject is visible for the selected
+  class and opens its existing revisioned target editor directly.
+- Added term-bounded week navigation with previous/next controls, a native date jump, a centered term
+  week number and the visible start/end dates above the six-day rail. The selected week and class are
+  URL state. A deliberate horizontal pull on the rail uses a short resisted movement before snapping
+  to the adjacent week; taps and vertical page scrolling remain separate interactions.
+- Week cells now expose actual dates, period counts and school closures. The focused schedule keeps
+  baseline editing explicit as a repeating instructional-week pattern, while `Adjust date` carries
+  the selected class and date into the dated-plan workflow. A closure is explained without deleting
+  or hiding its preserved recurring pattern.
+- The authenticated localhost preview was checked at a 393 x 852 mobile viewport. All six days fit
+  without horizontal clipping; an actual drag advanced 28 September-3 October to 5-10 October and
+  updated the URL and focused date. Coverage settings, direct target rows, schedule actions and the
+  closure state were also visually checked. Frontend typecheck, lint and production build pass; all
+  **201** frontend tests pass, including focused week navigation, date jump, swipe and target-editing
+  coverage. Physical-phone acceptance remains open.

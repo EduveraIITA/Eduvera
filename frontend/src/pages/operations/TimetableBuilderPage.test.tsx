@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -49,6 +49,7 @@ describe("principal timetable management", () => {
   it("opens a focused mobile period editor with the next usable time", async () => {
     const user = userEvent.setup();
     show();
+    await user.click(screen.getByRole("button", { name: /Mon 28/ }));
     expect(screen.getByRole("heading", { name: "Monday" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Add period" }));
     expect(screen.getByRole("dialog", { name: "Add period" })).toBeVisible();
@@ -61,6 +62,7 @@ describe("principal timetable management", () => {
     const user = userEvent.setup();
     const onCopy = vi.fn().mockResolvedValue({ copied: true, periods_created: 1, target_weekdays: [2] });
     show({ onCopy });
+    await user.click(screen.getByRole("button", { name: /Mon 28/ }));
     await user.click(screen.getByRole("button", { name: "Copy day" }));
     await user.click(screen.getByRole("button", { name: /Tuesday/ }));
     await user.click(screen.getByRole("button", { name: "Copy to 1 day" }));
@@ -75,7 +77,8 @@ describe("principal timetable management", () => {
     const user = userEvent.setup();
     const onSaveTarget = vi.fn().mockResolvedValue(undefined);
     show({ onSaveTarget });
-    await user.click(screen.getByRole("tab", { name: "Term coverage" }));
+    await user.click(screen.getByRole("button", { name: /Coverage targets/ }));
+    expect(screen.queryByRole("combobox", { name: "Add target" })).not.toBeInTheDocument();
     expect(screen.getByText("5.8h short")).toBeVisible();
     await user.click(screen.getByRole("button", { name: /Mathematics/ }));
     expect(screen.getByRole("dialog", { name: "Mathematics" })).toBeVisible();
@@ -83,6 +86,32 @@ describe("principal timetable management", () => {
     await user.type(screen.getByLabelText("Target hours for the term"), "24");
     await user.click(screen.getByRole("button", { name: "Save target" }));
     expect(onSaveTarget).toHaveBeenCalledWith(expect.objectContaining({ target_minutes: 1440, expected_revision: 1 }));
+  });
+
+  it("switches weeks and lets the principal jump directly to a date", async () => {
+    const user = userEvent.setup();
+    show();
+    const picker = screen.getByLabelText("Jump to date");
+    expect(picker).toHaveValue("2026-10-02");
+    await user.click(screen.getByRole("button", { name: "Next week" }));
+    expect(picker).toHaveValue("2026-10-09");
+    fireEvent.change(picker, { target: { value: "2026-11-12" } });
+    expect(screen.getByRole("heading", { name: "Thursday" })).toBeVisible();
+    expect(picker).toHaveValue("2026-11-12");
+  });
+
+  it("snaps to the next week after a deliberate horizontal pull", () => {
+    show();
+    const rail = screen.getByRole("navigation", { name: /Dates in selected week/ });
+    const pointer = (type: string, clientX: number, clientY: number) => {
+      const event = new Event(type, { bubbles: true });
+      Object.defineProperties(event, { pointerId: { value: 1 }, clientX: { value: clientX }, clientY: { value: clientY } });
+      fireEvent(rail, event);
+    };
+    pointer("pointerdown", 300, 200);
+    pointer("pointermove", 210, 204);
+    pointer("pointerup", 210, 204);
+    expect(screen.getByLabelText("Jump to date")).toHaveValue("2026-10-09");
   });
 
   it("creates a dated emergency closure without changing the weekly plan", async () => {

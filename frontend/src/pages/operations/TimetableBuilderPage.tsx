@@ -1,12 +1,49 @@
-import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, BookOpenCheck, CalendarClock, CalendarOff, CalendarRange, CheckCircle2, Clock3, Copy, Pencil, Plus } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { AlertTriangle, ArrowLeft, BookOpenCheck, CalendarClock, CalendarOff, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Copy, Pencil, Plus, Settings2 } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 import type { CopyTimetableDayInput, CurriculumTargetInput, NewTimetableSlot, PrincipalTimetableResponse, SchoolClosureInput } from "../../features/operations/api";
 import { OperationsShell } from "./OperationsShell";
 import { CopyDaySheet, CurriculumTargetSheet, SchoolCalendarSheet, SlotEditorSheet, nextSlot } from "./TimetableBuilderSheets";
 import "./timetable-builder.css";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+function isoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function addDays(value: string, amount: number) {
+  const [year = 1970, month = 1, day = 1] = value.split("-").map(Number);
+  return isoDate(new Date(Date.UTC(year, month - 1, day + amount)));
+}
+
+function mondayFor(value: string) {
+  const [year = 1970, month = 1, day = 1] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const offset = (date.getUTCDay() + 6) % 7;
+  return isoDate(new Date(Date.UTC(year, month - 1, day - offset)));
+}
+
+function weekdayFor(value: string) {
+  const [year = 1970, month = 1, day = 1] = value.split("-").map(Number);
+  const dayNumber = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return dayNumber >= 1 && dayNumber <= 6 ? dayNumber : 1;
+}
+
+function shortDateLabel(value: string) {
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" })
+    .format(new Date(`${value}T12:00:00Z`));
+}
+
+function weekLabel(start: string) {
+  const end = addDays(start, 5);
+  const startDate = new Date(`${start}T12:00:00Z`);
+  const endDate = new Date(`${end}T12:00:00Z`);
+  if (startDate.getUTCMonth() === endDate.getUTCMonth()) {
+    return `${startDate.getUTCDate()}-${endDate.getUTCDate()} ${new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric", timeZone: "UTC" }).format(endDate)}`;
+  }
+  return `${shortDateLabel(start)}-${shortDateLabel(end)} ${endDate.getUTCFullYear()}`;
+}
 
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })
@@ -36,17 +73,20 @@ export interface TimetableBuilderProps {
 }
 
 export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate, onDelete, onCopy, onSaveTarget, onCreateClosure, onDeleteClosure }: TimetableBuilderProps) {
-  const [classId, setClassId] = useState(data.classes[0]?.id ?? "");
-  const [weekday, setWeekday] = useState(1);
-  const [view, setView] = useState<"build" | "coverage">("build");
+  const [params, setParams] = useSearchParams();
+  const [weekday, setWeekday] = useState(() => weekdayFor(data.school_date));
   const [editing, setEditing] = useState<PrincipalTimetableResponse["slots"][number] | "new" | null>(null);
   const [copying, setCopying] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [targetSubjectId, setTargetSubjectId] = useState<string | null>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressDayClick = useRef(false);
+  const [swipeDirection, setSwipeDirection] = useState<"previous" | "next" | null>(null);
   const [message, setMessage] = useState("");
   const selectedTerm = data.terms.find((term) => term.id === data.selected_term_id);
+  const coverageOpen = params.get("settings") === "coverage";
 
-  const selectedClass = data.classes.find((item) => item.id === classId) ?? data.classes[0];
+  const selectedClass = data.classes.find((item) => item.id === params.get("class")) ?? data.classes[0];
   const classSlots = useMemo(() => data.slots.filter((item) => item.class_section_id === selectedClass?.id), [data.slots, selectedClass?.id]);
   const daySlots = useMemo(() => classSlots.filter((item) => item.weekday === weekday).sort((a, b) => a.period_number - b.period_number), [classSlots, weekday]);
   const conflictingIds = useMemo(() => new Set(data.conflicts.flatMap((item) => [item.first_slot_id, item.second_slot_id])), [data.conflicts]);
@@ -58,7 +98,7 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
   const targetedClassIds = new Set(trackedCoverage.map((item) => item.class_section_id));
   const readyClasses = [...targetedClassIds].filter((id) => !coverageGaps.some((item) => item.class_section_id === id)).length;
   const selectedCoverage = data.coverage.filter((item) => item.class_section_id === selectedClass?.id);
-  const visibleCoverage = selectedCoverage.filter((item) => item.weekly_periods > 0 || item.target_minutes !== null);
+  const visibleCoverage = selectedCoverage;
   const targetCoverage = selectedCoverage.find((item) => item.subject_id === targetSubjectId);
   const targetSubject = data.subjects.find((item) => item.id === targetSubjectId);
   const nextClosure = data.calendar_exceptions.find((item) => !item.is_instructional && item.date >= data.school_date);
@@ -66,6 +106,72 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
   if (!selectedTerm) {
     return <OperationsShell portal="principal" active="timetable" title="Manage timetable"><section className="timetable-builder__empty-page"><CalendarRange size={28} /><h1>No academic term</h1><p>Create an academic term before managing the timetable.</p></section></OperationsShell>;
   }
+
+  const firstWeek = mondayFor(selectedTerm.starts_on);
+  const lastWeek = mondayFor(selectedTerm.ends_on);
+  const requestedWeek = params.get("week");
+  const currentWeek = mondayFor(data.school_date);
+  const referenceWeek = currentWeek < firstWeek ? firstWeek : currentWeek > lastWeek ? lastWeek : currentWeek;
+  const selectedWeek = requestedWeek && requestedWeek >= firstWeek && requestedWeek <= lastWeek ? requestedWeek : referenceWeek;
+  const selectedDate = addDays(selectedWeek, weekday - 1);
+  const selectedException = data.calendar_exceptions.find((item) => item.date === selectedDate && !item.is_instructional);
+  const selectedWeekNumber = Math.floor((new Date(`${selectedWeek}T12:00:00Z`).getTime() - new Date(`${firstWeek}T12:00:00Z`).getTime()) / 604_800_000) + 1;
+  const totalWeeks = Math.floor((new Date(`${lastWeek}T12:00:00Z`).getTime() - new Date(`${firstWeek}T12:00:00Z`).getTime()) / 604_800_000) + 1;
+
+  const updateUrl = (changes: Record<string, string | null>) => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    setParams(next, { replace: true });
+  };
+
+  const switchWeek = (amount: number) => {
+    const nextWeek = addDays(selectedWeek, amount * 7);
+    if (nextWeek < firstWeek || nextWeek > lastWeek) return;
+    updateUrl({ week: nextWeek });
+    const nextFocusedDate = addDays(nextWeek, weekday - 1);
+    if (nextFocusedDate < selectedTerm.starts_on) setWeekday(weekdayFor(selectedTerm.starts_on));
+    if (nextFocusedDate > selectedTerm.ends_on) setWeekday(weekdayFor(selectedTerm.ends_on));
+    setMessage("");
+  };
+
+  const returnToReferenceWeek = () => {
+    updateUrl({ week: referenceWeek });
+    const nextFocusedDate = addDays(referenceWeek, weekday - 1);
+    if (nextFocusedDate < selectedTerm.starts_on) setWeekday(weekdayFor(selectedTerm.starts_on));
+    if (nextFocusedDate > selectedTerm.ends_on) setWeekday(weekdayFor(selectedTerm.ends_on));
+    setMessage("");
+  };
+
+  const startWeekSwipe = (event: ReactPointerEvent<HTMLElement>) => {
+    swipeStart.current = { x: event.clientX, y: event.clientY };
+    suppressDayClick.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveWeekSwipe = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!swipeStart.current) return;
+    const horizontal = event.clientX - swipeStart.current.x;
+    const vertical = event.clientY - swipeStart.current.y;
+    if (Math.abs(horizontal) < 22 || Math.abs(horizontal) <= Math.abs(vertical)) {
+      setSwipeDirection(null);
+      return;
+    }
+    suppressDayClick.current = true;
+    setSwipeDirection(horizontal > 0 ? "previous" : "next");
+  };
+
+  const finishWeekSwipe = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!swipeStart.current) return;
+    const horizontal = event.clientX - swipeStart.current.x;
+    const vertical = event.clientY - swipeStart.current.y;
+    swipeStart.current = null;
+    setSwipeDirection(null);
+    if (Math.abs(horizontal) >= 58 && Math.abs(horizontal) > Math.abs(vertical) * 1.25) switchWeek(horizontal > 0 ? -1 : 1);
+    window.setTimeout(() => { suppressDayClick.current = false; }, 0);
+  };
 
   const startNew = () => {
     setMessage("");
@@ -80,9 +186,9 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
           <label>Term<select value={selectedTerm.id} onChange={(event) => onTermChange(event.target.value)}>{data.terms.map((term) => <option key={term.id} value={term.id}>{term.name} - {term.academic_year}</option>)}</select></label>
         </header>
 
-        <section className="timetable-builder__summary" aria-label="Timetable progress">
+        <section className="timetable-builder__summary" aria-label={coverageOpen ? "Coverage target progress" : "Timetable progress"}>
           <div><CalendarRange size={22} /><span><strong>{selectedTerm.name}</strong><small>{dateLabel(selectedTerm.starts_on)} - {dateLabel(selectedTerm.ends_on)}</small></span></div>
-          {view === "build" ? <dl>
+          {!coverageOpen ? <dl>
             <div><dt>Class days</dt><dd>{plannedClassDays}/{totalClassDays}</dd></div>
             <div><dt>Periods</dt><dd>{data.slots.length}</dd></div>
             <div className={data.conflicts.length ? "is-warning" : ""}><dt>Conflicts</dt><dd>{data.conflicts.length}</dd></div>
@@ -95,40 +201,63 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
 
         <div className="timetable-builder__tools">
           <button type="button" onClick={() => { setCalendarOpen(true); setMessage(""); }}><CalendarOff size={18} /><span><strong>School dates</strong><small>{nextClosure ? `Next: ${nextClosure.label}, ${dateLabel(nextClosure.date)}` : "Holidays and closures"}</small></span></button>
-          <Link to={`/principal/timetable?date=${encodeURIComponent(data.school_date)}`}><CalendarClock size={18} /><span><strong>Adjust a date</strong><small>Cover, move or cancel periods</small></span></Link>
-        </div>
-
-        <div className="timetable-builder__view-switch" role="tablist" aria-label="Timetable view">
-          <button type="button" role="tab" aria-selected={view === "build"} className={view === "build" ? "is-active" : ""} onClick={() => { setView("build"); setMessage(""); }}>Weekly plan</button>
-          <button type="button" role="tab" aria-selected={view === "coverage"} className={view === "coverage" ? "is-active" : ""} onClick={() => { setView("coverage"); setMessage(""); }}>Term coverage</button>
+          <button type="button" className={coverageOpen ? "is-active" : ""} onClick={() => { updateUrl({ settings: coverageOpen ? null : "coverage" }); setMessage(""); }}><Settings2 size={18} /><span><strong>{coverageOpen ? "Back to weekly plan" : "Coverage targets"}</strong><small>{coverageOpen ? "Return to the repeating schedule" : "Set expected subject hours"}</small></span></button>
         </div>
 
         <section className="timetable-builder__scope" aria-labelledby="class-picker-heading">
-          <header><h2 id="class-picker-heading">Choose class</h2><span>{view === "build" ? selectedClass?.room_number || "Room not assigned" : `${selectedCoverage.filter((item) => item.target_minutes !== null && item.projected_minutes < item.target_minutes).length} gaps`}</span></header>
+          <header><h2 id="class-picker-heading">Class</h2><span>{!coverageOpen ? selectedClass?.room_number || "Room not assigned" : `${selectedCoverage.filter((item) => item.target_minutes !== null && item.projected_minutes < item.target_minutes).length} gaps`}</span></header>
           <div className="timetable-builder__classes" role="list">
             {data.classes.map((item) => {
               const filled = new Set(data.slots.filter((slot) => slot.class_section_id === item.id).map((slot) => slot.weekday)).size;
               const gaps = data.coverage.filter((row) => row.class_section_id === item.id && row.target_minutes !== null && row.projected_minutes < row.target_minutes).length;
               const targets = data.coverage.filter((row) => row.class_section_id === item.id && row.target_minutes !== null).length;
-              return <button key={item.id} type="button" className={item.id === selectedClass?.id ? "is-active" : ""} aria-pressed={item.id === selectedClass?.id} onClick={() => { setClassId(item.id); setMessage(""); }}><strong>{item.name}</strong><small>{view === "build" ? `${filled}/${DAYS.length} days` : targets ? gaps ? `${gaps} gap${gaps === 1 ? "" : "s"}` : "On target" : "No targets"}</small></button>;
+              return <button key={item.id} type="button" className={item.id === selectedClass?.id ? "is-active" : ""} aria-pressed={item.id === selectedClass?.id} onClick={() => { updateUrl({ class: item.id }); setTargetSubjectId(null); setMessage(""); }}><strong>{item.name}</strong><small>{!coverageOpen ? `${filled}/${DAYS.length} days` : targets ? gaps ? `${gaps} gap${gaps === 1 ? "" : "s"}` : "On target" : "No targets"}</small></button>;
             })}
           </div>
         </section>
 
-        {view === "build" ? <><nav className="timetable-builder__days" aria-label="School week">
-          {DAYS.map((day, index) => {
-            const dayNumber = index + 1;
-            const count = classSlots.filter((item) => item.weekday === dayNumber).length;
-            return <button key={day} type="button" className={weekday === dayNumber ? "is-active" : ""} aria-current={weekday === dayNumber ? "date" : undefined} onClick={() => { setWeekday(dayNumber); setMessage(""); }}><span>{day.slice(0, 3)}</span><strong>{count}</strong></button>;
-          })}
-        </nav>
+        {!coverageOpen ? <><section className="timetable-builder__week" aria-labelledby="weekly-plan-heading">
+          <header>
+            <div><span>Weekly plan</span><h2 id="weekly-plan-heading">{weekLabel(selectedWeek)}</h2></div>
+            <div className="timetable-builder__week-controls">
+              <label><span>Jump to date</span><input type="date" min={selectedTerm.starts_on} max={selectedTerm.ends_on} value={selectedDate} onChange={(event) => { const date = event.target.value; if (!date) return; updateUrl({ week: mondayFor(date) }); setWeekday(weekdayFor(date)); setMessage(""); }} /></label>
+              <nav aria-label="Change week">
+                <button type="button" onClick={() => switchWeek(-1)} disabled={selectedWeek <= firstWeek} aria-label="Previous week"><ChevronLeft size={18} /></button>
+                <button type="button" className="is-current" onClick={returnToReferenceWeek} disabled={selectedWeek === referenceWeek}>{currentWeek === referenceWeek ? "Current" : currentWeek < firstWeek ? "Term start" : "Term end"}</button>
+                <button type="button" onClick={() => switchWeek(1)} disabled={selectedWeek >= lastWeek} aria-label="Next week"><ChevronRight size={18} /></button>
+              </nav>
+            </div>
+          </header>
+          <div className="timetable-builder__week-position" aria-label={`Week ${selectedWeekNumber} of ${totalWeeks}`}>
+            <span>{shortDateLabel(selectedWeek)}</span><strong>Week {selectedWeekNumber}</strong><span>{shortDateLabel(addDays(selectedWeek, 5))}</span>
+          </div>
+          <nav
+            className={`timetable-builder__days${swipeDirection ? ` is-pulling-${swipeDirection}` : ""}`}
+            aria-label="Dates in selected week. Swipe horizontally to change week."
+            onPointerDown={startWeekSwipe}
+            onPointerMove={moveWeekSwipe}
+            onPointerUp={finishWeekSwipe}
+            onPointerCancel={() => { swipeStart.current = null; setSwipeDirection(null); }}
+          >
+            {DAYS.map((day, index) => {
+              const dayNumber = index + 1;
+              const date = addDays(selectedWeek, index);
+              const count = classSlots.filter((item) => item.weekday === dayNumber).length;
+              const closure = data.calendar_exceptions.find((item) => item.date === date && !item.is_instructional);
+              const outsideTerm = date < selectedTerm.starts_on || date > selectedTerm.ends_on;
+              return <button key={day} type="button" disabled={outsideTerm} className={weekday === dayNumber ? "is-active" : ""} aria-current={weekday === dayNumber ? "date" : undefined} onClick={() => { if (suppressDayClick.current) return; setWeekday(dayNumber); setMessage(""); }}><span>{day.slice(0, 3)}</span><strong>{new Date(`${date}T12:00:00Z`).getUTCDate()}</strong><small>{closure ? "Closed" : `${count} period${count === 1 ? "" : "s"}`}</small></button>;
+            })}
+          </nav>
+        </section>
 
         {data.conflicts.length ? <div className="timetable-builder__alert" role="status"><AlertTriangle size={18} /><span><strong>{data.conflicts.length} conflict{data.conflicts.length === 1 ? "" : "s"} need review</strong><small>Conflicting periods are marked in the schedule.</small></span></div> : <div className="timetable-builder__clear" role="status"><CheckCircle2 size={18} /><span>No teacher or room conflicts</span></div>}
 
+        {selectedException ? <div className="timetable-builder__closure" role="status"><CalendarOff size={18} /><span><strong>{selectedException.label}</strong><small>No classes run on {dateLabel(selectedDate)}. The repeating {DAYS[weekday - 1]} plan remains available below.</small></span><button type="button" onClick={() => setCalendarOpen(true)}>School dates</button></div> : null}
+
         <section className="timetable-builder__schedule" aria-labelledby="focused-day-heading">
           <header>
-            <div><span>{selectedClass?.name}</span><h2 id="focused-day-heading">{DAYS[weekday - 1]}</h2><p>{daySlots.length ? `${daySlots.length} periods in the repeating weekly plan` : "No periods planned"}</p></div>
-            <div>{daySlots.length ? <button className="is-secondary" type="button" onClick={() => setCopying(true)}><Copy size={16} />Copy day</button> : null}<button type="button" onClick={startNew}><Plus size={17} />Add period</button></div>
+            <div><span>{selectedClass?.name} · {dateLabel(selectedDate)}</span><h2 id="focused-day-heading">{DAYS[weekday - 1]}</h2><p>{daySlots.length ? `${daySlots.length} periods · repeats on instructional ${DAYS[weekday - 1]}s` : "No repeating periods planned"}</p></div>
+            <div><Link className="is-secondary" to={`/principal/timetable?date=${encodeURIComponent(selectedDate)}&class=${encodeURIComponent(selectedClass?.id ?? "")}`}><CalendarClock size={16} />Adjust date</Link>{daySlots.length ? <button className="is-secondary" type="button" aria-label="Copy day" onClick={() => setCopying(true)}><Copy size={16} />Copy</button> : null}<button type="button" aria-label="Add period" onClick={startNew}><Plus size={17} />Add</button></div>
           </header>
           {message ? <p className="timetable-builder__message" role="status">{message}</p> : null}
           {daySlots.length ? <ol className="timetable-builder__periods">{daySlots.map((item) => <li key={item.id} className={conflictingIds.has(item.id) ? "has-conflict" : ""}>
@@ -139,8 +268,7 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
           {dayConflictCount ? <p className="timetable-builder__day-warning"><AlertTriangle size={15} />{dayConflictCount} period{dayConflictCount === 1 ? "" : "s"} on this day conflict with another allocation.</p> : null}
         </section></> : <section className="timetable-builder__coverage" aria-labelledby="coverage-heading">
           <header>
-            <div><span>{selectedClass?.name}</span><h2 id="coverage-heading">Subject coverage</h2></div>
-            <label>Add target<select value="" onChange={(event) => { if (event.target.value) setTargetSubjectId(event.target.value); }}><option value="">Choose subject</option>{data.subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+            <div><span>{selectedClass?.name} · {selectedTerm.name}</span><h2 id="coverage-heading">Coverage targets</h2><p>Set the expected teaching time for each subject.</p></div>
           </header>
           {message ? <p className="timetable-builder__message" role="status">{message}</p> : null}
           {visibleCoverage.length ? <ul>{visibleCoverage.map((row) => {
@@ -153,7 +281,7 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
               <span className={`timetable-builder__coverage-status ${gap === null ? "is-unset" : gap > 0 ? "is-gap" : "is-ready"}`}>{gap === null ? "Set target" : gap > 0 ? `${hours(gap)} short` : "On target"}</span>
               {row.target_minutes !== null ? <span className="timetable-builder__coverage-progress"><i style={{ width: `${ratio}%` }} /><small>{hours(row.projected_minutes)} of {hours(row.target_minutes)}</small></span> : null}
             </button></li>;
-          })}</ul> : <div className="timetable-builder__empty-day"><BookOpenCheck size={24} /><h3>No subject plan yet</h3><p>Add periods in the weekly plan or choose a subject target above.</p></div>}
+          })}</ul> : <div className="timetable-builder__empty-day"><BookOpenCheck size={24} /><h3>No subjects available</h3><p>Add subjects in school administration before setting coverage targets.</p></div>}
         </section>}
 
         {editing && selectedClass ? <SlotEditorSheet
