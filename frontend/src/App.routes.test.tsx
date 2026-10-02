@@ -67,14 +67,14 @@ interface RouteSmokeCase {
 }
 
 const implementedScreenRoutes: RouteSmokeCase[] = [
-  { path: "/parent/home", heading: "Academic Pulse" },
-  { path: "/parent/attendance", heading: "Today's Presence Pulse" },
+  { path: "/parent/home", heading: "Current class" },
+  { path: "/parent/attendance", heading: "Today's attendance" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
   { path: "/student", heading: "Aarav Sharma" },
   { path: "/student/attendance", heading: /Aarav Sharma/ },
-  { path: "/student/attendance/eligibility", heading: /Hey Aarav!/ },
-  { path: "/student/leave/new", heading: "Apply Leave" },
+  { path: "/student/attendance/eligibility", heading: "Attendance eligibility" },
+  { path: "/student/leave/new", heading: "Apply leave" },
   { path: "/student/leave", heading: "Leave Tracker" },
   { path: "/student/timetable", heading: "Class 7A Timetable" },
   { path: "/student/timetable/week", heading: "My Timetable" },
@@ -134,15 +134,15 @@ describe("implemented application routes", () => {
 
   it("renders a real launcher instead of silently changing portals", async () => {
     render(<MemoryRouter initialEntries={["/student/apps"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Everything for school, in one place" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "More" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Attendance" })).toBeVisible();
   });
 
   it("keeps one established primary navigation destination selected on every event portal", async () => {
     for (const [path, roles, navLabel, pageHeading] of [
-      ["/parent/events", ["guardian"], "More", "Events & activities"],
+      ["/parent/events", ["guardian"], "More", "Events"],
       ["/student/events", ["student"], "More", "Events & activities"],
-      ["/teacher/events", ["staff"], "More", "Your upcoming school activities"],
+      ["/teacher/events", ["staff"], "More", "Assigned events"],
     ] as const) {
       cleanup();
       mockSession([...roles]);
@@ -463,7 +463,7 @@ describe("implemented application routes", () => {
     });
 
     render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Today's Presence Pulse" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Today's attendance" })).toBeVisible();
     expect(document.querySelector(".child-switcher")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Aarav Sharma - Class/ })).not.toBeInTheDocument();
     const chooseChild = await screen.findByRole("button", { name: "Choose child profile" });
@@ -588,10 +588,13 @@ describe("implemented application routes", () => {
     await swipe("Kavya", "Aarav", "left");
   }, 60000);
 
-  it("renders the timetable as a weekly period chart without the old tab switcher", async () => {
+  it("renders the timetable with the shared day view switcher", async () => {
     render(<MemoryRouter initialEntries={["/student/timetable"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Weekly period chart" })).toBeVisible();
-    expect(screen.queryByRole("tab", { name: "Week Grid" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Period schedule" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Day" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Week" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Month" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Year" })).toBeInTheDocument();
   });
 });
 

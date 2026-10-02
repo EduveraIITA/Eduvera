@@ -115,6 +115,7 @@
   line-height: 1.5;
 }
 
+/* Live phone review is served through Vite HMR. */
 .operations-workspace {
   min-width: 0;
 }
@@ -135,18 +136,11 @@
 .operations-topbar__brand {
   display: none;
 }
-.operations-topbar > div:nth-child(2) {
+.operations-topbar__heading {
   min-width: 0;
 }
-.operations-topbar > div:nth-child(2) > span {
-  color: var(--op-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
 .operations-topbar .operations-topbar__title {
-  margin-top: 2px;
+  margin: 0;
   overflow: hidden;
   font-size: 21px;
   font-weight: 700;
@@ -155,10 +149,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.operations-topbar > div:last-child {
+.operations-topbar__actions {
   display: flex;
   align-items: center;
   gap: 7px;
+  grid-column: -2 / -1;
 }
 .operations-icon-button,
 .operations-profile-button {
@@ -368,15 +363,15 @@
 .teacher-home__caught-up { grid-template-columns: auto minmax(0, 1fr); }
 .teacher-home__caught-up > svg { color: #9cf2df; }
 .teacher-home__caught-up small { font-weight: 600; letter-spacing: 0; text-transform: none; }
-.teacher-home__classes { border: 1px solid var(--op-border); box-shadow: none; }
+.teacher-home__classes { border: 0; box-shadow: var(--edura-shadow-card); }
 .teacher-home__classes > header { min-height: 56px; padding-block: 12px; }
 .teacher-home__classes > header h2 { margin: 0; font-size: 17px; }
 .teacher-home__classes .teacher-class-list > article { min-height: 70px; }
 .operations-hero {
   position: relative;
   display: flex;
-  min-height: 156px;
-  padding: 25px 28px;
+  min-height: 112px;
+  padding: 20px 22px;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
@@ -416,7 +411,7 @@
   opacity: 0.78;
 }
 .operations-hero h2 {
-  margin: 6px 0 5px;
+  margin: 5px 0 0;
   font-size: clamp(23px, 3vw, 30px);
   line-height: 1.2;
   letter-spacing: -0.035em;
@@ -1367,7 +1362,7 @@
   .operations-topbar__brand .school-brand__name {
     font-size: 14px;
   }
-  .operations-topbar > div:nth-child(2) {
+  .operations-topbar__heading {
     display: none;
   }
   .operations-main {

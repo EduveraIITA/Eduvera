@@ -84,7 +84,7 @@ export function StudentIdentityCard({
       <div className="student-home-id-card__identity">
         <span className="student-home-avatar" aria-hidden="true">{identity.avatarUrl ? <img src={identity.avatarUrl} alt="" /> : initials}</span>
         <span className="student-home-id-card__copy"><small>{eyebrow}</small>{primaryHeading ? <h1 id="student-home-heading">{identity.studentName}</h1> : <strong className="student-home-id-card__name">{identity.studentName}</strong>}<p>{identity.className} - Roll {identity.rollNumber}</p></span>
-        <span className={`student-home-attendance-score ${tone}`} aria-label={attendanceRecorded ? `Attendance ${Math.round(identity.attendancePercent)} percent` : "Attendance not recorded"}><strong>{attendanceRecorded ? `${Math.round(identity.attendancePercent)}%` : "—"}</strong><small>Attendance</small></span>
+        <span className={`student-home-attendance-score ${tone}`} aria-label={attendanceRecorded ? `Attendance ${Math.round(identity.attendancePercent)} percent` : "Attendance not recorded"}><strong>{attendanceRecorded ? `${Math.round(identity.attendancePercent)}%` : "N/A"}</strong><small>Attendance</small></span>
       </div>
       <footer>
         <span><small>Student ID</small><strong>{identity.studentId}</strong></span>

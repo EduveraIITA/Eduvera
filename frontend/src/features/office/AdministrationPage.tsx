@@ -30,7 +30,7 @@ export default function AdministrationPage() {
     <div className="office-page">
       <Link className="office-back" to="/principal/more"><ArrowLeft size={17} /> More tools</Link>
       <header className="office-hero office-hero--admin">
-        <div className="office-hero__copy"><span className="office-eyebrow"><Settings2 size={15} /> SCHOOL ADMINISTRATION</span><h1>Run your school</h1><p>Keep academic structure, people and access current.</p></div>
+        <div className="office-hero__copy"><h1>School administration</h1></div>
         <div className="office-hero__signal" aria-label={activeTerm ? `Current academic term ${activeTerm.name}` : "No academic term configured"}><span className="office-hero__signal-icon"><CalendarRange size={20} /></span><span>Current term</span><strong>{activeTerm ? activeTerm.name : "Not configured"}</strong></div>
       </header>
       {schools.length > 1 ? <label className="office-field office-context-field">School<select value={currentSchoolId} onChange={(event) => setSchoolId(event.target.value)}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}

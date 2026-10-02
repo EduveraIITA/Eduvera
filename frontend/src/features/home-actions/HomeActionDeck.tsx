@@ -41,7 +41,7 @@ function dateLabel(action: HomeAction) {
   }).format(date);
 }
 
-function ActionLink({ action, primary = false }: { action: HomeAction; primary?: boolean }) {
+function ActionLink({ action, primary = false, compact = false }: { action: HomeAction; primary?: boolean; compact?: boolean }) {
   const Icon = icons[action.kind];
   const className = `home-action-card is-${action.priority}${primary ? " is-primary" : ""}`;
   const formattedDate = dateLabel(action);
@@ -50,7 +50,7 @@ function ActionLink({ action, primary = false }: { action: HomeAction; primary?:
     <span className="home-action-card__content">
       <span className="home-action-card__meta"><b>{action.status_label}</b>{formattedDate ? <time dateTime={action.due_at ?? action.occurs_at ?? undefined}>{formattedDate}</time> : null}</span>
       <strong>{action.title}</strong>
-      <small>{action.detail}</small>
+      {!compact && action.detail ? <small>{action.detail}</small> : null}
     </span>
     <span className="home-action-card__cta">{action.action_label}<ArrowRight size={16} /></span>
   </>;
@@ -83,10 +83,10 @@ export function HomeActionDeck({ actions, title = "For you", variant = "default"
   const [primary, ...secondary] = actions;
   return <section className={`home-action-deck${variant === "quiet" ? " home-action-deck--quiet" : ""}`} aria-labelledby="home-action-deck-heading">
     <header>
-      <div>{variant === "default" ? <span>Next best actions</span> : null}<h2 id="home-action-deck-heading">{title}</h2></div>
+      <div><h2 id="home-action-deck-heading">{title}</h2></div>
       <b>{actions.length}</b>
     </header>
-    {primary ? <ActionLink action={primary} primary /> : null}
-    {secondary.length ? <div className="home-action-deck__secondary">{secondary.map((action) => <ActionLink key={action.id} action={action} />)}</div> : null}
+    {primary ? <ActionLink action={primary} primary compact={variant === "quiet"} /> : null}
+    {secondary.length ? <div className="home-action-deck__secondary">{secondary.map((action) => <ActionLink key={action.id} action={action} compact={variant === "quiet"} />)}</div> : null}
   </section>;
 }

@@ -176,9 +176,10 @@ export class ChatService {
           LIMIT 1
         ), 'staff') AS other_role,
         COALESCE((
-          SELECT st.avatar_url
+          SELECT COALESCE(NULLIF(st.avatar_url,''),NULLIF(other_user.avatar_url,''))
           FROM chat_participants other_participant
-          JOIN students st ON st.user_id=other_participant.user_id
+          JOIN users other_user ON other_user.id=other_participant.user_id
+          LEFT JOIN students st ON st.user_id=other_participant.user_id
           WHERE other_participant.conversation_id=c.id
             AND other_participant.user_id<>${user.id}::uuid
             AND other_participant.is_active
@@ -240,7 +241,7 @@ export class ChatService {
         result = await sql<any>`
           SELECT target.id, target.first_name, target.last_name, target.role,
             target_membership.role AS membership_role, school.id AS school_id, school.name AS school_name,
-            student.id AS student_id, student.avatar_url
+            student.id AS student_id, COALESCE(NULLIF(student.avatar_url,''),NULLIF(target.avatar_url,''),'') AS avatar_url
           FROM school_memberships target_membership
           JOIN users target ON target.id=target_membership.user_id AND target.is_active
           JOIN schools school ON school.id=target_membership.school_id
@@ -253,7 +254,7 @@ export class ChatService {
         result = await sql<any>`
           SELECT DISTINCT target.id, target.first_name, target.last_name, target.role,
             target_membership.role AS membership_role, school.id AS school_id, school.name AS school_name,
-            student.id AS student_id, student.avatar_url
+            student.id AS student_id, COALESCE(NULLIF(student.avatar_url,''),NULLIF(target.avatar_url,''),'') AS avatar_url
           FROM school_memberships target_membership
           JOIN users target ON target.id=target_membership.user_id AND target.is_active
           JOIN schools school ON school.id=target_membership.school_id
@@ -292,7 +293,7 @@ export class ChatService {
         result = await sql<any>`
           SELECT DISTINCT target.id, target.first_name, target.last_name, target.role,
             target_membership.role AS membership_role, school.id AS school_id, school.name AS school_name,
-            NULL::uuid AS student_id, ''::text AS avatar_url
+            NULL::uuid AS student_id, target.avatar_url
           FROM school_memberships target_membership
           JOIN users target ON target.id=target_membership.user_id AND target.is_active
           JOIN schools school ON school.id=target_membership.school_id
@@ -319,7 +320,7 @@ export class ChatService {
         result = await sql<any>`
           SELECT DISTINCT target.id, target.first_name, target.last_name, target.role,
             target_membership.role AS membership_role, school.id AS school_id, school.name AS school_name,
-            NULL::uuid AS student_id, ''::text AS avatar_url
+            NULL::uuid AS student_id, target.avatar_url
           FROM students own_student
           JOIN enrollments enrollment ON enrollment.student_id=own_student.id AND enrollment.is_active
           JOIN school_memberships target_membership ON target_membership.school_id=own_student.school_id

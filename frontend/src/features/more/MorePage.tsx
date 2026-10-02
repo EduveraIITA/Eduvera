@@ -1,4 +1,4 @@
-import { ArrowRight, Info, LayoutGrid, LockKeyhole } from "lucide-react";
+import { ArrowRight, Info, LockKeyhole } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
@@ -7,16 +7,9 @@ import type { Portal } from "../auth/AuthContext";
 import { toolsFor, type Tool } from "./tools";
 import "./more.css";
 
-const HEADLINE: Record<Portal, { eyebrow: string; title: string; body: string }> = {
-  parent: { eyebrow: "Family tools", title: "Everything for your child, in one place", body: "The daily screens stay in the bar below. Everything else your school offers guardians lives here." },
-  student: { eyebrow: "Your school workspace", title: "Everything for school, in one place", body: "Open today's connected tools and see what's coming next." },
-  teacher: { eyebrow: "Teaching tools", title: "Your classes, calendar and schedule", body: "Registers and messages stay in the bar below. Class rosters, the calendar and your weekly plan live here." },
-  principal: { eyebrow: "Leadership tools", title: "The whole school, one tap away", body: "Attendance, timetable and messages stay in the bar below. People, imports, the calendar and administration live here." },
-};
-
 function ToolTile({ tool }: { tool: Tool }) {
   const Icon = tool.icon;
-  const status = tool.path ? <span className="more-status is-live"><i />Live</span> : <span className="more-status"><LockKeyhole size={11} />{tool.planned === "desktop" ? "Desktop" : "Planned"}</span>;
+  const status = tool.path ? null : <span className="more-status"><LockKeyhole size={11} />{tool.planned === "desktop" ? "Desktop" : "Planned"}</span>;
   const body = <>
     <div className="more-tile__top"><span className="more-tile__icon"><Icon size={21} /></span>{status}</div>
     <h3>{tool.name}</h3>
@@ -32,23 +25,17 @@ export function MoreContent({ portal }: { portal: Portal }) {
   const tools = toolsFor(portal);
   const live = tools.filter((t) => t.path);
   const planned = tools.filter((t) => !t.path);
-  const copy = HEADLINE[portal];
   return (
     <div className="more-page">
-      <section className="more-hero">
-        <span><LayoutGrid size={14} /> {copy.eyebrow}</span>
-        <h1>{copy.title}</h1>
-        <p>{copy.body}</p>
-      </section>
       <section className="more-section" aria-labelledby="more-tools-title">
-        <header><div><span>Available now</span><h2 id="more-tools-title">Tools</h2></div><b>{live.length} live</b></header>
+        <header><div><h2 id="more-tools-title">Tools</h2></div><b>{live.length} available</b></header>
         <div className="more-grid">{live.map((tool) => <ToolTile key={tool.id} tool={tool} />)}</div>
       </section>
       {planned.length ? (
         <section className="more-section" aria-labelledby="more-planned-title">
-          <header><div><span>Not on mobile yet</span><h2 id="more-planned-title">Coming to mobile</h2></div></header>
+          <header><div><h2 id="more-planned-title">Coming to mobile</h2></div></header>
           <div className="more-grid">{planned.map((tool) => <ToolTile key={tool.id} tool={tool} />)}</div>
-          <div className="more-note"><Info size={16} /><span>These are built for a wide screen today. They will appear here, mobile-first, as each one is ready — nothing here sends you to the desktop app.</span></div>
+          <div className="more-note"><Info size={16} /><span>These tools need a wider screen today. Mobile versions will appear here when they are ready.</span></div>
         </section>
       ) : null}
     </div>
@@ -57,7 +44,7 @@ export function MoreContent({ portal }: { portal: Portal }) {
 
 function Shell({ portal, children }: { portal: Portal; children: ReactNode }) {
   if (portal === "parent") return <ParentShell active="more" pageLabel="More">{children}</ParentShell>;
-  return <OperationsShell portal={portal === "teacher" ? "teacher" : "principal"} active="more" title="More tools" subtitle={portal === "teacher" ? "Teaching workspace" : "Leadership workspace"}>{children}</OperationsShell>;
+  return <OperationsShell portal={portal === "teacher" ? "teacher" : "principal"} active="more" title="More">{children}</OperationsShell>;
 }
 
 export function ParentMoreRoute() { return <Shell portal="parent"><MoreContent portal="parent" /></Shell>; }

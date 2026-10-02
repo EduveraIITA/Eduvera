@@ -27,6 +27,7 @@ function publicUser(user: AuthUser) {
     email: user.email,
     first_name: user.first_name,
     last_name: user.last_name,
+    avatar_url: user.avatar_url || null,
     display_name: `${user.first_name} ${user.last_name}`.trim() || user.username,
     role: user.role,
     active_school_id: user.active_school_id ?? null,
@@ -65,7 +66,7 @@ export class AuthService {
       .innerJoin("users as u", "u.id", "s.user_id")
       .select([
         "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at", "s.active_school_id",
-        "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.role", "u.is_active",
+        "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.avatar_url", "u.role", "u.is_active",
       ])
       .where("s.token_hash", "=", tokenHash).executeTakeFirst();
     if (!row) return null;
@@ -88,6 +89,7 @@ export class AuthService {
         email: row.email,
         first_name: row.first_name,
         last_name: row.last_name,
+        avatar_url: row.avatar_url,
         role: row.role,
         is_active: row.is_active,
         active_school_id: row.active_school_id,
@@ -209,7 +211,7 @@ export class AuthService {
     const grants = await sql<{ school_id: string; permission: string }>`SELECT g.school_id,g.permission FROM school_permission_grants g JOIN school_memberships m
       ON m.school_id=g.school_id AND m.user_id=g.user_id WHERE m.user_id=${user.id}::uuid AND m.role='staff' AND m.is_active`.execute(this.db);
     return {
-      user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || null },
+      user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || user.avatar_url || null },
       students: [...ids].map((id) => ({ id })),
       memberships,
       permission_grants: grants.rows,

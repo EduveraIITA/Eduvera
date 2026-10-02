@@ -21,5 +21,5 @@
   .operations-topbar__brand { display: flex; flex: 1; }
   .operations-topbar .school-brand__crest { display: grid; }
   .operations-topbar .school-brand__name { display: block; }
-  .operations-topbar > div:nth-child(2) { display: none; }
+  .operations-topbar__heading { display: none; }
 }

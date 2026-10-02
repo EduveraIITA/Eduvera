@@ -139,6 +139,14 @@ AVATARS = [
     "/assets/kavya-nair.png",
 ]
 
+PROFILE_AVATARS = {
+    "pooja.parent": "/assets/pooja-sharma.png",
+    "parent.cis0103": "/assets/rashmi-joshi.png",
+    "parent.cis0093": "/assets/pooja-chauhan.png",
+    "meera.principal": "/assets/meera-kapoor.png",
+    "kavita.staff": "/assets/kavita-mehta.png",
+}
+
 
 SUBJECTS = [
     ("mat", "MAT", "Mathematics", "Maths", "#2457D6", "calculator"),
@@ -691,7 +699,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
     shared_hash = password_hash(demo_password, rng)
 
     dataset: dict[str, list[tuple[Any, ...]]] = {name: [] for name in [
-        "schools", "users", "memberships", "students", "parents", "guardians", "terms", "sections", "enrollments",
+        "schools", "calendar_days", "users", "memberships", "students", "parents", "guardians", "terms", "sections", "enrollments",
         "subjects", "subject_attendance", "attendance", "gate_events", "timetable", "policies", "leaves", "leave_audits",
         "diary", "diary_acknowledgements", "diary_notes", "notifications", "contacts",
         "campus_events", "campus_event_class_sections", "campus_event_selected_students", "campus_event_staff",
@@ -702,9 +710,10 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         "campus_event_fee_invoices", "campus_event_fee_payments",
     ]}
     dataset["schools"].append((school_id, SCHOOL_NAME, SCHOOL_CODE))
+    dataset["calendar_days"].append((deterministic_id("calendar-gandhi-jayanti"), school_id, date(int(academic_year[:4]), 10, 2), False, "Gandhi Jayanti"))
 
     def add_user(user_id: str, username: str, email: str, first: str, last: str, role: str, membership_role: str) -> None:
-        dataset["users"].append((user_id, username, email, shared_hash, first, last, role, True))
+        dataset["users"].append((user_id, username, email, shared_hash, first, last, role, True, PROFILE_AVATARS.get(username, "")))
         dataset["memberships"].append((deterministic_id(f"membership-{user_id}"), user_id, school_id, membership_role, True))
 
     for student in students:
@@ -1292,8 +1301,12 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
         conflict=" ON CONFLICT(id) DO UPDATE SET name=excluded.name,code=excluded.code",
     )
     statements += insert_sql(
-        "users", ["id", "username", "email", "password_hash", "first_name", "last_name", "role", "is_active"], dataset["users"],
-        conflict=" ON CONFLICT(id) DO UPDATE SET username=excluded.username,email=excluded.email,password_hash=excluded.password_hash,first_name=excluded.first_name,last_name=excluded.last_name,role=excluded.role,is_active=excluded.is_active,updated_at=now()",
+        "school_calendar_days", ["id", "school_id", "date", "is_instructional", "label"], dataset["calendar_days"],
+        conflict=" ON CONFLICT(school_id,date) DO UPDATE SET is_instructional=excluded.is_instructional,label=excluded.label,updated_at=now()",
+    )
+    statements += insert_sql(
+        "users", ["id", "username", "email", "password_hash", "first_name", "last_name", "role", "is_active", "avatar_url"], dataset["users"],
+        conflict=" ON CONFLICT(id) DO UPDATE SET username=excluded.username,email=excluded.email,password_hash=excluded.password_hash,first_name=excluded.first_name,last_name=excluded.last_name,role=excluded.role,is_active=excluded.is_active,avatar_url=excluded.avatar_url,updated_at=now()",
     )
     statements += insert_sql(
         "school_memberships", ["id", "user_id", "school_id", "role", "is_active"], dataset["memberships"],
@@ -1311,6 +1324,26 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
         "guardian_relationships", ["id", "guardian_id", "student_id", "relationship", "is_primary", "can_authorize_leave"], dataset["guardians"],
         conflict=" ON CONFLICT(guardian_id,student_id) DO UPDATE SET relationship=excluded.relationship,is_primary=excluded.is_primary,can_authorize_leave=CASE WHEN guardian_relationships.authority_source='reviewed' THEN guardian_relationships.can_authorize_leave ELSE excluded.can_authorize_leave END",
     )
+    statements.append("""UPDATE school_people person SET avatar_url = CASE
+      WHEN account.username='pooja.parent' THEN '/assets/pooja-sharma.png'
+      WHEN account.username='parent.cis0103' THEN '/assets/rashmi-joshi.png'
+      WHEN account.username='parent.cis0093' THEN '/assets/pooja-chauhan.png'
+      WHEN EXISTS (SELECT 1 FROM guardian_relationships relationship JOIN students student ON student.id=relationship.student_id
+        WHERE relationship.guardian_id=parent.id AND student.admission_number='CIS-2026-0201') THEN '/assets/nandita-deshmukh.png'
+      ELSE person.avatar_url END
+      FROM guardian_school_profiles profile JOIN parents parent ON parent.id=profile.guardian_id
+      LEFT JOIN users account ON account.id=parent.user_id
+      WHERE person.id=profile.person_id AND (account.username IN ('pooja.parent','parent.cis0103','parent.cis0093')
+        OR EXISTS (SELECT 1 FROM guardian_relationships relationship JOIN students student ON student.id=relationship.student_id
+          WHERE relationship.guardian_id=parent.id AND student.admission_number='CIS-2026-0201'));""")
+    statements.append("""UPDATE school_people person SET avatar_url = (ARRAY[
+      '/assets/pooja-sharma.png','/assets/rashmi-joshi.png','/assets/nandita-deshmukh.png','/assets/pooja-chauhan.png'
+      ])[1 + (get_byte(decode(md5(person.id::text),'hex'),0) % 4)]
+      FROM guardian_school_profiles profile WHERE person.id=profile.person_id AND person.avatar_url='';
+      UPDATE users account SET avatar_url=person.avatar_url
+      FROM parents parent JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+      JOIN school_people person ON person.id=profile.person_id
+      WHERE account.id=parent.user_id AND account.avatar_url='' AND person.avatar_url<>'';""")
     statements += insert_sql(
         "academic_terms", ["id", "school_id", "academic_year", "name", "starts_on", "ends_on", "attendance_threshold", "is_active"], dataset["terms"],
         conflict=" ON CONFLICT(id) DO UPDATE SET academic_year=excluded.academic_year,name=excluded.name,starts_on=excluded.starts_on,ends_on=excluded.ends_on,attendance_threshold=excluded.attendance_threshold,is_active=excluded.is_active",

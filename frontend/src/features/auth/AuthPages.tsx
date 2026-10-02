@@ -15,7 +15,6 @@ import {
   RefreshCw,
   School,
   ShieldCheck,
-  Sparkles,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -43,16 +42,14 @@ function AuthLayout({ eyebrow, title, description, children }: {
       <section className="auth-story" aria-label="Edura OS introduction">
         <AuthBrand />
         <div className="auth-story__content">
-          <span className="auth-story__badge"><Sparkles size={14} /> Attendance intelligence</span>
-          <h1>Every school day,<br /><em>in one calm view.</em></h1>
-          <p>Presence, leave, diary, and school communication built around students and families.</p>
+          <h1>School records that stay current.</h1>
+          <p>Attendance, timetables, leave and communication for every school role.</p>
           <div className="auth-story__proof">
             <span><ShieldCheck size={17} /><b>Role-safe access</b></span>
             <span><Clock3 size={17} /><b>Live attendance</b></span>
             <span><BookOpenCheck size={17} /><b>One source of truth</b></span>
           </div>
         </div>
-        <p className="auth-story__footnote">Secure school workspace - Built for families</p>
       </section>
 
       <section className="auth-panel">
@@ -84,7 +81,7 @@ function PasswordInput({ value, onChange, autoComplete = "current-password" }: {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
-        minLength={10}
+        minLength={12}
         required
       />
       <button type="button" aria-label={visible ? "Hide password" : "Show password"} onClick={() => setVisible((current) => !current)}>
@@ -171,19 +168,19 @@ export function LoginPage() {
           <div className="auth-divider"><span>or explore the live demo</span></div>
           <div className="demo-entry__buttons">
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("parent")}>
-              <span><UsersRound size={18} /></span><b>Parent view</b><small>Pooja Sharma</small>
+              <span><img src="/assets/pooja-sharma.png" alt="" /></span><b>Parent view</b><small>Pooja Sharma</small>
               {pending === "parent" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("student")}>
-              <span><GraduationCap size={18} /></span><b>Student view</b><small>Aarav Sharma</small>
+              <span><img src="/assets/aarav-sharma.png" alt="" /></span><b>Student view</b><small>Aarav Sharma</small>
               {pending === "student" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("staff")}>
-              <span><School size={18} /></span><b>Teacher view</b><small>Kavita Mehta</small>
+              <span><img src="/assets/kavita-mehta.png" alt="" /></span><b>Teacher view</b><small>Kavita Mehta</small>
               {pending === "staff" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("admin")}>
-              <span><ShieldCheck size={18} /></span><b>Principal view</b><small>Meera Kapoor</small>
+              <span><img src="/assets/meera-kapoor.png" alt="" /></span><b>Principal view</b><small>Meera Kapoor</small>
               {pending === "admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
           </div>
@@ -258,7 +255,7 @@ export function SignupPage() {
           <label className="auth-field"><span>Last name</span><div className="auth-input-wrap"><UserRound size={18} /><input value={form.last_name} onChange={(event) => update("last_name", event.target.value)} autoComplete="family-name" required /></div></label>
         </div>
         <label className="auth-field"><span>Email address</span><div className="auth-input-wrap"><Mail size={18} /><input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} autoComplete="email" placeholder="you@example.com" required /></div></label>
-        <label className="auth-field"><span>Create password</span><PasswordInput value={form.password} onChange={(value) => update("password", value)} autoComplete="new-password" /><small>Use at least 10 characters with a mix of letters and numbers.</small></label>
+        <label className="auth-field"><span>Create password</span><PasswordInput value={form.password} onChange={(value) => update("password", value)} autoComplete="new-password" /><small>Use at least 12 characters with upper- and lowercase letters, a number and a symbol.</small></label>
         <label className="auth-field"><span>Confirm password</span><PasswordInput value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" /></label>
         <button className="auth-primary-button" type="submit" disabled={pending}>
           {pending ? <><LoaderCircle className="auth-spin" size={18} /> Creating account...</> : <>Create secure account <ArrowRight size={18} /></>}

@@ -65,7 +65,7 @@ describe("Account-optional school enrollment",()=>{
     const review=await preview();expect(review.class_name).toBe("Class 7A");expect(review.guardian.name).toBe("Nandita Deshmukh");
     expect((await pool.query("SELECT (SELECT count(*) FROM students) AS students,(SELECT count(*) FROM parents) AS parents,(SELECT count(*) FROM users) AS accounts")).rows[0]).toEqual(before);
   });
-  it("paginates the admission-ordered directory without repeating students",async()=>{
+  it("paginates the name-ordered directory without repeating students",async()=>{
     const first=await people.list(admin.authUser,{school_id:schoolId});expect(first.results).toHaveLength(25);expect(first.next_cursor).toBeTruthy();
     const second=await people.list(admin.authUser,{school_id:schoolId,cursor:first.next_cursor!});
     expect(new Set([...first.results,...second.results].map(r=>r.id)).size).toBe(first.results.length+second.results.length);
@@ -78,7 +78,10 @@ describe("Account-optional school enrollment",()=>{
     expect((await pool.query("SELECT count(*)::int AS n FROM users")).rows[0].n).toBe(count);
     expect((await pool.query("SELECT id FROM attendance_records WHERE student_id=$1",[id])).rows).toHaveLength(0);
     expect((await pool.query("SELECT classes_held FROM subject_attendance WHERE student_id=$1",[id])).rows.length).toBeGreaterThan(0);
-    const listing=await people.list(admin.authUser,{school_id:schoolId,search:value.admission_number});expect(listing.results[0]).toMatchObject({id,name:"Ishaan Deshmukh",has_account:false});
+    const listing=await people.list(admin.authUser,{school_id:schoolId,search:value.admission_number});expect(listing.results[0]).toMatchObject({id,name:"Ishaan Deshmukh",has_account:false,avatar_url:""});
+    const initial=await people.list(admin.authUser,{school_id:schoolId,initial:"i"});
+    expect(initial.results.find((student:{id:string})=>student.id===id)).toBeTruthy();
+    expect(initial.results.every((student:{name:string})=>student.name.startsWith("I"))).toBe(true);
   });
   it("keeps new students in current rosters and out of registers before their enrollment",async()=>{
     const id=await commit((await preview()).id);

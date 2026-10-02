@@ -101,14 +101,19 @@ export function TeacherHomePage({
     month: "long",
   }).format(new Date(`${date}T12:00:00+05:30`));
   const registerProgress = dueClasses.length ? Math.round((submitted * 100) / dueClasses.length) : 100;
+  const remainingRegisters = Math.max(dueClasses.length - submitted, 0);
+  const registerStatus = !dueClasses.length
+    ? "No registers due"
+    : remainingRegisters === 0
+      ? "Attendance complete"
+      : `${remainingRegisters} ${remainingRegisters === 1 ? "register" : "registers"} remaining`;
   const homeActions = data.home_actions ?? [];
   const [primaryAction, ...remainingActions] = homeActions;
   return (
     <OperationsShell
       portal="teacher"
       active="home"
-      title={`Good morning, ${data.teacher.name.split(" ")[0]}`}
-      subtitle="Teaching operations"
+      title="Today"
     >
       <div className="operations-stack teacher-home">
         <section className="teacher-home__day" aria-labelledby="teacher-home-day-heading">
@@ -131,7 +136,7 @@ export function TeacherHomePage({
           <div className="teacher-home__day-summary">
             <div>
               <strong>{data.classes.length ? `${data.classes.length} ${data.classes.length === 1 ? "class" : "classes"}` : "No classes"}</strong>
-              <span>{dueClasses.length ? `${submitted} of ${dueClasses.length} attendance registers complete` : "Nothing requires attendance today"}</span>
+              <span>{registerStatus}</span>
             </div>
             {dueClasses.length ? <b>{registerProgress}%</b> : <CheckCircle2 size={25} aria-label="Day clear" />}
           </div>
@@ -1175,11 +1180,7 @@ export function TeacherTimetablePage({ data }: { data: TeacherHomeResponse }) {
         <section className="operations-hero">
           <div>
             <span>Weekly teaching plan</span>
-            <h2>{data.weekly_timetable.length} scheduled periods</h2>
-            <p>
-              Your live school timetable, grouped by teaching day and ordered by
-              period.
-            </p>
+            <h2>{data.weekly_timetable.length} periods this week</h2>
           </div>
         </section>
         <section className="teacher-week-grid">

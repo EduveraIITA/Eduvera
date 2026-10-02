@@ -8,6 +8,7 @@ export interface AuthUser {
   email: string;
   first_name: string;
   last_name: string;
+  avatar_url?: string;
   role: UserRole;
   is_active: boolean;
   active_school_id?: string | null;

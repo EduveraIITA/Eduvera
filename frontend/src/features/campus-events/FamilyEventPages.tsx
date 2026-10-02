@@ -85,9 +85,7 @@ export function FamilyEventListPage({
     <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild}>
       <div className="family-events-page">
         <section className="family-events-hero">
-          <span>School life</span>
-          <h1>Events & activities</h1>
-          <p>Plans, consent and preparation for everything beyond the daily timetable.</p>
+          {audience === "student" ? <h1>Events &amp; activities</h1> : null}
           <div>
             <strong>{events.filter((event) => event.status === "published" && new Date(event.ends_at).getTime() >= now).length}</strong>
             <span>upcoming</span>
@@ -154,6 +152,7 @@ export function FamilyEventDetailPage({
   const [now] = useState(() => Date.now());
   const participant = event.viewer_participants.find((item) => item.student_id === selectedStudentId) ?? event.viewer_participants[0];
   const prefix = audience === "parent" ? "/parent" : "/student";
+  const PageHeading = audience === "parent" ? "h2" : "h1";
   const completedIds = new Set(participant?.checklist_completed_item_ids ?? []);
   const responseWindowOpen = event.status === "published" && new Date(event.starts_at).getTime() > now;
   const withdrawn = finance?.participation_state === "withdrawn";
@@ -180,7 +179,7 @@ export function FamilyEventDetailPage({
         </nav>
         <section className={`family-event-detail-hero family-event-detail-hero--${event.event_type}`}>
           <div><span>{eventTypeLabels[event.event_type]}</span><EventStatusBadge status={event.status} /></div>
-          <h1>{event.title}</h1>
+          <PageHeading>{event.title}</PageHeading>
           <p>{event.description}</p>
           <dl>
             <div><dt><Clock3 size={15} />When</dt><dd>{formatEventDate(event.starts_at)} to {formatEventDate(event.ends_at)}</dd></div>

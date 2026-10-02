@@ -70,10 +70,6 @@ function iconForKind(kind: StudentDiaryKind, isCatchUp: boolean) {
   return <MessageSquareText size={18} />;
 }
 
-function compactName(name: string) {
-  return name.split(" ")[0] ?? name;
-}
-
 export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiaryPageProps) {
   const [filter, setFilter] = useState<StudentDiaryFilter>("all");
   const [selected, setSelected] = useState<StudentDiaryItem | null>(null);
@@ -143,18 +139,9 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
         <section className="student-diary-hero" aria-labelledby="student-diary-heading">
           <div className="student-diary-hero__top">
             <div>
-              <span>Student diary</span>
-              <h1 id="student-diary-heading">Today's work desk</h1>
+              <h1 id="student-diary-heading">Diary</h1>
               <p>{data.rangeLabel} - {data.termLabel}</p>
             </div>
-            <span className="student-diary-avatar">
-              {data.avatarUrl ? <img src={data.avatarUrl} alt="" /> : compactName(data.studentName).slice(0, 2)}
-            </span>
-          </div>
-          <div className="student-diary-id">
-            <span><small>Student</small><strong>{data.studentName}</strong></span>
-            <span><small>Class</small><strong>{data.className}</strong></span>
-            <span><small>Roll</small><strong>{data.rollNumber}</strong></span>
           </div>
           <div className="student-diary-stats" aria-label="Diary summary">
             <span><strong>{stats.homework}</strong><small>Homework</small></span>
@@ -185,7 +172,7 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
 
         <section className="student-diary-list" aria-labelledby="student-diary-list-heading">
           <header>
-            <div><span>Class desk</span><h2 id="student-diary-list-heading">Diary entries</h2></div>
+            <div><h2 id="student-diary-list-heading">Diary entries</h2></div>
             <strong>{filtered.length}</strong>
           </header>
           {filtered.length ? filtered.map((item) => (

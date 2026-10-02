@@ -98,6 +98,8 @@ const initialState: AuthState = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const LOGGED_OUT_KEY = "omnischool:explicitly-logged-out";
+const LOGGED_OUT_DEMO_MODE_KEY = "omnischool:logged-out-demo-mode";
 
 function getPortals(memberships: SchoolMembership[]): Portal[] {
   const portals = new Set<Portal>();
@@ -110,8 +112,34 @@ function getPortals(memberships: SchoolMembership[]): Portal[] {
   return [...portals];
 }
 
+function retryableCsrfFailure(error: unknown) {
+  return !(error instanceof ApiError) || error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
 async function establishCsrfCookie() {
-  await apiFetch<{ csrf_token: string }>("/api/v1/auth/csrf/");
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await apiFetch<{ csrf_token: string }>("/api/v1/auth/csrf/");
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!retryableCsrfFailure(error) || attempt === 2) throw error;
+      await new Promise((resolve) => window.setTimeout(resolve, 200 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
+async function authMutation<T>(path: string, body: unknown): Promise<T> {
+  await establishCsrfCookie();
+  try {
+    return await apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 403 || !error.message.toLowerCase().includes("csrf")) throw error;
+    await establishCsrfCookie();
+    return apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -141,6 +169,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
+    if (window.localStorage.getItem(LOGGED_OUT_KEY) === "1") {
+      const retainedDemoMode = window.localStorage.getItem(LOGGED_OUT_DEMO_MODE_KEY);
+      setState({
+        status: "anonymous",
+        user: null,
+        memberships: [],
+        // Development sessions created before the retained flag was introduced
+        // should not lose the local test personas after their first logout.
+        demoMode: retainedDemoMode === null ? import.meta.env.DEV : retainedDemoMode === "1",
+        serviceError: null,
+      });
+      return;
+    }
     try {
       const session = await apiFetch<SessionResponse>("/api/v1/auth/session/");
       if (!session.authenticated || !session.user) {
@@ -196,11 +237,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (input: LoginInput) => {
-      await establishCsrfCookie();
-      const response = await apiFetch<AuthResponse>("/api/v1/auth/login/", {
-        method: "POST",
-        body: JSON.stringify(input),
-      });
+      const response = await authMutation<AuthResponse>("/api/v1/auth/login/", input);
+      window.localStorage.removeItem(LOGGED_OUT_KEY);
+      window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
       await loadProfile(response);
       await queryClient.invalidateQueries();
     },
@@ -209,11 +248,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (input: RegisterInput) => {
-      await establishCsrfCookie();
-      const response = await apiFetch<AuthResponse>("/api/v1/auth/register/", {
-        method: "POST",
-        body: JSON.stringify(input),
-      });
+      const response = await authMutation<AuthResponse>("/api/v1/auth/register/", input);
+      window.localStorage.removeItem(LOGGED_OUT_KEY);
+      window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
       setState({
         status: "authenticated",
         user: response.user,
@@ -228,11 +265,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const enterDemo = useCallback(
     async (persona: DemoPersona) => {
-      await establishCsrfCookie();
-      const response = await apiFetch<AuthResponse>("/api/v1/auth/demo-session/", {
-        method: "POST",
-        body: JSON.stringify({ role: persona }),
-      });
+      const response = await authMutation<AuthResponse>("/api/v1/auth/demo-session/", { role: persona });
+      window.localStorage.removeItem(LOGGED_OUT_KEY);
+      window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
       await loadProfile(response);
       queryClient.clear();
     },
@@ -240,7 +275,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    await apiFetch<void>("/api/v1/auth/logout/", { method: "POST" });
+    window.localStorage.setItem(LOGGED_OUT_KEY, "1");
+    window.localStorage.setItem(LOGGED_OUT_DEMO_MODE_KEY, state.demoMode ? "1" : "0");
     queryClient.clear();
     setState((current) => ({
       status: "anonymous",
@@ -249,7 +285,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       demoMode: current.demoMode,
       serviceError: null,
     }));
-  }, [queryClient]);
+    try {
+      await apiFetch<void>("/api/v1/auth/logout/", { method: "POST" });
+    } catch {
+      // The explicit local logout remains authoritative while an unavailable
+      // server session expires or is revoked by a later successful request.
+    }
+  }, [queryClient, state.demoMode]);
 
   const portals = useMemo(() => getPortals(state.memberships), [state.memberships]);
   const value = useMemo<AuthContextValue>(

@@ -51,23 +51,21 @@ export function OperationsEventListPage({
       <div className="campus-events-page operations-stack">
         <section className="campus-events-ops-hero">
           <div>
-            <span>{portal === "principal" ? "Plan, publish and reconcile" : "Your event desk"}</span>
-            <h1>{portal === "principal" ? "Every school event, responsibly operated" : "Your upcoming school activities"}</h1>
-            <p>{portal === "principal" ? "Keep invitations, consent, participation and event attendance distinct from the academic register." : "Review your assigned sessions, participant readiness and attendance registers."}</p>
+            <h1>{portal === "principal" ? "Events and activities" : "Assigned events"}</h1>
           </div>
           <Link className="campus-event-primary" to={portal === "principal" ? "/principal/events/new" : "/teacher/events/new"}><Plus size={17} />{portal === "principal" ? "Create event" : "Schedule class test"}</Link>
         </section>
 
         <section className="campus-event-metrics" aria-label="Event operations summary">
-          <article><span><CalendarClock size={18} /></span><small>Upcoming</small><strong>{upcoming}</strong><em>Published activities</em></article>
-          <article><span><UsersRound size={18} /></span><small>Participants</small><strong>{events.reduce((sum, event) => sum + event.counts.participants, 0)}</strong><em>Across visible events</em></article>
-          <article><span><CalendarCheck2 size={18} /></span><small>Open registers</small><strong>{awaitingRegisters}</strong><em>Sessions to reconcile</em></article>
-          <article><span><ShieldCheck size={18} /></span><small>Drafts</small><strong>{drafts}</strong><em>Not visible to families</em></article>
+          <article><span><CalendarClock size={18} /></span><small>Upcoming</small><strong>{upcoming}</strong></article>
+          <article><span><UsersRound size={18} /></span><small>Participants</small><strong>{events.reduce((sum, event) => sum + event.counts.participants, 0)}</strong></article>
+          <article><span><CalendarCheck2 size={18} /></span><small>Open registers</small><strong>{awaitingRegisters}</strong></article>
+          <article><span><ShieldCheck size={18} /></span><small>Drafts</small><strong>{drafts}</strong></article>
         </section>
 
         <section className="campus-event-collection" aria-labelledby="campus-event-list-title">
           <header>
-            <div><span>School calendar</span><h2 id="campus-event-list-title">{view === "upcoming" ? "Upcoming events" : view === "draft" ? "Draft events" : "Past events"}</h2></div>
+            <div><h2 id="campus-event-list-title">{view === "upcoming" ? "Upcoming events" : view === "draft" ? "Draft events" : "Past events"}</h2></div>
             <div className="campus-event-tabs" role="tablist" aria-label="Filter events">
               {(["upcoming", "draft", "past"] as EventView[]).map((item) => (
                 <button key={item} type="button" role="tab" aria-selected={view === item} className={view === item ? "is-active" : ""} onClick={() => onViewChange(item)}>

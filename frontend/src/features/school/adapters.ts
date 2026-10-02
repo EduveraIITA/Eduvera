@@ -287,7 +287,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
       : undefined,
     homeworkItems: response.homework_items?.map((item) => ({ id: item.id, title: item.title, body: item.body, subject: item.subject_name, dueAt: item.due_at, completedAt: item.completed_at })),
     metrics: {
-      attendance: hasAttendance ? `${attendance.toFixed(1)}%` : "—",
+      attendance: hasAttendance ? `${attendance.toFixed(1)}%` : "N/A",
       attendanceStatus: !hasAttendance ? "Not recorded" : attendance >= (response.semester_metrics.attendance_threshold ?? 85) ? "Safe Zone" : "Needs Attention",
       attendanceTrend: response.semester_metrics.attendance_trend_percent,
       attendanceRank: response.semester_metrics.attendance_rank,

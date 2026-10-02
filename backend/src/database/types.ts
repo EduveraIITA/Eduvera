@@ -13,6 +13,7 @@ export interface UserTable {
   password_hash: string;
   first_name: string;
   last_name: string;
+  avatar_url: Generated<string>;
   role: "student" | "parent" | "staff" | "admin";
   is_active: Generated<boolean>;
   created_at: Timestamp;
@@ -21,7 +22,7 @@ export interface UserTable {
 
 export interface SchoolTable { id: Generated<string>; name: string; code: string; timezone: Generated<string>; attendance_submission_cutoff: Generated<string>; created_at: Timestamp }
 export interface MembershipTable { id: Generated<string>; user_id: string; school_id: string; role: "student" | "guardian" | "staff" | "admin"; is_active: Generated<boolean>; created_at: Timestamp }
-export interface SchoolPersonTable { id: Generated<string>; school_id: string; first_name: string; last_name: Generated<string>; contact_phone: Generated<string>; contact_email: Generated<string>; revision: Generated<number>; created_at: Timestamp }
+export interface SchoolPersonTable { id: Generated<string>; school_id: string; first_name: string; last_name: Generated<string>; contact_phone: Generated<string>; contact_email: Generated<string>; avatar_url: Generated<string>; revision: Generated<number>; created_at: Timestamp }
 export interface GuardianSchoolProfileTable { school_id: string; guardian_id: string; person_id: string }
 export interface StudentTable { id: Generated<string>; person_id: Generated<string>; user_id: string | null; school_id: string; admission_number: string; date_of_birth: DateOnly | null; blood_group: string | null; emergency_contact: string | null; avatar_url: Generated<string>; created_at: Timestamp }
 export interface ParentTable { id: Generated<string>; user_id: string | null; phone: Generated<string>; created_at: Timestamp }
@@ -35,7 +36,17 @@ export interface AttendanceRecordTable { id: Generated<string>; student_id: stri
 export interface AttendanceRegisterTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; state: Generated<"draft" | "submitted" | "locked">; revision: Generated<number>; submitted_by: string | null; submitted_at: NullableTimestamp; locked_by: string | null; locked_at: NullableTimestamp; reopened_by: string | null; reopened_at: NullableTimestamp; reopen_reason: string | null; created_at: Timestamp; updated_at: Timestamp }
 export interface AttendanceSubmissionTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; submitted_by: string; idempotency_key: string; request_hash: string; request_id: string; register_revision: number; records_count: number; changed_count: number; result_status: Generated<number>; result_body: Generated<Json>; source_photo_session_id: string | null; completed_at: Timestamp; created_at: Timestamp }
 export interface AttendanceRecordRevisionTable { id: Generated<number>; attendance_record_id: string; attendance_submission_id: string | null; attendance_register_id: string | null; school_id: string; student_id: string; class_section_id: string; date: DateOnly; previous_status: AttendanceRecordTable["status"] | null; new_status: AttendanceRecordTable["status"]; previous_remarks: string | null; new_remarks: Generated<string>; previous_check_in_at: NullableTimestamp; new_check_in_at: NullableTimestamp; previous_check_out_at: NullableTimestamp; new_check_out_at: NullableTimestamp; reason: string; changed_by: string; request_id: string; register_revision: number; created_at: Timestamp }
-export interface SchoolCalendarDayTable { id: Generated<string>; school_id: string; date: DateOnly; is_instructional: boolean; label: Generated<string>; created_at: Timestamp; updated_at: Timestamp }
+export interface SchoolCalendarDayTable {
+  id: Generated<string>; school_id: string; date: DateOnly; is_instructional: boolean;
+  label: Generated<string>; kind: Generated<"public_holiday" | "local_holiday" | "emergency_closure" | "instructional_override">;
+  reason: Generated<string>; revision: Generated<number>; created_by: Generated<string | null>; updated_by: Generated<string | null>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CurriculumSubjectTargetTable {
+  school_id: string; term_id: string; class_section_id: string; subject_id: string;
+  target_minutes: number; revision: Generated<number>; updated_by: string | null;
+  created_at: Timestamp; updated_at: Timestamp;
+}
 export interface GateEventTable { id: Generated<string>; student_id: string; occurred_at: Timestamp; direction: "in" | "out"; gate: string; source: Generated<string>; device_reference: Generated<string> }
 export interface TimetableSlotTable { id: Generated<string>; class_section_id: string; term_id: string; subject_id: string | null; weekday: number; period_number: number; starts_at: TimeOnly; ends_at: TimeOnly; slot_type: Generated<"class" | "break" | "activity">; title: Generated<string>; room: Generated<string>; teacher_user_id: string | null; teacher_designation: Generated<string> }
 export interface AttendancePolicyTable { id: Generated<string>; term_id: string; name: string; minimum_percentage: string; medical_document_after_days: Generated<number>; policy_text: Generated<string> }
@@ -204,6 +215,7 @@ export interface Database {
   attendance_submissions: AttendanceSubmissionTable;
   attendance_record_revisions: AttendanceRecordRevisionTable;
   school_calendar_days: SchoolCalendarDayTable;
+  curriculum_subject_targets: CurriculumSubjectTargetTable;
   gate_events: GateEventTable;
   timetable_slots: TimetableSlotTable;
   attendance_policies: AttendancePolicyTable;

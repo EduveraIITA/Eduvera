@@ -37,6 +37,20 @@ export function shiftMonth(year: number, month0: number, delta: number): [number
   return [d.getFullYear(), d.getMonth()];
 }
 
+export function shiftDate(iso: string, days: number) {
+  const date = new Date(`${iso}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return isoOf(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+export function shiftIsoMonth(iso: string, delta: number) {
+  const [year, month0] = parseYm(iso);
+  const day = Number(iso.slice(8, 10));
+  const target = new Date(year, month0 + delta, 1);
+  const boundedDay = Math.min(day, new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate());
+  return isoOf(target.getFullYear(), target.getMonth(), boundedDay);
+}
+
 export function parseYm(iso: string): [number, number] {
   const [y, m] = iso.split("-").map(Number);
   return [y ?? 1970, (m ?? 1) - 1];

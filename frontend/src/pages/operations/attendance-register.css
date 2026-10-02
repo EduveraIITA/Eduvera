@@ -6,7 +6,7 @@
 }
 .roll-call-summary {
   padding: 20px 24px 0;
-  border: 1px solid var(--edura-border);
+  border: 0;
   border-radius: var(--edura-radius-feature);
   background: var(--edura-surface);
   box-shadow: var(--edura-shadow-card);

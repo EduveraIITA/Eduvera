@@ -203,7 +203,7 @@ export function StudentLeaveNewPage({
       <form className="student-page-stack leave-new-page" onSubmit={submit}>
         <header className="page-title-row">
           <button className="square-soft-button" type="button" aria-label="Go back" onClick={onBack ?? (() => navigate(-1))}><ArrowLeft size={20} /></button>
-          <div><h1>Apply Leave</h1><p>{context ? `Excusal request for ${context.studentName}` : "Excusal Request for Homeroom"}</p></div>
+          <div><h1>Apply leave</h1></div>
           <span className="term-indicator"><i />{context?.termLabel ?? "Term 1"}</span>
         </header>
 

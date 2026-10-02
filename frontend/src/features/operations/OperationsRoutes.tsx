@@ -4,8 +4,8 @@ import { useSearchParams } from "react-router-dom";
 import { schoolDateToday } from "../../lib/schoolTime";
 import {
   PrincipalHomePage,
-  PrincipalTimetablePage,
 } from "../../pages/operations/PrincipalPages";
+import { PrincipalTimetablePage } from "../../pages/operations/TimetableBuilderPage";
 import {
   TeacherAttendancePage,
   TeacherHomePage,
@@ -14,6 +14,9 @@ import {
 import { AttendanceWorkspacePage } from "../../pages/operations/AttendanceWorkspacePage";
 import {
   createTimetableSlot,
+  createSchoolClosure,
+  copyTimetableDay,
+  deleteSchoolClosure,
   deleteTimetableSlot,
   getAttendanceRegisterHistory,
   getPrincipalHome,
@@ -22,9 +25,12 @@ import {
   getTeacherHome,
   lockAttendanceRegister,
   saveTeacherAttendance,
+  saveCurriculumTarget,
   unlockAttendanceRegister,
   updateTimetableSlot,
   type NewTimetableSlot,
+  type CurriculumTargetInput,
+  type SchoolClosureInput,
   type TeacherAttendanceResponse,
   type TeacherAttendanceSaveInput,
 } from "./api";
@@ -208,7 +214,9 @@ export function PrincipalAttendanceRoute() {
 
 export function PrincipalTimetableRoute() {
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ["principal-timetable"], queryFn: getPrincipalTimetable });
+  const [params, setParams] = useSearchParams();
+  const termId = params.get("term") || undefined;
+  const query = useQuery({ queryKey: ["principal-timetable", termId ?? "current"], queryFn: () => getPrincipalTimetable(termId) });
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["principal-timetable"] });
     await query.refetch();
@@ -216,14 +224,23 @@ export function PrincipalTimetableRoute() {
   const create = useMutation({ mutationFn: (slot: NewTimetableSlot) => createTimetableSlot(slot) });
   const update = useMutation({ mutationFn: ({ id, slot }: { id: string; slot: NewTimetableSlot }) => updateTimetableSlot(id, slot) });
   const remove = useMutation({ mutationFn: deleteTimetableSlot });
+  const copy = useMutation({ mutationFn: copyTimetableDay });
+  const target = useMutation({ mutationFn: (input: CurriculumTargetInput) => saveCurriculumTarget(input) });
+  const closure = useMutation({ mutationFn: (input: SchoolClosureInput) => createSchoolClosure(input) });
+  const removeClosure = useMutation({ mutationFn: ({ date, revision, reason }: { date: string; revision: number; reason: string }) => deleteSchoolClosure(date, revision, reason) });
   if (query.isPending) return <Loading />;
   if (query.error) return <Failure error={query.error} />;
   return (
     <PrincipalTimetablePage
       data={query.data}
+      onTermChange={(nextTermId) => { const next = new URLSearchParams(params); next.set("term", nextTermId); setParams(next); }}
       onCreate={async (slot) => { await create.mutateAsync(slot); await refresh(); }}
       onUpdate={async (id, slot) => { await update.mutateAsync({ id, slot }); await refresh(); }}
       onDelete={async (id) => { await remove.mutateAsync(id); await refresh(); }}
+      onCopy={async (input) => { const result = await copy.mutateAsync(input); await refresh(); return result; }}
+      onSaveTarget={async (input) => { await target.mutateAsync(input); await refresh(); }}
+      onCreateClosure={async (input) => { await closure.mutateAsync(input); await refresh(); }}
+      onDeleteClosure={async (date, revision, reason) => { await removeClosure.mutateAsync({ date, revision, reason }); await refresh(); }}
     />
   );
 }

@@ -172,3 +172,56 @@ export async function teacherSummary(
   );
   return { start, end, days, totals };
 }
+
+export async function adminSummary(
+  db: PlanDb,
+  user: AuthUser,
+  schoolId: string,
+  start: string,
+  end: string,
+  classSectionId?: string,
+) {
+  await authorize(db, user, schoolId, "admin");
+  const classFilter = classSectionId
+    ? sql`AND class_section_id=${classSectionId}::uuid`
+    : sql``;
+  const days = (
+    await sql<{
+      date: string;
+      periods: number;
+      classes: number;
+      pending: number;
+      accepted: number;
+      declined: number;
+      cancelled: number;
+    }>`WITH days AS (
+      SELECT generate_series(${start}::date,${end}::date,'1 day')::date AS day
+    )
+    SELECT d.day::text AS date,
+      count(e.id) FILTER (WHERE NOT e.cancelled)::int AS periods,
+      count(DISTINCT e.class_section_id) FILTER (WHERE e.id IS NOT NULL AND NOT e.cancelled)::int AS classes,
+      count(e.id) FILTER (WHERE e.coverage_status IN ('unassigned','pending','declined') AND NOT e.cancelled)::int AS pending,
+      count(e.id) FILTER (WHERE e.coverage_status='accepted' AND NOT e.cancelled)::int AS accepted,
+      count(e.id) FILTER (WHERE e.coverage_status='declined' AND NOT e.cancelled)::int AS declined,
+      count(e.id) FILTER (WHERE e.cancelled)::int AS cancelled
+    FROM days d
+    LEFT JOIN LATERAL (
+      SELECT * FROM effective_school_schedule(${schoolId}::uuid,d.day)
+      WHERE true ${classFilter}
+    ) e ON true
+    GROUP BY d.day
+    ORDER BY d.day`.execute(db)
+  ).rows;
+  const totals = days.reduce(
+    (sum, day) => ({
+      periods: sum.periods + day.periods,
+      classes: sum.classes + day.classes,
+      pending: sum.pending + day.pending,
+      accepted: sum.accepted + day.accepted,
+      declined: sum.declined + day.declined,
+      cancelled: sum.cancelled + day.cancelled,
+    }),
+    { periods: 0, classes: 0, pending: 0, accepted: 0, declined: 0, cancelled: 0 },
+  );
+  return { start, end, days, totals };
+}

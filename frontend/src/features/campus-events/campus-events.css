@@ -63,8 +63,8 @@
 
 .campus-events-ops-hero {
   display: flex;
-  min-height: 168px;
-  padding: 26px 28px;
+  min-height: 112px;
+  padding: 20px 22px;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
@@ -85,7 +85,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.campus-events-ops-hero h1 { margin: 7px 0; font-size: clamp(24px, 3vw, 31px); line-height: 1.18; letter-spacing: -0.04em; }
+.campus-events-ops-hero h1 { margin: 5px 0 0; font-size: clamp(24px, 3vw, 31px); line-height: 1.18; letter-spacing: -0.04em; }
 .campus-events-ops-hero p { max-width: 64ch; font-size: 13px; line-height: 1.65; opacity: 0.84; }
 .campus-events-ops-hero .campus-event-primary { flex: 0 0 auto; color: var(--edura-brand); background: #fff; box-shadow: none; }
 
@@ -100,7 +100,7 @@
   padding: 17px;
   align-content: start;
   gap: 5px;
-  border: 1px solid var(--edura-border);
+  border: 0;
   border-radius: var(--edura-radius-card);
   background: var(--edura-surface);
   box-shadow: var(--edura-shadow-card);
@@ -108,7 +108,6 @@
 .campus-event-metrics article > span { display: grid; width: 34px; height: 34px; margin-bottom: 3px; place-items: center; border-radius: 10px; color: var(--edura-brand); background: var(--edura-brand-soft); }
 .campus-event-metrics small { color: var(--edura-ink-muted); font-size: 11px; font-weight: 700; }
 .campus-event-metrics strong { font-size: 24px; line-height: 1.2; }
-.campus-event-metrics em { color: var(--edura-ink-muted); font-size: 11px; font-style: normal; }
 
 .campus-event-collection,
 .campus-event-detail-panel,
@@ -117,7 +116,7 @@
 .family-event-panel,
 .family-event-response {
   padding: 22px;
-  border: 1px solid var(--edura-border);
+  border: 0;
   border-radius: var(--edura-radius-feature);
   background: var(--edura-surface);
   box-shadow: var(--edura-shadow-card);
@@ -179,12 +178,16 @@
   padding: 16px;
   grid-template-columns: 58px minmax(0, 1fr);
   gap: 16px;
-  border: 1px solid var(--edura-border);
+  border: 0;
   border-radius: var(--edura-radius-card);
   background: #fff;
+  box-shadow: var(--edura-shadow-card);
   transition: transform var(--edura-motion), border-color var(--edura-motion), box-shadow var(--edura-motion);
 }
-.campus-event-card:hover { border-color: #bdccef; box-shadow: var(--edura-shadow-card); transform: translateY(-1px); }
+.campus-event-card:hover { box-shadow: 0 10px 26px rgba(29, 78, 216, .08); transform: translateY(-1px); }
+.campus-event-collection .campus-event-list { gap: 0; }
+.campus-event-collection .campus-event-card { border-radius: 0; box-shadow: none; }
+.campus-event-collection .campus-event-card + .campus-event-card { border-top: 1px solid var(--edura-border); }
 .campus-event-card__date { display: grid; width: 58px; height: 66px; align-content: center; justify-items: center; border-radius: 13px; color: var(--edura-brand); background: var(--edura-brand-soft); }
 .campus-event-card__date strong { font-size: 21px; line-height: 1; }
 .campus-event-card__date span { margin-top: 4px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
@@ -410,7 +413,7 @@
 .campus-test-attendance { margin-top: 15px; }
 
 .campus-event-register-page { display: grid; gap: 15px; }
-.campus-event-register-hero { display: flex; min-height: 138px; padding: 24px 26px; align-items: center; justify-content: space-between; gap: 20px; }
+.campus-event-register-hero { display: flex; min-height: 108px; padding: 20px 22px; align-items: center; justify-content: space-between; gap: 20px; }
 .campus-event-register-hero h1 { margin: 5px 0; font-size: 28px; letter-spacing: -0.04em; }
 .campus-event-register-hero p { font-size: 11px; opacity: 0.78; }
 .campus-event-register-state { color: #fff; background: rgba(255, 255, 255, 0.15); }
@@ -455,7 +458,8 @@
 .family-event-detail { display: grid; padding: 0 24px 30px; gap: 16px; }
 .family-events-hero { padding: 24px; }
 .family-events-hero > span { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.78; }
-.family-events-hero h1 { margin: 6px 0; font-size: 27px; letter-spacing: -0.04em; }
+.family-events-hero h1,
+.family-events-hero h2 { margin: 0; font-size: 27px; letter-spacing: -0.04em; }
 .family-events-hero p { max-width: 54ch; font-size: 12px; line-height: 1.55; opacity: 0.82; }
 .family-events-hero > div { display: flex; margin-top: 18px; align-items: baseline; gap: 6px; }
 .family-events-hero > div strong { margin-left: 12px; font-size: 20px; }
@@ -464,7 +468,8 @@
 .family-event-tabs { justify-self: start; }
 .family-event-detail .campus-event-back { margin: 0; }
 .family-event-detail-hero { padding: 25px; }
-.family-event-detail-hero h1 { margin: 9px 0 7px; font-size: 28px; letter-spacing: -0.04em; }
+.family-event-detail-hero h1,
+.family-event-detail-hero h2 { margin: 9px 0 7px; font-size: 28px; letter-spacing: -0.04em; }
 .family-event-detail-hero > p { max-width: 60ch; font-size: 12px; line-height: 1.6; opacity: 0.84; }
 .family-event-response__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .family-event-response__buttons button { display: flex; min-height: 45px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--edura-border); border-radius: 11px; color: var(--edura-brand); background: #fff; font-size: 11px; font-weight: 800; }
@@ -513,7 +518,7 @@
   display: grid;
   padding: 18px;
   gap: 14px;
-  border: 1px solid var(--edura-border);
+  border: 0;
   border-radius: var(--edura-radius-feature);
   background: var(--edura-surface);
   box-shadow: var(--edura-shadow-card);

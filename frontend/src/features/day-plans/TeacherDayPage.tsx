@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Clock3,
   MapPin,
-  X,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
@@ -17,27 +16,25 @@ import {
   timeLabel,
   dateLabel,
   type DayPeriod,
-  type TeacherDaySummary,
 } from "./api";
-import {
-  compactDayLabel,
-  firstOfMonth,
-  groupSummaryByMonth,
-  monthDays,
-  monthLabel,
-  shortMonthLabel,
-  summaryRange,
-  visibleStrip,
-  type TeacherCalendarView,
-} from "./teacher-date-navigation";
+import { TimetableNavigator, timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
 import { CoverageResponse } from "./CoverageResponse";
 import "./day-plans.css";
 export default function TeacherDayPage() {
   const [params, setParams] = useSearchParams();
   const date = params.get("date") || schoolDateToday();
+  const requestedView = params.get("view");
+  const view: TimetableView = ["day", "week", "month", "year"].includes(requestedView ?? "")
+    ? requestedView as TimetableView
+    : "day";
   const setDate = (nextDate: string) => {
     const next = new URLSearchParams(params);
     next.set("date", nextDate);
+    setParams(next);
+  };
+  const setView = (nextView: TimetableView) => {
+    const next = new URLSearchParams(params);
+    next.set("view", nextView);
     setParams(next);
   };
   return (
@@ -50,18 +47,22 @@ export default function TeacherDayPage() {
     >
       <div className="day-workspace">
         <h1 className="sr-only">My timetable</h1>
-        <TeacherDayPanel date={date} onDateChange={setDate} />
+        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} />
       </div>
     </OperationsShell>
   );
 }
 export function TeacherDayPanel({
   date,
+  view = "day",
   onDateChange,
+  onViewChange,
   compact = false,
 }: {
   date: string;
+  view?: TimetableView;
   onDateChange?: (date: string) => void;
+  onViewChange?: (view: TimetableView) => void;
   compact?: boolean;
 }) {
   const auth = useAuth(),
@@ -87,11 +88,13 @@ export function TeacherDayPanel({
     : rows;
   return (
     <>
-      {!compact && onDateChange ? (
+      {!compact && onDateChange && onViewChange ? (
         <TeacherDateNavigator
           date={date}
+          view={view}
           schoolId={schoolId}
           onDateChange={onDateChange}
+          onViewChange={onViewChange}
         />
       ) : null}
       <section className="day-panel">
@@ -174,7 +177,7 @@ export function TeacherDayPanel({
                   <div className="day-period-meta">
                     <span>
                       <Clock3 size={14} />
-                      {timeLabel(p.starts_at)}–{timeLabel(p.ends_at)}
+                      {timeLabel(p.starts_at)}-{timeLabel(p.ends_at)}
                     </span>
                     {p.room ? (
                       <span>
@@ -258,36 +261,18 @@ export function TeacherDayPanel({
 
 function TeacherDateNavigator({
   date,
+  view,
   schoolId,
   onDateChange,
+  onViewChange,
 }: {
   date: string;
+  view: TimetableView;
   schoolId: string;
   onDateChange: (date: string) => void;
+  onViewChange: (view: TimetableView) => void;
 }) {
-  const [calendarView, setCalendarView] = useState<TeacherCalendarView | null>(
-    null,
-  );
-  const stripRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    const centerSelectedDate = () => {
-      const selected = strip.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
-      if (!selected) return;
-      const item = selected.getBoundingClientRect();
-      const container = strip.getBoundingClientRect();
-      strip.scrollTo({
-        left: strip.scrollLeft + item.left - container.left - (strip.clientWidth - item.width) / 2,
-        behavior: "auto",
-      });
-    };
-    centerSelectedDate();
-    const observer = new ResizeObserver(centerSelectedDate);
-    observer.observe(strip);
-    return () => observer.disconnect();
-  }, [date]);
-  const range = summaryRange(date, calendarView ?? "month");
+  const range = timetableSummaryRange(date, view);
   const summary = useQuery({
     queryKey: [
       "school",
@@ -300,207 +285,17 @@ function TeacherDateNavigator({
     queryFn: () => getTeacherSummary(schoolId, range.start, range.end),
     enabled: !!schoolId,
   });
-  const days = summary.data?.days ?? [];
-  const dayMap = new Map(days.map((day) => [day.date, day]));
-  const openCalendar = (view: TeacherCalendarView) => {
-    setCalendarView((current) => (current === view ? null : view));
-  };
   return (
-    <div className="teacher-date-navigation">
-      <div className="teacher-date-board">
-        <div className="teacher-date-band">
-          <p className="teacher-date-context">{monthLabel(date)}</p>
-          <div className="teacher-day-strip" aria-label="Teaching days" ref={stripRef}>
-            {visibleStrip(date).map((day) => (
-              <DayStripButton
-                key={day}
-                day={day}
-                active={day === date}
-                summary={dayMap.get(day)}
-                onDateChange={onDateChange}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="teacher-date-mode" role="group" aria-label="Calendar view">
-          <Link to="/teacher/timetable/weekly">Week</Link>
-          {(["month", "year"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={calendarView === option}
-              aria-expanded={calendarView === option}
-              aria-controls={calendarView === option ? "teacher-calendar-overview" : undefined}
-              onClick={() => openCalendar(option)}
-            >
-              {option === "month" ? "Month" : "Year"}
-            </button>
-          ))}
-        </div>
-      </div>
-      {calendarView ? (
-        <div className="teacher-calendar-overview" id="teacher-calendar-overview">
-          <header className="teacher-calendar-dialog-header">
-            <div>
-              <span className="day-eyebrow">
-                {calendarView === "month" ? "Monthly view" : "Yearly view"}
-              </span>
-              <h2>
-                {calendarView === "month"
-                  ? monthLabel(date)
-                  : `${date.slice(0, 4)} overview`}
-              </h2>
-            </div>
-            <button
-              className="day-icon-button"
-              type="button"
-              aria-label="Close calendar view"
-              onClick={() => setCalendarView(null)}
-            >
-              <X size={18} />
-            </button>
-          </header>
-          {summary.isPending ? (
-            <div className="day-skeleton" role="status" aria-label="Loading teaching totals">
-              <span />
-              <span />
-            </div>
-          ) : summary.isError ? (
-            <div className="day-error" role="alert">
-              <p>{summary.error.message}</p>
-              <button
-                className="day-secondary"
-                type="button"
-                onClick={() => void summary.refetch()}
-              >
-                Reload calendar
-              </button>
-            </div>
-          ) : calendarView === "month" ? (
-            <TeacherMonthView
-              date={date}
-              summary={summary.data}
-              onDateChange={(nextDate) => {
-                onDateChange(nextDate);
-                setCalendarView(null);
-              }}
-            />
-          ) : (
-            <TeacherYearView
-              date={date}
-              summary={summary.data}
-              onDateChange={(nextDate) => {
-                onDateChange(nextDate);
-                setCalendarView(null);
-              }}
-            />
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DayStripButton({
-  day,
-  active,
-  summary,
-  onDateChange,
-}: {
-  day: string;
-  active: boolean;
-  summary?: TeacherDaySummary["days"][number];
-  onDateChange: (date: string) => void;
-}) {
-  const label = compactDayLabel(day);
-  return (
-    <button
-      className="teacher-day-chip"
-      type="button"
-      aria-pressed={active}
-      aria-label={`${dateLabel(day)}${summary ? `, ${summary.periods} periods` : ""}`}
-      onClick={() => onDateChange(day)}
-    >
-      <span>{label.weekday}</span>
-      <strong>{label.day}</strong>
-      <small>{summary ? summary.periods ? `${summary.periods} periods` : "Free" : "…"}</small>
-      {summary?.pending ? <i>{summary.pending}</i> : null}
-    </button>
-  );
-}
-
-function TeacherMonthView({
-  date,
-  summary,
-  onDateChange,
-}: {
-  date: string;
-  summary?: TeacherDaySummary;
-  onDateChange: (date: string) => void;
-}) {
-  const dayMap = new Map((summary?.days ?? []).map((day) => [day.date, day]));
-  const days = monthDays(date);
-  return (
-    <div className="teacher-calendar-panel">
-      <header>
-        <span>{monthLabel(date)}</span>
-        <strong>{summary?.totals.periods ?? 0} periods</strong>
-      </header>
-      <div className="teacher-month-grid" aria-label="Monthly teaching load">
-        {days.map((day) => {
-          const item = dayMap.get(day);
-          return (
-            <button
-              key={day}
-              type="button"
-              aria-pressed={day === date}
-              onClick={() => onDateChange(day)}
-            >
-              <span>{day.slice(-2)}</span>
-              <strong>{item?.periods ?? 0}</strong>
-              {item?.pending ? <i>{item.pending}</i> : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TeacherYearView({
-  date,
-  summary,
-  onDateChange,
-}: {
-  date: string;
-  summary?: TeacherDaySummary;
-  onDateChange: (date: string) => void;
-}) {
-  const months = groupSummaryByMonth(summary?.days ?? []);
-  const max = Math.max(1, ...months.map((month) => month.periods));
-  return (
-    <div className="teacher-calendar-panel">
-      <header>
-        <span>{date.slice(0, 4)} overview</span>
-        <strong>{summary?.totals.periods ?? 0} periods</strong>
-      </header>
-      <div className="teacher-year-grid" aria-label="Yearly teaching load">
-        {months.map((month) => (
-          <button
-            key={month.month}
-            type="button"
-            aria-pressed={date.startsWith(month.month)}
-            onClick={() => onDateChange(firstOfMonth(`${month.month}-01`))}
-          >
-            <span>{shortMonthLabel(month.month)}</span>
-            <strong>{month.periods}</strong>
-            <em
-              className={`is-load-${Math.max(1, Math.ceil((month.periods / max) * 10))}`}
-            />
-            {month.pending ? <i>{month.pending}</i> : null}
-          </button>
-        ))}
-      </div>
-    </div>
+    <TimetableNavigator
+      date={date}
+      view={view}
+      summary={summary.data}
+      loading={summary.isPending}
+      error={summary.isError ? summary.error.message : undefined}
+      contextLabel="My teaching schedule"
+      onDateChange={onDateChange}
+      onViewChange={onViewChange}
+      onRetry={() => void summary.refetch()}
+    />
   );
 }

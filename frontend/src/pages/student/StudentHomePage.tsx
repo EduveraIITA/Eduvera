@@ -260,7 +260,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
         )}
 
         <section className="student-home-overview" aria-labelledby="student-home-overview-heading">
-          <header><div><h2 id="student-home-overview-heading">Your day at a glance</h2></div><b>Live</b></header>
+          <header><div><h2 id="student-home-overview-heading">Today</h2></div></header>
           <div>
             <button type="button" onClick={() => navigate("/student/attendance")}>
               <span className="tone-blue"><ClipboardCheck size={19} /></span><small>Attendance</small><strong className={attendanceScoreTone}>{data.attendancePercent.toFixed(1)}%</strong><em className={attendanceSafe ? "is-safe" : "is-warning"}>{attendanceSafe ? "Safe zone" : "Needs attention"}</em>

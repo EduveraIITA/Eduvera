@@ -122,6 +122,7 @@ const attendanceLockSchema = z.object({
   reason: z.string().trim().min(3).max(500).optional(),
 });
 const timetableSlotSchema = z.object({
+  term_id: z.string().uuid().optional(),
   class_section_id: z.string().uuid(),
   subject_id: z.string().uuid().nullable().optional(),
   weekday: z.number().int().min(1).max(7),
@@ -133,6 +134,47 @@ const timetableSlotSchema = z.object({
   room: z.string().trim().max(80).optional().default(""),
   teacher_user_id: z.string().uuid().nullable().optional(),
   teacher_designation: z.string().trim().max(120).optional().default("Subject Teacher"),
+});
+const timetableCopyDaySchema = z.object({
+  term_id: z.string().uuid(),
+  class_section_id: z.string().uuid(),
+  source_weekday: z.number().int().min(1).max(7),
+  target_weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(6),
+  replace: z.boolean().default(false),
+  reason: z.string().trim().min(3).max(500),
+}).superRefine((value, context) => {
+  if (new Set(value.target_weekdays).size !== value.target_weekdays.length) {
+    context.addIssue({ code: "custom", message: "Choose each target day once.", path: ["target_weekdays"] });
+  }
+  if (value.target_weekdays.includes(value.source_weekday)) {
+    context.addIssue({ code: "custom", message: "The source day cannot also be a target day.", path: ["target_weekdays"] });
+  }
+});
+const curriculumTargetSchema = z.object({
+  term_id: z.string().uuid(),
+  class_section_id: z.string().uuid(),
+  subject_id: z.string().uuid(),
+  target_minutes: z.number().int().min(30).max(120000),
+  expected_revision: z.number().int().min(0),
+  reason: z.string().trim().min(3).max(500),
+});
+const schoolClosureSchema = z.object({
+  term_id: z.string().uuid(),
+  starts_on: z.string().regex(datePattern),
+  ends_on: z.string().regex(datePattern),
+  kind: z.enum(["public_holiday", "local_holiday", "emergency_closure"]),
+  label: z.string().trim().min(3).max(160),
+  reason: z.string().trim().min(3).max(500),
+}).superRefine((value, context) => {
+  if (value.ends_on < value.starts_on) {
+    context.addIssue({ code: "custom", message: "The closure end cannot be before its start.", path: ["ends_on"] });
+  } else if (daysInclusive(value.starts_on, value.ends_on) > 31) {
+    context.addIssue({ code: "custom", message: "A closure range cannot exceed 31 days.", path: ["ends_on"] });
+  }
+});
+const schoolClosureDeleteSchema = z.object({
+  expected_revision: z.number().int().min(1),
+  reason: z.string().trim().min(3).max(500),
 });
 const notificationPageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -508,6 +550,25 @@ export class SchoolService {
         .where("role", "in", ["staff", "admin"]).where("is_active", "=", true).executeTakeFirst());
     }
     if (!allowed) throw new ForbiddenException(`An active ${role} membership is required for this operation.`);
+  }
+
+  async calendarDays(user: AuthUser, query: Record<string, string>) {
+    const input = z.object({
+      school_id: z.string().uuid(),
+      from: z.string().date(),
+      to: z.string().date(),
+    }).refine((value) => value.from <= value.to, { message: "Calendar start must not follow its end." })
+      .refine((value) => (new Date(`${value.to}T00:00:00`).getTime() - new Date(`${value.from}T00:00:00`).getTime()) / 86_400_000 <= 92, { message: "Calendar ranges cannot exceed 92 days." })
+      .parse(query);
+    const membership = await this.db.selectFrom("school_memberships").select("id")
+      .where("user_id", "=", user.id).where("school_id", "=", input.school_id)
+      .where("is_active", "=", true).executeTakeFirst();
+    if (!membership) throw new ForbiddenException("An active school membership is required for this calendar.");
+    return this.db.selectFrom("school_calendar_days").select([
+      "date", "is_instructional", "label", "kind", "reason", "revision",
+    ])
+      .where("school_id", "=", input.school_id).where("date", ">=", input.from).where("date", "<=", input.to)
+      .orderBy("date").execute();
   }
 
   private async requireSchoolRole(user: AuthUser, roles: Array<"staff" | "admin">, schoolId?: string) {
@@ -1572,10 +1633,11 @@ export class SchoolService {
   async studentAttendanceScreen(user: AuthUser, studentId?: string) {
     const student = await this.studentForUser(user, studentId);
     const [, enrollment] = await Promise.all([this.requireRole(user, student, "student"), this.enrollment(student.id)]);
-    const [summary, subjects, ranking] = await Promise.all([
+    const [summary, subjects, ranking, records] = await Promise.all([
       this.attendanceSummary(student.id, enrollment),
       this.subjectAttendance(student.id, enrollment.term_id),
       this.classAttendanceRanking(student.id, enrollment),
+      this.attendanceRecords(student.id, enrollment),
     ]);
     return {
       student: await this.studentDto(student, enrollment),
@@ -1583,6 +1645,7 @@ export class SchoolService {
       summary,
       subjects,
       ranking,
+      calendar: records,
     };
   }
 
@@ -1675,6 +1738,67 @@ export class SchoolService {
       day_plan: await this.dayPlanSummary(enrollment.class_section_id,selectedDate),
       days: [...grouped.entries()].sort(([left], [right]) => left - right).map(([weekday, periods]) => ({ weekday, weekday_label: weekdayLabels[weekday], periods })),
     };
+  }
+
+  async timetableSummaryScreen(
+    user: AuthUser,
+    startValue: string,
+    endValue: string,
+    selectedDateValue?: string,
+    studentId?: string,
+    portal: "student" | "guardian" = "student",
+  ) {
+    if (!datePattern.test(startValue) || !datePattern.test(endValue))
+      throw new BadRequestException("Use ISO date format YYYY-MM-DD.");
+    const startMs = Date.parse(`${startValue}T00:00:00Z`);
+    const endMs = Date.parse(`${endValue}T00:00:00Z`);
+    const dayCount = Math.round((endMs - startMs) / 86_400_000) + 1;
+    if (dayCount < 1) throw new BadRequestException("End date must follow start date.");
+    if (dayCount > 370) throw new BadRequestException("Timetable summary ranges are limited to 370 days.");
+    const student = await this.studentForUser(user, studentId);
+    await this.requireRole(user, student, portal);
+    const selectedDate = selectedDateValue ?? await this.schoolLocalDate(student.school_id);
+    if (!datePattern.test(selectedDate)) throw new BadRequestException("Use ISO date format YYYY-MM-DD.");
+    const enrollment = await this.enrollment(student.id, selectedDate);
+    const days = (
+      await sql<{
+        date: string;
+        periods: number;
+        classes: number;
+        pending: number;
+        accepted: number;
+        declined: number;
+        cancelled: number;
+      }>`WITH days AS (
+        SELECT generate_series(${startValue}::date,${endValue}::date,'1 day')::date AS day
+      )
+      SELECT d.day::text AS date,
+        count(e.id) FILTER (WHERE NOT e.cancelled)::int AS periods,
+        CASE WHEN count(e.id) FILTER (WHERE NOT e.cancelled)>0 THEN 1 ELSE 0 END::int AS classes,
+        0::int AS pending,
+        0::int AS accepted,
+        0::int AS declined,
+        count(e.id) FILTER (WHERE e.cancelled)::int AS cancelled
+      FROM days d
+      LEFT JOIN LATERAL (
+        SELECT * FROM effective_school_schedule(${student.school_id}::uuid,d.day)
+        WHERE class_section_id=${enrollment.class_section_id}::uuid
+      ) e ON true
+      GROUP BY d.day
+      ORDER BY d.day`.execute(this.db)
+    ).rows;
+    const totals = days.reduce(
+      (sum, day) => ({
+        periods: sum.periods + day.periods,
+        classes: sum.classes + day.classes,
+        pending: 0,
+        accepted: 0,
+        declined: 0,
+        cancelled: sum.cancelled + day.cancelled,
+      }),
+      { periods: 0, classes: 0, pending: 0, accepted: 0, declined: 0, cancelled: 0 },
+    );
+    return { start: startValue, end: endValue, days, totals };
   }
 
   async leaveApplyScreen(user: AuthUser, studentId?: string, request?: FastifyRequest) {
@@ -2429,13 +2553,74 @@ export class SchoolService {
     };
   }
 
-  async principalTimetableScreen(user: AuthUser) {
+  async principalTimetableScreen(user: AuthUser, requestedTermId?: string) {
     const membership = await this.requireSchoolRole(user, ["admin"]);
-    const [classes, subjects, teachers, slots] = await Promise.all([
-      this.db.selectFrom("class_sections").selectAll().where("school_id", "=", membership.school_id).orderBy("grade").orderBy("section").execute(),
+    const terms = await this.db.selectFrom("academic_terms")
+      .select(["id", "academic_year", "name", "starts_on", "ends_on", "is_active"])
+      .where("school_id", "=", membership.school_id)
+      .orderBy("starts_on", "desc")
+      .execute();
+    const selectedTerm = requestedTermId
+      ? terms.find((term) => term.id === requestedTermId)
+      : terms.find((term) => term.is_active) ?? terms[0];
+    if (requestedTermId && !selectedTerm) throw new BadRequestException("The selected term does not belong to this school.");
+    if (!selectedTerm) {
+      return {
+        terms: [], selected_term_id: null, classes: [], subjects: [], teachers: [], slots: [], conflicts: [],
+        calendar_exceptions: [], coverage: [], school_date: await this.schoolLocalDate(membership.school_id),
+      };
+    }
+    const [classes, subjects, teachers, slots, calendarExceptions, coverage, schoolDate] = await Promise.all([
+      this.db.selectFrom("class_sections").selectAll().where("school_id", "=", membership.school_id).where("academic_year", "=", selectedTerm.academic_year).orderBy("grade").orderBy("section").execute(),
       this.db.selectFrom("subjects").select(["id", "code", "name", "short_name", "color"]).where("school_id", "=", membership.school_id).orderBy("name").execute(),
       this.db.selectFrom("school_memberships as m").innerJoin("users as u", "u.id", "m.user_id").select(["u.id", "u.first_name", "u.last_name"]).where("m.school_id", "=", membership.school_id).where("m.role", "=", "staff").where("m.is_active", "=", true).execute(),
-      sql<any>`SELECT ts.*, cs.grade, cs.section, s.name AS subject_name, u.first_name, u.last_name FROM timetable_slots ts JOIN class_sections cs ON cs.id=ts.class_section_id JOIN academic_terms t ON t.id=ts.term_id AND t.is_active LEFT JOIN subjects s ON s.id=ts.subject_id LEFT JOIN users u ON u.id=ts.teacher_user_id WHERE cs.school_id=${membership.school_id}::uuid ORDER BY ts.weekday,ts.period_number,cs.grade,cs.section`.execute(this.db),
+      sql<any>`SELECT ts.*, cs.grade, cs.section, s.name AS subject_name, u.first_name, u.last_name FROM timetable_slots ts JOIN class_sections cs ON cs.id=ts.class_section_id LEFT JOIN subjects s ON s.id=ts.subject_id LEFT JOIN users u ON u.id=ts.teacher_user_id WHERE cs.school_id=${membership.school_id}::uuid AND ts.term_id=${selectedTerm.id}::uuid ORDER BY ts.weekday,ts.period_number,cs.grade,cs.section`.execute(this.db),
+      this.db.selectFrom("school_calendar_days")
+        .select(["id", "date", "is_instructional", "label", "kind", "reason", "revision"])
+        .where("school_id", "=", membership.school_id)
+        .where("date", ">=", dateOnly(selectedTerm.starts_on)).where("date", "<=", dateOnly(selectedTerm.ends_on))
+        .orderBy("date").execute(),
+      sql<{
+        class_section_id: string; subject_id: string; weekly_periods: number; weekly_minutes: number;
+        projected_periods: number; projected_minutes: number; target_minutes: number | null; revision: number | null;
+      }>`
+        WITH baseline AS (
+          SELECT slot.class_section_id,slot.subject_id,
+            count(*)::int AS weekly_periods,
+            round(sum(extract(epoch FROM (slot.ends_at-slot.starts_at))/60))::int AS weekly_minutes
+          FROM timetable_slots slot
+          JOIN class_sections class ON class.id=slot.class_section_id
+          WHERE class.school_id=${membership.school_id}::uuid
+            AND slot.term_id=${selectedTerm.id}::uuid
+            AND slot.slot_type='class' AND slot.subject_id IS NOT NULL
+          GROUP BY slot.class_section_id,slot.subject_id
+        ), effective AS (
+          SELECT schedule.class_section_id,schedule.subject_id,
+            count(*)::int AS projected_periods,
+            round(sum(extract(epoch FROM (schedule.ends_at-schedule.starts_at))/60))::int AS projected_minutes
+          FROM generate_series(${dateOnly(selectedTerm.starts_on)}::date,${dateOnly(selectedTerm.ends_on)}::date,'1 day') day
+          CROSS JOIN LATERAL effective_school_schedule(${membership.school_id}::uuid,day::date) schedule
+          WHERE schedule.term_id=${selectedTerm.id}::uuid
+            AND schedule.slot_type='class' AND schedule.subject_id IS NOT NULL AND NOT schedule.cancelled
+          GROUP BY schedule.class_section_id,schedule.subject_id
+        )
+        SELECT class.id AS class_section_id,subject.id AS subject_id,
+          COALESCE(baseline.weekly_periods,0)::int AS weekly_periods,
+          COALESCE(baseline.weekly_minutes,0)::int AS weekly_minutes,
+          COALESCE(effective.projected_periods,0)::int AS projected_periods,
+          COALESCE(effective.projected_minutes,0)::int AS projected_minutes,
+          target.target_minutes,target.revision
+        FROM class_sections class CROSS JOIN subjects subject
+        LEFT JOIN baseline ON baseline.class_section_id=class.id AND baseline.subject_id=subject.id
+        LEFT JOIN effective ON effective.class_section_id=class.id AND effective.subject_id=subject.id
+        LEFT JOIN curriculum_subject_targets target ON target.term_id=${selectedTerm.id}::uuid
+          AND target.class_section_id=class.id AND target.subject_id=subject.id
+        WHERE class.school_id=${membership.school_id}::uuid
+          AND class.academic_year=${selectedTerm.academic_year}
+          AND subject.school_id=${membership.school_id}::uuid
+        ORDER BY class.grade,class.section,subject.name
+      `.execute(this.db),
+      this.schoolLocalDate(membership.school_id),
     ]);
     const conflicts = await sql<any>`
       SELECT a.id AS first_slot_id, b.id AS second_slot_id, a.weekday, a.starts_at, a.ends_at,
@@ -2443,15 +2628,216 @@ export class SchoolService {
       FROM timetable_slots a JOIN timetable_slots b ON a.id < b.id AND a.weekday=b.weekday
         AND a.starts_at < b.ends_at AND b.starts_at < a.ends_at
         AND ((a.teacher_user_id=b.teacher_user_id AND a.teacher_user_id IS NOT NULL) OR (a.room=b.room AND a.room<>''))
-      JOIN class_sections cs ON cs.id=a.class_section_id WHERE cs.school_id=${membership.school_id}::uuid
+      JOIN class_sections cs ON cs.id=a.class_section_id WHERE cs.school_id=${membership.school_id}::uuid AND a.term_id=${selectedTerm.id}::uuid AND b.term_id=${selectedTerm.id}::uuid
       ORDER BY a.weekday,a.starts_at
     `.execute(this.db);
     return {
+      terms,
+      selected_term_id: selectedTerm.id,
       classes: classes.map((row) => ({ ...row, name: `Class ${row.grade}${row.section}` })), subjects,
       teachers: teachers.map((row) => ({ id: row.id, name: `${row.first_name} ${row.last_name}`.trim() })),
       slots: slots.rows.map((row) => ({ ...row, class_name: `Class ${row.grade}${row.section}`, display_title: row.subject_name ?? row.title, teacher_name: row.teacher_user_id ? `${row.first_name} ${row.last_name}`.trim() : null, weekday_label: weekdayLabels[row.weekday] })),
       conflicts: conflicts.rows,
+      calendar_exceptions: calendarExceptions,
+      coverage: coverage.rows.map((row) => ({
+        ...row,
+        weekly_periods: Number(row.weekly_periods), weekly_minutes: Number(row.weekly_minutes),
+        projected_periods: Number(row.projected_periods), projected_minutes: Number(row.projected_minutes),
+        target_minutes: row.target_minutes === null ? null : Number(row.target_minutes),
+        revision: row.revision === null ? null : Number(row.revision),
+      })),
+      school_date: schoolDate,
     };
+  }
+
+  async setCurriculumSubjectTarget(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    const data = curriculumTargetSchema.parse(body);
+    const membership = await this.requireSchoolRole(user, ["admin"]);
+    const [term, section, subject] = await Promise.all([
+      this.db.selectFrom("academic_terms").select(["id", "academic_year"])
+        .where("id", "=", data.term_id).where("school_id", "=", membership.school_id).executeTakeFirst(),
+      this.db.selectFrom("class_sections").select(["id", "academic_year"])
+        .where("id", "=", data.class_section_id).where("school_id", "=", membership.school_id).executeTakeFirst(),
+      this.db.selectFrom("subjects").select("id")
+        .where("id", "=", data.subject_id).where("school_id", "=", membership.school_id).executeTakeFirst(),
+    ]);
+    if (!term || !section || !subject || term.academic_year !== section.academic_year) {
+      throw new BadRequestException("The selected term, class and subject must belong to the same school year.");
+    }
+    return this.db.transaction().execute(async (tx) => {
+      await lockSchedule(tx, membership.school_id);
+      const current = await tx.selectFrom("curriculum_subject_targets").selectAll()
+        .where("term_id", "=", data.term_id).where("class_section_id", "=", data.class_section_id)
+        .where("subject_id", "=", data.subject_id).forUpdate().executeTakeFirst();
+      if ((current?.revision ?? 0) !== data.expected_revision) {
+        throw new ConflictException("This subject target changed in another session. Refresh and try again.");
+      }
+      const target = current
+        ? await tx.updateTable("curriculum_subject_targets").set({
+            target_minutes: data.target_minutes,
+            revision: current.revision + 1,
+            updated_by: user.id,
+            updated_at: new Date(),
+          }).where("term_id", "=", data.term_id).where("class_section_id", "=", data.class_section_id)
+            .where("subject_id", "=", data.subject_id).returningAll().executeTakeFirstOrThrow()
+        : await tx.insertInto("curriculum_subject_targets").values({
+            school_id: membership.school_id,
+            term_id: data.term_id,
+            class_section_id: data.class_section_id,
+            subject_id: data.subject_id,
+            target_minutes: data.target_minutes,
+            updated_by: user.id,
+          }).returningAll().executeTakeFirstOrThrow();
+      await tx.insertInto("audit_events").values({
+        action: current ? "timetable.curriculum_target.updated" : "timetable.curriculum_target.created",
+        actor_id: user.id, school_id: membership.school_id,
+        target_type: "curriculum_subject_target", target_id: data.class_section_id,
+        request_id: request.requestId, ip_hash: null,
+        metadata: {
+          term_id: data.term_id, class_section_id: data.class_section_id, subject_id: data.subject_id,
+          previous_minutes: current?.target_minutes ?? null, target_minutes: data.target_minutes, reason: data.reason,
+        },
+      }).execute();
+      await this.events.enqueueTimetableUpdate(tx, {
+        schoolId: membership.school_id, classSectionId: data.class_section_id,
+        slotId: data.class_section_id, requestId: request.requestId, action: "updated",
+      });
+      return target;
+    });
+  }
+
+  async createSchoolClosure(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    const data = schoolClosureSchema.parse(body);
+    const membership = await this.requireSchoolRole(user, ["admin"]);
+    const [term, schoolDate] = await Promise.all([
+      this.db.selectFrom("academic_terms").select(["id", "starts_on", "ends_on"])
+        .where("id", "=", data.term_id).where("school_id", "=", membership.school_id).executeTakeFirst(),
+      this.schoolLocalDate(membership.school_id),
+    ]);
+    if (!term || data.starts_on < dateOnly(term.starts_on) || data.ends_on > dateOnly(term.ends_on)) {
+      throw new BadRequestException("The closure dates must fall inside the selected academic term.");
+    }
+    if (data.starts_on < schoolDate) throw new BadRequestException("Past school-calendar dates cannot be changed here.");
+    const dates = (await sql<{ date: string }>`
+      SELECT day::date::text AS date
+      FROM generate_series(${data.starts_on}::date,${data.ends_on}::date,'1 day') day
+      ORDER BY day
+    `.execute(this.db)).rows.map((row) => row.date);
+    return this.db.transaction().execute(async (tx) => {
+      await lockSchedule(tx, membership.school_id);
+      const existing = await tx.selectFrom("school_calendar_days").select(["date", "label"])
+        .where("school_id", "=", membership.school_id).where("date", "in", dates).executeTakeFirst();
+      if (existing) throw new ConflictException(`${dateOnly(existing.date)} already has a school-calendar override: ${existing.label || "Calendar override"}.`);
+      const attendanceConflict = await sql<{ date: string }>`
+        SELECT register.date::text AS date
+        FROM attendance_registers register
+        WHERE register.school_id=${membership.school_id}::uuid AND register.date=ANY(${dates}::date[])
+          AND (register.state IN ('submitted','locked') OR EXISTS (
+            SELECT 1 FROM attendance_records record
+            WHERE record.class_section_id=register.class_section_id AND record.date=register.date
+          ))
+        ORDER BY register.date LIMIT 1
+      `.execute(tx);
+      if (attendanceConflict.rows[0]) {
+        throw new ConflictException(`Attendance has already been recorded for ${attendanceConflict.rows[0].date}. Resolve the register before closing this date.`);
+      }
+      const rows = await tx.insertInto("school_calendar_days").values(dates.map((date) => ({
+        school_id: membership.school_id, date, is_instructional: false,
+        label: data.label, kind: data.kind, reason: data.reason,
+        created_by: user.id, updated_by: user.id,
+      }))).returning(["id", "date", "is_instructional", "label", "kind", "reason", "revision"]).execute();
+      await tx.insertInto("audit_events").values({
+        action: "school_calendar.closure.created", actor_id: user.id, school_id: membership.school_id,
+        target_type: "school_calendar_range", target_id: rows[0]!.id,
+        request_id: request.requestId, ip_hash: null,
+        metadata: { term_id: data.term_id, starts_on: data.starts_on, ends_on: data.ends_on, kind: data.kind, label: data.label, reason: data.reason },
+      }).execute();
+      const audience = (await sql<{ user_id: string }>`
+        SELECT DISTINCT membership.user_id
+        FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+        WHERE membership.school_id=${membership.school_id}::uuid AND membership.is_active
+      `.execute(tx)).rows.map((row) => row.user_id);
+      const notify = data.kind === "emergency_closure" ? audience : [];
+      await this.events.enqueueUserEvent(tx, {
+        schoolId: membership.school_id, eventType: "calendar.updated",
+        aggregateType: "school_calendar_range", aggregateId: rows[0]!.id,
+        audienceUserIds: audience,
+        payload: {
+          action: "closure_created", starts_on: data.starts_on, ends_on: data.ends_on,
+          refresh: ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications"],
+        },
+        idempotencyKey: `calendar:${request.requestId}:created:${rows[0]!.id}`,
+        notificationUserIds: notify,
+        notificationPayload: notify.length ? {
+          kind: "general", title: data.label,
+          body: data.starts_on === data.ends_on ? `${data.reason} School is closed on ${data.starts_on}.` : `${data.reason} School is closed from ${data.starts_on} to ${data.ends_on}.`,
+          parent_link: `/parent/calendar?date=${data.starts_on}`,
+          student_link: `/student/calendar?date=${data.starts_on}`,
+          staff_link: `/teacher/calendar?date=${data.starts_on}`,
+          admin_link: `/principal/calendar?date=${data.starts_on}`,
+        } : null,
+      });
+      return { created: true as const, results: rows };
+    });
+  }
+
+  async deleteSchoolClosure(user: AuthUser, date: string, body: unknown, request: AuthenticatedRequest) {
+    if (!datePattern.test(date)) throw new BadRequestException("Use ISO date format YYYY-MM-DD.");
+    const data = schoolClosureDeleteSchema.parse(body);
+    const membership = await this.requireSchoolRole(user, ["admin"]);
+    const schoolDate = await this.schoolLocalDate(membership.school_id);
+    if (date < schoolDate) throw new BadRequestException("Past school-calendar dates cannot be changed here.");
+    return this.db.transaction().execute(async (tx) => {
+      await lockSchedule(tx, membership.school_id);
+      const current = await tx.selectFrom("school_calendar_days").selectAll()
+        .where("school_id", "=", membership.school_id).where("date", "=", date).forUpdate().executeTakeFirst();
+      if (!current || current.is_instructional) throw new NotFoundException("School closure not found.");
+      if (current.revision !== data.expected_revision) throw new ConflictException("This school-calendar date changed in another session. Refresh and try again.");
+      const attendanceConflict = await sql<{ found: boolean }>`
+        SELECT EXISTS (
+          SELECT 1 FROM attendance_registers register
+          WHERE register.school_id=${membership.school_id}::uuid AND register.date=${date}::date
+            AND (register.state IN ('submitted','locked') OR EXISTS (
+              SELECT 1 FROM attendance_records record
+              WHERE record.class_section_id=register.class_section_id AND record.date=register.date
+            ))
+        ) AS found
+      `.execute(tx);
+      if (attendanceConflict.rows[0]?.found) throw new ConflictException("Attendance exists for this date, so the closure cannot be removed here.");
+      await tx.deleteFrom("school_calendar_days").where("id", "=", current.id).execute();
+      await tx.insertInto("audit_events").values({
+        action: "school_calendar.closure.removed", actor_id: user.id, school_id: membership.school_id,
+        target_type: "school_calendar_day", target_id: current.id,
+        request_id: request.requestId, ip_hash: null,
+        metadata: { date, label: current.label, kind: current.kind, reason: data.reason },
+      }).execute();
+      const audience = (await sql<{ user_id: string }>`
+        SELECT DISTINCT membership.user_id
+        FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+        WHERE membership.school_id=${membership.school_id}::uuid AND membership.is_active
+      `.execute(tx)).rows.map((row) => row.user_id);
+      const notify = current.kind === "emergency_closure" ? audience : [];
+      await this.events.enqueueUserEvent(tx, {
+        schoolId: membership.school_id, eventType: "calendar.updated",
+        aggregateType: "school_calendar_day", aggregateId: current.id,
+        audienceUserIds: audience,
+        payload: {
+          action: "closure_removed", date,
+          refresh: ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications"],
+        },
+        idempotencyKey: `calendar:${request.requestId}:removed:${current.id}`,
+        notificationUserIds: notify,
+        notificationPayload: notify.length ? {
+          kind: "general", title: `${current.label} cancelled`,
+          body: `The closure on ${date} was removed. Check the timetable for the restored school day.`,
+          parent_link: `/parent/calendar?date=${date}`,
+          student_link: `/student/calendar?date=${date}`,
+          staff_link: `/teacher/calendar?date=${date}`,
+          admin_link: `/principal/calendar?date=${date}`,
+        } : null,
+      });
+      return { deleted: true as const, date };
+    });
   }
 
   async createTimetableSlot(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
@@ -2460,21 +2846,24 @@ export class SchoolService {
     const section = await this.db.selectFrom("class_sections").selectAll().where("id", "=", data.class_section_id).executeTakeFirst();
     if (!section) throw new NotFoundException("Class section not found.");
     const membership = await this.requireSchoolRole(user, ["admin"], section.school_id);
-    const term = await this.db.selectFrom("academic_terms").select("id").where("school_id", "=", membership.school_id).where("academic_year", "=", section.academic_year).where("is_active", "=", true).executeTakeFirst();
-    if (!term) throw new NotFoundException("No active term exists for this class.");
+    const term = await this.db.selectFrom("academic_terms").select(["id", "academic_year"]).where("school_id", "=", membership.school_id)
+      .$if(Boolean(data.term_id), (query) => query.where("id", "=", data.term_id!))
+      .$if(!data.term_id, (query) => query.where("academic_year", "=", section.academic_year).where("is_active", "=", true))
+      .executeTakeFirst();
+    if (!term || term.academic_year !== section.academic_year) throw new NotFoundException("The selected term is not available for this class.");
     if (data.teacher_user_id) {
       const teacher = await this.db.selectFrom("school_memberships").select("id").where("school_id", "=", membership.school_id).where("user_id", "=", data.teacher_user_id).where("role", "=", "staff").where("is_active", "=", true).executeTakeFirst();
       if (!teacher) throw new BadRequestException("Selected teacher is not active in this school.");
     }
-    const conflict = data.teacher_user_id || data.room ? await this.db.selectFrom("timetable_slots").select("id").where("term_id", "=", term.id).where("weekday", "=", data.weekday)
-      .where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at)
-      .where((eb) => eb.or([
-        ...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []),
-        ...(data.room ? [eb("room", "=", data.room)] : []),
-      ])).executeTakeFirst() : undefined;
-    if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
     return this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
+      const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", term.id).where("weekday", "=", data.weekday)
+        .where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at)
+        .where((eb) => eb.or([
+          ...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []),
+          ...(data.room ? [eb("room", "=", data.room)] : []),
+        ])).executeTakeFirst() : undefined;
+      if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
       const slot = await tx.insertInto("timetable_slots").values({
         class_section_id: data.class_section_id, term_id: term.id, subject_id: data.subject_id ?? null,
         weekday: data.weekday, period_number: data.period_number, starts_at: data.starts_at, ends_at: data.ends_at,
@@ -2494,16 +2883,17 @@ export class SchoolService {
     const current = await this.db.selectFrom("timetable_slots as ts").innerJoin("class_sections as cs", "cs.id", "ts.class_section_id").select(["ts.id", "ts.term_id", "ts.class_section_id", "cs.school_id"]).where("ts.id", "=", slotId).executeTakeFirst();
     if (!current) throw new NotFoundException("Timetable slot not found.");
     const membership = await this.requireSchoolRole(user, ["admin"], current.school_id);
+    if (data.term_id && data.term_id !== current.term_id) throw new BadRequestException("Move periods between terms by copying the timetable into the selected term.");
     const section = await this.db.selectFrom("class_sections").select("id").where("id", "=", data.class_section_id).where("school_id", "=", membership.school_id).executeTakeFirst();
     if (!section) throw new BadRequestException("Selected class does not belong to this school.");
     if (data.teacher_user_id) {
       const teacher = await this.db.selectFrom("school_memberships").select("id").where("school_id", "=", membership.school_id).where("user_id", "=", data.teacher_user_id).where("role", "=", "staff").where("is_active", "=", true).executeTakeFirst();
       if (!teacher) throw new BadRequestException("Selected teacher is not active in this school.");
     }
-    const conflict = data.teacher_user_id || data.room ? await this.db.selectFrom("timetable_slots").select("id").where("term_id", "=", current.term_id).where("id", "!=", slotId).where("weekday", "=", data.weekday).where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at).where((eb) => eb.or([...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []), ...(data.room ? [eb("room", "=", data.room)] : [])])).executeTakeFirst() : undefined;
-    if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
     return this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
+      const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", current.term_id).where("id", "!=", slotId).where("weekday", "=", data.weekday).where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at).where((eb) => eb.or([...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []), ...(data.room ? [eb("room", "=", data.room)] : [])])).executeTakeFirst() : undefined;
+      if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
       const slot = await tx.updateTable("timetable_slots").set({ class_section_id: data.class_section_id, subject_id: data.subject_id ?? null, teacher_user_id: data.teacher_user_id ?? null, weekday: data.weekday, period_number: data.period_number, starts_at: data.starts_at, ends_at: data.ends_at, slot_type: data.slot_type, title: data.title, room: data.room, teacher_designation: data.teacher_designation }).where("id", "=", slotId).returningAll().executeTakeFirstOrThrow();
       await protectPublishedPlans(tx,membership.school_id);
       await tx.insertInto("audit_events").values({ action: "timetable.slot.updated", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slot.id, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: data.class_section_id } }).execute();
@@ -2525,6 +2915,62 @@ export class SchoolService {
       await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: current.class_section_id, slotId, requestId: request.requestId, action: "deleted" });
     });
     return { deleted: true, id: slotId };
+  }
+
+  async copyTimetableDay(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    const data = timetableCopyDaySchema.parse(body);
+    const membership = await this.requireSchoolRole(user, ["admin"]);
+    const [term, section] = await Promise.all([
+      this.db.selectFrom("academic_terms").select(["id", "academic_year"]).where("id", "=", data.term_id).where("school_id", "=", membership.school_id).executeTakeFirst(),
+      this.db.selectFrom("class_sections").select(["id", "academic_year"]).where("id", "=", data.class_section_id).where("school_id", "=", membership.school_id).executeTakeFirst(),
+    ]);
+    if (!term || !section || term.academic_year !== section.academic_year) throw new BadRequestException("The selected class and term do not match.");
+    return this.db.transaction().execute(async (tx) => {
+      await lockSchedule(tx, membership.school_id);
+      const source = await tx.selectFrom("timetable_slots").selectAll()
+        .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "=", data.source_weekday)
+        .orderBy("period_number").execute();
+      if (!source.length) throw new BadRequestException("The source day has no periods to copy.");
+      const existingTargets = await tx.selectFrom("timetable_slots").select(["id", "weekday"])
+        .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "in", data.target_weekdays).execute();
+      if (existingTargets.length && !data.replace) throw new BadRequestException("One or more target days already contain periods. Choose Replace existing days to continue.");
+      const otherSlots = await tx.selectFrom("timetable_slots").select(["id", "class_section_id", "teacher_user_id", "weekday", "starts_at", "ends_at", "room"])
+        .where("term_id", "=", term.id).where("weekday", "in", data.target_weekdays)
+        .$if(data.replace, (query) => query.where("class_section_id", "!=", section.id))
+        .execute();
+      const planned = data.target_weekdays.flatMap((weekday) => source.map((slot) => ({ ...slot, weekday })));
+      const conflict = planned.find((candidate) => otherSlots.some((other) =>
+        other.weekday === candidate.weekday && other.starts_at < candidate.ends_at && other.ends_at > candidate.starts_at
+        && ((candidate.teacher_user_id && candidate.teacher_user_id === other.teacher_user_id) || (candidate.room && candidate.room === other.room)),
+      ));
+      if (conflict) throw new BadRequestException(`The copied ${weekdayLabels[conflict.weekday]} schedule conflicts with another teacher or room allocation.`);
+      if (data.replace) {
+        await tx.deleteFrom("timetable_slots").where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "in", data.target_weekdays).execute();
+      }
+      const inserted = await tx.insertInto("timetable_slots").values(planned.map((slot) => ({
+        class_section_id: slot.class_section_id,
+        term_id: slot.term_id,
+        subject_id: slot.subject_id,
+        weekday: slot.weekday,
+        period_number: slot.period_number,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+        slot_type: slot.slot_type,
+        title: slot.title,
+        room: slot.room,
+        teacher_user_id: slot.teacher_user_id,
+        teacher_designation: slot.teacher_designation,
+      }))).returning(["id", "weekday"]).execute();
+      await protectPublishedPlans(tx, membership.school_id);
+      const first = inserted[0]!;
+      await tx.insertInto("audit_events").values({
+        action: "timetable.day.copied", actor_id: user.id, school_id: membership.school_id,
+        target_type: "timetable_slot", target_id: first.id, request_id: request.requestId, ip_hash: null,
+        metadata: { class_section_id: section.id, term_id: term.id, source_weekday: data.source_weekday, target_weekdays: data.target_weekdays, replace: data.replace, reason: data.reason, periods_created: inserted.length },
+      }).execute();
+      await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: section.id, slotId: first.id, requestId: request.requestId, action: "updated" });
+      return { copied: true as const, periods_created: inserted.length, target_weekdays: data.target_weekdays };
+    });
   }
 
 }

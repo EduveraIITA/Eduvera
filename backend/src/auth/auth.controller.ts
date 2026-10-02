@@ -87,14 +87,23 @@ export class AuthController {
     return this.auth.response(user, session.csrfToken);
   }
 
-  @ApiCookieAuth()
+  @Public()
+  @SkipCsrf()
   @Post("logout/")
   @HttpCode(204)
-  async logout(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) reply: FastifyReply): Promise<void> {
-    await this.audit.record({ action: "auth.logout", request, actorId: request.authUser.id });
-    await this.auth.logout(request.sessionHash);
+  async logout(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply): Promise<void> {
+    const rawToken = signedCookie(request, config().SESSION_COOKIE_NAME);
     reply.clearCookie(config().SESSION_COOKIE_NAME, { path: "/" });
     reply.clearCookie("csrftoken", { path: "/" });
+    if (!rawToken) return;
+
+    const tokenHash = AuthService.tokenHash(rawToken);
+    const identity = await this.auth.resolveSession(rawToken).catch(() => null);
+    const work: Promise<unknown>[] = [this.auth.logout(tokenHash)];
+    if (identity) {
+      work.push(this.audit.record({ action: "auth.logout", request, actorId: identity.user.id }));
+    }
+    await Promise.allSettled(work);
   }
 
   @ApiCookieAuth()

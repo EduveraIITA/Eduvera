@@ -11,6 +11,7 @@ import {
 
 import { schoolClock } from "../../lib/schoolTime";
 import {DayPlanNotice,type PublishedDayNotice} from '../../features/day-plans/DayPlanNotice';
+import { TimetableNavigator, type TimetableSummary, type TimetableView } from "../../features/timetable/TimetableNavigator";
 import { StudentShell, type StudentRouteMap } from "./StudentShell";
 import { ParentShell } from "../parent/ParentShell";
 import type { ParentChildSummary, ParentPageAction } from "../parent/parentTypes";
@@ -49,6 +50,16 @@ function periodRange(period: TimetablePeriod) {
   return period.endTime ? `${period.time} - ${period.endTime}` : period.time;
 }
 
+function dateLabelForStudent(value?: string) {
+  if (!value) return "Selected school day";
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
 function kitForPeriod(period: TimetablePeriod) {
   const subject = period.subject.toLowerCase();
   if (/lunch|recess|break|free|dismissal/.test(subject)) return null;
@@ -68,6 +79,12 @@ function kitForPeriod(period: TimetablePeriod) {
 
 export interface StudentTimetablePageProps {
   dayPlan?:PublishedDayNotice|null;selectedDate?:string;onDateChange?:(date:string)=>void;
+  view?: TimetableView;
+  onViewChange?: (view: TimetableView) => void;
+  summary?: TimetableSummary;
+  summaryLoading?: boolean;
+  summaryError?: string;
+  onSummaryRetry?: () => void;
   days?: TimetableDay[];
   audience?: "student" | "parent";
   child?: ParentChildSummary;
@@ -103,6 +120,12 @@ function TimetableShell({
 
 export function StudentTimetablePage({
   dayPlan,selectedDate,onDateChange,
+  view = "day",
+  onViewChange,
+  summary,
+  summaryLoading,
+  summaryError,
+  onSummaryRetry,
   days = demoTimetableDays,
   audience = "student",
   child,
@@ -149,6 +172,25 @@ export function StudentTimetablePage({
       ?? [];
     return { day: source, items };
   }, [days, today,selectedDate]);
+  const selectedKey = selectedDate
+    ? weekdayKeys[new Date(`${selectedDate}T00:00:00Z`).getUTCDay()]
+    : undefined;
+  const displayDays = view === "week"
+    ? days
+    : days.filter((day) => day.isoDate === selectedDate || (!day.isoDate && day.key === selectedKey));
+  const navigator = selectedDate && onDateChange && onViewChange ? (
+    <TimetableNavigator
+      date={selectedDate}
+      view={view}
+      summary={summary}
+      loading={summaryLoading}
+      error={summaryError}
+      contextLabel={audience === "parent" ? `${studentName}'s schedule` : "My class schedule"}
+      onDateChange={onDateChange}
+      onViewChange={onViewChange}
+      onRetry={onSummaryRetry}
+    />
+  ) : null;
 
   useEffect(() => {
     if (!toast) return;
@@ -191,14 +233,14 @@ export function StudentTimetablePage({
     return (
       <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
         <div className="student-page-stack timetable-page">
+          {navigator}
           <section className="timetable-intro">
             <h1>{className} Timetable</h1>
-            {onDateChange?<label className="timetable-date-picker">School date<input type="date" value={selectedDate??currentSchoolClock.date} onChange={e=>{if(e.target.value)onDateChange(e.target.value);}}/></label>:null}
           </section>
-          <DayPlanNotice plan={dayPlan}/>
+          {view === "day" ? <DayPlanNotice plan={dayPlan}/> : null}
           <section className="student-card student-empty-state timetable-empty-state">
             <BookOpen size={24} />
-            <div><strong>No timetable published</strong><p>The school has not added periods for this week yet.</p></div>
+            <div><strong>No timetable published</strong><p>No periods are scheduled for the selected date.</p></div>
           </section>
         </div>
       </TimetableShell>
@@ -208,13 +250,13 @@ export function StudentTimetablePage({
   return (
     <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
       <div className="student-page-stack timetable-page">
+        {navigator}
         <section className="timetable-intro">
           <header>
-            <div><h1>{className} Timetable</h1><p>{termLabel} - {studentName}</p></div>
+            <div><h1>{className} Timetable</h1><p>{view === "week" ? "Week view" : "Selected day"} · {termLabel}</p></div>
             <button className={bellAlerts ? "square-soft-button is-active" : "square-soft-button"} type="button" aria-pressed={bellAlerts} aria-label="Save bell reminder preference" onClick={toggleBellAlerts}><Clock3 size={23} /></button>
           </header>
-          {onDateChange?<label className="timetable-date-picker">School date<input type="date" value={selectedDate??currentSchoolClock.date} onChange={e=>{if(e.target.value)onDateChange(e.target.value);}}/></label>:null}
-          {bellPeriod ? (
+          {view === "day" && bellPeriod ? (
             <div className="next-bell-banner" aria-label="Today bell status">
               <span><BellRing size={19} /></span>
               <span><small>{currentPeriod ? "Current period ends" : "Next bell"} <i /> <b>{bellMinutes ?? "-"} mins</b></small><strong>{bellPeriod.period} - {bellPeriod.subject}</strong></span>
@@ -223,12 +265,17 @@ export function StudentTimetablePage({
           ) : null}
         </section>
 
-        <DayPlanNotice plan={dayPlan}/>
+        {view === "day" ? <DayPlanNotice plan={dayPlan}/> : null}
 
-        <section className="student-card timetable-week-chart" aria-labelledby="week-chart-heading">
+        {displayDays.length === 0 ? (
+          <section className="student-card student-empty-state timetable-empty-state">
+            <BookOpen size={24} />
+            <div><strong>No periods scheduled</strong><p>This school day has no published classes.</p></div>
+          </section>
+        ) : <section className="student-card timetable-week-chart" aria-labelledby="week-chart-heading">
           <header>
-            <div><h2 id="week-chart-heading">Weekly period chart</h2><p>Published schedule for this week</p></div>
-            <strong>{days.reduce((total, day) => total + day.periods.filter(p=>!p.cancelled).length, 0)} periods/wk</strong>
+            <div><h2 id="week-chart-heading">{view === "week" ? "Weekly period chart" : view === "day" ? "Period schedule" : "Selected day schedule"}</h2><p>{view === "week" ? "Published schedule for this week" : dateLabelForStudent(selectedDate)}</p></div>
+            <strong>{displayDays.reduce((total, day) => total + day.periods.filter(p=>!p.cancelled).length, 0)} periods{view === "week" ? "/wk" : ""}</strong>
           </header>
           <div className="timetable-week-chart__scroller" ref={chartScrollerRef}>
             <table>
@@ -239,7 +286,7 @@ export function StudentTimetablePage({
                 </tr>
               </thead>
               <tbody>
-                {days.map((day) => (
+                {displayDays.map((day) => (
                   <tr key={day.isoDate??day.key} className={day.key === todayKey&&(!day.isoDate||day.isoDate===currentSchoolClock.date) ? "is-today" : ""}>
                     <th scope="row"><span>{day.shortLabel}</span><small>{day.date}</small></th>
                     {periodColumns.map((index) => {
@@ -258,9 +305,9 @@ export function StudentTimetablePage({
             </table>
           </div>
           <div className="timetable-legend"><span><i className="tone-math" />Maths</span><span><i className="tone-science" />Science</span><span><i className="tone-english" />English</span><span><i className="tone-language" />Languages</span><span><i className="tone-lab" />Labs</span><span><i className="tone-activity" />Activities</span></div>
-        </section>
+        </section>}
 
-        {todayKit.items.length ? (
+        {view === "day" && todayKit.items.length ? (
           <section className="student-card timetable-kit-card" aria-labelledby="timetable-kit-heading">
             <header><div><h2 id="timetable-kit-heading">{todayKit.day?.isoDate===currentSchoolClock.date?"Today's kit":"Materials to bring"}</h2><p>{todayKit.day?.longLabel ?? "Today"} · requested by your school.</p></div><strong>{todayKit.items.length}</strong></header>
             <div>{todayKit.items.map((item) => <span key={item}><Check size={13} />{item}</span>)}</div>

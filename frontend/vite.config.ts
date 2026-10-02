@@ -7,11 +7,18 @@ const devAllowedHosts = (process.env.VITE_ALLOWED_HOSTS ?? "")
   .split(",")
   .map((host) => host.trim())
   .filter(Boolean);
+const allowAllDevHosts = devAllowedHosts.includes("*");
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
+const trustedProxyOrigin = `http://${devHost}:${devPort}`;
 const backendProxy = {
   target: apiProxyTarget,
   changeOrigin: true,
   ws: true,
+  // Phone browsers reach Vite through an HTTPS ngrok host. The browser request
+  // is same-origin, but http-proxy otherwise forwards that public Origin to the
+  // local API, whose development CORS policy correctly trusts only localhost.
+  // Normalize only this private Vite -> API hop; production never uses Vite.
+  headers: { Origin: trustedProxyOrigin },
 };
 
 export default defineConfig({
@@ -23,7 +30,11 @@ export default defineConfig({
     host: devHost,
     port: devPort,
     strictPort: true,
-    allowedHosts: devAllowedHosts.length ? devAllowedHosts : undefined,
+    allowedHosts: allowAllDevHosts ? true : devAllowedHosts.length ? devAllowedHosts : undefined,
+    // This repository lives in a macOS File Provider folder, where native file
+    // events can be dropped. Polling makes every saved frontend edit reach HMR
+    // reliably, including sessions connected through ngrok.
+    watch: { usePolling: true, interval: 300 },
     proxy: {
       "/api": backendProxy,
       "/healthz": backendProxy,

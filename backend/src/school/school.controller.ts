@@ -54,6 +54,11 @@ export class SchoolController {
     return { results: await this.school.timetable(enrollment, weekday) };
   }
 
+  @Get("calendar/days/")
+  async calendarDays(@Req() request: AuthenticatedRequest, @Query() query: Record<string, string>) {
+    return { results: await this.school.calendarDays(request.authUser, query) };
+  }
+
   @Get("attendance-records/")
   async attendanceRecords(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     const student = await this.school.studentForUser(request.authUser, studentId);
@@ -166,6 +171,11 @@ export class SchoolController {
     return this.school.timetableScreen(request.authUser, mode, studentId, date, "guardian");
   }
 
+  @Get("screens/parent/timetable-summary/")
+  parentTimetableSummary(@Req() request: AuthenticatedRequest, @Query("start") start: string, @Query("end") end: string, @Query("date") date?: string, @Query("student_id") studentId?: string) {
+    return this.school.timetableSummaryScreen(request.authUser, start, end, date, studentId, "guardian");
+  }
+
   @Get("screens/student/attendance/")
   studentAttendance(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     return this.school.studentAttendanceScreen(request.authUser, studentId);
@@ -184,6 +194,11 @@ export class SchoolController {
   @Get("screens/student/timetable/:mode/")
   studentTimetable(@Req() request: AuthenticatedRequest, @Param("mode") mode: string, @Query("student_id") studentId?: string, @Query("date") date?: string) {
     return this.school.timetableScreen(request.authUser, mode, studentId, date);
+  }
+
+  @Get("screens/student/timetable-summary/")
+  studentTimetableSummary(@Req() request: AuthenticatedRequest, @Query("start") start: string, @Query("end") end: string, @Query("date") date?: string, @Query("student_id") studentId?: string) {
+    return this.school.timetableSummaryScreen(request.authUser, start, end, date, studentId);
   }
 
   @Get("screens/student/leave/apply/")
@@ -240,8 +255,8 @@ export class SchoolController {
   }
 
   @Get("screens/principal/timetable/")
-  principalTimetable(@Req() request: AuthenticatedRequest) {
-    return this.school.principalTimetableScreen(request.authUser);
+  principalTimetable(@Req() request: AuthenticatedRequest, @Query("term_id") termId?: string) {
+    return this.school.principalTimetableScreen(request.authUser, termId);
   }
 
   @Post("principal/timetable/slots/")
@@ -258,5 +273,26 @@ export class SchoolController {
   @HttpCode(200)
   principalTimetableDelete(@Req() request: AuthenticatedRequest, @Param("slotId") slotId: string) {
     return this.school.deleteTimetableSlot(request.authUser, slotId, request);
+  }
+
+  @Post("principal/timetable/copy-day/")
+  principalTimetableCopyDay(@Req() request: AuthenticatedRequest) {
+    return this.school.copyTimetableDay(request.authUser, request.body, request);
+  }
+
+  @Post("principal/timetable/targets/")
+  principalTimetableTarget(@Req() request: AuthenticatedRequest) {
+    return this.school.setCurriculumSubjectTarget(request.authUser, request.body, request);
+  }
+
+  @Post("principal/calendar/closures/")
+  principalCalendarClosureCreate(@Req() request: AuthenticatedRequest) {
+    return this.school.createSchoolClosure(request.authUser, request.body, request);
+  }
+
+  @Delete("principal/calendar/closures/:date/")
+  @HttpCode(200)
+  principalCalendarClosureDelete(@Req() request: AuthenticatedRequest, @Param("date") date: string) {
+    return this.school.deleteSchoolClosure(request.authUser, date, request.body, request);
   }
 }

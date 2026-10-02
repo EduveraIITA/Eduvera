@@ -34,6 +34,21 @@ export class DayPlanController {
   ) {
     return this.plans.teacherSummary(req.authUser, school, start, end);
   }
+  @Get("admin/summary") adminSummary(
+    @Req() req: AuthenticatedRequest,
+    @Query("school_id") school: string,
+    @Query("start") start: string,
+    @Query("end") end: string,
+    @Query("class_section_id") classSectionId?: string,
+  ) {
+    return this.plans.adminSummary(
+      req.authUser,
+      school,
+      start,
+      end,
+      classSectionId,
+    );
+  }
   @Get(":id") detail(
     @Req() req: AuthenticatedRequest,
     @Param("id") id: string,

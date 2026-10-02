@@ -1,6 +1,8 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { schoolDateToday } from "../../lib/schoolTime";
+import { timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
 import { ParentAttendancePage } from "../../pages/parent/ParentAttendancePage";
 import { ParentDiaryPage } from "../../pages/parent/ParentDiaryPage";
 import { ParentHomePage } from "../../pages/parent/ParentHomePage";
@@ -15,6 +17,7 @@ import {
   getParentHome,
   getParentLeave,
   getParentTimetable,
+  getParentTimetableSummary,
   performLeaveAction,
   setHomeworkCompleted,
 } from "./api";
@@ -198,11 +201,20 @@ export function ParentDiaryRoute() {
 }
 
 export function ParentTimetableRoute() {
-  const [params,setParams]=useSearchParams();const date=params.get('date')||undefined;
+  const [params,setParams]=useSearchParams();
+  const date=params.get('date')||undefined;
+  const requestedView=params.get("view");
+  const view: TimetableView=["day","week","month","year"].includes(requestedView??"")?requestedView as TimetableView:"day";
+  const anchor=date??schoolDateToday();
+  const range=timetableSummaryRange(anchor,view);
   const { studentId, selectStudent } = useSelectedStudent();
   const query = useQuery({
     queryKey: ["school", "parent", "timetable", studentId ?? "default",date],
     queryFn: () => getParentTimetable(date, studentId),
+  });
+  const summary=useQuery({
+    queryKey:["school","parent","timetable-summary",studentId??"default",range.start,range.end,anchor],
+    queryFn:()=>getParentTimetableSummary(range.start,range.end,anchor,studentId),
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
@@ -210,6 +222,8 @@ export function ParentTimetableRoute() {
     <StudentTimetablePage
       audience="parent"
       dayPlan={query.data.day_plan} selectedDate={query.data.selected_date} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
+      view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next);}}
+      summary={summary.data} summaryLoading={summary.isPending} summaryError={summary.isError?summary.error.message:undefined} onSummaryRetry={()=>void summary.refetch()}
       child={adaptStudentSummary(query.data.student)}
       onSelectChild={selectStudent}
       className={query.data.class_name}

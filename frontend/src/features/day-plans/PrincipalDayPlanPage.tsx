@@ -12,14 +12,15 @@ import { useAuth } from "../auth/AuthContext";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
-  dateLabel,
   getDayPlan,
+  getAdminSummary,
   getPlanOptions,
   startDayPlan,
   sharedDayPeriods,
   type DayPeriod,
   type PlanOptions,
 } from "./api";
+import { TimetableNavigator, timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
 import { DayPeriodList } from "./DayPeriodList";
 import { PlanEditor } from "./PlanEditor";
 import { CoverageResponse } from "./CoverageResponse";
@@ -31,6 +32,10 @@ export default function PrincipalDayPlanPage() {
   const schools = auth.memberships.filter((m) => m.role === "admin");
   const schoolId = params.get("school") || schools[0]?.school_id || "";
   const date = params.get("date") || schoolDateToday();
+  const requestedView = params.get("view");
+  const view: TimetableView = ["day", "week", "month", "year"].includes(requestedView ?? "")
+    ? requestedView as TimetableView
+    : "day";
   const query = useQuery({
     queryKey: ["school", "day-plans", "options", schoolId, date],
     queryFn: () => getPlanOptions(schoolId, date),
@@ -39,6 +44,12 @@ export default function PrincipalDayPlanPage() {
   const section =
     query.data?.classes.find((c) => c.id === params.get("class")) ??
     query.data?.classes[0];
+  const range = timetableSummaryRange(date, view);
+  const summary = useQuery({
+    queryKey: ["school", "day-plans", "admin-summary", schoolId, section?.id ?? "all", range.start, range.end],
+    queryFn: () => getAdminSummary(schoolId, range.start, range.end, section?.id),
+    enabled: !!schoolId,
+  });
   const set = (values: Record<string, string>) => {
     if (
       dirty &&
@@ -56,22 +67,48 @@ export default function PrincipalDayPlanPage() {
       title="Daily school plan"
       subtitle="Timetable"
       schoolName={schools.find((s) => s.school_id === schoolId)?.school_name}
+      contentHasHeading
     >
       <div className="day-workspace">
-        <header className="day-page-heading">
-          <div>
-            <span className="day-eyebrow">Timetable</span>
-            <h1>One clear plan for the day.</h1>
-            <p>
-              Prepare changes, coordinate cover, and keep families informed.
-            </p>
-          </div>
+        <div className="day-page-actions">
+          <h1>Timetable</h1>
           <Link className="day-secondary" to="/principal/timetable/weekly">
-            Weekly timetable <ArrowRight size={16} />
+            Manage timetable <ArrowRight size={16} />
           </Link>
-        </header>
-        <div className="day-filters">
-          {schools.length > 1 ? (
+        </div>
+        <TimetableNavigator
+          date={date}
+          view={view}
+          summary={summary.data}
+          loading={summary.isPending}
+          error={summary.isError ? summary.error.message : undefined}
+          contextControl={
+            <label className="timetable-context-select">
+              <span className="sr-only">Class</span>
+              <select
+                aria-label="Class"
+                value={section?.id ?? ""}
+                disabled={!query.data?.classes.length}
+                onChange={(e) => set({ class: e.target.value })}
+              >
+                {query.data?.classes.length ? (
+                  query.data.classes.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No classes</option>
+                )}
+              </select>
+            </label>
+          }
+          onDateChange={(nextDate) => set({ date: nextDate })}
+          onViewChange={(nextView) => set({ view: nextView })}
+          onRetry={() => void summary.refetch()}
+        />
+        {schools.length > 1 ? (
+          <div className="day-filters is-date-only">
             <label>
               School
               <select
@@ -85,38 +122,8 @@ export default function PrincipalDayPlanPage() {
                 ))}
               </select>
             </label>
-          ) : null}
-          <label>
-            School date
-            <input
-              aria-label="School date"
-              type="date"
-              required
-              value={date}
-              onChange={(e) => {
-                if (e.target.value) set({ date: e.target.value });
-              }}
-            />
-          </label>
-          <label>
-            Class
-            <select
-              aria-label="Plan class"
-              value={section?.id ?? ""}
-              onChange={(e) => set({ class: e.target.value })}
-            >
-              {query.data?.classes.length ? (
-                query.data.classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))
-              ) : (
-                <option value="">No classes for this date</option>
-              )}
-            </select>
-          </label>
-        </div>
+          </div>
+        ) : null}
         {query.isPending ? (
           <DayLoading />
         ) : query.isError ? (
@@ -126,13 +133,6 @@ export default function PrincipalDayPlanPage() {
           />
         ) : query.data ? (
           <>
-            {query.data.context.is_instructional === false ? (
-              <p className="day-notice">
-                <CalendarDays size={20} />
-                {query.data.context.label || "Non-instructional day"} · No
-                regular classes.
-              </p>
-            ) : null}
             {query.data.classes.some((c) => c.unresolved > 0) ? (
               <div className="day-coverage-strip">
                 <strong>Coverage needs attention</strong>
@@ -223,41 +223,52 @@ function PlanWorkspace({
   }
   const plan = detail.data;
   const live = sharedDayPeriods(plan, options.schedule, section.id);
-  const canEdit = date >= options.context.today;
+  const isClosed = options.context.is_instructional === false;
+  const canEdit = date >= options.context.today && (!isClosed || Boolean(id));
+  if (isClosed && !id && !live.length) {
+    return (
+      <section className="day-panel day-closed-state" aria-labelledby="closed-day-heading">
+        <span className="day-closed-state__icon"><CalendarDays size={22} /></span>
+        <div>
+          <h2 id="closed-day-heading">{options.context.label || "School closed"}</h2>
+          <p>No regular classes are scheduled.</p>
+        </div>
+        <Link className="day-closed-state__link" to={`/principal/calendar?date=${date}`}>
+          School calendar <ArrowRight size={15} />
+        </Link>
+      </section>
+    );
+  }
+  const scheduleActions = (
+    <div className="day-actions day-schedule-actions">
+      {plan?.draft_version ? null : canEdit ? (
+        <button
+          className="day-primary"
+          disabled={busy}
+          onClick={() => void start()}
+        >
+          {busy
+            ? "Preparing…"
+            : plan?.published_version
+              ? "Create revision"
+              : "Prepare changes"}
+        </button>
+      ) : (
+        <span className="day-status">Past schedule</span>
+      )}
+      {live.length || plan?.published_version ? (
+        <button
+          className="day-icon-button day-print"
+          aria-label="Print published day plan"
+          onClick={() => window.print()}
+        >
+          <Printer size={19} />
+        </button>
+      ) : null}
+    </div>
+  );
   return (
     <>
-      <div className="day-heading">
-        <div>
-          <span className="day-eyebrow">{section.name}</span>
-          <h2>{dateLabel(date)}</h2>
-        </div>
-        <div className="day-actions">
-          {plan?.draft_version ? (
-            <span className="day-status is-pending">Draft in progress</span>
-          ) : canEdit ? (
-            <button
-              className="day-primary"
-              disabled={busy}
-              onClick={() => void start()}
-            >
-              {busy
-                ? "Preparing…"
-                : plan?.published_version
-                  ? "Create revision"
-                  : "Prepare day changes"}
-            </button>
-          ) : (
-            <span className="day-status">Past schedule · read only</span>
-          )}
-          <button
-            className="day-icon-button day-print"
-            aria-label="Print published day plan"
-            onClick={() => window.print()}
-          >
-            <Printer size={19} />
-          </button>
-        </div>
-      </div>
       {error ? <DayFailure message={error} retry={() => void start()} /> : null}
       {id && detail.isPending ? (
         <DayLoading />
@@ -282,13 +293,10 @@ function PlanWorkspace({
       >
         <header className="day-heading">
           <div>
-            <span className="day-eyebrow">
-              {plan?.published_version
-                ? `Published · version ${plan.published_version}`
-                : "Weekly baseline"}
-            </span>
-            <h2 id="published-heading">Shared with teachers & families</h2>
+            <span className="day-eyebrow">{section.name}</span>
+            <h2 id="published-heading">Published timetable</h2>
           </div>
+          {scheduleActions}
         </header>
         {plan?.versions.find((v) => v.version === plan.published_version)
           ?.notice ? (
@@ -302,7 +310,10 @@ function PlanWorkspace({
         {live.length ? (
           <DayPeriodList periods={live} />
         ) : (
-          <p className="day-empty">No periods scheduled for this date.</p>
+          <div className="day-empty-state" role="status">
+            <CalendarDays size={20} />
+            <span><strong>No periods scheduled</strong><small>This class has no timetable entries for the selected date.</small></span>
+          </div>
         )}
         {plan?.published_periods
           .filter(

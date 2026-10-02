@@ -7,6 +7,6 @@ describe("Newly enrolled student presentation",()=>{
     const response=structuredClone(schoolApiFixture("/api/v1/screens/parent/home/")) as ParentHomeResponse;
     response.attendance={total:0,present:0,absent:0,late:0,excused:0,half_day:0,percentage:0};response.campus_presence=null;
     const data=adaptParentHome(response);
-    expect(data.idCard.attendanceRecorded).toBe(false);expect(data.metrics.attendance).toBe("—");expect(data.metrics.attendanceStatus).toBe("Not recorded");expect(data.presence.status).toBe("Not confirmed");
+    expect(data.idCard.attendanceRecorded).toBe(false);expect(data.metrics.attendance).toBe("N/A");expect(data.metrics.attendanceStatus).toBe("Not recorded");expect(data.presence.status).toBe("Not confirmed");
   });
 });

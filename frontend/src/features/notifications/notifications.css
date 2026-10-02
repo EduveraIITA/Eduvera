@@ -56,9 +56,11 @@
 .notification-panel > header svg { color: #ffffff; }
 
 .notification-panel__list {
+  display: grid;
   max-height: min(390px, 58dvh);
   overflow-y: auto;
-  padding: 5px;
+  padding: 8px;
+  gap: 7px;
 }
 
 .notification-panel__list > button {
@@ -70,9 +72,10 @@
   grid-template-columns: 34px 1fr;
   align-items: start;
   gap: 9px;
+  border: 1px solid var(--edura-border);
   border-radius: var(--edura-radius-control);
   color: var(--edura-ink);
-  background: transparent;
+  background: var(--edura-surface);
   text-align: left;
 }
 

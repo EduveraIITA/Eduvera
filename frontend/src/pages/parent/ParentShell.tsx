@@ -154,9 +154,9 @@ export function ParentShell({
           </div>
         </div>
         <div className="parent-header__context">
-          <span className="parent-header__page">{pageLabel}</span>
+          <h1 className="parent-header__page">{pageLabel}</h1>
           {active !== "home" && active !== "events" ? <span className="parent-header__child-label">
-            <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : presenceStatus === "away" ? "presence-dot presence-dot--away" : "presence-dot"} />
+            {presenceStatus ? <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : "presence-dot presence-dot--away"} /> : null}
             <span className="parent-header__child-name">{child.name} · Class {child.grade.replace("Grade ", "")}{child.section}</span>
           </span> : null}
         </div>

@@ -1,4 +1,8 @@
-import { apiFetch } from "../../lib/api";
+import { ApiError, apiFetch } from "../../lib/api";
+import {
+  getPrincipalTimetable,
+  type PrincipalTimetableResponse,
+} from "../operations/api";
 export interface PeriodInput {
   subject_id?: string | null;
   period_number: number;
@@ -138,6 +142,108 @@ export const getTeacherSummary = (
       end,
     })}`,
   );
+export const getAdminSummary = (
+  schoolId: string,
+  start: string,
+  end: string,
+  classSectionId?: string,
+) =>
+  apiFetch<TeacherDaySummary>(
+    `${base}/admin/summary?${new URLSearchParams({
+      school_id: schoolId,
+      start,
+      end,
+      ...(classSectionId ? { class_section_id: classSectionId } : {}),
+    })}`,
+  ).catch(async (error: unknown) => {
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    return getAdminSummaryFromPublishedTimetable(start, end, classSectionId);
+  });
+
+function datesBetween(start: string, end: string) {
+  const dates: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function selectedTerm(data: PrincipalTimetableResponse) {
+  return data.terms.find((term) => term.id === data.selected_term_id);
+}
+
+export function buildAdminSummaryFromPublishedTimetables(
+  timetables: PrincipalTimetableResponse[],
+  start: string,
+  end: string,
+  classSectionId?: string,
+): TeacherDaySummary {
+  const days = datesBetween(start, end).map((date) => {
+    const timetable = timetables.find((candidate) => {
+      const term = selectedTerm(candidate);
+      return term && date >= term.starts_on && date <= term.ends_on;
+    });
+    const closed = timetable?.calendar_exceptions.some(
+      (item) => item.date === date && !item.is_instructional,
+    );
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
+    const slots = !timetable || closed
+      ? []
+      : timetable.slots.filter(
+          (slot) =>
+            slot.weekday === weekday &&
+            (!classSectionId || slot.class_section_id === classSectionId),
+        );
+    return {
+      date,
+      periods: slots.length,
+      classes: new Set(slots.map((slot) => slot.class_section_id)).size,
+      pending: slots.filter((slot) => !slot.teacher_user_id).length,
+      accepted: 0,
+      declined: 0,
+      cancelled: 0,
+    };
+  });
+  const totals = days.reduce(
+    (sum, day) => ({
+      periods: sum.periods + day.periods,
+      classes: sum.classes + day.classes,
+      pending: sum.pending + day.pending,
+      accepted: sum.accepted + day.accepted,
+      declined: sum.declined + day.declined,
+      cancelled: sum.cancelled + day.cancelled,
+    }),
+    { periods: 0, classes: 0, pending: 0, accepted: 0, declined: 0, cancelled: 0 },
+  );
+  return { start, end, days, totals };
+}
+
+async function getAdminSummaryFromPublishedTimetable(
+  start: string,
+  end: string,
+  classSectionId?: string,
+) {
+  const current = await getPrincipalTimetable();
+  const overlappingTerms = current.terms.filter(
+    (term) => term.starts_on <= end && term.ends_on >= start,
+  );
+  const timetables = await Promise.all(
+    overlappingTerms.map((term) =>
+      term.id === current.selected_term_id
+        ? Promise.resolve(current)
+        : getPrincipalTimetable(term.id),
+    ),
+  );
+  return buildAdminSummaryFromPublishedTimetables(
+    timetables,
+    start,
+    end,
+    classSectionId,
+  );
+}
 const post = <T>(url: string, body: unknown) =>
   apiFetch<T>(url, { method: "POST", body: JSON.stringify(body) });
 export const startDayPlan = (

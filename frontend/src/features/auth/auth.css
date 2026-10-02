@@ -1,3 +1,4 @@
+/* Vite HMR keeps the phone preview synchronized during development. */
 .auth-page,
 .onboarding-page {
   min-height: 100dvh;
@@ -153,6 +154,8 @@
 .demo-entry__buttons button { position: relative; display: grid; min-height: 76px; padding: 11px 28px 11px 11px; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 8px; border: 1px solid #d8e1f1; border-radius: var(--edura-radius-card); color: #172943; background: #ffffff; text-align: left; }
 .demo-entry__buttons button:hover:not(:disabled) { border-color: #aebfff; background: #f7f9ff; }
 .demo-entry__buttons button > span { display: grid; width: 30px; height: 30px; grid-row: 1 / 3; place-items: center; border-radius: var(--edura-radius-control); color: var(--edura-brand); background: var(--edura-surface-strong); }
+.demo-entry__buttons button > span:has(img) { overflow: hidden; border-radius: 50%; }
+.demo-entry__buttons button > span img { width: 100%; height: 100%; object-fit: cover; }
 .demo-entry__buttons button > b { align-self: end; font-size: 11px; }
 .demo-entry__buttons button > small { align-self: start; color: #687287; font-size: 11px; }
 .demo-entry__buttons button > svg { position: absolute; right: 9px; color: var(--edura-brand-bright); }

@@ -175,8 +175,7 @@ export function StudentEligibilityPage({
               <span>{periodLabel}</span>
             </span>
           </div>
-          <h1>Hey {data.studentName}! <span aria-hidden="true">👋</span></h1>
-          <p>{data.streak !== undefined ? "Your current on-time streak is shown below." : "Review your current subject attendance position."}</p>
+          <h1>Attendance eligibility</h1>
         </section>
 
         <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
@@ -196,7 +195,7 @@ export function StudentEligibilityPage({
               ? <span><h2 id="next-class-heading">{data.nextClass.name}</h2><p><strong>{data.nextClass.room}</strong> - {data.nextClass.block} - {data.nextClass.teacher}</p></span>
               : <span><h2 id="next-class-heading">Next class details</h2><p>Open the timetable to see the school's published schedule.</p></span>}
           </div>
-          <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />View Full Timetable</button>
+          <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />View timetable</button>
         </section>
 
         <section className="eligibility-hero" aria-labelledby="semester-health-heading">
@@ -206,7 +205,7 @@ export function StudentEligibilityPage({
           </div>
           <div className="eligibility-safe-zone">
             <ShieldCheck size={20} />
-            <span><strong>{data.aggregate >= data.threshold ? "Eligible" : "Below Threshold"} <em>{data.safeLeaves > 0 ? `+${data.safeLeaves} Classes` : "No buffer"}</em></strong><p>{data.safeLeaves > 0 ? `You can miss up to ${data.safeLeaves} more ${data.subjectName} classes before reaching` : "Your current attendance is at or below"} the <b>{data.threshold}% minimum exam eligibility threshold</b>.</p></span>
+            <span><strong>{data.aggregate >= data.threshold ? "Eligible" : "Below threshold"} <em>{data.safeLeaves > 0 ? `+${data.safeLeaves} classes` : "No buffer"}</em></strong><p>{data.threshold}% minimum required</p></span>
           </div>
           <div className="eligibility-stats">
             <span><small>Attended</small><strong>{data.attended}</strong></span>

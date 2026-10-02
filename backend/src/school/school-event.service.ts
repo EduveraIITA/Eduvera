@@ -109,7 +109,7 @@ interface RegisterEventInput {
 
 interface UserEventInput {
   schoolId: string;
-  eventType: "leave.updated" | "notification.created" | "timetable.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated" | "diary.updated";
+  eventType: "leave.updated" | "notification.created" | "timetable.updated" | "calendar.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated" | "diary.updated";
   aggregateType: string;
   aggregateId: string;
   audienceUserIds: string[];

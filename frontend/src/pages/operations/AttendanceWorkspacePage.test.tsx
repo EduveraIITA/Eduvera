@@ -48,7 +48,9 @@ describe("attendance class workspace", () => {
   it("does not count a submission from an unscheduled teacher as complete", () => {
     show("principal", [row({ submission_status: "submitted", submission_authorized: false, submitted_by_name: "Kavita Mehta", marked_count: 25 })]);
     expect(screen.getByText("Assignment mismatch")).toBeVisible();
-    expect(screen.getByText("1 due")).toBeVisible();
+    const overview = screen.getByLabelText("Register overview");
+    expect(within(overview).getByText("Registers")).toBeVisible();
+    expect(within(overview).getAllByText("1")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "To submit 1" })).toBeVisible();
     expect(screen.getByText(/assignment review is required/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Review assignment mismatch for Class 7A" })).toBeVisible();

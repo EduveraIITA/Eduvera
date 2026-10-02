@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, CircleUserRound, LogOut, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { profileAvatar } from "../../lib/profileAvatars";
 import { useOptionalAuth } from "./AuthContext";
 import "./auth.css";
 
@@ -63,7 +64,8 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
   }
 
   const displayName = auth.user.display_name || auth.user.username;
-  const avatarUrl = auth.user.avatar_url || undefined;
+  const avatarKind = auth.user.role === "student" ? "student" : auth.user.role === "parent" ? "guardian" : undefined;
+  const avatarUrl = profileAvatar(displayName, auth.user.avatar_url, avatarKind, auth.user.id);
   const avatar = avatarUrl
     ? <img className="account-menu-trigger-avatar" src={avatarUrl} alt="" />
     : <span className="account-menu-trigger-initials" aria-hidden="true">{initials(displayName)}</span>;

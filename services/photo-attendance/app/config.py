@@ -49,7 +49,7 @@ class Settings:
         if self.api_token and len(self.api_token) < 24:
             raise ValueError('ATTENDANCE_API_TOKEN must have at least 24 characters.')
         parsed = urlparse(self.ollama_url)
-        if parsed.scheme != 'http' or parsed.hostname not in {'127.0.0.1', 'localhost', '::1'} or parsed.username or parsed.query:
+        if parsed.scheme != 'http' or parsed.hostname not in {'127.0.0.1', 'localhost', '::1', 'host.docker.internal'} or parsed.username or parsed.query:
             raise ValueError('OLLAMA_URL must be a local HTTP endpoint.')
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]*(?::[A-Za-z0-9._-]+)?', self.ollama_model):
             raise ValueError('OLLAMA_MODEL contains unsupported characters.')

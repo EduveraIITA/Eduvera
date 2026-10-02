@@ -122,7 +122,7 @@ export function ParentDiaryPage({
       <div className="parent-stack diary-page">
         <section className="diary-date-section" aria-labelledby="diary-date-heading">
           <div className="diary-date-section__heading">
-            <div><span>{data.termLabel}</span><h1 id="diary-date-heading">{dayHeading(selectedDayId, data.dateHeading)}</h1></div>
+            <div><span>{data.termLabel}</span><h2 id="diary-date-heading">{dayHeading(selectedDayId, data.dateHeading)}</h2></div>
             <span className="diary-date-section__calendar" aria-hidden="true"><CalendarDays size={19} /></span>
           </div>
           <div className="diary-day-strip" role="tablist" aria-label={data.weekLabel}>

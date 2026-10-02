@@ -206,7 +206,7 @@ export function ParentLeavePage({
             <article className="surface-card leave-request-card">
               <div className="leave-request-card__intro">
                 <div className="leave-request-card__status"><span>Awaiting guardian approval</span><strong>Ref {request.id.replaceAll("-", "").slice(-6).toUpperCase()}</strong></div>
-                <h1>{request.title}</h1>
+                <h2>{request.title}</h2>
                 <p>Class {data.child.grade.replace("Grade ", "")}{data.child.section} - Roll No. {data.child.rollNumber} - {request.submittedLabel}</p>
               </div>
 
@@ -293,7 +293,7 @@ export function ParentLeavePage({
         {tab === "pending" && !request ? (
           <section className="surface-card parent-empty-state parent-empty-state--large" aria-labelledby="no-pending-leave-heading">
             <CheckCircle2 size={28} />
-            <div><h1 id="no-pending-leave-heading">No sign-off waiting</h1><p>There are no guardian leave authorizations for {data.child.name} right now.</p></div>
+            <div><h2 id="no-pending-leave-heading">No sign-off waiting</h2></div>
             <button className="button button--soft" type="button" onClick={() => setTab("history")}>View leave history</button>
           </section>
         ) : null}
@@ -311,7 +311,7 @@ export function ParentLeavePage({
               </div>
             ) : (
               <>
-                <div className="parent-leave-form__heading"><span><CalendarDays size={21} /></span><div><h1 id="parent-apply-heading">Apply Leave for {data.child.name.split(" ")[0]}</h1><p>Submit an excusal request to the homeroom desk.</p></div></div>
+                <div className="parent-leave-form__heading"><span><CalendarDays size={21} /></span><div><h2 id="parent-apply-heading">Apply leave for {data.child.name.split(" ")[0]}</h2></div></div>
                 <label htmlFor="parent-leave-category">Primary reason</label>
                 <select id="parent-leave-category" value={draft.category} onChange={(event) => setDraft((current) => ({ ...current, category: event.target.value as ParentLeaveDraft["category"] }))}>
                   <option value="medical">Medical / Illness</option>

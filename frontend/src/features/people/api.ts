@@ -4,11 +4,11 @@ export interface GuardianChoice {id:string;name:string;phone:string;linked_admis
 export type GuardianInput = {mode:"existing";id:string}|{mode:"new";first_name:string;last_name:string;phone:string;email:string};
 export interface EnrollmentInput {school_id:string;first_name:string;last_name:string;admission_number:string;date_of_birth:string;class_section_id:string;term_id:string;roll_number:number;enrolled_on:string;guardian:GuardianInput;relationship:"mother"|"father"|"guardian";can_authorize_leave:boolean}
 export interface EnrollmentReview {id:string;expires_at:string;input:EnrollmentInput;class_name:string;term_name:string;guardian:{id:string;name:string;phone:string};warnings:string[]}
-export interface DirectoryStudent {id:string;name:string;admission_number:string;date_of_birth:string;has_account:boolean;class_name:string;roll_number:number;enrolled_on:string;guardians:Array<{id:string;name:string;phone:string;relationship:string;has_account:boolean}>}
+export interface DirectoryStudent {id:string;name:string;admission_number:string;avatar_url:string;date_of_birth:string;has_account:boolean;class_name:string;roll_number:number;enrolled_on:string;guardians:Array<{id:string;name:string;phone:string;relationship:string;has_account:boolean;avatar_url?:string|null}>}
 const base="/api/v1/people";
 export const enrollmentOptions=(schoolId:string)=>apiFetch<{results:EnrollmentOption[]}>(`${base}/enrollment-options?school_id=${schoolId}`);
 export const searchGuardians=(schoolId:string,search:string)=>apiFetch<{results:GuardianChoice[]}>(`${base}/guardians?${new URLSearchParams({school_id:schoolId,search})}`);
-export const listStudents=(schoolId:string,search:string,cursor?:string)=>apiFetch<{results:DirectoryStudent[];next_cursor:string|null}>(`${base}/students?${new URLSearchParams({school_id:schoolId,search,...(cursor?{cursor}:{})})}`);
+export const listStudents=(schoolId:string,search:string,cursor?:string,initial?:string)=>apiFetch<{results:DirectoryStudent[];next_cursor:string|null}>(`${base}/students?${new URLSearchParams({school_id:schoolId,search,...(cursor?{cursor}:{}),...(initial?{initial}:{})})}`);
 export const reviewEnrollment=(input:EnrollmentInput)=>apiFetch<EnrollmentReview>(`${base}/enrollment-reviews`,{method:"POST",body:JSON.stringify(input)});
 export const commitEnrollment=(id:string)=>apiFetch<{student_id:string}>(`${base}/enrollment-reviews/${id}/commit`,{method:"POST",body:"{}"});
 export interface AuthoritySnapshot {revision:number;enabled:boolean;valid_from:string|null;valid_until:string|null;source:string}

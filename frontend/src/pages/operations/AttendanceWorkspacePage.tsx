@@ -15,8 +15,6 @@ function registerQueue(item: TeacherClassSummary): Exclude<Queue, "all"> | "not_
   return "pending";
 }
 
-const dateLabel = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
-
 export function AttendanceWorkspacePage({ portal, classes, date, onDateChange }: {
   portal: "teacher" | "principal";
   classes: TeacherClassSummary[];
@@ -43,17 +41,18 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange }:
   return <OperationsShell portal={portal} active="attendance" title="Attendance" subtitle={principal ? "School-wide registers" : "Your assigned classes"} contentHasHeading>
     <div className="attendance-workspace">
       <section className="attendance-workspace__hero">
-        <div className="attendance-workspace__heading"><div><span>{principal ? "Principal workspace" : "Teacher workspace"}</span><h1>{principal ? "School attendance" : "My class registers"}</h1></div><ClipboardCheck size={30} aria-hidden="true" /></div>
-        <div className="attendance-workspace__date"><p>{dateLabel(date)}</p><label><CalendarDays size={17} /><span className="sr-only">Register date</span><input type="date" value={date} onChange={(event) => { if (event.target.value) onDateChange(event.target.value); }} /></label></div>
+        <div className="attendance-workspace__heading">
+          <h1>{principal ? "School attendance" : "Class registers"}</h1>
+          <label><CalendarDays size={17} /><span className="sr-only">Register date</span><input type="date" value={date} onChange={(event) => { if (event.target.value) onDateChange(event.target.value); }} /></label>
+        </div>
         <div className="attendance-workspace__totals" aria-label="Register overview">
-          <div><strong>{dueCount}</strong><span>Due registers</span></div>
+          <div><strong>{dueCount}</strong><span>Registers</span></div>
           <div><strong>{counts.pending}</strong><span>To submit</span></div>
           <div><strong>{counts.submitted + counts.locked}</strong><span>Submitted</span></div>
         </div>
       </section>
-      <p className="attendance-workspace__guidance">{principal ? "Scheduled classes appear here. Preserved records with a schedule or assignment mismatch remain visible for principal review." : "Only your scheduled lessons and accepted cover are attendance-eligible for this date."}</p>
       <section className="attendance-workspace__queue" aria-labelledby="attendance-class-list">
-        <div className="attendance-workspace__list-heading"><h2 id="attendance-class-list">{principal ? "Class registers" : "Scheduled registers"}</h2><span>{dueCount} due</span></div>
+        <div className="attendance-workspace__list-heading"><h2 id="attendance-class-list">Registers</h2></div>
         <label className="attendance-workspace__search"><Search size={18} /><span className="sr-only">Search classes</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={principal ? "Search class or teacher" : "Search class or subject"} /></label>
         <div className="attendance-workspace__filters" role="group" aria-label="Filter registers">{filters.map(([key, label, count]) => <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}<span>{count}</span></button>)}</div>
         <div className="attendance-workspace__cards">{visible.map((item) => {

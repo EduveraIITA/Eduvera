@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +91,11 @@ if (!process.env.PREVIEW_BACKEND_ROOT) {
   // can leave controller dependencies undefined. Build once before starting,
   // then keep tsc and Node's native watcher running for live backend edits.
   runSetup("npm", ["run", "build", "--silent"], backendRunRoot);
+} else {
+  // Node's native watcher requires an initial emitted tree. Build it before
+  // starting either the compiler watcher or the API process so launchd cannot
+  // enter a restart loop on a missing dist/main.js.
+  runSetup("npm", ["run", "build", "--silent"], backendRunRoot);
 }
 
 if (!process.env.PREVIEW_FRONTEND_ROOT) {
@@ -117,17 +122,6 @@ if (!process.env.PREVIEW_PHOTO_ROOT) {
   replaceDirectory(resolve(photoAttendanceRoot, "app"), resolve(photoAttendanceRunRoot, "app"));
   replaceDirectory(resolve(photoAttendanceRoot, "models"), resolve(photoAttendanceRunRoot, "models"));
   copyFile(resolve(photoAttendanceRoot, "requirements.txt"), resolve(photoAttendanceRunRoot, "requirements.txt"));
-  const dependencyKey = fileHash(resolve(photoAttendanceRoot, "requirements.txt"));
-  const dependencyMarker = resolve(photoAttendanceRunRoot, ".dependencies-ready");
-  const localPython = resolve(photoAttendanceRunRoot, ".venv/bin/python");
-  if (!existsSync(localPython) || !existsSync(dependencyMarker) || readFileSync(dependencyMarker, "utf8").trim() !== dependencyKey) {
-    rmSync(resolve(photoAttendanceRunRoot, ".venv"), { recursive: true, force: true });
-    const bootstrapPython = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"].find((path) => existsSync(path));
-    if (!bootstrapPython) throw new Error("Python 3 is required to prepare photo attendance.");
-    runSetup(bootstrapPython, ["-m", "venv", resolve(photoAttendanceRunRoot, ".venv")], photoAttendanceRunRoot);
-    runSetup(localPython, ["-m", "pip", "install", "--disable-pip-version-check", "-r", resolve(photoAttendanceRunRoot, "requirements.txt")], photoAttendanceRunRoot);
-    writeFileSync(dependencyMarker, `${dependencyKey}\n`, { mode: 0o600 });
-  }
 }
 
 const photoTokenPath = resolve(runtimeRoot, "photo-attendance-token");
@@ -137,14 +131,11 @@ if (!existsSync(photoTokenPath)) {
 const photoToken = readFileSync(photoTokenPath, "utf8").trim();
 const photoPythonCandidates = [
   process.env.PHOTO_ATTENDANCE_PYTHON,
-  resolve(photoAttendanceRunRoot, ".venv/bin/python"),
   resolve(photoAttendanceRoot, ".venv/bin/python"),
+  resolve(photoAttendanceRunRoot, ".venv/bin/python"),
   resolve(root, "../../Downloads/attendance-lab/.venv/bin/python"),
 ].filter(Boolean);
 const photoPython = photoPythonCandidates.find((candidate) => existsSync(candidate));
-if (!photoPython) {
-  throw new Error("Photo attendance Python environment is missing. Create services/photo-attendance/.venv and install its requirements.");
-}
 const photoModelCandidates = [
   process.env.PHOTO_ATTENDANCE_MODELS_DIR,
   resolve(photoAttendanceRunRoot, "models"),
@@ -153,8 +144,9 @@ const photoModelCandidates = [
 const photoModels = photoModelCandidates.find((candidate) =>
   existsSync(resolve(candidate, "yunet.onnx")) && existsSync(resolve(candidate, "sface.onnx")),
 );
-if (!photoModels) {
-  throw new Error("Photo attendance models are missing. Run services/photo-attendance/scripts/download_models.py.");
+const photoAttendanceReady = Boolean(photoPython && photoModels);
+if (!photoAttendanceReady) {
+  console.warn("[preview] photo attendance is unavailable; core web and authentication services will continue.");
 }
 
 const backendEnv = {
@@ -170,7 +162,7 @@ const backendEnv = {
   SPA_DIST_DIR: resolve(root, "frontend/dist"),
   STAFF_DIST_DIR: resolve(root, "frontend-desktop/dist"),
   ALLOWED_ORIGINS: [...origins].join(","),
-  PHOTO_ATTENDANCE_ENABLED: "true",
+  PHOTO_ATTENDANCE_ENABLED: photoAttendanceReady ? "true" : "false",
   PHOTO_ATTENDANCE_BASE_URL: "http://127.0.0.1:8100/api",
   PHOTO_ATTENDANCE_API_TOKEN: photoToken,
   PHOTO_ATTENDANCE_TIMEOUT_MS: "300000",
@@ -180,7 +172,7 @@ const photoAttendanceEnv = {
   ...process.env,
   PATH: childPath,
   DATA_DIR: photoDataRoot,
-  MODELS_DIR: photoModels,
+  MODELS_DIR: photoModels ?? photoAttendanceRunRoot,
   ATTENDANCE_API_TOKEN: photoToken,
   ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]",
   SESSION_RETENTION_DAYS: "7",
@@ -195,7 +187,10 @@ const frontendEnv = {
   VITE_API_PROXY_TARGET: apiOrigin,
   VITE_DEV_PORT: "8000",
   VITE_DEV_HOST: "127.0.0.1",
-  VITE_ALLOWED_HOSTS: "dalene-miraculous-sweepingly.ngrok-free.dev",
+  // ngrok free domains are assigned when the managed preview starts. This
+  // process is local-development only; production host validation is handled
+  // by the deployed service configuration.
+  VITE_ALLOWED_HOSTS: "*",
 };
 
 const children = new Map();
@@ -204,25 +199,47 @@ let shuttingDown = false;
 
 function mirrorSourceChanges(source, destination) {
   const destinationRoot = `${resolve(destination)}${sep}`;
-  const watcher = watch(source, { recursive: true }, (_event, filename) => {
-    if (!filename) return;
-    const sourcePath = resolve(source, filename);
-    const destinationPath = resolve(destination, filename);
-    if (!destinationPath.startsWith(destinationRoot)) return;
+  const knownFiles = new Map();
+
+  const scan = (directory, prefix = "") => {
+    const files = new Map();
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const absolute = resolve(directory, entry.name);
+      if (entry.isDirectory()) {
+        for (const [file, signature] of scan(absolute, relative)) files.set(file, signature);
+      } else if (entry.isFile()) {
+        const details = statSync(absolute);
+        files.set(relative, `${details.size}:${details.mtimeMs}`);
+      }
+    }
+    return files;
+  };
+
+  const sync = () => {
     try {
-      if (!existsSync(sourcePath)) {
-        rmSync(destinationPath, { recursive: true, force: true });
-      } else if (statSync(sourcePath).isDirectory()) {
-        mkdirSync(destinationPath, { recursive: true });
-      } else {
+      const currentFiles = scan(source);
+      for (const [filename, signature] of currentFiles) {
+        if (knownFiles.get(filename) === signature) continue;
+        const sourcePath = resolve(source, filename);
+        const destinationPath = resolve(destination, filename);
+        if (!destinationPath.startsWith(destinationRoot)) continue;
         mkdirSync(dirname(destinationPath), { recursive: true });
         copyFileSync(sourcePath, destinationPath);
       }
+      for (const filename of knownFiles.keys()) {
+        if (!currentFiles.has(filename)) rmSync(resolve(destination, filename), { force: true });
+      }
+      knownFiles.clear();
+      for (const entry of currentFiles) knownFiles.set(...entry);
     } catch (error) {
-      console.error(`[preview] could not mirror ${filename}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[preview] source sync will retry: ${error instanceof Error ? error.message : String(error)}`);
     }
-  });
-  sourceWatchers.push(watcher);
+  };
+
+  sync();
+  const timer = setInterval(sync, 500);
+  sourceWatchers.push({ close: () => clearInterval(timer) });
 }
 
 function startProcess(name, command, args, options) {
@@ -240,6 +257,14 @@ function startProcess(name, command, args, options) {
   child.on("exit", (code, signal) => {
     children.delete(name);
     if (shuttingDown) return;
+    if (options.restartOnFailure) {
+      const delay = options.restartDelayMs ?? 5000;
+      console.error(`[preview] ${name} exited with ${signal ?? code ?? "unknown status"}; retrying in ${delay}ms without stopping the core app.`);
+      setTimeout(() => {
+        if (!shuttingDown) startProcess(name, command, args, options);
+      }, delay);
+      return;
+    }
     console.error(`[preview] ${name} exited with ${signal ?? code ?? "unknown status"}; stopping local preview.`);
     stopAll(signal === "SIGINT" ? "SIGINT" : "SIGTERM");
     process.exitCode = typeof code === "number" && code !== 0 ? code : 1;
@@ -269,20 +294,35 @@ process.on("SIGTERM", () => {
   setTimeout(() => process.exit(143), 500);
 });
 
-startProcess("photo-attendance", photoPython, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8100", "--workers", "1"], { env: photoAttendanceEnv, cwd: photoAttendanceRunRoot });
+if (photoAttendanceReady && photoPython) {
+  startProcess("photo-attendance", photoPython, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8100", "--workers", "1"], {
+    env: photoAttendanceEnv,
+    cwd: photoAttendanceRunRoot,
+    restartOnFailure: true,
+    restartDelayMs: 10000,
+  });
+}
 // Run the source watcher in local review so backend edits appear without a manual
 // production build or service restart. The watcher remains a child of this
 // supervisor, so an actual process failure still restarts the whole stack.
-mirrorSourceChanges(resolve(backendRoot, "src"), resolve(backendRunRoot, "src"));
-mirrorSourceChanges(resolve(frontendRoot, "src"), resolve(frontendRunRoot, "src"));
-mirrorSourceChanges(resolve(frontendRoot, "public"), resolve(frontendRunRoot, "public"));
+if (resolve(backendRoot) !== resolve(backendRunRoot)) {
+  mirrorSourceChanges(resolve(backendRoot, "src"), resolve(backendRunRoot, "src"));
+}
+if (resolve(frontendRoot) !== resolve(frontendRunRoot)) {
+  mirrorSourceChanges(resolve(frontendRoot, "src"), resolve(frontendRunRoot, "src"));
+  mirrorSourceChanges(resolve(frontendRoot, "public"), resolve(frontendRunRoot, "public"));
+}
 startProcess("api-compiler", resolve(backendRunRoot, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json", "--watch", "--preserveWatchOutput"], { env: backendEnv, cwd: backendRunRoot });
 startProcess("api", process.execPath, ["--watch", "dist/main.js"], { env: backendEnv, cwd: backendRunRoot });
 startProcess("web", "npm", ["--prefix", frontendRunRoot, "run", "dev", "--", "--host", "127.0.0.1", "--port", "8000", "--strictPort"], { env: frontendEnv });
 if (process.env.LIVE_NGROK === "true") {
   const ngrokConfig = process.env.NGROK_CONFIG ?? resolve(homedir(), "Library/Application Support/ngrok/ngrok.yml");
   if (!existsSync(ngrokConfig)) throw new Error(`ngrok configuration is missing at ${ngrokConfig}`);
-  startProcess("ngrok", "ngrok", ["http", "--config", ngrokConfig, "--log=stdout", "127.0.0.1:8000"], { env: { ...process.env, PATH: childPath } });
+  startProcess("ngrok", "ngrok", ["http", "--config", ngrokConfig, "--log=stdout", "127.0.0.1:8000"], {
+    env: { ...process.env, PATH: childPath },
+    restartOnFailure: true,
+    restartDelayMs: 5000,
+  });
 }
 console.log(`[preview] live React app: ${appOrigin}`);
 console.log(`[preview] API proxy target: ${apiOrigin}`);

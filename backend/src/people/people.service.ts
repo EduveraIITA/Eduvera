@@ -61,14 +61,14 @@ export class PeopleService {
   }
 
   async list(user: AuthUser, query: Record<string,string>) {
-    const input = z.object({school_id:z.string().uuid(),search:z.string().trim().max(80).default(""),cursor:z.string().uuid().optional()}).parse(query);
+    const input = z.object({school_id:z.string().uuid(),search:z.string().trim().max(80).default(""),initial:z.string().trim().toUpperCase().regex(/^[A-Z]$/).optional(),cursor:z.string().uuid().optional()}).parse(query);
     await this.authorize(this.db,user,input.school_id);
     const pattern=`%${input.search.replace(/[\\%_]/g,"\\$&")}%`;
-    const rows = (await sql<{id:string}>`SELECT s.id,s.admission_number,concat_ws(' ',p.first_name,p.last_name) AS name,
+    const rows = (await sql<{id:string;name:string}>`SELECT s.id,s.admission_number,s.avatar_url,concat_ws(' ',p.first_name,p.last_name) AS name,
       s.date_of_birth::text,(s.user_id IS NOT NULL) AS has_account,
       enrollment.class_name,enrollment.roll_number,enrollment.enrolled_on,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('id',g.id,'name',concat_ws(' ',person.first_name,person.last_name),'relationship',g.relationship,
-        'phone',person.contact_phone,'has_account',guardian.user_id IS NOT NULL) ORDER BY g.is_primary DESC)
+        'phone',person.contact_phone,'avatar_url',person.avatar_url,'has_account',guardian.user_id IS NOT NULL) ORDER BY g.is_primary DESC)
         FROM guardian_relationships g JOIN parents guardian ON guardian.id=g.guardian_id
         JOIN guardian_school_profiles gp ON gp.guardian_id=g.guardian_id AND gp.school_id=s.school_id
         JOIN school_people person ON person.id=gp.person_id WHERE g.student_id=s.id),'[]'::jsonb) AS guardians
@@ -76,10 +76,13 @@ export class PeopleService {
       LEFT JOIN LATERAL (SELECT concat('Class ',c.grade,c.section) AS class_name,e.roll_number,e.enrolled_on::text
         FROM enrollments e JOIN class_sections c ON c.id=e.class_section_id JOIN academic_terms t ON t.id=e.term_id
         WHERE e.student_id=s.id AND e.is_active ORDER BY t.starts_on DESC LIMIT 1) enrollment ON true
-      WHERE s.school_id=${input.school_id}::uuid AND (${input.cursor??null}::uuid IS NULL OR (s.admission_number,s.id)>
-        (SELECT cursor.admission_number,cursor.id FROM students cursor WHERE cursor.id=${input.cursor??null}::uuid AND cursor.school_id=${input.school_id}::uuid))
+      WHERE s.school_id=${input.school_id}::uuid AND (${input.initial??null}::text IS NULL OR upper(left(p.first_name,1))=${input.initial??null})
+        AND (${input.cursor??null}::uuid IS NULL OR (lower(p.first_name),lower(coalesce(p.last_name,'')),s.id)>
+        (SELECT lower(cursor_person.first_name),lower(coalesce(cursor_person.last_name,'')),cursor.id FROM students cursor
+          JOIN school_people cursor_person ON cursor_person.id=cursor.person_id
+          WHERE cursor.id=${input.cursor??null}::uuid AND cursor.school_id=${input.school_id}::uuid))
         AND (s.admission_number ILIKE ${pattern} OR concat_ws(' ',p.first_name,p.last_name) ILIKE ${pattern})
-      ORDER BY s.admission_number,s.id LIMIT 26`.execute(this.db)).rows;
+      ORDER BY lower(p.first_name),lower(coalesce(p.last_name,'')),s.id LIMIT 26`.execute(this.db)).rows;
     return {results:rows.slice(0,25),next_cursor:rows.length>25?rows[24]!.id:null};
   }
 

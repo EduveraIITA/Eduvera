@@ -109,4 +109,3 @@ inventing merchant credentials or treating unverified claims as money received.
 5. Razorpay, [web integration steps](https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/integration-steps/).
 6. Razorpay, [webhook best practices](https://razorpay.com/docs/webhooks/best-practices).
 7. Google Pay, [handle payment response](https://developers.google.com/pay/india/api/web/handle-response).
-

@@ -871,6 +871,25 @@ describe("OmniSchool API", () => {
     expect((await json(me)).memberships[0].role).toBe("student");
   });
 
+  it("supports demo sign-in, fail-safe logout, and immediate password sign-in in one browser", async () => {
+    const browser = new BrowserSession();
+    const demo = await browser.request("/api/v1/auth/demo-session/", {
+      method: "POST",
+      body: JSON.stringify({ role: "admin" }),
+    });
+    expect(demo.status).toBe(200);
+    expect((await json(demo)).user.role).toBe("admin");
+    expect((await browser.request("/api/v1/auth/me/")).status).toBe(200);
+
+    const logout = await browser.request("/api/v1/auth/logout/", { method: "POST" });
+    expect(logout.status).toBe(204);
+    expect(await json(await browser.request("/api/v1/auth/session/"))).toMatchObject({ authenticated: false, user: null });
+    expect((await browser.request("/api/v1/auth/me/")).status).toBe(401);
+
+    expect((await browser.login("meera.principal")).status).toBe(200);
+    expect((await browser.request("/api/v1/auth/me/")).status).toBe(200);
+  });
+
   it("requires registration CSRF and leaves new identities pending school onboarding", async () => {
     const browser = new BrowserSession();
     await browser.csrf();
@@ -1547,9 +1566,75 @@ describe("OmniSchool API", () => {
     expect(overview.summary).toMatchObject({ students: 200, classes_total: 8 });
     expect(overview.classes).toHaveLength(8);
     const timetable = await json(await principal.request("/api/v1/screens/principal/timetable/"));
+    expect(timetable.terms).toEqual(expect.arrayContaining([expect.objectContaining({ id: expect.any(String), academic_year: "2026-27" })]));
+    expect(timetable.selected_term_id).toEqual(expect.any(String));
     expect(timetable.slots.length).toBeGreaterThan(250);
     expect(timetable.classes).toHaveLength(8);
     expect(timetable.teachers).toHaveLength(17);
+    expect(timetable.coverage).toHaveLength(timetable.classes.length * timetable.subjects.length);
+    expect(timetable.calendar_exceptions).toEqual(expect.any(Array));
+    const coveredSlot = timetable.slots.find((item: any) => item.weekday >= 1 && item.weekday <= 5 && item.subject_id);
+    expect(coveredSlot).toBeDefined();
+    const initialCoverage = timetable.coverage.find((item: any) => item.class_section_id === coveredSlot.class_section_id && item.subject_id === coveredSlot.subject_id);
+    expect(initialCoverage.projected_minutes).toBeGreaterThan(0);
+    const targetResponse = await principal.request("/api/v1/principal/timetable/targets/", {
+      method: "POST",
+      body: JSON.stringify({
+        term_id: timetable.selected_term_id,
+        class_section_id: coveredSlot.class_section_id,
+        subject_id: coveredSlot.subject_id,
+        target_minutes: initialCoverage.projected_minutes + 180,
+        expected_revision: 0,
+        reason: "Verify term curriculum coverage planning",
+      }),
+    }, true);
+    expect(targetResponse.status).toBe(201);
+    expect(await json(targetResponse)).toMatchObject({ target_minutes: initialCoverage.projected_minutes + 180, revision: 1 });
+    expect((await principal.request("/api/v1/principal/timetable/targets/", {
+      method: "POST",
+      body: JSON.stringify({
+        term_id: timetable.selected_term_id,
+        class_section_id: coveredSlot.class_section_id,
+        subject_id: coveredSlot.subject_id,
+        target_minutes: initialCoverage.projected_minutes + 240,
+        expected_revision: 0,
+        reason: "Reject a stale curriculum edit",
+      }),
+    }, true)).status).toBe(409);
+    const availableClosure = (await pool.query<{ date: string }>(`
+      SELECT day::date::text AS date
+      FROM generate_series(GREATEST(current_date + 7, $1::date), $2::date, '1 day') day
+      WHERE extract(isodow FROM day)=$3
+        AND NOT EXISTS(SELECT 1 FROM school_calendar_days calendar WHERE calendar.school_id=$4 AND calendar.date=day::date)
+        AND NOT EXISTS(SELECT 1 FROM attendance_registers register WHERE register.school_id=$4 AND register.date=day::date)
+      ORDER BY day LIMIT 1
+    `, [timetable.terms.find((item: any) => item.id === timetable.selected_term_id).starts_on, timetable.terms.find((item: any) => item.id === timetable.selected_term_id).ends_on, coveredSlot.weekday, overview.classes[0].school_id ?? (await pool.query("SELECT school_id FROM class_sections WHERE id=$1", [coveredSlot.class_section_id])).rows[0].school_id])).rows[0];
+    expect(availableClosure).toBeDefined();
+    if (!availableClosure) throw new Error("Expected an available school date for closure coverage");
+    const closureResponse = await principal.request("/api/v1/principal/calendar/closures/", {
+      method: "POST",
+      body: JSON.stringify({
+        term_id: timetable.selected_term_id,
+        starts_on: availableClosure.date,
+        ends_on: availableClosure.date,
+        kind: "public_holiday",
+        label: "Integration planning holiday",
+        reason: "Verify dated timetable exceptions",
+      }),
+    }, true);
+    expect(closureResponse.status).toBe(201);
+    const closure = (await json(closureResponse)).results[0];
+    const afterClosure = await json(await principal.request(`/api/v1/screens/principal/timetable/?term_id=${timetable.selected_term_id}`));
+    const reducedCoverage = afterClosure.coverage.find((item: any) => item.class_section_id === coveredSlot.class_section_id && item.subject_id === coveredSlot.subject_id);
+    expect(reducedCoverage.projected_minutes).toBeLessThan(initialCoverage.projected_minutes);
+    const removedClosure = await principal.request(`/api/v1/principal/calendar/closures/${availableClosure.date}/`, {
+      method: "DELETE",
+      body: JSON.stringify({ expected_revision: closure.revision, reason: "Integration cleanup" }),
+    }, true);
+    expect(removedClosure.status).toBe(200);
+    await pool.query("DELETE FROM curriculum_subject_targets WHERE term_id=$1 AND class_section_id=$2 AND subject_id=$3", [timetable.selected_term_id, coveredSlot.class_section_id, coveredSlot.subject_id]);
+    await pool.query("DELETE FROM audit_events WHERE action LIKE 'timetable.curriculum_target.%' OR (action LIKE 'school_calendar.%' AND metadata->>'label'='Integration planning holiday')");
+    await pool.query("DELETE FROM event_outbox WHERE event_type='calendar.updated' OR (event_type='timetable.updated' AND aggregate_id=$1)", [coveredSlot.class_section_id]);
     const draft = { class_section_id: timetable.classes[0].id, subject_id: timetable.subjects[0].id, teacher_user_id: timetable.teachers[0].id, weekday: 6, period_number: 9, starts_at: "14:00", ends_at: "14:45", slot_type: "class", title: "", room: "Seminar 2", teacher_designation: "Subject Teacher" };
     const createdResponse = await principal.request("/api/v1/principal/timetable/slots/", { method: "POST", body: JSON.stringify(draft) }, true);
     expect(createdResponse.status).toBe(201);
@@ -1557,6 +1642,30 @@ describe("OmniSchool API", () => {
     const updatedResponse = await principal.request(`/api/v1/principal/timetable/slots/${created.id}/`, { method: "PATCH", body: JSON.stringify({ ...draft, starts_at: "14:50", ends_at: "15:35" }) }, true);
     expect(updatedResponse.status).toBe(200);
     expect((await json(updatedResponse)).starts_at).toContain("14:50");
+    const copyResponse = await principal.request("/api/v1/principal/timetable/copy-day/", {
+      method: "POST",
+      body: JSON.stringify({
+        term_id: timetable.selected_term_id,
+        class_section_id: timetable.classes[0].id,
+        source_weekday: 6,
+        target_weekdays: [7],
+        replace: false,
+        reason: "Verify atomic principal timetable copy workflow",
+      }),
+    }, true);
+    expect(copyResponse.status).toBe(201);
+    const copied = await json(copyResponse);
+    expect(copied).toMatchObject({ copied: true, target_weekdays: [7] });
+    expect(copied.periods_created).toBeGreaterThan(0);
+    const copiedRows = await pool.query<{ id: string }>(
+      "SELECT id FROM timetable_slots WHERE term_id=$1 AND class_section_id=$2 AND weekday=7",
+      [timetable.selected_term_id, timetable.classes[0].id],
+    );
+    expect(copiedRows.rows).toHaveLength(copied.periods_created);
+    const copiedIds = copiedRows.rows.map((row) => row.id);
+    await pool.query("DELETE FROM event_outbox WHERE aggregate_id = ANY($1::uuid[])", [copiedIds]);
+    await pool.query("DELETE FROM audit_events WHERE target_id = ANY($1::uuid[])", [copiedIds]);
+    await pool.query("DELETE FROM timetable_slots WHERE id = ANY($1::uuid[])", [copiedIds]);
     const deletedResponse = await principal.request(`/api/v1/principal/timetable/slots/${created.id}/`, { method: "DELETE" }, true);
     expect(deletedResponse.status).toBe(200);
     expect(await json(deletedResponse)).toEqual({ deleted: true, id: created.id });

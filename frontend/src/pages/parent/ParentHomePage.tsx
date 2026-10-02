@@ -185,7 +185,7 @@ export function ParentHomePage({
 
         <section className="surface-card pulse-card" aria-labelledby="pulse-heading">
           <div className="card-heading-row">
-            <h2 id="pulse-heading"><Clock3 size={20} />Academic Pulse</h2>
+            <h2 id="pulse-heading"><Clock3 size={20} />Current class</h2>
             <span className={`status-pill ${data.presence.status === "In School" ? "status-pill--success" : data.presence.status === "Checked Out" ? "status-pill--danger" : "status-pill--neutral"}`}>{data.presence.status === "Not confirmed" ? <Clock3 size={14} /> : <CheckCircle2 size={14} />}{data.presence.status}</span>
           </div>
           {currentPeriod ? <div className="current-period">

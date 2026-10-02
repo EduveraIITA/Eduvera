@@ -41,7 +41,7 @@ export function DayPeriodList({
             <div className="day-period-meta">
               <span>
                 <Clock3 size={14} />
-                {timeLabel(p.starts_at)}–{timeLabel(p.ends_at)}
+                {timeLabel(p.starts_at)}-{timeLabel(p.ends_at)}
               </span>
               {p.slot_type !== "break" ? (
                 <span>

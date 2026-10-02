@@ -42,6 +42,7 @@ import {
   planOptions,
   teacherDay,
   teacherSummary,
+  adminSummary,
 } from "./day-plan.queries.js";
 import { planEvent } from "./events.js";
 const baselineHash = (rows: PlanPeriod[]) =>
@@ -102,6 +103,31 @@ export class DayPlanService {
       uuid.parse(schoolId),
       startDate,
       endDate,
+    );
+  }
+  adminSummary(
+    user: AuthUser,
+    schoolId: string,
+    start: string,
+    end: string,
+    classSectionId?: string,
+  ) {
+    const startDate = dateSchema.parse(start);
+    const endDate = dateSchema.parse(end);
+    const startMs = Date.parse(`${startDate}T00:00:00Z`);
+    const endMs = Date.parse(`${endDate}T00:00:00Z`);
+    const days = Math.round((endMs - startMs) / 86_400_000) + 1;
+    if (days < 1)
+      throw new BadRequestException("End date must follow start date.");
+    if (days > 370)
+      throw new BadRequestException("Timetable summary ranges are limited to 370 days.");
+    return adminSummary(
+      this.db,
+      user,
+      uuid.parse(schoolId),
+      startDate,
+      endDate,
+      classSectionId ? uuid.parse(classSectionId) : undefined,
     );
   }
   private async command<T>(

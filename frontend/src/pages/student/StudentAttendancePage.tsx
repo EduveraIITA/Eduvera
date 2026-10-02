@@ -271,11 +271,9 @@ export function StudentAttendancePage({
   const attendanceDaysToOvertake = nextRank && nextRank.percent < 100
     ? Math.max(1, Math.floor(((nextRank.percent / 100) * data.held - data.attended) / (1 - nextRank.percent / 100)) + 1)
     : undefined;
-  const attendanceSummary = data.aggregate >= data.minimumPercent + 5
-    ? `Above the ${data.minimumPercent}% policy minimum across ${data.subjects.length} enrolled subjects`
-    : data.aggregate >= data.minimumPercent
-      ? `Meets the ${data.minimumPercent}% policy minimum across ${data.subjects.length} enrolled subjects`
-      : `Below the ${data.minimumPercent}% policy minimum; review the subjects needing attention`;
+  const attendanceSummary = data.aggregate >= data.minimumPercent
+    ? `Eligible across ${data.subjects.length} subjects`
+    : "Below the attendance minimum";
 
   const visibleSubjects = useMemo(() => {
     if (filter === "core") return data.subjects.filter((subject) => subject.group === "core");
@@ -300,7 +298,7 @@ export function StudentAttendancePage({
             </div>
             <div className="attendance-ring">
               <svg viewBox="0 0 36 36" aria-hidden="true"><circle className="attendance-ring__track" cx="18" cy="18" r="15.9155" /><circle className="attendance-ring__value" cx="18" cy="18" r="15.9155" pathLength="100" strokeDasharray={`${Math.max(0, Math.min(100, data.aggregate))} 100`} /></svg>
-              <span className="attendance-ring__label"><ShieldCheck size={20} /><small>{Math.round(data.aggregate)}%</small></span>
+              <span className="attendance-ring__label"><ShieldCheck size={24} /></span>
             </div>
           </div>
 
@@ -313,7 +311,7 @@ export function StudentAttendancePage({
           <div className="attendance-stat-grid">
             <StatTile icon={<UserCheck size={18} />} label="Attended" value={`${data.attended}/${data.held}`} tone="green" />
             {data.streak !== undefined
-              ? <StatTile icon={<Flame size={18} />} label="Active Streak" value={`${data.streak} Days 🔥`} tone="amber" />
+              ? <StatTile icon={<Flame size={18} />} label="Active Streak" value={`${data.streak} Days`} tone="amber" />
               : <StatTile icon={<Flame size={18} />} label="Half Days" value={`${data.halfDays ?? 0} Recorded`} tone="amber" />}
             <StatTile icon={<FileCheck2 size={18} />} label="Excused Leaves" value={`${data.excused} Recorded`} />
             <StatTile icon={<ClipboardCheck size={18} />} label="Unexcused" value={`${data.unexcused} Recorded`} tone="rose" />

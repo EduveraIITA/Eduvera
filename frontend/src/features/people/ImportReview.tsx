@@ -1,44 +1,467 @@
-import {useEffect,useRef,useState} from "react";
-import {Download,RefreshCw} from "lucide-react";
-import {cancelImport,commitImport,importReportUrl,type ImportDetail,type ImportRow} from "./import-api";
-import {ImportRowEditor} from "./ImportRowEditor";
-export function ImportReview({schoolId,job,reload,onCommitted}:{schoolId:string;job:ImportDetail;reload:()=>Promise<void>;onCommitted:()=>Promise<void>}){
-  const [filter,setFilter]=useState("all");const [page,setPage]=useState(0);const [editing,setEditing]=useState<ImportRow|null>(null);
-  const [confirm,setConfirm]=useState(false);const [verified,setVerified]=useState(false);const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [cancelling,setCancelling]=useState(false);
-  const [attempt,setAttempt]=useState<{expected_revision:number;validation_token:string}|null>(null);const heading=useRef<HTMLHeadingElement>(null);
-  const [reviewed,setReviewed]=useState<{expected_revision:number;validation_token:string}|null>(null);
-  useEffect(()=>{heading.current?.focus();},[confirm]);
-  const review=job.review;if(!review)return null;
-  const summary=review.summary;const filtered=review.rows.filter(r=>filter==='all'||filter==='errors'&&r.errors.length||filter==='warnings'&&r.warnings.length||filter==='skipped'&&r.decision==='skip');
-  const stale=Boolean(reviewed&&(reviewed.expected_revision!==job.revision||reviewed.validation_token!==review.validation_token));
-  const rows=filtered.slice(page*20,page*20+20);
-  async function save(){if(!verified||busy||!reviewed||stale&&!attempt)return;setBusy(true);setError("");const command=attempt??reviewed;setAttempt(command);try{await commitImport(job.id,{school_id:schoolId,...command,verified:true});await onCommitted();}catch(e){setError(e instanceof Error?e.message:"Import could not be completed. Retry the same review or reload to check changes.");}finally{setBusy(false);}}
-  async function cancel(){setBusy(true);setError("");try{await cancelImport(job.id,{school_id:schoolId,expected_revision:job.revision});await reload();}catch(e){setError(e instanceof Error?e.message:"Could not discard the draft.");}finally{setBusy(false);}}
-  return <>
-    <section className="people-panel"><header className="people-heading"><div><h2 ref={heading} tabIndex={-1}>{confirm?"Confirm school enrollment":"Check your import"}</h2><p className="people-muted">{job.filename} · {review.term.name} · {job.row_count} rows</p></div><a className="people-secondary" href={importReportUrl(schoolId,job.id)} download><Download size={17}/>Download report</a></header>
-      <dl className="import-metrics"><div><dt>To enroll</dt><dd>{summary.included}</dd></div><div><dt>Need correction</dt><dd>{summary.errors}</dd></div><div><dt>Need review</dt><dd>{summary.warnings}</dd></div><div><dt>Skipped</dt><dd>{summary.skipped}</dd></div></dl>
-      {error?<div className="people-error" role="alert"><p>{error}</p><button type="button" className="people-secondary" disabled={busy} onClick={async()=>{setConfirm(false);setVerified(false);setAttempt(null);setError("");await reload();}}><RefreshCw size={16}/>Reload latest review</button></div>:null}
-      {confirm?<div className="people-form"><p>Enroll <strong>{summary.included} {summary.included===1?'student':'students'}</strong>{summary.new_guardians?<> and create <strong>{summary.new_guardians} {summary.new_guardians===1?'guardian record':'guardian records'}</strong></>:null}{summary.existing_guardians?<> and link <strong>{summary.existing_guardians} existing {summary.existing_guardians===1?'guardian':'guardians'}</strong></>:null}.</p>
-        {stale&&!attempt?<p role="alert" className="people-error">This review changed while it was open. Go back to rows and review the latest results before confirming.</p>:null}
-        {summary.skipped?<p className="people-warning">{summary.skipped} {summary.skipped===1?'row is':'rows are'} excluded. No school records will change for {summary.skipped===1?'that row':'those rows'}.</p>:null}
-        {summary.warnings?<p className="people-warning">{summary.warnings} included {summary.warnings===1?'row has':'rows have'} review notes. Confirm any matching names or phone numbers represent the intended people.</p>:null}
-        {summary.registers_reopened?<p className="people-warning">{summary.registers_reopened} submitted registers will return to draft for the updated roster. Existing attendance marks are retained.</p>:null}
-        <p className="people-muted">The entire selected batch saves together. No login access, leave-signing permissions or attendance marks will be created.</p>
-        <label className="people-confirm"><input type="checkbox" checked={verified} disabled={busy} onChange={e=>setVerified(e.target.checked)}/>I verified the included students, family links, dates, skipped rows and review notes.</label>
-        <footer className="import-actions"><button className="people-secondary" disabled={busy} onClick={()=>{setConfirm(false);setVerified(false);}}>Back to rows</button><button className="people-primary" disabled={!verified||busy||(stale&&!attempt)} onClick={()=>void save()}>{busy?"Saving enrollment…":attempt?"Retry same import":`Enroll ${summary.included} ${summary.included===1?'student':'students'}`}</button></footer>
-      </div>:<>
-        <p className="people-muted">Correct invalid rows or skip students you don't want to import. Changes remain in this draft until you confirm the batch.</p>
-        <footer className="import-actions"><button className="people-secondary" disabled={Boolean(editing)||busy} onClick={()=>setCancelling(true)}>Discard draft</button><button className="people-primary" disabled={Boolean(editing)||!summary.included||Boolean(summary.errors)||busy} onClick={()=>{setConfirm(true);setVerified(false);setAttempt(null);setReviewed({expected_revision:job.revision,validation_token:review.validation_token});}}>Review enrollment</button></footer>
-        {cancelling?<div className="people-warning"><p>Discard this draft and clear its uploaded personal details? No enrolled school records will be removed.</p><div className="import-actions"><button className="people-secondary" disabled={busy} onClick={()=>setCancelling(false)}>Keep draft</button><button className="people-primary" disabled={busy} onClick={()=>void cancel()}>{busy?"Discarding…":"Discard uploaded draft"}</button></div></div>:null}
-      </>}
-    </section>
-    {!confirm?<>
-      {editing?<ImportRowEditor key={editing.row_number} schoolId={schoolId} job={job} row={editing} onClose={()=>setEditing(null)} onSaved={reload}/>:null}
-      <section className="people-panel"><div className="import-table-controls"><h2>Student rows</h2><label>Show rows<select value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="all">All ({review.rows.length})</option><option value="errors">Need correction ({summary.errors})</option><option value="warnings">Review notes ({summary.warnings})</option><option value="skipped">Skipped ({summary.skipped})</option></select></label></div>
-        <div className="import-table-scroll" role="region" aria-label="Import row results" tabIndex={0}><table className="import-table"><thead><tr><th>Row / student</th><th>Placement</th><th>Guardian</th><th>Validation</th><th><span className="sr-only">Action</span></th></tr></thead><tbody>{rows.map(row=><tr key={row.row_number}><th scope="row"><small>Row {row.row_number}</small><strong>{row.values.first_name} {row.values.last_name}</strong><span>{row.values.admission_number||"No admission number"}</span></th><td>{row.class_name||"No class"}<small>Roll {row.values.roll_number||"—"}</small></td><td>{row.guardian_name||"Guardian missing"}<small>{row.values.guardian_key?`Family: ${row.values.guardian_key}`:row.guardian_choice.mode==='existing'?"Existing guardian":"Separate guardian"}</small></td><td><span className={`import-status import-status--${row.decision==='skip'?'skipped':row.errors.length?'error':row.warnings.length?'warning':'ready'}`}>{row.decision==='skip'?'Skipped':row.errors.length?'Needs correction':row.warnings.length?'Review notes':'Ready'}</span>{[...row.errors,...row.warnings].length?<ul className="import-issues">{[...row.errors,...row.warnings].map((issue,i)=><li key={i}>{issue}</li>)}</ul>:null}</td><td><button className="people-secondary" disabled={Boolean(editing)} aria-label={`Edit row ${row.row_number}`} onClick={()=>setEditing(row)}>Edit</button></td></tr>)}</tbody></table></div>
-        {!rows.length?<p role="status" className="people-muted">No rows in this view.</p>:null}
-        {filtered.length>20?<footer className="import-pagination"><button className="people-secondary" disabled={page===0||Boolean(editing)} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page+1} of {Math.ceil(filtered.length/20)}</span><button className="people-secondary" disabled={(page+1)*20>=filtered.length||Boolean(editing)} onClick={()=>setPage(p=>p+1)}>Next</button></footer>:null}
+import { useEffect, useRef, useState } from "react";
+import { Download, RefreshCw } from "lucide-react";
+import {
+  cancelImport,
+  commitImport,
+  importReportUrl,
+  type ImportDetail,
+  type ImportRow,
+} from "./import-api";
+import { ImportRowEditor } from "./ImportRowEditor";
+export function ImportReview({
+  schoolId,
+  job,
+  reload,
+  onCommitted,
+}: {
+  schoolId: string;
+  job: ImportDetail;
+  reload: () => Promise<void>;
+  onCommitted: () => Promise<void>;
+}) {
+  const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const [editing, setEditing] = useState<ImportRow | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [attempt, setAttempt] = useState<{
+    expected_revision: number;
+    validation_token: string;
+  } | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const [reviewed, setReviewed] = useState<{
+    expected_revision: number;
+    validation_token: string;
+  } | null>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [confirm]);
+  const review = job.review;
+  if (!review) return null;
+  const summary = review.summary;
+  const filtered = review.rows.filter(
+    (r) =>
+      filter === "all" ||
+      (filter === "errors" && r.errors.length) ||
+      (filter === "warnings" && r.warnings.length) ||
+      (filter === "skipped" && r.decision === "skip"),
+  );
+  const stale = Boolean(
+    reviewed &&
+    (reviewed.expected_revision !== job.revision ||
+      reviewed.validation_token !== review.validation_token),
+  );
+  const rows = filtered.slice(page * 20, page * 20 + 20);
+  async function save() {
+    if (!verified || busy || !reviewed || (stale && !attempt)) return;
+    setBusy(true);
+    setError("");
+    const command = attempt ?? reviewed;
+    setAttempt(command);
+    try {
+      await commitImport(job.id, {
+        school_id: schoolId,
+        ...command,
+        verified: true,
+      });
+      await onCommitted();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Import could not be completed. Retry the same review or reload to check changes.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function cancel() {
+    setBusy(true);
+    setError("");
+    try {
+      await cancelImport(job.id, {
+        school_id: schoolId,
+        expected_revision: job.revision,
+      });
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not discard the draft.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <section className="people-panel">
+        <header className="people-heading">
+          <div>
+            <h2 ref={heading} tabIndex={-1}>
+              {confirm ? "Confirm school enrollment" : "Check your import"}
+            </h2>
+            <p className="people-muted">
+              {job.filename} · {review.term.name} · {job.row_count} rows
+            </p>
+          </div>
+          <a
+            className="people-secondary"
+            href={importReportUrl(schoolId, job.id)}
+            download
+          >
+            <Download size={17} />
+            Download report
+          </a>
+        </header>
+        <dl className="import-metrics">
+          <div>
+            <dt>To enroll</dt>
+            <dd>{summary.included}</dd>
+          </div>
+          <div>
+            <dt>Need correction</dt>
+            <dd>{summary.errors}</dd>
+          </div>
+          <div>
+            <dt>Need review</dt>
+            <dd>{summary.warnings}</dd>
+          </div>
+          <div>
+            <dt>Skipped</dt>
+            <dd>{summary.skipped}</dd>
+          </div>
+        </dl>
+        {error ? (
+          <div className="people-error" role="alert">
+            <p>{error}</p>
+            <button
+              type="button"
+              className="people-secondary"
+              disabled={busy}
+              onClick={async () => {
+                setConfirm(false);
+                setVerified(false);
+                setAttempt(null);
+                setError("");
+                await reload();
+              }}
+            >
+              <RefreshCw size={16} />
+              Reload latest review
+            </button>
+          </div>
+        ) : null}
+        {confirm ? (
+          <div className="people-form">
+            <p>
+              Enroll{" "}
+              <strong>
+                {summary.included}{" "}
+                {summary.included === 1 ? "student" : "students"}
+              </strong>
+              {summary.new_guardians ? (
+                <>
+                  {" "}
+                  and create{" "}
+                  <strong>
+                    {summary.new_guardians}{" "}
+                    {summary.new_guardians === 1
+                      ? "guardian record"
+                      : "guardian records"}
+                  </strong>
+                </>
+              ) : null}
+              {summary.existing_guardians ? (
+                <>
+                  {" "}
+                  and link{" "}
+                  <strong>
+                    {summary.existing_guardians} existing{" "}
+                    {summary.existing_guardians === 1
+                      ? "guardian"
+                      : "guardians"}
+                  </strong>
+                </>
+              ) : null}
+              .
+            </p>
+            {stale && !attempt ? (
+              <p role="alert" className="people-error">
+                This review changed while it was open. Go back to rows and
+                review the latest results before confirming.
+              </p>
+            ) : null}
+            {summary.skipped ? (
+              <p className="people-warning">
+                {summary.skipped}{" "}
+                {summary.skipped === 1 ? "row is" : "rows are"} excluded. No
+                school records will change for{" "}
+                {summary.skipped === 1 ? "that row" : "those rows"}.
+              </p>
+            ) : null}
+            {summary.warnings ? (
+              <p className="people-warning">
+                {summary.warnings} included{" "}
+                {summary.warnings === 1 ? "row has" : "rows have"} review notes.
+                Confirm any matching names or phone numbers represent the
+                intended people.
+              </p>
+            ) : null}
+            {summary.registers_reopened ? (
+              <p className="people-warning">
+                {summary.registers_reopened} submitted registers will return to
+                draft for the updated roster. Existing attendance marks are
+                retained.
+              </p>
+            ) : null}
+            <p className="people-muted">
+              The entire selected batch saves together. No login access,
+              leave-signing permissions or attendance marks will be created.
+            </p>
+            <label className="people-confirm">
+              <input
+                type="checkbox"
+                checked={verified}
+                disabled={busy}
+                onChange={(e) => setVerified(e.target.checked)}
+              />
+              I verified the included students, family links, dates, skipped
+              rows and review notes.
+            </label>
+            <footer className="import-actions">
+              <button
+                className="people-secondary"
+                disabled={busy}
+                onClick={() => {
+                  setConfirm(false);
+                  setVerified(false);
+                }}
+              >
+                Back to rows
+              </button>
+              <button
+                className="people-primary"
+                disabled={!verified || busy || (stale && !attempt)}
+                onClick={() => void save()}
+              >
+                {busy
+                  ? "Saving enrollment…"
+                  : attempt
+                    ? "Retry same import"
+                    : `Enroll ${summary.included} ${summary.included === 1 ? "student" : "students"}`}
+              </button>
+            </footer>
+          </div>
+        ) : (
+          <>
+            <p className="people-muted">
+              Correct invalid rows or skip students you don't want to import.
+              Changes remain in this draft until you confirm the batch.
+            </p>
+            <footer className="import-actions">
+              <button
+                className="people-secondary"
+                disabled={Boolean(editing) || busy}
+                onClick={() => setCancelling(true)}
+              >
+                Discard draft
+              </button>
+              <button
+                className="people-primary"
+                disabled={
+                  Boolean(editing) ||
+                  !summary.included ||
+                  Boolean(summary.errors) ||
+                  busy
+                }
+                onClick={() => {
+                  setConfirm(true);
+                  setVerified(false);
+                  setAttempt(null);
+                  setReviewed({
+                    expected_revision: job.revision,
+                    validation_token: review.validation_token,
+                  });
+                }}
+              >
+                Review enrollment
+              </button>
+            </footer>
+            {cancelling ? (
+              <div className="people-warning">
+                <p>
+                  Discard this draft and clear its uploaded personal details? No
+                  enrolled school records will be removed.
+                </p>
+                <div className="import-actions">
+                  <button
+                    className="people-secondary"
+                    disabled={busy}
+                    onClick={() => setCancelling(false)}
+                  >
+                    Keep draft
+                  </button>
+                  <button
+                    className="people-primary"
+                    disabled={busy}
+                    onClick={() => void cancel()}
+                  >
+                    {busy ? "Discarding…" : "Discard uploaded draft"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </section>
-    </>:null}
-  </>;
+      {!confirm ? (
+        <>
+          {editing ? (
+            <ImportRowEditor
+              key={editing.row_number}
+              schoolId={schoolId}
+              job={job}
+              row={editing}
+              onClose={() => setEditing(null)}
+              onSaved={reload}
+            />
+          ) : null}
+          <section className="people-panel">
+            <div className="import-table-controls">
+              <h2>Student rows</h2>
+              <label>
+                Show rows
+                <select
+                  value={filter}
+                  onChange={(e) => {
+                    setFilter(e.target.value);
+                    setPage(0);
+                  }}
+                >
+                  <option value="all">All ({review.rows.length})</option>
+                  <option value="errors">
+                    Need correction ({summary.errors})
+                  </option>
+                  <option value="warnings">
+                    Review notes ({summary.warnings})
+                  </option>
+                  <option value="skipped">Skipped ({summary.skipped})</option>
+                </select>
+              </label>
+            </div>
+            <div
+              className="import-table-scroll"
+              role="region"
+              aria-label="Import row results"
+              tabIndex={0}
+            >
+              <table className="import-table">
+                <thead>
+                  <tr>
+                    <th>Row / student</th>
+                    <th>Placement</th>
+                    <th>Guardian</th>
+                    <th>Validation</th>
+                    <th>
+                      <span className="sr-only">Action</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.row_number}>
+                      <th scope="row">
+                        <small>Row {row.row_number}</small>
+                        <strong>
+                          {row.values.first_name} {row.values.last_name}
+                        </strong>
+                        <span>
+                          {row.values.admission_number || "No admission number"}
+                        </span>
+                      </th>
+                      <td>
+                        {row.class_name || "No class"}
+                      <small>Roll {row.values.roll_number || "Not set"}</small>
+                      </td>
+                      <td>
+                        {row.guardian_name || "Guardian missing"}
+                        <small>
+                          {row.values.guardian_key
+                            ? `Family: ${row.values.guardian_key}`
+                            : row.guardian_choice.mode === "existing"
+                              ? "Existing guardian"
+                              : "Separate guardian"}
+                        </small>
+                      </td>
+                      <td>
+                        <span
+                          className={`import-status import-status--${row.decision === "skip" ? "skipped" : row.errors.length ? "error" : row.warnings.length ? "warning" : "ready"}`}
+                        >
+                          {row.decision === "skip"
+                            ? "Skipped"
+                            : row.errors.length
+                              ? "Needs correction"
+                              : row.warnings.length
+                                ? "Review notes"
+                                : "Ready"}
+                        </span>
+                        {[...row.errors, ...row.warnings].length ? (
+                          <ul className="import-issues">
+                            {[...row.errors, ...row.warnings].map(
+                              (issue, i) => (
+                                <li key={i}>{issue}</li>
+                              ),
+                            )}
+                          </ul>
+                        ) : null}
+                      </td>
+                      <td>
+                        <button
+                          className="people-secondary"
+                          disabled={Boolean(editing)}
+                          aria-label={`Edit row ${row.row_number}`}
+                          onClick={() => setEditing(row)}
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!rows.length ? (
+              <p role="status" className="people-muted">
+                No rows in this view.
+              </p>
+            ) : null}
+            {filtered.length > 20 ? (
+              <footer className="import-pagination">
+                <button
+                  className="people-secondary"
+                  disabled={page === 0 || Boolean(editing)}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {page + 1} of {Math.ceil(filtered.length / 20)}
+                </span>
+                <button
+                  className="people-secondary"
+                  disabled={
+                    (page + 1) * 20 >= filtered.length || Boolean(editing)
+                  }
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </button>
+              </footer>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+    </>
+  );
 }

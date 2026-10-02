@@ -124,17 +124,17 @@
 .presence-dot { width: 8px; height: 8px; background: var(--parent-outline); }
 .presence-dot--in { background: var(--parent-positive); }
 .presence-dot--away { background: var(--parent-danger); }
-.parent-header__page { flex: 0 0 auto; color: var(--parent-muted); font-size: 11px; line-height: 14px; font-weight: 700; letter-spacing: 0.04em; }
+.parent-header__page { flex: 0 0 auto; margin: 0; color: var(--parent-ink); font-size: 17px; line-height: 22px; font-weight: 750; letter-spacing: -0.025em; }
 
 .parent-main { width: 100%; padding: calc(130px + max(0px, env(safe-area-inset-top) - 12px)) 16px calc(116px + env(safe-area-inset-bottom)); }
 .parent-stack { display: flex; flex-direction: column; gap: 22px; }
 .home-page { gap: 18px; padding-bottom: 22px; }
 
 .surface-card {
-  border: 1px solid rgba(226, 232, 240, 0.72);
+  border: 0;
   border-radius: var(--edura-radius-card);
   background: var(--parent-card);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(29, 78, 216, 0.02);
+  box-shadow: var(--parent-shadow);
 }
 
 .title-row { gap: 7px; min-width: 0; }
@@ -244,7 +244,7 @@
 .next-period time { color: #33405b; font-size: 11px; font-weight: 600; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
-.metric-card { position: relative; min-height: 124px; padding: 14px; border: 1px solid rgba(226,232,240,.72); border-radius: var(--edura-radius-card); background: white; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(29,78,216,.02); }
+.metric-card { position: relative; min-height: 124px; padding: 14px; border: 0; border-radius: var(--edura-radius-card); background: white; box-shadow: var(--parent-shadow); }
 .metric-card__hit-area { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
 .metric-card__hit-area:focus-visible { outline: 3px solid var(--parent-primary-bright); outline-offset: 3px; }
 .metric-card:has(.metric-card__hit-area):hover { border-color: #94b1f5; box-shadow: 0 5px 16px rgba(29,78,216,.12); }
@@ -361,7 +361,7 @@
 .aggregate-card__cushion strong { color: #89f5e7; }
 
 .attendance-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-.attendance-stat-card { min-height: 96px; padding: 13px 12px; border: 1px solid rgba(226,232,240,.72); border-radius: var(--edura-radius-card); background: white; box-shadow: var(--parent-shadow); }
+.attendance-stat-card { min-height: 96px; padding: 13px 12px; border: 0; border-radius: var(--edura-radius-card); background: white; box-shadow: var(--parent-shadow); }
 .attendance-stat-card__title { justify-content: space-between; color: #3e4a63; font-size: 11px; font-weight: 700; letter-spacing: .035em; text-transform: uppercase; }
 .attendance-stat-card__title svg { color: var(--parent-positive-dark); }
 .attendance-stat-card__title .flame-icon { color: #fb610f; fill: #ffb344; }
@@ -415,8 +415,9 @@
 .calendar-selected-detail--present strong { color: var(--parent-positive-dark); }
 .calendar-selected-detail--unexcused strong { color: var(--parent-danger); }
 
-.subject-attendance-card { display: grid; gap: 8px; padding: 12px; }
-.subject-attendance-card article { min-width: 0; padding: 12px; border: 1px solid #e7edfa; border-radius: 11px; background: #f8faff; }
+.subject-attendance-card { display: grid; gap: 0; padding: 4px 12px; }
+.subject-attendance-card article { min-width: 0; padding: 14px 0; border: 0; border-radius: 0; background: transparent; }
+.subject-attendance-card article + article { border-top: 1px solid var(--edura-border); }
 .subject-attendance-card__labels { justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; }
 .subject-attendance-card__labels > span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; overflow-wrap: anywhere; }
 .subject-attendance-card__labels > span { font-weight: 600; }
@@ -466,7 +467,7 @@
 .leave-request-card__status { display: flex; justify-content: space-between; align-items: center; gap: 9px; }
 .leave-request-card__status span { padding: 3px 8px; border-radius: 999px; color: #0c2063; background: #dce1ff; font-size: 11px; font-weight: 700; letter-spacing: .025em; }
 .leave-request-card__status strong { color: #3a4660; font-size: 11px; letter-spacing: .08em; }
-.leave-request-card__intro h1 { margin: 9px 0 1px; font-size: 20px; line-height: 26px; font-weight: 500; letter-spacing: -.035em; }
+.leave-request-card__intro h2 { margin: 9px 0 1px; font-size: 20px; line-height: 26px; font-weight: 500; letter-spacing: -.035em; }
 .leave-request-card__intro p { margin: 0; color: #526078; font-size: 11px; }
 .leave-request-card__body { display: flex; flex-direction: column; gap: 14px; padding: 15px 16px 17px; }
 .leave-fact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -521,10 +522,10 @@
 .leave-history__list { display: flex; flex-direction: column; gap: 9px; margin-top: 9px; }
 .parent-empty-state { display: flex; min-height: 88px; padding: 16px; align-items: center; justify-content: center; gap: 10px; color: var(--parent-positive-dark); text-align: left; }
 .parent-empty-state > div { display: flex; flex-direction: column; gap: 2px; }
-.parent-empty-state strong, .parent-empty-state h1 { margin: 0; color: var(--parent-ink); font-size: 13px; }
+.parent-empty-state strong, .parent-empty-state h2 { margin: 0; color: var(--parent-ink); font-size: 13px; }
 .parent-empty-state span, .parent-empty-state p { margin: 0; color: var(--parent-muted); font-size: 11px; line-height: 15px; }
 .parent-empty-state--large { min-height: 220px; flex-direction: column; text-align: center; }
-.parent-empty-state--large h1 { font-size: 18px; }
+.parent-empty-state--large h2 { font-size: 18px; }
 .parent-empty-state--large p { max-width: 36ch; font-size: 11px; }
 .leave-history-item { width: 100%; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 10px; min-height: 94px; padding: 13px 14px; color: var(--parent-ink); text-align: left; }
 .leave-history-item__icon { display: grid; width: 37px; height: 37px; place-items: center; align-self: start; border-radius: var(--edura-radius-control); color: var(--parent-positive-dark); background: #e2f1ef; }
@@ -536,7 +537,7 @@
 .parent-leave-form { max-width: 560px; width: 100%; margin-inline: auto; padding: 18px; }
 .parent-leave-form__heading { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
 .parent-leave-form__heading > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: var(--edura-radius-control); color: white; background: var(--parent-primary-bright); }
-.parent-leave-form__heading h1 { margin: 0; font-size: 18px; }
+.parent-leave-form__heading h2 { margin: 0; font-size: 18px; }
 .parent-leave-form__heading p { margin: 1px 0 0; color: var(--parent-muted); font-size: 11px; }
 .parent-leave-form select, .parent-leave-form input, .parent-leave-form textarea { margin-top: 5px; margin-bottom: 13px; padding: 10px 11px; border-color: var(--edura-border); font-size: 12px; }
 .parent-leave-form__dates { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
@@ -570,7 +571,7 @@
 .diary-date-section__heading { justify-content: space-between; gap: 12px; padding: 0 2px; }
 .diary-date-section__heading > div { min-width: 0; }
 .diary-date-section__heading span { display: block; color: #3d4962; font-size: 11px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
-.diary-date-section__heading h1 { margin: 1px 0 0; font-size: 18px; line-height: 24px; letter-spacing: -.03em; }
+.diary-date-section__heading h2 { margin: 1px 0 0; font-size: 18px; line-height: 24px; letter-spacing: -.03em; }
 .diary-date-section__calendar { display: grid !important; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 999px; color: var(--parent-primary) !important; background: var(--parent-soft-2); }
 .packing-heading small { color: var(--parent-muted); font-size: 11px; font-weight: 500; }
 .diary-day-strip { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 5px; margin-top: 10px; }

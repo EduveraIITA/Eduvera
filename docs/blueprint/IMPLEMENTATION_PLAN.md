@@ -901,40 +901,276 @@ Verification:
   and local route health are the acceptance checks for the expanded implementation; phone review of
   parent, student and principal Home remains the final visual gate.
 
+## Shared heading hierarchy — 2 October 2026
+
+- Standardized the parent and staff shells around one direct page label. Staff shell subtitles no
+  longer create an uppercase heading above the page title, and routes with their own content heading
+  suppress the duplicate shell title. Parent page labels now use the same formal title treatment on
+  every route.
+- Replaced promotional or ambiguous labels including “Academic Pulse,” “Presence Pulse,” “School
+  pulse,” “Next best actions,” and “work desk” with task-oriented names such as “Current class,”
+  “Today's attendance,” “Today,” “Class registers,” and “Diary.” Administration, fees, events, More,
+  and student services use the same plain-language hierarchy without changing the established theme,
+  navigation or workflow behavior.
+- Frontend typecheck, lint, production build, and all **177** tests pass. The rebuilt local Docker
+  preview reports database/events ready and the teacher Home hierarchy was visually checked at the
+  mobile breakpoint. Cross-role user visual review remains the acceptance gate; no external deployment
+  or production-readiness claim is made by this entry.
+
+## Operational surface density — 2 October 2026
+
+- Consolidated the teacher/principal attendance summary to one editable date, one set of authoritative
+  register totals and one list heading. Removed the repeated human-readable date, duplicate due count,
+  decorative icon and explanatory paragraph while preserving assignment-mismatch, review and audit
+  behavior.
+- Reduced minimum height and padding across shared timetable, class and campus-event feature surfaces.
+  Generic explanatory copy was removed where the adjacent data and controls already communicate the
+  task. Student attendance no longer repeats its percentage inside the donut, eligibility policy copy
+  is concise, and the diary summary no longer repeats shell-level student identity.
+- Teacher and student Home identity/day cards were explicitly excluded and are unchanged by this pass.
+  Frontend typecheck, lint and all **177** tests pass. The local teacher attendance route was visually
+  checked at the mobile breakpoint; cross-role physical-phone review remains open.
+
+## Principal family contact directory — 2 October 2026
+
+- Reworked Students & guardians into a mobile-first contact directory. Students are grouped by
+  name initial, represented by their persisted profile photo with an initials fallback, and paired
+  with compact guardian avatar stacks. Expanding a student reveals linked guardian phone,
+  relationship, login state and the existing authority-management action without duplicating every
+  family record in the default scan view.
+- Search now updates after a short debounce and A–Z controls request an exact server-side initial.
+  The people API returns student `avatar_url`, orders stable cursor pages by student name, and
+  preserves authorization and 25-row pagination. The frontend includes a compatibility fallback for
+  older review backends so alphabet filtering remains accurate while the backend release catches up.
+- Frontend typecheck, lint and all **177** tests pass; backend typecheck and lint pass. The local
+  principal directory, expanded guardian row and alphabet filtering were visually checked at the
+  mobile breakpoint. The isolated people integration suite could not complete against the already
+  active shared database and remains an open release check.
+
+## Adult profile imagery — 2 October 2026
+
+- Added six consistent, square directory portraits for four seeded guardians (Pooja Sharma, Rashmi
+  Joshi, Nandita Deshmukh and Pooja Chauhan), principal Meera Kapoor and teacher Kavita Mehta. The
+  assets are bundled with the application rather than referenced from expiring external URLs.
+- Added additive `avatar_url` fields to account and school-person identities. Authentication now
+  carries adult account imagery, the people directory returns the guardian image, and chat recipient
+  discovery falls back from a student portrait to the adult account portrait. The deterministic school
+  generator preserves all six mappings across reseeds.
+- The shared account menu, demo persona picker and family contact directory render the same identity
+  image with initials retained as the fallback. A temporary exact-person frontend fallback keeps the
+  local review UI complete while an older backend remains connected.
+- All seeded student directory rows now have a stable visual fallback when an older API omits
+  `avatar_url`. The four generated guardian portraits are distributed deterministically across every
+  seeded guardian profile and parent account; local verification reports **201/201** guardian school
+  profiles and **199/199** parent accounts with persisted imagery.
+- The migration was applied transactionally to the local PostgreSQL database and verified for all six
+  intended people. Frontend/backend typecheck and lint pass, all **177** frontend tests pass, all seed
+  integrity tests pass, and backend unit tests pass; database integration suites still require their
+  isolated `DATABASE_URL` test database.
+
+## Role-aware operational calendar — 2 October 2026
+
+- Replaced the month-only calendar with URL-addressable Month and Day modes. Month navigation,
+  day navigation, Today, direct date selection and the seven-day Day strip all keep the selected
+  school date in the URL, so refresh and back/forward navigation preserve the current context.
+- Calendar indicators now aggregate the records relevant to each role: campus events and class tests
+  for all authorized audiences, attendance and leave for students and families, and school holidays for every
+  portal. Selecting a date opens the existing authoritative timetable, register, leave or event
+  workflow rather than duplicating mutations inside the calendar.
+- Added a tenant-scoped school-calendar read endpoint with active-membership authorization, strict
+  ISO date validation and a bounded 92-day range. The deterministic school seed and additive
+  migrations include Gandhi Jayanti as a non-instructional day. Non-instructional overrides suppress
+  recurring periods and register workload while retaining explicitly scheduled events.
+- Loading, empty, error/retry and selected-day states are present, indicators pair shape/labels with
+  colour, and controls retain keyboard-visible native button semantics. The existing Eduvera cobalt
+  visual system, role headers and navigation remain unchanged.
+- Frontend/backend typecheck and lint pass, the production frontend build passes, all **180** frontend
+  tests, **53** backend non-integration tests and all **8** deterministic seed integrity tests pass. The localhost preview is healthy
+  and Month, Day, event and holiday states were visually checked at the mobile breakpoint. Physical
+  phone and cross-role visual acceptance remain the release gate; the additive calendar migrations
+  still need to be applied through each deployment environment's normal migration pipeline. Database
+  integration suites remain unverified because this workspace has no isolated integration-test
+  `DATABASE_URL`; they were not pointed at the active shared database.
+
+## Principal timetable mobile hierarchy — 2 October 2026
+
+- Simplified the principal daily timetable without changing its workflow or navigation. The page now
+  has one `Timetable` heading, a compact date/class selector, concise class context and the existing
+  weekly-view path. Repeated date headings and promotional schedule labels were removed.
+- Replaced the overlapping iOS date/class row with a responsive grid that stacks the native controls
+  on phones. Non-instructional days hide the class selector because class choice cannot change a
+  school-wide closure. The native date/select controls use grid stretching rather than percentage
+  widths, preventing iOS Safari from resolving the date input against the outer card and overflowing
+  its padded content area.
+- A non-instructional date with no explicit plan now renders one compact school-closure surface. It
+  does not offer prepare or print actions that cannot produce a valid regular schedule. Explicitly
+  published dated plans remain visible and editable under the existing authorization and validation
+  rules. Its action opens the school calendar instead of repeating the weekly-view action.
+- Normal school days retain plan preparation, revisions, printing, coverage, history and the full
+  period list. Empty instructional schedules use a compact inline state rather than reserving a large
+  card. The established Eduvera type, cobalt palette, staff header and four-tab phone navigation are
+  unchanged. The selected class, schedule status, revision control and print control now share one
+  schedule header rather than repeating the class context in a separate block.
+- All **180** frontend tests, the production build, typecheck and lint pass. The Gandhi Jayanti closure state and a
+  populated Class 6A day were visually inspected at the mobile breakpoint in the live local preview.
+  Physical-phone acceptance remains open.
+
+## Mobile term timetable management — 2 October 2026
+
+- Replaced the principal's flat weekly management list and single-period form with a class-first,
+  term-scoped management workspace. The primary `Timetable` module continues to open the published
+  schedule; principals enter `Manage timetable` only when changing the weekly plan, targets or school
+  dates. A principal can select an academic term, swipe between classes and weekdays,
+  see completed class-days, total periods and teacher/room conflicts, then edit only the focused
+  day's ordered schedule. The weekly baseline remains the authoritative pattern repeated throughout
+  the selected term; dated day plans continue to own exceptions and cover changes.
+- Period editing now uses a phone bottom sheet with large native controls and automatic next-period
+  defaults. New periods start five minutes after the focused day's final period and retain the
+  selected class, room, term and weekday. Class periods require a subject; breaks and activities use
+  a descriptive title. Existing period edit and removal paths remain available from each row.
+- Added an atomic Copy day workflow for one or more target weekdays. Existing days are visibly
+  identified and require an explicit replace confirmation. The server validates term/class scope,
+  active school ownership, target contents and teacher/room clashes while holding the school's
+  schedule transaction lock; replacement, audit history and the timetable outbox event commit in the
+  same transaction. Published dated plans remain protected from silent baseline changes.
+- The principal timetable read model now exposes all school terms, selects one explicitly through
+  the URL and filters class/slot/conflict data to that term and academic year. Existing slot creation
+  also accepts the selected term and rejects cross-year class/term combinations. No database schema
+  migration was required.
+- Backend and frontend typecheck, lint and production builds pass. All **183** frontend tests and
+  **49** backend non-integration tests pass; the focused builder suite contributes **3** workflow
+  tests. An isolated-database API case now covers the term read model and atomic day copy, but was
+  not run against the active shared demo database. The authenticated Class 6A builder, automatic P7
+  defaults and guarded Monday-to-Tuesday copy flow were visually checked at a 393 px mobile viewport.
+  Physical-phone acceptance remains open.
+
+## Timetable calendar exceptions and curriculum coverage — 2 October 2026
+
+- Extended the mobile term builder without replacing the accepted weekly-baseline model. Principals
+  can now record public holidays, school holidays and emergency closures as dated school-calendar
+  exceptions, while the existing daily-plan workspace remains the path for teacher cover, moved
+  periods and cancellations on an otherwise instructional date. Closures suppress both recurring
+  slots and published dated schedules in the effective projection without deleting their history.
+- Added class-and-subject curriculum targets expressed as minutes per academic term. The principal
+  coverage view compares those targets with projected effective periods and hours across the whole
+  term, including dated plans and excluding closures. Each class reports configured subjects,
+  weekly period counts, projected hours and remaining gaps; school-level totals identify ready
+  classes, subject gaps and configured targets.
+- Target and closure writes are principal-only, tenant-scoped and transactionally serialized. They
+  use optimistic revisions, database constraints, audit entries and outbox events. A date cannot be
+  closed or reopened after attendance has been recorded, submitted or locked. Emergency closures
+  additionally create role-appropriate in-app notices, while all calendar changes invalidate the
+  affected role calendars, timetables and Home projections through the existing event channel.
+- Added migration `027_timetable_curriculum_and_calendar_management.sql`, including the target table,
+  richer school-calendar metadata, tenant indexes, row-level security and explicit privilege
+  revocation. It was applied to the local Docker database after a recoverable backup. The API image
+  was rebuilt and is healthy on port 8001; the Vite hot-reload preview remains on port 8000 and is
+  exposed through the existing ngrok tunnel.
+- Frontend typecheck, lint and production build pass; all **185** frontend tests and **53** backend
+  non-integration tests pass. A focused isolated-database API test covers target creation, stale-write
+  rejection, closure creation, projected-hour reduction and closure removal. Weekly plan, term
+  coverage, target editor and school-date sheet were visually checked at the mobile breakpoint.
+  Physical-phone acceptance and the normal deployment migration pipeline remain open release gates.
+
+## Shared role-aware timetable views — 2 October 2026
+
+- Standardized the primary timetable module around one shared date strip and Day, Week, Month and
+  Year switcher for principals, teachers, students and parents. The selected date and view are URL
+  state, so browser navigation, refresh and shared links retain context. The existing weekly
+  timetable management workspace remains a separate principal-only editing workflow rather than
+  being mislabeled as a read-only Week view.
+- Kept role context in the data, not in four competing navigation designs. Principals see the
+  selected class and unresolved coverage counts; teachers see only their assigned and accepted
+  teaching periods; students see their class schedule; parents see the selected child's schedule.
+  Student and parent Day/Week content remains read-only, while staff actions stay in the authorized
+  day-plan and timetable-management workflows.
+- Added tenant- and role-authorized timetable summary reads for principal and family portals. Month
+  and Year totals are calculated from `effective_school_schedule`, so closures, cancellations and
+  published dated plans are reflected instead of extrapolating an obsolete recurring template in
+  the browser. Summary ranges are validated and capped at 370 days.
+- Interaction research used the official Google Calendar and Microsoft Outlook/Teams patterns:
+  quick view switching, stable selection, previous/next date navigation and a selected-day agenda.
+  The implementation retains Eduvera's established cobalt strip, compact mobile surfaces, headers
+  and four-item navigation rather than copying those products' visual styling.
+- Frontend/backend typecheck, lint and production builds pass. All **186** frontend tests and **53**
+  database-free backend tests pass. Database integration suites remain gated on an isolated test
+  `DATABASE_URL`; the active shared demo database was not used as a test target. Visual validation
+  and physical-phone acceptance remain open because the managed local preview could not bind ports
+  inside the restricted execution environment for this run.
+
+### Principal summary compatibility follow-up — 2 October 2026
+
+- The live principal preview was still connected to an older API image that did not expose the new
+  `/api/v1/day-plans/admin/summary` route, leaving Week, Month and Year in an error fallback even
+  though the published timetable builder read model was available. The principal client now falls
+  back only on an explicit 404 and derives the requested range from the authorized published
+  timetable read model, including term boundaries, the selected class, weekly slots, unassigned
+  periods and non-instructional school-calendar exceptions. Other server errors still surface and
+  are not hidden.
+- Corrected Month totals to include only dates in the displayed month; the wider summary range used
+  to populate the scrolling date strip no longer inflates the visible month total.
+- Removed staffing-warning badges from the compact date, Week, Month and Year cells after phone
+  validation showed that any corner badge competed with the weekday label. Assignment gaps remain
+  available in the detailed timetable-management workflow where they have adequate context.
+- Moved the principal class selector into the blue timetable scope header, ahead of the date strip
+  and view switcher. Week, Month, Year and the selected-day schedule now visibly inherit one class
+  choice; the detached selector surface below the overview was removed.
+- A focused fallback test passes, and frontend typecheck and lint pass. The authenticated local
+  principal view was visually verified with populated Week, Month and Year views; October Class 6A
+  shows the Gandhi Jayanti closure as zero periods and a 141-period month total. The new API remains
+  the authoritative path once the backend image is rebuilt because it also accounts for published
+  dated-plan overrides.
+
+### Fail-safe sign-out — 2 October 2026
+
+- Sign-out now clears cached school data and authenticated client state immediately, before the
+  revocation request. An explicit local logout marker prevents a stale HttpOnly session cookie from
+  silently signing the user back in after a refresh when the API is temporarily unavailable; a
+  successful login, registration or demo selection clears that marker.
+- The logout marker also retains the server-advertised demo-mode flag, so the test persona buttons
+  stay available after logout and browser reload in local and Railway testing environments.
+- The logout endpoint is public and CSRF-independent because it only removes authority. It clears
+  both cookies before doing database work, then best-effort revokes the hashed session and records
+  the audit event. An expired session, stale CSRF token, audit failure or transient database error can
+  no longer trap the user inside the signed-in UI.
+- The complete authentication loop is now covered: transient CSRF bootstrap failures retry before
+  login, registration or demo entry; a stale CSRF rejection refreshes once; and integration coverage
+  verifies demo login -> logout -> anonymous session -> password login in one browser. The signup
+  password guidance and browser validation now match the backend's 12-character policy.
+- The local live-preview supervisor builds backend artifacts in a scratch runtime rather than the
+  macOS Documents/File Provider folder, mirrors edits through descriptor-free polling, and restarts
+  ngrok/photo attendance independently so an optional service failure cannot take authentication down.
+- The Vite development proxy now normalizes the internal API-hop `Origin` to its trusted localhost
+  origin. This prevents ngrok phone requests from being rejected by the intentionally strict backend
+  CORS allowlist while leaving browser-facing tunnel URLs, cookies and production CORS unchanged.
+
+### Family timetable summary compatibility — 2 October 2026
+
+- The parent and student Week, Month and Year views now survive rolling deployments where the
+  published weekly timetable endpoint is available before the newer summary endpoint. Only an
+  explicit summary-route 404 activates the compatibility path; authorization, database and other
+  server failures remain visible rather than being masked.
+- Compatibility totals are derived from each authorized effective weekly schedule, including dated
+  periods and cancellations, and requests are bounded in six-week batches for a Year view. The
+  dedicated summary API remains the primary path and automatically takes over as soon as the backend
+  deployment exposes it.
+- A focused regression test covers complete date ranges, weekday mapping, free days and cancelled
+  periods. Frontend typecheck and lint pass. Parent Week and Month views were verified both on the
+  localhost mobile preview and through the active ngrok URL; the former error surface is replaced by
+  populated daily counts and the selected week reports 33 periods.
+
 ## Fee payment submissions and review — 2 October 2026
 
-The user confirmed fee/payment review, not school ratings. Behavior, research sources,
-state transitions, edge cases and remaining release boundaries are recorded in
-[FEE_PAY_REVIEW.md](FEE_PAY_REVIEW.md).
-
-- Migration 022 adds school payment instructions with revision control, immutable
-  guardian fee/payment submissions, and immutable reviewer decisions. Instructions
-  changes retain before/after snapshots in the administrative audit.
-- Parents review balances, use school payment instructions/optional UPI handoff,
-  report an already-made payment, or question a fee. Students remain read-only.
-  Pending claims do not create receipts or reduce balances. Existing invoices,
-  event credits and refunds remain the financial source of truth.
-- Principal and delegated desktop finance reviewers verify or reject claims with
-  an explanation. Verification rechecks collectible balance and reference, then
-  writes receipt and decision atomically. Self-verification, changed retry payloads,
-  repeated pending submissions and stale competing decisions are rejected.
-- Scoped ID-only outbox updates refresh mobile/desktop fee views. Event delivery
-  rechecks current school/guardian/finance permission. Original posted records and
-  new submissions/decisions are protected from update/delete.
-- Verification: backend typecheck/build/lint; responsive app build/lint and all 184
-  frontend tests; desktop build and all 11 tests; 9 operations/event unit tests;
-  11 new fee-review database integration tests plus 6 existing event-ledger tests.
-  Local integration used disposable PostgreSQL WASM (PGlite), applied all migrations
-  001–022, and exercised permission boundaries, duplicate references, retries,
-  stale balances, competing decisions, self-verification and immutable records.
-  Native multi-connection PostgreSQL behavior remains covered by the Stage CI gate;
-  local PGlite serialization is not a native concurrency benchmark.
-- Browser verification used the real local API and generated demo database:
-  parent payment report → pending review → administrator verification → family
-  verified receipt. No browser page errors; API health HTTP 200. Parent payment
-  layouts checked at 320, 390, 768, 1024 and 1440 px without horizontal overflow.
-  Visually inspected mobile payment and desktop principal review screens.
-- No real payment was made. No school bank/UPI destination is seeded. This release
-  does not enable a gateway, automatic reconciliation/refund, or general non-event
-  fee credits. A question marked “School responded” is not a financial adjustment.
-  Confirm final presentation and real school payment instructions on Stage after CI.
+- Preserved the incoming Stage fee-review workflow while integrating the timetable, calendar and
+  authentication work. Migration `022_fee_payment_reviews.sql` adds revisioned school payment
+  instructions, immutable guardian submissions and immutable reviewer decisions.
+- Parents can review balances, use school payment instructions, report an already-made payment or
+  question a fee. Pending claims do not create receipts or reduce balances. Principals and delegated
+  finance reviewers can verify or reject claims; verification rechecks the collectible balance and
+  writes the receipt and decision atomically.
+- Scoped `fees.updated` outbox events refresh the mobile and desktop finance views. Existing invoice,
+  receipt, event-credit and refund records remain the financial source of truth. No gateway, automatic
+  reconciliation or real school bank/UPI destination is introduced by the demo seed.
+- The upstream implementation record and detailed acceptance evidence remain in
+  [FEE_PAY_REVIEW.md](FEE_PAY_REVIEW.md). The merged workflow is revalidated by Stage CI against its
+  isolated PostgreSQL service before migrations and Railway deployment.

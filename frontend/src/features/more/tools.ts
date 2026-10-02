@@ -56,7 +56,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },
     { id: "events", name: "Events & activities", description: "Publish school activities, manage consent and event attendance", icon: CalendarDays, tone: "blue", path: "/principal/events" },
     { id: "import", name: "Import students", description: "Bulk enrol from a spreadsheet with review before commit", icon: FileSpreadsheet, tone: "amber", path: "/principal/students/import" },
-    { id: "weekly", name: "Master timetable", description: "Weekly grid with staffing and clash control", icon: CalendarDays, tone: "violet", path: "/principal/timetable/weekly" },
+    { id: "weekly", name: "Manage timetable", description: "Weekly plan, subject targets and school dates", icon: CalendarDays, tone: "violet", path: "/principal/timetable/weekly" },
     { id: "messages", name: "Messages", description: "School and family conversations", icon: MessageCircle, tone: "teal", path: "/principal/messages" },
     { id: "safeguarding", name: "Safeguarding", description: "Moderation queue and welfare reports", icon: ShieldAlert, tone: "rose", path: "/principal/safeguarding" },
     { id: "administration", name: "School administration", description: "Terms, classes, invitations and school access", icon: Settings2, tone: "slate", path: "/principal/administration" },

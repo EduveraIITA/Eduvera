@@ -115,7 +115,7 @@ function ClassDetail({ cls, date, periods, planned }: { cls: TeacherClassSummary
 }
 
 /* My classes: every class the teacher is responsible for on a date. Each card
-   opens into the room — who is there, what to bring, what was posted. */
+   opens into the room: who is there, what to bring, what was posted. */
 export default function TeacherClassesPage() {
   const auth = useAuth();
   const [params, setParams] = useSearchParams();
@@ -135,9 +135,8 @@ export default function TeacherClassesPage() {
       <div className="operations-stack">
         <section className="operations-hero operations-hero--teacher">
           <div>
-            <span>Class view</span>
+            <span>Assigned classes</span>
             <h2>{home.isPending ? "Loading…" : `${classes.length} ${classes.length === 1 ? "class" : "classes"} · ${students} students`}</h2>
-            <p>Every class you are responsible for on this date. Open one to see the students, today's materials and what has been posted to the class.</p>
           </div>
           <label>Date<input type="date" value={date} max={schoolDateToday()} onChange={(e) => setDate(e.target.value)} /></label>
         </section>
@@ -156,7 +155,7 @@ export default function TeacherClassesPage() {
                       <span className="cls-card__badge">{c.grade}{c.section}</span>
                       <span className="cls-card__title">
                         <strong>{c.class_name}</strong>
-                        <small><MapPin size={11} /> Room {c.room_number || "—"}{c.subjects?.length ? ` · ${c.subjects.join(", ")}` : ""}{c.assignment_kind === "substitute" ? " · cover" : ""}</small>
+                        <small><MapPin size={11} /> Room {c.room_number || "TBD"}{c.subjects?.length ? ` · ${c.subjects.join(", ")}` : ""}{c.assignment_kind === "substitute" ? " · cover" : ""}</small>
                       </span>
                       <Pill tone={statusTone(c.submission_status)}>{statusLabel(c.submission_status)}</Pill>
                       {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}

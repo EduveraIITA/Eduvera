@@ -156,6 +156,8 @@ export interface PrincipalHomeResponse {
 }
 
 export interface PrincipalTimetableResponse {
+  terms: Array<{ id: string; academic_year: string; name: string; starts_on: string; ends_on: string; is_active: boolean }>;
+  selected_term_id: string | null;
   classes: Array<{ id: string; name: string; grade: string; section: string; room_number: string }>;
   subjects: Array<{ id: string; code: string; name: string; short_name: string; color: string }>;
   teachers: Array<{ id: string; name: string }>;
@@ -165,6 +167,16 @@ export interface PrincipalTimetableResponse {
     period_number: number; starts_at: string; ends_at: string; slot_type: "class" | "break" | "activity"; room: string;
   }>;
   conflicts: Array<{ first_slot_id: string; second_slot_id: string; weekday: number; starts_at: string; ends_at: string; type: "teacher" | "room" }>;
+  coverage: Array<{
+    class_section_id: string; subject_id: string; weekly_periods: number; weekly_minutes: number;
+    projected_periods: number; projected_minutes: number; target_minutes: number | null; revision: number | null;
+  }>;
+  calendar_exceptions: Array<{
+    id: string; date: string; is_instructional: boolean; label: string;
+    kind: "public_holiday" | "local_holiday" | "emergency_closure" | "instructional_override";
+    reason: string; revision: number;
+  }>;
+  school_date: string;
 }
 
 function query(path: string, values: Record<string, string | undefined>) {
@@ -217,11 +229,12 @@ export function getPrincipalHome(date = schoolDateToday()) {
   return apiFetch<PrincipalHomeResponse>(query("/api/v1/screens/principal/home/", { date }));
 }
 
-export function getPrincipalTimetable() {
-  return apiFetch<PrincipalTimetableResponse>("/api/v1/screens/principal/timetable/");
+export function getPrincipalTimetable(termId?: string) {
+  return apiFetch<PrincipalTimetableResponse>(query("/api/v1/screens/principal/timetable/", { term_id: termId }));
 }
 
 export interface NewTimetableSlot {
+  term_id?: string;
   class_section_id: string;
   subject_id: string | null;
   teacher_user_id: string | null;
@@ -235,6 +248,33 @@ export interface NewTimetableSlot {
   teacher_designation: string;
 }
 
+export interface CopyTimetableDayInput {
+  term_id: string;
+  class_section_id: string;
+  source_weekday: number;
+  target_weekdays: number[];
+  replace: boolean;
+  reason: string;
+}
+
+export interface CurriculumTargetInput {
+  term_id: string;
+  class_section_id: string;
+  subject_id: string;
+  target_minutes: number;
+  expected_revision: number;
+  reason: string;
+}
+
+export interface SchoolClosureInput {
+  term_id: string;
+  starts_on: string;
+  ends_on: string;
+  kind: "public_holiday" | "local_holiday" | "emergency_closure";
+  label: string;
+  reason: string;
+}
+
 export function createTimetableSlot(slot: NewTimetableSlot) {
   return apiFetch("/api/v1/principal/timetable/slots/", { method: "POST", body: JSON.stringify(slot) });
 }
@@ -245,4 +285,32 @@ export function updateTimetableSlot(id: string, slot: NewTimetableSlot) {
 
 export function deleteTimetableSlot(id: string) {
   return apiFetch<{ deleted: true; id: string }>(`/api/v1/principal/timetable/slots/${id}/`, { method: "DELETE" });
+}
+
+export function copyTimetableDay(input: CopyTimetableDayInput) {
+  return apiFetch<{ copied: true; periods_created: number; target_weekdays: number[] }>("/api/v1/principal/timetable/copy-day/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function saveCurriculumTarget(input: CurriculumTargetInput) {
+  return apiFetch("/api/v1/principal/timetable/targets/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function createSchoolClosure(input: SchoolClosureInput) {
+  return apiFetch<{ created: true; results: PrincipalTimetableResponse["calendar_exceptions"] }>("/api/v1/principal/calendar/closures/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteSchoolClosure(date: string, expectedRevision: number, reason: string) {
+  return apiFetch<{ deleted: true; date: string }>(`/api/v1/principal/calendar/closures/${encodeURIComponent(date)}/`, {
+    method: "DELETE",
+    body: JSON.stringify({ expected_revision: expectedRevision, reason }),
+  });
 }

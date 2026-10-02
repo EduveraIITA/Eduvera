@@ -92,7 +92,7 @@ export function ParentAttendancePage({
             <div>
               <button type="button" id="aggregate-heading" className="attendance-ranking-trigger" onClick={() => setRankingOpen(true)}>Overall Aggregate <span aria-hidden="true">↗</span></button>
               <button type="button" className="aggregate-card__score aggregate-card__score--open" aria-label="View all class attendance from the attendance score" onClick={() => setRankingOpen(true)}>
-                <strong>{hasAttendance ? `${data.aggregatePercent.toFixed(1)}%` : "—"}</strong>
+                <strong>{hasAttendance ? `${data.aggregatePercent.toFixed(1)}%` : "N/A"}</strong>
                 {!hasAttendance ? <span>Not recorded</span> : data.trendPercent === undefined ? <span>Live term</span> : (
                   <span>
                     {data.trendPercent < 0 ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
@@ -136,7 +136,7 @@ export function ParentAttendancePage({
         </section>
 
         <section aria-labelledby="presence-pulse-heading">
-          <h2 className="parent-section-title" id="presence-pulse-heading">Today's Presence Pulse</h2>
+          <h2 className="parent-section-title" id="presence-pulse-heading">Today's attendance</h2>
           <div className="surface-card presence-event-list">
             <article>
               <span className="presence-event-icon"><Radio size={19} /></span>
