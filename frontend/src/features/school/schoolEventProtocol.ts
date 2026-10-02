@@ -17,6 +17,7 @@ export const SCHOOL_EVENT_TYPES = [
   "timetable.updated",
   "administration.updated",
   "campus_event.updated",
+  "fees.updated",
 ] as const;
 
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
@@ -45,6 +46,7 @@ export const REFRESH_TARGETS = [
   "principal.administration",
   "notifications",
   "campus-events",
+  "fees",
 ] as const;
 
 export type RefreshTarget = (typeof REFRESH_TARGETS)[number];
@@ -112,6 +114,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
     "principal.timetable",
   ],
   "administration.updated": ["principal.administration", "principal.timetable", "principal.home", "teacher.home", "student.home", "student.timetable", "parent.home", "parent.timetable"],
+  "fees.updated": ["fees", "campus-events"],
   "campus_event.updated": ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications"],
 };
 
@@ -124,6 +127,8 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["principal-register-history"] },
   { queryKey: ["principal-timetable"] },
   { queryKey: ["office", "administration"] },
+  { queryKey: ["office", "fees"] },
+  { queryKey: ["office", "family-fees"] },
   { queryKey: ["notifications"] },
   { queryKey: ["campus-events"] },
   { queryKey: ["campus-event"] },
@@ -218,6 +223,7 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "principal.attendance": return [scopedOperationsInvalidation("principal-register", payload)];
     case "principal.attendance-history": return [scopedOperationsInvalidation("principal-register-history", payload)];
     case "principal.timetable": return [{ queryKey: ["principal-timetable"] }];
+    case "fees": return [{ queryKey: ["office", "fees"] }, { queryKey: ["office", "family-fees"] }, { queryKey: ["campus-event-finance"] }];
     case "principal.administration": return [{ queryKey: ["office", "administration"] }];
     case "notifications": return [{ queryKey: userId ? ["notifications", userId] : ["notifications"] }];
     case "campus-events": return [{ queryKey: ["campus-events"] }, { queryKey: ["campus-event"] }, { queryKey: ["campus-event-register"] }, { queryKey: ["campus-event-finance"] }];

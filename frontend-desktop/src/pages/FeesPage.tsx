@@ -1,3 +1,4 @@
+import { FeeReviewPanel, type Review } from "./FeeReviewPanel";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileText, Info, Receipt, Wallet } from "lucide-react";
 import { useState } from "react";
@@ -26,7 +27,7 @@ export function FeesPage() {
   const familyId = studentId || students.data?.results[0]?.id;
   const query = useQuery({
     queryKey: ["fees", school?.school_id, manager ? "all" : familyId], enabled: Boolean(school && (manager || familyId)),
-    queryFn: () => api<Fees>(withQuery(schoolPath(school!.school_id, "fees"), { student_id: manager ? undefined : familyId })),
+    queryFn: () => api<Fees & { reviews: Review[] }>(withQuery(schoolPath(school!.school_id, "fees/workspace"), { student_id: manager ? undefined : familyId })),
   });
 
   if (!school) return <Empty>Select your school first.</Empty>;
@@ -87,6 +88,8 @@ export function FeesPage() {
           )}
         </div>
 
+      {manager ? <FeeReviewPanel schoolId={school.school_id} reviews={query.data.reviews ?? []} invoices={invoices} onSaved={refresh} /> : <a className="btn" href={`/${persona === "parent" ? "parent" : "student"}/fees?student_id=${encodeURIComponent(familyId ?? "")}`}>Review fees & pay</a>}
+      {persona === "principal" ? <a className="btn" href="/principal/fees">Manage school payment instructions</a> : null}
       <div className="grid12">
         {manager ? (
           <div className="col-4 col">

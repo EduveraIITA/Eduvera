@@ -1634,3 +1634,25 @@
     max-width: none;
   }
 }
+
+.office-family-fee-actions { margin-top: 1rem; }
+.office-fee-detail { border-top: 1px solid var(--border-color, #e4e7ec); margin-top: 1rem; padding-top: 1rem; display: grid; gap: .75rem; min-width: 0; }
+.office-fee-detail h3 { margin: 0; font-size: 1rem; }
+.office-fee-breakdown { margin: 0; display: grid; gap: .5rem; }
+.office-fee-breakdown > div { display: flex; justify-content: space-between; gap: 1rem; }
+.office-fee-breakdown dd { margin: 0; font-weight: 600; }
+.office-review-list { list-style: none; padding: 0; margin: 0; }
+.office-review-list > li { padding: 1rem 0; border-top: 1px solid var(--border-color, #e4e7ec); }
+.office-review-note, .office-review-response, .office-payment-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+.office-review-response, .office-payment-instructions { padding: 1rem; background: var(--surface-secondary, #f7f8fa); border-radius: .75rem; display: grid; gap: .5rem; }
+.office-field textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border-color, #dce0e6); border-radius: .5rem; padding: .75rem; font: inherit; color: inherit; background: var(--surface, #fff); resize: vertical; min-height: 6rem; }
+.office-panel > summary { cursor: pointer; font-weight: 600; padding: .5rem 0; }
+.office-fee-detail .office-actions { flex-wrap: wrap; }
+.office-fee-detail .office-actions button { min-height: 44px; }
+.office-review-list .office-invoice-top, .office-fee-detail .office-invoice-top { flex-wrap: wrap; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .office-fee-detail .office-actions { display: grid; grid-template-columns: 1fr; } .office-fee-breakdown { font-size: .875rem; } }
+@media print { .office-family-fee-actions, .office-panel:has(> summary) { display: none; } }
+.office-page--fees .office-panel > h2 { display: flex; align-items: center; gap: .5rem; }
+.office-page--fees .office-panel > h2 > span { margin-left: auto; }
+.office-family-fee-actions .office-primary { color: #fff; background: var(--edura-brand); border-color: var(--edura-brand); }
+.office-family-fee-actions .office-primary:disabled { opacity: .6; cursor: not-allowed; }

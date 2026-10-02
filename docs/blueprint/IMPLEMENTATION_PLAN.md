@@ -900,3 +900,41 @@ Verification:
 - The teacher pilot received user visual approval. Cross-role typecheck, focused tests, production build
   and local route health are the acceptance checks for the expanded implementation; phone review of
   parent, student and principal Home remains the final visual gate.
+
+## Fee payment submissions and review — 2 October 2026
+
+The user confirmed fee/payment review, not school ratings. Behavior, research sources,
+state transitions, edge cases and remaining release boundaries are recorded in
+[FEE_PAY_REVIEW.md](FEE_PAY_REVIEW.md).
+
+- Migration 022 adds school payment instructions with revision control, immutable
+  guardian fee/payment submissions, and immutable reviewer decisions. Instructions
+  changes retain before/after snapshots in the administrative audit.
+- Parents review balances, use school payment instructions/optional UPI handoff,
+  report an already-made payment, or question a fee. Students remain read-only.
+  Pending claims do not create receipts or reduce balances. Existing invoices,
+  event credits and refunds remain the financial source of truth.
+- Principal and delegated desktop finance reviewers verify or reject claims with
+  an explanation. Verification rechecks collectible balance and reference, then
+  writes receipt and decision atomically. Self-verification, changed retry payloads,
+  repeated pending submissions and stale competing decisions are rejected.
+- Scoped ID-only outbox updates refresh mobile/desktop fee views. Event delivery
+  rechecks current school/guardian/finance permission. Original posted records and
+  new submissions/decisions are protected from update/delete.
+- Verification: backend typecheck/build/lint; responsive app build/lint and all 184
+  frontend tests; desktop build and all 11 tests; 9 operations/event unit tests;
+  11 new fee-review database integration tests plus 6 existing event-ledger tests.
+  Local integration used disposable PostgreSQL WASM (PGlite), applied all migrations
+  001–022, and exercised permission boundaries, duplicate references, retries,
+  stale balances, competing decisions, self-verification and immutable records.
+  Native multi-connection PostgreSQL behavior remains covered by the Stage CI gate;
+  local PGlite serialization is not a native concurrency benchmark.
+- Browser verification used the real local API and generated demo database:
+  parent payment report → pending review → administrator verification → family
+  verified receipt. No browser page errors; API health HTTP 200. Parent payment
+  layouts checked at 320, 390, 768, 1024 and 1440 px without horizontal overflow.
+  Visually inspected mobile payment and desktop principal review screens.
+- No real payment was made. No school bank/UPI destination is seeded. This release
+  does not enable a gateway, automatic reconciliation/refund, or general non-event
+  fee credits. A question marked “School responded” is not a financial adjustment.
+  Confirm final presentation and real school payment instructions on Stage after CI.

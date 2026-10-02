@@ -15,6 +15,7 @@ export const SCHOOL_EVENT_TYPES = [
   "leave.updated",
   "timetable.updated",
   "campus_event.updated",
+  "fees.updated",
 ] as const;
 
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
@@ -42,6 +43,7 @@ export const REFRESH_TARGETS = [
   "principal.timetable",
   "notifications",
   "campus-events",
+  "fees",
 ] as const;
 
 export type RefreshTarget = (typeof REFRESH_TARGETS)[number];
@@ -99,6 +101,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
   "notification.created": ["notifications"],
   "leave.updated": ["student.home", "student.leave", "parent.home", "parent.leave", "teacher.home", "principal.home", "notifications"],
   "timetable.updated": ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable"],
+  "fees.updated": ["fees"],
   "campus_event.updated": ["campus-events", "notifications"],
 };
 
@@ -244,6 +247,7 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "principal.attendance-history": return [{ queryKey: ["register-history"] }];
     case "principal.timetable": return [{ queryKey: ["principal-timetable"] }];
     case "notifications": return [{ queryKey: ["notifications"] }];
+    case "fees": return [{ queryKey: ["fees"] }, { queryKey: ["campus-event-finance"] }];
     case "campus-events": return [
       { queryKey: ["campus-events"] },
       { queryKey: ["campus-event"] },

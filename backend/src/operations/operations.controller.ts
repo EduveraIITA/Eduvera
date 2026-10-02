@@ -1,11 +1,24 @@
 import { Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import { Public } from "../common/decorators.js";
 import type { AuthenticatedRequest } from "../common/request.js";
+import { FeeReviewService } from "./fee-review.service.js";
 import { OperationsService } from "./operations.service.js";
 
 @Controller("api/v1")
 export class OperationsController {
-  constructor(private readonly operations: OperationsService) {}
+  constructor(private readonly operations: OperationsService, private readonly feeReviews: FeeReviewService) {}
+
+  @Get("schools/:schoolId/fees/workspace/")
+  feeWorkspace(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query("student_id") student?: string) { return this.feeReviews.workspace(req.authUser, school, student); }
+
+  @Post("schools/:schoolId/fees/settings/")
+  feeSettings(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.feeReviews.settings(req.authUser, school, req.body); }
+
+  @Post("schools/:schoolId/fees/invoices/:id/reviews/")
+  feeSubmit(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.feeReviews.submit(req.authUser, school, id, req.body); }
+
+  @Post("schools/:schoolId/fees/reviews/:id/decision/")
+  feeDecide(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.feeReviews.decide(req.authUser, school, id, req.body); }
 
   @Post("schools/")
   school(@Req() req: AuthenticatedRequest) { return this.operations.createSchool(req.authUser, req.body); }
