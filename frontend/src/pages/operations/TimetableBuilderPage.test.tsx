@@ -43,7 +43,7 @@ describe("principal timetable management", () => {
   it("keeps the published timetable as the primary module", () => {
     show();
     expect(screen.getByRole("heading", { name: "Manage timetable" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Published timetable" })).toHaveAttribute("href", "/principal/timetable");
+    expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
   });
 
   it("opens a focused mobile period editor with the next usable time", async () => {
