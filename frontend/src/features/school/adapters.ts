@@ -199,6 +199,23 @@ function compactRequestTitle(item: ApiLeaveRequest) {
   return item.category === "medical" ? "Medical Leave" : `${item.category_label} Leave`;
 }
 
+function homePeriodState(slot: ApiTimetableSlot, nowMinutes: number) {
+  const starts = clockMinutes(slot.starts_at) ?? Number.POSITIVE_INFINITY;
+  const ends = clockMinutes(slot.ends_at) ?? Number.POSITIVE_INFINITY;
+  return starts <= nowMinutes && nowMinutes < ends
+    ? "current" as const
+    : ends <= nowMinutes ? "complete" as const : "upcoming" as const;
+}
+
+function homePeriodProgress(slot: ApiTimetableSlot, nowMinutes: number) {
+  const state = homePeriodState(slot, nowMinutes);
+  if (state === "complete") return 100;
+  if (state === "upcoming") return 0;
+  const starts = clockMinutes(slot.starts_at) ?? nowMinutes;
+  const ends = clockMinutes(slot.ends_at) ?? nowMinutes + 1;
+  return Math.max(0, Math.min(100, Math.round((nowMinutes - starts) * 100 / Math.max(1, ends - starts))));
+}
+
 export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
   const child = classDetails(response.student);
   const schedule = response.today_schedule.filter(p=>!p.cancelled);
@@ -258,6 +275,19 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
       : undefined,
     unreadDiaryCount: response.diary_preview.filter((item) => !item.acknowledged).length,
     diarySender: response.diary_preview[0]?.author_name ?? "No new diary entries",
+    schedule: schedule.map((slot) => ({
+      id: slot.id,
+      period: slot.period_number,
+      subject: slot.display_title,
+      startsAt: formatTime(slot.starts_at),
+      endsAt: formatTime(slot.ends_at),
+      teacher: slot.teacher?.name ?? "Class faculty",
+      room: roomLabel(slot.room),
+      state: homePeriodState(slot, nowMinutes),
+      progressPercent: homePeriodProgress(slot, nowMinutes),
+      subjectIcon: slot.subject?.icon,
+      subjectColor: slot.subject?.color,
+    })),
     currentPeriod: focus
       ? {
           number: focus.period_number,
@@ -633,11 +663,6 @@ export function adaptStudentAttendance(response: StudentAttendanceResponse): Stu
 export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData {
   const nowMinutes = indiaMinutesNow();
   const schedule: StudentHomePeriod[] = response.today_schedule.filter(p=>!p.cancelled).map((slot) => {
-    const starts = clockMinutes(slot.starts_at) ?? Number.POSITIVE_INFINITY;
-    const ends = clockMinutes(slot.ends_at) ?? Number.POSITIVE_INFINITY;
-    const state: StudentHomePeriod["state"] = starts <= nowMinutes && nowMinutes < ends
-      ? "current"
-      : ends <= nowMinutes ? "complete" : "upcoming";
     return {
       id: slot.id,
       period: slot.period_number,
@@ -647,7 +672,10 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
       teacher: slot.teacher?.name ?? "Faculty assignment pending",
       room: roomLabel(slot.room),
       materials:slot.materials,
-      state,
+      state: homePeriodState(slot, nowMinutes),
+      progressPercent: homePeriodProgress(slot, nowMinutes),
+      subjectIcon: slot.subject?.icon,
+      subjectColor: slot.subject?.color,
     };
   });
   const presence = response.campus_presence;

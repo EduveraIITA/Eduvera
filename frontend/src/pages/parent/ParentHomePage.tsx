@@ -10,7 +10,6 @@ import {
   ClipboardList,
   Phone,
   PieChart,
-  Sigma,
   TrendingDown,
   TrendingUp,
   Minus,
@@ -24,6 +23,7 @@ import { HomeworkDetailsDialog } from "../../features/school/HomeworkDetailsDial
 import { ParentShell } from "./ParentShell";
 import { FollowupInbox } from "../../features/coordination/FollowupInbox";
 import { HomeActionDeck, HomeActionSpotlight } from "../../features/home-actions/HomeActionDeck";
+import { TodayActivities, type TodayActivityPeriod } from "../../features/today-activities/TodayActivities";
 import type { ParentHomeData, ParentPageAction } from "./parentTypes";
 import {DayPlanNotice} from '../../features/day-plans/DayPlanNotice';
 import "./parent-pages.css";
@@ -146,7 +146,33 @@ export function ParentHomePage({
   const selectedStudentId = searchParams.get("student_id");
   const parentPath = (path: string) =>
     selectedStudentId ? `${path}${path.includes("?") ? "&" : "?"}student_id=${encodeURIComponent(selectedStudentId)}` : path;
-  const currentPeriod = data.currentPeriod;
+  const todayActivities: TodayActivityPeriod[] = data.schedule?.length
+    ? data.schedule
+    : [
+        ...(data.currentPeriod ? [{
+          id: `period-${data.currentPeriod.number}`,
+          period: data.currentPeriod.number,
+          subject: data.currentPeriod.subject,
+          startsAt: data.currentPeriod.startsAt,
+          endsAt: data.currentPeriod.endsAt,
+          teacher: data.currentPeriod.teacher,
+          room: data.currentPeriod.room,
+          state: data.currentPeriod.remainingLabel.includes("remaining") ? "current" as const
+            : data.currentPeriod.remainingLabel.includes("Starts") ? "upcoming" as const : "complete" as const,
+          progressPercent: data.currentPeriod.progressPercent,
+        }] : []),
+        ...(data.nextPeriod ? [{
+          id: `period-${data.nextPeriod.number}`,
+          period: data.nextPeriod.number,
+          subject: data.nextPeriod.subject,
+          startsAt: data.nextPeriod.startsAt,
+          endsAt: "",
+          teacher: "Class faculty",
+          room: data.nextPeriod.room,
+          state: "upcoming" as const,
+          progressPercent: 0,
+        }] : []),
+      ];
   const homeworkRecent = data.metrics.homeworkRecent;
   const homeworkPrevious = data.metrics.homeworkPrevious;
   const homeworkTrend = homeworkRecent === undefined || homeworkPrevious === undefined ? null
@@ -183,31 +209,14 @@ export function ParentHomePage({
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
         <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
 
-        <section className="surface-card pulse-card" aria-labelledby="pulse-heading">
-          <div className="card-heading-row">
-            <h2 id="pulse-heading"><Clock3 size={20} />Current class</h2>
-            <span className={`status-pill ${data.presence.status === "In School" ? "status-pill--success" : data.presence.status === "Checked Out" ? "status-pill--danger" : "status-pill--neutral"}`}>{data.presence.status === "Not confirmed" ? <Clock3 size={14} /> : <CheckCircle2 size={14} />}{data.presence.status}</span>
-          </div>
-          {currentPeriod ? <div className="current-period">
-            <div className="current-period__meta">
-              <span className="period-badge">Period {currentPeriod.number}</span>
-              <span>{currentPeriod.startsAt} - {currentPeriod.endsAt}</span>
-              <strong>{currentPeriod.remainingLabel}</strong>
-            </div>
-            <div className="current-period__subject">
-              <div><h3>{currentPeriod.subject} - {currentPeriod.topic}</h3><p>{currentPeriod.room} - {currentPeriod.teacher}</p></div>
-              <span className="subject-icon"><Sigma size={21} /></span>
-            </div>
-            <div className="progress-track" aria-label={`${currentPeriod.progressPercent}% of period complete`}>
-              <span style={{ width: `${currentPeriod.progressPercent}%` }} />
-            </div>
-          </div> : <div className="completed-message completed-message--neutral"><CalendarDays size={22} /><div><strong>No classes scheduled today</strong><span>The timetable has no periods for this date.</span></div></div>}
-          {data.nextPeriod ? <div className="next-period">
-            <ChevronRight size={17} />
-            <span>Next: <strong>Period {data.nextPeriod.number} - {data.nextPeriod.subject}</strong> ({data.nextPeriod.room})</span>
-            <time>{data.nextPeriod.startsAt}</time>
-          </div> : null}
-        </section>
+        <TodayActivities
+          periods={todayActivities}
+          headingId="parent-home-activities-heading"
+          onOpenPeriod={() => navigate(parentPath("/parent/timetable"))}
+          onOpenTimetable={() => navigate(parentPath("/parent/timetable"))}
+          emptyDetail="The timetable has no published activities for this date."
+          headingAccessory={<span className={`status-pill ${data.presence.status === "In School" ? "status-pill--success" : data.presence.status === "Checked Out" ? "status-pill--danger" : "status-pill--neutral"}`}>{data.presence.status === "Not confirmed" ? <Clock3 size={14} /> : <CheckCircle2 size={14} />}{data.presence.status}</span>}
+        />
 
         <section aria-labelledby="metrics-heading">
           <div className="section-eyebrow-row">

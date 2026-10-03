@@ -33,6 +33,8 @@ const slot = {
     code: "MAT",
     name: "Mathematics",
     short_name: "Maths",
+    color: "#1D4ED8",
+    icon: "calculator",
   },
   teacher: {
     id: "50000000-0000-4000-a000-000000000001",

@@ -67,7 +67,7 @@ interface RouteSmokeCase {
 }
 
 const implementedScreenRoutes: RouteSmokeCase[] = [
-  { path: "/parent/home", heading: "Current class" },
+  { path: "/parent/home", heading: "Today's activities" },
   { path: "/parent/attendance", heading: "Today's attendance" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },

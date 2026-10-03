@@ -87,7 +87,7 @@ export interface ApiTimetableSlot {
   ends_at: string;
   display_title: string;
   room: string;
-  subject: { id: string; code: string; name: string; short_name: string } | null;
+  subject: { id: string; code: string; name: string; short_name: string; color?: string; icon?: string } | null;
   teacher: { id: string; name: string; designation: string } | null;
 }
 

@@ -769,7 +769,7 @@ export class SchoolService {
 
   async timetable(enrollment: Pick<EnrollmentContext, "class_section_id" | "term_id">, weekday?: number, date?: string) {
     const result = await sql<any>`
-      SELECT ts.*, s.code, s.name AS subject_name, s.short_name, s.color AS subject_color,
+      SELECT ts.*, s.code, s.name AS subject_name, s.short_name, s.color AS subject_color, s.icon AS subject_icon,
         u.first_name AS teacher_first_name, u.last_name AS teacher_last_name
       FROM ${date?sql`effective_school_schedule((SELECT school_id FROM class_sections WHERE id=${enrollment.class_section_id}::uuid),${date}::date)`:sql`timetable_slots`} ts LEFT JOIN subjects s ON s.id=ts.subject_id
       LEFT JOIN users u ON u.id=ts.teacher_user_id
@@ -782,7 +782,7 @@ export class SchoolService {
       period_number: row.period_number, starts_at: row.starts_at, ends_at: row.ends_at,
       slot_type: row.slot_type, slot_type_label: String(row.slot_type).replace(/^./, (v: string) => v.toUpperCase()),
       display_title: row.day_plan_id?row.title:row.subject_name ?? row.title, title: row.title, room: row.room,
-      subject: row.subject_id ? { id: row.subject_id, code: row.code, name: row.subject_name, short_name: row.short_name, color: row.subject_color } : null,
+      subject: row.subject_id ? { id: row.subject_id, code: row.code, name: row.subject_name, short_name: row.short_name, color: row.subject_color, icon: row.subject_icon } : null,
       teacher: row.teacher_user_id ? { id: row.teacher_user_id, name: `${row.teacher_first_name} ${row.teacher_last_name}`.trim(), designation: row.teacher_designation } : null,
       cancelled: row.cancelled ?? false, materials: row.materials ?? [], day_plan_id: row.day_plan_id ?? null,
       plan_version: row.plan_version ?? null, notice: row.notice ?? '', date: date ?? null,

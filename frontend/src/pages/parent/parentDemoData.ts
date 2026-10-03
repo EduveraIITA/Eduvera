@@ -32,6 +32,11 @@ export const fallbackHomeData: ParentHomeData = {
   },
   unreadDiaryCount: 1,
   diarySender: "Mrs. K. Sharma (Class Teacher)",
+  schedule: [
+    { id: "period-2", period: 2, subject: "Hindi", startsAt: "9:25 AM", endsAt: "10:10 AM", teacher: "Neelam Mishra", room: "Room 204", state: "complete", progressPercent: 100, subjectIcon: "languages", subjectColor: "#7c3aed" },
+    { id: "period-3", period: 3, subject: "Mathematics", startsAt: "10:15 AM", endsAt: "11:00 AM", teacher: "Prof. Rajesh Mehta", room: "Room 204", state: "current", progressPercent: 45, subjectIcon: "calculator", subjectColor: "#1d4ed8" },
+    { id: "period-4", period: 4, subject: "General Science", startsAt: "11:05 AM", endsAt: "11:50 AM", teacher: "Dr. Arjun Shah", room: "Lab 2", state: "upcoming", progressPercent: 0, subjectIcon: "flask-conical", subjectColor: "#0f766e" },
+  ],
   currentPeriod: {
     number: 3,
     startsAt: "10:15 AM",

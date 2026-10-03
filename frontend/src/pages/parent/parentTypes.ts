@@ -1,5 +1,6 @@
 import type { AttendanceRankingData } from "../../features/school/AttendanceRankingDialog";
 import type { HomeAction } from "../../features/home-actions/types";
+import type { TodayActivityPeriod } from "../../features/today-activities/TodayActivities";
 
 export type ParentPageAction = void | Promise<void>;
 
@@ -42,6 +43,7 @@ export interface ParentHomeData {
   };
   unreadDiaryCount: number;
   diarySender: string;
+  schedule?: TodayActivityPeriod[];
   currentPeriod?: {
     number: number;
     startsAt: string;

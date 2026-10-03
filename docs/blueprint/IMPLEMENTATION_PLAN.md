@@ -1235,3 +1235,23 @@ Verification:
   lint and the production build pass. The authenticated localhost
   principal root/detail views and parent root/detail views were inspected; Back is absent on the two
   roots, visible on the detail pages, and the parent Back action returns to Parent Home.
+
+## Shared family Today activities — 3 October 2026
+
+- Renamed the student Home schedule rail from `Today's flow` to the plain-language
+  `Today's activities`. Parent Home now uses the same responsive activity rail instead of a
+  separate single-class card, while retaining the selected child's presence status and its
+  child-scoped timetable destination.
+- Parent and student Home both consume the full authoritative effective schedule for the school
+  date. The rail centres the current period, or the next/last meaningful period when nothing is
+  in progress, and keeps adjacent context available without turning the Home screen into a full
+  timetable.
+- Subject catalogue color and icon now travel with timetable slots. The shared cards render the
+  configured Mathematics, Science, Language, Art, Physical Education, Computing and Social Science
+  glyphs, with a deterministic subject-name fallback for older rolling deployments or unconfigured
+  activities.
+- Every activity card exposes an accessible progress bar: completed periods are 100%, upcoming
+  periods are 0%, and the active period is calculated from its published start/end time. Empty days
+  remain explicit and link to the role-appropriate timetable.
+- Focused component, adapter and parent child-switching/route regressions pass. Frontend and backend
+  lint and production builds pass. Physical-phone acceptance remains open.

@@ -11,9 +11,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
-  Clock3,
   FileText,
-  MapPin,
   PackageCheck,
   Sparkles,
   X,
@@ -24,18 +22,11 @@ import { StudentShell } from "./StudentShell";
 import { StudentIdentityCard } from "./StudentIdentityCard";
 import type { HomeAction } from "../../features/home-actions/types";
 import { HomeActionDeck, HomeActionSpotlight } from "../../features/home-actions/HomeActionDeck";
+import { TodayActivities, type TodayActivityPeriod } from "../../features/today-activities/TodayActivities";
 import "./student-pages.css";
 
-export interface StudentHomePeriod {
+export interface StudentHomePeriod extends TodayActivityPeriod {
   materials?:string[];
-  id: string;
-  period: number;
-  subject: string;
-  startsAt: string;
-  endsAt: string;
-  teacher: string;
-  room: string;
-  state: "complete" | "current" | "upcoming";
 }
 
 export interface StudentHomeDiaryItem {
@@ -135,8 +126,6 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
   const navigate = useNavigate();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [kitOpen, setKitOpen] = useState(false);
-  const periodRailRef = useRef<HTMLDivElement | null>(null);
-  const periodCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const scheduleListRef = useRef<HTMLDivElement | null>(null);
   const scheduleRowRefs = useRef<Record<string, HTMLElement | null>>({});
   const kitStorageKey = `omnischool.student.today-kit.${data.studentId}.${data.dateLabel}`;
@@ -149,11 +138,6 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
     () => currentPeriod ?? data.schedule.find((period) => period.state === "upcoming") ?? data.schedule.at(-1),
     [currentPeriod, data.schedule],
   );
-  const periodRail = useMemo(() => {
-    if (!focusPeriod) return [];
-    const focusIndex = data.schedule.findIndex((period) => period.id === focusPeriod.id);
-    return data.schedule.filter((_, index) => Math.abs(index - focusIndex) <= 1);
-  }, [data.schedule, focusPeriod]);
   const attendanceSafe = data.attendancePercent >= data.attendanceThreshold;
   const attendanceScoreTone = attendanceSafe
     ? "is-green"
@@ -170,13 +154,6 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
   useLayoutEffect(() => {
     if (!focusPeriod) return;
     const alignFocusedPeriod = () => {
-      const card = periodCardRefs.current[focusPeriod.id];
-      const rail = periodRailRef.current;
-      if (card && rail) {
-        const left = card.offsetLeft - (rail.clientWidth / 2) + (card.clientWidth / 2);
-        if (typeof rail.scrollTo === "function") rail.scrollTo({ left, behavior: "auto" });
-        else rail.scrollLeft = left;
-      }
       const row = scheduleRowRefs.current[focusPeriod.id];
       const list = scheduleListRef.current;
       if (row && list) {
@@ -216,48 +193,13 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
           <button type="button" onClick={() => navigate("/student/attendance")}>Details <ChevronRight size={16} /></button>
         </section>
 
-        {focusPeriod ? (
-          <section className="student-home-period-focus" aria-labelledby="student-home-class-heading">
-            <header>
-              <div><h2 id="student-home-class-heading">Today's flow</h2></div>
-              <button type="button" onClick={() => navigate("/student/timetable")}>Timetable <ArrowRight size={15} /></button>
-            </header>
-            <div className="student-home-period-rail" ref={periodRailRef} aria-label="Previous current and next periods">
-              {periodRail.map((period) => (
-                <article
-                  key={period.id}
-                  ref={(element) => { periodCardRefs.current[period.id] = element; }}
-                  className={`student-card student-home-class is-${period.state} ${period.id === focusPeriod.id ? "is-focus" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setScheduleOpen(true)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setScheduleOpen(true);
-                    }
-                  }}
-                  aria-label={`Open full schedule. Period ${period.period}, ${period.subject}, ${period.startsAt} to ${period.endsAt}`}
-                >
-                  <header>
-                    <span>{period.state === "current" ? <i className="breathing-indicator" aria-hidden="true" /> : <Clock3 size={16} />}{period.state === "current" ? "Happening now" : period.state === "complete" ? "Previous period" : "Next period"}</span>
-                    <b>Period {period.period}</b>
-                  </header>
-                  <div>
-                    <span className="student-home-class__icon"><BookOpenText size={24} /></span>
-                    <span><h3>{period.subject}</h3><p>{period.teacher}</p></span>
-                  </div>
-                  <footer><span><Clock3 size={14} />{period.startsAt} - {period.endsAt}</span><span><MapPin size={14} />{period.room}</span></footer>
-                </article>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <section className="student-card student-home-no-class">
-            <CalendarClock size={23} /><span><strong>No more classes today</strong><small>Open the timetable to plan the next school day.</small></span>
-            <button type="button" onClick={() => navigate("/student/timetable")}>View timetable</button>
-          </section>
-        )}
+        <TodayActivities
+          periods={data.schedule}
+          headingId="student-home-activities-heading"
+          onOpenPeriod={() => setScheduleOpen(true)}
+          onOpenTimetable={() => navigate("/student/timetable")}
+          emptyDetail="Open the timetable to plan the next school day."
+        />
 
         <section className="student-home-overview" aria-labelledby="student-home-overview-heading">
           <header><div><h2 id="student-home-overview-heading">Today</h2></div></header>
