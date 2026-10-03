@@ -33,6 +33,12 @@ export class SpaController {
   }
 
   @Public()
+  @Get("favicon.png")
+  async faviconPng(@Res() reply: FastifyReply) {
+    return this.serveAsset(reply, "favicon.png", "image/png");
+  }
+
+  @Public()
   @Get("apple-touch-icon.svg")
   async appleTouchIcon(@Res() reply: FastifyReply) {
     try {
@@ -44,6 +50,12 @@ export class SpaController {
     } catch {
       return reply.status(404).send();
     }
+  }
+
+  @Public()
+  @Get("apple-touch-icon.png")
+  async appleTouchIconPng(@Res() reply: FastifyReply) {
+    return this.serveAsset(reply, "apple-touch-icon.png", "image/png");
   }
 
   @Public()
@@ -65,6 +77,18 @@ export class SpaController {
       return reply.type("text/html; charset=utf-8").send(html);
     } catch {
       return reply.status(503).send({ error: { status: 503, code: "frontend_not_built", detail } });
+    }
+  }
+
+  private async serveAsset(reply: FastifyReply, filename: string, contentType: string) {
+    try {
+      const asset = await readFile(join(config().spaDistDir, filename));
+      return reply
+        .header("Cache-Control", "public, max-age=0")
+        .type(contentType)
+        .send(asset);
+    } catch {
+      return reply.status(404).send();
     }
   }
 }

@@ -280,6 +280,10 @@ jobs:
               mobile=$(curl -fsS "$STAGE_URL/")
               staff=$(curl -fsS "$STAGE_URL/staff/")
               schema=$(curl -fsS "$STAGE_URL/api/schema")
+              curl -fsS -o /dev/null "$STAGE_URL/favicon.png"
+              curl -fsS -o /dev/null "$STAGE_URL/apple-touch-icon.png"
+              curl -fsS -o /dev/null "$STAGE_URL/icons/eduvera-192.png"
+              curl -fsS -o /dev/null "$STAGE_URL/icons/eduvera-512.png"
               anonymous_session=$(curl -fsS "$STAGE_URL/api/v1/auth/session/")
               demo_login=$(curl -fsS -H 'Content-Type: application/json' --data '{"role":"student"}' "$STAGE_URL/api/v1/auth/demo-session/")
               unauthenticated_metrics_status=$(curl -sS -o /dev/null -w '%{http_code}' "$STAGE_URL/metrics")
@@ -293,7 +297,7 @@ jobs:
               [ "$unauthenticated_metrics_status" = "401" ] || { echo "::error::Metrics endpoint is not rejecting unauthenticated requests"; exit 1; }
               metrics=$(curl -fsS -H "Authorization: Bearer $STAGE_METRICS_TOKEN" "$STAGE_URL/metrics")
               echo "$metrics" | grep -Fq 'omnischool_event_broker_ready' || { echo "::error::Protected metrics content check failed"; exit 1; }
-              echo "Verified API readiness, both SPAs, OpenAPI, Stage demo login, protected metrics, and stage release $release_sha"
+              echo "Verified API readiness, both SPAs, install icons, OpenAPI, Stage demo login, protected metrics, and stage release $release_sha"
               exit 0
             fi
             sleep 5

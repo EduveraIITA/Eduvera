@@ -38,6 +38,12 @@ async function bootstrap(): Promise<void> {
       prefix: "/assets/",
       wildcard: true,
     });
+    await app.register(fastifyStatic, {
+      root: join(settings.spaDistDir, "icons"),
+      prefix: "/icons/",
+      wildcard: true,
+      decorateReply: false,
+    });
   } catch {
     // The API remains runnable before the separately-built React bundle exists.
   }

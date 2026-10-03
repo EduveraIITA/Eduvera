@@ -1210,6 +1210,9 @@ Verification:
   180-pixel Safari touch icon, and 192/512-pixel manifest icons with maskable declarations. The manifest
   and document head reference the new files directly so newly added iOS home-screen shortcuts use the
   Eduvera symbol.
+- The production SPA server now exposes the root PNG favicon and Safari touch icon plus the manifest
+  icon directory. The Stage release smoke test requests all four install assets, preventing a healthy
+  application deployment from silently shipping broken home-screen artwork.
 - The complete route regression file passes (**44** tests) and the production frontend build succeeds.
   The principal top bar plus login and signup lockups were visually checked at a 390 x 844 mobile
   viewport; both co-brand arrangements remain legible without colliding with account actions.
