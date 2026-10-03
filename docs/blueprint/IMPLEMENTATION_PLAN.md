@@ -1425,3 +1425,21 @@ Verification:
   authenticated local mobile preview was exercised through the principal continuity
   desk and into a Class 6A paper-register capture, including the source/reference and review-only states.
   A physical-device offline/reconnect drill must still be recorded before calling this release gate complete.
+
+## Stage release, Supabase migration and demo seed verification — 3 October 2026
+
+- The Stage release workflow applied migrations `028`–`031` to Supabase through the persistent
+  session/migration connection before the application rollout. The database seed entry points now use
+  the same validated managed-PostgreSQL TLS adapter as the migrator, fixing the certificate-chain
+  rejection that previously affected the explicit Stage re-seed path without weakening TLS policy.
+- The repeat-safe Stage seed completed with 200 students, 200 guardian links, 12,825 attendance rows,
+  264 timetable slots, four campus events, seven event sessions, 450 event participants, 289 event-session
+  roster rows, 215 event attendance rows and 16 event fee invoices. The operations seed reported no new
+  invoices or payments, confirming that its existing demo records were preserved rather than duplicated.
+- GitHub Stage run `37143689643` passed the secret scan, isolated migration and seed preparation, complete
+  backend integration suite, mobile typecheck/build/test suite, desktop build, real Supabase migration and
+  seed, Railway deployment and public smoke gate. Railway served release `8c5c29b0bac2b2c5f47c69818ca0ccafb2b31d6d`
+  with `/readyz` reporting ready database and event dependencies.
+- An independent authenticated principal smoke check against Stage returned 17 staff profiles, two leave
+  policies and the imported responsibility assignment. Both SPAs, install icons, OpenAPI, demo login and
+  protected metrics were also verified by the release gate.
