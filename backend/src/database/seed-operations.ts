@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
+import { postgresClientConnectionConfig } from "./connection-policy.js";
 
 // Same identifiers as generate_school_data.py. Never select arbitrary school users.
 export function demoId(name: string) {
@@ -80,7 +81,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.stdout.write("Operations demo seed skipped: DEMO_MODE is not true.\n");
   } else {
     if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, application_name: "eduera_operations_demo" });
+    const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? "development";
+    const connection = postgresClientConnectionConfig(process.env.DATABASE_URL, {
+      name: "DATABASE_URL",
+      purpose: "migrations",
+      requireRemoteTls: deploymentEnvironment === "stage" || deploymentEnvironment === "production",
+    });
+    const pool = new Pool({ ...connection, max: 1, application_name: "eduera_operations_demo" });
     try {
       process.stdout.write(`Operations demo seed: ${JSON.stringify(await seedOperations(pool, true))}\n`);
     } finally {
