@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Bot, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck, FileSpreadsheet,
-  MessageCircle, ReceiptIndianRupee, Settings2, ShieldAlert, ShieldCheck, Users, UsersRound,
+  Handshake, MessageCircle, ReceiptIndianRupee, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
 
@@ -43,6 +43,8 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "fees", name: "Fees", description: "Invoices, receipts and payment history", icon: ReceiptIndianRupee, tone: "amber", path: "/student/fees" },
   ],
   teacher: [
+    { id: "responsibilities", name: "My responsibilities", description: "Class, event and cover duties with clear dates and scope", icon: Handshake, tone: "blue", path: "/teacher/responsibilities" },
+    { id: "leave", name: "My leave", description: "Balances, applications and approval history", icon: CalendarX2, tone: "rose", path: "/teacher/leave" },
     { id: "classes", name: "My classes", description: "Every class you teach, today's register status and the live roster", icon: Users, tone: "blue", path: "/teacher/classes" },
     { id: "calendar", name: "Calendar", description: "Month view of teaching days, periods and registers", icon: CalendarRange, tone: "teal", path: "/teacher/calendar" },
     { id: "weekly", name: "Weekly timetable", description: "Your published schedule, day by day", icon: CalendarDays, tone: "violet", path: "/teacher/timetable/weekly" },
@@ -52,6 +54,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "safeguarding", name: "Safeguarding", description: "Report and review welfare concerns", icon: ShieldAlert, tone: "rose", path: "/teacher/safeguarding" },
   ],
   principal: [
+    { id: "staff", name: "Staff operations", description: "Onboarding, scoped responsibilities, leave and cover", icon: UserRoundCheck, tone: "teal", path: "/principal/staff" },
     { id: "calendar", name: "Calendar", description: "Month view of school days, coverage and registers", icon: CalendarRange, tone: "blue", path: "/principal/calendar" },
     { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },
     { id: "events", name: "Events & activities", description: "Publish school activities, manage consent and event attendance", icon: CalendarDays, tone: "blue", path: "/principal/events" },

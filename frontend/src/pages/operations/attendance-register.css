@@ -173,6 +173,20 @@
 .photo-draft-notice strong { display: block; color: var(--edura-ink); font-size: 13px; }
 .photo-draft-notice p { margin-top: 3px; color: var(--edura-ink-secondary); font-size: 11px; }
 .photo-draft-notice button { min-height: 40px; padding: 0 12px; border-radius: var(--edura-radius-control); color: var(--edura-brand); background: #ffffff; font-size: 11px; font-weight: 750; }
+.attendance-continuity-status { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #a9d8cb; border-radius: var(--edura-radius-card); color: var(--edura-positive); background: var(--edura-positive-soft); }
+.attendance-continuity-status.is-offline { color: var(--edura-warning); border-color: #e6c979; background: var(--edura-warning-soft); }
+.attendance-continuity-status.needs-review { color: var(--edura-danger); border-color: #efb4b4; background: var(--edura-danger-soft); }
+.attendance-continuity-status strong { display: block; color: var(--edura-ink); font-size: 13px; }
+.attendance-continuity-status p { margin: 3px 0 0; color: var(--edura-ink-secondary); font-size: 11px; line-height: 1.55; }
+.attendance-capture-source { display: grid; grid-template-columns: minmax(180px,1fr) auto; align-items: center; gap: 12px 18px; padding: 16px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-surface); }
+.attendance-capture-source > div:first-child { display: flex; align-items: center; gap: 10px; color: var(--edura-brand); }
+.attendance-capture-source > div:first-child span { display: grid; gap: 3px; color: var(--edura-ink); }
+.attendance-capture-source small { color: var(--edura-ink-muted); font-size: 10px; font-weight: 500; }
+.attendance-capture-source > div[role="group"] { display: flex; gap: 6px; overflow-x: auto; }
+.attendance-capture-source button { min-height: 40px; padding: 0 11px; flex-shrink: 0; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-pill); color: var(--edura-ink-muted); background: var(--edura-surface); font-size: 11px; font-weight: 700; }
+.attendance-capture-source button[aria-pressed="true"] { color: #fff; border-color: var(--edura-brand); background: var(--edura-brand); }
+.attendance-capture-source > label { display: grid; grid-column: 1 / -1; gap: 6px; color: var(--edura-ink-secondary); font-size: 11px; font-weight: 700; }
+.attendance-capture-source input { min-height: 44px; padding: 0 12px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-ink); font: inherit; font-size: 12px; }
 .roll-call-search {
   display: flex;
   align-items: center;
@@ -325,6 +339,10 @@
   .roll-call-admin-actions button + button { border-left: 1px solid var(--edura-border); border-radius: 0; }
   .photo-draft-notice { grid-template-columns: auto minmax(0, 1fr); }
   .photo-draft-notice button { grid-column: 2; justify-self: start; }
+  .attendance-capture-source { grid-template-columns: 1fr; }
+  .attendance-capture-source > div[role="group"], .attendance-capture-source > label { grid-column: 1; }
+  .attendance-capture-source > div[role="group"] { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .attendance-capture-source button { padding-inline: 6px; }
   .roll-call-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; overflow: visible; }
   .roll-call-filters button { min-width: 0; gap: 4px; padding: 0 6px; font-size: 11px; }
   .roll-call-student { padding: 14px; }

@@ -1,6 +1,6 @@
 import "./school-brand.css";
 
-const eduveraMark = "/assets/eduvera-mark.png";
+const appMark = "/assets/edura-leaf-mark.png";
 
 export function SchoolBrand({
   name,
@@ -13,11 +13,11 @@ export function SchoolBrand({
 }) {
   const crest = name.split(/\s+/).filter(Boolean).map((word) => word[0]).join("").slice(0, 3).toUpperCase();
   return (
-    <div className={`school-brand ${className}`.trim()} aria-label={`${name} and Eduvera`}>
+    <div className={`school-brand ${className}`.trim()} aria-label={name}>
       <span className={`school-brand__marks school-brand__marks--${marksLayout}`} aria-hidden="true">
         <span className="school-brand__crest">{crest}</span>
         <span className="school-brand__eduvera">
-          <img src={eduveraMark} alt="" />
+          <img src={appMark} alt="" />
         </span>
       </span>
       <span className="school-brand__name">{name}</span>

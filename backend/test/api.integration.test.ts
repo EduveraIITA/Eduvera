@@ -1405,6 +1405,86 @@ describe("OmniSchool API", () => {
     }
   });
 
+  it("accepts current offline-safe observations and quarantines expired or paper captures for review", async () => {
+    const teacher = new BrowserSession();
+    const principal = new BrowserSession();
+    expect((await teacher.login("kavita.staff")).status).toBe(200);
+    expect((await principal.login("meera.principal")).status).toBe(200);
+    const date = await latestScheduledDateForTeacher("kavita.staff");
+    const home = await json(await teacher.request(`/api/v1/screens/teacher/home/?date=${date}`));
+    const classId = home.classes[0].class_section_id;
+    const register = await json(await teacher.request(`/api/v1/screens/teacher/attendance/?class_section_id=${classId}&date=${date}`));
+    expect(register.continuity_snapshot).toMatchObject({ roster_fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), roster_count: register.roster.length });
+    const records = register.roster.map((row: any) => ({ student_id: row.id, status: row.status ?? "present", remarks: row.remarks ?? "" }));
+    const capture = {
+      class_section_id: classId,
+      date,
+      expected_revision: register.register.revision,
+      records,
+      source: "live_app",
+      source_reference: "",
+      device_id: null,
+      observed_at: new Date().toISOString(),
+      roster_fingerprint: register.continuity_snapshot.roster_fingerprint,
+      roster_captured_at: register.continuity_snapshot.captured_at,
+      roster_expires_at: register.continuity_snapshot.expires_at,
+      snapshot_token: register.continuity_snapshot.token,
+    };
+    const acceptedResponse = await teacher.request("/api/v1/attendance-continuity/batches/", {
+      method: "POST", headers: { "Idempotency-Key": `continuity-live-${randomUUID()}` }, body: JSON.stringify(capture),
+    }, true);
+    expect(acceptedResponse.status).toBe(200);
+    const accepted = await json(acceptedResponse);
+    expect(accepted).toMatchObject({ status: "accepted", register: { register: { state: "submitted" }, latest_capture: { status: "accepted", source: "live_app" } } });
+    expect((await pool.query("SELECT action FROM audit_events WHERE target_id=$1", [accepted.batch.id])).rows)
+      .toContainEqual({ action: "attendance.capture.accepted" });
+
+    const expiredResponse = await teacher.request("/api/v1/attendance-continuity/batches/", {
+      method: "POST", headers: { "Idempotency-Key": `continuity-expired-${randomUUID()}` }, body: JSON.stringify({
+        ...capture,
+        expected_revision: accepted.register.register.revision,
+        source: "offline_device",
+        device_id: `test-device-${randomUUID()}`,
+        roster_expires_at: new Date(Date.now() - 1_000).toISOString(),
+      }),
+    }, true);
+    expect(expiredResponse.status).toBe(200);
+    const expired = await json(expiredResponse);
+    expect(expired).toMatchObject({ status: "quarantined", review: { reason_code: "snapshot_expired", state: "open" } });
+    const rejected = await principal.request(`/api/v1/attendance-continuity/cases/${expired.review.id}/decision/`, {
+      method: "POST", body: JSON.stringify({ decision: "reject", reason: "Expired device roster cannot be accepted automatically", expected_revision: accepted.register.register.revision }),
+    }, true);
+    expect(rejected.status).toBe(200);
+
+    const paperRegister = await json(await principal.request(`/api/v1/screens/teacher/attendance/?class_section_id=${classId}&date=${date}`));
+    const paperResponse = await principal.request("/api/v1/attendance-continuity/batches/", {
+      method: "POST", headers: { "Idempotency-Key": `continuity-paper-${randomUUID()}` }, body: JSON.stringify({
+        class_section_id: classId,
+        date,
+        expected_revision: paperRegister.register.revision,
+        records: paperRegister.roster.map((row: any) => ({ student_id: row.id, status: row.status, remarks: row.remarks ?? "" })),
+        source: "paper",
+        source_reference: "Register book 7A, page 42",
+        device_id: null,
+        observed_at: new Date().toISOString(),
+        roster_fingerprint: paperRegister.continuity_snapshot.roster_fingerprint,
+        roster_captured_at: paperRegister.continuity_snapshot.captured_at,
+        roster_expires_at: paperRegister.continuity_snapshot.expires_at,
+        snapshot_token: paperRegister.continuity_snapshot.token,
+      }),
+    }, true);
+    expect(paperResponse.status).toBe(200);
+    const paper = await json(paperResponse);
+    expect(paper).toMatchObject({ status: "quarantined", review: { reason_code: "source_requires_review" } });
+    const applied = await principal.request(`/api/v1/attendance-continuity/cases/${paper.review.id}/decision/`, {
+      method: "POST", body: JSON.stringify({ decision: "accept", reason: "Matched every row against the signed paper register", expected_revision: paperRegister.register.revision }),
+    }, true);
+    expect(applied.status).toBe(200);
+    const stored = await pool.query("SELECT capture_source,observed_at FROM attendance_submissions WHERE capture_batch_id=$1", [paper.batch.id]);
+    expect(stored.rows).toMatchObject([{ capture_source: "paper", observed_at: expect.any(Date) }]);
+    await expect(pool.query("UPDATE attendance_observations SET remarks='tampered' WHERE batch_id=$1", [paper.batch.id])).rejects.toThrow(/append-only/i);
+  });
+
   it("limits staff student records to their current timetable assignments", async () => {
     const browser = new BrowserSession();
     expect((await browser.login("kavita.staff")).status).toBe(200);

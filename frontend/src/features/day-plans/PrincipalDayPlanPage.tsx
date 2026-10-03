@@ -104,6 +104,7 @@ export default function PrincipalDayPlanPage() {
           }
           onDateChange={(nextDate) => set({ date: nextDate })}
           onViewChange={(nextView) => set({ view: nextView })}
+          onNavigate={(nextDate, nextView) => set({ date: nextDate, view: nextView })}
           onRetry={() => void summary.refetch()}
         />
         {schools.length > 1 ? (

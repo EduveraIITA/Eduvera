@@ -12,19 +12,32 @@ import {
   TeacherTimetablePage,
 } from "../../pages/operations/TeacherPages";
 import { AttendanceWorkspacePage } from "../../pages/operations/AttendanceWorkspacePage";
+import { ApiError } from "../../lib/api";
+import { useAuth } from "../auth/AuthContext";
+import {
+  applyQueuedCapture,
+  attendanceDeviceId,
+  cacheAttendanceSnapshot,
+  queueAttendanceCapture,
+  readAttendanceSnapshot,
+  readQueuedAttendanceCapture,
+  removeQueuedAttendanceCapture,
+} from "../attendance/attendanceOfflineStore";
 import {
   createTimetableSlot,
   createSchoolClosure,
   copyTimetableDay,
+  decideAttendanceReconciliation,
   deleteSchoolClosure,
   deleteTimetableSlot,
+  getAttendanceContinuityWorkspace,
   getAttendanceRegisterHistory,
   getPrincipalHome,
   getPrincipalTimetable,
   getTeacherAttendance,
   getTeacherHome,
   lockAttendanceRegister,
-  saveTeacherAttendance,
+  saveAttendanceContinuityBatch,
   saveCurriculumTarget,
   unlockAttendanceRegister,
   updateTimetableSlot,
@@ -34,6 +47,78 @@ import {
   type TeacherAttendanceResponse,
   type TeacherAttendanceSaveInput,
 } from "./api";
+
+async function attendanceWithOfflineFallback(ownerId: string, classSectionId: string, date: string) {
+  try {
+    const live = await getTeacherAttendance(classSectionId, date);
+    await cacheAttendanceSnapshot(ownerId, live).catch(() => undefined);
+    const queued = await readQueuedAttendanceCapture(ownerId, classSectionId, date).catch(() => null);
+    return queued ? applyQueuedCapture(live, queued) : live;
+  } catch (error) {
+    // A current authorization or validation refusal must win over the cache.
+    // Offline fallback is only for connectivity/server interruptions, never a
+    // way to reopen a roster after the school has revoked access.
+    if (error instanceof ApiError && error.status < 500) throw error;
+    const cached = await readAttendanceSnapshot(ownerId, classSectionId, date).catch(() => null);
+    if (!cached) throw error;
+    const queued = await readQueuedAttendanceCapture(ownerId, classSectionId, date).catch(() => null);
+    return queued ? applyQueuedCapture(cached, queued) : cached;
+  }
+}
+
+async function submitAttendanceWithContinuity(
+  ownerId: string,
+  screen: TeacherAttendanceResponse,
+  classSectionId: string,
+  date: string,
+  input: TeacherAttendanceSaveInput,
+) {
+  const source = !navigator.onLine && (!input.source || input.source === "live_app")
+    ? "offline_device"
+    : input.source ?? "live_app";
+  const deviceId = source === "offline_device" ? await attendanceDeviceId(ownerId) : null;
+  const captureInput: TeacherAttendanceSaveInput = {
+    ...input,
+    source,
+    device_id: input.device_id ?? deviceId,
+    observed_at: input.observed_at ?? new Date().toISOString(),
+    roster_fingerprint: input.roster_fingerprint ?? screen.continuity_snapshot.roster_fingerprint,
+    roster_captured_at: input.roster_captured_at ?? screen.continuity_snapshot.captured_at,
+    roster_expires_at: input.roster_expires_at ?? screen.continuity_snapshot.expires_at,
+    snapshot_token: input.snapshot_token ?? screen.continuity_snapshot.token,
+  };
+  const localCapture = {
+    id: input.idempotency_key,
+    ownerId,
+    classSectionId,
+    date,
+    createdAt: new Date().toISOString(),
+    input: captureInput,
+    screen,
+  };
+  try {
+    const result = await saveAttendanceContinuityBatch(classSectionId, date, captureInput);
+    await removeQueuedAttendanceCapture(ownerId, classSectionId, date).catch(() => undefined);
+    if (result.status === "accepted" && result.register) {
+      await cacheAttendanceSnapshot(ownerId, result.register).catch(() => undefined);
+      return result.register;
+    }
+    return {
+      ...applyQueuedCapture(screen, localCapture),
+      latest_capture: {
+        id: result.batch.id,
+        source: result.batch.source,
+        status: result.status,
+        received_at: result.batch.received_at,
+        roster_expires_at: result.batch.roster_expires_at,
+      },
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status < 500) throw error;
+    await queueAttendanceCapture(localCapture);
+    return applyQueuedCapture(screen, localCapture);
+  }
+}
 
 function Loading() {
   return (
@@ -80,6 +165,7 @@ export function TeacherTimetableRoute() {
 }
 
 export function TeacherAttendanceRoute() {
+  const auth = useAuth();
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
@@ -93,7 +179,7 @@ export function TeacherAttendanceRoute() {
 
   const query = useQuery({
     queryKey: attendanceKey,
-    queryFn: () => getTeacherAttendance(classId!, date),
+    queryFn: () => attendanceWithOfflineFallback(auth.user!.id, classId!, date),
     enabled: Boolean(classId),
   });
   const setDate = (next: string) => {
@@ -111,12 +197,12 @@ export function TeacherAttendanceRoute() {
   if (query.error) return <Failure error={query.error} />;
 
   const refresh = async () => {
-    const latest = await getTeacherAttendance(classId!, date);
+    const latest = await attendanceWithOfflineFallback(auth.user!.id, classId!, date);
     queryClient.setQueryData(attendanceKey, latest);
     return latest;
   };
   const save = async (input: TeacherAttendanceSaveInput) => {
-    const updated = await saveTeacherAttendance(classId!, date, input);
+    const updated = await submitAttendanceWithContinuity(auth.user!.id, query.data, classId!, date, input);
     queryClient.setQueryData(attendanceKey, updated);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
@@ -146,6 +232,7 @@ export function PrincipalHomeRoute() {
 }
 
 export function PrincipalAttendanceRoute() {
+  const auth = useAuth();
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
@@ -157,9 +244,14 @@ export function PrincipalAttendanceRoute() {
     queryFn: () => getPrincipalHome(date),
     enabled: !classId,
   });
+  const continuity = useQuery({
+    queryKey: ["attendance-continuity", date],
+    queryFn: () => getAttendanceContinuityWorkspace(date),
+    enabled: !classId,
+  });
   const roster = useQuery({
     queryKey: registerKey,
-    queryFn: () => getTeacherAttendance(classId!, date),
+    queryFn: () => attendanceWithOfflineFallback(auth.user!.id, classId!, date),
     enabled: Boolean(classId),
   });
   const loadHistory = useCallback(() => queryClient.fetchQuery({
@@ -192,15 +284,16 @@ export function PrincipalAttendanceRoute() {
       <TeacherAttendancePage
         key={`${roster.data.class.id}-${date}`}
         portal="principal"
+        initialCaptureSource={params.get("source") === "paper" ? "paper" : "live_app"}
         data={roster.data}
         date={date}
         onDateChange={setDate}
         onRefresh={async () => {
-          const latest = await getTeacherAttendance(classId, date);
+          const latest = await attendanceWithOfflineFallback(auth.user!.id, classId, date);
           queryClient.setQueryData(registerKey, latest);
           return latest;
         }}
-        onSave={(input) => storeResult(saveTeacherAttendance(classId, date, input))}
+        onSave={(input) => storeResult(submitAttendanceWithContinuity(auth.user!.id, roster.data, classId, date, input))}
         onLock={() => storeResult(lockAttendanceRegister(classId, date))}
         onUnlock={(reason) => storeResult(unlockAttendanceRegister(classId, date, reason))}
         onLoadHistory={loadHistory}
@@ -209,7 +302,24 @@ export function PrincipalAttendanceRoute() {
   }
   if (home.isPending) return <Loading />;
   if (home.error) return <Failure error={home.error} />;
-  return <AttendanceWorkspacePage portal="principal" classes={home.data.classes} date={date} onDateChange={setDate} />;
+  return <AttendanceWorkspacePage
+    portal="principal"
+    classes={home.data.classes}
+    date={date}
+    onDateChange={setDate}
+    continuity={continuity.data}
+    continuityLoading={continuity.isPending}
+    continuityError={continuity.error ?? null}
+    onContinuityDecision={async (caseId, decision, reason, expectedRevision) => {
+      const updated = await decideAttendanceReconciliation(caseId, { decision, reason, expected_revision: expectedRevision });
+      queryClient.setQueryData(["attendance-continuity", date], updated);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
+        queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
+        queryClient.invalidateQueries({ queryKey: ["principal-register"] }),
+      ]);
+    }}
+  />;
 }
 
 export function PrincipalTimetableRoute() {

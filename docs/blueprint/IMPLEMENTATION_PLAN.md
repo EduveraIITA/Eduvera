@@ -32,7 +32,7 @@ decisions cannot be replaced by synthetic software tests.
 | B0: Reproducible preview | Compiled bundles existed; previous runtime had manual patches and stopped | Restore locked dependencies, compile source, managed local restart, readiness and restart drill |
 | B1: People and authority | School-scoped account-optional people; individual and reviewed bulk enrollment; dated guardian leave-signing permission | Other purpose-specific grants, account invitations, transfer/withdrawal; no merge by phone/name |
 | B2: Daily plan | Weekly baseline plus dated, versioned daily plans; notices/materials; coverage responses; shared family schedule; conflict checks and outbox updates | Local UI acceptance and school-operating validation; resource catalogue/advanced authoring remains later timetable scope |
-| B3: Attendance | Full-roster commands, revision checks, idempotency, correction history, calendar, leave | Source-rich observations, offline queue with expiry and review/quarantine, paper capture, print reconciliation; retain unrecorded/unknown states |
+| B3: Attendance | Full-roster commands, revision checks, idempotency, correction history, calendar, leave; immutable source-rich observations; encrypted account-scoped offline queue with expiry/quarantine; reviewed paper and office capture | Print/export reconciliation, physical offline/device drill and school-operating acceptance; retain unrecorded/unknown states |
 | B4: Attendance follow-up | Attendance facts and parent/teacher screens | First local slice implemented below: explicit owner/deadline, guardian reply, assisted response, outcome, event update |
 | B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes | Dedicated action inbox aggregating obligations; notice creation/audiences; delivery-attempt versus acknowledgment versus decision states; explicit non-app routing |
 | B6: Pilot readiness | Scoped documents, auth/CSRF, event replay and tests | Scoped object storage, malware scanning, non-owner RLS runtime roles/context, privileged auth, recovery drill, accessibility/device validation, release evidence |
@@ -45,7 +45,7 @@ decisions cannot be replaced by synthetic software tests.
 | E2: Academic/admin breadth | Diary/homework completion; timetable editing | Admission conversion, assessments/results, office requests/documents/lost property; extend only after core acceptance |
 | F1: Intelligence | Provider-neutral read-only attendance assistant | Evidence/freshness, scoped retrieval tests, safe drafting, policy rehearsal; no authority, diagnosis, release or autonomous reconciliation |
 
-B1 and B3 still have foundational gaps; B2 has a locally implemented workflow awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
+B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
 
 ## Section coverage
@@ -54,9 +54,9 @@ and attendance primitives; it does not imply that the complete Stage B exit gate
 | --- | --- |
 | 1-4: Definition, principles, boundaries, outcomes | Above baseline and staged roadmap; operational-obligation metric definitions remain to be field validated |
 | 5-6: Roles and experience | Existing role shells retained; new follow-ups use deliberate guardian/staff contexts; purpose grants and office/transport/care roles remain B1/C |
-| 7-9: Domains, invariants, observations | New CoordinationModule; separate journal; tenant FK; actor and effective/recording time; source observation adapters remain B3/D |
+| 7-9: Domains, invariants, observations | New CoordinationModule; separate journal; tenant FK; actor and effective/recording time; attendance source observations and reconciliation are implemented locally; other adapters remain D |
 | 10: Closed loops | WF-LOCAL-001 below; remaining domain state machines scheduled C/E |
-| 11-12: Configuration, non-app and offline | Assisted follow-up channel implemented; policy lifecycle and secured device queue remain B3/D2 |
+| 11-12: Configuration, non-app and offline | Assisted follow-up channel and account-scoped encrypted attendance device queue implemented locally; policy lifecycle and other non-app channels remain D/D2 |
 | 13-15: Architecture, concurrency, tenancy | Retain modular Node backend; transaction + outbox, replay, scope checks, command receipts; runtime-role RLS and purpose grants remain B1/B6 |
 | 16-18: Privacy, finance, AI | Restricted-data boundaries recorded; no real provider/finance/safeguarding enablement in this slice |
 | 19: Measurable targets | Targets are not measured SLAs. 100k-student workload, latency and recovery tests remain unproven |
@@ -97,7 +97,7 @@ so an SSE leader in the staff bundle can relay them to the responsive web app.
 
 Current boundaries: follow-ups now support students and guardians without login accounts;
 staff can record assisted responses. App delivery still requires an authorized linked account.
-No SMS/WhatsApp was sent or integrated. No offline write is represented as confirmed.
+No SMS/WhatsApp was sent or integrated. Attendance offline writes are explicitly shown as device-pending until accepted or quarantined by the server; other offline writes remain unsupported.
 No care/medical details should be entered in this routine thread. Dedicated action navigation,
 coverage/reassignment and reminders are subsequent B4/B5 extensions.
 
@@ -217,6 +217,59 @@ without enabling the first daily loop. Retain them; evaluate native offline stor
 4. Departure/care/transport: review documented authority and physical fallback before implementation
    is enabled for a live pilot. Synthetic tests are not a physical-safety approval.
 5. Finance/intelligence: independent contracts and permission tests before widening scope.
+
+## WF-STAFF-001: Staff onboarding and leave operations
+
+Delivered as a bounded school-operations workflow on 3 October 2026. This is deliberately not
+a payroll, salary, expense, recruitment-pipeline, appraisal or employee-surveillance system.
+
+1. **Principal → More → Staff & leave** provides one mobile-first workspace for the staff
+   directory, onboarding checks, leave approvals and leave-policy settings. A staff record holds
+   service-record essentials only: school code, contact identity, teaching/non-teaching kind,
+   designation, department, employment type and joining date.
+2. New staff onboarding creates a single-use 72-hour school invitation when no active account
+   already exists. Existing staff accounts are linked instead of duplicated. Invitation acceptance
+   completes the account-access check; the record becomes active only after all required checks
+   are complete. Existing staff memberships are backfilled with completed legacy checks.
+3. The five auditable onboarding checks are identity, service contract, qualifications, emergency
+   contact and account access. This aligns with the blueprint's staff-import/onboarding scope and
+   CBSE's service-record and contract expectations without claiming that a checklist itself proves
+   legal compliance.
+4. Leave policies are school/year configuration. Leadership can set allowance, carry-forward cap,
+   evidence threshold, paid/unpaid status, statutory label and availability. Starter Casual and
+   Medical policies are editable examples, not statutory declarations. Statutory eligibility must
+   be confirmed by the school against current applicable law.
+5. **Teacher → More → My leave** shows allowance, adjustments, used, pending and available days;
+   accepts full- or half-day applications with reason and handover note; and supports withdrawal
+   while pending. The server counts working dates, rejects closure-only/overlapping/out-of-year
+   requests, and rechecks balances at approval.
+6. The principal approval card combines request reason, balance and derived timetable coverage.
+   Approval records the affected published periods, writes immutable request history, emits an
+   outbox event, notifies the teacher and invalidates staff/leave/timetable consumers. It does not
+   silently rewrite teaching assignments; cover remains an explicit day-planning action.
+7. School/role boundaries are checked for every read and mutation. Writes use row/advisory locks,
+   optimistic revisions, cross-school database constraints, scoped foreign keys, audit records and
+   RLS/revocation defense in depth for direct Supabase Data API roles.
+
+Implementation: migration `028_staff_onboarding_and_leave.sql`,
+`backend/src/staff-operations/`, `frontend/src/features/staff-operations/`, and the existing
+invitation acceptance flow. Research inputs: CBSE Affiliation Bye-Laws 2018 (staff service records
+and contracts), Ministry of Labour's current Maternity Benefit Act summary, and Microsoft Shifts'
+employee-request/manager-decision interaction model. The product uses configurable policies rather
+than treating example balances as universal legal entitlements.
+
+Verified evidence:
+
+- Clean disposable PostgreSQL migration from `001` through `028`.
+- `staff-operations.integration.test.ts`: four passing end-to-end API cases covering existing-account
+  onboarding, role denial, policy configuration, leave submission, timetable impact, approval,
+  balance update, invalid withdrawal, audit and outbox delivery.
+- Backend and frontend TypeScript/lint clean; full frontend suite: 32 files / 210 tests passing,
+  including focused principal and teacher staff-workspace rendering/interaction checks.
+- Local preview database migrated; local API `/readyz` reports database and event broker healthy.
+
+Remaining acceptance gate: a school operator should review the principal and teacher mobile views
+with its own leave rules before pilot use. Policy values and statutory categories are school-owned.
 
 Do not silently change navigation or theme at any checkpoint. Record actual user acceptance
 and keep open work visible. No release dates or production-complete claim are inferred here.
@@ -387,8 +440,9 @@ The dated plan is an exception to the weekly baseline, not a replacement timetab
   launchd reports the managed preview running after restart (PID 53090 at verification).
 - Local review starts at `/principal/timetable`, with the weekly editor still available at
   `/principal/timetable/weekly`. Teachers use `/teacher/timetable`; family routes stay unchanged.
-- Next blueprint foundation: B3 attendance observation/offline/paper reconciliation. Do not
-  widen into departure, transport or restricted care before their separate authority and safety gates.
+- B3 attendance observation/offline/paper reconciliation is implemented locally below and awaits
+  physical-device and school-operating acceptance. Do not widen into departure, transport or
+  restricted care before their separate authority and safety gates.
 - This completes the bounded implementation, not all Stage B, a production-scale SLA, or school
   operational acceptance. Await Abhishek's UI validation before further UI expansion.
 
@@ -1255,3 +1309,119 @@ Verification:
   remain explicit and link to the role-appropriate timetable.
 - Focused component, adapter and parent child-switching/route regressions pass. Frontend and backend
   lint and production builds pass. Physical-phone acceptance remains open.
+
+## Full-screen digital student identity — 3 October 2026
+
+- The expanded student ID now opens as a true viewport-level modal above the shared header and
+  bottom navigation in both student and parent contexts. The entire application becomes a dark,
+  blurred background so the school identity, portrait, admission details and verification QR remain
+  visually isolated and readable.
+- The close control is fixed inside the safe area and remains available while a short-height device
+  scrolls the card. Opening locks background scrolling; Escape, the close control and backdrop
+  dismissal close the modal, return focus to the identity card and restore the previous page scroll
+  behavior. Keyboard focus is contained on the close control because the identity itself has no
+  secondary actions.
+- The complete frontend regression suite passes (**206 tests**), and frontend lint and production
+  builds pass. The local readiness probe reports healthy database and event dependencies. Physical-
+  phone visual acceptance remains open.
+
+## Student timetable discovery and compact calendar summaries — 3 October 2026
+
+- The existing student Day, Week, Month and Year timetable is now presented as a first-class
+  `Timetable` destination in both the four-item bottom navigation and the More service catalogue.
+  The former `Classes & Leave` tile was split into clear Timetable and Leave requests destinations,
+  without changing the authorized student timetable or leave workflows.
+- The shared Month summary now follows a recognizable Monday-first calendar: weekday headings sit
+  above aligned date cells, leading spacers preserve the correct weekday position, the selected date
+  remains explicit, and each date exposes its scheduled-period count or a free-day state.
+- The shared Year summary no longer uses twelve large month cards. It is one compact horizontal load
+  chart with Month, Scheduled load and Periods columns, twelve keyboard-accessible month rows and a
+  stable zero state. Because the navigator is shared, parent, student, teacher and principal timetable
+  readers receive the same calendar structure while retaining their role-specific data.
+- Focused month/year and student-route regressions pass. The complete frontend suite passes
+  (**208 tests**); frontend lint, type checking and production build pass. Physical-phone visual
+  acceptance remains open.
+
+## Staff responsibilities, leave coverage and contextual duties — 3 October 2026
+
+- Added the research-backed product and engineering specification in
+  [STAFF_RESPONSIBILITIES_AND_COVERAGE.md](STAFF_RESPONSIBILITIES_AND_COVERAGE.md). It keeps a
+  person's account role stable while modelling class ownership, subject teaching, mentoring,
+  coordination, event, examination, safety and committee work as dated, scoped appointments with
+  acceptance, revocation, backup and audit history.
+- Added tenant-scoped responsibility types, assignments, assignment audits, leave coverage tasks and
+  coverage audits. Migration `029_staff_responsibilities_and_coverage.sql` validates scope ownership,
+  seeds the standard catalogue for existing and future schools, imports existing class and event
+  assignments without duplicating them, enables RLS and preserves the established application-owner
+  deployment model.
+- Leave approval now creates actionable timetable, event and operational coverage tasks in the same
+  transaction. Principals can offer a task to an eligible replacement; the replacement must accept or
+  decline it. Approved leave, timetable overlap, duplicate responsibility scope and conflicting cover
+  are checked before assignment. Every transition emits an operations audit record and scoped outbox
+  event.
+- Principal Staff operations now has distinct People, Duties, Leave and Settings workflows. The mobile
+  Duties board prioritizes uncovered leave and dated/special duties, keeps routine academic ownership
+  collapsed, and provides contextual appointment and replacement pickers. Teachers receive a dedicated
+  My responsibilities destination with pending offers, active appointments and accepted cover.
+- A clean PostgreSQL database applies all migrations through **029**, loads and verifies the canonical
+  200-student demo school, and passes all **210 backend tests** across **23 files**. Backend typecheck,
+  lint and production build pass. The complete frontend suite passes all **211 tests** across **32
+  files**; frontend typecheck, lint and production build pass. The authenticated localhost principal
+  Duties board and assignment sheet were inspected at the mobile breakpoint. Physical-phone acceptance
+  remains open.
+
+## Compact published timetable rows — 3 October 2026
+
+- Rebalanced each published period into a compact three-part row: the period rail now owns the complete
+  start/end time, the subject and schedule state share the primary line, and teacher and room share a
+  two-column metadata line. The former duplicate time entry and mobile-only vertical metadata stack were
+  removed without hiding schedule, staffing, room, cancellation, materials or editing information.
+- The focused daily-plan suite passes all **17 tests**. Frontend typecheck, lint and production build pass,
+  and the authenticated principal published timetable was inspected at the mobile breakpoint with three
+  periods visible in substantially less vertical space. Physical-phone acceptance remains open.
+
+## Timetable overview drill-down — 3 October 2026
+
+- Made the shared timetable hierarchy directly navigable across principal, teacher, parent and student
+  portals. Selecting a Year load row now selects that month and opens Month view; selecting a Month date
+  or Week date selects the exact school date and opens Day view. The current role, class or child context
+  remains unchanged.
+- Date and view are written through one atomic navigation callback on URL-backed screens, preventing one
+  search-parameter update from overwriting the other. Accessible labels now state the destination action
+  (`open month view` or `open day view`) for keyboard and assistive-technology users.
+- Today is now distinct from the selected date: the date header exposes a persistent `Today · 3 Oct`
+  shortcut, current dates use a ring in the day rail and Week/Month calendars, and Year view marks the
+  current month separately. Corrected cumulative rail centering so the selected date remains centred
+  instead of drifting to the clipped edge after resize updates.
+- The complete frontend suite passes all **212 tests** across **32 files**. Frontend typecheck, lint and
+  production build pass. The authenticated principal Year → May → 10 May flow was exercised in the local
+  mobile preview, including the correct Day-view empty state for a free Sunday and the distinct selected
+  2 October/current 3 October markers. Physical-phone acceptance remains open.
+
+## Attendance continuity and reconciliation — 3 October 2026
+
+- Migrations `030_attendance_continuity.sql` and `031_attendance_snapshot_provenance.sql` separate immutable field observations from accepted
+  attendance facts. Capture batches retain source, actor, observation/receipt time, roster fingerprint,
+  roster capture/expiry time, expected register revision, device/source reference and resolution. Tenant-consistency triggers,
+  append-only observation enforcement, RLS and public-role revocation protect the evidence tables.
+- Teacher registers now issue an 18-hour, actor-bound HMAC-signed roster snapshot. A matching live or offline capture can publish
+  through the existing revision-checked/idempotent attendance command; expired snapshots, roster or
+  assignment changes, permission loss and write conflicts are quarantined instead of silently discarded.
+  Unrecorded roster rows remain null and are never converted into absence.
+- The browser stores roster snapshots and pending captures with non-extractable AES-GCM keys in IndexedDB.
+  Records, keys, device identifiers and queue keys are scoped to the authenticated staff account on a
+  shared device. Pending observations survive expiry so the server can retain and review the evidence;
+  reconnect sync never describes a device-only capture as submitted.
+- Principal Attendance includes an evidence/reconciliation desk, current revision and lock context,
+  explicit accept/reject notes, and a paper/office capture path. Applying a reviewed observation creates
+  an ordinary audited attendance revision; it does not bypass register locks or rewrite observation
+  history. History identifies the source and paper/office reference.
+- Focused migration, API integration and responsive component regressions cover automatic acceptance,
+  expired-snapshot quarantine/rejection, paper review/application, append-only evidence, pending-device
+  messaging, source-reference requirements and locked-register review. Backend/frontend type checking
+  and both production builds pass. Migrations 030–031 are applied to the local application and isolated
+  test databases. Targeted evidence is green (2 migration assertions, 1 end-to-end API workflow and 16 UI
+  regressions); the complete automated suites also pass (164 backend and 216 frontend tests). The
+  authenticated local mobile preview was exercised through the principal continuity
+  desk and into a Class 6A paper-register capture, including the source/reference and review-only states.
+  A physical-device offline/reconnect drill must still be recorded before calling this release gate complete.

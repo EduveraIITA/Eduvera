@@ -227,6 +227,23 @@ export class SchoolController {
     return this.school.saveTeacherAttendance(request.authUser, request.body, request);
   }
 
+  @Post("attendance-continuity/batches/")
+  @HttpCode(200)
+  attendanceContinuitySave(@Req() request: AuthenticatedRequest) {
+    return this.school.saveAttendanceContinuityBatch(request.authUser, request.body, request);
+  }
+
+  @Get("screens/principal/attendance/continuity/")
+  attendanceContinuityWorkspace(@Req() request: AuthenticatedRequest, @Query("date") date?: string) {
+    return this.school.attendanceContinuityWorkspace(request.authUser, date);
+  }
+
+  @Post("attendance-continuity/cases/:caseId/decision/")
+  @HttpCode(200)
+  attendanceContinuityDecision(@Req() request: AuthenticatedRequest, @Param("caseId") caseId: string) {
+    return this.school.decideAttendanceReconciliation(request.authUser, caseId, request.body, request);
+  }
+
   @Post("attendance-registers/:classSectionId/lock/")
   @HttpCode(200)
   attendanceRegisterLock(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {

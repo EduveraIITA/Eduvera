@@ -9,6 +9,9 @@ import {
   ChevronRight,
   ClipboardCheck,
   Camera,
+  Cloud,
+  CloudOff,
+  FileInput,
   History,
   LockKeyhole,
   LoaderCircle,
@@ -19,6 +22,7 @@ import {
   UnlockKeyhole,
 } from "lucide-react";
 import type {
+  AttendanceCaptureSource,
   AttendanceRegister,
   AttendanceRegisterHistoryResponse,
   AttendanceStatus,
@@ -320,6 +324,7 @@ interface TeacherAttendancePageProps {
   onUnlock?: (reason: string) => Promise<TeacherAttendanceResponse>;
   onLoadHistory?: () => Promise<AttendanceRegisterHistoryResponse>;
   portal?: "teacher" | "principal";
+  initialCaptureSource?: AttendanceCaptureSource;
 }
 
 export function TeacherAttendancePage({
@@ -332,6 +337,7 @@ export function TeacherAttendancePage({
   onUnlock,
   onLoadHistory,
   portal = "teacher",
+  initialCaptureSource = "live_app",
 }: TeacherAttendancePageProps) {
   const navigate = useNavigate();
   const [baseline, setBaseline] = useState<AttendanceSnapshot>(() =>
@@ -358,10 +364,22 @@ export function TeacherAttendancePage({
   const [remoteUpdate, setRemoteUpdate] = useState(false);
   const [mergeConflicts, setMergeConflicts] = useState<string[]>([]);
   const [showPhotoAttendance, setShowPhotoAttendance] = useState(false);
-  const [editing, setEditing] = useState(portal === "teacher");
+  const [editing, setEditing] = useState(portal === "teacher" || initialCaptureSource !== "live_app");
   const [photoSessionId, setPhotoSessionId] = useState<string | null>(null);
+  const [captureSource, setCaptureSource] = useState<AttendanceCaptureSource>(initialCaptureSource);
+  const [sourceReference, setSourceReference] = useState("");
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   const saveAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const incomingSnapshot = useMemo(() => attendanceSnapshot(data), [data]);
+  useEffect(() => {
+    const updateConnection = () => setOnline(navigator.onLine);
+    window.addEventListener("online", updateConnection);
+    window.addEventListener("offline", updateConnection);
+    return () => {
+      window.removeEventListener("online", updateConnection);
+      window.removeEventListener("offline", updateConnection);
+    };
+  }, []);
   const localDirty =
     recordsSignature(records) !== recordsSignature(baseline.records);
   const incomingChanged =
@@ -388,7 +406,9 @@ export function TeacherAttendancePage({
     data.roster.length > 0 && markedCount === data.roster.length;
   const isLocked = activeBaseline.register.state === "locked";
   const unavailable = data.availability?.can_mark === false;
-  const readOnly = isLocked || unavailable || !editing;
+  const capturePending = data.latest_capture?.status === "pending";
+  const captureNeedsReview = data.latest_capture?.status === "quarantined";
+  const readOnly = isLocked || unavailable || !editing || (captureNeedsReview && portal === "teacher");
   const isCorrection =
     activeBaseline.register.submitted_at !== null ||
     activeBaseline.register.state !== "draft";
@@ -400,6 +420,8 @@ export function TeacherAttendancePage({
     !readOnly &&
     allMarked &&
     (dirty || activeBaseline.register.state === "draft") &&
+    (!capturePending || dirty) &&
+    (!(["paper", "office"] as AttendanceCaptureSource[]).includes(captureSource) || sourceReference.trim().length >= 3) &&
     (!correctionReasonRequired || reason.trim().length >= 3);
   const counts = Object.values(activeRecords).reduce<
     Record<AttendanceStatus, number>
@@ -503,6 +525,8 @@ export function TeacherAttendancePage({
     const fingerprint = JSON.stringify({
       revision: activeBaseline.register.revision,
       reason: reason.trim(),
+      source: captureSource,
+      source_reference: sourceReference.trim(),
       records: completeRecords.sort((first, second) =>
         first.student_id.localeCompare(second.student_id),
       ),
@@ -520,14 +544,23 @@ export function TeacherAttendancePage({
         photo_session_id: photoSessionId ?? undefined,
         reason: reason.trim() || undefined,
         idempotency_key: saveAttempt.current.key,
+        source: portal === "principal" ? captureSource : undefined,
+        source_reference: portal === "principal" ? sourceReference.trim() : undefined,
       });
+      const continuityMessage = result.latest_capture?.status === "pending"
+        ? "Saved securely on this device. It has not reached the school register yet."
+        : result.latest_capture?.status === "quarantined"
+          ? "Observation received and held for attendance-desk review."
+          : result.latest_capture?.status === "rejected"
+            ? "The observation was rejected. Review it with the attendance desk."
+            : null;
       applyServerResult(
         result,
-        isCorrection
+        continuityMessage ?? (isCorrection
           ? "Attendance correction saved."
-          : "Attendance register submitted.",
+          : "Attendance register submitted."),
       );
-      if (portal === "principal") setEditing(false);
+      if (portal === "principal" && result.latest_capture?.status !== "quarantined") setEditing(false);
     } catch (requestError) {
       if (requestError instanceof ApiError && requestError.status === 409) {
         setRemoteUpdate(true);
@@ -705,6 +738,7 @@ export function TeacherAttendancePage({
         : activeBaseline.register.state === "draft"
           ? `${markedCount} of ${data.roster.length} marked`
           : "All changes saved";
+  const snapshotExpiry = formatRegisterMoment(data.continuity_snapshot.expires_at);
 
   return (
     <OperationsShell
@@ -811,8 +845,21 @@ export function TeacherAttendancePage({
           ) : null}
         </section>
 
+        <section className={`attendance-continuity-status${!online ? " is-offline" : data.latest_capture?.status === "quarantined" ? " needs-review" : ""}`} role="status" aria-live="polite">
+          {!online ? <CloudOff size={20} /> : data.latest_capture?.status === "quarantined" ? <AlertTriangle size={20} /> : <Cloud size={20} />}
+          <div>
+            <strong>{!online ? "Working offline" : data.latest_capture?.status === "pending" ? "Saved on this device — not submitted" : data.latest_capture?.status === "quarantined" ? "Attendance-desk review required" : "Offline-ready register"}</strong>
+            <p>{!online ? `Changes are encrypted on this device and will sync automatically. The downloaded roster is valid until ${snapshotExpiry ?? "its displayed expiry"}.` : data.latest_capture?.status === "pending" ? "Keep this device signed in. Sync will retry automatically when the connection returns." : data.latest_capture?.status === "quarantined" ? "The observation is preserved, but family attendance has not been changed." : `This roster is cached securely for connection interruptions until ${snapshotExpiry ?? "the snapshot expires"}.`}</p>
+          </div>
+        </section>
+
         {unavailable ? <section className="operations-alert is-neutral" role="status"><CalendarDays size={20} /><div><strong>Read-only date</strong><p>{data.availability?.reason}</p></div></section> : null}
         {portal === "principal" && !isLocked && !unavailable ? <section className="roll-call-review-mode"><div><strong>{editing ? "Editing register" : "Principal review"}</strong><p>{editing ? "Changes to a submitted register need a correction reason." : isCorrection ? "Check the record and its history, then lock it when reviewed." : "This class is awaiting submission. You can complete the register if needed."}</p></div><button type="button" disabled={busy} onClick={() => { if (editing) { if (!confirmDiscard()) return; setRecords(activeBaseline.records); setReason(""); setPhotoSessionId(null); } setEditing(!editing); }}>{editing ? "Cancel editing" : <><Pencil size={15} />{isCorrection ? "Make correction" : "Complete register"}</>}</button></section> : null}
+        {portal === "principal" && editing && !isLocked && !unavailable ? <section className="attendance-capture-source" aria-labelledby="attendance-capture-source-heading">
+          <div><FileInput size={20} /><span><strong id="attendance-capture-source-heading">Observation source</strong><small>The source remains attached to every attendance revision.</small></span></div>
+          <div role="group" aria-label="Attendance observation source">{(["live_app", "paper", "office"] as const).map((source) => <button type="button" key={source} aria-pressed={captureSource === source} onClick={() => { setCaptureSource(source); setSourceReference(""); }}>{source === "live_app" ? "Live register" : source === "paper" ? "Paper sheet" : "Office entry"}</button>)}</div>
+          {captureSource !== "live_app" ? <label>Source reference<input value={sourceReference} maxLength={160} onChange={(event) => setSourceReference(event.target.value)} placeholder={captureSource === "paper" ? "Example: Register book 7A, page 42" : "Example: Reception call log 184"} /><small>This entry will go to reconciliation before it changes published attendance.</small></label> : null}
+        </section> : null}
         {portal === "principal" && isLocked && showUnlockReason ? (
           <section className="attendance-unlock-panel">
             <div>
@@ -918,7 +965,8 @@ export function TeacherAttendancePage({
                           </strong>
                           <small>
                             {submission.submitted_by_name} -{" "}
-                            {formatRegisterMoment(submission.created_at)}
+                            {formatRegisterMoment(submission.created_at)} · {(submission.capture_source ?? "live_app").replace("_", " ")}
+                            {submission.source_reference ? ` · ${submission.source_reference}` : ""}
                           </small>
                         </span>
                         <b>{submission.records_count} reviewed</b>
@@ -1134,7 +1182,11 @@ export function TeacherAttendancePage({
                 <Save size={17} />
               )}
               {state === "saving"
-                ? "Saving register..."
+                ? online ? "Saving register..." : "Saving on device..."
+                : portal === "principal" && captureSource !== "live_app"
+                  ? "Send for review"
+                  : !online
+                    ? "Save on device"
                 : isCorrection
                   ? "Save correction"
                   : "Submit register"}

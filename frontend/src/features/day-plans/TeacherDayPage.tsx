@@ -37,6 +37,12 @@ export default function TeacherDayPage() {
     next.set("view", nextView);
     setParams(next);
   };
+  const setSelection = (nextDate: string, nextView: TimetableView) => {
+    const next = new URLSearchParams(params);
+    next.set("date", nextDate);
+    next.set("view", nextView);
+    setParams(next);
+  };
   return (
     <OperationsShell
       portal="teacher"
@@ -47,7 +53,7 @@ export default function TeacherDayPage() {
     >
       <div className="day-workspace">
         <h1 className="sr-only">My timetable</h1>
-        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} />
+        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} onNavigate={setSelection} />
       </div>
     </OperationsShell>
   );
@@ -57,12 +63,14 @@ export function TeacherDayPanel({
   view = "day",
   onDateChange,
   onViewChange,
+  onNavigate,
   compact = false,
 }: {
   date: string;
   view?: TimetableView;
   onDateChange?: (date: string) => void;
   onViewChange?: (view: TimetableView) => void;
+  onNavigate?: (date: string, view: TimetableView) => void;
   compact?: boolean;
 }) {
   const auth = useAuth(),
@@ -95,6 +103,7 @@ export function TeacherDayPanel({
           schoolId={schoolId}
           onDateChange={onDateChange}
           onViewChange={onViewChange}
+          onNavigate={onNavigate}
         />
       ) : null}
       <section className="day-panel">
@@ -265,12 +274,14 @@ function TeacherDateNavigator({
   schoolId,
   onDateChange,
   onViewChange,
+  onNavigate,
 }: {
   date: string;
   view: TimetableView;
   schoolId: string;
   onDateChange: (date: string) => void;
   onViewChange: (view: TimetableView) => void;
+  onNavigate?: (date: string, view: TimetableView) => void;
 }) {
   const range = timetableSummaryRange(date, view);
   const summary = useQuery({
@@ -295,6 +306,7 @@ function TeacherDateNavigator({
       contextLabel="My teaching schedule"
       onDateChange={onDateChange}
       onViewChange={onViewChange}
+      onNavigate={onNavigate}
       onRetry={() => void summary.refetch()}
     />
   );

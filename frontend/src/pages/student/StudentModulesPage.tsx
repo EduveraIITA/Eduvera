@@ -1,10 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  BookOpenCheck,
   Bot,
   CalendarCheck2,
   CalendarRange,
+  CalendarX2,
   Clock3,
   Grid2X2,
   ReceiptIndianRupee,
@@ -18,7 +18,8 @@ const modules = [
   { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, path: "/student/calendar", tone: "blue" },
   { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas, and eligibility", icon: CalendarCheck2, path: "/student/attendance", tone: "blue" },
   { id: "copilot", name: "Attendance Copilot", description: "Ask policy and projection questions using your own data", icon: Bot, path: "/student/copilot", tone: "teal" },
-  { id: "classes", name: "Classes & Leave", description: "Timetable, leave applications, and approval status", icon: BookOpenCheck, path: "/student/timetable", tone: "violet" },
+  { id: "timetable", name: "Timetable", description: "Full day, week, month, and year schedule", icon: CalendarRange, path: "/student/timetable", tone: "violet" },
+  { id: "leave", name: "Leave requests", description: "Apply for leave and follow approval status", icon: CalendarX2, path: "/student/leave", tone: "rose" },
   { id: "events", name: "Events & Activities", description: "Invitations, schedules, responses, consent, and preparation", icon: CalendarRange, path: "/student/events", tone: "teal" },
   { id: "fees", name: "Fees", description: "Invoices, receipts, and payment history", icon: ReceiptIndianRupee, path: "/student/fees", tone: "amber" },
   { id: "diary", name: "Student Diary", description: "Homework, teacher notes, and announcements", icon: Clock3, path: "/student/diary", tone: "rose" },

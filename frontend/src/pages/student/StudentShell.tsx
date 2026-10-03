@@ -73,7 +73,7 @@ const schoolNav = [
 const eduraNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
-  { key: "classes" as const, label: "Classes", icon: CalendarDays },
+  { key: "classes" as const, label: "Timetable", icon: CalendarDays },
   { key: "launcher" as const, label: "More", icon: MoreHorizontal },
 ];
 

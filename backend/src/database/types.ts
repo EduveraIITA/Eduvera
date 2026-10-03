@@ -34,8 +34,32 @@ export interface SubjectTable { id: Generated<string>; school_id: string; code: 
 export interface SubjectAttendanceTable { id: Generated<string>; student_id: string; subject_id: string; term_id: string; classes_held: Generated<number>; classes_attended: Generated<number>; classes_excused: Generated<number> }
 export interface AttendanceRecordTable { id: Generated<string>; student_id: string; class_section_id: string; date: DateOnly; status: "present" | "absent" | "late" | "excused" | "half_day"; check_in_at: NullableTimestamp; check_out_at: NullableTimestamp; remarks: Generated<string>; marked_by: string | null; revision: Generated<number>; source_request_id: Generated<string | null>; created_at: Timestamp; updated_at: Timestamp }
 export interface AttendanceRegisterTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; state: Generated<"draft" | "submitted" | "locked">; revision: Generated<number>; submitted_by: string | null; submitted_at: NullableTimestamp; locked_by: string | null; locked_at: NullableTimestamp; reopened_by: string | null; reopened_at: NullableTimestamp; reopen_reason: string | null; created_at: Timestamp; updated_at: Timestamp }
-export interface AttendanceSubmissionTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; submitted_by: string; idempotency_key: string; request_hash: string; request_id: string; register_revision: number; records_count: number; changed_count: number; result_status: Generated<number>; result_body: Generated<Json>; source_photo_session_id: string | null; completed_at: Timestamp; created_at: Timestamp }
+export interface AttendanceSubmissionTable { id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly; submitted_by: string; idempotency_key: string; request_hash: string; request_id: string; register_revision: number; records_count: number; changed_count: number; result_status: Generated<number>; result_body: Generated<Json>; source_photo_session_id: string | null; capture_batch_id: string | null; capture_source: Generated<"live_app" | "offline_device" | "paper" | "office" | "photo">; observed_at: NullableTimestamp; completed_at: Timestamp; created_at: Timestamp }
 export interface AttendanceRecordRevisionTable { id: Generated<number>; attendance_record_id: string; attendance_submission_id: string | null; attendance_register_id: string | null; school_id: string; student_id: string; class_section_id: string; date: DateOnly; previous_status: AttendanceRecordTable["status"] | null; new_status: AttendanceRecordTable["status"]; previous_remarks: string | null; new_remarks: Generated<string>; previous_check_in_at: NullableTimestamp; new_check_in_at: NullableTimestamp; previous_check_out_at: NullableTimestamp; new_check_out_at: NullableTimestamp; reason: string; changed_by: string; request_id: string; register_revision: number; created_at: Timestamp }
+export interface AttendanceCaptureBatchTable {
+  id: Generated<string>; school_id: string; class_section_id: string; term_id: string; date: DateOnly;
+  source: "live_app" | "offline_device" | "paper" | "office"; source_reference: Generated<string>;
+  recorded_by: string; device_id: string | null; idempotency_key: string; request_hash: string;
+  roster_fingerprint: string; roster_count: number; expected_register_revision: number;
+  observed_at: Timestamp; roster_captured_at: Timestamp; roster_expires_at: Timestamp; received_at: Timestamp;
+  status: Generated<"pending" | "accepted" | "quarantined" | "rejected">;
+  accepted_submission_id: string | null; accepted_at: NullableTimestamp; resolved_by: string | null;
+  resolved_at: NullableTimestamp; resolution_note: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface AttendanceObservationTable {
+  id: Generated<string>; batch_id: string; school_id: string; student_id: string;
+  class_section_id: string; term_id: string; date: DateOnly;
+  observed_status: AttendanceRecordTable["status"]; remarks: Generated<string>;
+  observed_at: Timestamp; recorded_at: Timestamp; recorded_by: string;
+  source: AttendanceCaptureBatchTable["source"];
+}
+export interface AttendanceReconciliationCaseTable {
+  id: Generated<string>; school_id: string; batch_id: string;
+  reason_code: "snapshot_expired" | "roster_changed" | "register_changed" | "permission_revoked" | "assignment_changed" | "invalid_observation_time" | "source_requires_review" | "write_conflict";
+  reason: string; details: Generated<Json>; state: Generated<"open" | "accepted" | "rejected">;
+  opened_at: Timestamp; decided_by: string | null; decided_at: NullableTimestamp;
+  decision_note: string | null; updated_at: Timestamp;
+}
 export interface SchoolCalendarDayTable {
   id: Generated<string>; school_id: string; date: DateOnly; is_instructional: boolean;
   label: Generated<string>; kind: Generated<"public_holiday" | "local_holiday" | "emergency_closure" | "instructional_override">;
@@ -59,6 +83,83 @@ export interface HomeworkCompletionTable { item_id: string; student_id: string; 
 export interface DiaryNoteTable { id: Generated<string>; item_id: string; student_id: string; author_id: string; body: string; created_at: Timestamp }
 export interface NotificationTable { id: Generated<string>; recipient_id: string; kind: "attendance" | "leave" | "diary" | "general"; title: string; body: string; link: Generated<string>; metadata: Json; dedupe_key: Generated<string | null>; read_at: NullableTimestamp; created_at: Timestamp }
 export interface SchoolContactTable { id: Generated<string>; school_id: string; label: string; name: string; phone: Generated<string>; email: Generated<string>; availability: Generated<string>; priority: Generated<number> }
+export interface StaffProfileTable {
+  id: Generated<string>; school_id: string; user_id: string | null; staff_code: string;
+  first_name: string; last_name: Generated<string>; email: string; phone: Generated<string>;
+  staff_kind: "teaching" | "non_teaching"; designation: string; department: Generated<string>;
+  employment_type: "full_time" | "part_time" | "contract"; joined_on: DateOnly;
+  status: Generated<"onboarding" | "active" | "inactive">; revision: Generated<number>;
+  created_by: string | null; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface StaffOnboardingItemTable {
+  id: Generated<string>; school_id: string; staff_profile_id: string;
+  item_key: "identity" | "service_contract" | "qualifications" | "emergency_contact" | "account_access";
+  label: string; required: Generated<boolean>; completed_at: NullableTimestamp; completed_by: string | null;
+  note: Generated<string>; updated_at: Timestamp;
+}
+export interface StaffLeavePolicyTable {
+  id: Generated<string>; school_id: string; academic_year: string; code: string; name: string;
+  annual_allowance: string; carry_forward_limit: Generated<string>; requires_document_after_days: string | null;
+  is_paid: Generated<boolean>; is_statutory: Generated<boolean>; is_active: Generated<boolean>;
+  revision: Generated<number>; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface StaffLeaveBalanceAdjustmentTable {
+  id: Generated<string>; school_id: string; staff_profile_id: string; policy_id: string;
+  days: string; reason: string; recorded_by: string; created_at: Timestamp;
+}
+export interface StaffLeaveRequestTable {
+  id: Generated<string>; school_id: string; staff_profile_id: string; policy_id: string;
+  starts_on: DateOnly; ends_on: DateOnly; portion: Generated<"full_day" | "first_half" | "second_half">;
+  requested_days: string; reason: string; handover_note: Generated<string>;
+  status: Generated<"submitted" | "approved" | "rejected" | "withdrawn">; revision: Generated<number>;
+  submitted_at: Timestamp; decided_by: string | null; decided_at: NullableTimestamp;
+  decision_note: Generated<string>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface StaffLeaveRequestAuditTable {
+  id: Generated<string>; school_id: string; request_id: string; actor_id: string;
+  action: "submitted" | "approved" | "rejected" | "withdrawn";
+  from_status: string | null; to_status: string; note: Generated<string>; created_at: Timestamp;
+}
+export interface StaffResponsibilityTypeTable {
+  id: Generated<string>; school_id: string; code: string; name: string;
+  category: "academic" | "student_support" | "event" | "examination" | "operations" | "governance";
+  scope_kind: "school" | "class_section" | "event" | "scheduled_duty";
+  description: Generated<string>; access_summary: Generated<string>;
+  requires_acceptance: Generated<boolean>; restricted: Generated<boolean>; is_active: Generated<boolean>;
+  created_at: Timestamp;
+}
+export interface StaffResponsibilityAssignmentTable {
+  id: Generated<string>; school_id: string; responsibility_type_id: string; staff_profile_id: string;
+  class_section_id: string | null; subject_id: string | null; event_id: string | null;
+  scope_label: Generated<string>; location: Generated<string>; starts_on: DateOnly; ends_on: DateOnly | null;
+  starts_at: TimeOnly | null; ends_at: TimeOnly | null;
+  status: "offered" | "active" | "declined" | "completed" | "revoked";
+  notes: Generated<string>; assigned_by: string; responded_at: NullableTimestamp;
+  response_note: Generated<string>; revoked_by: string | null; revoked_at: NullableTimestamp;
+  revocation_reason: Generated<string>; backup_staff_profile_id: string | null;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface StaffResponsibilityAuditTable {
+  id: Generated<string>; school_id: string; assignment_id: string; actor_id: string;
+  action: "offered" | "activated" | "accepted" | "declined" | "completed" | "revoked";
+  from_status: string | null; to_status: string; note: Generated<string>; created_at: Timestamp;
+}
+export interface StaffCoverageTaskTable {
+  id: Generated<string>; school_id: string; leave_request_id: string; absent_staff_profile_id: string;
+  replacement_staff_profile_id: string | null; responsibility_assignment_id: string | null;
+  source_schedule_id: string | null; class_section_id: string | null; subject_id: string | null;
+  duty_date: DateOnly; period_number: number | null; starts_at: TimeOnly | null; ends_at: TimeOnly | null;
+  title: string; location: Generated<string>;
+  status: Generated<"open" | "offered" | "accepted" | "declined" | "completed" | "cancelled">;
+  handover_note: Generated<string>; assigned_by: string | null; offered_at: NullableTimestamp;
+  responded_at: NullableTimestamp; response_note: Generated<string>; revision: Generated<number>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface StaffCoverageTaskAuditTable {
+  id: Generated<string>; school_id: string; task_id: string; actor_id: string;
+  action: "created" | "offered" | "accepted" | "declined" | "reassigned" | "completed" | "cancelled";
+  from_status: string | null; to_status: string; note: Generated<string>; created_at: Timestamp;
+}
 export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string>; active_school_id: Generated<string | null> }
 export interface AuditEventTable { id: Generated<string>; action: string; actor_id: string | null; school_id: string | null; target_type: Generated<string>; target_id: string | null; request_id: string; ip_hash: string | null; metadata: Json; created_at: Timestamp }
 export interface AiConversationTable { id: Generated<string>; owner_id: string; student_id: string; title: string; status: Generated<"active" | "archived">; created_at: Timestamp; updated_at: Timestamp }
@@ -214,6 +315,9 @@ export interface Database {
   attendance_registers: AttendanceRegisterTable;
   attendance_submissions: AttendanceSubmissionTable;
   attendance_record_revisions: AttendanceRecordRevisionTable;
+  attendance_capture_batches: AttendanceCaptureBatchTable;
+  attendance_observations: AttendanceObservationTable;
+  attendance_reconciliation_cases: AttendanceReconciliationCaseTable;
   school_calendar_days: SchoolCalendarDayTable;
   curriculum_subject_targets: CurriculumSubjectTargetTable;
   gate_events: GateEventTable;
@@ -228,6 +332,17 @@ export interface Database {
   diary_notes: DiaryNoteTable;
   notifications: NotificationTable;
   school_contacts: SchoolContactTable;
+  staff_profiles: StaffProfileTable;
+  staff_onboarding_items: StaffOnboardingItemTable;
+  staff_leave_policies: StaffLeavePolicyTable;
+  staff_leave_balance_adjustments: StaffLeaveBalanceAdjustmentTable;
+  staff_leave_requests: StaffLeaveRequestTable;
+  staff_leave_request_audits: StaffLeaveRequestAuditTable;
+  staff_responsibility_types: StaffResponsibilityTypeTable;
+  staff_responsibility_assignments: StaffResponsibilityAssignmentTable;
+  staff_responsibility_audits: StaffResponsibilityAuditTable;
+  staff_coverage_tasks: StaffCoverageTaskTable;
+  staff_coverage_task_audits: StaffCoverageTaskAuditTable;
   auth_sessions: AuthSessionTable;
   audit_events: AuditEventTable;
   ai_conversations: AiConversationTable;

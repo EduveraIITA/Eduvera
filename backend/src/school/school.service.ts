@@ -8,7 +8,7 @@ import {
 import { createReadStream } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
@@ -117,10 +117,70 @@ const attendanceBulkSchema = z.object({
     remarks: z.string().trim().max(500).optional().default(""),
   })).min(1).max(100),
 });
+const attendanceCaptureSourceSchema = z.enum(["live_app", "offline_device", "paper", "office"]);
+const attendanceContinuityBatchSchema = attendanceBulkSchema.extend({
+  source: attendanceCaptureSourceSchema,
+  source_reference: z.string().trim().max(160).optional().default(""),
+  device_id: z.string().trim().min(8).max(128).nullable().optional(),
+  observed_at: z.string().datetime({ offset: true }),
+  roster_fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  roster_captured_at: z.string().datetime({ offset: true }),
+  roster_expires_at: z.string().datetime({ offset: true }),
+  snapshot_token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+}).superRefine((value, context) => {
+  if (value.source === "offline_device" && !value.device_id) {
+    context.addIssue({ code: "custom", path: ["device_id"], message: "Offline attendance requires a registered device identifier." });
+  }
+  if ((value.source === "paper" || value.source === "office") && value.source_reference.length < 3) {
+    context.addIssue({ code: "custom", path: ["source_reference"], message: "Paper and office captures require a source reference." });
+  }
+});
+const attendanceReconciliationDecisionSchema = z.object({
+  decision: z.enum(["accept", "reject"]),
+  reason: z.string().trim().min(3).max(500),
+  expected_revision: z.number().int().min(0),
+});
 const attendanceLockSchema = z.object({
   date: z.string().regex(datePattern),
   reason: z.string().trim().min(3).max(500).optional(),
 });
+
+export function attendanceRosterFingerprint(input: {
+  schoolId: string;
+  classSectionId: string;
+  termId: string;
+  date: string;
+  studentIds: string[];
+}) {
+  return createHash("sha256").update(JSON.stringify({
+    school_id: input.schoolId,
+    class_section_id: input.classSectionId,
+    term_id: input.termId,
+    date: input.date,
+    student_ids: [...input.studentIds].sort(),
+  })).digest("hex");
+}
+
+function attendanceSnapshotToken(input: {
+  userId: string;
+  schoolId: string;
+  classSectionId: string;
+  termId: string;
+  date: string;
+  rosterFingerprint: string;
+  rosterCount: number;
+  capturedAt: string;
+  expiresAt: string;
+}) {
+  return createHmac("sha256", config().COOKIE_SECRET)
+    .update(JSON.stringify(input))
+    .digest("base64url");
+}
+
+function validAttendanceSnapshotToken(token: string, input: Parameters<typeof attendanceSnapshotToken>[0]) {
+  const expected = attendanceSnapshotToken(input);
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(token));
+}
 const timetableSlotSchema = z.object({
   term_id: z.string().uuid().optional(),
   class_section_id: z.string().uuid(),
@@ -1928,6 +1988,36 @@ export class SchoolService {
       && dayPolicy?.actor_scheduled
       && hasRoster,
     );
+    const rosterFingerprint = attendanceRosterFingerprint({
+      schoolId: section.school_id,
+      classSectionId,
+      termId: section.term_id,
+      date: selectedDate,
+      studentIds: roster.rows.map((row) => row.student_id),
+    });
+    const rosterCapturedAt = new Date();
+    const rosterExpiresAt = new Date(rosterCapturedAt.getTime() + 18 * 60 * 60 * 1000);
+    const capturedAt = rosterCapturedAt.toISOString();
+    const expiresAt = rosterExpiresAt.toISOString();
+    const snapshotToken = attendanceSnapshotToken({
+      userId: user.id,
+      schoolId: section.school_id,
+      classSectionId,
+      termId: section.term_id,
+      date: selectedDate,
+      rosterFingerprint,
+      rosterCount: roster.rows.length,
+      capturedAt,
+      expiresAt,
+    });
+    const latestCapture = await this.db.selectFrom("attendance_capture_batches")
+      .select(["id", "source", "status", "received_at", "roster_expires_at"])
+      .where("class_section_id", "=", classSectionId)
+      .where("term_id", "=", section.term_id)
+      .where("date", "=", selectedDate)
+      .where("recorded_by", "=", user.id)
+      .orderBy("received_at", "desc")
+      .executeTakeFirst();
     return {
       date: selectedDate,
       availability: {
@@ -1956,6 +2046,20 @@ export class SchoolService {
         reopened_by: null, reopened_at: null, reopen_reason: null,
       },
       periods,
+      continuity_snapshot: {
+        roster_fingerprint: rosterFingerprint,
+        roster_count: roster.rows.length,
+        captured_at: capturedAt,
+        expires_at: expiresAt,
+        token: snapshotToken,
+      },
+      latest_capture: latestCapture ? {
+        id: latestCapture.id,
+        source: latestCapture.source,
+        status: latestCapture.status,
+        received_at: latestCapture.received_at,
+        roster_expires_at: latestCapture.roster_expires_at,
+      } : null,
       roster: roster.rows.map((row) => ({
         id: row.student_id, admission_number: row.admission_number, avatar_url: row.avatar_url,
         roll_number: row.roll_number, name: `${row.first_name} ${row.last_name}`.trim(),
@@ -2250,7 +2354,10 @@ export class SchoolService {
         idempotency_key: idempotencyKey, request_hash: requestHash, request_id: request.requestId,
         register_revision: effectiveRevision, records_count: data.records.length,
         changed_count: changed.length, result_body: provisionalResult as any,
-        source_photo_session_id: sourcePhotoSession?.id ?? null, completed_at: now,
+        source_photo_session_id: sourcePhotoSession?.id ?? null,
+        capture_batch_id: null,
+        observed_at: null,
+        completed_at: now,
       }).returning("id").executeTakeFirstOrThrow();
 
       if (sourcePhotoSession) {
@@ -2341,6 +2448,465 @@ export class SchoolService {
     });
   }
 
+  private async attendanceCaptureResult(batchId: string) {
+    const batch = await this.db.selectFrom("attendance_capture_batches").selectAll().where("id", "=", batchId).executeTakeFirstOrThrow();
+    const review = await this.db.selectFrom("attendance_reconciliation_cases").selectAll().where("batch_id", "=", batchId).executeTakeFirst();
+    if (batch.status === "accepted" && batch.accepted_submission_id) {
+      const submission = await this.db.selectFrom("attendance_submissions")
+        .select("result_body").where("id", "=", batch.accepted_submission_id).executeTakeFirst();
+      return { status: "accepted" as const, batch, review: review ?? null, register: submission?.result_body ?? null };
+    }
+    return { status: batch.status, batch, review: review ?? null, register: null };
+  }
+
+  private async quarantineAttendanceCapture(
+    user: AuthUser,
+    batchId: string,
+    code: "snapshot_expired" | "roster_changed" | "register_changed" | "permission_revoked" | "assignment_changed" | "invalid_observation_time" | "source_requires_review" | "write_conflict",
+    reason: string,
+    details: Record<string, unknown>,
+    request: AuthenticatedRequest,
+  ) {
+    await this.db.transaction().execute(async (tx) => {
+      const batch = await tx.selectFrom("attendance_capture_batches").selectAll().where("id", "=", batchId).forUpdate().executeTakeFirstOrThrow();
+      if (batch.status === "accepted" || batch.status === "rejected") return;
+      const now = new Date();
+      await tx.updateTable("attendance_capture_batches").set({ status: "quarantined", updated_at: now }).where("id", "=", batchId).execute();
+      await tx.insertInto("attendance_reconciliation_cases").values({
+        school_id: batch.school_id,
+        batch_id: batch.id,
+        reason_code: code,
+        reason,
+        details: details as any,
+        state: "open",
+        decided_by: null,
+        decided_at: null,
+        decision_note: null,
+        updated_at: now,
+      }).onConflict((conflict) => conflict.column("batch_id").doUpdateSet({
+        reason_code: code,
+        reason,
+        details,
+        updated_at: now,
+      })).execute();
+      await tx.insertInto("audit_events").values({
+        action: "attendance.capture.quarantined",
+        actor_id: user.id,
+        school_id: batch.school_id,
+        target_type: "attendance_capture_batch",
+        target_id: batch.id,
+        request_id: request.requestId,
+        ip_hash: null,
+        metadata: { reason_code: code, reason, details, source: batch.source, date: batch.date },
+      }).execute();
+    });
+    return this.attendanceCaptureResult(batchId);
+  }
+
+  async saveAttendanceContinuityBatch(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    const data = attendanceContinuityBatchSchema.parse(body);
+    const rawKey = request.headers["idempotency-key"];
+    const idempotencyKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
+    if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException("A valid Idempotency-Key header (8–128 safe characters) is required.");
+    }
+    const section = await this.db.selectFrom("class_sections as section")
+      .innerJoin("academic_terms as term", (join) => join
+        .onRef("term.school_id", "=", "section.school_id")
+        .onRef("term.academic_year", "=", "section.academic_year"))
+      .select(["section.school_id", "section.id as class_section_id", "term.id as term_id"])
+      .where("section.id", "=", data.class_section_id)
+      .where("term.starts_on", "<=", data.date)
+      .where("term.ends_on", ">=", data.date)
+      .orderBy("term.starts_on", "desc")
+      .executeTakeFirst();
+    if (!section) throw new NotFoundException("Class section and term were not found for this attendance date.");
+    const membership = await this.db.selectFrom("school_memberships")
+      .select(["role", "is_active"])
+      .where("school_id", "=", section.school_id)
+      .where("user_id", "=", user.id)
+      .where("role", "in", ["staff", "admin"])
+      .orderBy("created_at", "desc")
+      .executeTakeFirst();
+    if (!membership) {
+      throw new ForbiddenException("Only current or previously assigned school staff can upload this captured register.");
+    }
+    if ((data.source === "paper" || data.source === "office") && (!membership.is_active || membership.role !== "admin")) {
+      throw new ForbiddenException("Only an active school administrator can record paper or office attendance.");
+    }
+    const canonical = {
+      class_section_id: data.class_section_id,
+      date: data.date,
+      expected_revision: data.expected_revision,
+      source: data.source,
+      source_reference: data.source_reference,
+      device_id: data.device_id ?? null,
+      observed_at: data.observed_at,
+      roster_fingerprint: data.roster_fingerprint,
+      roster_captured_at: data.roster_captured_at,
+      roster_expires_at: data.roster_expires_at,
+      snapshot_token: data.snapshot_token,
+      photo_session_id: data.photo_session_id ?? null,
+      reason: data.reason ?? "",
+      records: [...data.records].sort((left, right) => left.student_id.localeCompare(right.student_id)),
+    };
+    const requestHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+    const now = new Date();
+    const batch = await this.db.transaction().execute(async (tx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${section.school_id}:${user.id}:attendance-capture:${idempotencyKey}`}, 0))`.execute(tx);
+      const duplicate = await tx.selectFrom("attendance_capture_batches").selectAll()
+        .where("school_id", "=", section.school_id)
+        .where("recorded_by", "=", user.id)
+        .where("idempotency_key", "=", idempotencyKey)
+        .executeTakeFirst();
+      if (duplicate) {
+        if (duplicate.request_hash !== requestHash) {
+          throw new ConflictException({ message: "This Idempotency-Key was already used for a different attendance capture.", code: "idempotency_conflict" });
+        }
+        return duplicate;
+      }
+      if (new Set(data.records.map((record) => record.student_id)).size !== data.records.length) {
+        throw new BadRequestException("A student may only appear once in an attendance capture.");
+      }
+      const created = await tx.insertInto("attendance_capture_batches").values({
+        school_id: section.school_id,
+        class_section_id: data.class_section_id,
+        term_id: section.term_id,
+        date: data.date,
+        source: data.source,
+        source_reference: data.source_reference,
+        recorded_by: user.id,
+        device_id: data.device_id ?? null,
+        idempotency_key: idempotencyKey,
+        request_hash: requestHash,
+        roster_fingerprint: data.roster_fingerprint,
+        roster_count: data.records.length,
+        expected_register_revision: data.expected_revision,
+        observed_at: data.observed_at,
+        roster_captured_at: data.roster_captured_at,
+        roster_expires_at: data.roster_expires_at,
+        received_at: now,
+        status: "pending",
+        accepted_submission_id: null,
+        accepted_at: null,
+        resolved_by: null,
+        resolved_at: null,
+        resolution_note: null,
+        created_at: now,
+        updated_at: now,
+      }).returningAll().executeTakeFirstOrThrow();
+      await tx.insertInto("attendance_observations").values(data.records.map((record) => ({
+        batch_id: created.id,
+        school_id: section.school_id,
+        student_id: record.student_id,
+        class_section_id: data.class_section_id,
+        term_id: section.term_id,
+        date: data.date,
+        observed_status: record.status,
+        remarks: record.remarks,
+        observed_at: data.observed_at,
+        recorded_at: now,
+        recorded_by: user.id,
+        source: data.source,
+      }))).execute();
+      return created;
+    });
+    if (batch.status !== "pending") return this.attendanceCaptureResult(batch.id);
+
+    const observedAt = new Date(data.observed_at);
+    const expiresAt = new Date(data.roster_expires_at);
+    if (observedAt.getTime() > now.getTime() + 5 * 60 * 1000 || observedAt.getTime() < now.getTime() - 48 * 60 * 60 * 1000) {
+      return this.quarantineAttendanceCapture(user, batch.id, "invalid_observation_time", "The recorded observation time is outside the allowed attendance capture window.", { observed_at: data.observed_at }, request);
+    }
+    if (expiresAt.getTime() < now.getTime()) {
+      return this.quarantineAttendanceCapture(user, batch.id, "snapshot_expired", "The downloaded roster expired before this capture reached the school server.", { roster_expires_at: data.roster_expires_at }, request);
+    }
+    const snapshotIsValid = validAttendanceSnapshotToken(data.snapshot_token, {
+      userId: user.id,
+      schoolId: section.school_id,
+      classSectionId: data.class_section_id,
+      termId: section.term_id,
+      date: data.date,
+      rosterFingerprint: data.roster_fingerprint,
+      rosterCount: data.records.length,
+      capturedAt: data.roster_captured_at,
+      expiresAt: data.roster_expires_at,
+    });
+    if (!snapshotIsValid) {
+      return this.quarantineAttendanceCapture(user, batch.id, "roster_changed", "The roster snapshot signature is invalid or its offline window was changed.", { snapshot_signature_valid: false }, request);
+    }
+    const currentMembership = await this.db.selectFrom("school_memberships")
+      .select(["role", "is_active"])
+      .where("school_id", "=", section.school_id)
+      .where("user_id", "=", user.id)
+      .where("role", "in", ["staff", "admin"])
+      .orderBy("created_at", "desc")
+      .executeTakeFirst();
+    if (!currentMembership?.is_active) {
+      return this.quarantineAttendanceCapture(user, batch.id, "permission_revoked", "The recorder no longer has an active school role. The observation was retained but not published.", {}, request);
+    }
+    if (currentMembership.role !== "admin") {
+      const assignment = await sql<{ assigned: boolean }>`SELECT EXISTS(
+        SELECT 1 FROM effective_school_schedule(${section.school_id}::uuid,${data.date}::date) slot
+        WHERE slot.class_section_id=${data.class_section_id}::uuid
+          AND slot.term_id=${section.term_id}::uuid
+          AND slot.teacher_user_id=${user.id}::uuid
+          AND NOT slot.cancelled AND slot.coverage_status IN ('not_required','accepted')
+      ) AS assigned`.execute(this.db);
+      if (!assignment.rows[0]?.assigned) {
+        return this.quarantineAttendanceCapture(user, batch.id, "assignment_changed", "The recorder is no longer assigned to this class for the selected date.", {}, request);
+      }
+    }
+    const currentRoster = await this.db.selectFrom("enrollments as enrollment")
+      .innerJoin("students as student", "student.id", "enrollment.student_id")
+      .select("enrollment.student_id")
+      .where("student.school_id", "=", section.school_id)
+      .where("enrollment.class_section_id", "=", data.class_section_id)
+      .where("enrollment.term_id", "=", section.term_id)
+      .where("enrollment.is_active", "=", true)
+      .where("enrollment.enrolled_on", "<=", data.date)
+      .orderBy("enrollment.student_id")
+      .execute();
+    const currentFingerprint = attendanceRosterFingerprint({
+      schoolId: section.school_id,
+      classSectionId: data.class_section_id,
+      termId: section.term_id,
+      date: data.date,
+      studentIds: currentRoster.map((row) => row.student_id),
+    });
+    if (currentFingerprint !== data.roster_fingerprint || currentRoster.length !== data.records.length) {
+      return this.quarantineAttendanceCapture(user, batch.id, "roster_changed", "The class roster changed after this attendance snapshot was downloaded.", { captured_count: data.records.length, current_count: currentRoster.length }, request);
+    }
+    const register = await this.db.selectFrom("attendance_registers").select("revision")
+      .where("class_section_id", "=", data.class_section_id)
+      .where("term_id", "=", section.term_id)
+      .where("date", "=", data.date)
+      .executeTakeFirst();
+    const currentRevision = Number(register?.revision ?? 0);
+    if (currentRevision !== data.expected_revision) {
+      return this.quarantineAttendanceCapture(user, batch.id, "register_changed", "The attendance register changed after this capture began.", { expected_revision: data.expected_revision, current_revision: currentRevision }, request);
+    }
+    if (data.source === "paper" || data.source === "office") {
+      return this.quarantineAttendanceCapture(user, batch.id, "source_requires_review", "Paper and office observations require an explicit attendance-desk review before publication.", { source_reference: data.source_reference }, request);
+    }
+
+    let result: Awaited<ReturnType<SchoolService["saveTeacherAttendance"]>>;
+    try {
+      result = await this.saveTeacherAttendance(user, {
+        class_section_id: data.class_section_id,
+        date: data.date,
+        expected_revision: data.expected_revision,
+        photo_session_id: data.photo_session_id,
+        reason: data.reason,
+        records: data.records,
+      }, request);
+    } catch (error) {
+      const status = typeof (error as { getStatus?: unknown })?.getStatus === "function"
+        ? (error as { getStatus: () => number }).getStatus()
+        : 500;
+      if ([400, 403, 409, 423].includes(status)) {
+        const response = typeof (error as { getResponse?: unknown })?.getResponse === "function"
+          ? (error as { getResponse: () => unknown }).getResponse()
+          : null;
+        const message = typeof response === "string" ? response : typeof response === "object" && response && "message" in response
+          ? String(response.message)
+          : error instanceof Error ? error.message : "The attendance capture conflicted with the current register.";
+        return this.quarantineAttendanceCapture(user, batch.id, "write_conflict", message, { status }, request);
+      }
+      throw error;
+    }
+    const submission = await this.db.selectFrom("attendance_submissions").select("id")
+      .where("school_id", "=", section.school_id)
+      .where("submitted_by", "=", user.id)
+      .where("idempotency_key", "=", idempotencyKey)
+      .executeTakeFirstOrThrow();
+    const acceptedResult = {
+      ...result,
+      latest_capture: {
+        id: batch.id,
+        source: data.source,
+        status: "accepted" as const,
+        received_at: batch.received_at,
+        roster_expires_at: batch.roster_expires_at,
+      },
+    };
+    await this.db.transaction().execute(async (tx) => {
+      await tx.updateTable("attendance_submissions").set({
+        capture_batch_id: batch.id,
+        capture_source: data.photo_session_id ? "photo" : data.source,
+        observed_at: data.observed_at,
+        result_body: acceptedResult as any,
+      }).where("id", "=", submission.id).execute();
+      await tx.updateTable("attendance_capture_batches").set({
+        status: "accepted",
+        accepted_submission_id: submission.id,
+        accepted_at: new Date(),
+        updated_at: new Date(),
+      }).where("id", "=", batch.id).execute();
+      await tx.insertInto("audit_events").values({
+        action: "attendance.capture.accepted",
+        actor_id: user.id,
+        school_id: section.school_id,
+        target_type: "attendance_capture_batch",
+        target_id: batch.id,
+        request_id: request.requestId,
+        ip_hash: null,
+        metadata: {
+          source: data.source,
+          date: data.date,
+          submission_id: submission.id,
+          observed_at: data.observed_at,
+        },
+      }).execute();
+    });
+    return { status: "accepted" as const, batch: { ...batch, status: "accepted" as const, accepted_submission_id: submission.id }, review: null, register: acceptedResult };
+  }
+
+  async attendanceContinuityWorkspace(user: AuthUser, selectedDateValue?: string) {
+    const membership = await this.requireSchoolRole(user, ["admin"]);
+    const selectedDate = selectedDateValue ?? await this.schoolLocalDate(membership.school_id);
+    if (!datePattern.test(selectedDate)) throw new BadRequestException("Use ISO date format YYYY-MM-DD.");
+    const [summary, cases] = await Promise.all([
+      sql<{ pending: number; quarantined: number; accepted: number; rejected: number }>`
+        SELECT count(*) FILTER (WHERE status='pending')::int AS pending,
+          count(*) FILTER (WHERE status='quarantined')::int AS quarantined,
+          count(*) FILTER (WHERE status='accepted' AND date=${selectedDate}::date)::int AS accepted,
+          count(*) FILTER (WHERE status='rejected' AND date=${selectedDate}::date)::int AS rejected
+        FROM attendance_capture_batches
+        WHERE school_id=${membership.school_id}::uuid
+      `.execute(this.db),
+      sql<any>`
+        SELECT review.id, review.reason_code, review.reason, review.details, review.state, review.opened_at,
+          batch.id AS batch_id, batch.date, batch.source, batch.source_reference, batch.observed_at,
+          batch.received_at, batch.roster_count, batch.expected_register_revision,
+          section.id AS class_section_id, 'Class ' || section.grade || section.section AS class_name,
+          trim(concat_ws(' ', actor.first_name, actor.last_name)) AS recorded_by_name,
+          COALESCE(register.revision,0)::int AS current_revision,
+          register.state AS register_state
+        FROM attendance_reconciliation_cases review
+        JOIN attendance_capture_batches batch ON batch.id=review.batch_id
+        JOIN class_sections section ON section.id=batch.class_section_id
+        JOIN users actor ON actor.id=batch.recorded_by
+        LEFT JOIN attendance_registers register ON register.class_section_id=batch.class_section_id
+          AND register.term_id=batch.term_id AND register.date=batch.date
+        WHERE review.school_id=${membership.school_id}::uuid AND review.state='open'
+        ORDER BY review.opened_at, section.grade, section.section
+        LIMIT 50
+      `.execute(this.db),
+    ]);
+    return { date: selectedDate, summary: summary.rows[0] ?? { pending: 0, quarantined: 0, accepted: 0, rejected: 0 }, cases: cases.rows };
+  }
+
+  async decideAttendanceReconciliation(user: AuthUser, caseId: string, body: unknown, request: AuthenticatedRequest) {
+    const data = attendanceReconciliationDecisionSchema.parse(body);
+    const review = await this.db.selectFrom("attendance_reconciliation_cases as review")
+      .innerJoin("attendance_capture_batches as batch", "batch.id", "review.batch_id")
+      .select([
+        "review.id", "review.school_id", "review.state", "review.batch_id",
+        "batch.class_section_id", "batch.term_id", "batch.date", "batch.source", "batch.source_reference",
+        "batch.recorded_by", "batch.observed_at", "batch.received_at", "batch.roster_expires_at", "batch.expected_register_revision",
+      ])
+      .where("review.id", "=", caseId)
+      .executeTakeFirst();
+    if (!review) throw new NotFoundException("Attendance reconciliation case not found.");
+    const membership = await this.requireSchoolRole(user, ["admin"], review.school_id);
+    if (review.state !== "open") return this.attendanceContinuityWorkspace(user, review.date);
+    if (data.decision === "reject") {
+      const rejected = await this.db.transaction().execute(async (tx) => {
+        const now = new Date();
+        const claimed = await tx.updateTable("attendance_reconciliation_cases").set({
+          state: "rejected", decided_by: user.id, decided_at: now,
+          decision_note: data.reason, updated_at: now,
+        }).where("id", "=", review.id).where("state", "=", "open").returning("id").executeTakeFirst();
+        if (!claimed) return false;
+        await tx.updateTable("attendance_capture_batches").set({
+          status: "rejected", resolved_by: user.id, resolved_at: now,
+          resolution_note: data.reason, updated_at: now,
+        }).where("id", "=", review.batch_id).where("status", "=", "quarantined").execute();
+        await tx.insertInto("audit_events").values({
+          action: "attendance.capture.rejected", actor_id: user.id, school_id: membership.school_id,
+          target_type: "attendance_capture_batch", target_id: review.batch_id,
+          request_id: request.requestId, ip_hash: null,
+          metadata: { case_id: review.id, reason: data.reason, source: review.source, date: review.date },
+        }).execute();
+        return true;
+      });
+      if (!rejected) return this.attendanceContinuityWorkspace(user, review.date);
+      return this.attendanceContinuityWorkspace(user, review.date);
+    }
+
+    const screen = await this.teacherAttendanceScreen(user, review.class_section_id, review.date);
+    if (screen.register.revision !== data.expected_revision) {
+      throw new ConflictException({ message: "The register changed after this review opened. Reload the queue before applying the observation.", code: "revision_conflict", current_revision: screen.register.revision });
+    }
+    if (screen.register.state === "locked") throw new ForbiddenException("Unlock the register before applying a reconciled observation.");
+    const observations = await this.db.selectFrom("attendance_observations")
+      .select(["student_id", "observed_status", "remarks"])
+      .where("batch_id", "=", review.batch_id)
+      .orderBy("student_id")
+      .execute();
+    const currentIds = [...screen.roster.map((student) => student.id)].sort();
+    const observedIds = observations.map((item) => item.student_id).sort();
+    if (currentIds.length !== observedIds.length || currentIds.some((id, index) => id !== observedIds[index])) {
+      throw new ConflictException({ message: "The current class roster differs from this observation. Reject the batch and correct the live register manually.", code: "roster_changed" });
+    }
+    const reconciliationKey = `reconcile:${review.id}:${data.expected_revision}`;
+    const previousKey = request.headers["idempotency-key"];
+    request.headers["idempotency-key"] = reconciliationKey;
+    let result: Awaited<ReturnType<SchoolService["saveTeacherAttendance"]>>;
+    try {
+      result = await this.saveTeacherAttendance(user, {
+        class_section_id: review.class_section_id,
+        date: review.date,
+        expected_revision: data.expected_revision,
+        reason: `Reconciled ${review.source.replace("_", " ")} observation: ${data.reason}`,
+        records: observations.map((item) => ({ student_id: item.student_id, status: item.observed_status, remarks: item.remarks })),
+      }, request);
+    } finally {
+      if (previousKey === undefined) delete request.headers["idempotency-key"];
+      else request.headers["idempotency-key"] = previousKey;
+    }
+    const submission = await this.db.selectFrom("attendance_submissions").select("id")
+      .where("school_id", "=", review.school_id)
+      .where("submitted_by", "=", user.id)
+      .where("idempotency_key", "=", reconciliationKey)
+      .executeTakeFirstOrThrow();
+    const acceptedResult = {
+      ...result,
+      latest_capture: {
+        id: review.batch_id,
+        source: review.source,
+        status: "accepted" as const,
+        received_at: review.received_at,
+        roster_expires_at: review.roster_expires_at,
+      },
+    };
+    await this.db.transaction().execute(async (tx) => {
+      const now = new Date();
+      await tx.updateTable("attendance_submissions").set({
+        capture_batch_id: review.batch_id,
+        capture_source: review.source,
+        observed_at: review.observed_at,
+        result_body: acceptedResult as any,
+      }).where("id", "=", submission.id).execute();
+      await tx.updateTable("attendance_capture_batches").set({
+        status: "accepted", accepted_submission_id: submission.id, accepted_at: now,
+        resolved_by: user.id, resolved_at: now, resolution_note: data.reason, updated_at: now,
+      }).where("id", "=", review.batch_id).execute();
+      await tx.updateTable("attendance_reconciliation_cases").set({
+        state: "accepted", decided_by: user.id, decided_at: now,
+        decision_note: data.reason, updated_at: now,
+      }).where("id", "=", review.id).execute();
+      await tx.insertInto("audit_events").values({
+        action: "attendance.capture.reconciled", actor_id: user.id, school_id: membership.school_id,
+        target_type: "attendance_capture_batch", target_id: review.batch_id,
+        request_id: request.requestId, ip_hash: null,
+        metadata: { case_id: review.id, reason: data.reason, source: review.source, date: review.date, submission_id: submission.id },
+      }).execute();
+    });
+    return { ...(await this.attendanceContinuityWorkspace(user, review.date)), applied_register: acceptedResult };
+  }
+
   async setAttendanceRegisterLock(user: AuthUser, classSectionId: string, locked: boolean, body: unknown, request: AuthenticatedRequest) {
     const data = attendanceLockSchema.parse(body);
     const target = await this.db.selectFrom("class_sections").select("school_id").where("id", "=", classSectionId).executeTakeFirst();
@@ -2408,9 +2974,11 @@ export class SchoolService {
       `.execute(this.db),
       sql<any>`
         SELECT submission.id, submission.register_revision, submission.records_count,
-          submission.changed_count, submission.created_at,
+          submission.changed_count, submission.created_at, submission.capture_source,
+          submission.observed_at, batch.source_reference,
           trim(concat_ws(' ', actor.first_name, actor.last_name)) AS submitted_by_name
         FROM attendance_submissions submission JOIN users actor ON actor.id=submission.submitted_by
+        LEFT JOIN attendance_capture_batches batch ON batch.id=submission.capture_batch_id
         WHERE submission.class_section_id=${classSectionId}::uuid AND submission.date=${selectedDate}::date
         ORDER BY submission.register_revision DESC, submission.created_at DESC
       `.execute(this.db),

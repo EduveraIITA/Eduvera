@@ -107,6 +107,9 @@ const TeacherClassesPage = lazy(() => import("./features/classes/TeacherClassesP
 const AdministrationPage = lazy(() => import("./features/office/AdministrationPage"));
 const FeeLedgerPage = lazy(() => import("./features/office/FeeLedgerPage"));
 const FamilyFeesPage = lazy(async () => ({ default: (await import("./features/office/FamilyFeesPage")).FamilyFeesPage }));
+const PrincipalStaffRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).PrincipalStaffRoute }));
+const TeacherLeaveRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).TeacherLeaveRoute }));
+const TeacherResponsibilitiesRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).TeacherResponsibilitiesRoute }));
 
 function PageLoader() {
   return (
@@ -208,6 +211,8 @@ export function App() {
               <Route path="/teacher/more" element={<PortalOnly portal="teacher"><TeacherMoreRoute /></PortalOnly>} />
               <Route path="/teacher/calendar" element={<PortalOnly portal="teacher"><TeacherCalendarRoute /></PortalOnly>} />
               <Route path="/teacher/classes" element={<PortalOnly portal="teacher"><TeacherClassesPage /></PortalOnly>} />
+              <Route path="/teacher/leave" element={<PortalOnly portal="teacher"><TeacherLeaveRoute /></PortalOnly>} />
+              <Route path="/teacher/responsibilities" element={<PortalOnly portal="teacher"><TeacherResponsibilitiesRoute /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
@@ -217,6 +222,7 @@ export function App() {
               <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
               <Route path="/principal/administration" element={<PortalOnly portal="principal"><AdministrationPage /></PortalOnly>} />
               <Route path="/principal/fees" element={<PortalOnly portal="principal"><FeeLedgerPage /></PortalOnly>} />
+              <Route path="/principal/staff" element={<PortalOnly portal="principal"><PrincipalStaffRoute /></PortalOnly>} />
               <Route path="/principal/messages" element={<PortalOnly portal="principal"><PrincipalChatRoute /></PortalOnly>} />
               <Route path="/principal/safeguarding" element={<PortalOnly portal="principal"><PrincipalSafeguardingRoute /></PortalOnly>} />
               <Route path="/principal/events" element={<PortalOnly portal="principal"><PrincipalEventsRoute /></PortalOnly>} />

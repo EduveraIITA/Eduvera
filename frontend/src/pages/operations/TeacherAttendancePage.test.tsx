@@ -47,9 +47,17 @@ function attendanceData(
   const names = ["Aarav Sharma", "Ananya Iyer"];
   return {
     date: "2026-09-12",
-    class: { id: "class-7a", name: "Class 7A", grade: "7", section: "A", room: "204", board: "CBSE", term: "Term 1 - 2026-27" },
+    class: { id: "class-7a", school_id: "school-1", term_id: "term-1", name: "Class 7A", grade: "7", section: "A", room: "204", board: "CBSE", term: "Term 1 - 2026-27" },
     periods: [],
     register,
+    continuity_snapshot: {
+      roster_fingerprint: "a".repeat(64),
+      roster_count: states.length,
+      captured_at: "2026-09-12T08:00:00.000Z",
+      expires_at: "2026-09-13T02:00:00.000Z",
+      token: "t".repeat(43),
+    },
+    latest_capture: null,
     roster: states.map((status, index) => ({
       id: `student-${index + 1}`,
       admission_number: `CIS-2026-0${index + 1}`,
@@ -85,6 +93,48 @@ function renderRegister(overrides: Partial<React.ComponentProps<typeof TeacherAt
 }
 
 describe("teacher attendance register lifecycle", () => {
+  it("makes an offline device save unmistakable and prevents a duplicate submission", () => {
+    renderRegister({
+      data: {
+        ...attendanceData(["present", "present"]),
+        latest_capture: {
+          id: "queued-1",
+          source: "offline_device",
+          status: "pending",
+          received_at: "2026-09-12T09:30:00.000Z",
+          roster_expires_at: "2026-09-13T02:00:00.000Z",
+        },
+      },
+    });
+    expect(screen.getByText("Saved on this device — not submitted")).toBeVisible();
+    expect(screen.getByText(/Sync will retry automatically/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Submit register" })).toBeDisabled();
+  });
+
+  it("sends a paper observation to review only after a source reference is recorded", async () => {
+    const interact = userEvent.setup();
+    const onSave = vi.fn<(input: TeacherAttendanceSaveInput) => Promise<TeacherAttendanceResponse>>(() => Promise.resolve({
+      ...attendanceData(["present", "present"]),
+      latest_capture: {
+        id: "paper-1",
+        source: "paper",
+        status: "quarantined",
+        received_at: "2026-09-12T09:30:00.000Z",
+        roster_expires_at: "2026-09-13T02:00:00.000Z",
+      },
+    }));
+    renderRegister({ portal: "principal", initialCaptureSource: "paper", onSave });
+    await interact.click(screen.getByRole("button", { name: "Mark all present" }));
+    expect(screen.getByRole("button", { name: "Send for review" })).toBeDisabled();
+    await interact.type(screen.getByPlaceholderText("Example: Register book 7A, page 42"), "Register book 7A, page 42");
+    await interact.click(screen.getByRole("button", { name: "Send for review" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      source: "paper",
+      source_reference: "Register book 7A, page 42",
+    })));
+    expect(await screen.findByText("Observation received and held for attendance-desk review.")).toBeVisible();
+  });
+
   it("starts principal registers in review mode and requires an explicit edit action", async () => {
     const interact = userEvent.setup();
     renderRegister({ portal: "principal" });
@@ -306,7 +356,11 @@ describe("teacher attendance register lifecycle", () => {
       date: locked.date,
       class: locked.class,
       register: locked.register,
-      submissions: [{ id: "submission-6", register_revision: 6, records_count: 2, changed_count: 1, created_at: "2026-09-12T09:00:00.000Z", submitted_by_name: "Kavita Mehta" }],
+      submissions: [{
+        id: "submission-6", register_revision: 6, records_count: 2, changed_count: 1,
+        created_at: "2026-09-12T09:00:00.000Z", submitted_by_name: "Kavita Mehta",
+        capture_source: "live_app" as const, observed_at: null, source_reference: null,
+      }],
       revisions: [{
         id: "revision-6",
         student_id: "student-1",
@@ -371,6 +425,9 @@ describe("teacher attendance register lifecycle", () => {
         changed_count: data.register.revision,
         created_at: data.register.submitted_at!,
         submitted_by_name: "Kavita Mehta",
+        capture_source: "live_app",
+        observed_at: null,
+        source_reference: null,
       }],
       revisions: [],
     });

@@ -39,6 +39,12 @@ export class SpaController {
   }
 
   @Public()
+  @Get("edura-leaf-favicon.png")
+  async eduraLeafFavicon(@Res() reply: FastifyReply) {
+    return this.serveAsset(reply, "edura-leaf-favicon.png", "image/png");
+  }
+
+  @Public()
   @Get("apple-touch-icon.svg")
   async appleTouchIcon(@Res() reply: FastifyReply) {
     try {
@@ -56,6 +62,12 @@ export class SpaController {
   @Get("apple-touch-icon.png")
   async appleTouchIconPng(@Res() reply: FastifyReply) {
     return this.serveAsset(reply, "apple-touch-icon.png", "image/png");
+  }
+
+  @Public()
+  @Get("apple-touch-icon-edura.png")
+  async appleTouchIconEdura(@Res() reply: FastifyReply) {
+    return this.serveAsset(reply, "apple-touch-icon-edura.png", "image/png");
   }
 
   @Public()

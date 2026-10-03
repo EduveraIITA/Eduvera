@@ -24,7 +24,6 @@ export function StudentIdentityCard({
   showSwitchButton = true,
   eyebrow = "Student identity",
   primaryHeading = true,
-  modalInset = "student",
 }: {
   identity: StudentIdentity;
   schoolName?: string;
@@ -32,10 +31,11 @@ export function StudentIdentityCard({
   showSwitchButton?: boolean;
   eyebrow?: string;
   primaryHeading?: boolean;
-  modalInset?: "student" | "parent";
 }) {
   const [idOpen, setIdOpen] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
   const swiped = useRef(false);
@@ -68,13 +68,28 @@ export function StudentIdentityCard({
 
   useEffect(() => {
     if (!idOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setIdOpen(false); };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    const trigger = triggerRef.current;
+    document.body.style.overflow = "hidden";
+    const frame = window.requestAnimationFrame(() => closeRef.current?.focus());
+    const handleDialogKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIdOpen(false);
+      if (event.key === "Tab") {
+        event.preventDefault();
+        closeRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleDialogKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleDialogKey);
+      if (trigger?.isConnected) trigger.focus();
+    };
   }, [idOpen]);
 
   return <>
-    <section className="student-home-id-card" aria-label={`Open digital student ID for ${identity.studentName}${switchChild ? `. Swipe to switch to ${switchChild.name}` : ""}`} role="button" tabIndex={0}
+    <section ref={triggerRef} className="student-home-id-card" aria-label={`Open digital student ID for ${identity.studentName}${switchChild ? `. Swipe to switch to ${switchChild.name}` : ""}`} role="button" tabIndex={0}
       onClick={() => { if (swiped.current) { swiped.current = false; return; } setIdOpen(true); }}
       onKeyDown={(event) => { if (switchChild?.onSwipe && (event.key === "ArrowLeft" || event.key === "ArrowRight")) { event.preventDefault(); switchChild.onSwipe(event.key === "ArrowLeft" ? "left" : "right"); } else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setIdOpen(true); } }}
       onTouchStart={(event) => { touchStartX.current = event.touches[0]?.clientX ?? null; touchStartY.current = event.touches[0]?.clientY ?? null; }}
@@ -93,8 +108,8 @@ export function StudentIdentityCard({
       </footer>
     </section>
     {switchChild && showSwitchButton ? <button className="parent-id-switch" type="button" onClick={switchChild.onSelect}>Switch to {switchChild.name}</button> : null}
-    {idOpen ? createPortal(<div className={`student-id-view${modalInset === "parent" ? " student-id-view--parent" : ""}`} role="dialog" aria-modal="true" aria-labelledby="digital-student-id-heading">
-      <button className="student-id-view__close" type="button" onClick={() => setIdOpen(false)} aria-label="Close digital student ID"><X size={20} /></button>
+    {idOpen ? createPortal(<div className="student-id-view" role="dialog" aria-modal="true" aria-labelledby="digital-student-id-heading" aria-describedby="digital-student-id-help" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdOpen(false); }}>
+      <button ref={closeRef} className="student-id-view__close" type="button" onClick={() => setIdOpen(false)} aria-label="Close digital student ID"><X size={22} /></button>
       <section className="student-id-view__card">
         <header><span className="student-id-view__crest">{crest}</span><span><strong>{schoolName}</strong><small>Digital Student Identity</small></span><BadgeCheck size={22} /></header>
         <div className="student-id-view__identity"><span>{identity.avatarUrl ? <img src={identity.avatarUrl} alt="" /> : initials}</span><div><small>Student name</small><h2 id="digital-student-id-heading">{identity.studentName}</h2><p>{identity.className} - Roll {identity.rollNumber}</p></div></div>
@@ -104,7 +119,7 @@ export function StudentIdentityCard({
           <span><small>Scan to verify school identity</small><strong>{identity.studentId}</strong></span>
         </div>
       </section>
-      <p>Show this screen when your school asks for student identification.</p>
+      <p id="digital-student-id-help">Show this screen when your school asks for student identification.</p>
     </div>, document.body) : null}
   </>;
 }

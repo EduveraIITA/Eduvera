@@ -60,3 +60,44 @@
 .roll-call-submit-bar .roll-call-review-return { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--edura-brand); font-size: 13px; font-weight: 700; text-decoration: none; }
 @media (max-width: 760px) { .attendance-workspace__cards { grid-template-columns: minmax(0,1fr); } }
 @media (max-width: 440px) { .attendance-workspace__hero { padding: 18px; } .attendance-workspace__heading { gap: 10px; } .attendance-workspace__heading h1 { font-size: 24px; } .attendance-workspace__heading label { min-height: 38px; padding-inline: 9px; } .attendance-workspace__heading input { width: 105px; } .attendance-workspace__totals div { padding-inline: 12px; } .attendance-workspace__totals strong { font-size: 25px; } .attendance-class-card { padding: 16px; } .attendance-workspace__filters button { padding-inline: 12px; gap: 6px; } .attendance-class-card__top { gap: 9px; } .attendance-class-card__monogram { width: 40px; height: 40px; } .attendance-class-card__top h3 { font-size: 17px; } .roll-call-review-mode { align-items: flex-start; flex-direction: column; } }
+
+.attendance-continuity { padding: 20px; border-radius: var(--edura-radius-feature); background: var(--edura-surface); box-shadow: var(--edura-shadow-card); }
+.attendance-continuity__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.attendance-continuity__header > div > span { color: var(--edura-brand); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.attendance-continuity__header h2 { margin: 5px 0 0; font-size: 21px; letter-spacing: -.04em; }
+.attendance-continuity__header p { max-width: 620px; margin: 7px 0 0; color: var(--edura-muted); font-size: 12px; line-height: 1.65; }
+.attendance-continuity__badge { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 7px 10px; border-radius: var(--edura-radius-pill); color: var(--edura-positive); background: var(--edura-positive-soft); font-size: 11px; font-weight: 750; }
+.attendance-continuity__badge.has-review { color: var(--edura-warning); background: var(--edura-warning-soft); }
+.attendance-continuity__summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 18px; overflow: hidden; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-border); }
+.attendance-continuity__summary > div { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 13px; background: var(--edura-surface-soft); color: var(--edura-muted); }
+.attendance-continuity__summary strong { color: var(--edura-ink); font-size: 18px; font-variant-numeric: tabular-nums; }
+.attendance-continuity__summary span { font-size: 11px; font-weight: 650; }
+.attendance-paper-capture { display: grid; grid-template-columns: minmax(0,1fr) minmax(180px,240px) auto; align-items: center; gap: 12px; margin-top: 14px; padding: 14px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); }
+.attendance-paper-capture > div { display: flex; align-items: center; gap: 10px; color: var(--edura-brand); }
+.attendance-paper-capture > div span { display: grid; gap: 3px; color: var(--edura-ink); }
+.attendance-paper-capture small { color: var(--edura-muted); font-size: 10px; font-weight: 500; }
+.attendance-paper-capture select { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface); color: var(--edura-ink); font: inherit; font-size: 12px; }
+.attendance-paper-capture a { display: inline-flex; min-height: 42px; align-items: center; gap: 6px; padding: 0 12px; border-radius: var(--edura-radius-control); color: #fff; background: var(--edura-brand); font-size: 11px; font-weight: 750; text-decoration: none; }
+.attendance-continuity__state, .attendance-continuity__empty { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 16px; border-radius: var(--edura-radius-card); background: var(--edura-surface-soft); color: var(--edura-muted); font-size: 12px; }
+.attendance-continuity__state.is-error { color: var(--edura-danger); background: var(--edura-danger-soft); }
+.attendance-continuity__empty svg { color: var(--edura-positive); }
+.attendance-continuity__empty strong { color: var(--edura-ink); }
+.attendance-continuity__empty p { margin: 3px 0 0; font-size: 11px; }
+.attendance-review-list { display: grid; gap: 10px; margin-top: 14px; }
+.attendance-review-card { border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); overflow: hidden; }
+.attendance-review-card__main { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 14px; }
+.attendance-review-card__icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: var(--edura-warning); background: var(--edura-warning-soft); }
+.attendance-review-card__main > div > span { color: var(--edura-brand); font-size: 10px; font-weight: 750; text-transform: uppercase; }
+.attendance-review-card h3 { margin: 4px 0 0; font-size: 13px; line-height: 1.45; }
+.attendance-review-card p, .attendance-review-card small { margin: 4px 0 0; color: var(--edura-muted); font-size: 10px; line-height: 1.5; }
+.attendance-review-card__main > button { min-height: 40px; padding: 0 12px; border-radius: var(--edura-radius-control); color: var(--edura-brand); background: var(--edura-brand-soft); font-size: 11px; font-weight: 750; }
+.attendance-review-card__decision { padding: 14px; border-top: 1px solid var(--edura-border); background: var(--edura-surface-soft); }
+.attendance-review-card__decision > p { margin: 0 0 10px; }
+.attendance-review-card__decision label { display: grid; gap: 6px; color: var(--edura-ink-secondary); font-size: 11px; font-weight: 700; }
+.attendance-review-card__decision textarea { min-height: 78px; resize: vertical; padding: 10px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface); color: var(--edura-ink); font: inherit; font-size: 12px; }
+.attendance-review-card__decision > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.attendance-review-card__decision button { display: inline-flex; min-height: 42px; align-items: center; gap: 6px; padding: 0 12px; border-radius: var(--edura-radius-control); color: var(--edura-danger); background: var(--edura-danger-soft); font-size: 11px; font-weight: 750; }
+.attendance-review-card__decision button:last-child { color: #fff; background: var(--edura-brand); }
+.attendance-review-card__decision button:disabled { opacity: .5; cursor: not-allowed; }
+.attendance-review-card__warning, .attendance-review-card__error { display: flex; align-items: center; gap: 6px; color: var(--edura-danger) !important; }
+@media (max-width: 620px) { .attendance-continuity { padding: 16px; } .attendance-continuity__header { display: grid; } .attendance-continuity__badge { justify-self: start; } .attendance-continuity__summary { grid-template-columns: 1fr; } .attendance-paper-capture { grid-template-columns: 1fr; } .attendance-paper-capture a { justify-content: center; } .attendance-review-card__main { grid-template-columns: auto minmax(0,1fr); } .attendance-review-card__main > button { grid-column: 1 / -1; } .attendance-review-card__decision > div { display: grid; grid-template-columns: 1fr 1fr; } }

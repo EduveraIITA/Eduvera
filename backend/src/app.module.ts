@@ -15,9 +15,10 @@ import { SchoolModule } from "./school/school.module.js";
 import { SpaController } from "./spa.controller.js";
 import { PhotoAttendanceModule } from "./photo-attendance/photo-attendance.module.js";
 import { OperationsModule } from "./operations/operations.module.js";
+import { StaffOperationsModule } from "./staff-operations/staff-operations.module.js";
 
 @Module({
-  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule],
+  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule, StaffOperationsModule],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
     { provide: APP_GUARD, useClass: SessionGuard },

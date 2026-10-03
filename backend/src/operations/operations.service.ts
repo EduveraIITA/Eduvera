@@ -436,6 +436,17 @@ export class OperationsService {
         }
       }
       await db.insertInto("school_memberships").values({ school_id: invite.school_id, user_id: accountId!, role: invite.role }).onConflict((oc) => oc.columns(["user_id", "school_id", "role"]).doUpdateSet({ is_active: true })).execute();
+      if (invite.role === "staff") {
+        await sql`UPDATE staff_profiles SET user_id=${accountId}::uuid,updated_by=${accountId}::uuid,updated_at=now()
+          WHERE school_id=${invite.school_id}::uuid AND lower(email)=${invite.email} AND user_id IS NULL`.execute(db);
+        await sql`UPDATE staff_onboarding_items item SET completed_at=now(),completed_by=${accountId}::uuid,updated_at=now()
+          FROM staff_profiles profile WHERE item.staff_profile_id=profile.id AND profile.school_id=${invite.school_id}::uuid
+          AND profile.user_id=${accountId}::uuid AND item.item_key='account_access'`.execute(db);
+        await sql`UPDATE staff_profiles profile SET status=CASE WHEN NOT EXISTS (
+            SELECT 1 FROM staff_onboarding_items item WHERE item.staff_profile_id=profile.id AND item.required AND item.completed_at IS NULL
+          ) THEN 'active' ELSE 'onboarding' END,updated_by=${accountId}::uuid,updated_at=now()
+          WHERE profile.school_id=${invite.school_id}::uuid AND profile.user_id=${accountId}::uuid`.execute(db);
+      }
       await sql`UPDATE school_invitations SET accepted_at=now() WHERE id=${invite.id}::uuid`.execute(db);
       await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id) VALUES (${invite.school_id}::uuid,${accountId}::uuid,'invitation.accepted',${invite.id}::uuid)`.execute(db);
       return { accepted: true, message: "School access is ready. Sign in with your email and password." };

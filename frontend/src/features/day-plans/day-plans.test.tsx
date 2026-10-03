@@ -442,6 +442,14 @@ describe("Daily plan workflow UI", () => {
     expect(screen.queryByText("Graph notebook")).not.toBeInTheDocument();
     expect(screen.queryByText("Teacher confirmed")).not.toBeInTheDocument();
   });
+  it("shows a compact time range without repeating it in period metadata", () => {
+    const { container } = render(<DayPeriodList periods={[period]} />);
+    expect(screen.getAllByText("9:00 AM")).toHaveLength(1);
+    expect(screen.getByText("9:45 AM")).toBeVisible();
+    expect(container.querySelector(".day-period-meta")).toHaveTextContent(
+      "Kavita MehtaRoom 204",
+    );
+  });
   it("uses an in-app link for a family notice without claiming acknowledgment", () => {
     render(
       <MemoryRouter>

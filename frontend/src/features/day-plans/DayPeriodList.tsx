@@ -1,4 +1,4 @@
-import { Clock3, MapPin, Pencil, UserRound, PackageCheck } from "lucide-react";
+import { MapPin, Pencil, UserRound, PackageCheck } from "lucide-react";
 import { timeLabel, type DayPeriod } from "./api";
 const statuses = {
   pending: "Awaiting teacher",
@@ -25,7 +25,11 @@ export function DayPeriodList({
         >
           <div className="day-period-number">
             <span>P{p.period_number}</span>
-            <small>{timeLabel(p.starts_at)}</small>
+            <time dateTime={p.starts_at}>{timeLabel(p.starts_at)}</time>
+            <small>
+              <span aria-hidden="true">–</span>
+              <time dateTime={p.ends_at}>{timeLabel(p.ends_at)}</time>
+            </small>
           </div>
           <div className="day-period-content">
             <header>
@@ -39,10 +43,6 @@ export function DayPeriodList({
               ) : null}
             </header>
             <div className="day-period-meta">
-              <span>
-                <Clock3 size={14} />
-                {timeLabel(p.starts_at)}-{timeLabel(p.ends_at)}
-              </span>
               {p.slot_type !== "break" ? (
                 <span>
                   <UserRound size={14} />

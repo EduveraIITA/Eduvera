@@ -4,6 +4,7 @@ import type { HomeAction } from "../home-actions/types";
 
 export type AttendanceStatus = "present" | "absent" | "late" | "excused" | "half_day";
 export type AttendanceRegisterState = "draft" | "submitted" | "locked";
+export type AttendanceCaptureSource = "live_app" | "offline_device" | "paper" | "office";
 
 export interface AttendanceRegister {
   state: AttendanceRegisterState;
@@ -81,10 +82,24 @@ export interface TeacherRosterStudent {
 export interface TeacherAttendanceResponse {
   date: string;
   availability?: { can_mark: boolean; reason: string | null };
-  class: { id: string; name: string; grade: string; section: string; room: string; board: string; term: string };
+  class: { id: string; school_id: string; term_id: string; name: string; grade: string; section: string; room: string; board: string; term: string };
   periods: Array<{ id: string; period_number: number; starts_at: string; ends_at: string; display_title: string; room: string }>;
   roster: TeacherRosterStudent[];
   register: AttendanceRegister;
+  continuity_snapshot: {
+    roster_fingerprint: string;
+    roster_count: number;
+    captured_at: string;
+    expires_at: string;
+    token: string;
+  };
+  latest_capture: {
+    id: string;
+    source: AttendanceCaptureSource;
+    status: "pending" | "accepted" | "quarantined" | "rejected";
+    received_at: string;
+    roster_expires_at: string;
+  } | null;
 }
 
 export interface TeacherAttendanceRecordInput {
@@ -99,6 +114,54 @@ export interface TeacherAttendanceSaveInput {
   photo_session_id?: string;
   reason?: string;
   idempotency_key: string;
+  source?: AttendanceCaptureSource;
+  source_reference?: string;
+  device_id?: string | null;
+  observed_at?: string;
+  roster_fingerprint?: string;
+  roster_captured_at?: string;
+  roster_expires_at?: string;
+  snapshot_token?: string;
+}
+
+export interface AttendanceContinuityResult {
+  status: "pending" | "accepted" | "quarantined" | "rejected";
+  batch: {
+    id: string;
+    source: AttendanceCaptureSource;
+    status: "pending" | "accepted" | "quarantined" | "rejected";
+    date: string;
+    received_at: string;
+    roster_expires_at: string;
+  };
+  review: null | { id: string; reason_code: string; reason: string; state: "open" | "accepted" | "rejected" };
+  register: TeacherAttendanceResponse | null;
+}
+
+export interface AttendanceContinuityWorkspace {
+  date: string;
+  summary: { pending: number; quarantined: number; accepted: number; rejected: number };
+  cases: Array<{
+    id: string;
+    batch_id: string;
+    reason_code: string;
+    reason: string;
+    details: Record<string, unknown>;
+    state: "open";
+    opened_at: string;
+    date: string;
+    source: AttendanceCaptureSource;
+    source_reference: string;
+    observed_at: string;
+    received_at: string;
+    roster_count: number;
+    expected_register_revision: number;
+    class_section_id: string;
+    class_name: string;
+    recorded_by_name: string;
+    current_revision: number;
+    register_state: AttendanceRegisterState | null;
+  }>;
 }
 
 export interface AttendanceRegisterHistoryResponse {
@@ -112,6 +175,9 @@ export interface AttendanceRegisterHistoryResponse {
     changed_count: number;
     created_at: string;
     submitted_by_name: string;
+    capture_source?: AttendanceCaptureSource | "photo";
+    observed_at?: string | null;
+    source_reference?: string | null;
   }>;
   revisions: Array<{
     id: string;
@@ -205,6 +271,41 @@ export function saveTeacherAttendance(classSectionId: string, date: string, inpu
       photo_session_id: input.photo_session_id,
       reason: input.reason,
     }),
+  });
+}
+
+export function saveAttendanceContinuityBatch(classSectionId: string, date: string, input: TeacherAttendanceSaveInput) {
+  if (!input.roster_fingerprint || !input.roster_expires_at || !input.observed_at) {
+    throw new TypeError("Attendance continuity metadata is required.");
+  }
+  return apiFetch<AttendanceContinuityResult>("/api/v1/attendance-continuity/batches/", {
+    method: "POST",
+    headers: { "Idempotency-Key": input.idempotency_key },
+    body: JSON.stringify({
+      class_section_id: classSectionId,
+      date,
+      records: input.records,
+      expected_revision: input.expected_revision,
+      photo_session_id: input.photo_session_id,
+      reason: input.reason,
+      source: input.source ?? "live_app",
+      source_reference: input.source_reference ?? "",
+      device_id: input.device_id ?? null,
+      observed_at: input.observed_at,
+      roster_fingerprint: input.roster_fingerprint,
+      roster_expires_at: input.roster_expires_at,
+    }),
+  });
+}
+
+export function getAttendanceContinuityWorkspace(date = schoolDateToday()) {
+  return apiFetch<AttendanceContinuityWorkspace>(query("/api/v1/screens/principal/attendance/continuity/", { date }));
+}
+
+export function decideAttendanceReconciliation(caseId: string, input: { decision: "accept" | "reject"; reason: string; expected_revision: number }) {
+  return apiFetch<AttendanceContinuityWorkspace>(`/api/v1/attendance-continuity/cases/${encodeURIComponent(caseId)}/decision/`, {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 

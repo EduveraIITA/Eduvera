@@ -81,6 +81,7 @@ export interface StudentTimetablePageProps {
   dayPlan?:PublishedDayNotice|null;selectedDate?:string;onDateChange?:(date:string)=>void;
   view?: TimetableView;
   onViewChange?: (view: TimetableView) => void;
+  onNavigate?: (date: string, view: TimetableView) => void;
   summary?: TimetableSummary;
   summaryLoading?: boolean;
   summaryError?: string;
@@ -122,6 +123,7 @@ export function StudentTimetablePage({
   dayPlan,selectedDate,onDateChange,
   view = "day",
   onViewChange,
+  onNavigate,
   summary,
   summaryLoading,
   summaryError,
@@ -188,6 +190,7 @@ export function StudentTimetablePage({
       contextLabel={audience === "parent" ? `${studentName}'s schedule` : "My class schedule"}
       onDateChange={onDateChange}
       onViewChange={onViewChange}
+      onNavigate={onNavigate}
       onRetry={onSummaryRetry}
     />
   ) : null;

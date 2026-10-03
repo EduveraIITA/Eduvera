@@ -101,7 +101,7 @@ describe("implemented application routes", () => {
       const { container } = render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
       await waitFor(() => expect(container.querySelector(".school-brand__crest")).toHaveTextContent("CIS"));
       expect(container.querySelector(".school-brand__name")).toHaveTextContent("Cambridge International School");
-      expect(container.querySelector<HTMLImageElement>(".school-brand__eduvera img")?.src).toContain("/assets/eduvera-mark.png");
+      expect(container.querySelector<HTMLImageElement>(".school-brand__eduvera img")?.src).toContain("/assets/edura-leaf-mark.png");
     }
     cleanup();
     const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><OperationsShell portal="teacher" active="home" title="Today" subtitle="Your day"><span /></OperationsShell></MemoryRouter></QueryClientProvider>);
@@ -225,14 +225,15 @@ describe("implemented application routes", () => {
     expect(await screen.findByText("Overall Aggregate")).toBeVisible();
   }, 12000);
 
-  it("opens the parent's full student ID above the card deck with a visible close control", async () => {
+  it("opens the parent's student ID as a viewport modal with a visible close control", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
     await interact.click(await screen.findByRole("button", { name: /Open digital student ID for Aarav Sharma/ }));
     const dialog = screen.getByRole("dialog", { name: "Aarav Sharma" });
     expect(dialog).toBeVisible();
     expect(dialog.parentElement).toBe(document.body);
-    expect(dialog).toHaveClass("student-id-view--parent");
+    expect(dialog).toHaveClass("student-id-view");
+    expect(dialog).not.toHaveClass("student-id-view--parent");
     expect(within(dialog).getByText("Digital Student Identity")).toBeVisible();
     const close = within(dialog).getByRole("button", { name: "Close digital student ID" });
     expect(close).toBeVisible();
@@ -628,6 +629,7 @@ describe("implemented application routes", () => {
   it("renders the timetable with the shared day view switcher", async () => {
     render(<MemoryRouter initialEntries={["/student/timetable"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Period schedule" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Timetable" })).toHaveAttribute("href", "/student/timetable");
     expect(screen.getByRole("tab", { name: "Day" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Week" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Month" })).toBeInTheDocument();

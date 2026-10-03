@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ClipboardCheck, Clock3, LockKeyhole, Search, UsersRound } from "lucide-react";
-import type { TeacherClassSummary } from "../../features/operations/api";
+import type { AttendanceContinuityWorkspace, TeacherClassSummary } from "../../features/operations/api";
 import { OperationsShell } from "./OperationsShell";
+import { AttendanceContinuityPanel } from "./AttendanceContinuityPanel";
 import "./attendance-workspace.css";
 
 type Queue = "all" | "pending" | "submitted" | "locked";
@@ -15,11 +16,15 @@ function registerQueue(item: TeacherClassSummary): Exclude<Queue, "all"> | "not_
   return "pending";
 }
 
-export function AttendanceWorkspacePage({ portal, classes, date, onDateChange }: {
+export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, continuity, continuityLoading = false, continuityError = null, onContinuityDecision }: {
   portal: "teacher" | "principal";
   classes: TeacherClassSummary[];
   date: string;
   onDateChange: (value: string) => void;
+  continuity?: AttendanceContinuityWorkspace;
+  continuityLoading?: boolean;
+  continuityError?: Error | null;
+  onContinuityDecision?: (caseId: string, decision: "accept" | "reject", reason: string, expectedRevision: number) => Promise<void>;
 }) {
   const [filter, setFilter] = useState<Queue>("all");
   const [search, setSearch] = useState("");
@@ -51,6 +56,14 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange }:
           <div><strong>{counts.submitted + counts.locked}</strong><span>Submitted</span></div>
         </div>
       </section>
+      {principal && onContinuityDecision ? <AttendanceContinuityPanel
+        data={continuity}
+        classes={classes}
+        date={date}
+        loading={continuityLoading}
+        error={continuityError}
+        onDecision={onContinuityDecision}
+      /> : null}
       <section className="attendance-workspace__queue" aria-labelledby="attendance-class-list">
         <div className="attendance-workspace__list-heading"><h2 id="attendance-class-list">Registers</h2></div>
         <label className="attendance-workspace__search"><Search size={18} /><span className="sr-only">Search classes</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={principal ? "Search class or teacher" : "Search class or subject"} /></label>
