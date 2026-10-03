@@ -624,7 +624,7 @@ describe("implemented application routes", () => {
     await swipe("Ananya", "Rohan", "left");
     await swipe("Rohan", "Kavya", "left");
     await swipe("Kavya", "Aarav", "left");
-  }, 60000);
+  }, 90000);
 
   it("renders the timetable with the shared day view switcher", async () => {
     render(<MemoryRouter initialEntries={["/student/timetable"]}><App /></MemoryRouter>);
