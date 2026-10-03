@@ -30,13 +30,12 @@ export function StudentModulesPage({ focus = "launcher" }: { focus?: ModuleId })
   const activeNav: StudentNavKey = focus === "fees" ? "fees" : focus === "diary" ? "diary" : "launcher";
 
   return (
-    <StudentShell activeNav={activeNav} section="School OS">
+    <StudentShell activeNav={activeNav} pageTitle={selected ? selected.name : "More"}>
       <div className="student-page-stack module-page">
-        <section className="module-hero">
-          <h1>{selected ? selected.name : "More"}</h1>
+        {selected ? <section className="module-hero">
           {selected ? <p>{selected.description}. Your school has not enabled this module yet.</p> : null}
           {selected ? <button type="button" onClick={() => navigate("/student/apps")}><Grid2X2 size={17} /> View all modules</button> : null}
-        </section>
+        </section> : null}
 
         <section className="module-catalog" aria-labelledby="module-catalog-title">
           <header><div><h2 id="module-catalog-title">Services</h2></div><b>{modules.length} available</b></header>

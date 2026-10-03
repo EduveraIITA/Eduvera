@@ -1,7 +1,6 @@
 import { useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
@@ -199,13 +198,11 @@ export function StudentLeaveNewPage({
   }
 
   return (
-    <StudentShell activeNav="attendance" variant="edura" routes={routes}>
+    <StudentShell activeNav="attendance" variant="edura" routes={routes} pageTitle="Apply leave" onBack={onBack}>
       <form className="student-page-stack leave-new-page" onSubmit={submit}>
-        <header className="page-title-row">
-          <button className="square-soft-button" type="button" aria-label="Go back" onClick={onBack ?? (() => navigate(-1))}><ArrowLeft size={20} /></button>
-          <div><h1>Apply leave</h1></div>
+        <div className="page-context-row page-context-row--end">
           <span className="term-indicator"><i />{context?.termLabel ?? "Term 1"}</span>
-        </header>
+        </div>
 
         <div className="segmented-control" role="tablist" aria-label="Leave application views">
           <button className="is-active" type="button" role="tab" aria-selected="true"><CheckCircle2 size={16} />+ Apply Leave</button>

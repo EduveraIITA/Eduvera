@@ -6,6 +6,15 @@
   height: 42px;
 }
 
+.school-brand__marks {
+  position: relative;
+  display: flex;
+  width: 67px;
+  height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
 .school-brand__crest {
   display: grid;
   width: 37px;
@@ -18,6 +27,45 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 5px 14px rgba(0, 55, 176, 0.13);
   font-size: 11px;
   font-weight: 800;
+}
+
+.school-brand__eduvera {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(180, 194, 219, 0.72);
+  border-radius: 11px;
+  background: #ffffff;
+  box-shadow: 0 5px 14px rgba(14, 37, 83, 0.12);
+}
+
+.school-brand__eduvera img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.school-brand__marks--overlap .school-brand__crest {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 2px;
+}
+
+.school-brand__marks--overlap .school-brand__eduvera {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  top: 4px;
+}
+
+.school-brand__marks--side-by-side {
+  width: auto;
+  gap: 8px;
 }
 
 .school-brand__name {
@@ -34,6 +82,9 @@
 
 @media (max-width: 390px) {
   .school-brand { gap: 6px; }
+  .school-brand__marks { width: 57px; height: 36px; }
   .school-brand__crest { width: 32px; height: 32px; }
+  .school-brand__eduvera { width: 30px; height: 30px; border-radius: 9px; }
+  .school-brand__marks--side-by-side { width: auto; gap: 7px; }
   .school-brand__name { font-size: 13px; }
 }

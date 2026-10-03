@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarPlus2, Check, Plus, ShieldCheck, Trash2, UsersRound } from "lucide-react";
+import { CalendarPlus2, Check, Plus, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
@@ -155,10 +155,9 @@ export function EventEditorPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" backTo={event ? `${prefix}/events/${event.id}` : `${prefix}/events`} contentHasHeading>
       <form className="campus-event-editor" onSubmit={submit}>
-        <header className="campus-event-editor__header">
-          <div><Link to={event ? `${prefix}/events/${event.id}` : `${prefix}/events`}><ArrowLeft size={17} />Back to events</Link><h1>{event ? event.title : "Create a school event"}</h1></div>
+        <header className="campus-event-editor__header campus-event-editor__header--actions">
           <button className="campus-event-primary" type="submit" disabled={state === "saving"}><Check size={17} />{state === "saving" ? "Saving..." : "Save draft"}</button>
         </header>
         {error ? <p className="campus-event-form-error" role="alert">{error}</p> : null}

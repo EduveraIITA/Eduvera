@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, FileText, ReceiptIndianRupee } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { FileText, ReceiptIndianRupee } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import { StudentShell } from "../../pages/student/StudentShell";
 import { useAuth } from "../auth/AuthContext";
@@ -20,10 +20,7 @@ export function FamilyFeesPage({ portal }: { portal: "parent" | "student" }) {
   const studentId = children.data?.results.find((student) => student.id === requestedStudentId)?.id ?? children.data?.results[0]?.id ?? "";
   const selectedChild = children.data?.results.find((student) => student.id === studentId);
   const ledger = useQuery({ queryKey: ["office", "family-fees", schoolId, studentId], queryFn: () => getFeeLedger(schoolId, studentId), enabled: Boolean(schoolId && studentId) });
-  const PageHeading = portal === "parent" ? "h2" : "h1";
   const content = <div className="office-page office-page--fees">
-    <Link className="office-back" to={portal === "parent" ? "/parent/more" : "/student/apps"}><ArrowLeft size={17} /> More tools</Link>
-    <header className="office-heading"><PageHeading>Fees &amp; receipts</PageHeading></header>
     {!schoolId ? <p className="office-alert">No active school membership is available.</p> : children.isPending ? <ScreenLoading /> : children.isError ? <LiveRouteError error={children.error} onRetry={children.refetch} /> : !studentId ? <p className="office-empty">No linked student record is available. Contact your school office.</p> : ledger.isPending ? <ScreenLoading /> : ledger.isError ? <LiveRouteError error={ledger.error} onRetry={ledger.refetch} /> : ledger.data ? <>
       {portal === "parent" && (children.data?.results.length ?? 0) > 1 ? <label className="office-field">Child<select value={studentId} onChange={(event) => { const next = new URLSearchParams(params); next.set("student_id", event.target.value); setParams(next); }}>{children.data?.results.map((student) => <option key={student.id} value={student.id}>{student.user.display_name}</option>)}</select></label> : null}
       <div className="office-summary office-summary--money"><div><strong>{rupees(ledger.data.invoices.reduce((sum, item) => sum + item.adjusted_amount_paise, 0))}</strong><span>Adjusted billed</span></div><div><strong>{rupees(ledger.data.invoices.reduce((sum, item) => sum + item.paid_paise, 0))}</strong><span>Received</span></div><div><strong>{rupees(ledger.data.invoices.reduce((sum, item) => sum + item.balance_paise, 0))}</strong><span>Outstanding</span></div><div><strong>{rupees(ledger.data.invoices.reduce((sum, item) => sum + item.refund_due_paise, 0))}</strong><span>Refund due</span></div></div>
@@ -34,5 +31,5 @@ export function FamilyFeesPage({ portal }: { portal: "parent" | "student" }) {
       <p className="office-hint">Only verified payments appear as receipts. {portal === "student" ? "A linked guardian can submit payment details." : "The app does not debit your account."}</p>
     </> : null}
   </div>;
-  return portal === "parent" ? <ParentShell active="more" pageLabel="Fees & receipts" selectedChildId={studentId} child={selectedChild ? { id: selectedChild.id, name: selectedChild.user.display_name, grade: `Grade ${selectedChild.current_enrollment.grade}`, section: selectedChild.current_enrollment.section, board: selectedChild.current_enrollment.board, rollNumber: String(selectedChild.current_enrollment.roll_number), avatarUrl: selectedChild.avatar_url } : undefined} onSelectChild={(nextId) => { const next = new URLSearchParams(params); next.set("student_id", nextId); setParams(next); }}>{content}</ParentShell> : <StudentShell activeNav="fees">{content}</StudentShell>;
+  return portal === "parent" ? <ParentShell active="more" pageLabel="Fees & receipts" backTo="/parent/more" selectedChildId={studentId} child={selectedChild ? { id: selectedChild.id, name: selectedChild.user.display_name, grade: `Grade ${selectedChild.current_enrollment.grade}`, section: selectedChild.current_enrollment.section, board: selectedChild.current_enrollment.board, rollNumber: String(selectedChild.current_enrollment.roll_number), avatarUrl: selectedChild.avatar_url } : undefined} onSelectChild={(nextId) => { const next = new URLSearchParams(params); next.set("student_id", nextId); setParams(next); }}>{content}</ParentShell> : <StudentShell activeNav="fees" backTo="/student/apps">{content}</StudentShell>;
 }

@@ -139,16 +139,7 @@
 .operations-topbar__heading {
   min-width: 0;
 }
-.operations-topbar .operations-topbar__title {
-  margin: 0;
-  overflow: hidden;
-  font-size: 21px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.03em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.operations-topbar .portal-page-title__text { font-size: 21px; }
 .operations-topbar__actions {
   display: flex;
   align-items: center;
@@ -1347,13 +1338,17 @@
     display: none;
   }
   .operations-topbar {
-    min-height: calc(64px + env(safe-area-inset-top, 0px));
-    padding: env(safe-area-inset-top, 0px) 16px 0;
+    min-height: calc(116px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 16px 4px;
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand actions" "heading heading";
+    column-gap: 8px;
+    row-gap: 0;
   }
   .operations-topbar__brand {
     display: flex;
     min-width: 0;
+    grid-area: brand;
   }
   .operations-topbar__brand .school-brand__crest {
     width: 37px;
@@ -1363,7 +1358,15 @@
     font-size: 14px;
   }
   .operations-topbar__heading {
-    display: none;
+    display: block;
+    grid-area: heading;
+  }
+  .operations-topbar__actions {
+    grid-area: actions;
+    grid-column: auto;
+  }
+  .operations-topbar .portal-page-title__text {
+    font-size: 18px;
   }
   .operations-main {
     padding: 16px 14px 28px;

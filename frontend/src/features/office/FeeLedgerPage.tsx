@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CircleAlert, CircleCheck, FileText, Printer, ReceiptIndianRupee, Wallet } from "lucide-react";
+import { CircleAlert, CircleCheck, FileText, Printer, ReceiptIndianRupee, Wallet } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { useAuth } from "../auth/AuthContext";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
@@ -64,10 +63,8 @@ export default function FeeLedgerPage() {
     finally { setBusy(false); }
   }
 
-  return <OperationsShell portal="principal" active="more" title="Fee ledger" subtitle="Leadership workspace" schoolName={schools.find((school) => school.school_id === currentSchoolId)?.school_name} contentHasHeading>
+  return <OperationsShell portal="principal" active="more" title="Fee ledger" subtitle="Leadership workspace" schoolName={schools.find((school) => school.school_id === currentSchoolId)?.school_name} backTo="/principal/more" contentHasHeading>
     <div className="office-page office-page--fees">
-      <Link className="office-back" to="/principal/more"><ArrowLeft size={17} /> More tools</Link>
-      <header className="office-hero office-hero--fees"><div className="office-hero__copy"><h1>Fee ledger</h1></div><span className="office-hero__mark" aria-hidden="true"><ReceiptIndianRupee size={27} /></span></header>
       {schools.length > 1 ? <label className="office-field office-context-field">School<select value={currentSchoolId} onChange={(event) => { setSchoolId(event.target.value); setStudentId(""); reset(); }}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {!currentSchoolId ? <p className="office-alert">An active administrator membership is required.</p> : students.isPending || ledger.isPending ? <ScreenLoading /> : students.isError || ledger.isError ? <LiveRouteError error={students.error ?? ledger.error} onRetry={async () => { await Promise.all([students.refetch(), ledger.refetch()]); }} /> : <>
         <label className="office-field office-student-filter">Showing records for<select value={studentId} onChange={(event) => { setStudentId(event.target.value); reset(); }}><option value="">All students</option>{students.data?.results.map((student) => <option key={student.id} value={student.id}>{personName(student)}, {student.admission_number}</option>)}</select></label>

@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowLeft,
   CalendarCheck2,
   CheckCircle2,
   Clock3,
@@ -82,13 +81,11 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={event.title} subtitle="Events & activities" contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={event.title} subtitle="Events & activities" backTo={`${prefix}/events`} contentHasHeading>
       <div className="campus-event-detail-page operations-stack">
-        <nav className="campus-event-back" aria-label="Event navigation"><Link to={`${prefix}/events`}><ArrowLeft size={17} />All events</Link></nav>
         <section className={`campus-event-detail-hero campus-event-detail-hero--${event.event_type}`}>
           <div className="campus-event-detail-hero__copy">
             <div><span>{eventTypeLabels[event.event_type]}</span><EventStatusBadge status={event.status} /></div>
-            <h1>{event.title}</h1>
             <p>{event.description}</p>
             <dl>
               <div><dt><Clock3 size={15} />When</dt><dd>{formatEventDate(event.starts_at)} to {formatEventDate(event.ends_at)}</dd></div>

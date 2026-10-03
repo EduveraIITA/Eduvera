@@ -1,6 +1,5 @@
-import { AlertTriangle, ArrowLeft, CheckCircle2, Clock3, History as HistoryIcon, LockKeyhole, RotateCcw, Save, Search, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, History as HistoryIcon, LockKeyhole, RotateCcw, Save, Search, ShieldCheck, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { eventIdempotencyKey } from "./api";
 import { formatEventDate } from "./EventPrimitives";
@@ -160,9 +159,8 @@ export function EventRegisterPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={`${register.event.title} attendance`} subtitle="Event register" contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={`${register.event.title} attendance`} subtitle="Event register" backTo={`${prefix}/events/${register.event.id}`} contentHasHeading>
       <div className="campus-event-register-page">
-        <nav className="campus-event-back"><Link to={`${prefix}/events/${register.event.id}`}><ArrowLeft size={17} />Back to event</Link></nav>
         <section className="campus-event-register-hero">
           <div><span>Event session register</span><h1>{register.session.title}</h1><p>{formatEventDate(register.session.starts_at)} · {register.session.attendance_mode === "check_in_out" ? "Check-in and check-out" : "Check-in register"}</p></div>
           <span className={`campus-event-register-state is-${register.session.state}`}>{register.session.state === "locked" ? <LockKeyhole size={15} /> : <Clock3 size={15} />}{register.session.state}</span>

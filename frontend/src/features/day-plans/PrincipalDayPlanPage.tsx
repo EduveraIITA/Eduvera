@@ -71,7 +71,6 @@ export default function PrincipalDayPlanPage() {
     >
       <div className="day-workspace">
         <div className="day-page-actions">
-          <h1>Timetable</h1>
           <Link className="day-secondary" to="/principal/timetable/weekly">
             Manage timetable <ArrowRight size={16} />
           </Link>

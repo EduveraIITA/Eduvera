@@ -101,12 +101,14 @@ describe("implemented application routes", () => {
       const { container } = render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
       await waitFor(() => expect(container.querySelector(".school-brand__crest")).toHaveTextContent("CIS"));
       expect(container.querySelector(".school-brand__name")).toHaveTextContent("Cambridge International School");
+      expect(container.querySelector<HTMLImageElement>(".school-brand__eduvera img")?.src).toContain("/assets/eduvera-mark.png");
     }
     cleanup();
     const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><OperationsShell portal="teacher" active="home" title="Today" subtitle="Your day"><span /></OperationsShell></MemoryRouter></QueryClientProvider>);
     expect(container.querySelectorAll(".school-brand__crest")).toHaveLength(2);
     container.querySelectorAll(".school-brand__crest").forEach((crest) => expect(crest).toHaveTextContent("CIS"));
     container.querySelectorAll(".school-brand__name").forEach((name) => expect(name).toHaveTextContent("Cambridge International School"));
+    expect(container.querySelectorAll(".school-brand__eduvera img")).toHaveLength(2);
   });
 
   it("keeps mobile navigation to four destinations and no duplicate header More shortcut", () => {
@@ -125,6 +127,41 @@ describe("implemented application routes", () => {
       expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
       cleanup();
     }
+  });
+
+  it("keeps a consistent page title and only shows Back beyond each portal home", () => {
+    const wrap = (entry: string, content: ReactNode) => render(
+      <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[entry]}>{content}</MemoryRouter></QueryClientProvider>,
+    );
+
+    wrap("/parent/home", <ParentShell active="home" pageLabel="Home"><span /></ParentShell>);
+    expect(screen.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Go back" })).not.toBeInTheDocument();
+    cleanup();
+
+    wrap("/parent/attendance", <ParentShell active="attendance" pageLabel="Attendance"><span /></ParentShell>);
+    expect(screen.getByRole("heading", { name: "Attendance", level: 1 })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
+    cleanup();
+
+    wrap("/student", <StudentShell activeNav="home"><span /></StudentShell>);
+    expect(screen.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Go back" })).not.toBeInTheDocument();
+    cleanup();
+
+    wrap("/student/leave/new", <StudentShell activeNav="attendance"><span /></StudentShell>);
+    expect(screen.getByRole("heading", { name: "Apply leave", level: 1 })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
+    cleanup();
+
+    wrap("/principal", <OperationsShell portal="principal" active="home" title="Overview"><span /></OperationsShell>);
+    expect(screen.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Go back" })).not.toBeInTheDocument();
+    cleanup();
+
+    wrap("/principal/timetable", <OperationsShell portal="principal" active="timetable" title="Timetable"><span /></OperationsShell>);
+    expect(screen.getByRole("heading", { name: "Timetable", level: 1 })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
   });
 
   it("opens Copilot from its visible navigation destination", async () => {

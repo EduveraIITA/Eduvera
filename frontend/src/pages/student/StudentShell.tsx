@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   Bot,
   CalendarDays,
@@ -10,6 +10,7 @@ import {
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
+import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 
 import "./student-pages.css";
@@ -57,6 +58,9 @@ export interface StudentShellProps {
   notificationCount?: number;
   onNotifications?: () => void;
   onProfile?: () => void;
+  pageTitle?: string;
+  backTo?: string;
+  onBack?: () => void;
 }
 
 const schoolNav = [
@@ -73,16 +77,39 @@ const eduraNav = [
   { key: "launcher" as const, label: "More", icon: MoreHorizontal },
 ];
 
+function pageTitleFor(pathname: string, activeNav: StudentNavKey, section?: string) {
+  if (pathname === "/student") return "Home";
+  if (pathname.startsWith("/student/attendance/eligibility")) return "Attendance eligibility";
+  if (pathname.startsWith("/student/leave/new")) return "Apply leave";
+  if (pathname.startsWith("/student/leave")) return "Leave Tracker";
+  if (pathname.startsWith("/student/timetable/week")) return "Weekly timetable";
+  if (pathname.startsWith("/student/timetable")) return "Timetable";
+  if (pathname.startsWith("/student/events")) return "Events";
+  if (pathname.startsWith("/student/calendar")) return "Calendar";
+  if (pathname.startsWith("/student/messages")) return "Messages";
+  if (pathname.startsWith("/student/fees")) return "Fees & receipts";
+  if (pathname.startsWith("/student/apps")) return "More";
+  if (pathname.startsWith("/student/diary")) return "Diary";
+  if (pathname.startsWith("/student/attendance")) return "Attendance";
+  if (pathname.startsWith("/student/copilot")) return "Attendance Copilot";
+  return section ?? ({ home: "Home", attendance: "Attendance", classes: "Classes", diary: "Diary", copilot: "Attendance Copilot", fees: "Fees & receipts", launcher: "More", chat: "Messages" } satisfies Record<StudentNavKey, string>)[activeNav];
+}
+
 export function StudentShell({
   children,
   activeNav,
   variant = "edura",
+  section,
   schoolName,
   routes,
   notificationCount,
   onNotifications,
   onProfile,
+  pageTitle,
+  backTo,
+  onBack,
 }: StudentShellProps) {
+  const location = useLocation();
   const auth = useOptionalAuth();
   const routeMap = { ...defaultStudentRoutes, ...routes };
   const navItems = variant === "school" ? schoolNav : eduraNav;
@@ -94,16 +121,20 @@ export function StudentShell({
   return (
     <div className={`student-app student-app--${variant}`}>
       <header className={`student-topbar student-topbar--${variant}`}>
-        <SchoolBrand name={resolvedSchoolName ?? "Cambridge International School"} className="student-topbar__brand" />
-
-        <div className="student-topbar__actions">
-          <NotificationCenter
-            buttonClassName="student-icon-button student-notification-button"
-            iconSize={21}
-            fallbackUnreadCount={notificationCount}
-            onOpen={onNotifications}
-          />
-          <AccountMenu buttonClassName="student-profile-button" ariaLabel="Open profile" iconSize={21} onOpen={onProfile} />
+        <div className="student-topbar__top">
+          <SchoolBrand name={resolvedSchoolName ?? "Cambridge International School"} className="student-topbar__brand" />
+          <div className="student-topbar__actions">
+            <NotificationCenter
+              buttonClassName="student-icon-button student-notification-button"
+              iconSize={21}
+              fallbackUnreadCount={notificationCount}
+              onOpen={onNotifications}
+            />
+            <AccountMenu buttonClassName="student-profile-button" ariaLabel="Open profile" iconSize={21} onOpen={onProfile} />
+          </div>
+        </div>
+        <div className="student-topbar__context">
+          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} />
         </div>
       </header>
 

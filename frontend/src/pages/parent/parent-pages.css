@@ -118,13 +118,13 @@
 .profile-button { width: 42px; height: 42px; border-radius: 999px; color: white; background: var(--parent-primary); }
 
 .parent-header__context { min-height: 42px; justify-content: space-between; gap: 12px; }
+.parent-header__context .portal-page-title { min-width: 0; flex: 1 1 auto; }
 .parent-header__child-label { display: inline-flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; color: var(--parent-muted); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .parent-header__child-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .presence-dot, .blue-dot, .alert-dot { display: inline-block; flex: 0 0 auto; border-radius: 999px; }
 .presence-dot { width: 8px; height: 8px; background: var(--parent-outline); }
 .presence-dot--in { background: var(--parent-positive); }
 .presence-dot--away { background: var(--parent-danger); }
-.parent-header__page { flex: 0 0 auto; margin: 0; color: var(--parent-ink); font-size: 17px; line-height: 22px; font-weight: 750; letter-spacing: -0.025em; }
 
 .parent-main { width: 100%; padding: calc(130px + max(0px, env(safe-area-inset-top) - 12px)) 16px calc(116px + env(safe-area-inset-bottom)); }
 .parent-stack { display: flex; flex-direction: column; gap: 22px; }

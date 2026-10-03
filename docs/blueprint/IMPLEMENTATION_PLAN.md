@@ -1196,3 +1196,39 @@ Verification:
   Frontend typecheck, lint and production build pass; all **201** frontend tests pass, including
   focused week navigation, date jump, compact-rail and target-editing coverage. Physical-phone
   acceptance remains open.
+
+## Eduvera co-brand and install icon — 3 October 2026
+
+- Extracted the symbol-only Eduvera mark from the approved supplied artwork; the `Eduvera` wordmark,
+  surrounding canvas and decorative effects are not embedded in the application asset. The transparent
+  master is stored once under the public assets directory and used by the shared school-brand component.
+- Login, signup and onboarding now show the school crest and Eduvera mark side by side. Authenticated
+  student, parent, teacher and principal headers inherit the same shared component with a compact
+  overlapping lockup, while retaining the established school name, theme, navigation and accessible
+  label.
+- Replaced the old browser and install artwork with symbol-only PNG assets: a browser favicon, a
+  180-pixel Safari touch icon, and 192/512-pixel manifest icons with maskable declarations. The manifest
+  and document head reference the new files directly so newly added iOS home-screen shortcuts use the
+  Eduvera symbol.
+- The complete route regression file passes (**44** tests) and the production frontend build succeeds.
+  The principal top bar plus login and signup lockups were visually checked at a 390 x 844 mobile
+  viewport; both co-brand arrangements remain legible without colliding with account actions.
+
+## Consistent portal page headers — 3 October 2026
+
+- Added one shared, semantic page-title row to the parent, student, teacher and principal shells.
+  Every authenticated route now presents its current page name in the same position beneath the
+  school identity and account actions. The mobile operations stylesheet no longer hides the title.
+- Added a 40-pixel accessible Back control on non-root pages. Explicit parent routes and protected
+  edit workflows can provide a stable destination or guarded callback; otherwise the control uses
+  valid browser history and safely falls back to the portal home. Parent Home, Student Home, Teacher
+  Today and Principal Overview deliberately omit the control.
+- Removed redundant local page titles and Back links from timetable management, attendance register,
+  student leave and diary, school administration, people import, finance and campus-event workflows.
+  Contextual headings such as a class, event or session name remain where they identify the content
+  rather than repeat the page title.
+- The complete route regression file passes (**45** tests), including title and root/non-root Back
+  visibility across all four portal shells and the existing selected-navigation checks. Frontend
+  lint and the production build pass. The authenticated localhost
+  principal root/detail views and parent root/detail views were inspected; Back is absent on the two
+  roots, visible on the detail pages, and the parent Back action returns to Parent Home.

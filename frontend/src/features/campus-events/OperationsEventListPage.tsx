@@ -44,17 +44,14 @@ export function OperationsEventListPage({
     <OperationsShell
       portal={portal}
       active="events"
-      title="Events & activities"
+      title={portal === "principal" ? "Events & activities" : "Assigned events"}
       subtitle={portal === "principal" ? "Whole-school event operations" : "Assigned event duties"}
       contentHasHeading
     >
       <div className="campus-events-page operations-stack">
-        <section className="campus-events-ops-hero">
-          <div>
-            <h1>{portal === "principal" ? "Events and activities" : "Assigned events"}</h1>
-          </div>
+        <div className="campus-events-ops-actions">
           <Link className="campus-event-primary" to={portal === "principal" ? "/principal/events/new" : "/teacher/events/new"}><Plus size={17} />{portal === "principal" ? "Create event" : "Schedule class test"}</Link>
-        </section>
+        </div>
 
         <section className="campus-event-metrics" aria-label="Event operations summary">
           <article><span><CalendarClock size={18} /></span><small>Upcoming</small><strong>{upcoming}</strong></article>

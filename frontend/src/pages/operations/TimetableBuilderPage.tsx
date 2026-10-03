@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, BookOpenCheck, CalendarClock, CalendarOff, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Copy, Pencil, Plus, Settings2 } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CalendarClock, CalendarOff, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Copy, Pencil, Plus, Settings2 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { CopyTimetableDayInput, CurriculumTargetInput, NewTimetableSlot, PrincipalTimetableResponse, SchoolClosureInput } from "../../features/operations/api";
 import { OperationsShell } from "./OperationsShell";
@@ -146,10 +146,9 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
   };
 
   return (
-    <OperationsShell portal="principal" active="timetable" title="Manage timetable" contentHasHeading>
+    <OperationsShell portal="principal" active="timetable" title="Manage timetable" backTo="/principal/timetable" contentHasHeading>
       <main className="timetable-builder">
         <header className="timetable-builder__title">
-          <div><Link to="/principal/timetable"><ArrowLeft size={15} />Published timetable</Link><h1>Manage timetable</h1></div>
           <label>Term<select value={selectedTerm.id} onChange={(event) => onTermChange(event.target.value)}>{data.terms.map((term) => <option key={term.id} value={term.id}>{term.name} - {term.academic_year}</option>)}</select></label>
         </header>
 

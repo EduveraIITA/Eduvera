@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   BookOpenCheck,
   Check,
   Plus,
@@ -184,20 +183,14 @@ export function ClassTestEditorPage({
       active="events"
       title={event ? "Edit class test" : "Schedule class test"}
       subtitle="Events & activities"
+      backTo={`${prefix}/events${event ? `/${event.id}` : ""}`}
       contentHasHeading
     >
       <form
         className="campus-event-editor campus-test-editor"
         onSubmit={submit}
       >
-        <header className="campus-event-editor__header">
-          <div>
-            <Link to={`${prefix}/events${event ? `/${event.id}` : ""}`}>
-              <ArrowLeft size={17} />
-              Back
-            </Link>
-            <h1>{event ? event.title : "Schedule a class test"}</h1>
-          </div>
+        <header className="campus-event-editor__header campus-event-editor__header--actions">
           <button
             className="campus-event-primary"
             type="submit"

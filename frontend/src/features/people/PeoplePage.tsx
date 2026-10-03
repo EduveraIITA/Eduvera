@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ChevronDown, Plus, Search, UsersRound, X } from "lucide-react";
+import { ChevronDown, Plus, Search, UsersRound, X } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { profileAvatar } from "../../lib/profileAvatars";
@@ -60,9 +60,8 @@ export default function PeoplePage() {
   const schools = auth.memberships.filter((membership) => membership.role === "admin");
   const [selected, setSelected] = useState("");
   const schoolId = selected || schools[0]?.school_id;
-  return <OperationsShell portal="principal" active="home" title="Students & guardians" subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} contentHasHeading>
+  return <OperationsShell portal="principal" active="home" title="Students & guardians" subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo="/principal" contentHasHeading>
     <div className="operations-stack">
-      <Link to="/principal" className="people-back"><ArrowLeft size={17} />Overview</Link>
       {schools.length > 1 ? <label className="people-school">School<select value={schoolId} onChange={(event) => setSelected(event.target.value)}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {schoolId ? <Directory key={schoolId} schoolId={schoolId} /> : <p role="alert">An active school administrator membership is required.</p>}
     </div>
@@ -117,8 +116,7 @@ function Directory({ schoolId }: { schoolId: string }) {
   };
 
   return <>
-    <header className="people-heading">
-      <div><h1 className="people-page-title">Students & guardians</h1></div>
+    <header className="people-heading people-heading--actions">
       <div className="people-authority-actions">
         <Link className="people-secondary" to={`/principal/students/import?school=${schoolId}`}>Import</Link>
         <button type="button" className="people-primary" disabled={!options.data?.results.length || adding} onClick={() => { setAdding(true); setSaved(""); }}><Plus size={17} />Add student</button>

@@ -20,13 +20,13 @@ import {
 } from "lucide-react";
 import { authDestination, useAuth, type RegisterInput } from "./AuthContext";
 import type { DemoPersona } from "../../lib/api";
+import { SchoolBrand } from "../school/SchoolBrand";
 import "./auth.css";
 
 function AuthBrand() {
   return (
-    <Link className="auth-brand" to="/" aria-label="Cambridge International School">
-      <span className="auth-brand__mark"><GraduationCap size={22} strokeWidth={2.1} /></span>
-      <span><strong>Cambridge International School</strong></span>
+    <Link className="auth-brand" to="/" aria-label="Cambridge International School and Eduvera">
+      <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" />
     </Link>
   );
 }

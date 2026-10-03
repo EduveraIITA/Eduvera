@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   Check,
   CircleX,
   Clock3,
@@ -144,13 +143,12 @@ export function StudentLeaveStatusPage({
   }
 
   return (
-    <StudentShell activeNav="attendance" variant="edura" routes={routes}>
+    <StudentShell activeNav="attendance" variant="edura" routes={routes} pageTitle="Leave Tracker" onBack={onBack}>
       <div className="student-page-stack leave-status-page">
-        <header className="page-title-row">
-          <button className="square-soft-button" type="button" aria-label="Go back" onClick={onBack ?? (() => navigate(-1))}><ArrowLeft size={20} /></button>
-          <div><span className="title-with-badge"><h1>Leave Tracker</h1><b>{data.activeCount} Active</b></span><p>Attendance &amp; Excusal Requests</p></div>
+        <div className="page-context-row">
+          <span className="title-with-badge"><b>{data.activeCount} Active</b></span>
           <button className="square-soft-button" type="button" aria-label="Leave policy information" onClick={() => navigate("/student/attendance/eligibility")}><Info size={20} /></button>
-        </header>
+        </div>
 
         <div className="segmented-control" role="tablist" aria-label="Leave tracker views">
           <button type="button" role="tab" aria-selected="false" onClick={onApplyLeave ?? (() => navigate("/student/leave/new"))}><Send size={16} />Apply Leave</button>

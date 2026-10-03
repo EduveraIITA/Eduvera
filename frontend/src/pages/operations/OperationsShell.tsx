@@ -4,6 +4,7 @@ import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, Message
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
+import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import "./operations.css";
 import "./operations-links.css";
@@ -32,7 +33,7 @@ const nav = {
 } as const;
 const mobileNavIds = new Set(["home", "attendance", "timetable", "more"]);
 
-export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, contentHasHeading = false }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean }) {
+export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void }) {
   const auth = useOptionalAuth();
   const navigationActive = active === "events" ? "more" : active;
   const mobileActive = mobileNavIds.has(navigationActive) ? navigationActive : "more";
@@ -51,7 +52,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
       <div className="operations-workspace">
         <header className="operations-topbar">
           <SchoolBrand name={schoolName} className="operations-topbar__brand" />
-          {!contentHasHeading ? <div className="operations-topbar__heading"><h1 className="operations-topbar__title">{title}</h1></div> : null}
+          <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
         <main className="operations-main">{children}</main>

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
@@ -713,6 +712,14 @@ export function TeacherAttendancePage({
       active="attendance"
       title={`${data.class.name} attendance`}
       subtitle={`${data.class.term} - ${data.class.room}`}
+      onBack={() => {
+        if (confirmDiscard())
+          void navigate(
+            portal === "teacher"
+              ? `/teacher/attendance?date=${date}`
+              : `/principal/attendance?date=${date}`,
+          );
+      }}
       contentHasHeading
     >
       <div className="operations-stack roll-call-page">
@@ -721,21 +728,6 @@ export function TeacherAttendancePage({
         >
           <div className="roll-call-summary__top">
             <div className="roll-call-class-heading">
-            <button
-              className="roll-call-back"
-              type="button"
-              aria-label="Back to classes"
-              onClick={() => {
-                if (confirmDiscard())
-                  void navigate(
-                    portal === "teacher"
-                      ? `/teacher/attendance?date=${date}`
-                      : `/principal/attendance?date=${date}`,
-                  );
-              }}
-            >
-              <ArrowLeft size={17} />
-            </button>
             <div>
               <h1>{data.class.name}</h1>
               <p><span>Attendance · {data.roster.length} students</span>{data.class.room ? <span>{/^room\b/i.test(data.class.room) ? data.class.room : `Room ${data.class.room}`}</span> : null}</p>

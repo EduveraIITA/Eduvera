@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {useInfiniteQuery,useQuery,useQueryClient} from "@tanstack/react-query";
 import {Link,useSearchParams} from "react-router-dom";
-import {ArrowLeft,CheckCircle2,Download,FileSpreadsheet,Plus} from "lucide-react";
+import {CheckCircle2,Download,FileSpreadsheet,Plus} from "lucide-react";
 import {useAuth} from "../auth/AuthContext";
 import {OperationsShell} from "../../pages/operations/OperationsShell";
 import {enrollmentOptions} from "./api";
@@ -15,9 +15,8 @@ export default function PeopleImportPage(){
   const auth=useAuth();const schools=auth.memberships.filter(m=>m.role==='admin');const [params,setParams]=useSearchParams();
   const schoolId=params.get('school')||schools[0]?.school_id;const id=params.get('import');
   const open=(importId?:string)=>{setParams({...(schoolId?{school:schoolId}:{}),...(importId?{import:importId}:{})});};
-  return <OperationsShell portal="principal" active="home" title="Import students" subtitle="School onboarding" schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} contentHasHeading><div className="operations-stack">
-    <Link to="/principal/students" className="people-back"><ArrowLeft size={17}/>Students & guardians</Link>
-    <header className="people-heading"><div><h1 className="people-page-title">Import students</h1></div>{id?<button className="people-secondary" onClick={()=>open()}>Import history</button>:null}</header>
+  return <OperationsShell portal="principal" active="home" title="Import students" subtitle="School onboarding" schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} backTo="/principal/students" contentHasHeading><div className="operations-stack">
+    {id?<header className="people-heading people-heading--actions"><button className="people-secondary" onClick={()=>open()}>Import history</button></header>:null}
     {schools.length>1?<label className="people-school">School<select value={schoolId} onChange={e=>setParams({school:e.target.value})}>{schools.map(s=><option key={s.school_id} value={s.school_id}>{s.school_name}</option>)}</select></label>:null}
     {schoolId?(id?<ImportWorkspace key={id} schoolId={schoolId} id={id} onNew={()=>open()}/>:<ImportStart key={schoolId} schoolId={schoolId} onOpen={open}/>):<p role="alert">An active school administrator membership is required.</p>}
   </div></OperationsShell>;

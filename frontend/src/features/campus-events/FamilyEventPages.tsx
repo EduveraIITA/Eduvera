@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -11,7 +10,6 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import type { ParentChildSummary, ParentPageAction } from "../../pages/parent/parentTypes";
 import { StudentShell } from "../../pages/student/StudentShell";
@@ -30,19 +28,21 @@ function FamilyFrame({
   audience,
   child,
   onSelectChild,
+  backTo,
   children,
 }: {
   audience: "parent" | "student";
   child?: ParentChildSummary;
   onSelectChild?: (id: string) => ParentPageAction;
+  backTo?: string;
   children: ReactNode;
 }) {
   return audience === "parent" ? (
-    <ParentShell active="events" pageLabel="Events" child={child} onSelectChild={onSelectChild}>
+    <ParentShell active="events" pageLabel="Events" child={child} onSelectChild={onSelectChild} backTo={backTo}>
       {children}
     </ParentShell>
   ) : (
-    <StudentShell activeNav="launcher">{children}</StudentShell>
+    <StudentShell activeNav="launcher" pageTitle="Events & activities" backTo={backTo}>{children}</StudentShell>
   );
 }
 
@@ -85,7 +85,6 @@ export function FamilyEventListPage({
     <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild}>
       <div className="family-events-page">
         <section className="family-events-hero">
-          {audience === "student" ? <h1>Events &amp; activities</h1> : null}
           <div>
             <strong>{events.filter((event) => event.status === "published" && new Date(event.ends_at).getTime() >= now).length}</strong>
             <span>upcoming</span>
@@ -172,11 +171,8 @@ export function FamilyEventDetailPage({
   };
 
   return (
-    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild}>
+    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild} backTo={`${prefix}/events${child ? `?student_id=${encodeURIComponent(child.id)}` : ""}`}>
       <div className="family-event-detail">
-        <nav className="campus-event-back">
-          <Link to={`${prefix}/events${child ? `?student_id=${encodeURIComponent(child.id)}` : ""}`}><ArrowLeft size={17} />All events</Link>
-        </nav>
         <section className={`family-event-detail-hero family-event-detail-hero--${event.event_type}`}>
           <div><span>{eventTypeLabels[event.event_type]}</span><EventStatusBadge status={event.status} /></div>
           <PageHeading>{event.title}</PageHeading>

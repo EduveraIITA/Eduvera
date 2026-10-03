@@ -175,7 +175,6 @@ export function StudentEligibilityPage({
               <span>{periodLabel}</span>
             </span>
           </div>
-          <h1>Attendance eligibility</h1>
         </section>
 
         <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>

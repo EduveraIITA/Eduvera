@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BookOpenCheck, CalendarRange, ChevronRight, GraduationCap, History, KeyRound, Layers, Mail, School, Settings2, ShieldCheck, UserRoundCheck, UsersRound, X } from "lucide-react";
+import { BookOpenCheck, CalendarRange, ChevronRight, GraduationCap, History, KeyRound, Layers, Mail, School, Settings2, ShieldCheck, UserRoundCheck, UsersRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
@@ -26,11 +26,9 @@ export default function AdministrationPage() {
   const refresh = () => query.refetch().then(() => undefined);
   const activeTerm = query.data?.terms.find((term) => term.is_active) ?? query.data?.terms[0];
   const pendingInvitations = query.data?.invitations.filter((item) => !item.accepted_at && !item.revoked_at && new Date(item.expires_at) > new Date()).length ?? 0;
-  return <OperationsShell portal="principal" active="more" title="School administration" subtitle="Leadership workspace" schoolName={schools.find((school) => school.school_id === currentSchoolId)?.school_name} contentHasHeading>
+  return <OperationsShell portal="principal" active="more" title="School administration" subtitle="Leadership workspace" schoolName={schools.find((school) => school.school_id === currentSchoolId)?.school_name} backTo="/principal/more" contentHasHeading>
     <div className="office-page">
-      <Link className="office-back" to="/principal/more"><ArrowLeft size={17} /> More tools</Link>
       <header className="office-hero office-hero--admin">
-        <div className="office-hero__copy"><h1>School administration</h1></div>
         <div className="office-hero__signal" aria-label={activeTerm ? `Current academic term ${activeTerm.name}` : "No academic term configured"}><span className="office-hero__signal-icon"><CalendarRange size={20} /></span><span>Current term</span><strong>{activeTerm ? activeTerm.name : "Not configured"}</strong></div>
       </header>
       {schools.length > 1 ? <label className="office-field office-context-field">School<select value={currentSchoolId} onChange={(event) => setSchoolId(event.target.value)}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}

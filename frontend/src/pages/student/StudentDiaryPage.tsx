@@ -136,10 +136,9 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
   return (
     <StudentShell activeNav="diary" section="Diary" className={data.className}>
       <div className="student-page-stack student-diary-page">
-        <section className="student-diary-hero" aria-labelledby="student-diary-heading">
+        <section className="student-diary-hero" aria-label="Diary summary">
           <div className="student-diary-hero__top">
             <div>
-              <h1 id="student-diary-heading">Diary</h1>
               <p>{data.rangeLabel} - {data.termLabel}</p>
             </div>
           </div>

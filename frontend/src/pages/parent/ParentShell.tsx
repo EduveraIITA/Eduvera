@@ -13,6 +13,7 @@ import {
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
+import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { getAccessibleStudents } from "../../features/school/api";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import { demoParentChild } from "./parentDemoData";
@@ -50,6 +51,8 @@ export interface ParentShellProps {
   presenceStatus?: "in" | "away";
   selectedChildId?: string;
   childSwitchDisabled?: boolean;
+  backTo?: string;
+  onBack?: () => void;
 }
 
 export function ParentShell({
@@ -62,6 +65,8 @@ export function ParentShell({
   presenceStatus,
   selectedChildId,
   childSwitchDisabled = false,
+  backTo,
+  onBack,
 }: ParentShellProps) {
   const auth = useOptionalAuth();
   const navigationActive = active === "events" ? "more" : active;
@@ -154,7 +159,7 @@ export function ParentShell({
           </div>
         </div>
         <div className="parent-header__context">
-          <h1 className="parent-header__page">{pageLabel}</h1>
+          <PortalPageTitle title={pageLabel} rootPath="/parent/home" backTo={backTo} onBack={onBack} />
           {active !== "home" && active !== "events" ? <span className="parent-header__child-label">
             {presenceStatus ? <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : "presence-dot presence-dot--away"} /> : null}
             <span className="parent-header__child-name">{child.name} · Class {child.grade.replace("Grade ", "")}{child.section}</span>
