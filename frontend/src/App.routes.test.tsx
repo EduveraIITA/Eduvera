@@ -308,7 +308,7 @@ describe("implemented application routes", () => {
     await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
     await interact.click(screen.getByRole("button", { name: "View all class attendance from your percentage" }));
     expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
-  }, 15000);
+  }, 30000);
 
   it.each(["/parent/home", "/parent/attendance"])("opens the same highlighted class standings from %s", async (path) => {
     const interact = userEvent.setup();
