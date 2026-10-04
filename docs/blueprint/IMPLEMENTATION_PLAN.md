@@ -1616,6 +1616,9 @@ role referenced by an invitation is now an append-only change in migration `039`
 behavior. Fresh-schema PostgreSQL 17 verification and Stage application remain guarded by the Stage
 workflow; the local Homebrew PostgreSQL 14 server cannot parse migration 033's PostgreSQL 15+
 column-list `SET NULL` syntax and is not accepted as release evidence for this correction.
+The Stage runtime repair step now also preserves or generates a dedicated restricted-care encryption
+key (distinct from cookie and metrics secrets) and binds the service to `0.0.0.0`; both are required
+by the managed-environment configuration before Railway can become ready.
 
 ## Invitation SMTP delivery — 4 October 2026
 

@@ -154,13 +154,14 @@ jobs:
           db_file="$RUNNER_TEMP/stage-database-url"
           cookie_file="$RUNNER_TEMP/stage-cookie-secret"
           metrics_file="$RUNNER_TEMP/stage-metrics-token"
+          restricted_case_file="$RUNNER_TEMP/stage-restricted-case-encryption-key"
           session_file="$RUNNER_TEMP/stage-session-database-url"
 
           # Pull the existing service values into ephemeral runner files without
           # printing any credential to the Actions log.
           railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
-            sh -c 'printf "%s" "${DATABASE_URL:-}" > "$1"; printf "%s" "${COOKIE_SECRET:-}" > "$2"; printf "%s" "${METRICS_TOKEN:-}" > "$3"' \
-            sh "$db_file" "$cookie_file" "$metrics_file"
+            sh -c 'printf "%s" "${DATABASE_URL:-}" > "$1"; printf "%s" "${COOKIE_SECRET:-}" > "$2"; printf "%s" "${METRICS_TOKEN:-}" > "$3"; printf "%s" "${RESTRICTED_CASE_ENCRYPTION_KEY:-}" > "$4"' \
+            sh "$db_file" "$cookie_file" "$metrics_file" "$restricted_case_file"
 
           [ -s "$db_file" ] || { echo "::error::DATABASE_URL is not configured on the Railway service"; exit 1; }
 
@@ -208,13 +209,23 @@ jobs:
             metrics_token="$(openssl rand -hex 32)"
           fi
 
+          restricted_case_key="$(cat "$restricted_case_file")"
+          case "$restricted_case_key" in
+            *[[:space:]]*|*development-only*|*change-me*|*replace-with*|*generate-a*|*compose-demo*|*omnidemo*) restricted_case_key="" ;;
+          esac
+          if [ "${#restricted_case_key}" -lt 32 ] || [ "$restricted_case_key" = "$cookie_secret" ] || [ "$restricted_case_key" = "$metrics_token" ]; then
+            restricted_case_key="$(openssl rand -hex 32)"
+          fi
+
           session_url="$(cat "$session_file")"
           railway variable set \
             "EVENT_DATABASE_URL=$session_url" \
             "COOKIE_SECRET=$cookie_secret" \
             "METRICS_TOKEN=$metrics_token" \
+            "RESTRICTED_CASE_ENCRYPTION_KEY=$restricted_case_key" \
             "COOKIE_SECURE=true" \
             "TRUST_PROXY=true" \
+            "HOST=0.0.0.0" \
             "ALLOWED_ORIGINS=$STAGE_URL" \
             "PUBLIC_URL=$STAGE_URL" \
             "DEPLOYMENT_ENVIRONMENT=stage" \
@@ -228,6 +239,7 @@ jobs:
 
           printf "%s" "$cookie_secret" > "$cookie_file"
           printf "%s" "$metrics_token" > "$metrics_file"
+          printf "%s" "$restricted_case_key" > "$restricted_case_file"
           echo "Stage runtime configuration repaired without exposing secret values."
 
       - name: Backend · install migration tooling
@@ -322,4 +334,5 @@ jobs:
             "$RUNNER_TEMP/stage-database-url" \
             "$RUNNER_TEMP/stage-session-database-url" \
             "$RUNNER_TEMP/stage-cookie-secret" \
-            "$RUNNER_TEMP/stage-metrics-token"
+            "$RUNNER_TEMP/stage-metrics-token" \
+            "$RUNNER_TEMP/stage-restricted-case-encryption-key"
