@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth/password.js';
 const suite=process.env.TEST_DATABASE_ISOLATED==='true'?describe:describe.skip;
 suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
   const pool=new Pool({connectionString:process.env.DATABASE_URL,max:2});
-  const base='http://127.0.0.1:8061/api/v1/';const suffix=randomUUID();const password='Str0ng!OnboardingPebbles2026';
+  const base='http://127.0.0.1:8061/api/v1/';const suffix=randomUUID();const password='Str0ng!RiverPebbles2026';
   const cookies:Record<string,Map<string,string>>={company:new Map(),admin:new Map(),staff:new Map(),public:new Map(),firstAdmin:new Map(),invitedStaff:new Map()};
   let server:ChildProcess,companyId:string,adminId:string,staffId:string,school:string,createdSchool:string,firstCode:string,delegatedRole:string,student:string,guardian:string,revocableCode:string;
   const firstEmail=`first.${suffix}@example.test`;
@@ -26,7 +26,7 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
       if(actor==='company'){companyId=user;await pool.query('INSERT INTO company_operators(user_id) VALUES($1)',[user]);}
       else{if(actor==='admin')adminId=user;else staffId=user;await pool.query('INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,$3)',[school,user,actor]);}
     }
-    server=spawn(process.execPath,['dist/main.js'],{env:{...process.env,HOST:'127.0.0.1',PORT:'8061',COOKIE_SECRET:'onboarding-test-cookie-secret-at-least-32',NODE_ENV:'test',RATE_LIMIT_STORE:'memory',LOG_LEVEL:'silent'},stdio:['ignore','ignore','inherit']});
+    server=spawn(process.execPath,['dist/main.js'],{env:{...process.env,HOST:'127.0.0.1',PORT:'8061',COOKIE_SECRET:'onboarding-test-cookie-secret-at-least-32',NODE_ENV:'test',RATE_LIMIT_STORE:'postgres',LOG_LEVEL:'silent'},stdio:['ignore','ignore','inherit']});
     let ready=false;for(let n=0;n<160;n++){try{if((await fetch('http://127.0.0.1:8061/healthz')).ok){ready=true;break;}}catch{/* startup */}await new Promise(r=>setTimeout(r,50));}expect(ready).toBe(true);
     for(const actor of Object.keys(cookies)){await request(actor,'auth/csrf/');if(['company','admin','staff'].includes(actor))expect((await request(actor,'auth/login/',{identifier:actor+'.'+suffix,password})).status).toBe(200);}
     const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Native','Student') RETURNING id",[school])).rows[0].id;
@@ -36,6 +36,8 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     await pool.query('INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id) VALUES($1,$2,$3)',[school,guardian,guardianPerson]);
     await pool.query("INSERT INTO guardian_relationships(student_id,guardian_id,relationship,is_primary) VALUES($1,$2,'guardian',true)",[student,guardian]);
   },30000);
+  // Keep rate limiting enabled; each isolated scenario gets a fresh test-only acceptance bucket.
+  beforeEach(async()=>{await pool.query('DELETE FROM api_rate_limit_buckets WHERE bucket_key=$1',[createHash('sha256').update('127.0.0.1:POST:/api/v1/invitations/accept/').digest('hex')]);});
   afterAll(async()=>{server?.kill('SIGTERM');await pool.end();});
   it('separates company operators from school admins and school data',async()=>{
     expect((await request('company','company/workspace/')).status).toBe(200);
