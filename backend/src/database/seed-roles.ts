@@ -14,9 +14,11 @@ export async function seedRolesDemo(pool: Pool, demoMode: boolean) {
     if(!admin) admin=(await client.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES('arjun.admin','arjun.rao@example.test',$1,'Arjun','Rao','admin') ON CONFLICT DO NOTHING RETURNING id",[await hashPassword(randomBytes(32).toString('base64url'))])).rows[0];
     if(!admin) throw new Error('Demo admin identity collision; refusing to reuse unrelated account.');
     await client.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'admin') ON CONFLICT DO NOTHING",[school.id,admin.id]);
-    const count=(await client.query('SELECT count(*)::int AS n FROM school_custom_roles WHERE school_id=$1',[school.id])).rows[0].n;
-    if(!count) {
-      for(const role of [{name:'Accountant',description:'Fee ledger and offline receipts',permissions:['fees.manage']},{name:'Class Teacher',description:'Assigned classroom and family coordination',permissions:['attendance.view','attendance.record','timetable.view','dayplans.respond','followups.manage','messages.view','messages.send','events.view','events.attendance']},{name:'Teaching Observer',description:'Read assigned registers and schedules',permissions:['attendance.view','timetable.view','events.view']}]) await client.query('INSERT INTO school_custom_roles(school_id,name,description,permissions,created_by) VALUES($1,$2,$3,$4,$5)',[school.id,role.name,role.description,role.permissions,admin.id]);
+    for(const role of [{name:'Accountant',description:'Fee ledger and offline receipts',permissions:['fees.manage']},{name:'Class Teacher',description:'Assigned classroom and family coordination',permissions:['attendance.view','attendance.record','timetable.view','dayplans.respond','followups.manage','messages.view','messages.send','events.view','events.attendance']},{name:'Teaching Observer',description:'Read assigned registers and schedules',permissions:['attendance.view','timetable.view','events.view']}]) {
+      await client.query(`INSERT INTO school_custom_roles(school_id,name,description,permissions,created_by)
+        SELECT $1::uuid,$2::varchar,$3::text,$4::text[],$5::uuid WHERE NOT EXISTS (
+          SELECT 1 FROM school_custom_roles WHERE school_id=$1::uuid AND lower(name)=lower($2::text)
+        )`,[school.id,role.name,role.description,role.permissions,admin.id]);
     }
     let operator=(await client.query("SELECT id FROM users WHERE username='company.demo' AND email='company.operator@example.test' AND role='admin'")).rows[0];
     if(!operator) operator=(await client.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES('company.demo','company.operator@example.test',$1,'Eduera','Company','admin') ON CONFLICT DO NOTHING RETURNING id",[await hashPassword(randomBytes(32).toString('base64url'))])).rows[0];

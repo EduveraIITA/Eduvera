@@ -31,7 +31,7 @@ npm run db:seed
 npm run dev
 ```
 
-The seed workflow also requires Python 3.11+ and the PostgreSQL `psql` client. It generates and then non-destructively upserts a complete 200-student school cohort. Use `npm run db:generate` to inspect the generated SQL and summary without changing PostgreSQL, and `npm run test:seed` to run the relationship and transaction-safety checks.
+The seed workflow also requires Python 3.11+ and the PostgreSQL `psql` client. It generates and then non-destructively upserts a complete 200-student school cohort, example custom roles, the extra demo administrator and the non-production company operator. Use `npm run db:generate` to inspect the generated SQL and summary without changing PostgreSQL, `npm run db:seed:roles` to repair only role/operator demo records after migrations `032`–`033`, and `npm run test:seed` to run the relationship and transaction-safety checks.
 
 Production-like compiled start:
 
@@ -44,13 +44,21 @@ Set `SPA_DIST_DIR` to the React `dist` directory. Exact assets are served direct
 
 ## Demo accounts
 
-All seeded accounts use `OmniDemo@2026` (or `DEMO_PASSWORD` during seeding):
+The primary credential demo accounts use `OmniDemo@2026` (or `DEMO_PASSWORD` during seeding):
 
 | Persona | Username | Email |
 |---|---|---|
 | Parent | `pooja.parent` | `pooja.sharma@example.test` |
 | Student | `aarav.student` | `aarav.sharma@example.test` |
 | Staff | `kavita.staff` | `kavita.mehta@example.test` |
+
+The following synthetic identities receive random, unusable-as-demo passwords and are available
+only through one-click personas when `DEMO_MODE=true`:
+
+| Persona | Username | Email |
+|---|---|---|
+| School admin | `arjun.admin` | `arjun.rao@example.test` |
+| Company operator | `company.demo` | `company.operator@example.test` |
 
 Pooja is Aarav's primary parent and Ananya's registered guardian. Every seeded student has an active enrollment, primary guardian, complete two-month attendance history, subject totals, timetable, and operational data used by the student, parent, teacher, and principal screens. Aarav also has an authorization-pending medical leave, approved history, diary items, notifications, and school contact details.
 

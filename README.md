@@ -139,7 +139,7 @@ npm run db:seed
 npm run dev
 ```
 
-`db:seed` non-destructively upserts a realistic Cambridge International School cohort: 200 students in eight sections, a primary guardian relationship for every student, 17 teachers/staff, one principal, two months of daily attendance, subject totals, conflict-free weekly timetables, gate events, leave workflows, diary activity, and notifications. The generator validates the graph before producing SQL; PostgreSQL repeats the critical checks inside one transaction. Run `npm run db:generate` when you only want the reviewable SQL and JSON summary without loading the database.
+`db:seed` non-destructively upserts a realistic Cambridge International School cohort: 200 students in eight sections, a primary guardian relationship for every student, 17 teachers/staff, one principal, two months of daily attendance, subject totals, conflict-free weekly timetables, gate events, leave workflows, diary activity, notifications, example custom roles, and the non-production company demo operator. The generator validates the graph before producing SQL; PostgreSQL repeats the critical checks inside one transaction. Run `npm run db:generate` when you only want the reviewable SQL and JSON summary without loading the database. `db:seed:roles` can repair only the repeat-safe demo role/operator records after migrations `032` and `033`.
 
 In another terminal:
 

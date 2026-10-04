@@ -1558,3 +1558,11 @@ Verified locally after reconciliation: both development and isolated-test databa
 the ordered `032`–`036` migration set; backend typecheck/lint/build and all 240 backend tests
 pass; responsive frontend typecheck/lint/build and all 230 UI tests pass; and the desktop staff
 bundle typechecks and builds. This is local merge evidence only, not Stage deployment evidence.
+
+Follow-up seed correction: the original local `db:seed` command loaded the base Cambridge
+dataset but did not invoke the new role/company demo seeder, leaving `/company` unavailable even
+though migrations `032`–`033` existed. `db:seed` now chains the repeat-safe role/operator seeder,
+and `db:seed:roles` provides a narrow repair path. The seeder fills each missing named example role
+independently rather than skipping all examples when any custom role already exists. The repaired
+development database was verified with the `company.demo` session, company-operator profile claim,
+two-institution company workspace and the local/ngrok `/company` route.
