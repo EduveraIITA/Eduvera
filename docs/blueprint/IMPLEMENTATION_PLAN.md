@@ -1566,3 +1566,10 @@ and `db:seed:roles` provides a narrow repair path. The seeder fills each missing
 independently rather than skipping all examples when any custom role already exists. The repaired
 development database was verified with the `company.demo` session, company-operator profile claim,
 two-institution company workspace and the local/ngrok `/company` route.
+
+Company creation usability correction: the institution code is now derived from the entered name and
+normalizes spaces, capitals, punctuation and accented characters while it is edited. This removes the
+browser-native pattern-validation dead end that could make the create action appear unresponsive, while
+preserving the backend's lowercase tenant-code invariant. Verified evidence includes the company UI
+regression test for generated and manually edited codes plus an authenticated browser creation through
+the local ngrok preview; the transactional service and database constraints remain the authority.
