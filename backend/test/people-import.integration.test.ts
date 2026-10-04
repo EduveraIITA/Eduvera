@@ -107,10 +107,10 @@ describe('Reviewed bulk student enrollment',()=>{
     const [a,b]=await Promise.all([imports.commit(admin,id,command),imports.commit(admin,id,command)]);expect(a).toEqual(b);
     expect((await pool.query("SELECT id FROM audit_events WHERE target_id=$1 AND action='people.import.committed'",[id])).rows).toHaveLength(1);
   });
-  it('enforces administrator and tenant boundaries on every stage',async()=>{
-    const id=await upload([row()]);await expect(imports.detail(teacher.authUser,id,schoolId)).rejects.toThrow('administrator');await expect(imports.detail(admin.authUser,id,randomUUID())).rejects.toThrow('administrator');
+  it('enforces school permission and tenant boundaries on every stage',async()=>{
+    const id=await upload([row()]);await expect(imports.detail(teacher.authUser,id,schoolId)).rejects.toThrow('sis.manage');await expect(imports.detail(admin.authUser,id,randomUUID())).rejects.toThrow('sis.manage');
     const current=await detail(id);await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);
-    try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:1,validation_token:current.review!.validation_token,verified:true})).rejects.toThrow('administrator');}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
+    try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:1,validation_token:current.review!.validation_token,verified:true})).rejects.toThrow('sis.manage');}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
   });
   it('warns about submitted registers, reopens once, and preserves historical roster boundaries',async()=>{
     const register=(await pool.query("INSERT INTO attendance_registers(school_id,class_section_id,term_id,date,state,revision,submitted_by,submitted_at) VALUES($1,$2,$3,$4,'submitted',1,$5,now()) RETURNING id",[schoolId,sectionA,termId,today,teacher.authUser.id])).rows[0].id;
@@ -128,7 +128,7 @@ describe('Reviewed bulk student enrollment',()=>{
     const expired=await upload([row()]);await pool.query("UPDATE people_imports SET expires_at=now()-interval '1 second' WHERE id=$1",[expired]);await imports.expireDrafts();expect((await detail(expired)).state).toBe('expired');await expect(commit(expired)).rejects.toThrow();
   });
   it('exports scoped, formula-safe correction reports and saved receipts',async()=>{
-    const id=await upload([row({first_name:'=UNTRUSTED()'})]);expect(await imports.report(admin.authUser,id,schoolId)).toContain("'=UNTRUSTED()");const saved=await upload([row()]);await commit(saved);expect(await imports.report(admin.authUser,saved,schoolId)).toContain('student_id');await expect(imports.report(parent.authUser,saved,schoolId)).rejects.toThrow('administrator');
+    const id=await upload([row({first_name:'=UNTRUSTED()'})]);expect(await imports.report(admin.authUser,id,schoolId)).toContain("'=UNTRUSTED()");const saved=await upload([row()]);await commit(saved);expect(await imports.report(admin.authUser,saved,schoolId)).toContain('student_id');await expect(imports.report(parent.authUser,saved,schoolId)).rejects.toThrow('sis.manage');
   });
   it('preserves the tenant boundary for import row student references in PostgreSQL',async()=>{
     const id=await upload([row()]);const foreign=(await pool.query('SELECT id FROM students WHERE school_id<>$1 LIMIT 1',[schoolId])).rows[0].id;

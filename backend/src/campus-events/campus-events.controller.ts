@@ -1,3 +1,4 @@
+import { RequirePermission } from "../roles/permissions.js";
 import { Controller, Get, HttpCode, Param, Post, Query, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { AuthenticatedRequest } from "../common/request.js";
@@ -10,6 +11,7 @@ export class CampusEventsController {
   constructor(private readonly campusEvents: CampusEventsService) {}
 
   @Get("catalog")
+  @RequirePermission("events.view")
   catalog(
     @Req() request: AuthenticatedRequest,
     @Query("school_id") schoolId: string,
@@ -45,6 +47,7 @@ export class CampusEventsController {
   }
 
   @Get()
+  @RequirePermission("events.view")
   list(
     @Req() request: AuthenticatedRequest,
     @Query() query: Record<string, string | undefined>,
@@ -54,11 +57,13 @@ export class CampusEventsController {
 
   @Post()
   @HttpCode(200)
+  @RequirePermission("events.manage")
   create(@Req() request: AuthenticatedRequest) {
     return this.campusEvents.create(request, request.body);
   }
 
   @Get(":eventId")
+  @RequirePermission("events.view")
   detail(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -70,6 +75,7 @@ export class CampusEventsController {
 
   @Post(":eventId/save")
   @HttpCode(200)
+  @RequirePermission("events.manage")
   save(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -79,6 +85,7 @@ export class CampusEventsController {
 
   @Post(":eventId/publish")
   @HttpCode(200)
+  @RequirePermission("events.manage")
   publish(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -88,6 +95,7 @@ export class CampusEventsController {
 
   @Post(":eventId/cancel")
   @HttpCode(200)
+  @RequirePermission("events.manage")
   cancel(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -97,6 +105,7 @@ export class CampusEventsController {
 
   @Post(":eventId/complete")
   @HttpCode(200)
+  @RequirePermission("events.manage")
   complete(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -106,6 +115,7 @@ export class CampusEventsController {
 
   @Post(":eventId/discard")
   @HttpCode(200)
+  @RequirePermission("events.manage")
   discard(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -142,6 +152,7 @@ export class CampusEventsController {
   }
 
   @Get(":eventId/sessions/:sessionId/roster")
+  @RequirePermission("events.view")
   roster(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -153,6 +164,7 @@ export class CampusEventsController {
 
   @Post(":eventId/sessions/:sessionId/attendance")
   @HttpCode(200)
+  @RequirePermission("events.attendance")
   attendance(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,
@@ -162,6 +174,7 @@ export class CampusEventsController {
   }
 
   @Get(":eventId/sessions/:sessionId/attendance/history")
+  @RequirePermission("events.view")
   history(
     @Req() request: AuthenticatedRequest,
     @Param("eventId") eventId: string,

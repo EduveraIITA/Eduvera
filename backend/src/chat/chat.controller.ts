@@ -1,4 +1,4 @@
-/* eslint-disable */
+import { RequirePermission } from "../roles/permissions.js";
 // @ts-nocheck
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
@@ -32,17 +32,20 @@ export class ChatController {
   constructor(private readonly chat: ChatService) {}
 
   @Get("reports/")
+  @RequirePermission("safeguarding.review")
   reports(@Req() request: AuthenticatedRequest, @Query("status") status?: string) {
     return this.chat.reports(request.authUser, status);
   }
 
   @Get("reports/reviewers/")
+  @RequirePermission("safeguarding.review")
   reportReviewers(@Req() request: AuthenticatedRequest) {
     return this.chat.reportReviewers(request.authUser);
   }
 
   @Patch("reports/:reportId/")
   @HttpCode(200)
+  @RequirePermission("safeguarding.review")
   updateReport(
     @Req() request: AuthenticatedRequest,
     @Param("reportId") reportId: string,
@@ -52,21 +55,25 @@ export class ChatController {
   }
 
   @Get("conversations/")
+  @RequirePermission("messages.view")
   conversations(@Req() request: AuthenticatedRequest) {
     return this.chat.conversations(request.authUser);
   }
 
   @Get("recipients/")
+  @RequirePermission("messages.view")
   recipients(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     return this.chat.recipients(request.authUser, studentId);
   }
 
   @Post("groups/")
+  @RequirePermission("groups.create")
   createGroup(@Req() request: AuthenticatedRequest) {
     return this.chat.createGroup(request.authUser, request.body, request);
   }
 
   @Get("policy/")
+  @RequirePermission("messages.view")
   policy(@Req() request: AuthenticatedRequest) {
     return this.chat.policyForUser(request.authUser);
   }
@@ -77,11 +84,13 @@ export class ChatController {
   }
 
   @Post("conversations/")
+  @RequirePermission("messages.send")
   createConversation(@Req() request: AuthenticatedRequest) {
     return this.chat.createConversation(request.authUser, request.body, request);
   }
 
   @Get("conversations/:conversationId/messages/")
+  @RequirePermission("messages.view")
   messages(
     @Req() request: AuthenticatedRequest,
     @Param("conversationId") conversationId: string,
@@ -91,6 +100,7 @@ export class ChatController {
   }
 
   @Post("conversations/:conversationId/messages/")
+  @RequirePermission("messages.send")
   async send(
     @Req() request: AuthenticatedRequest,
     @Param("conversationId") conversationId: string,
@@ -101,12 +111,14 @@ export class ChatController {
 
   @Post("conversations/:conversationId/read/")
   @HttpCode(200)
+  @RequirePermission("messages.view")
   read(@Req() request: AuthenticatedRequest, @Param("conversationId") conversationId: string) {
     return this.chat.markRead(request.authUser, conversationId);
   }
 
   @Patch("conversations/:conversationId/messages/:messageId/")
   @HttpCode(200)
+  @RequirePermission("messages.send")
   edit(@Req() request: AuthenticatedRequest, @Param("conversationId") conversationId: string, @Param("messageId") messageId: string) {
     return this.chat.editMessage(request.authUser, conversationId, messageId, request.body);
   }
@@ -122,6 +134,7 @@ export class ChatController {
   }
 
   @Get("conversations/:conversationId/messages/:messageId/attachment/")
+  @RequirePermission("messages.view")
   async attachment(
     @Req() request: AuthenticatedRequest,
     @Res() reply: FastifyReply,

@@ -12,10 +12,10 @@ import "./people.css";
 import "./people-import.css";
 const displayDate=(value:string)=>new Intl.DateTimeFormat("en-IN",{dateStyle:"medium",timeStyle:"short"}).format(new Date(value));
 export default function PeopleImportPage(){
-  const auth=useAuth();const schools=auth.memberships.filter(m=>m.role==='admin');const [params,setParams]=useSearchParams();
+  const auth=useAuth();const schools=auth.memberships.filter(m=>m.role==='admin'||(m.role==='staff'&&m.permissions?.includes('sis.manage')));const [params,setParams]=useSearchParams();
   const schoolId=params.get('school')||schools[0]?.school_id;const id=params.get('import');
   const open=(importId?:string)=>{setParams({...(schoolId?{school:schoolId}:{}),...(importId?{import:importId}:{})});};
-  return <OperationsShell portal="principal" active="home" title="Import students" subtitle="School onboarding" schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} backTo="/principal/students" contentHasHeading><div className="operations-stack">
+  return <OperationsShell portal={auth.hasPortal("principal")?"principal":"teacher"} active="home" title="Import students" subtitle="School onboarding" schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} backTo={auth.hasPortal("principal")?"/principal/students":"/teacher/students"} contentHasHeading><div className="operations-stack">
     {id?<header className="people-heading people-heading--actions"><button className="people-secondary" onClick={()=>open()}>Import history</button></header>:null}
     {schools.length>1?<label className="people-school">School<select value={schoolId} onChange={e=>setParams({school:e.target.value})}>{schools.map(s=><option key={s.school_id} value={s.school_id}>{s.school_name}</option>)}</select></label>:null}
     {schoolId?(id?<ImportWorkspace key={id} schoolId={schoolId} id={id} onNew={()=>open()}/>:<ImportStart key={schoolId} schoolId={schoolId} onOpen={open}/>):<p role="alert">An active school administrator membership is required.</p>}
@@ -48,9 +48,10 @@ function ImportWorkspace({schoolId,id,onNew}:{schoolId:string;id:string;onNew:()
   </>;
 }
 function ImportResult({schoolId,job,onNew}:{schoolId:string;job:ImportDetail;onNew:()=>void}){
+  const auth=useAuth();
   const receipt=job.receipt;
   return <section className="people-panel import-result"><CheckCircle2 size={28}/><h2>{receipt?'Enrollment complete':job.state==='expired'?'Draft expired':'Draft discarded'}</h2>
-    {receipt?<><p>{receipt.students} students are enrolled with complete guardian links. No attendance marks or login permissions were added.</p><dl className="import-metrics"><div><dt>Students</dt><dd>{receipt.students}</dd></div><div><dt>New guardians</dt><dd>{receipt.guardians_created}</dd></div><div><dt>Existing guardians</dt><dd>{receipt.guardians_reused}</dd></div><div><dt>Skipped</dt><dd>{receipt.skipped}</dd></div></dl>{receipt.registers_reopened?<p className="people-warning">{receipt.registers_reopened} submitted registers returned to draft for the revised roster.</p>:null}<div className="import-actions"><Link className="people-primary" to="/principal/students">Open student directory</Link><a className="people-secondary" href={importReportUrl(schoolId,job.id)} download><Download size={17}/>Enrollment receipt</a></div></>:<p>Uploaded personal details have been cleared. No students were enrolled from this draft.</p>}
+    {receipt?<><p>{receipt.students} students are enrolled with complete guardian links. No attendance marks or login permissions were added.</p><dl className="import-metrics"><div><dt>Students</dt><dd>{receipt.students}</dd></div><div><dt>New guardians</dt><dd>{receipt.guardians_created}</dd></div><div><dt>Existing guardians</dt><dd>{receipt.guardians_reused}</dd></div><div><dt>Skipped</dt><dd>{receipt.skipped}</dd></div></dl>{receipt.registers_reopened?<p className="people-warning">{receipt.registers_reopened} submitted registers returned to draft for the revised roster.</p>:null}<div className="import-actions"><Link className="people-primary" to={auth.hasPortal("principal")?"/principal/students":"/teacher/students"}>Open student directory</Link><a className="people-secondary" href={importReportUrl(schoolId,job.id)} download><Download size={17}/>Enrollment receipt</a></div></>:<p>Uploaded personal details have been cleared. No students were enrolled from this draft.</p>}
     <button className="people-secondary" onClick={onNew}>Back to imports</button>
   </section>;
 }

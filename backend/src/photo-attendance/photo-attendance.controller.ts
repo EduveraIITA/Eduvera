@@ -1,3 +1,4 @@
+import { RequirePermission } from "../roles/permissions.js";
 import { BadRequestException, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { AuthenticatedRequest } from "../common/request.js";
@@ -33,6 +34,7 @@ export class PhotoAttendanceController {
   constructor(private readonly photoAttendance: PhotoAttendanceService) {}
 
   @Get("classes/:classSectionId/setup/")
+  @RequirePermission("photo.use")
   setup(
     @Req() request: AuthenticatedRequest,
     @Param("classSectionId") classSectionId: string,
@@ -42,6 +44,7 @@ export class PhotoAttendanceController {
   }
 
   @Post("students/:studentId/samples/")
+  @RequirePermission("photo.use")
   async enroll(
     @Req() request: AuthenticatedRequest,
     @Param("studentId") studentId: string,
@@ -51,6 +54,7 @@ export class PhotoAttendanceController {
   }
 
   @Post("classes/:classSectionId/analyze/")
+  @RequirePermission("photo.use")
   async analyze(
     @Req() request: AuthenticatedRequest,
     @Param("classSectionId") classSectionId: string,
@@ -60,6 +64,7 @@ export class PhotoAttendanceController {
   }
 
   @Get("sessions/:sessionId/")
+  @RequirePermission("photo.use")
   detail(@Req() request: AuthenticatedRequest, @Param("sessionId") sessionId: string) {
     return this.photoAttendance.detail(request.authUser, sessionId);
   }

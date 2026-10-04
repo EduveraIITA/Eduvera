@@ -1,3 +1,6 @@
+import { CompanyModule } from "./company/company.module.js";
+import { RolesModule } from "./roles/roles.module.js";
+import { PermissionGuard } from "./roles/permission.guard.js";
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { AiModule } from "./ai/ai.module.js";
@@ -20,11 +23,29 @@ import { GovernanceModule } from "./governance/governance.module.js";
 import { RestrictedCareModule } from "./restricted-care/restricted-care.module.js";
 
 @Module({
-  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule, StaffOperationsModule, GovernanceModule, RestrictedCareModule],
+  imports: [
+    CompanyModule,
+    RolesModule,
+    DatabaseModule,
+    AuthModule,
+    SchoolModule,
+    ChatModule,
+    AiModule,
+    CoordinationModule,
+    PeopleModule,
+    DayPlanModule,
+    PhotoAttendanceModule,
+    OperationsModule,
+    CampusEventsModule,
+    StaffOperationsModule,
+    GovernanceModule,
+    RestrictedCareModule,
+  ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: PermissionGuard },
   ],
 })
 export class AppModule {}

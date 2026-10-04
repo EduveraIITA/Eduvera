@@ -9,7 +9,7 @@ import type { Database } from "../database/types.js";
 import { catalogMutationSchema, classSchema, enrollmentSchema, guardianSchema, invoiceSchema, parseStudentCsv, paymentSchema, personSchema, rolloverSchema, studentSchema, studentUpdateSchema, subjectSchema, termSchema, uuid } from "./schemas.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
-type Permission = "sis.manage" | "fees.manage";
+type Permission = "sis.manage" | "fees.manage" | "members.invite";
 type MembershipRole = "student" | "guardian" | "staff" | "admin";
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -17,31 +17,17 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 export class OperationsService {
   constructor(private readonly db: DatabaseService) {}
 
-  async createSchool(user: AuthUser, body: unknown) {
-    const data = z.object({ name: z.string().trim().min(2).max(180), code: z.string().trim().regex(/^[a-z0-9-]{2,32}$/) }).parse(body);
-    // Bootstrap of the first operator remains an explicit deployment task.
-    // Existing school administrators can provision another school they manage.
-    const admin = await this.db.selectFrom("school_memberships").select("id").where("user_id", "=", user.id).where("role", "=", "admin").where("is_active", "=", true).executeTakeFirst();
-    if (!admin) throw new ForbiddenException("An existing administrator must provision a school.");
-    try {
-      return await this.db.transaction().execute(async (db) => {
-        const school = await db.insertInto("schools").values(data).returningAll().executeTakeFirstOrThrow();
-        await db.insertInto("school_memberships").values({ user_id: user.id, school_id: school.id, role: "admin" }).execute();
-        await this.audit(db, user, school.id, "school.created", school.id);
-        return school;
-      });
-    } catch (error) {
-      if ((error as { code?: string }).code === "23505") throw new ConflictException("School code is already in use.");
-      throw error;
-    }
+  createSchool() {
+    throw new ForbiddenException("Company operators provision institutions through the company console.");
   }
 
   async authorize(user: AuthUser, schoolId: string, permission: Permission, db: Db = this.db, adminOnly = false) {
     uuid.parse(schoolId);
     const result = await sql<{ role: MembershipRole }>`
-      SELECT m.role FROM school_memberships m WHERE m.school_id=${schoolId}::uuid AND m.user_id=${user.id}::uuid AND m.is_active
+      SELECT m.role FROM school_memberships m JOIN users u ON u.id=m.user_id WHERE m.school_id=${schoolId}::uuid AND m.user_id=${user.id}::uuid AND m.is_active AND u.is_active
       AND (m.role='admin' OR (${!adminOnly} AND m.role='staff' AND EXISTS (
-        SELECT 1 FROM school_permission_grants g WHERE g.school_id=m.school_id AND g.user_id=m.user_id AND g.permission=${permission}
+        SELECT 1 FROM school_custom_role_assignments a JOIN school_custom_roles r ON r.id=a.role_id AND r.school_id=a.school_id WHERE a.school_id=m.school_id AND a.user_id=m.user_id AND ${permission}=ANY(r.permissions)
+        UNION ALL SELECT 1 FROM school_permission_grants g WHERE g.school_id=m.school_id AND g.user_id=m.user_id AND g.permission=${permission} AND NOT EXISTS(SELECT 1 FROM school_custom_role_assignments a WHERE a.school_id=m.school_id AND a.user_id=m.user_id)
       ))) ORDER BY (m.role='admin') DESC LIMIT 1`.execute(db);
     if (!result.rows[0]) throw new ForbiddenException(`School permission ${permission} is required.`);
     return result.rows[0];
@@ -385,23 +371,42 @@ export class OperationsService {
     });
   }
 
+  async invitationWorkspace(user: AuthUser, schoolId: string) {
+    const authority=await this.authorize(user,schoolId,"members.invite");
+    const invitations=await sql`SELECT id,email,role,expires_at,accepted_at,revoked_at FROM school_invitations
+      WHERE school_id=${schoolId}::uuid AND (${authority.role}='admin' OR (role<>'admin' AND source='school')) ORDER BY created_at DESC LIMIT 100`.execute(this.db);
+    const students=await sql`SELECT s.id,s.admission_number,concat_ws(' ',p.first_name,p.last_name) AS name,coalesce(u.email,p.contact_email) AS email
+      FROM students s JOIN school_people p ON p.id=s.person_id LEFT JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid ORDER BY p.first_name`.execute(this.db);
+    const guardians=await sql`SELECT g.guardian_id AS id,concat_ws(' ',p.first_name,p.last_name) AS name,coalesce(u.email,p.contact_email) AS email
+      FROM guardian_school_profiles g JOIN school_people p ON p.id=g.person_id JOIN parents parent ON parent.id=g.guardian_id
+      LEFT JOIN users u ON u.id=parent.user_id WHERE g.school_id=${schoolId}::uuid ORDER BY p.first_name`.execute(this.db);
+    const roles=authority.role==='admin' ? (await sql`SELECT id,name FROM school_custom_roles WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(this.db)).rows : [];
+    return {invitations:invitations.rows,students:students.rows,guardians:guardians.rows,roles,can_invite_admin:authority.role==='admin'};
+  }
+
   async invite(user: AuthUser, schoolId: string, body: unknown) {
-    const data = z.object({ email: z.email().trim().toLowerCase(), role: z.enum(["student", "guardian", "staff", "admin"]) }).parse(body);
-    await this.authorize(user, schoolId, "sis.manage", this.db, true);
-    return this.mutate(user, schoolId, "sis.manage", "invitation.created", async (db) => {
-      await this.authorize(user, schoolId, "sis.manage", db, true);
+    const data = z.object({ email: z.email().trim().toLowerCase(), role: z.enum(["student", "guardian", "staff", "admin"]),student_id:uuid.optional(),guardian_id:uuid.optional(),custom_role_id:uuid.optional() }).strict().parse(body);
+    return this.mutate(user, schoolId, "members.invite", "invitation.created", async (db) => {
+      const authority=await this.authorize(user,schoolId,"members.invite",db);
+      if ((data.role==='admin' || data.custom_role_id) && authority.role!=='admin') throw new ForbiddenException('Only school admins can invite administrators or assign custom roles.');
+      if ((data.student_id && data.role!=='student') || (data.guardian_id && data.role!=='guardian') || (data.custom_role_id && data.role!=='staff')) throw new BadRequestException('Invitation target does not match its role.');
       const pendingElsewhere = await sql`SELECT 1 FROM users u WHERE lower(u.email)=${data.email} AND u.onboarding_pending
         AND NOT EXISTS (SELECT 1 FROM school_memberships m WHERE m.user_id=u.id AND m.school_id=${schoolId}::uuid AND m.is_active)`.execute(db);
       if (pendingElsewhere.rows.length) throw new ConflictException("This account must complete its original school onboarding before joining another school.");
-      if (data.role === "student") {
-        const found = await sql`SELECT 1 FROM students s JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid AND lower(u.email)=${data.email}`.execute(db);
-        if (!found.rows.length) throw new BadRequestException("Create the student record before issuing its invitation.");
+      let studentId=data.student_id;
+      if (data.role === 'student') {
+        const found=await sql<{id:string}>`SELECT s.id FROM students s LEFT JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid
+          AND (${studentId??null}::uuid IS NULL OR s.id=${studentId??null}::uuid) AND (lower(u.email)=${data.email} OR (${studentId??null}::uuid IS NOT NULL AND s.user_id IS NULL))`.execute(db);
+        if(!found.rows.length)throw new BadRequestException('Select a student record from this institution before issuing its invitation.');
+        studentId=found.rows[0]!.id;
       }
-      const token = randomBytes(32).toString("base64url");
-      await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND email=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL`.execute(db);
-      const result = await sql<{ id: string; expires_at: Date }>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at)
-        VALUES (${schoolId}::uuid,${data.email},${data.role},${digest(token)},${user.id}::uuid,now()+interval '72 hours') RETURNING id,expires_at`.execute(db);
-      return { ...result.rows[0], token, delivery: "manual", message: "Share this single-use code privately with the recipient. It expires in 72 hours." };
+      if(data.guardian_id && !(await sql`SELECT 1 FROM guardian_school_profiles g JOIN parents p ON p.id=g.guardian_id LEFT JOIN users u ON u.id=p.user_id WHERE g.school_id=${schoolId}::uuid AND g.guardian_id=${data.guardian_id}::uuid AND (p.user_id IS NULL OR lower(u.email)=${data.email})`.execute(db)).rows.length) throw new BadRequestException('Guardian record must belong to this institution and email.');
+      if(data.custom_role_id && !(await sql`SELECT 1 FROM school_custom_roles WHERE school_id=${schoolId}::uuid AND id=${data.custom_role_id}::uuid`.execute(db)).rows.length) throw new BadRequestException('Custom role must belong to this institution.');
+      const token=randomBytes(32).toString('base64url');
+      await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND email=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL AND (${authority.role}='admin' OR role<>'admin')`.execute(db);
+      const result=await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,student_id,guardian_id,custom_role_id)
+        VALUES(${schoolId}::uuid,${data.email},${data.role},${digest(token)},${user.id}::uuid,now()+interval '72 hours',${studentId??null}::uuid,${data.guardian_id??null}::uuid,${data.custom_role_id??null}::uuid) RETURNING id,expires_at`.execute(db);
+      return {...result.rows[0],token,delivery:'manual',message:'Share this single-use code privately. It expires in 72 hours.'};
     });
   }
 
@@ -411,13 +416,19 @@ export class OperationsService {
       const candidate = await sql<{ school_id: string }>`SELECT school_id FROM school_invitations WHERE token_hash=${digest(data.token)}`.execute(db);
       if (!candidate.rows[0]) throw new BadRequestException("Invitation is invalid, expired or already used.");
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${candidate.rows[0].school_id},0))`.execute(db);
-      const found = await sql<{ id: string; school_id: string; email: string; role: MembershipRole }>`SELECT id,school_id,email,role FROM school_invitations
+      const found = await sql<{ id: string; school_id: string; email: string; role: MembershipRole; source:string; created_by:string; student_id:string|null; guardian_id:string|null; custom_role_id:string|null }>`SELECT id,school_id,email,role,source,created_by,student_id,guardian_id,custom_role_id FROM school_invitations
         WHERE token_hash=${digest(data.token)} AND expires_at>now() AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`.execute(db);
       const invite = found.rows[0];
       if (!invite || invite.email !== data.email) throw new BadRequestException("Invitation is invalid, expired or already used.");
-      const inviter = await sql`SELECT 1 FROM school_memberships m JOIN school_invitations i ON i.created_by=m.user_id AND i.school_id=m.school_id
-        WHERE i.id=${invite.id}::uuid AND m.role='admin' AND m.is_active`.execute(db);
-      if (!inviter.rows.length) throw new ForbiddenException("The inviter no longer has school administrator access.");
+      if(invite.source==='company') {
+        if(!(await sql`SELECT 1 FROM company_operators o JOIN users u ON u.id=o.user_id WHERE o.user_id=${invite.created_by}::uuid AND o.is_active AND u.is_active FOR SHARE OF o,u`.execute(db)).rows.length) throw new ForbiddenException('The company inviter no longer has operator access.');
+      } else {
+        const inviter=(await sql<{role:string}>`SELECT m.role FROM school_memberships m JOIN users u ON u.id=m.user_id
+          WHERE m.user_id=${invite.created_by}::uuid AND m.school_id=${invite.school_id}::uuid AND m.is_active AND u.is_active
+          AND (m.role='admin' OR (m.role='staff' AND EXISTS (SELECT 1 FROM school_custom_role_assignments a JOIN school_custom_roles r ON r.id=a.role_id AND r.school_id=a.school_id WHERE a.school_id=m.school_id AND a.user_id=m.user_id AND 'members.invite'=ANY(r.permissions))))
+          ORDER BY (m.role='admin') DESC LIMIT 1 FOR SHARE OF m,u`.execute(db)).rows[0];
+        if(!inviter || ((invite.role==='admin' || invite.custom_role_id) && inviter.role!=='admin')) throw new ForbiddenException('The inviter no longer has permission for this invitation.');
+      }
       let account = await sql<{ id: string; password_hash: string; onboarding_pending: boolean; is_active: boolean }>`SELECT id,password_hash,onboarding_pending,is_active FROM users WHERE lower(email)=${data.email} FOR UPDATE`.execute(db);
       let accountId = account.rows[0]?.id;
       if (account.rows[0] && !account.rows[0].is_active) throw new ForbiddenException("This account is inactive.");
@@ -435,6 +446,21 @@ export class OperationsService {
           accountId = account.rows[0]!.id;
         }
       }
+      if(invite.student_id) {
+        const linked=await sql`UPDATE students SET user_id=${accountId}::uuid WHERE id=${invite.student_id}::uuid AND school_id=${invite.school_id}::uuid AND (user_id IS NULL OR user_id=${accountId}::uuid) RETURNING id`.execute(db);
+        if(!linked.rows.length)throw new ConflictException('Student account linkage changed. Request a new invitation.');
+      }
+      if(invite.guardian_id) {
+        const linked=await sql`UPDATE parents p SET user_id=${accountId}::uuid WHERE p.id=${invite.guardian_id}::uuid AND (p.user_id IS NULL OR p.user_id=${accountId}::uuid)
+          AND EXISTS(SELECT 1 FROM guardian_school_profiles g WHERE g.guardian_id=p.id AND g.school_id=${invite.school_id}::uuid) RETURNING id`.execute(db);
+        if(!linked.rows.length)throw new ConflictException('Guardian account linkage changed. Request a new invitation.');
+      }
+      if(invite.custom_role_id) {
+        if((await sql`SELECT 1 FROM school_memberships WHERE school_id=${invite.school_id}::uuid AND user_id=${accountId}::uuid AND role='admin' AND is_active`.execute(db)).rows.length)throw new ForbiddenException('Admin access is protected from staff role assignment.');
+        if(!(await sql`SELECT 1 FROM school_custom_roles WHERE school_id=${invite.school_id}::uuid AND id=${invite.custom_role_id}::uuid`.execute(db)).rows.length)throw new ConflictException('The invited role is no longer available.');
+        await sql`INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by) VALUES(${invite.school_id}::uuid,${accountId}::uuid,${invite.custom_role_id}::uuid,${invite.created_by}::uuid)
+          ON CONFLICT(school_id,user_id) DO UPDATE SET role_id=excluded.role_id,assigned_by=excluded.assigned_by,assigned_at=now()`.execute(db);
+      }
       await db.insertInto("school_memberships").values({ school_id: invite.school_id, user_id: accountId!, role: invite.role }).onConflict((oc) => oc.columns(["user_id", "school_id", "role"]).doUpdateSet({ is_active: true })).execute();
       if (invite.role === "staff") {
         await sql`UPDATE staff_profiles SET user_id=${accountId}::uuid,updated_by=${accountId}::uuid,updated_at=now()
@@ -449,7 +475,8 @@ export class OperationsService {
       }
       await sql`UPDATE school_invitations SET accepted_at=now() WHERE id=${invite.id}::uuid`.execute(db);
       await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id) VALUES (${invite.school_id}::uuid,${accountId}::uuid,'invitation.accepted',${invite.id}::uuid)`.execute(db);
-      return { accepted: true, message: "School access is ready. Sign in with your email and password." };
+      if(invite.source==='company') await sql`INSERT INTO company_audit(actor_id,school_id,action,metadata) VALUES(${accountId}::uuid,${invite.school_id}::uuid,'company.admin_joined',${JSON.stringify({invitation_id:invite.id})}::jsonb)`.execute(db);
+      return { accepted: true, school_id:invite.school_id, role:invite.role, message: "School access is ready. Sign in with your email and password." };
     });
   }
 
@@ -476,11 +503,11 @@ export class OperationsService {
 
   async revokeInvitation(user: AuthUser, schoolId: string, id: string) {
     uuid.parse(id);
-    return this.mutate(user, schoolId, "sis.manage", "invitation.revoked", async (db) => {
-      await this.authorize(user, schoolId, "sis.manage", db, true);
-      const result = await sql`UPDATE school_invitations SET revoked_at=now() WHERE id=${id}::uuid AND school_id=${schoolId}::uuid AND accepted_at IS NULL RETURNING id`.execute(db);
-      if (!result.rows.length) throw new NotFoundException();
-      return { revoked: true };
+    return this.mutate(user,schoolId,'members.invite','invitation.revoked',async db=>{
+      const authority=await this.authorize(user,schoolId,'members.invite',db);
+      const result=await sql`UPDATE school_invitations SET revoked_at=now() WHERE id=${id}::uuid AND school_id=${schoolId}::uuid AND accepted_at IS NULL
+        AND (${authority.role}='admin' OR (role<>'admin' AND source='school')) RETURNING id`.execute(db);
+      if(!result.rows.length)throw new NotFoundException('Invitation not found or cannot be managed by this role.');return {revoked:true};
     });
   }
 

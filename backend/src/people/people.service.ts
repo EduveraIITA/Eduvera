@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { schoolPermission } from "../roles/authorization.js";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser, AuthenticatedRequest } from "../common/request.js";
@@ -29,10 +30,7 @@ export class PeopleService {
 
   private async authorize(db: Db, user: AuthUser, schoolId: string, lock = false) {
     z.string().uuid().parse(schoolId);
-    const row = (await sql`SELECT m.id FROM school_memberships m JOIN users u ON u.id=m.user_id
-      WHERE m.school_id=${schoolId}::uuid AND m.user_id=${user.id}::uuid AND m.role='admin' AND m.is_active AND u.is_active
-      ${lock ? sql`FOR SHARE OF m,u` : sql``}`.execute(db)).rows[0];
-    if (!row) throw new ForbiddenException("Only a current school administrator can manage enrollment.");
+    await schoolPermission(db,user,schoolId,"sis.manage",lock);
   }
 
   async options(user: AuthUser, schoolId: string) {

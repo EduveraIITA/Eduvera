@@ -1,5 +1,5 @@
 export type Persona = "parent" | "student";
-export type DemoPersona = Persona | "staff" | "admin";
+export type DemoPersona = Persona | "staff" | "admin" | "school_admin" | "company";
 
 export class ApiError extends Error {
   readonly status: number;
