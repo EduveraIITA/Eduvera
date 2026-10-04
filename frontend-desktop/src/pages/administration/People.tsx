@@ -10,11 +10,10 @@ const PERMISSION: Array<{ id: string; label: string; hint: string }> = [
   { id: "fees.manage", label: "Manage fees", hint: "Post invoices and record offline receipts." },
 ];
 
-/* People & access: invitations are single-use codes shared by hand — nothing is
-   emailed — and every membership change is attributed to the administrator. */
+/* Invitation email status is distinct from account acceptance. */
 export function People({ school, data, refresh }: { school: string; data: Administration; refresh: () => Promise<void> }) {
   const toast = useToast();
-  const [invite, setInvite] = useState<{ token: string; email: string; role: string; expires_at?: string } | null>(null);
+  const [invite, setInvite] = useState<{ token: string; email: string; role: string; expires_at?: string; delivery?: string } | null>(null);
   const [memberId, setMemberId] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "staff" | "guardian" | "student">("all");
@@ -44,17 +43,18 @@ export function People({ school, data, refresh }: { school: string; data: Admini
             { name: "role", label: "School role", options: Object.entries(ROLE).map(([value, label]) => ({ value, label })), hint: "Students must already exist in the directory." },
           ]} onSave={async (values) => {
             setInvite(null);
-            const result = await save<{ token: string; expires_at?: string }>(school, "invitations", values);
-            setInvite({ token: result.token, email: values.email!, role: values.role!, expires_at: result.expires_at });
+            const result = await save<{ token: string; expires_at?: string; delivery?: string }>(school, "invitations", values);
+            setInvite({ token: result.token, email: values.email!, role: values.role!, expires_at: result.expires_at, delivery: result.delivery });
             await refresh();
           }}>
-            <p className="t-bsm ink2">Administrator only. Codes are single-use, expire after 72 hours, and are <b>not</b> emailed — share them privately.</p>
+            <p className="t-bsm ink2">Codes are single-use and expire after 72 hours. Email is attempted when configured; a private code remains available.</p>
           </RecordForm>
 
           {invite ? (
             <section className="panel tight card ring">
-              <SectionTitle small icon={KeyRound} title="Share this code privately" aside={<Pill kind="tint">{ROLE[invite.role] ?? invite.role}</Pill>} />
+              <SectionTitle small icon={KeyRound} title="Invitation ready" aside={<Pill kind="tint">{ROLE[invite.role] ?? invite.role}</Pill>} />
               <p className="t-bsm ink2">For <b>{invite.email}</b>. They open <a href="/staff/join" target="_blank" rel="noreferrer">{joinUrl}</a>, enter this code with the same email, and set a password.{invite.expires_at ? ` Expires ${fmtDate(invite.expires_at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.` : ""}</p>
+              <p className="t-bsm ink2">{invite.delivery === 'email_accepted' ? 'Invitation email accepted by the mail server. Check inbox and spam.' : invite.delivery === 'failed' ? 'Email delivery could not be confirmed. Share the code privately or create a replacement.' : 'No email has been sent. Share the code privately.'}</p>
               <div className="code-box big" aria-label="Invitation code">{invite.token}</div>
               <div className="btnrow">
                 <button className="btn pri" onClick={() => void copy(invite.token, "Invitation code")}><Copy size={16} />Copy code</button>

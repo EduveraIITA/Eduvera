@@ -33,6 +33,11 @@ const schema = z.object({
   SPA_DIST_DIR: z.string().default("../frontend/dist"),
   STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),
+  INVITATION_EMAIL_ENABLED: booleanString("false"),
+  SMTP_HOST: z.string().min(1).default("smtp.gmail.com"),
+  SMTP_PORT: z.coerce.number().pipe(z.union([z.literal(465), z.literal(587)])).default(465),
+  SMTP_USER: z.email().optional(),
+  SMTP_PASSWORD: z.string().min(1).optional(),
   RELEASE_SHA: z.string().min(7).max(64).regex(/^[A-Za-z0-9._-]+$/).optional(),
   METRICS_TOKEN: z.string().min(32).optional(),
   UPLOAD_DIR: z.string().default("./storage/leave-documents"),
@@ -56,6 +61,11 @@ export type AppConfig = ReturnType<typeof loadConfig>;
 
 export function loadConfig() {
   const value = schema.parse(process.env);
+  if (value.INVITATION_EMAIL_ENABLED) {
+    if (!value.SMTP_USER || !value.SMTP_PASSWORD || !value.PUBLIC_URL) throw new Error("SMTP_USER, SMTP_PASSWORD and PUBLIC_URL are required for invitation email");
+    const origin = new URL(value.PUBLIC_URL);
+    if (origin.protocol !== "https:" || origin.origin !== value.PUBLIC_URL || isLocalHostname(origin.hostname)) throw new Error("Invitation email requires an exact non-local HTTPS PUBLIC_URL origin");
+  }
   const deploymentEnvironment = value.DEPLOYMENT_ENVIRONMENT ?? value.NODE_ENV;
   const managedDeployment = deploymentEnvironment === "stage" || deploymentEnvironment === "production";
   const allowedOrigins = value.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);

@@ -12,8 +12,8 @@ is exposed in school roles, signup, invitations or ordinary account APIs.
 2. Share the invitation code privately. `/join` activates a new recipient's
    account or verifies the existing account password. Existing passwords are
    not overwritten. Codes are hashed in storage, bound to the recipient email,
-   expire, can be revoked, and cannot be replayed. No automatic email provider
-   is configured; the UI says explicitly that delivery is manual.
+   expire, can be revoked, and cannot be replayed. When SMTP is configured, email is attempted after the invitation commits.
+   The UI distinguishes mail-server acceptance, unconfirmed delivery and manual sharing.
 3. The first administrator signs in to `/principal/administration?school=…`,
    creates terms, classes and subjects, and enrolls students through the
    directory or reviewed import. Student and guardian records remain usable
@@ -61,3 +61,24 @@ Production already prohibits `DEMO_MODE`; no demo operator is bootstrapped there
 College provisioning selects institution kind and uses the existing academic
 term/class enrollment model. University-specific course/credit administration
 is outside this increment.
+
+## Invitation email setup
+
+Set these Railway service variables: `INVITATION_EMAIL_ENABLED=true`,
+`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`,
+`SMTP_USER=projectpathyakram@gmail.com`, `SMTP_PASSWORD` to a newly generated
+Google app password, and `PUBLIC_URL=https://omnischool-stage.up.railway.app`.
+The address corrects the user-supplied `gamil.com` typo; verify account ownership
+before enabling. Do not use the regular Google login password. Google app
+passwords require two-step verification. Enter secrets directly in Railway;
+never paste them into source, logs or version control.
+
+Company first-admin, replacement admin, and school member invitations all use
+this transport after their database transaction commits. The email contains the
+single-use code, recipient email, trusted `/join` URL and expiry. Codes are not
+placed in URLs. Server acceptance is not proof of inbox delivery or acceptance
+of school membership. Errors return the committed private code and an explicit
+unconfirmed status; create a replacement to retry (this revokes the old code).
+No durable retry queue is included; a process crash after commit requires a
+replacement invitation. Existing expiration, revocation and authority checks
+remain in force. SMTP TLS certificate validation cannot be disabled.

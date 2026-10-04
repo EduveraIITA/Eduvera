@@ -1,3 +1,4 @@
+import { deliverInvitation } from "../common/invitation-email.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -386,7 +387,7 @@ export class OperationsService {
 
   async invite(user: AuthUser, schoolId: string, body: unknown) {
     const data = z.object({ email: z.email().trim().toLowerCase(), role: z.enum(["student", "guardian", "staff", "admin"]),student_id:uuid.optional(),guardian_id:uuid.optional(),custom_role_id:uuid.optional() }).strict().parse(body);
-    return this.mutate(user, schoolId, "members.invite", "invitation.created", async (db) => {
+    const invitation = await this.mutate(user, schoolId, "members.invite", "invitation.created", async (db) => {
       const authority=await this.authorize(user,schoolId,"members.invite",db);
       if ((data.role==='admin' || data.custom_role_id) && authority.role!=='admin') throw new ForbiddenException('Only school admins can invite administrators or assign custom roles.');
       if ((data.student_id && data.role!=='student') || (data.guardian_id && data.role!=='guardian') || (data.custom_role_id && data.role!=='staff')) throw new BadRequestException('Invitation target does not match its role.');
@@ -406,8 +407,9 @@ export class OperationsService {
       await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND email=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL AND (${authority.role}='admin' OR role<>'admin')`.execute(db);
       const result=await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,student_id,guardian_id,custom_role_id)
         VALUES(${schoolId}::uuid,${data.email},${data.role},${digest(token)},${user.id}::uuid,now()+interval '72 hours',${studentId??null}::uuid,${data.guardian_id??null}::uuid,${data.custom_role_id??null}::uuid) RETURNING id,expires_at`.execute(db);
-      return {...result.rows[0],token,delivery:'manual',message:'Share this single-use code privately. It expires in 72 hours.'};
+      return {...result.rows[0]!,email:data.email,token};
     });
+    return deliverInvitation(invitation);
   }
 
   async acceptInvite(body: unknown) {

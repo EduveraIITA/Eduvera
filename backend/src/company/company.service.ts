@@ -1,3 +1,4 @@
+import { deliverInvitation } from '../common/invitation-email.js';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
@@ -44,13 +45,13 @@ export class CompanyService {
     const row = (await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,source)
       VALUES(${school}::uuid,${recipient},'admin',${createHash('sha256').update(token).digest('hex')},${user.id}::uuid,now()+interval '72 hours','company') RETURNING id,expires_at`.execute(db)).rows[0]!;
     await this.audit(db,user,school,'company.admin_invited',{invitation_id:row.id,email:recipient});
-    return {...row,email:recipient,token,delivery:'manual'};
+    return {...row,email:recipient,token};
   }
   async create(user: AuthUser, body: unknown) {
     await this.authorize(user);
     const data = z.object({name:z.string().trim().min(2).max(180),code:z.string().trim().regex(/^[a-z0-9-]{2,32}$/),institution_kind:z.enum(['school','college']),timezone:z.string().max(80).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Choose a valid timezone.').default('Asia/Kolkata'),admin_email:email}).strict().parse(body);
     try {
-      return await this.db.transaction().execute(async db=>{
+      const result = await this.db.transaction().execute(async db=>{
         await this.authorize(user,db);
         const school = (await sql<{id:string;name:string}>`INSERT INTO schools(name,code,timezone,institution_kind)
           VALUES(${data.name},${data.code},${data.timezone},${data.institution_kind}) RETURNING *`.execute(db)).rows[0]!;
@@ -63,15 +64,17 @@ export class CompanyService {
         const invitation=await this.invitation(db,user,school.id,data.admin_email);
         return {school,invitation};
       });
+      return {...result, invitation: await deliverInvitation(result.invitation)};
     } catch(error) {if((error as {code?:string}).code==='23505') throw new ConflictException('Institution code is already in use.');throw error;}
   }
   async inviteAdmin(user: AuthUser, school: string, body: unknown) {
     z.uuid().parse(school);const data=z.object({email}).strict().parse(body);
-    return this.db.transaction().execute(async db=>{
+    const invitation = await this.db.transaction().execute(async db=>{
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${school},0))`.execute(db);await this.authorize(user,db);
       if (!(await db.selectFrom('schools').select('id').where('id','=',school).executeTakeFirst())) throw new NotFoundException('Institution not found.');
       return this.invitation(db,user,school,data.email);
     });
+    return deliverInvitation(invitation);
   }
   async revoke(user: AuthUser, school: string, id: string) {
     z.uuid().parse(school);z.uuid().parse(id);

@@ -7,6 +7,7 @@ import CompanyPage from './CompanyPage';
 import SelfServiceOnboardingPage from './SelfServiceOnboardingPage';
 import InvitationsPage from './InvitationsPage';
 import JoinPage from './JoinPage';
+import { InvitationReceipt } from './InvitationReceipt';
 import { createCoachingWorkspace,createInstitution,getCompany,getInvitations,getOnboardingWorkspace,inviteMember,submitInstitutionApplication } from './api';
 import { apiFetch } from '../../lib/api';
 import { authDestination } from '../auth/AuthContext';
@@ -28,6 +29,17 @@ beforeEach(()=>{
   vi.mocked(createCoachingWorkspace).mockResolvedValue({id:'coaching',name:'Lotus Tutorials',code:'lotus-tutorials'});
 });
 describe('company and school onboarding',()=>{
+  it('reports mail-server acceptance without claiming inbox delivery',()=>{
+    mount(<InvitationReceipt invite={{token:'private-code',email:'recipient@example.test',expires_at:'2099-10-04',delivery:'email_accepted'}} onClose={()=>{}}/>);
+    expect(screen.getByText(/accepted by the mail server/)).toBeInTheDocument();
+    expect(screen.queryByText(/No email has been sent/)).not.toBeInTheDocument();
+  });
+  it('offers private-code fallback when email cannot be confirmed',()=>{
+    mount(<InvitationReceipt invite={{token:'private-code',email:'recipient@example.test',expires_at:'2099-10-04',delivery:'failed'}} onClose={()=>{}}/>);
+    expect(screen.getByText(/Email delivery could not be confirmed/)).toBeInTheDocument();
+    expect(screen.getByText('private-code')).toBeInTheDocument();
+  });
+
   it('creates a college with first admin and explains manual invitation delivery',async()=>{
     const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));
     await user.type(screen.getByLabelText('Institution name'),'Lotus College');await user.selectOptions(screen.getByLabelText('Institution type'),'college');await user.type(screen.getByLabelText('First administrator email'),'admin@example.test');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));

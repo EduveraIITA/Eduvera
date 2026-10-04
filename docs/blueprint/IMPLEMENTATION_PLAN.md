@@ -1608,3 +1608,27 @@ desktop and mobile breakpoints with no browser console warnings/errors. This is 
 or company operating-policy acceptance. The user UI review, Stage migration/seed/Railway smoke,
 decision notification delivery, email verification/MFA, ownership transfer and coaching/college
 policy packs remain open release work.
+
+## Invitation SMTP delivery — 4 October 2026
+
+User request: send company/admin and school-member invitations using the
+Pathyakram Gmail account. The supplied `gamil.com` address is treated as a typo
+for `gmail.com`; account verification and a new Google app password remain
+required for live activation. No supplied password is committed.
+
+A shared Nodemailer transport attempts email only after invitation transactions
+commit. TLS is mandatory (465 implicit TLS or 587 STARTTLS), with certificate
+validation and bounded connection/socket timeouts. Credentials and trusted join
+origin come from environment variables. All three invitation creation paths use
+this adapter. The message includes email-bound code, expiry and `/join` address;
+no code is placed in URLs or logged. Mobile and desktop receipts distinguish
+mail-server acceptance, unconfirmed delivery and manual sharing. Invitation
+expiry/revocation/acceptance and current-authority checks remain authoritative.
+
+Validation: five transport tests and seven onboarding UI tests pass. Backend
+and mobile typechecks, backend lint, backend build and both web production builds
+pass. The connected Railway account exposes DigiRobe and Petboarding only, so
+Eduera SMTP variables have not been configured and no live email has been sent.
+Durable queue retries, persisted delivery history, crash recovery and real mailbox
+confirmation remain outside this increment; create a replacement invitation for
+manual retry. See COMPANY_ONBOARDING.md for server activation settings.
