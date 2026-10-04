@@ -16,7 +16,7 @@ const registrationSchema = z.object({
   password: z.string().min(1).max(128),
   first_name: z.string().trim().min(1).max(150),
   last_name: z.string().trim().min(1).max(150),
-  role: z.enum(["student", "parent"]),
+  role: z.enum(["student", "parent", "admin"]),
 });
 
 export interface SessionIdentity { user: AuthUser; tokenHash: string; csrfToken: string }

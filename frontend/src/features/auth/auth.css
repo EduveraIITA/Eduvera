@@ -177,6 +177,7 @@
 .auth-role-picker button > span { display: flex; min-width: 0; flex-direction: column; }
 .auth-role-picker button b { color: #172943; font-size: 11px; }
 .auth-role-picker button small { color: #69758a; font-size: 11px; }
+.auth-role-picker button:last-child:nth-child(3) { grid-column: 1 / -1; }
 .auth-name-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 
 .onboarding-page { display: grid; padding: 28px 20px; place-items: center; background: radial-gradient(circle at 50% 0, var(--edura-surface-strong) 0, transparent 42%), var(--edura-canvas); }

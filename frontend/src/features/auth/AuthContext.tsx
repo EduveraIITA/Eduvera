@@ -73,7 +73,7 @@ export interface RegisterInput {
   password: string;
   first_name: string;
   last_name: string;
-  role: Persona;
+  role: Persona | "admin";
 }
 
 interface AuthState {
@@ -337,6 +337,6 @@ export function authDestination(auth: Pick<AuthContextValue, "status" | "portals
   if (auth.portals.includes("student")) return "/student";
   if (auth.portals.includes("teacher")) return auth.memberships.some(m=>m.role==='staff' && m.custom_role) ? "/teacher/more" : "/teacher";
   if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/administration" : "/principal";
-  if (auth.memberships.length === 0) return "/onboarding/pending";
+  if (auth.memberships.length === 0) return "/onboarding/start";
   return "/workspace";
 }

@@ -8,4 +8,5 @@ export class CompanyController {
   @Post('institutions/') create(@Req() req: AuthenticatedRequest) {return this.company.create(req.authUser,req.body);}
   @Post('institutions/:schoolId/admin-invitations/') invite(@Req() req: AuthenticatedRequest,@Param('schoolId') school: string) {return this.company.inviteAdmin(req.authUser,school,req.body);}
   @Post('institutions/:schoolId/admin-invitations/:id/revoke/') revoke(@Req() req: AuthenticatedRequest,@Param('schoolId') school: string,@Param('id') id: string) {return this.company.revoke(req.authUser,school,id);}
+  @Post('institution-applications/:id/review/') reviewApplication(@Req() req: AuthenticatedRequest,@Param('id') id: string) {return this.company.reviewApplication(req.authUser,id,req.body);}
 }

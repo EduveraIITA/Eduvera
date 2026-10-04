@@ -4,24 +4,28 @@ import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import CompanyPage from './CompanyPage';
+import SelfServiceOnboardingPage from './SelfServiceOnboardingPage';
 import InvitationsPage from './InvitationsPage';
 import JoinPage from './JoinPage';
-import { createInstitution,getCompany,getInvitations,inviteMember } from './api';
+import { createCoachingWorkspace,createInstitution,getCompany,getInvitations,getOnboardingWorkspace,inviteMember,submitInstitutionApplication } from './api';
 import { apiFetch } from '../../lib/api';
 import { authDestination } from '../auth/AuthContext';
-const auth=vi.hoisted(()=>({status:'authenticated',companyOperator:true,memberships:[{school_id:'school',role:'admin',school_name:'School',permissions:['members.invite']}],user:{display_name:'Eduera Company'},hasPortal:vi.fn(()=>true),logout:vi.fn()}));
+const auth=vi.hoisted(()=>({status:'authenticated',companyOperator:true,memberships:[{school_id:'school',role:'admin',school_name:'School',permissions:['members.invite']}],user:{display_name:'Eduera Company'},hasPortal:vi.fn(()=>true),logout:vi.fn(),refresh:vi.fn()}));
 vi.mock('../auth/AuthContext',async original=>({...await original(),useAuth:()=>auth}));
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children}:{children:React.ReactNode})=><main>{children}</main>}));
-vi.mock('./api',async original=>({...await original(),getCompany:vi.fn(),createInstitution:vi.fn(),getInvitations:vi.fn(),inviteMember:vi.fn()}));
+vi.mock('./api',async original=>({...await original(),getCompany:vi.fn(),createInstitution:vi.fn(),getInvitations:vi.fn(),inviteMember:vi.fn(),getOnboardingWorkspace:vi.fn(),submitInstitutionApplication:vi.fn(),createCoachingWorkspace:vi.fn()}));
 vi.mock('../../lib/api',async original=>({...await original(),apiFetch:vi.fn()}));
 function mount(element:React.ReactNode){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter>{element}</MemoryRouter></QueryClientProvider>);}
 afterEach(cleanup);
 beforeEach(()=>{
-  vi.clearAllMocks();auth.hasPortal.mockReturnValue(true);
-  vi.mocked(getCompany).mockResolvedValue({schools:[],invitations:[]});
+  vi.clearAllMocks();auth.companyOperator=true;auth.hasPortal.mockReturnValue(true);
+  vi.mocked(getCompany).mockResolvedValue({schools:[],invitations:[],applications:[]});
   vi.mocked(createInstitution).mockResolvedValue({school:{id:'new',name:'Lotus',code:'lotus',institution_kind:'college',admin_count:0,pending_admins:1},invitation:{token:'x'.repeat(43),email:'admin@example.test',expires_at:'2099-10-04'}});
   vi.mocked(getInvitations).mockResolvedValue({can_invite_admin:false,invitations:[],students:[{id:'student',name:'Learner',admission_number:'A001',email:null}],guardians:[],roles:[]});
   vi.mocked(inviteMember).mockResolvedValue({token:'x'.repeat(43),email:'learner@example.test',expires_at:'2099-10-04'});
+  vi.mocked(getOnboardingWorkspace).mockResolvedValue({applications:[],coaching_workspaces:[]});
+  vi.mocked(submitInstitutionApplication).mockResolvedValue({id:'application',institution_name:'Lotus School',requested_code:'lotus-school',institution_kind:'school',timezone:'Asia/Kolkata',state_code:'KA',district:'Bengaluru Urban',website:'',applicant_role_title:'Founder',regulator_type:'udise',regulator_reference:'12345',status:'submitted',review_note:'',revision:1,submitted_at:'2026-10-04',updated_at:'2026-10-04',provisioned_school_id:null});
+  vi.mocked(createCoachingWorkspace).mockResolvedValue({id:'coaching',name:'Lotus Tutorials',code:'lotus-tutorials'});
 });
 describe('company and school onboarding',()=>{
   it('creates a college with first admin and explains manual invitation delivery',async()=>{
@@ -57,5 +61,26 @@ describe('company and school onboarding',()=>{
     expect(authDestination({status:'authenticated',companyOperator:true,portals:[],memberships:[]})).toBe('/company');
     expect(authDestination({status:'authenticated',setupRequired:true,portals:['principal'],memberships:[]})).toBe('/principal/administration');
     expect(authDestination({status:'authenticated',portals:['principal'],memberships:[]})).toBe('/principal');
+  });
+  it('presents verified institution and immediate coaching as distinct onboarding models',async()=>{
+    auth.companyOperator=false;
+    mount(<SelfServiceOnboardingPage/>);
+    expect(await screen.findByRole('button',{name:/Start institution application/i})).toBeVisible();
+    expect(screen.getByRole('button',{name:/Create coaching workspace/i})).toBeVisible();
+    expect(screen.getByText('No Eduvera verification')).toBeVisible();
+    expect(screen.getByText('Workspace opens after approval')).toBeVisible();
+  });
+  it('submits formal verification details without provisioning from the applicant UI',async()=>{
+    auth.companyOperator=false;
+    const user=userEvent.setup();mount(<SelfServiceOnboardingPage/>);await user.click(await screen.findByRole('button',{name:/Start institution application/i}));
+    await user.type(screen.getByLabelText('Institution name'),'Lotus School');
+    await user.type(screen.getByLabelText('State or UT code'),'KA');
+    await user.type(screen.getByLabelText('District'),'Bengaluru Urban');
+    await user.type(screen.getByLabelText('Your role at the institution'),'Founder Principal');
+    await user.type(screen.getByLabelText(/Registration or affiliation reference/),'UDISE-12345');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button',{name:/Submit for company review/i}));
+    expect(submitInstitutionApplication).toHaveBeenCalledWith(expect.objectContaining({institution_name:'Lotus School',requested_code:'lotus-school',state_code:'KA',declaration_accepted:true}));
+    expect(createCoachingWorkspace).not.toHaveBeenCalled();
   });
 });

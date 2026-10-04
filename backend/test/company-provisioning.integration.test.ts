@@ -53,6 +53,7 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     expect((await request('company','company/institutions/',payload,'POST',false)).status).toBe(403);
     const result=await request('company','company/institutions/',payload);expect(result.status).toBe(201);createdSchool=result.data.school.id;firstCode=result.data.invitation.token;
     expect(result.data.school.institution_kind).toBe('college');expect(firstCode.length).toBeGreaterThan(40);
+    expect((await pool.query('SELECT institution_kind,capability_packs FROM institution_regulatory_profiles WHERE school_id=$1',[createdSchool])).rows[0]).toEqual({institution_kind:'college',capability_packs:['india_college_core']});
     expect((await pool.query('SELECT 1 FROM school_memberships WHERE school_id=$1',[createdSchool])).rowCount).toBe(0);
     expect((await pool.query('SELECT token_hash FROM school_invitations WHERE school_id=$1',[createdSchool])).rows[0].token_hash).not.toBe(firstCode);
     expect((await request('company','company/institutions/',payload)).status).toBe(409);

@@ -21,7 +21,7 @@ export interface UserTable {
   updated_at: Timestamp;
 }
 
-export interface SchoolTable { id: Generated<string>; name: string; code: string; timezone: Generated<string>; attendance_submission_cutoff: Generated<string>; created_at: Timestamp }
+export interface SchoolTable { id: Generated<string>; name: string; code: string; timezone: Generated<string>; attendance_submission_cutoff: Generated<string>; institution_kind: Generated<"school" | "college" | "coaching" | "hybrid">; onboarding_model: Generated<"company_managed" | "company_verified" | "self_service_coaching">; verification_status: Generated<"not_required" | "pending" | "approved" | "rejected">; created_by_user_id: string | null; created_at: Timestamp }
 export interface MembershipTable { id: Generated<string>; user_id: string; school_id: string; role: "student" | "guardian" | "staff" | "admin"; is_active: Generated<boolean>; created_at: Timestamp }
 export interface SchoolPersonTable { id: Generated<string>; school_id: string; first_name: string; last_name: Generated<string>; contact_phone: Generated<string>; contact_email: Generated<string>; avatar_url: Generated<string>; revision: Generated<number>; created_at: Timestamp }
 export interface GuardianSchoolProfileTable { school_id: string; guardian_id: string; person_id: string }

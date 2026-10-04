@@ -233,7 +233,7 @@ export function SignupPage() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
       });
-      void navigate("/onboarding/pending", { replace: true });
+      void navigate("/onboarding/start", { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Your account could not be created.");
     } finally {
@@ -242,7 +242,7 @@ export function SignupPage() {
   }
 
   return (
-    <AuthLayout eyebrow="Join your school" title="Create your Edura account" description="Choose your role now. Your school verifies access before records become visible.">
+    <AuthLayout eyebrow="Get started" title="Create your Edura account" description="Join an institution, apply to onboard one, or create a coaching workspace.">
       <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <fieldset className="auth-role-picker">
@@ -253,6 +253,9 @@ export function SignupPage() {
             </button>
             <button type="button" className={form.role === "student" ? "is-selected" : ""} aria-pressed={form.role === "student"} onClick={() => update("role", "student")}>
               <GraduationCap size={18} /><span><b>Student</b><small>Learning portal</small></span>{form.role === "student" ? <Check size={15} /> : null}
+            </button>
+            <button type="button" className={form.role === "admin" ? "is-selected" : ""} aria-pressed={form.role === "admin"} onClick={() => update("role", "admin")}>
+              <School size={18} /><span><b>Institution owner</b><small>School or coaching setup</small></span>{form.role === "admin" ? <Check size={15} /> : null}
             </button>
           </div>
         </fieldset>

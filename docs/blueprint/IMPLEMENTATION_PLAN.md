@@ -1573,3 +1573,38 @@ browser-native pattern-validation dead end that could make the create action app
 preserving the backend's lowercase tenant-code invariant. Verified evidence includes the company UI
 regression test for generated and manually edited codes plus an authenticated browser creation through
 the local ngrok preview; the transactional service and database constraints remain the authority.
+
+## WF-LOCAL-018: Two-lane self-service onboarding
+
+User decision (4 October 2026): the product must support both company-verified onboarding for
+formal institutions and immediate, no-company-verification creation for small coaching/tutor
+workspaces. Detailed contract: [Self-service institution onboarding](SELF_SERVICE_ONBOARDING.md).
+
+Implemented locally in migrations `037`–`038`, `backend/src/institution-onboarding`, the company review
+service, and `frontend/src/features/onboarding`:
+
+- Signup accepts an **Institution owner** account choice but grants no tenant access by itself.
+- Formal school/college/hybrid submission creates an audited application only. Company operators
+  can request information, reject or approve; only approval creates the tenant, regulatory profile
+  and applicant's first admin membership in one transaction.
+- Coaching creation immediately creates a `coaching` tenant, admin membership and `coaching_core`
+  profile labelled `self_service_coaching` / `not_required`. The product explicitly says this is
+  not a verified school or college. One coaching workspace per creating account is the initial
+  bounded anti-abuse rule.
+- Applicant status and resubmission, company queue and decisions, loading/error states, mobile
+  layout, tenant-code conflicts, current-session switching, RLS enablement/revokes and global plus
+  workflow audits are included.
+
+Verified local evidence: migrations 037–038 applied to development PostgreSQL and from-scratch to
+a disposable seeded PostgreSQL database; backend/frontend typecheck, lint and production build pass.
+The complete backend suite passes against that clean database (29 files, 241 tests), including the
+real-PostgreSQL HTTP test for the immediate coaching path, duplicate guard,
+application-without-tenant boundary, information request, resubmission, approval, membership
+creation and repeat-decision rejection.
+The complete frontend suite passes locally (37 files, 233 tests), including the two-model selector,
+formal submission boundary and updated no-membership routing.
+The signup, two-model selector and formal form were visually inspected through the local preview at
+desktop and mobile breakpoints with no browser console warnings/errors. This is not Stage deployment
+or company operating-policy acceptance. The user UI review, Stage migration/seed/Railway smoke,
+decision notification delivery, email verification/MFA, ownership transfer and coaching/college
+policy packs remain open release work.

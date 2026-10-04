@@ -21,6 +21,7 @@ import { OperationsModule } from "./operations/operations.module.js";
 import { StaffOperationsModule } from "./staff-operations/staff-operations.module.js";
 import { GovernanceModule } from "./governance/governance.module.js";
 import { RestrictedCareModule } from "./restricted-care/restricted-care.module.js";
+import { InstitutionOnboardingModule } from "./institution-onboarding/institution-onboarding.module.js";
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { RestrictedCareModule } from "./restricted-care/restricted-care.module.j
     StaffOperationsModule,
     GovernanceModule,
     RestrictedCareModule,
+    InstitutionOnboardingModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

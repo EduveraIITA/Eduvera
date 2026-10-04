@@ -46,6 +46,9 @@ function mockSession(membershipRoles: Array<"guardian" | "student" | "staff"> = 
         demo_mode: true,
       });
     }
+    if (path === "/api/v1/onboarding/workspace/") {
+      return Promise.resolve({ applications: [], coaching_workspaces: [] });
+    }
     return Promise.resolve(schoolApiFixture(path));
   });
 }
@@ -663,7 +666,8 @@ describe("authentication and route authorization", () => {
   it("holds a newly registered account outside tenant data until membership exists", async () => {
     mockSession([]);
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Now connect with your school" })).toBeVisible();
-    expect(screen.getByText(/needs to verify your membership/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "How would you like to begin?" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Start institution application/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Create coaching workspace/i })).toBeVisible();
   });
 });

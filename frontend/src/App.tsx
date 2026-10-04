@@ -10,6 +10,7 @@ import {
 } from "./features/auth/RouteGuards";
 
 const CompanyPage=lazy(()=>import('./features/onboarding/CompanyPage'));
+const SelfServiceOnboardingPage=lazy(()=>import('./features/onboarding/SelfServiceOnboardingPage'));
 const JoinPage=lazy(()=>import('./features/onboarding/JoinPage'));
 const InvitationsPage=lazy(()=>import('./features/onboarding/InvitationsPage'));
 const RolesPage = lazy(() => import("./features/roles/RolesPage"));
@@ -19,9 +20,6 @@ const LoginPage = lazy(async () => ({
 }));
 const SignupPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).SignupPage,
-}));
-const PendingOnboardingPage = lazy(async () => ({
-  default: (await import("./features/auth/AuthPages")).PendingOnboardingPage,
 }));
 const WorkspaceUnavailablePage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).WorkspaceUnavailablePage,
@@ -173,7 +171,8 @@ export function App() {
               <Route path="/" element={<RoleLanding />} />
               <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
               <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />
-              <Route path="/onboarding/pending" element={<AuthenticatedOnly><PendingOnboardingPage /></AuthenticatedOnly>} />
+              <Route path="/onboarding/start" element={<AuthenticatedOnly><SelfServiceOnboardingPage /></AuthenticatedOnly>} />
+              <Route path="/onboarding/pending" element={<Navigate to="/onboarding/start" replace />} />
               <Route path="/company" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
               <Route path="/join" element={<JoinPage />} />
               <Route path="/principal/invitations" element={<PortalOnly portal="principal"><InvitationsPage /></PortalOnly>} />
