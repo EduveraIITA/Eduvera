@@ -1609,6 +1609,14 @@ or company operating-policy acceptance. The user UI review, Stage migration/seed
 decision notification delivery, email verification/MFA, ownership transfer and coaching/college
 policy packs remain open release work.
 
+Release migration correction (4 October 2026): applied migration `033_company_provisioning.sql`
+is restored byte-for-byte to its Stage checksum. The later decision to prevent deletion of a custom
+role referenced by an invitation is now an append-only change in migration `039`, after migrations
+037–038. This preserves migration-history integrity while retaining the intended final foreign-key
+behavior. Fresh-schema PostgreSQL 17 verification and Stage application remain guarded by the Stage
+workflow; the local Homebrew PostgreSQL 14 server cannot parse migration 033's PostgreSQL 15+
+column-list `SET NULL` syntax and is not accepted as release evidence for this correction.
+
 ## Invitation SMTP delivery — 4 October 2026
 
 User request: send company/admin and school-member invitations using the

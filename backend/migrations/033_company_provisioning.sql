@@ -17,7 +17,7 @@ ALTER TABLE school_invitations
   ADD COLUMN student_id uuid REFERENCES students(id),
   ADD COLUMN guardian_id uuid REFERENCES parents(id),
   ADD COLUMN custom_role_id uuid,
-  ADD CONSTRAINT invitation_role_scope FOREIGN KEY (school_id,custom_role_id) REFERENCES school_custom_roles(school_id,id) ON DELETE RESTRICT,
+  ADD CONSTRAINT invitation_role_scope FOREIGN KEY (school_id,custom_role_id) REFERENCES school_custom_roles(school_id,id) ON DELETE SET NULL (custom_role_id),
   ADD CHECK (source != 'company' OR role='admin'),
   ADD CHECK (student_id IS NULL OR role='student'),
   ADD CHECK (guardian_id IS NULL OR role='guardian'),
