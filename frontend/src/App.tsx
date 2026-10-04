@@ -8,6 +8,8 @@ import {
   RoleLanding,
 } from "./features/auth/RouteGuards";
 
+const RolesPage = lazy(() => import("./features/roles/RolesPage"));
+
 const LoginPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).LoginPage,
 }));
@@ -208,6 +210,8 @@ export function App() {
               <Route path="/teacher/events/:eventId" element={<PortalOnly portal="teacher"><TeacherEventDetailRoute /></PortalOnly>} />
               <Route path="/teacher/events/:eventId/edit" element={<PortalOnly portal="teacher"><TeacherEventEditRoute /></PortalOnly>} />
               <Route path="/teacher/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="teacher"><TeacherEventRegisterRoute /></PortalOnly>} />
+              <Route path="/teacher/fees" element={<PortalOnly portal="teacher"><FeeLedgerPage /></PortalOnly>} />
+              <Route path="/teacher/administration" element={<PortalOnly portal="teacher"><AdministrationPage /></PortalOnly>} />
               <Route path="/teacher/more" element={<PortalOnly portal="teacher"><TeacherMoreRoute /></PortalOnly>} />
               <Route path="/teacher/calendar" element={<PortalOnly portal="teacher"><TeacherCalendarRoute /></PortalOnly>} />
               <Route path="/teacher/classes" element={<PortalOnly portal="teacher"><TeacherClassesPage /></PortalOnly>} />
@@ -220,6 +224,7 @@ export function App() {
               <Route path="/principal/timetable/weekly" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
               <Route path="/principal/students" element={<PortalOnly portal="principal"><PeoplePage /></PortalOnly>} />
               <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
+              <Route path="/principal/roles" element={<PortalOnly portal="principal"><RolesPage /></PortalOnly>} />
               <Route path="/principal/administration" element={<PortalOnly portal="principal"><AdministrationPage /></PortalOnly>} />
               <Route path="/principal/fees" element={<PortalOnly portal="principal"><FeeLedgerPage /></PortalOnly>} />
               <Route path="/principal/staff" element={<PortalOnly portal="principal"><PrincipalStaffRoute /></PortalOnly>} />

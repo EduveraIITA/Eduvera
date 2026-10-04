@@ -35,6 +35,9 @@ const mobileNavIds = new Set(["home", "attendance", "timetable", "more"]);
 
 export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void }) {
   const auth = useOptionalAuth();
+  const member=auth?.memberships.find(m=>m.role==='staff');
+  const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
+  const navigation=nav[portal].filter(item=>portal!=='teacher' || !member?.custom_role || !required[item.id] || member.permissions?.includes(required[item.id] ?? ''));
   const navigationActive = active === "events" ? "more" : active;
   const mobileActive = mobileNavIds.has(navigationActive) ? navigationActive : "more";
   const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
@@ -43,7 +46,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
       <aside className="operations-sidebar">
         <SchoolBrand name={schoolName} className="operations-brand" />
         <nav aria-label={`${portal} portal navigation`}>
-          {nav[portal].map(({ id, label, path, icon: Icon }) => (
+          {navigation.map(({ id, label, path, icon: Icon }) => (
             <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
           ))}
         </nav>
@@ -57,7 +60,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
         </header>
         <main className="operations-main">{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
-          {nav[portal].filter(({ id }) => mobileNavIds.has(id)).map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={mobileActive === id ? "page" : undefined} className={mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
+          {navigation.filter(({ id }) => mobileNavIds.has(id)).map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={mobileActive === id ? "page" : undefined} className={mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>
       </div>
     </div>

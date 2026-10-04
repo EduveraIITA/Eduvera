@@ -1443,3 +1443,47 @@ Verification:
 - An independent authenticated principal smoke check against Stage returned 17 staff profiles, two leave
   policies and the imported responsibility assignment. Both SPAs, install icons, OpenAPI, demo login and
   protected metrics were also verified by the release gate.
+
+
+## WF-LOCAL-016: Custom school roles and permission assignment
+
+Admins/principals open **More → Roles & permissions** (`/principal/roles`),
+create a named role, choose grouped permission checkboxes, and assign the role
+to an active staff member. Role edits affect existing sessions on their next
+guarded API request. One custom role replaces the default staff tool permissions
+and old individual SIS/fee grants for that school. Clearing it explicitly restores
+the default staff permissions and existing individual grants.
+
+Implemented domains: student administration (`sis.manage`), fees (`fees.manage`),
+assigned attendance read/write, photo attendance, timetable/day-plan reading,
+coverage response, attendance follow-ups, chat read/send, class group creation,
+assigned safeguarding review, event read/manage/attendance, and scoped AI.
+No role changes membership, class assignments, guardian relationships, event
+responsibilities, or school boundaries. Existing domain authority remains an
+additional requirement. School leadership commands (including staff onboarding,
+weekly timetable editing, access/invitations, school policy and school-wide
+safeguarding assignment) remain built-in admin/principal capabilities. Personal
+staff leave/responsibility responses and family rights remain separate.
+
+Role create/edit/delete/assignment is admin-only and recorded in the school
+operations audit. Case-insensitive role names are unique in-school; built-in
+names are reserved. Revisions guard concurrent role edits; assignment changes
+compare the previous role. Used roles cannot be deleted, and admin accounts
+cannot be downgraded through the staff assignment endpoint. Composite foreign
+keys prevent cross-school role assignment. No new PUBLIC database grants.
+
+Stage demo seeding adds **Arjun Rao** (`arjun.admin`) with a random unusable-as-demo
+password and separate **Admin view** one-click persona behind `DEMO_MODE`, plus
+Accountant, Class Teacher and Teaching Observer role examples. Existing teacher
+assignments are not changed automatically. The deployment workflow seeds only
+these examples after migrations; it does not reseed the school.
+
+Verification before release: backend/frontend typechecks, backend lint/build,
+frontend build and existing 216 UI tests passed; the new checkbox editor tests
+and 23 local PostgreSQL-backed service/guard assertions passed. All migrations
+including `032_custom_school_roles.sql` applied to a disposable PostgreSQL
+engine. Real PostgreSQL HTTP integration tests are included in the Stage CI
+gate; the local socket emulator cannot reliably multiplex the app's event
+listener and request transactions, so that attempted run is not API release
+evidence. Physical school acceptance, stronger privileged auth and non-owner
+RLS gates remain separate from this role-management increment.

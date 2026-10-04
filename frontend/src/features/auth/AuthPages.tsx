@@ -183,6 +183,10 @@ export function LoginPage() {
               <span><img src="/assets/meera-kapoor.png" alt="" /></span><b>Principal view</b><small>Meera Kapoor</small>
               {pending === "admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
+            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("school_admin")}>
+              <span aria-hidden="true">A</span><b>Admin view</b><small>Arjun Rao · Roles & access</small>
+              {pending === "school_admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
+            </button>
           </div>
         </div>
       ) : null}

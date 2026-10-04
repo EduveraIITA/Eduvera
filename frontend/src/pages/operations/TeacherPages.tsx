@@ -1,3 +1,4 @@
+import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -408,7 +409,11 @@ export function TeacherAttendancePage({
   const unavailable = data.availability?.can_mark === false;
   const capturePending = data.latest_capture?.status === "pending";
   const captureNeedsReview = data.latest_capture?.status === "quarantined";
-  const readOnly = isLocked || unavailable || !editing || (captureNeedsReview && portal === "teacher");
+  const roleAuth=useOptionalAuth();
+  const roleMember=roleAuth?.memberships.find(m=>m.role==='staff');
+  const roleReadOnly=portal==='teacher' && !!roleMember?.custom_role && !roleMember.permissions?.includes('attendance.record');
+  const canUsePhoto=portal==='principal' || !roleMember?.custom_role || roleMember.permissions?.includes('photo.use');
+  const readOnly = roleReadOnly || isLocked || unavailable || !editing || (captureNeedsReview && portal === "teacher");
   const isCorrection =
     activeBaseline.register.submitted_at !== null ||
     activeBaseline.register.state !== "draft";
@@ -1081,7 +1086,7 @@ export function TeacherAttendancePage({
             <div className="roll-call-toolbar__title">
               <h2 id="roll-call-heading">Class register</h2>
               {editing ? <div className="roll-call-toolbar__actions">
-                <button className="roll-call-photo" type="button" disabled={busy || readOnly} onClick={() => setShowPhotoAttendance(true)}>
+                <button className="roll-call-photo" type="button" disabled={busy || readOnly || !canUsePhoto} onClick={() => setShowPhotoAttendance(true)}>
                   <Camera size={17} /> Take from photo
                 </button>
                 <button className="roll-call-mark-all" type="button" disabled={busy || readOnly || allMarked} onClick={markAllPresent}>

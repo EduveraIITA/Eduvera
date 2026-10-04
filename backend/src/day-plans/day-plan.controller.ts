@@ -1,3 +1,4 @@
+import { RequirePermission } from "../roles/permissions.js";
 import {
   Controller,
   Get,
@@ -12,6 +13,7 @@ import { DayPlanService } from "./day-plan.service.js";
 @Controller("api/v1/day-plans")
 export class DayPlanController {
   constructor(private readonly plans: DayPlanService) {}
+  @RequirePermission("timetable.view")
   @Get("options") options(
     @Req() req: AuthenticatedRequest,
     @Query("school_id") school: string,
@@ -19,6 +21,7 @@ export class DayPlanController {
   ) {
     return this.plans.options(req.authUser, school, date);
   }
+  @RequirePermission("timetable.view")
   @Get("teacher") teacher(
     @Req() req: AuthenticatedRequest,
     @Query("school_id") school: string,
@@ -26,6 +29,7 @@ export class DayPlanController {
   ) {
     return this.plans.teacher(req.authUser, school, date);
   }
+  @RequirePermission("timetable.view")
   @Get("teacher/summary") teacherSummary(
     @Req() req: AuthenticatedRequest,
     @Query("school_id") school: string,
@@ -49,6 +53,7 @@ export class DayPlanController {
       classSectionId,
     );
   }
+  @RequirePermission("timetable.view")
   @Get(":id") detail(
     @Req() req: AuthenticatedRequest,
     @Param("id") id: string,
@@ -77,6 +82,7 @@ export class DayPlanController {
   ) {
     return this.plans.discard(req, id, req.body);
   }
+  @RequirePermission("dayplans.respond")
   @Post("periods/:id/respond") @HttpCode(200) respond(
     @Req() req: AuthenticatedRequest,
     @Param("id") id: string,

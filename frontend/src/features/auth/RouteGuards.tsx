@@ -51,5 +51,14 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
   if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
+  if(portal==='teacher') {
+    const member=auth.memberships.find(m=>m.role==='staff');
+    if(member?.custom_role) {
+      if(location.pathname==='/teacher') return <Navigate to="/teacher/more" replace/>;
+      const permissions:Record<string,string>={attendance:'attendance.view',classes:'attendance.view',calendar:'timetable.view',timetable:'timetable.view',messages:'messages.view',safeguarding:'safeguarding.review',events:'events.view',fees:'fees.manage',administration:'sis.manage'};
+      const section=location.pathname.split('/')[2] ?? '';
+      if(permissions[section] && !member.permissions?.includes(permissions[section] ?? '')) return <Navigate to="/teacher/more" replace/>;
+    }
+  }
   return children;
 }

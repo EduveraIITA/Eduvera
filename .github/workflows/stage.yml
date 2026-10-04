@@ -82,6 +82,7 @@ jobs:
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
           node --import tsx src/database/seed-operations.ts
+          node --import tsx src/database/seed-roles.ts
 
       - name: Backend · integration tests
         working-directory: backend
@@ -241,6 +242,15 @@ jobs:
           export NODE_ENV=production
           export DEPLOYMENT_ENVIRONMENT=stage
           npm run db:migrate
+
+      - name: Add Stage demo admin and custom role examples
+        working-directory: backend
+        run: |
+          set -eu
+          export DATABASE_URL="$(cat "$RUNNER_TEMP/stage-session-database-url")"
+          export NODE_ENV=production
+          export DEPLOYMENT_ENVIRONMENT=stage
+          DEMO_MODE=true node --import tsx src/database/seed-roles.ts
 
       - uses: actions/setup-python@v5
         if: github.event_name == 'workflow_dispatch' && inputs.seed

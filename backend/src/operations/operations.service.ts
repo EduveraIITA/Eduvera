@@ -41,7 +41,8 @@ export class OperationsService {
     const result = await sql<{ role: MembershipRole }>`
       SELECT m.role FROM school_memberships m WHERE m.school_id=${schoolId}::uuid AND m.user_id=${user.id}::uuid AND m.is_active
       AND (m.role='admin' OR (${!adminOnly} AND m.role='staff' AND EXISTS (
-        SELECT 1 FROM school_permission_grants g WHERE g.school_id=m.school_id AND g.user_id=m.user_id AND g.permission=${permission}
+        SELECT 1 FROM school_custom_role_assignments a JOIN school_custom_roles r ON r.id=a.role_id AND r.school_id=a.school_id WHERE a.school_id=m.school_id AND a.user_id=m.user_id AND ${permission}=ANY(r.permissions)
+        UNION ALL SELECT 1 FROM school_permission_grants g WHERE g.school_id=m.school_id AND g.user_id=m.user_id AND g.permission=${permission} AND NOT EXISTS(SELECT 1 FROM school_custom_role_assignments a WHERE a.school_id=m.school_id AND a.user_id=m.user_id)
       ))) ORDER BY (m.role='admin') DESC LIMIT 1`.execute(db);
     if (!result.rows[0]) throw new ForbiddenException(`School permission ${permission} is required.`);
     return result.rows[0];

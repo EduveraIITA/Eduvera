@@ -1,3 +1,5 @@
+import { RolesModule } from "./roles/roles.module.js";
+import { PermissionGuard } from "./roles/permission.guard.js";
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { AiModule } from "./ai/ai.module.js";
@@ -18,11 +20,12 @@ import { OperationsModule } from "./operations/operations.module.js";
 import { StaffOperationsModule } from "./staff-operations/staff-operations.module.js";
 
 @Module({
-  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule, StaffOperationsModule],
+  imports: [RolesModule, DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule, StaffOperationsModule],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: PermissionGuard },
   ],
 })
 export class AppModule {}

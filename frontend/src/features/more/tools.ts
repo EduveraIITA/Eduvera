@@ -54,6 +54,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "safeguarding", name: "Safeguarding", description: "Report and review welfare concerns", icon: ShieldAlert, tone: "rose", path: "/teacher/safeguarding" },
   ],
   principal: [
+    {id: "roles", name: "Roles & permissions", description: "Create custom roles and assign staff access", icon: ShieldCheck, tone: "blue", path: "/principal/roles"},
     { id: "staff", name: "Staff operations", description: "Onboarding, scoped responsibilities, leave and cover", icon: UserRoundCheck, tone: "teal", path: "/principal/staff" },
     { id: "calendar", name: "Calendar", description: "Month view of school days, coverage and registers", icon: CalendarRange, tone: "blue", path: "/principal/calendar" },
     { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },

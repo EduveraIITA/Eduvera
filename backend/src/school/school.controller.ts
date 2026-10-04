@@ -1,3 +1,4 @@
+import { RequirePermission } from "../roles/permissions.js";
 import { Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
@@ -212,23 +213,27 @@ export class SchoolController {
   }
 
   @Get("screens/teacher/home/")
+  @RequirePermission("timetable.view")
   teacherHome(@Req() request: AuthenticatedRequest, @Query("date") date?: string) {
     return this.school.teacherHomeScreen(request.authUser, date);
   }
 
   @Get("screens/teacher/attendance/")
+  @RequirePermission("attendance.view")
   teacherAttendance(@Req() request: AuthenticatedRequest, @Query("class_section_id") classSectionId?: string, @Query("date") date?: string) {
     return this.school.teacherAttendanceScreen(request.authUser, classSectionId, date);
   }
 
   @Post("teacher/attendance/bulk/")
   @HttpCode(200)
+  @RequirePermission("attendance.record")
   teacherAttendanceSave(@Req() request: AuthenticatedRequest) {
     return this.school.saveTeacherAttendance(request.authUser, request.body, request);
   }
 
   @Post("attendance-continuity/batches/")
   @HttpCode(200)
+  @RequirePermission("attendance.record")
   attendanceContinuitySave(@Req() request: AuthenticatedRequest) {
     return this.school.saveAttendanceContinuityBatch(request.authUser, request.body, request);
   }
@@ -257,6 +262,7 @@ export class SchoolController {
   }
 
   @Get("attendance-registers/:classSectionId/history/")
+  @RequirePermission("attendance.view")
   attendanceRegisterHistory(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
     return this.school.attendanceRegisterHistory(request.authUser, classSectionId, date ?? "");
   }
