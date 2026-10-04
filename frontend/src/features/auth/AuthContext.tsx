@@ -43,6 +43,8 @@ interface SessionResponse {
 }
 
 interface MeResponse {
+  company_operator?:boolean;
+  institution_setup_required?:boolean;
   school_permissions?: Array<{school_id:string;permissions:string[];custom_role:{id:string;name:string}|null}>;
   user: AuthUser;
   students: Array<{ id: string }>;
@@ -75,6 +77,8 @@ export interface RegisterInput {
 }
 
 interface AuthState {
+  companyOperator?:boolean;
+  setupRequired?:boolean;
   status: "loading" | "anonymous" | "authenticated";
   user: AuthUser | null;
   memberships: SchoolMembership[];
@@ -155,6 +159,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState({
         status: "authenticated",
         user: profile.user,
+        companyOperator:profile.company_operator===true,
+        setupRequired:profile.institution_setup_required===true,
         memberships: (profile.user.active_school_id ? profile.memberships.filter((m) => m.school_id === profile.user.active_school_id) : profile.memberships).map(m=>({...m,...profile.school_permissions?.find(p=>p.school_id===m.school_id)})),
         demoMode: profile.demo_mode,
         serviceError: null,
@@ -324,12 +330,13 @@ export function useOptionalAuth() {
   return useContext(AuthContext);
 }
 
-export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships">) {
+export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships" | "companyOperator" | "setupRequired">) {
   if (auth.status !== "authenticated") return "/login";
+  if (auth.companyOperator) return "/company";
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
   if (auth.portals.includes("teacher")) return auth.memberships.some(m=>m.role==='staff' && m.custom_role) ? "/teacher/more" : "/teacher";
-  if (auth.portals.includes("principal")) return "/principal";
+  if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/administration" : "/principal";
   if (auth.memberships.length === 0) return "/onboarding/pending";
   return "/workspace";
 }

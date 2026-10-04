@@ -168,8 +168,8 @@ export class AuthService {
     }
   }
 
-  async demoUser(role: "student" | "parent" | "staff" | "admin" | "school_admin"): Promise<AuthUser> {
-    const username = { student: "aarav.student", parent: "pooja.parent", staff: "kavita.staff", admin: "meera.principal", school_admin: "arjun.admin" }[role];
+  async demoUser(role: "student" | "parent" | "staff" | "admin" | "school_admin" | "company"): Promise<AuthUser> {
+    const username = { student: "aarav.student", parent: "pooja.parent", staff: "kavita.staff", admin: "meera.principal", school_admin: "arjun.admin", company: "company.demo" }[role];
     const user = await this.db.selectFrom("users").selectAll().where("username", "=", username).where("is_active", "=", true).executeTakeFirst();
     if (!user) throw new UnauthorizedException("Demo data has not been seeded.");
     return user;
@@ -215,6 +215,8 @@ export class AuthService {
       user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || user.avatar_url || null },
       students: [...ids].map((id) => ({ id })),
       memberships,
+      institution_setup_required: memberships.some(m=>m.role==='admin') && !(await this.db.selectFrom('academic_terms').select('id').where('school_id','in',memberships.filter(m=>m.role==='admin').map(m=>m.school_id)).execute()).length,
+      company_operator: (await sql`SELECT 1 FROM company_operators WHERE user_id=${user.id}::uuid AND is_active`.execute(this.db)).rows.length>0,
       permission_grants: grants.rows,
       school_permissions: await Promise.all(memberships.map(async m => ({school_id:m.school_id,...await this.roles.effective(user,m.school_id)}))),
       demo_mode: config().DEMO_MODE,

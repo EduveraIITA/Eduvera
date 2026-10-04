@@ -25,7 +25,7 @@ export class OperationsController {
   feeDecide(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.feeReviews.decide(req.authUser, school, id, req.body); }
 
   @Post("schools/")
-  school(@Req() req: AuthenticatedRequest) { return this.operations.createSchool(req.authUser, req.body); }
+  school() { return this.operations.createSchool(); }
 
   @Public()
   @Post("invitations/accept/")
@@ -67,6 +67,9 @@ export class OperationsController {
   @Post("schools/:schoolId/rollover/")
   @RequirePermission("sis.manage")
   rollover(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.rollover(req.authUser, school, req.body); }
+
+  @Get("schools/:schoolId/invitations/workspace/")
+  invitations(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) {return this.operations.invitationWorkspace(req.authUser,school);}
 
   @Post("schools/:schoolId/invitations/")
   invite(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.invite(req.authUser, school, req.body); }

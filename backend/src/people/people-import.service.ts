@@ -1,4 +1,5 @@
-import {BadRequestException,ConflictException,ForbiddenException,Injectable,Logger,NotFoundException,type OnModuleInit,type OnModuleDestroy} from "@nestjs/common";
+import { schoolPermission } from "../roles/authorization.js";
+import {BadRequestException,ConflictException,Injectable,Logger,NotFoundException,type OnModuleInit,type OnModuleDestroy} from "@nestjs/common";
 import {createHash,randomUUID} from "node:crypto";
 import {sql} from "kysely";
 import {z} from "zod";
@@ -31,8 +32,7 @@ export class PeopleImportService implements OnModuleInit,OnModuleDestroy {
   }
   private async authorize(db:ImportDb,user:AuthUser,schoolId:string,lock=false){
     uuid.parse(schoolId);
-    const member=(await sql`SELECT m.id FROM school_memberships m JOIN users u ON u.id=m.user_id WHERE m.school_id=${schoolId}::uuid AND m.user_id=${user.id}::uuid AND m.role='admin' AND m.is_active AND u.is_active ${lock?sql`FOR SHARE OF m,u`:sql``}`.execute(db)).rows[0];
-    if(!member)throw new ForbiddenException("Only a current school administrator can manage imports.");
+    await schoolPermission(db,user,schoolId,"sis.manage",lock);
   }
   private async job(db:ImportDb,id:string,schoolId:string,lock=false){
     const job=(await sql<ImportJob>`SELECT * FROM people_imports WHERE id=${uuid.parse(id)}::uuid AND school_id=${uuid.parse(schoolId)}::uuid ${lock?sql`FOR UPDATE`:sql``}`.execute(db)).rows[0];

@@ -31,7 +31,7 @@ function AuthBrand() {
   );
 }
 
-function AuthLayout({ eyebrow, title, description, children }: {
+export function AuthLayout({ eyebrow, title, description, children }: {
   eyebrow: string;
   title: string;
   description: string;
@@ -126,7 +126,7 @@ export function LoginPage() {
     setPending(persona);
     try {
       await auth.enterDemo(persona);
-      const destination = persona === "parent" ? "/parent/home" : persona === "student" ? "/student" : persona === "staff" ? "/teacher" : "/principal";
+      const destination = persona === "company" ? "/company" : persona === "parent" ? "/parent/home" : persona === "student" ? "/student" : persona === "staff" ? "/teacher" : "/principal";
       void navigate(destination, { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The demo workspace is unavailable.");
@@ -137,6 +137,7 @@ export function LoginPage() {
 
   return (
     <AuthLayout eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
+      <p className="auth-invite-link">Have an invitation? <Link to="/join">Join your institution</Link></p>
       <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <label className="auth-field">
@@ -187,6 +188,7 @@ export function LoginPage() {
               <span aria-hidden="true">A</span><b>Admin view</b><small>Arjun Rao · Roles & access</small>
               {pending === "school_admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
+            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("company")}><span><ShieldCheck size={20}/></span><b>Company view</b><small>Eduera · Institution provisioning</small>{pending === "company" ? <LoaderCircle className="auth-spin" size={16}/> : <ArrowRight size={16}/>}</button>
           </div>
         </div>
       ) : null}

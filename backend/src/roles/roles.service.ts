@@ -69,6 +69,7 @@ export class RolesService {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${schoolId},0))`.execute(db); await this.admin(user,schoolId,db);
       const role=(await sql<RoleRow>`SELECT * FROM school_custom_roles WHERE school_id=${schoolId}::uuid AND id=${id}::uuid FOR UPDATE`.execute(db)).rows[0]; if(!role) throw new NotFoundException("Role not found."); if(role.revision!==expected_revision) throw new ConflictException("This role changed. Refresh before deleting.");
       if((await sql`SELECT 1 FROM school_custom_role_assignments WHERE school_id=${schoolId}::uuid AND role_id=${id}::uuid`.execute(db)).rows.length) throw new ConflictException("Reassign staff before deleting this role.");
+      if((await sql`SELECT 1 FROM school_invitations WHERE school_id=${schoolId}::uuid AND custom_role_id=${id}::uuid AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()`.execute(db)).rows.length) throw new ConflictException('Revoke pending staff invitations before deleting this role.');
       await sql`DELETE FROM school_custom_roles WHERE school_id=${schoolId}::uuid AND id=${id}::uuid`.execute(db); await this.audit(db,user,schoolId,"role.deleted",id,{before:role}); return {deleted:true};
     });
   }

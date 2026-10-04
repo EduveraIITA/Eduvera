@@ -55,10 +55,18 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
     const member=auth.memberships.find(m=>m.role==='staff');
     if(member?.custom_role) {
       if(location.pathname==='/teacher') return <Navigate to="/teacher/more" replace/>;
-      const permissions:Record<string,string>={attendance:'attendance.view',classes:'attendance.view',calendar:'timetable.view',timetable:'timetable.view',messages:'messages.view',safeguarding:'safeguarding.review',events:'events.view',fees:'fees.manage',administration:'sis.manage'};
+      const permissions:Record<string,string>={attendance:'attendance.view',classes:'attendance.view',calendar:'timetable.view',timetable:'timetable.view',messages:'messages.view',safeguarding:'safeguarding.review',events:'events.view',fees:'fees.manage',administration:'sis.manage',students:'sis.manage',invitations:'members.invite'};
       const section=location.pathname.split('/')[2] ?? '';
       if(permissions[section] && !member.permissions?.includes(permissions[section] ?? '')) return <Navigate to="/teacher/more" replace/>;
     }
   }
+  return children;
+}
+
+export function CompanyOnly({children}:{children:ReactNode}) {
+  const auth=useAuth();
+  if(auth.status==='loading')return <SessionLoader/>;
+  if(auth.status==='anonymous')return <Navigate to="/login?next=%2Fcompany" replace/>;
+  if(!auth.companyOperator)return <Navigate to={authDestination(auth)} replace/>;
   return children;
 }

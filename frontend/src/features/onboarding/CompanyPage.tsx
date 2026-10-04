@@ -1,0 +1,31 @@
+import { useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Building2, Plus, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../auth/AuthContext';
+import { getCompany,createInstitution,inviteAdmin,revokeAdmin,invitationState,type ReadyInvitation } from './api';
+import { InvitationReceipt } from './InvitationReceipt';
+import '../office/office.css';
+import './onboarding.css';
+export default function CompanyPage() {
+  const auth=useAuth();const query=useQuery({queryKey:['company','institutions'],queryFn:getCompany});
+  const [creating,setCreating]=useState(false);const [invite,setInvite]=useState<ReadyInvitation|null>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [search,setSearch]=useState('');
+  async function create(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();const form=new FormData(event.currentTarget);setBusy(true);setError('');
+    try{const result=await createInstitution(Object.fromEntries(form));setInvite(result.invitation);setCreating(false);await query.refetch();}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}
+  }
+  async function admin(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();const form=new FormData(event.currentTarget);setBusy(true);setError('');
+    try{setInvite(await inviteAdmin(String(form.get('school_id')),String(form.get('email'))));await query.refetch();}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}
+  }
+  return <main className="company-console"><header className="company-top"><a href="/company" className="company-brand"><ShieldCheck/>Eduera <span>Company console</span></a><div><span>{auth.user?.display_name}</span><button className="office-secondary" onClick={()=>void auth.logout()}>Sign out</button></div></header><div className="office-page">
+    <header className="company-title"><div><h1>Institutions</h1><p>Create a school or college and hand setup to its administrator.</p></div><button className="office-primary" disabled={busy} onClick={()=>{setCreating(true);setError('');}}><Plus size={16}/>Create institution</button></header>
+    <ol className="onboarding-steps" aria-label="Institution onboarding"><li><strong>1. Company provisions</strong><span>Create institution and admin invitation.</span></li><li><strong>2. Admin activates</strong><span>Accept the code and sign in.</span></li><li><strong>3. School takes over</strong><span>Set up terms, invite people and delegate roles.</span></li></ol>
+    {error?<p className="office-alert" role="alert">{error}</p>:null}{invite?<InvitationReceipt invite={invite} onClose={()=>setInvite(null)}/>:null}
+    {creating?<form className="office-panel office-form" aria-label="Create institution" onSubmit={event=>void create(event)}><h2>Create institution</h2><fieldset disabled={busy} className="onboarding-fields"><div className="office-form-grid"><label className="office-field">Institution name<input name="name" required minLength={2} maxLength={180}/></label><label className="office-field">Institution type<select name="institution_kind"><option value="school">School</option><option value="college">College</option></select></label><label className="office-field">Unique code<input name="code" required pattern="[a-z0-9-]{2,32}" placeholder="e.g. lotus-college"/></label><label className="office-field">Timezone<input name="timezone" defaultValue="Asia/Kolkata" required maxLength={80}/></label></div><label className="office-field">First administrator email<input type="email" name="admin_email" required maxLength={254}/></label><p className="office-hint">The recipient activates their own account. Company access does not grant access to student records.</p><div className="office-actions"><button type="button" className="office-secondary" onClick={()=>setCreating(false)}>Cancel</button><button className="office-primary">{busy?'Creating…':'Create & invite admin'}</button></div></fieldset></form>:null}
+    {query.isPending?<p role="status">Loading institutions…</p>:query.isError?<section className="office-panel"><p role="alert">{query.error.message}</p><button className="office-secondary" onClick={()=>void query.refetch()}>Retry</button></section>:query.data?<>
+      <label className="office-field">Find institution<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or code"/></label><div className="institution-list">{query.data.schools.filter(s=>(s.name+' '+s.code).toLowerCase().includes(search.toLowerCase())).map(s=><article className="office-panel" key={s.id}><div className="company-title"><div><h2><Building2 size={18}/>{s.name}</h2><p>{s.institution_kind} · {s.code}</p></div><span className="office-status">{s.admin_count?'Active':'Awaiting admin'}</span></div><p>{s.admin_count} active administrators · {s.pending_admins} pending admin invitations</p><details><summary>Invite or replace administrator invitation</summary><form className="office-form" onSubmit={event=>void admin(event)}><input type="hidden" name="school_id" value={s.id}/><label className="office-field">Administrator email<input type="email" name="email" required disabled={busy}/></label><button className="office-secondary" disabled={busy}>{busy?'Creating…':'Create admin invitation'}</button></form></details></article>)}</div>
+      {!query.data.schools.length?<p>No institutions yet. Create the first school or college.</p>:!query.data.schools.some(s=>(s.name+' '+s.code).toLowerCase().includes(search.toLowerCase()))?<p>No matching institutions.</p>:null}
+      <section className="office-panel"><h2>Admin invitations</h2><ul className="office-list office-list--cards">{query.data.invitations.map(i=><li key={i.id}><div><strong>{i.school_name}</strong><span>{i.email}</span><small>Expires {new Date(i.expires_at).toLocaleString()}</small></div><span>{invitationState(i)}</span>{invitationState(i)==='Pending'?<button disabled={busy} onClick={()=>{setBusy(true);setError('');void revokeAdmin(i.school_id!,i.id).then(()=>query.refetch()).catch(cause=>setError((cause as Error).message)).finally(()=>setBusy(false));}}>Revoke</button>:null}</li>)}</ul>{!query.data.invitations.length?<p>No admin invitations created yet.</p>:null}</section>
+    </>:null}
+  </div></main>;
+}

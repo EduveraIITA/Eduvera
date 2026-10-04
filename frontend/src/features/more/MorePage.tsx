@@ -28,6 +28,7 @@ export function MoreContent({ portal }: { portal: Portal }) {
   const tools = toolsFor(portal).filter(tool=>portal!=='teacher' || !member?.custom_role || !needed[tool.id] || member.permissions?.includes(needed[tool.id] ?? ""));
   if(portal==='teacher' && member?.permissions?.includes('fees.manage')) tools.push({id:'delegated-fees',name:'Fee ledger',description:'Delegated fee and receipt access',icon:LockKeyhole,tone:'amber',path:'/teacher/fees'});
   if(portal==='teacher' && member?.permissions?.includes('sis.manage')) tools.push({id:'delegated-office',name:'School administration',description:'Delegated school office access',icon:LockKeyhole,tone:'blue',path:'/teacher/administration'});
+  if(portal==='principal' || (portal==='teacher' && member?.permissions?.includes('members.invite'))) tools.unshift({id:'member-invitations',name:'Invite members',description:'Invite staff, students and guardians',icon:LockKeyhole,tone:'blue',path:`/${portal}/invitations`});
   const live = tools.filter((t) => t.path);
   const planned = tools.filter((t) => !t.path);
   return (

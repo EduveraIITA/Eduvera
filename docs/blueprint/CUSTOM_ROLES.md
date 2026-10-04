@@ -6,6 +6,7 @@ protected; parent/student/guardian memberships cannot be changed by this flow.
 
 | Group | Checkbox | Code |
 | --- | --- | --- |
+| Onboarding | Invite school members | `members.invite` |
 | School office | Manage students and school records | `sis.manage` |
 | Finance | Manage fees and receipts | `fees.manage` |
 | Attendance | View assigned registers | `attendance.view` |
@@ -29,11 +30,11 @@ access, consent authority or access to a different school. Read permissions and
 write permissions are independent; choose the read checkbox alongside writes
 when the user needs to operate the corresponding screen.
 
-Creating/editing/assigning roles, managing access/invitations, changing payment
+Creating/editing/assigning roles, administrator invitations, managing membership access, changing payment
 instructions, staff administration, weekly timetable editing and school-wide
 incident assignment remain leadership actions. Personal staff leave and family
 rights remain independent of delegated staff tools. Future domains must add a
-server-enforced permission before adding a checkbox.
+server-enforced permission before adding a checkbox. `members.invite` delegates non-admin invitation creation/revocation, and `sis.manage` delegates reviewed enrollment and student imports. Use both for an admissions coordinator. Institution creation is restricted to company operators.
 
 A custom role replaces default staff permissions and legacy SIS/finance grants
 in its school. Choose **Default staff** to restore existing teacher tools and

@@ -1487,3 +1487,41 @@ gate; the local socket emulator cannot reliably multiplex the app's event
 listener and request transactions, so that attempted run is not API release
 evidence. Physical school acceptance, stronger privileged auth and non-owner
 RLS gates remain separate from this role-management increment.
+
+## WF-LOCAL-017: Company provisioning and delegated institution onboarding
+
+User decision (4 October 2026): institution provisioning belongs to the company
+backend superuser, then the institution admin handles academic setup, invites
+staff/students and delegates onboarding through custom roles. This supersedes
+WF-LOCAL-016's leadership-only invitation/enrollment boundary.
+
+Implemented: a separately bootstrapped `company_operators` authority and `/company`
+console; transactional school/college creation with first-admin invitation;
+operator metadata-only workspace; admin invitation replacement/revocation;
+main-app `/join` acceptance with new/existing account protection; empty-institution
+setup routing; school member invitations with native student/guardian record
+activation; staff custom role on joining; `members.invite` permission and delegated
+native directory/reviewed enrollment/import through `sis.manage`. School admins
+can no longer self-provision another school through the old API or either UI.
+Custom role assignment, administrator invitations, HR authority and guardian
+leave-authority edits remain protected leadership operations. Company authority
+cannot be granted from signup, role checkboxes or school APIs.
+
+Migration `033` adds institution kind, company grants/audit, invitation origin,
+record targets and same-institution invited custom-role linkage. Codes remain
+single-use, email-bound, hashed, expiring and manually delivered. Acceptance
+rechecks the original company/admin/delegated inviter's live authority. College
+records reuse the established term/class model; dedicated degree/credit workflows
+and automatic email delivery are not included.
+
+Local validation: backend typecheck/lint/build, frontend typecheck/build; five new
+onboarding UI tests plus auth/import checks; migration 033 and 22 direct
+PostgreSQL-engine service checks (company/school separation, first-admin handoff,
+role delegation, native student linkage, pending-invitation revocation). Eleven
+HTTP integration scenarios against real disposable PostgreSQL are added to the
+Stage release gate. See `COMPANY_ONBOARDING.md` for production operator bootstrap.
+
+WF-LOCAL-016 release evidence: Stage run `37184577063` passed 219 backend and 219
+frontend tests, migrated/seeded, deployed and verified exact release
+`07b5ce6be1657f7ceb1082690ac3b5f2064df388`. Live dummy-admin login, role list,
+assignment controls and checkbox grouping were verified through the browser.

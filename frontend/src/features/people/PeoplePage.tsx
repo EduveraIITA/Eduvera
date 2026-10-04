@@ -25,7 +25,7 @@ function PersonAvatar({ name, src, guardian = false }: { name: string; src?: str
 function StudentContact({ student, authorityOpen, onManage }: {
   student: DirectoryStudent;
   authorityOpen: boolean;
-  onManage: (id: string) => void;
+  onManage?: (id: string) => void;
 }) {
   return <details className="people-contact">
     <summary>
@@ -48,7 +48,7 @@ function StudentContact({ student, authorityOpen, onManage }: {
         {student.guardians.map((guardian) => <li key={guardian.id}>
           <PersonAvatar name={guardian.name} src={profileAvatar(guardian.name, guardian.avatar_url, "guardian", guardian.id)} guardian />
           <span><strong>{guardian.name}</strong><small>{guardian.relationship} · {guardian.phone || "Phone not recorded"}</small></span>
-          <button type="button" className="people-contact__permission" disabled={authorityOpen} aria-label={`Manage ${guardian.name}'s permissions for ${student.name}`} onClick={() => onManage(guardian.id)}>Permissions</button>
+          {onManage ? <button type="button" className="people-contact__permission" disabled={authorityOpen} aria-label={`Manage ${guardian.name}'s permissions for ${student.name}`} onClick={() => onManage(guardian.id)}>Permissions</button> : null}
         </li>)}
       </ul>
     </div>
@@ -57,10 +57,11 @@ function StudentContact({ student, authorityOpen, onManage }: {
 
 export default function PeoplePage() {
   const auth = useAuth();
-  const schools = auth.memberships.filter((membership) => membership.role === "admin");
+  const schools = auth.memberships.filter((membership) => membership.role === "admin" || (membership.role === "staff" && membership.permissions?.includes("sis.manage")));
   const [selected, setSelected] = useState("");
   const schoolId = selected || schools[0]?.school_id;
-  return <OperationsShell portal="principal" active="home" title="Students & guardians" subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo="/principal" contentHasHeading>
+  const portal=auth.hasPortal("principal")?"principal":"teacher";
+  return <OperationsShell portal={portal} active="home" title="Students & guardians" subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo={`/${portal}/more`} contentHasHeading>
     <div className="operations-stack">
       {schools.length > 1 ? <label className="people-school">School<select value={schoolId} onChange={(event) => setSelected(event.target.value)}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {schoolId ? <Directory key={schoolId} schoolId={schoolId} /> : <p role="alert">An active school administrator membership is required.</p>}
@@ -69,6 +70,7 @@ export default function PeoplePage() {
 }
 
 function Directory({ schoolId }: { schoolId: string }) {
+  const auth=useAuth();const portal=auth.hasPortal("principal")?"principal":"teacher";
   const [search, setSearch] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [initial, setInitial] = useState<string | undefined>();
@@ -118,7 +120,7 @@ function Directory({ schoolId }: { schoolId: string }) {
   return <>
     <header className="people-heading people-heading--actions">
       <div className="people-authority-actions">
-        <Link className="people-secondary" to={`/principal/students/import?school=${schoolId}`}>Import</Link>
+        <Link className="people-secondary" to={`/${portal}/students/import?school=${schoolId}`}>Import</Link>
         <button type="button" className="people-primary" disabled={!options.data?.results.length || adding} onClick={() => { setAdding(true); setSaved(""); }}><Plus size={17} />Add student</button>
       </div>
     </header>
@@ -146,7 +148,7 @@ function Directory({ schoolId }: { schoolId: string }) {
       {!query.isPending && !query.isError && !rows.length ? <div className="people-empty"><UsersRound size={24} /><p>No students match this view.</p></div> : null}
       <div className="people-contact-list">{grouped.map((group) => <section key={group.initial} aria-labelledby={`people-initial-${group.initial}`}>
         <h3 id={`people-initial-${group.initial}`}>{group.initial}</h3>
-        {group.students.map((student) => <StudentContact key={student.id} student={student} authorityOpen={Boolean(authorityId)} onManage={setAuthorityId} />)}
+        {group.students.map((student) => <StudentContact key={student.id} student={student} authorityOpen={Boolean(authorityId)} onManage={auth.hasPortal("principal") ? setAuthorityId : undefined} />)}
       </section>)}</div>
       {query.hasNextPage ? <button type="button" className="people-secondary people-directory__more" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{query.isFetchingNextPage ? "Loading…" : "Load more"}</button> : null}
     </section>

@@ -244,3 +244,5 @@
 @media (prefers-reduced-motion: reduce) {
   .auth-spin { animation-duration: 1.5s; }
 }
+
+.auth-invite-link{font-size:12px;color:var(--edura-ink-muted);margin:0 0 18px}.auth-invite-link a{font-weight:600;color:var(--edura-brand)}

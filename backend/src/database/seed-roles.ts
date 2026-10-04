@@ -18,7 +18,12 @@ export async function seedRolesDemo(pool: Pool, demoMode: boolean) {
     if(!count) {
       for(const role of [{name:'Accountant',description:'Fee ledger and offline receipts',permissions:['fees.manage']},{name:'Class Teacher',description:'Assigned classroom and family coordination',permissions:['attendance.view','attendance.record','timetable.view','dayplans.respond','followups.manage','messages.view','messages.send','events.view','events.attendance']},{name:'Teaching Observer',description:'Read assigned registers and schedules',permissions:['attendance.view','timetable.view','events.view']}]) await client.query('INSERT INTO school_custom_roles(school_id,name,description,permissions,created_by) VALUES($1,$2,$3,$4,$5)',[school.id,role.name,role.description,role.permissions,admin.id]);
     }
-    await client.query('COMMIT');return {admin:true};
+    let operator=(await client.query("SELECT id FROM users WHERE username='company.demo' AND email='company.operator@example.test' AND role='admin'")).rows[0];
+    if(!operator) operator=(await client.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES('company.demo','company.operator@example.test',$1,'Eduera','Company','admin') ON CONFLICT DO NOTHING RETURNING id",[await hashPassword(randomBytes(32).toString('base64url'))])).rows[0];
+    if(!operator)throw new Error('Company demo identity collision.');
+    if(process.env.DEPLOYMENT_ENVIRONMENT==='production')throw new Error('Company demo is limited to non-production environments.');
+    await client.query('INSERT INTO company_operators(user_id) VALUES($1) ON CONFLICT DO NOTHING',[operator.id]);
+    await client.query('COMMIT');return {admin:true,company_demo:true};
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }
 if(import.meta.url===new URL(process.argv[1] ?? '', 'file:').href) {
