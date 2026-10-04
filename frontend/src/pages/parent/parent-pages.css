@@ -58,7 +58,7 @@
   z-index: 50;
   width: min(100%, 780px);
   height: calc(116px + max(0px, env(safe-area-inset-top) - 12px));
-  padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+  padding: max(12px, env(safe-area-inset-top)) var(--edura-page-gutter) 12px;
   transform: translateX(-50%);
   background: rgba(248, 249, 255, 0.8);
   backdrop-filter: blur(16px);
@@ -126,7 +126,7 @@
 .presence-dot--in { background: var(--parent-positive); }
 .presence-dot--away { background: var(--parent-danger); }
 
-.parent-main { width: 100%; padding: calc(130px + max(0px, env(safe-area-inset-top) - 12px)) 16px calc(116px + env(safe-area-inset-bottom)); }
+.parent-main { width: 100%; padding: calc(130px + max(0px, env(safe-area-inset-top) - 12px)) var(--edura-page-gutter) calc(116px + env(safe-area-inset-bottom)); }
 .parent-stack { display: flex; flex-direction: column; gap: 22px; }
 .home-page { gap: 18px; padding-bottom: 22px; }
 
@@ -703,14 +703,10 @@
 @keyframes parent-spin { to { transform: rotate(360deg); } }
 
 @media (min-width: 520px) {
-  .parent-main { padding-inline: 24px; }
-  .parent-header { padding-inline: 24px; }
   .metric-card__value { font-size: 28px; }
 }
 
 @media (max-width: 390px) {
-  .parent-main { padding-inline: 14px; }
-  .parent-header { padding-inline: 14px; }
   .parent-header__actions { gap: 4px; }
   .parent-brand { min-width: 0; gap: 6px; }
   .parent-child-profiles__trigger { width: 43px; }

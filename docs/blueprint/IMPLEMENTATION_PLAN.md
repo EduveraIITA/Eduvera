@@ -29,6 +29,10 @@ decisions cannot be replaced by synthetic software tests.
   institutions; capability packs must express regulator and education-stage differences instead
   of scattering school-only assumptions through new domains. The first governance pack is the
   India school core pack; college and coaching packs require their own evidence and acceptance.
+- Product decision, 5 October 2026: initial institution onboarding assumes the institution is
+  bringing already-admitted learners into Eduvera. A pre-admission/enquiry/application pipeline is
+  parked for a later release. Current reviewed individual/bulk enrolment remains the supported
+  starting workflow; do not make admissions CRM a dependency for the next academic-operations slice.
 
 ## Repository audit and dependency order
 
@@ -47,7 +51,7 @@ decisions cannot be replaced by synthetic software tests.
 | D1: Repeatable operations | Basic timetable conflict checks | Staff coverage tasks, approved device adapters, quarantine, provider health, onboarding templates |
 | D2: Bounded policy | Attendance threshold/calendar configuration plus local G1-G3 institution profile, seeded policy register, immutable draft/review/publication and version acknowledgement | Policy rehearsal, scoped precedence, equal-priority conflict rejection, machine-evaluated explanations and prospective rollback remain open; legal applicability remains institution-reviewed |
 | E1: Finance | No authoritative fee ledger; existing labels need review | Obligations, integer minor units, allocations, receipts, verified callbacks, reversals, reconciliation; never gate collection on unpaid fees |
-| E2: Academic/admin breadth | Diary/homework completion; timetable editing | Admission conversion, assessments/results, office requests/documents/lost property; extend only after core acceptance |
+| E2: Academic/admin breadth | Diary/homework completion; timetable editing; local offline assessment/result lifecycle in WF-LOCAL-020 | Weighted term aggregation, configurable grading policy, transcripts, office requests/documents/lost property; extend only after core acceptance |
 | F1: Intelligence | Provider-neutral read-only attendance assistant | Evidence/freshness, scoped retrieval tests, safe drafting, policy rehearsal; no authority, diagnosis, release or autonomous reconciliation |
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
@@ -65,6 +69,17 @@ The complete frontend regression suite passes locally (35 files, 222 tests). Vis
 remains open, so this is not yet a release gate. This is domain hardening and does not represent
 compliance certification. G5-G10 remain planned and must not be represented as implemented until
 their separate high-risk workflows and evidence pass.
+
+## Active delivery: offline assessments and results — 5 October 2026
+
+The first Stage E academic-operations increment is tracked in
+[Offline assessments and results](OFFLINE_ASSESSMENTS_RESULTS.md). It intentionally supports the
+institution's physical exam/class-test workflow rather than becoming an online examination system.
+The local implementation covers configurable cycles and assessment kinds, explicit examiner and
+moderator assignments, a frozen enrolment roster, truthful non-score outcomes, optional protected
+evidence, revision-checked marks, independent moderation, immutable family publication snapshots,
+and corrected republication. UI acceptance, institutional grading-policy validation, production
+object storage/malware scanning and Stage deployment remain open release gates.
 
 ## Section coverage
 
@@ -1619,6 +1634,105 @@ column-list `SET NULL` syntax and is not accepted as release evidence for this c
 The Stage runtime repair step now also preserves or generates a dedicated restricted-care encryption
 key (distinct from cookie and metrics secrets) and binds the service to `0.0.0.0`; both are required
 by the managed-environment configuration before Railway can become ready.
+
+## WF-LOCAL-019: Institution activation and first-day readiness
+
+Implemented locally on 5 October 2026. Detailed contract:
+[Institution activation and first-day readiness](INSTITUTION_ACTIVATION.md).
+
+- Both formal and coaching onboarding now require a verified owner email. New tenants begin in a
+  revisioned `draft` activation state selected from a configurable school, college or coaching
+  capability pack; successful review moves the current evidence to `ready`, and a fresh locked
+  recheck is required for `active`.
+- New account trust includes hashed expiring email-verification/password-reset tokens,
+  authenticator TOTP with encrypted secrets and replay prevention, single-use hashed recovery codes,
+  MFA login challenges, enumeration-safe reset requests and all-session revocation on reset.
+- **Principal → More → Institution setup** computes readiness from real term, class/batch, subject,
+  attendance-policy, contact, staff, enrolment and timetable records. Empty workspaces can create the
+  academic foundation transactionally; partly configured workspaces deep-link to the established
+  administration, people, invitation, governance and timetable modules instead of being overwritten.
+- Review and activation are admin-only in addition to `sis.manage`, revision checked, globally audited
+  and recorded in an append-only activation history. Activation emits an `InstitutionActivated`
+  outbox event. New tables have RLS enabled and direct browser-role grants revoked.
+
+Verified local evidence: migration 040 applies from scratch on PostgreSQL 17; the local development
+database was reconciled to the restored migration-033 checksum, then migrations 039–040 applied.
+Backend lint/typecheck/build and all 253 tests pass across 31 files on a clean, seeded PostgreSQL 17
+database, including five new HTTP integration scenarios. Frontend lint/typecheck/build and all 237
+tests across 38 files pass, including computed checklist, optional-requirement and transactional
+quick-start UI coverage. The running local API reports ready database/events and its authenticated
+activation workspace returns 200. Mobile user acceptance and Stage migration/deployment/mailbox smoke
+remain open; this record does not claim those gates have passed.
+
+Demo-context correction (5 October 2026): every institution demo session now starts with the
+seeded Cambridge International School (`cis`) as its server-side active institution. Student,
+guardian, staff, principal and school-admin profiles therefore enter their contextual Cambridge
+workspace instead of the institution-onboarding flow; the company persona intentionally remains
+institution-free. The repeat-safe demo seeder also marks only the known, populated Cambridge
+reference tenant active, while real customer tenants keep the full readiness and verification
+gates. API regression coverage asserts the active-school and onboarding contract for all six demo
+personas, and a local browser check confirmed Principal view lands on `/principal` with Cambridge
+data rather than `/onboarding/start`.
+
+## WF-LOCAL-020: Offline assessment operations and results
+
+Implemented locally on 5 October 2026. Detailed contract:
+[Offline assessments and results](OFFLINE_ASSESSMENTS_RESULTS.md).
+
+- Principals create active assessment cycles inside an academic term, plan a class/subject
+  assessment, and assign different active members as examiner and moderator. Assessment kinds are
+  institution-neutral (`exam`, `class_test`, `quiz`, `assignment`, `practical`, `viva`, `project`,
+  `other`) so school, college and coaching capability packs can apply their own policy later.
+- Opening marking freezes the roster from active term enrolments. An assigned examiner records a
+  score or the explicit `absent`, `exempt`, `withheld` or `not_evaluated` outcome for every learner;
+  zero is a real score and never substitutes for absence. Bounds, evidence requirements and stale
+  revisions are enforced by the service and database-backed workflow, not only the browser.
+- The assigned moderator independently approves or returns a complete register. Principal
+  publication creates an immutable, sequenced result snapshot and notifies each account at its
+  correct student or guardian route. A later mark correction reopens marking and must pass the same
+  moderation/publication sequence; previous releases remain auditable.
+- Learner and guardian pages query only the latest published snapshot for the selected learner.
+  Draft marks, evidence and moderation data stay private. Evidence files are kept outside the public
+  web root and require current scoped staff authority to retrieve.
+- Migration `041_offline_assessments_and_results.sql` adds tenant-scoped cycles, assessments,
+  assignments, result revisions, evidence, publications and audits; direct browser-role grants are
+  revoked and RLS is enabled as defence in depth. `assessments.view`, `assessments.mark` and
+  `assessments.moderate` extend configurable staff roles without granting publication authority.
+
+Verified local evidence: migration 041 is applied to the development database; the repeat-safe demo
+seed provides a Class 7A marking register with 27 learners. Principal and assigned-teacher workspace
+smokes return the same scoped assessment. The isolated PostgreSQL lifecycle test passes creation,
+roster freeze, complete marking, self-moderation denial, independent approval, publication,
+relationship-scoped family access, correction and second publication while preserving release one.
+Focused family UI tests cover published correction display and private/empty states. Complete-suite
+verification now passes on a clean isolated PostgreSQL database: backend lint/typecheck/build and all
+256 tests across 32 files; frontend lint/typecheck/build and all 239 tests across 39 files. The local
+API reports ready database and event dependencies and both the login and principal-assessment routes
+return successfully.
+
+Responsive shell correction verified on 5 October 2026: role portals now share one 16 px mobile page
+gutter owned by the parent, student or operations shell. Assessments/results, institution setup and
+governance/policy workspaces no longer add a second horizontal page gutter, while intentionally
+full-bleed rails remain unchanged. The authenticated principal assessment route was measured at both
+390 px and 320 px: its hero is exactly 16 px from both viewport edges, the narrow metric row does not
+overflow or add a scrollbar, and the page has no horizontal overflow. Frontend lint, typecheck,
+production build and all 239 tests across 39 files pass after the correction. Representative physical-
+device acceptance across every role remains open and must not be inferred from this targeted browser
+verification.
+
+Content-density correction verified on 5 October 2026: newly added assessment/results, institution
+setup, account-security and self-service onboarding screens now follow the established concise portal
+pattern. Repeated page headings, promotional hero copy and implementation explanations were removed;
+operational counts, state, required choices, safety warnings and actionable next steps remain. The
+principal assessment and institution-setup routes were visually checked at 390 px and measured at
+320 px with the shared 16 px gutter and no horizontal overflow. Focused coverage asserts the concise
+empty/result, readiness and onboarding states; frontend lint, typecheck, production build and all 239
+tests across 39 files pass after the change.
+
+Open boundaries: no online test runner, question bank, proctoring, auto-grading, public ranking,
+weighted aggregate, board-specific grade calculation, transcript/certificate or result analytics is
+claimed. Production evidence storage still requires object lifecycle, scanning, retention and legal
+review. Institutional grading/moderation SOP and representative-device acceptance remain mandatory.
 
 ## Invitation SMTP delivery — 4 October 2026
 

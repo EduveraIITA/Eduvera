@@ -1339,7 +1339,7 @@
   }
   .operations-topbar {
     min-height: calc(116px + env(safe-area-inset-top, 0px));
-    padding: env(safe-area-inset-top, 0px) 16px 4px;
+    padding: env(safe-area-inset-top, 0px) var(--edura-page-gutter) 4px;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "brand actions" "heading heading";
     column-gap: 8px;
@@ -1369,7 +1369,7 @@
     font-size: 18px;
   }
   .operations-main {
-    padding: 16px 14px 28px;
+    padding: 16px var(--edura-page-gutter) 28px;
   }
   .teacher-home__day { padding: 18px; }
   .teacher-home__day-summary { margin-top: 20px; }
@@ -1558,9 +1558,6 @@
 }
 
 @media (max-width: 370px) {
-  .operations-main {
-    padding-inline: 12px;
-  }
   .teacher-home__primary-action-cta {
     font-size: 0;
     gap: 0;

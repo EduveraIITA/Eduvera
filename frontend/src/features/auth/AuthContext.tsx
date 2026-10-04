@@ -23,6 +23,7 @@ export interface AuthUser {
   display_name: string;
   role: AccountRole;
   avatar_url?: string | null;
+  email_verified?: boolean;
   active_school_id?: string | null;
 }
 
@@ -61,6 +62,12 @@ interface AuthResponse {
     has_school_access: boolean;
     message: string;
   };
+  verification?: { delivery: string; development_token?: string; expires_at?: string };
+}
+
+interface MfaChallengeResponse {
+  mfa_required: true;
+  challenge_token: string;
 }
 
 export interface LoginInput {
@@ -89,7 +96,8 @@ interface AuthState {
 export interface AuthContextValue extends AuthState {
   portals: Portal[];
   hasPortal: (portal: Portal) => boolean;
-  login: (input: LoginInput) => Promise<void>;
+  login: (input: LoginInput) => Promise<{ challengeToken: string | null }>;
+  completeMfa: (challengeToken: string, code: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   enterDemo: (persona: DemoPersona) => Promise<void>;
   logout: () => Promise<void>;
@@ -246,14 +254,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (input: LoginInput) => {
-      const response = await authMutation<AuthResponse>("/api/v1/auth/login/", input);
+      const response = await authMutation<AuthResponse | MfaChallengeResponse>("/api/v1/auth/login/", input);
+      if ("mfa_required" in response) return { challengeToken: response.challenge_token };
       window.localStorage.removeItem(LOGGED_OUT_KEY);
       window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
       await loadProfile(response);
       await queryClient.invalidateQueries();
+      return { challengeToken: null };
     },
     [loadProfile, queryClient],
   );
+
+  const completeMfa = useCallback(async (challengeToken: string, code: string) => {
+    const response = await authMutation<AuthResponse>("/api/v1/auth/mfa/login/", { challenge_token: challengeToken, code });
+    window.localStorage.removeItem(LOGGED_OUT_KEY);
+    window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
+    await loadProfile(response);
+    await queryClient.invalidateQueries();
+  }, [loadProfile, queryClient]);
 
   const register = useCallback(
     async (input: RegisterInput) => {
@@ -267,6 +285,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: response.demo_mode,
         serviceError: null,
       });
+      if (response.verification?.development_token) {
+        window.sessionStorage.setItem("omnischool:development-verification-token", response.verification.development_token);
+      }
       queryClient.clear();
     },
     [queryClient],
@@ -309,12 +330,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       portals,
       hasPortal: (portal) => portals.includes(portal),
       login,
+      completeMfa,
       register,
       enterDemo,
       logout,
       refresh,
     }),
-    [enterDemo, login, logout, portals, refresh, register, state],
+    [completeMfa, enterDemo, login, logout, portals, refresh, register, state],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -330,13 +352,14 @@ export function useOptionalAuth() {
   return useContext(AuthContext);
 }
 
-export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships" | "companyOperator" | "setupRequired">) {
+export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships" | "companyOperator" | "setupRequired"> & { user?: AuthUser | null }) {
   if (auth.status !== "authenticated") return "/login";
+  if (auth.user?.email_verified === false) return "/account/security";
   if (auth.companyOperator) return "/company";
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
   if (auth.portals.includes("teacher")) return auth.memberships.some(m=>m.role==='staff' && m.custom_role) ? "/teacher/more" : "/teacher";
-  if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/administration" : "/principal";
+  if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/activation" : "/principal";
   if (auth.memberships.length === 0) return "/onboarding/start";
   return "/workspace";
 }

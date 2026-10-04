@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   GraduationCap,
+  KeyRound,
   LoaderCircle,
   LockKeyhole,
   Mail,
@@ -102,6 +103,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
   const [pending, setPending] = useState<"login" | DemoPersona | null>(null);
   const [error, setError] = useState(auth.serviceError);
 
@@ -112,10 +115,30 @@ export function LoginPage() {
     setError(null);
     setPending("login");
     try {
-      await auth.login({ identifier: identifier.trim(), password });
+      const result = await auth.login({ identifier: identifier.trim(), password });
+      if (result.challengeToken) {
+        setMfaChallenge(result.challengeToken);
+        setPassword("");
+        return;
+      }
       void navigate(safeNextPath(location.search) ?? "/", { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Sign in could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function submitMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mfaChallenge) return;
+    setError(null);
+    setPending("login");
+    try {
+      await auth.completeMfa(mfaChallenge, mfaCode.trim());
+      void navigate(safeNextPath(location.search) ?? "/", { replace: true });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The verification code could not be confirmed.");
     } finally {
       setPending(null);
     }
@@ -138,7 +161,13 @@ export function LoginPage() {
   return (
     <AuthLayout eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
       <p className="auth-invite-link">Have an invitation? <Link to="/join">Join your institution</Link></p>
-      <form className="auth-form" onSubmit={submit}>
+      {mfaChallenge ? <form className="auth-form" onSubmit={submitMfa}>
+        {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
+        <div className="auth-verification-intro"><ShieldCheck size={20}/><div><strong>Two-step verification</strong><p>Enter the six-digit authenticator code or one unused recovery code.</p></div></div>
+        <label className="auth-field"><span>Verification code</span><div className="auth-input-wrap"><KeyRound size={18}/><input value={mfaCode} onChange={(event)=>setMfaCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" autoFocus required/></div></label>
+        <button className="auth-primary-button" type="submit" disabled={pending !== null}>{pending === "login" ? <><LoaderCircle className="auth-spin" size={18}/> Verifying…</> : <>Verify and sign in <ArrowRight size={18}/></>}</button>
+        <button className="auth-text-button" type="button" onClick={()=>{setMfaChallenge(null);setMfaCode("");setError(null);}}>Use another account</button>
+      </form> : <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <label className="auth-field">
           <span>Email or username</span>
@@ -156,13 +185,13 @@ export function LoginPage() {
           </div>
         </label>
         <label className="auth-field">
-          <span>Password</span>
+          <span className="auth-field__split">Password <Link to="/forgot-password">Forgot password?</Link></span>
           <PasswordInput value={password} onChange={setPassword} />
         </label>
         <button className="auth-primary-button" type="submit" disabled={pending !== null}>
           {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
-      </form>
+      </form>}
 
       {auth.demoMode ? (
         <div className="demo-entry">
@@ -233,7 +262,7 @@ export function SignupPage() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
       });
-      void navigate("/onboarding/start", { replace: true });
+      void navigate("/account/security", { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Your account could not be created.");
     } finally {

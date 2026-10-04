@@ -666,7 +666,7 @@ describe("authentication and route authorization", () => {
   it("holds a newly registered account outside tenant data until membership exists", async () => {
     mockSession([]);
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "How would you like to begin?" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Create a workspace" })).toBeVisible();
     expect(screen.getByRole("button", { name: /Start institution application/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /Create coaching workspace/i })).toBeVisible();
   });

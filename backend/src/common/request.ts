@@ -11,6 +11,7 @@ export interface AuthUser {
   avatar_url?: string;
   role: UserRole;
   is_active: boolean;
+  email_verified_at?: Date | null;
   active_school_id?: string | null;
 }
 

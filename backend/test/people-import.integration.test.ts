@@ -42,6 +42,7 @@ afterAll(async()=>{
     const guardianIds=(await pool.query('SELECT p.id FROM parents p JOIN guardian_school_profiles gp ON gp.guardian_id=p.id WHERE gp.school_id=$1 AND p.user_id IS NULL',[schoolId])).rows.map(r=>r.id);
     await pool.query('DELETE FROM people_imports WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM event_outbox WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM audit_events WHERE school_id=$1',[schoolId]);
+    await pool.query('DELETE FROM guardian_relationships WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM students WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM guardian_school_profiles WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM parents WHERE id=ANY($1::uuid[])',[guardianIds]);

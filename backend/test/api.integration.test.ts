@@ -903,13 +903,20 @@ describe("OmniSchool API", () => {
 
   it("supports demo sign-in, fail-safe logout, and immediate password sign-in in one browser", async () => {
     const browser = new BrowserSession();
+    const cambridge = (await pool.query<{ id: string }>("SELECT id FROM schools WHERE code='cis'")).rows[0]!;
     const demo = await browser.request("/api/v1/auth/demo-session/", {
       method: "POST",
       body: JSON.stringify({ role: "admin" }),
     });
     expect(demo.status).toBe(200);
-    expect((await json(demo)).user.role).toBe("admin");
-    expect((await browser.request("/api/v1/auth/me/")).status).toBe(200);
+    expect((await json(demo)).user).toMatchObject({ role: "admin", active_school_id: cambridge.id });
+    const demoProfileResponse = await browser.request("/api/v1/auth/me/");
+    expect(demoProfileResponse.status).toBe(200);
+    expect(await json(demoProfileResponse)).toMatchObject({
+      user: { active_school_id: cambridge.id },
+      memberships: [{ school_id: cambridge.id, role: "admin" }],
+      institution_setup_required: false,
+    });
 
     const logout = await browser.request("/api/v1/auth/logout/", { method: "POST" });
     expect(logout.status).toBe(204);
@@ -918,6 +925,24 @@ describe("OmniSchool API", () => {
 
     expect((await browser.login("meera.principal")).status).toBe(200);
     expect((await browser.request("/api/v1/auth/me/")).status).toBe(200);
+  });
+
+  it("pins every school demo profile to Cambridge while keeping the company demo institution-free", async () => {
+    const cambridge = (await pool.query<{ id: string }>("SELECT id FROM schools WHERE code='cis'")).rows[0]!;
+    for (const role of ["student", "parent", "staff", "admin", "school_admin"] as const) {
+      const browser = new BrowserSession();
+      const response = await browser.request("/api/v1/auth/demo-session/", { method: "POST", body: JSON.stringify({ role }) });
+      expect(response.status).toBe(200);
+      expect((await json(response)).user.active_school_id).toBe(cambridge.id);
+      const profile = await json(await browser.request("/api/v1/auth/me/"));
+      expect(profile.user.active_school_id).toBe(cambridge.id);
+      expect(profile.memberships).toEqual(expect.arrayContaining([expect.objectContaining({ school_id: cambridge.id })]));
+      expect(profile.institution_setup_required).toBe(false);
+    }
+    const company = new BrowserSession();
+    const response = await company.request("/api/v1/auth/demo-session/", { method: "POST", body: JSON.stringify({ role: "company" }) });
+    expect(response.status).toBe(200);
+    expect((await json(response)).user.active_school_id).toBeNull();
   });
 
   it("requires registration CSRF and leaves new identities pending school onboarding", async () => {
@@ -2136,6 +2161,7 @@ describe("OmniSchool API", () => {
         classes_excused: 0,
       });
     } finally {
+      await pool.query("DELETE FROM guardian_relationships WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM students WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM guardian_school_profiles WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM school_people WHERE school_id=$1", [schoolId]);

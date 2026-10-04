@@ -17,6 +17,7 @@ export interface UserTable {
   avatar_url: Generated<string>;
   role: "student" | "parent" | "staff" | "admin";
   is_active: Generated<boolean>;
+  email_verified_at: Generated<Date | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -382,6 +383,15 @@ export interface ChatMessageTable { id: Generated<string>; conversation_id: stri
 export interface ChatAttachmentTable { id: Generated<string>; message_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; created_at: Timestamp }
 export interface ChatMessageReportTable { id: Generated<string>; message_id: string; reported_by: string; reason: string; status: Generated<"open" | "under_review" | "resolved" | "dismissed">; assigned_to: string | null; reviewed_by: string | null; resolution_note: Generated<string>; action_taken: Generated<"none" | "no_action" | "warning" | "restrict" | "escalate">; created_at: Timestamp; updated_at: Timestamp; resolved_at: NullableTimestamp }
 export interface ChatMessagingRestrictionTable { id: Generated<string>; school_id: string; user_id: string; report_id: string; reason: string; starts_at: Timestamp; expires_at: Timestamp; created_by: string; revoked_at: NullableTimestamp; created_at: Timestamp }
+export interface AssessmentCycleTable { id: Generated<string>; school_id: string; term_id: string; name: string; code: string; starts_on: DateOnly; ends_on: DateOnly; status: Generated<"draft"|"active"|"completed"|"archived">; result_label: Generated<string>; revision: Generated<number>; created_by: string; updated_by: string; created_at: Timestamp; updated_at: Timestamp }
+export interface AssessmentTable { id: Generated<string>; school_id: string; cycle_id: string; class_section_id: string; subject_id: string; title: string; assessment_kind: "exam"|"class_test"|"quiz"|"assignment"|"practical"|"viva"|"project"|"other"; maximum_marks: string; weight_percent: string|null; scheduled_at: NullableTimestamp; duration_minutes: number|null; venue: Generated<string>; instructions: Generated<string>; evidence_requirement: Generated<"none"|"optional"|"required">; status: Generated<"draft"|"scheduled"|"marking"|"submitted"|"moderated"|"published"|"cancelled">; revision: Generated<number>; moderation_note: Generated<string>; submitted_by: string|null; submitted_at: NullableTimestamp; moderated_by: string|null; moderated_at: NullableTimestamp; cancelled_by: string|null; cancelled_at: NullableTimestamp; cancellation_reason: Generated<string>; created_by: string; updated_by: string; created_at: Timestamp; updated_at: Timestamp }
+export interface AssessmentStaffAssignmentTable { school_id: string; assessment_id: string; user_id: string; role: "examiner"|"moderator"; assigned_by: string; assigned_at: Timestamp }
+export interface AssessmentResultTable { id: Generated<string>; school_id: string; assessment_id: string; student_id: string; outcome: Generated<"unrecorded"|"scored"|"absent"|"exempt"|"withheld"|"not_evaluated">; marks: string|null; grade: Generated<string>; feedback: Generated<string>; revision: Generated<number>; recorded_by: string|null; recorded_at: NullableTimestamp; updated_at: Timestamp }
+export interface AssessmentResultRevisionTable { id: Generated<number>; school_id: string; assessment_id: string; result_id: string; student_id: string; revision: number; previous_outcome: string|null; outcome: string; previous_marks: string|null; marks: string|null; previous_grade: Generated<string>; grade: Generated<string>; previous_feedback: Generated<string>; feedback: Generated<string>; reason: string; changed_by: string; created_at: Timestamp }
+export interface AssessmentEvidenceTable { id: Generated<string>; school_id: string; assessment_id: string; result_id: string; student_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; uploaded_by: string; uploaded_at: Timestamp }
+export interface AssessmentPublicationTable { id: Generated<string>; school_id: string; assessment_id: string; sequence: number; source_revision: number; reason: string; published_by: string; published_at: Timestamp }
+export interface AssessmentPublicationResultTable { school_id: string; publication_id: string; assessment_id: string; student_id: string; source_result_id: string; source_result_revision: number; outcome: "scored"|"absent"|"exempt"|"withheld"|"not_evaluated"; marks: string|null; grade: Generated<string>; feedback: Generated<string> }
+export interface AssessmentAuditTable { id: Generated<number>; school_id: string; assessment_id: string|null; actor_id: string; action: string; from_status: string|null; to_status: string|null; metadata: Json; created_at: Timestamp }
 
 export interface Database {
   school_people: SchoolPersonTable;
@@ -480,6 +490,15 @@ export interface Database {
   chat_attachments: ChatAttachmentTable;
   chat_message_reports: ChatMessageReportTable;
   chat_messaging_restrictions: ChatMessagingRestrictionTable;
+  assessment_cycles: AssessmentCycleTable;
+  assessments: AssessmentTable;
+  assessment_staff_assignments: AssessmentStaffAssignmentTable;
+  assessment_results: AssessmentResultTable;
+  assessment_result_revisions: AssessmentResultRevisionTable;
+  assessment_evidence: AssessmentEvidenceTable;
+  assessment_publications: AssessmentPublicationTable;
+  assessment_publication_results: AssessmentPublicationResultTable;
+  assessment_audits: AssessmentAuditTable;
   chat_policies: ChatPolicyTable;
 }
 

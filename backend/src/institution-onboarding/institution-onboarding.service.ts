@@ -51,6 +51,7 @@ export class InstitutionOnboardingService {
   }
 
   async submitFormal(user: AuthUser, body: unknown, request: FastifyRequest) {
+    if (!user.email_verified_at) throw new ConflictException("Verify your account email before submitting an institution application.");
     const input = formalApplication.parse(body);
     try {
       const result = await this.db.transaction().execute(async (db) => {
@@ -88,6 +89,7 @@ export class InstitutionOnboardingService {
   }
 
   async createCoaching(user: AuthUser, sessionHash: string, body: unknown, request: FastifyRequest) {
+    if (!user.email_verified_at) throw new ConflictException("Verify your account email before creating a coaching workspace.");
     const input = coachingWorkspace.parse(body);
     try {
       const workspace = await this.db.transaction().execute(async (db) => {

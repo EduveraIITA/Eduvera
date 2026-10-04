@@ -87,7 +87,7 @@
   display: flex;
   width: min(100%, 780px);
   height: calc(116px + env(safe-area-inset-top, 0px));
-  padding: env(safe-area-inset-top, 0px) 16px 0;
+  padding: env(safe-area-inset-top, 0px) var(--edura-page-gutter) 0;
   transform: translateX(-50%);
   flex-direction: column;
   align-items: stretch;
@@ -197,7 +197,7 @@
 .student-main {
   width: 100%;
   min-height: 100vh;
-  padding: calc(116px + env(safe-area-inset-top, 0px) + 8px) 16px calc(90px + env(safe-area-inset-bottom, 0px));
+  padding: calc(116px + env(safe-area-inset-top, 0px) + 8px) var(--edura-page-gutter) calc(90px + env(safe-area-inset-bottom, 0px));
 }
 
 .student-bottom-nav {
@@ -3125,9 +3125,6 @@
 .student-diary-sheet__action { width: 100%; margin-top: 13px; }
 
 @media (min-width: 520px) {
-  .student-main { padding-inline: 22px; }
-  .horizontal-pills,
-  .day-selector__scroll { width: calc(100% + 44px); margin-inline: -22px; padding-inline: 22px; }
   .attendance-page,
   .eligibility-page,
   .leave-new-page,
@@ -3152,10 +3149,6 @@
 }
 
 @media (max-width: 390px) {
-  .student-main { padding-inline: 13px; }
-  .horizontal-pills,
-  .day-selector__scroll { width: calc(100% + 26px); margin-inline: -13px; padding-inline: 13px; }
-  .timetable-week-chart { margin-right: -13px; }
   .student-class-chip { display: none; }
   .attendance-hero,
   .eligibility-hero { padding: 16px; }

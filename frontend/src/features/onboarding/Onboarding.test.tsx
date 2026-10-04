@@ -71,16 +71,18 @@ describe('company and school onboarding',()=>{
   });
   it('routes company operators and new school admins to the correct workspace',()=>{
     expect(authDestination({status:'authenticated',companyOperator:true,portals:[],memberships:[]})).toBe('/company');
-    expect(authDestination({status:'authenticated',setupRequired:true,portals:['principal'],memberships:[]})).toBe('/principal/administration');
+    expect(authDestination({status:'authenticated',setupRequired:true,portals:['principal'],memberships:[]})).toBe('/principal/activation');
     expect(authDestination({status:'authenticated',portals:['principal'],memberships:[]})).toBe('/principal');
   });
   it('presents verified institution and immediate coaching as distinct onboarding models',async()=>{
     auth.companyOperator=false;
     mount(<SelfServiceOnboardingPage/>);
+    expect(await screen.findByRole('heading',{name:'Create a workspace'})).toBeVisible();
     expect(await screen.findByRole('button',{name:/Start institution application/i})).toBeVisible();
     expect(screen.getByRole('button',{name:/Create coaching workspace/i})).toBeVisible();
     expect(screen.getByText('No Eduvera verification')).toBeVisible();
     expect(screen.getByText('Workspace opens after approval')).toBeVisible();
+    expect(screen.queryByText(/focused learner community/i)).not.toBeInTheDocument();
   });
   it('submits formal verification details without provisioning from the applicant UI',async()=>{
     auth.companyOperator=false;

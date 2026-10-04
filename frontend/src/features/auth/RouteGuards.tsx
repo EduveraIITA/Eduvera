@@ -39,6 +39,9 @@ export function AuthenticatedOnly({ children }: { children: ReactNode }) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
+  if (auth.user?.email_verified === false && location.pathname !== "/account/security") {
+    return <Navigate to="/account/security" replace />;
+  }
   return children;
 }
 
@@ -50,6 +53,7 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
+  if (auth.user?.email_verified === false) return <Navigate to="/account/security" replace />;
   if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
   if(portal==='teacher') {
     const member=auth.memberships.find(m=>m.role==='staff');

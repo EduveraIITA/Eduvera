@@ -66,9 +66,8 @@ export default function SelfServiceOnboardingPage() {
     </header>
     <section className="self-onboarding__shell">
       <header className="self-onboarding__intro">
-        <span className="self-onboarding__eyebrow">Set up your workspace</span>
-        <h1>{mode === "choose" ? "How would you like to begin?" : mode === "institution" ? "Onboard your institution" : "Create your coaching workspace"}</h1>
-        <p>{mode === "choose" ? "Choose the path that matches how your organisation operates today. You can add people after the workspace is ready." : mode === "institution" ? "Schools and colleges are reviewed by Eduvera before their workspace is activated." : "For an independent tutor or small coaching group. No company verification is required."}</p>
+        <h1>{mode === "choose" ? "Create a workspace" : mode === "institution" ? "Institution verification" : "Coaching workspace"}</h1>
+        {mode === "choose" ? null : <p>{mode === "institution" ? "Reviewed by Eduvera before activation." : "No verification required."}</p>}
       </header>
 
       {workspace.isError ? <div className="self-onboarding__alert" role="alert">{workspace.error.message}<button type="button" onClick={() => void workspace.refetch()}>Retry</button></div> : null}
@@ -81,7 +80,7 @@ export default function SelfServiceOnboardingPage() {
           {workspace.data.applications.map((application) => <article key={application.id} className="application-status-card">
             <div><Building2 size={20}/><div><strong>{application.institution_name}</strong><small>{application.institution_kind} · {application.requested_code}</small></div></div>
             <StatusBadge status={application.status}/>
-            {application.review_note ? <p><b>Review note:</b> {application.review_note}</p> : application.status === "submitted" ? <p>Eduvera will review the organisation details. Your account remains private while the review is open.</p> : null}
+            {application.review_note ? <p><b>Review note:</b> {application.review_note}</p> : null}
             {application.status === "needs_information" ? <button type="button" className="self-secondary" onClick={() => editApplication(application)}>Update and resubmit <ArrowRight size={16}/></button> : null}
             {application.status === "approved" ? <button type="button" className="self-primary" onClick={async () => { await auth.refresh(); void navigate("/", { replace: true }); }}>Open institution workspace <ArrowRight size={16}/></button> : null}
           </article>)}
@@ -89,13 +88,13 @@ export default function SelfServiceOnboardingPage() {
         <section className="onboarding-models" aria-label="Workspace onboarding options">
           <article className="onboarding-model onboarding-model--verified">
             <div className="onboarding-model__icon"><Building2/></div><span className="onboarding-model__tag"><ShieldCheck size={14}/>Company verified</span>
-            <h2>Onboard your institution</h2><p>For a school, college, trust, or organised education institution that needs a verified workspace.</p>
+            <h2>Institution workspace</h2>
             <ul><li><Check/>Submit registration or affiliation details</li><li><Check/>Eduvera reviews the application</li><li><Check/>Workspace opens after approval</li></ul>
             <button type="button" className="self-primary" onClick={() => select("institution")}>Start institution application <ArrowRight size={17}/></button>
           </article>
           <article className="onboarding-model onboarding-model--coaching">
             <div className="onboarding-model__icon"><GraduationCap/></div><span className="onboarding-model__tag"><Clock3 size={14}/>Ready immediately</span>
-            <h2>Create your coaching workspace</h2><p>For an independent tutor or a small coaching group managing a focused learner community.</p>
+            <h2>Coaching workspace</h2>
             <ul><li><Check/>No Eduvera verification</li><li><Check/>Invite students after setup</li><li><Check/>Start with a lightweight capability pack</li></ul>
             <button type="button" className="self-primary" onClick={() => select("coaching")}>Create coaching workspace <ArrowRight size={17}/></button>
           </article>
@@ -126,8 +125,8 @@ export default function SelfServiceOnboardingPage() {
 
       {mode === "coaching" ? <form className="self-form self-form--coaching" onSubmit={(event) => void submitCoaching(event)}>
         <button type="button" className="self-back" onClick={() => select("choose")}><ArrowLeft size={16}/>Back to options</button>
-        <div className="coaching-boundary"><GraduationCap/><div><b>A coaching workspace is not a verified school or college.</b><p>It starts with coaching-appropriate capabilities. You can request formal institution verification later if your organisation grows.</p></div></div>
-        <section><header><span>1</span><div><h2>Workspace details</h2><p>You can invite learners and staff after creation.</p></div></header><div className="self-form__grid">
+        <div className="coaching-boundary"><GraduationCap/><div><b>Unverified coaching workspace</b><p>Upgrade later through institution review.</p></div></div>
+        <section><header><span>1</span><div><h2>Workspace details</h2></div></header><div className="self-form__grid">
           <label>Coaching or tutor name<input name="name" value={name} onChange={(event) => changeName(event.target.value)} minLength={2} maxLength={180} required/></label>
           <label>Workspace code<input name="code" value={code} onChange={(event) => { setCodeEdited(true); setCode(event.target.value); }} onBlur={() => setCode(codeFromName(code))} minLength={2} maxLength={32} required/></label>
           <label>Teaching mode<select name="delivery_mode"><option value="in_person">In person</option><option value="online">Online</option><option value="hybrid">Hybrid</option></select></label>

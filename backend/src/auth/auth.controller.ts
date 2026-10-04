@@ -50,7 +50,21 @@ export class AuthController {
   @Post("login/")
   @HttpCode(200)
   async login(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    const user = await this.auth.login(request.body, request);
+    const result = await this.auth.login(request.body, request);
+    if (result.mfaChallenge) {
+      reply.status(202);
+      return { mfa_required: true, challenge_token: result.mfaChallenge };
+    }
+    const session = await this.auth.createSession(result.user, request);
+    this.setSession(reply, session.rawToken, session.csrfToken);
+    return this.auth.response(result.user, session.csrfToken);
+  }
+
+  @Public()
+  @Post("mfa/login/")
+  @HttpCode(200)
+  async mfaLogin(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
+    const user = await this.auth.completeMfaLogin(request.body, request);
     const session = await this.auth.createSession(user, request);
     this.setSession(reply, session.rawToken, session.csrfToken);
     return this.auth.response(user, session.csrfToken);
@@ -59,17 +73,60 @@ export class AuthController {
   @Public()
   @Post("register/")
   async register(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    const user = await this.auth.register(request.body, request);
+    const result = await this.auth.register(request.body, request);
+    const user = result.user;
     const session = await this.auth.createSession(user, request);
     this.setSession(reply, session.rawToken, session.csrfToken);
     return {
       ...this.auth.response(user, session.csrfToken),
+      verification: result.verification,
       onboarding: {
         status: "pending_school_membership",
         has_school_access: false,
         message: "Your account is ready. Join a school through its invitation or onboarding process to access student data.",
       },
     };
+  }
+
+  @Post("email-verification/request/")
+  requestEmailVerification(@Req() request: AuthenticatedRequest) {
+    return this.auth.requestEmailVerification(request.authUser, request);
+  }
+
+  @Post("email-verification/confirm/")
+  @HttpCode(200)
+  confirmEmailVerification(@Req() request: AuthenticatedRequest) {
+    return this.auth.confirmEmailVerification(request.authUser, request.body, request);
+  }
+
+  @Public()
+  @Post("password-reset/request/")
+  @HttpCode(202)
+  passwordResetRequest(@Req() request: FastifyRequest) {
+    return this.auth.requestPasswordReset(request.body, request);
+  }
+
+  @Public()
+  @Post("password-reset/confirm/")
+  @HttpCode(200)
+  passwordResetConfirm(@Req() request: FastifyRequest) {
+    return this.auth.confirmPasswordReset(request.body, request);
+  }
+
+  @Get("mfa/")
+  mfaStatus(@Req() request: AuthenticatedRequest) {
+    return this.auth.mfaStatus(request.authUser);
+  }
+
+  @Post("mfa/enroll/")
+  beginMfa(@Req() request: AuthenticatedRequest) {
+    return this.auth.beginMfaEnrollment(request.authUser, request);
+  }
+
+  @Post("mfa/confirm/")
+  @HttpCode(200)
+  confirmMfa(@Req() request: AuthenticatedRequest) {
+    return this.auth.confirmMfaEnrollment(request.authUser, request.body, request);
   }
 
   @Public()

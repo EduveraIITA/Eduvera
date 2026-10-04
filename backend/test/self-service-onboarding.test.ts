@@ -33,7 +33,7 @@ suite("two-lane self-service onboarding against PostgreSQL", () => {
   beforeAll(async () => {
     const digest = await hashPassword(password);
     applicantId = (await pool.query(
-      "INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Anita','Founder','admin') RETURNING id",
+      "INSERT INTO users(username,email,password_hash,first_name,last_name,role,email_verified_at) VALUES($1,$2,$3,'Anita','Founder','admin',now()) RETURNING id",
       [`founder.${suffix}`, `founder.${suffix}@example.test`, digest],
     )).rows[0].id;
     const companyId = (await pool.query(
