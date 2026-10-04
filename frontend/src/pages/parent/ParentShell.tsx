@@ -53,6 +53,7 @@ export interface ParentShellProps {
   childSwitchDisabled?: boolean;
   backTo?: string;
   onBack?: () => void;
+  institutionLevel?: boolean;
 }
 
 export function ParentShell({
@@ -67,6 +68,7 @@ export function ParentShell({
   childSwitchDisabled = false,
   backTo,
   onBack,
+  institutionLevel = false,
 }: ParentShellProps) {
   const auth = useOptionalAuth();
   const navigationActive = active === "events" ? "more" : active;
@@ -160,7 +162,7 @@ export function ParentShell({
         </div>
         <div className="parent-header__context">
           <PortalPageTitle title={pageLabel} rootPath="/parent/home" backTo={backTo} onBack={onBack} />
-          {active !== "home" && active !== "events" ? <span className="parent-header__child-label">
+          {active !== "home" && active !== "events" && !institutionLevel ? <span className="parent-header__child-label">
             {presenceStatus ? <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : "presence-dot presence-dot--away"} /> : null}
             <span className="parent-header__child-name">{child.name} · Class {child.grade.replace("Grade ", "")}{child.section}</span>
           </span> : null}

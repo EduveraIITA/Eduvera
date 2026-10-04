@@ -24,6 +24,11 @@ decisions cannot be replaced by synthetic software tests.
   not prerequisites for a working web coordination loop. See ADR-001 below.
 - Use the local synthetic school for review. Do not silently switch to Supabase credentials.
 - Ask Abhishek to review working UI after substantial changes, before continuing UI expansion.
+- Preserve `schools` as the current tenancy anchor while modelling new capabilities as
+  institution-scoped configuration. The product target includes schools, colleges and coaching
+  institutions; capability packs must express regulator and education-stage differences instead
+  of scattering school-only assumptions through new domains. The first governance pack is the
+  India school core pack; college and coaching packs require their own evidence and acceptance.
 
 ## Repository audit and dependency order
 
@@ -37,16 +42,29 @@ decisions cannot be replaced by synthetic software tests.
 | B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes | Dedicated action inbox aggregating obligations; notice creation/audiences; delivery-attempt versus acknowledgment versus decision states; explicit non-app routing |
 | B6: Pilot readiness | Scoped documents, auth/CSRF, event replay and tests | Scoped object storage, malware scanning, non-owner RLS runtime roles/context, privileged auth, recovery drill, accessibility/device validation, release evidence |
 | C1: Departure coordination | No trusted operational release implementation | Departure plans and revisions; collection authority; verification/approval/readiness/execution; current-authority checks and fallback; separate school sign-off |
-| C2: Restricted care | No care domain | Assigned confidential referrals, alternate reporting route, audited restricted access and documented outcomes; never broad-feed allegations |
+| C2: Restricted care | Local restricted-care slice: encrypted intake/notes, dated primary and alternate recipients, explicit per-case access, reporting evidence, closure gate and neutral event envelopes | Authenticated UI/operational sign-off; evidence storage, retention/legal hold, external delivery and institution tabletop drill remain release gates |
 | C3: Transport pilot | Some existing read-only placeholder surfaces | Explicit service boundary, route/trip/leg rosters, manual observations, unresolved rider reconciliation and staffed closure; independent readiness gate |
 | D1: Repeatable operations | Basic timetable conflict checks | Staff coverage tasks, approved device adapters, quarantine, provider health, onboarding templates |
-| D2: Bounded policy | Attendance threshold/calendar configuration | Typed versioned draft/rehearsal/approval/activation workflow, scoped precedence, equal-priority conflict rejection, explanations and prospective rollback |
+| D2: Bounded policy | Attendance threshold/calendar configuration plus local G1-G3 institution profile, seeded policy register, immutable draft/review/publication and version acknowledgement | Policy rehearsal, scoped precedence, equal-priority conflict rejection, machine-evaluated explanations and prospective rollback remain open; legal applicability remains institution-reviewed |
 | E1: Finance | No authoritative fee ledger; existing labels need review | Obligations, integer minor units, allocations, receipts, verified callbacks, reversals, reconciliation; never gate collection on unpaid fees |
 | E2: Academic/admin breadth | Diary/homework completion; timetable editing | Admission conversion, assessments/results, office requests/documents/lost property; extend only after core acceptance |
 | F1: Intelligence | Provider-neutral read-only attendance assistant | Evidence/freshness, scoped retrieval tests, safe drafting, policy rehearsal; no authority, diagnosis, release or autonomous reconciliation |
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
+
+## Active delivery: institution governance and policy centre — 4 October 2026
+
+The next large delivery increment is tracked in
+[Institution governance and policy centre](GOVERNANCE_POLICY_COMPLIANCE.md). G1-G4 are implemented
+locally and automated focused checks pass: configurable institution/regulatory profile,
+India-school policy catalogue, versioned draft/review/publication, member acknowledgement and the
+separate [restricted care workflow](RESTRICTED_CARE_WORKFLOW.md) with encrypted narratives,
+explicit assignments and alternate intake routing.
+The complete frontend regression suite passes locally (35 files, 222 tests). Visual user sign-off
+remains open, so this is not yet a release gate. This is domain hardening and does not represent
+compliance certification. G5-G10 remain planned and must not be represented as implemented until
+their separate high-risk workflows and evidence pass.
 
 ## Section coverage
 
@@ -58,7 +76,7 @@ and attendance primitives; it does not imply that the complete Stage B exit gate
 | 10: Closed loops | WF-LOCAL-001 below; remaining domain state machines scheduled C/E |
 | 11-12: Configuration, non-app and offline | Assisted follow-up channel and account-scoped encrypted attendance device queue implemented locally; policy lifecycle and other non-app channels remain D/D2 |
 | 13-15: Architecture, concurrency, tenancy | Retain modular Node backend; transaction + outbox, replay, scope checks, command receipts; runtime-role RLS and purpose grants remain B1/B6 |
-| 16-18: Privacy, finance, AI | Restricted-data boundaries recorded; no real provider/finance/safeguarding enablement in this slice |
+| 16-18: Privacy, finance, AI | Restricted-care application encryption, explicit access and metadata-only event envelopes implemented locally; evidence storage/retention/privacy-rights gates remain open; no finance-provider or care AI enablement |
 | 19: Measurable targets | Targets are not measured SLAs. 100k-student workload, latency and recovery tests remain unproven |
 | 20-22: Discovery, SDLC, people | This traceability record and UI checkpoints; school sponsor/process owner and independent review not yet assigned |
 | 23-24: Verification, deployment | Local tests and managed preview; physical school drills and production rollout not performed |

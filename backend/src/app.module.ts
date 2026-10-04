@@ -16,9 +16,11 @@ import { SpaController } from "./spa.controller.js";
 import { PhotoAttendanceModule } from "./photo-attendance/photo-attendance.module.js";
 import { OperationsModule } from "./operations/operations.module.js";
 import { StaffOperationsModule } from "./staff-operations/staff-operations.module.js";
+import { GovernanceModule } from "./governance/governance.module.js";
+import { RestrictedCareModule } from "./restricted-care/restricted-care.module.js";
 
 @Module({
-  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule, StaffOperationsModule],
+  imports: [DatabaseModule, AuthModule, SchoolModule, ChatModule, AiModule, CoordinationModule, PeopleModule, DayPlanModule, PhotoAttendanceModule, OperationsModule, CampusEventsModule, StaffOperationsModule, GovernanceModule, RestrictedCareModule],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
     { provide: APP_GUARD, useClass: SessionGuard },

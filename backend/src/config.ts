@@ -25,6 +25,7 @@ const schema = z.object({
   SESSION_COOKIE_NAME: z.string().default("omnischool_session"),
   SESSION_TTL_SECONDS: z.coerce.number().int().min(300).max(604800).default(28800),
   COOKIE_SECRET: z.string().min(32).default("development-only-cookie-secret-change-me-now"),
+  RESTRICTED_CASE_ENCRYPTION_KEY: z.string().min(32).optional(),
   COOKIE_SECURE: booleanString("false"),
   TRUST_PROXY: booleanString("true"),
   ALLOWED_ORIGINS: z.string().default("http://127.0.0.1:8000,http://localhost:8000"),
@@ -80,6 +81,12 @@ export function loadConfig() {
     if (unsafeSecretMarkers.some((marker) => normalizedSecret.includes(marker))) {
       throw new Error("COOKIE_SECRET must be a unique random secret in managed deployments");
     }
+    if (!value.RESTRICTED_CASE_ENCRYPTION_KEY) {
+      throw new Error("RESTRICTED_CASE_ENCRYPTION_KEY is required for restricted care in managed deployments");
+    }
+    if (value.RESTRICTED_CASE_ENCRYPTION_KEY === value.COOKIE_SECRET) {
+      throw new Error("RESTRICTED_CASE_ENCRYPTION_KEY and COOKIE_SECRET must be different values");
+    }
     if (!value.COOKIE_SECURE) throw new Error("COOKIE_SECURE must be true in managed deployments");
     if (rateLimitStore !== "postgres") throw new Error("RATE_LIMIT_STORE must be postgres in managed deployments");
     if (!value.RELEASE_SHA) throw new Error("RELEASE_SHA is required in managed deployments");
@@ -124,6 +131,7 @@ export function loadConfig() {
     spaDistDir: resolve(process.cwd(), value.SPA_DIST_DIR),
     staffDistDir: resolve(process.cwd(), value.STAFF_DIST_DIR),
     uploadDir: resolve(process.cwd(), value.UPLOAD_DIR),
+    restrictedCaseEncryptionKey: value.RESTRICTED_CASE_ENCRYPTION_KEY ?? value.COOKIE_SECRET,
   };
 }
 

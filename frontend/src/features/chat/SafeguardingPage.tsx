@@ -1,7 +1,8 @@
 /* eslint-disable */
 // @ts-nocheck
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { useAuth } from "../auth/AuthContext";
+import { RestrictedCarePage } from "../restricted-care/RestrictedCarePage";
 import {
   getChatReportReviewers,
   getChatReports,
@@ -14,7 +15,10 @@ import "./chat.css";
 type StaffPortal = "teacher" | "principal";
 
 function SafeguardingRoute({ portal }: { portal: StaffPortal }) {
+  const auth = useAuth();
   const queryClient = useQueryClient();
+  const membershipRole = portal === "principal" ? "admin" : "staff";
+  const membership = auth.memberships.find((item) => item.role === membershipRole);
   const reportsQuery = useQuery({
     queryKey: ["chat", "reports"],
     queryFn: () => getChatReports(),
@@ -38,13 +42,14 @@ function SafeguardingRoute({ portal }: { portal: StaffPortal }) {
     },
   });
 
+  if (!membership?.school_id) return null;
+
   return (
-    <OperationsShell
+    <RestrictedCarePage
       portal={portal}
-      active="safeguarding"
-      title="Safeguarding"
-      subtitle={portal === "teacher" ? "Your assigned incident reviews" : "Confidential pastoral operations"}
-    >
+      schoolId={membership.school_id}
+      schoolName={membership.school_name}
+      messageReports={
       <ModerationDialog
         standalone
         staffView={portal === "teacher"}
@@ -57,7 +62,8 @@ function SafeguardingRoute({ portal }: { portal: StaffPortal }) {
         onRefresh={() => void reportsQuery.refetch()}
         onUpdate={(reportId, input) => moderationMutation.mutate({ reportId, input })}
       />
-    </OperationsShell>
+      }
+    />
   );
 }
 

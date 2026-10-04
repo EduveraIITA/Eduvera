@@ -5,6 +5,7 @@ type NullableTimestamp = ColumnType<Date | null, Date | string | null, Date | st
 type DateOnly = ColumnType<string, string, string>;
 type TimeOnly = ColumnType<string, string, string>;
 type Json = ColumnType<unknown, unknown, unknown>;
+type Bytea = ColumnType<Buffer, Buffer, Buffer>;
 
 export interface UserTable {
   id: Generated<string>;
@@ -159,6 +160,91 @@ export interface StaffCoverageTaskAuditTable {
   id: Generated<string>; school_id: string; task_id: string; actor_id: string;
   action: "created" | "offered" | "accepted" | "declined" | "reassigned" | "completed" | "cancelled";
   from_status: string | null; to_status: string; note: Generated<string>; created_at: Timestamp;
+}
+export interface InstitutionRegulatoryProfileTable {
+  school_id: string;
+  institution_kind: "school" | "college" | "coaching" | "hybrid";
+  country_code: string; state_code: Generated<string>; district: Generated<string>;
+  management_kind: "government" | "government_aided" | "private_unaided" | "trust_society" | "corporate" | "other";
+  delivery_mode: "in_person" | "online" | "hybrid";
+  education_levels: string[]; regulator_codes: string[]; capability_packs: string[];
+  recognition_reference: Generated<string>; affiliation_reference: Generated<string>;
+  residential: Generated<boolean>; transport_provided: Generated<boolean>; minors_enrolled: Generated<boolean>;
+  staff_count_band: "0_9" | "10_49" | "50_99" | "100_249" | "250_plus";
+  reviewed_on: DateOnly | null; review_note: Generated<string>; revision: Generated<number>;
+  updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionPolicyFamilyTable {
+  id: Generated<string>; school_id: string; code: string; title: string;
+  category: "safeguarding" | "student_operations" | "privacy" | "staff" | "inclusion" | "health_safety" | "communications" | "events_transport" | "finance" | "custom";
+  capability_pack: string; applicable_institution_kinds: string[]; source_references: Json;
+  default_audiences: string[]; default_requires_acknowledgement: Generated<boolean>;
+  risk_level: Generated<"standard" | "high">; guidance: Generated<string>;
+  is_custom: Generated<boolean>; is_active: Generated<boolean>; sort_order: Generated<number>; created_at: Timestamp;
+}
+export interface InstitutionPolicyVersionTable {
+  id: Generated<string>; school_id: string; family_id: string; version: number;
+  status: Generated<"draft" | "in_review" | "published" | "retired">;
+  title: string; summary: Generated<string>; body_markdown: Generated<string>; audience_roles: string[];
+  requires_acknowledgement: Generated<boolean>; effective_on: DateOnly | null; review_due_on: DateOnly | null;
+  source_note: Generated<string>; created_by: string; submitted_by: string | null; submitted_at: NullableTimestamp;
+  reviewed_by: string | null; reviewed_at: NullableTimestamp; review_note: Generated<string>;
+  review_separation_met: boolean | null; review_override_reason: Generated<string>;
+  published_at: NullableTimestamp; retired_at: NullableTimestamp; revision: Generated<number>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionPolicyAcknowledgementTable {
+  id: Generated<string>; school_id: string; policy_version_id: string; user_id: string;
+  membership_role: "admin" | "staff" | "guardian" | "student";
+  acknowledgement_text: string; acknowledged_at: Timestamp;
+}
+export interface InstitutionGovernanceAuditTable {
+  id: Generated<string>; school_id: string; actor_id: string; action: string;
+  target_type: "regulatory_profile" | "policy_version" | "policy_acknowledgement";
+  target_id: string | null; metadata: Json; created_at: Timestamp;
+}
+export interface RestrictedCareRoleAssignmentTable {
+  id: Generated<string>; school_id: string; user_id: string;
+  role_kind: "designated_lead" | "deputy_lead" | "institution_head" | "counsellor" | "external_liaison";
+  route_kind: "primary" | "alternate"; valid_from: DateOnly; valid_until: DateOnly | null;
+  status: Generated<"active" | "revoked">; created_by: string; revoked_by: string | null;
+  revoked_at: NullableTimestamp; revocation_reason: Generated<string>; revision: Generated<number>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface RestrictedCareCaseTable {
+  id: Generated<string>; school_id: string; student_id: string | null; reported_by: string; owner_user_id: string;
+  intake_route: "primary" | "alternate";
+  source_kind: "staff_observation" | "child_disclosure" | "guardian_report" | "student_report" | "anonymous" | "other";
+  urgency: "urgent" | "priority" | "routine";
+  concern_category: "sexual_safety" | "physical_safety" | "emotional_wellbeing" | "neglect" | "bullying" | "cyber_safety" | "other";
+  safety_state: "immediate_action_required" | "actions_underway" | "no_immediate_danger" | "unknown";
+  ordinary_handler_involved: Generated<boolean>; status: Generated<"open" | "triage" | "active" | "closed">;
+  reporting_state: Generated<"assessment_required" | "reporting_required" | "reported" | "not_applicable">;
+  observed_at: NullableTimestamp; opened_at: Timestamp; last_activity_at: Timestamp; closed_at: NullableTimestamp;
+  closed_by: string | null; retention_review_on: DateOnly | null; legal_hold: Generated<boolean>;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface RestrictedCareCaseAssignmentTable {
+  id: Generated<string>; school_id: string; case_id: string; user_id: string;
+  assignment_role: "reporter" | "owner" | "backup" | "contributor" | "reviewer";
+  access_level: "intake_only" | "full"; assigned_by: string; assigned_at: Timestamp;
+  revoked_by: string | null; revoked_at: NullableTimestamp; revocation_reason: Generated<string>;
+}
+export interface RestrictedCareCaseEntryTable {
+  id: Generated<string>; school_id: string; case_id: string;
+  entry_type: "intake_note" | "safety_action" | "contact" | "reporting_decision" | "case_note" | "outcome" | "handover";
+  ciphertext: Bytea; content_iv: Bytea; content_tag: Bytea; key_version: Generated<number>;
+  created_by: string; created_at: Timestamp;
+}
+export interface RestrictedCareExternalReportTable {
+  id: Generated<string>; school_id: string; case_id: string;
+  authority_type: "sjpu" | "local_police" | "child_welfare_committee" | "child_helpline" | "other";
+  reported_at: Timestamp; reference_ciphertext: Bytea; reference_iv: Bytea; reference_tag: Bytea;
+  key_version: Generated<number>; recorded_by: string; created_at: Timestamp;
+}
+export interface RestrictedCareAuditTable {
+  id: Generated<string>; school_id: string; case_id: string | null; actor_id: string;
+  action: string; metadata: Json; created_at: Timestamp;
 }
 export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string>; active_school_id: Generated<string | null> }
 export interface AuditEventTable { id: Generated<string>; action: string; actor_id: string | null; school_id: string | null; target_type: Generated<string>; target_id: string | null; request_id: string; ip_hash: string | null; metadata: Json; created_at: Timestamp }
@@ -343,6 +429,17 @@ export interface Database {
   staff_responsibility_audits: StaffResponsibilityAuditTable;
   staff_coverage_tasks: StaffCoverageTaskTable;
   staff_coverage_task_audits: StaffCoverageTaskAuditTable;
+  institution_regulatory_profiles: InstitutionRegulatoryProfileTable;
+  institution_policy_families: InstitutionPolicyFamilyTable;
+  institution_policy_versions: InstitutionPolicyVersionTable;
+  institution_policy_acknowledgements: InstitutionPolicyAcknowledgementTable;
+  institution_governance_audits: InstitutionGovernanceAuditTable;
+  restricted_care_role_assignments: RestrictedCareRoleAssignmentTable;
+  restricted_care_cases: RestrictedCareCaseTable;
+  restricted_care_case_assignments: RestrictedCareCaseAssignmentTable;
+  restricted_care_case_entries: RestrictedCareCaseEntryTable;
+  restricted_care_external_reports: RestrictedCareExternalReportTable;
+  restricted_care_audits: RestrictedCareAuditTable;
   auth_sessions: AuthSessionTable;
   audit_events: AuditEventTable;
   ai_conversations: AiConversationTable;

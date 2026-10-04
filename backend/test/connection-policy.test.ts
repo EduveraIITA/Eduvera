@@ -75,6 +75,7 @@ describe("managed deployment configuration", () => {
       EVENT_DATABASE_URL: "postgresql://events:secret@db.example.com:5432/postgres?sslmode=verify-full",
       DATABASE_POOL_MAX: "8",
       COOKIE_SECRET: "unit-test-cookie-key-that-is-long-enough",
+      RESTRICTED_CASE_ENCRYPTION_KEY: "unit-test-restricted-care-key-that-is-separate-and-long",
       COOKIE_SECURE: "true",
       ALLOWED_ORIGINS: "https://school.example",
       PUBLIC_URL: "https://school.example",
@@ -108,6 +109,10 @@ describe("managed deployment configuration", () => {
     setProductionEnvironment();
     delete process.env.METRICS_TOKEN;
     expect(() => loadConfig()).toThrow(/METRICS_TOKEN/);
+
+    setProductionEnvironment();
+    delete process.env.RESTRICTED_CASE_ENCRYPTION_KEY;
+    expect(() => loadConfig()).toThrow(/RESTRICTED_CASE_ENCRYPTION_KEY/);
   });
 
   it("rejects unsafe production modes and unbounded pools", () => {
@@ -146,5 +151,9 @@ describe("managed deployment configuration", () => {
     setProductionEnvironment();
     process.env.METRICS_TOKEN = process.env.COOKIE_SECRET;
     expect(() => loadConfig()).toThrow(/must be different/);
+
+    setProductionEnvironment();
+    process.env.RESTRICTED_CASE_ENCRYPTION_KEY = process.env.COOKIE_SECRET;
+    expect(() => loadConfig()).toThrow(/RESTRICTED_CASE_ENCRYPTION_KEY.*different/);
   });
 });
