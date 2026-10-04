@@ -1729,6 +1729,17 @@ principal assessment and institution-setup routes were visually checked at 390 p
 empty/result, readiness and onboarding states; frontend lint, typecheck, production build and all 239
 tests across 39 files pass after the change.
 
+Stage release evidence (5 October 2026): GitHub Actions
+[run 37232887399](https://github.com/EduveraIITA/Eduvera/actions/runs/37232887399) completed both
+`Verify` and `Deploy to Railway` successfully for application commit `a86215b`. The guarded database
+step applied migrations `040_institution_activation_and_account_trust.sql` and
+`041_offline_assessments_and_results.sql` to the Stage Supabase database before the Railway release.
+The workflow then verified API readiness, mobile and staff SPAs, install icons, OpenAPI, Stage demo
+login and protected metrics against that exact release SHA. An independent post-deploy check returned
+`ready` with database and event dependencies healthy, `/releasez` identified environment `stage` and
+SHA `a86215bcb7147d6207ff41fc742891ee1b542aaf`, and `/principal/assessments` returned HTTP 200. This is
+Stage deployment evidence, not production approval or representative physical-device acceptance.
+
 Open boundaries: no online test runner, question bank, proctoring, auto-grading, public ranking,
 weighted aggregate, board-specific grade calculation, transcript/certificate or result analytics is
 claimed. Production evidence storage still requires object lifecycle, scanning, retention and legal
