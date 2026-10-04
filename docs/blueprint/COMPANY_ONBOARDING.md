@@ -82,3 +82,14 @@ unconfirmed status; create a replacement to retry (this revokes the old code).
 No durable retry queue is included; a process crash after commit requires a
 replacement invitation. Existing expiration, revocation and authority checks
 remain in force. SMTP TLS certificate validation cannot be disabled.
+
+### Temporary Stage demo override — 4 October 2026
+
+The account owner explicitly requested committing the supplied demo credentials
+until rotation. SMTP defaults now apply only when `DEPLOYMENT_ENVIRONMENT=stage`
+and `DEMO_MODE` is enabled. The default enables invitation email; explicit
+`SMTP_USER`, `SMTP_PASSWORD` and `INVITATION_EMAIL_ENABLED` environment values
+always win. No such defaults apply to production, local development, tests or
+non-demo Stage. Rotate the account credentials and remove this fallback after
+review. The supplied credential's Gmail SMTP authentication has not been verified;
+normal delivery failures remain visible with a private-code fallback.

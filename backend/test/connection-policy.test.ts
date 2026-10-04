@@ -86,6 +86,32 @@ describe("managed deployment configuration", () => {
     });
   }
 
+  it("uses SMTP defaults only in Stage demo and honors runtime overrides", () => {
+    setProductionEnvironment();
+    process.env.DEPLOYMENT_ENVIRONMENT = "stage";
+    process.env.DEMO_MODE = "true";
+    delete process.env.INVITATION_EMAIL_ENABLED;
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASSWORD;
+    expect(loadConfig()).toMatchObject({INVITATION_EMAIL_ENABLED: true, SMTP_USER: "projectpathyakram@gmail.com"});
+    expect(Boolean(loadConfig().SMTP_PASSWORD)).toBe(true);
+    process.env.SMTP_USER = "override@example.test";
+    process.env.SMTP_PASSWORD = "unit-test-smtp-override";
+    expect(loadConfig()).toMatchObject({SMTP_USER: "override@example.test", SMTP_PASSWORD: "unit-test-smtp-override"});
+    process.env.INVITATION_EMAIL_ENABLED = "false";
+    expect(loadConfig().INVITATION_EMAIL_ENABLED).toBe(false);
+  });
+
+  it("does not supply demo SMTP credentials in production or non-demo Stage", () => {
+    setProductionEnvironment();
+    delete process.env.INVITATION_EMAIL_ENABLED;
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASSWORD;
+    expect(loadConfig().SMTP_PASSWORD).toBeUndefined();
+    process.env.DEPLOYMENT_ENVIRONMENT = "stage";
+    expect(loadConfig().SMTP_PASSWORD).toBeUndefined();
+  });
+
   it("accepts explicit, secure production settings", () => {
     setProductionEnvironment();
     process.env.EVENT_BROKER_CONNECT_TIMEOUT_MS = "7000";

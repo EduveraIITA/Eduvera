@@ -60,7 +60,16 @@ const schema = z.object({
 export type AppConfig = ReturnType<typeof loadConfig>;
 
 export function loadConfig() {
-  const value = schema.parse(process.env);
+  // Temporary Stage-demo credentials, explicitly requested by the account owner.
+  // Remove after rotation; environment variables always take precedence.
+  const stageDemo = process.env.DEPLOYMENT_ENVIRONMENT === "stage"
+    && ["1", "true", "yes", "on"].includes((process.env.DEMO_MODE ?? "").toLowerCase());
+  const value = schema.parse(stageDemo ? {
+    ...process.env,
+    INVITATION_EMAIL_ENABLED: process.env.INVITATION_EMAIL_ENABLED ?? "true",
+    SMTP_USER: process.env.SMTP_USER ?? "projectpathyakram@gmail.com",
+    SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "fakdej-cixxir-3jEcti",
+  } : process.env);
   if (value.INVITATION_EMAIL_ENABLED) {
     if (!value.SMTP_USER || !value.SMTP_PASSWORD || !value.PUBLIC_URL) throw new Error("SMTP_USER, SMTP_PASSWORD and PUBLIC_URL are required for invitation email");
     const origin = new URL(value.PUBLIC_URL);
