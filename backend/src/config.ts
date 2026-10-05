@@ -34,6 +34,9 @@ const schema = z.object({
   STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),
   INVITATION_EMAIL_ENABLED: booleanString("false"),
+  INVITATION_EMAIL_PROVIDER: z.enum(["smtp", "resend"]).default("smtp"),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  INVITATION_EMAIL_FROM: z.email().optional(),
   SMTP_HOST: z.string().min(1).default("smtp.gmail.com"),
   SMTP_PORT: z.coerce.number().pipe(z.union([z.literal(465), z.literal(587)])).default(465),
   SMTP_USER: z.email().optional(),
@@ -71,7 +74,10 @@ export function loadConfig() {
     SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "fakdej-cixxir-3jEcti",
   } : process.env);
   if (value.INVITATION_EMAIL_ENABLED) {
-    if (!value.SMTP_USER || !value.SMTP_PASSWORD || !value.PUBLIC_URL) throw new Error("SMTP_USER, SMTP_PASSWORD and PUBLIC_URL are required for invitation email");
+    if (!value.PUBLIC_URL) throw new Error("PUBLIC_URL is required for invitation email");
+    if (value.INVITATION_EMAIL_PROVIDER === "resend") {
+      if (!value.RESEND_API_KEY || !value.INVITATION_EMAIL_FROM) throw new Error("RESEND_API_KEY and INVITATION_EMAIL_FROM are required for Resend invitation email");
+    } else if (!value.SMTP_USER || !value.SMTP_PASSWORD) throw new Error("SMTP_USER and SMTP_PASSWORD are required for SMTP invitation email");
     const origin = new URL(value.PUBLIC_URL);
     if (origin.protocol !== "https:" || origin.origin !== value.PUBLIC_URL || isLocalHostname(origin.hostname)) throw new Error("Invitation email requires an exact non-local HTTPS PUBLIC_URL origin");
   }

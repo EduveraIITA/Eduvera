@@ -102,6 +102,19 @@ describe("managed deployment configuration", () => {
     expect(loadConfig().INVITATION_EMAIL_ENABLED).toBe(false);
   });
 
+  it("validates HTTPS invitation credentials without requiring SMTP credentials", () => {
+    setProductionEnvironment();
+    process.env.INVITATION_EMAIL_ENABLED = "true";
+    process.env.INVITATION_EMAIL_PROVIDER = "resend";
+    process.env.RESEND_API_KEY = "test-only-api-key";
+    process.env.INVITATION_EMAIL_FROM = "invitations@example.test";
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASSWORD;
+    expect(loadConfig().INVITATION_EMAIL_PROVIDER).toBe("resend");
+    delete process.env.RESEND_API_KEY;
+    expect(() => loadConfig()).toThrow(/RESEND_API_KEY/);
+  });
+
   it("does not supply demo SMTP credentials in production or non-demo Stage", () => {
     setProductionEnvironment();
     delete process.env.INVITATION_EMAIL_ENABLED;

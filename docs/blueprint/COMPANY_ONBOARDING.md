@@ -93,3 +93,26 @@ always win. No such defaults apply to production, local development, tests or
 non-demo Stage. Rotate the account credentials and remove this fallback after
 review. The supplied credential's Gmail SMTP authentication has not been verified;
 normal delivery failures remain visible with a private-code fallback.
+
+### Railway email delivery — 5 October 2026
+
+Railway only permits outbound SMTP on Pro and above. Free, Trial and Hobby
+services must use an HTTPS email API. Invitation receipts now report safe
+authentication, connection, recipient or provider failure categories; raw SMTP
+responses, credentials and codes are not logged.
+
+For HTTPS delivery configure `INVITATION_EMAIL_ENABLED=true`,
+`INVITATION_EMAIL_PROVIDER=resend`, `RESEND_API_KEY`,
+`INVITATION_EMAIL_FROM` (an address on a sender domain verified in Resend), and
+the existing exact HTTPS `PUBLIC_URL`. A Gmail address cannot be used as a
+Resend verified-domain sender. Resend's default testing sender can only send
+to the Resend account owner's email, so it is not suitable for general school
+invitations. Account verification and reset emails use the same transport.
+
+The default remains `smtp`; on Railway Pro this requires valid Gmail SMTP
+credentials (a Google app password) and a redeployment after upgrading.
+Provider acceptance does not establish inbox receipt. Do not automatically
+retry ambiguous failures; a connection timeout can occur after acceptance.
+
+Sources: https://docs.railway.com/networking/outbound-networking and
+https://resend.com/docs/api-reference/emails/send-email

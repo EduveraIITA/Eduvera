@@ -1768,3 +1768,25 @@ Eduera SMTP variables have not been configured and no live email has been sent.
 Durable queue retries, persisted delivery history, crash recovery and real mailbox
 confirmation remain outside this increment; create a replacement invitation for
 manual retry. See COMPANY_ONBOARDING.md for server activation settings.
+
+## Invitation email failure investigation — 5 October 2026
+
+A company-demo invitation to the user-requested `ise2016004@gmail.com` on
+live Stage release `669050f` returned `delivery: failed`. Inbox delivery was
+not confirmed. The prior blanket error hid the cause. Connected Railway access
+still does not expose the Eduera project, so the plan, variables and runtime
+logs cannot be inspected through that connector. Local Gmail SMTP is also
+unreachable from this workspace; that does not prove the live server's cause.
+
+Added allowlisted invitation failure categories and human-readable messages
+without disclosing raw provider errors. Added an optional Resend HTTPS transport
+for Railway plans which block SMTP; invitation and account-action emails share
+this transport. SMTP TLS validation and bounded timeouts remain. API requests
+have a fixed HTTPS destination, reject redirects and require a provider message
+ID before reporting acceptance. Production requires provider-specific credentials.
+
+Validation: 22 backend transport/configuration tests and 10 mobile onboarding
+tests pass; backend typecheck, lint and build, both web typechecks and production
+builds pass. Live Resend sending is blocked until a valid API key and allowed
+sender are configured. Live Gmail authentication remains unverified. This work
+does not claim email delivery is fixed merely because tests pass.
