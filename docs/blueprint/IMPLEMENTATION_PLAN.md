@@ -1777,10 +1777,17 @@ release one. Backend lint/typecheck/build and all 262 tests across 33 files pass
 lint/typecheck/production build and all 241 tests across 40 files pass; the desktop client typecheck
 and production build also pass.
 
-Stage migration, deployment, authenticated smoke and representative-device acceptance remain open;
-this local record does not claim those release gates have passed. Open product boundaries include
-board/university policy packs, promotion decisions, transcripts, certificates, digital signatures,
-longitudinal analytics and institution-approved print/retention policy.
+Stage release `548ee54a4752146a35b1501d00ab7fea5afd2dbe` passed the complete GitHub Actions
+[Stage workflow](https://github.com/EduveraIITA/Eduvera/actions/runs/37329333873) on 5 October 2026.
+That run reapplied the clean-build, lint, typecheck and test gates above, applied migration `042` to
+Stage Supabase, ran the repeat-safe report-card demo seed and bound the Railway release to the exact
+commit. Independent public checks returned ready database/event health and the same release SHA.
+The four principal, teacher, guardian and learner report-card routes returned HTTP 200. An
+authenticated principal demo smoke returned admin mode, one active scheme, one published batch,
+eight classes, nine subjects and one mapped source assessment. This is verified Stage deployment
+evidence, not production approval or representative physical-device acceptance. Open product
+boundaries include board/university policy packs, promotion decisions, transcripts, certificates,
+digital signatures, longitudinal analytics and institution-approved print/retention policy.
 
 ## Invitation SMTP delivery — 4 October 2026
 
