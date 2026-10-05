@@ -1773,7 +1773,7 @@ no-op. The repeat-safe demo seed creates one active scheme, one published batch 
 reports; all eleven new tables report RLS enabled. The real-database lifecycle test covers assessment
 publication, 80% report calculation, self-review denial, independent review, publication, unrelated-
 learner denial, relationship-scoped family access and a corrected 90% second release while retaining
-release one. Backend lint/typecheck/build and all 257 tests across 33 files pass. Frontend
+release one. Backend lint/typecheck/build and all 262 tests across 33 files pass. Frontend
 lint/typecheck/production build and all 241 tests across 40 files pass; the desktop client typecheck
 and production build also pass.
 
