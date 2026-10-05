@@ -13,7 +13,7 @@ const PERMISSION: Array<{ id: string; label: string; hint: string }> = [
 /* Invitation email status is distinct from account acceptance. */
 export function People({ school, data, refresh }: { school: string; data: Administration; refresh: () => Promise<void> }) {
   const toast = useToast();
-  const [invite, setInvite] = useState<{ token: string; email: string; role: string; expires_at?: string; delivery?: string } | null>(null);
+  const [invite, setInvite] = useState<{ token: string; email: string; role: string; expires_at?: string; delivery?: string; delivery_message?: string } | null>(null);
   const [memberId, setMemberId] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "staff" | "guardian" | "student">("all");
@@ -43,8 +43,8 @@ export function People({ school, data, refresh }: { school: string; data: Admini
             { name: "role", label: "School role", options: Object.entries(ROLE).map(([value, label]) => ({ value, label })), hint: "Students must already exist in the directory." },
           ]} onSave={async (values) => {
             setInvite(null);
-            const result = await save<{ token: string; expires_at?: string; delivery?: string }>(school, "invitations", values);
-            setInvite({ token: result.token, email: values.email!, role: values.role!, expires_at: result.expires_at, delivery: result.delivery });
+            const result = await save<{ token: string; expires_at?: string; delivery?: string; delivery_message?: string }>(school, "invitations", values);
+            setInvite({ token: result.token, email: values.email!, role: values.role!, expires_at: result.expires_at, delivery: result.delivery, delivery_message: result.delivery_message });
             await refresh();
           }}>
             <p className="t-bsm ink2">Codes are single-use and expire after 72 hours. Email is attempted when configured; a private code remains available.</p>
@@ -54,7 +54,7 @@ export function People({ school, data, refresh }: { school: string; data: Admini
             <section className="panel tight card ring">
               <SectionTitle small icon={KeyRound} title="Invitation ready" aside={<Pill kind="tint">{ROLE[invite.role] ?? invite.role}</Pill>} />
               <p className="t-bsm ink2">For <b>{invite.email}</b>. They open <a href="/staff/join" target="_blank" rel="noreferrer">{joinUrl}</a>, enter this code with the same email, and set a password.{invite.expires_at ? ` Expires ${fmtDate(invite.expires_at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.` : ""}</p>
-              <p className="t-bsm ink2">{invite.delivery === 'email_accepted' ? 'Invitation email accepted by the mail server. Check inbox and spam.' : invite.delivery === 'failed' ? 'Email delivery could not be confirmed. Share the code privately or create a replacement.' : 'No email has been sent. Share the code privately.'}</p>
+              <p className="t-bsm ink2">{invite.delivery === 'email_accepted' ? 'Invitation email accepted by the mail server. Check inbox and spam.' : invite.delivery === 'failed' ? (invite.delivery_message ?? 'Email delivery could not be confirmed. Share the code privately or create a replacement.') : 'No email has been sent. Share the code privately.'}</p>
               <div className="code-box big" aria-label="Invitation code">{invite.token}</div>
               <div className="btnrow">
                 <button className="btn pri" onClick={() => void copy(invite.token, "Invitation code")}><Copy size={16} />Copy code</button>
