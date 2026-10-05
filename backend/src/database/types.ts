@@ -392,6 +392,17 @@ export interface AssessmentEvidenceTable { id: Generated<string>; school_id: str
 export interface AssessmentPublicationTable { id: Generated<string>; school_id: string; assessment_id: string; sequence: number; source_revision: number; reason: string; published_by: string; published_at: Timestamp }
 export interface AssessmentPublicationResultTable { school_id: string; publication_id: string; assessment_id: string; student_id: string; source_result_id: string; source_result_revision: number; outcome: "scored"|"absent"|"exempt"|"withheld"|"not_evaluated"; marks: string|null; grade: Generated<string>; feedback: Generated<string> }
 export interface AssessmentAuditTable { id: Generated<number>; school_id: string; assessment_id: string|null; actor_id: string; action: string; from_status: string|null; to_status: string|null; metadata: Json; created_at: Timestamp }
+export interface GradingSchemeTable { id: Generated<string>; school_id: string; term_id: string; class_section_id: string; name: string; code: string; status: Generated<"draft"|"active"|"archived">; absence_treatment: Generated<"incomplete"|"zero">; review_mode: Generated<"owner_review"|"independent">; revision: Generated<number>; created_by: string; updated_by: string; activated_by: string|null; activated_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
+export interface GradingSchemeBandTable { id: Generated<string>; school_id: string; scheme_id: string; code: string; label: string; minimum_percentage: string; maximum_percentage: string; display_order: number }
+export interface GradingSchemeSubjectTable { id: Generated<string>; school_id: string; scheme_id: string; subject_id: string; pass_percentage: string|null; display_order: Generated<number>; created_at: Timestamp }
+export interface GradingComponentTable { id: Generated<string>; school_id: string; scheme_subject_id: string; code: string; name: string; weight_percentage: string; display_order: number }
+export interface GradingComponentAssessmentTable { school_id: string; component_id: string; assessment_id: string; added_at: Timestamp }
+export interface GradingReportBatchTable { id: Generated<string>; school_id: string; scheme_id: string; sequence: number; status: Generated<"draft"|"reviewed"|"published"|"cancelled">; revision: Generated<number>; source_scheme_revision: number; source_fingerprint: string; correction_reason: Generated<string>; generated_by: string; generated_at: Timestamp; reviewed_by: string|null; reviewed_at: NullableTimestamp; review_note: Generated<string>; published_by: string|null; published_at: NullableTimestamp; publication_note: Generated<string> }
+export interface GradingReportStudentTable { id: Generated<string>; school_id: string; batch_id: string; student_id: string; outcome: "complete"|"incomplete"|"withheld"; overall_percentage: string|null; overall_grade: Generated<string>; class_teacher_comment: Generated<string>; principal_comment: Generated<string>; comment_revision: Generated<number>; comment_updated_by: string|null; comment_updated_at: NullableTimestamp }
+export interface GradingReportSubjectTable { id: Generated<string>; school_id: string; batch_id: string; report_student_id: string; scheme_subject_id: string; subject_id: string; outcome: "complete"|"incomplete"|"exempt"|"withheld"; percentage: string|null; grade: Generated<string>; pass_percentage: string|null; passed: boolean|null }
+export interface GradingReportComponentTable { id: Generated<string>; school_id: string; batch_id: string; report_subject_id: string; component_id: string; component_name: string; weight_percentage: string; outcome: "complete"|"incomplete"|"exempt"; percentage: string|null; weighted_points: string|null; source_assessment_count: number }
+export interface GradingReportAssessmentSourceTable { school_id: string; batch_id: string; report_component_id: string; assessment_id: string; publication_id: string; student_id: string; outcome: "scored"|"absent"|"exempt"|"withheld"|"not_evaluated"; marks: string|null; maximum_marks: string; normalized_percentage: string|null }
+export interface GradingReportAuditTable { id: Generated<number>; school_id: string; scheme_id: string|null; batch_id: string|null; actor_id: string; action: string; from_status: string|null; to_status: string|null; metadata: Json; created_at: Timestamp }
 
 export interface Database {
   school_people: SchoolPersonTable;
@@ -499,6 +510,17 @@ export interface Database {
   assessment_publications: AssessmentPublicationTable;
   assessment_publication_results: AssessmentPublicationResultTable;
   assessment_audits: AssessmentAuditTable;
+  grading_schemes: GradingSchemeTable;
+  grading_scheme_bands: GradingSchemeBandTable;
+  grading_scheme_subjects: GradingSchemeSubjectTable;
+  grading_components: GradingComponentTable;
+  grading_component_assessments: GradingComponentAssessmentTable;
+  grading_report_batches: GradingReportBatchTable;
+  grading_report_students: GradingReportStudentTable;
+  grading_report_subjects: GradingReportSubjectTable;
+  grading_report_components: GradingReportComponentTable;
+  grading_report_assessment_sources: GradingReportAssessmentSourceTable;
+  grading_report_audits: GradingReportAuditTable;
   chat_policies: ChatPolicyTable;
 }
 

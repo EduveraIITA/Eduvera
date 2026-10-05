@@ -132,6 +132,8 @@ const PrincipalAssessmentsRoute = lazy(async () => ({ default: (await import("./
 const TeacherAssessmentsRoute = lazy(async () => ({ default: (await import("./features/assessments/AssessmentRoutes")).TeacherAssessmentsRoute }));
 const ParentResultsRoute = lazy(async () => ({ default: (await import("./features/assessments/AssessmentRoutes")).ParentResultsRoute }));
 const StudentResultsRoute = lazy(async () => ({ default: (await import("./features/assessments/AssessmentRoutes")).StudentResultsRoute }));
+const PrincipalAcademicReportsRoute = lazy(async () => ({ default: (await import("./features/academic-reports/AcademicReportRoutes")).PrincipalAcademicReportsRoute }));
+const TeacherAcademicReportsRoute = lazy(async () => ({ default: (await import("./features/academic-reports/AcademicReportRoutes")).TeacherAcademicReportsRoute }));
 
 function PageLoader() {
   return (
@@ -253,6 +255,7 @@ export function App() {
               <Route path="/teacher/responsibilities" element={<PortalOnly portal="teacher"><TeacherResponsibilitiesRoute /></PortalOnly>} />
               <Route path="/teacher/policies" element={<PortalOnly portal="teacher"><TeacherPoliciesRoute /></PortalOnly>} />
               <Route path="/teacher/assessments" element={<PortalOnly portal="teacher"><TeacherAssessmentsRoute /></PortalOnly>} />
+              <Route path="/teacher/report-cards" element={<PortalOnly portal="teacher"><TeacherAcademicReportsRoute /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
@@ -276,6 +279,7 @@ export function App() {
               <Route path="/principal/calendar" element={<PortalOnly portal="principal"><PrincipalCalendarRoute /></PortalOnly>} />
               <Route path="/principal/governance" element={<PortalOnly portal="principal"><PrincipalGovernanceRoute /></PortalOnly>} />
               <Route path="/principal/assessments" element={<PortalOnly portal="principal"><PrincipalAssessmentsRoute /></PortalOnly>} />
+              <Route path="/principal/report-cards" element={<PortalOnly portal="principal"><PrincipalAcademicReportsRoute /></PortalOnly>} />
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>

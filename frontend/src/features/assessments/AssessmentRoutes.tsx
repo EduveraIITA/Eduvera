@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { getAccessibleStudents } from "../school/api";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
+import { getFamilyReportCards } from "../academic-reports/api";
 import { AssessmentWorkspacePage, FamilyResultsPage } from "./AssessmentWorkspacePage";
 import { getAssessmentWorkspace, getFamilyResults } from "./api";
 
@@ -19,9 +20,10 @@ export function FamilyResultsRoute({portal}:{portal:"parent"|"student"}){
   const students=useQuery({queryKey:["school","accessible-students"],queryFn:getAccessibleStudents});
   const studentId=params.get("student_id")??students.data?.results[0]?.id??"";
   const results=useQuery({queryKey:["assessments","family",schoolId,studentId],queryFn:()=>getFamilyResults(schoolId,studentId),enabled:Boolean(schoolId&&studentId)});
-  if(students.isPending||(!studentId&&students.isFetching)||results.isPending)return <ScreenLoading/>;
-  if(students.error||results.error||!results.data)return <LiveRouteError error={students.error??results.error??new Error("Results are unavailable.")} onRetry={async()=>{await students.refetch();await results.refetch();}}/>;
-  return <FamilyResultsPage portal={portal} data={results.data} children={students.data?.results??[]} onSelect={(id)=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}/>;
+  const reports=useQuery({queryKey:["academic-reports","family",schoolId,studentId],queryFn:()=>getFamilyReportCards(schoolId,studentId),enabled:Boolean(schoolId&&studentId)});
+  if(students.isPending||(!studentId&&students.isFetching)||results.isPending||reports.isPending)return <ScreenLoading/>;
+  if(students.error||results.error||reports.error||!results.data||!reports.data)return <LiveRouteError error={students.error??results.error??reports.error??new Error("Results are unavailable.")} onRetry={async()=>{await students.refetch();await results.refetch();await reports.refetch();}}/>;
+  return <FamilyResultsPage portal={portal} data={results.data} reportCards={reports.data} children={students.data?.results??[]} onSelect={(id)=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}/>;
 }
 
 export function PrincipalAssessmentsRoute(){return <StaffAssessmentsRoute portal="principal"/>;}

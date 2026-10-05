@@ -1745,6 +1745,43 @@ weighted aggregate, board-specific grade calculation, transcript/certificate or 
 claimed. Production evidence storage still requires object lifecycle, scanning, retention and legal
 review. Institutional grading/moderation SOP and representative-device acceptance remain mandatory.
 
+## WF-LOCAL-021: Configurable grading and immutable report cards
+
+Implemented locally on 5 October 2026. Detailed contract:
+[Configurable grading and report cards](CONFIGURABLE_GRADING_REPORT_CARDS.md).
+
+- Institution administrators create versioned term/class grading schemes with contiguous grade
+  bands, explicit absence treatment, optional subject pass thresholds and weighted subject
+  components. Components map only to published assessments from the same institution, term, class
+  and subject; their weights must total 100%. The architecture contains no school-board-specific
+  formula and remains usable by school, college and coaching capability packs.
+- Activation freezes the scheme. Generation calculates from the latest immutable assessment
+  publication, stores relational learner/subject/component/source snapshots and never substitutes an
+  unknown result for zero. Independent review can require a second administrator before publication.
+- Class-teacher remarks require both an effective class assignment and the new `reports.comment`
+  permission. Principal remarks, review and publication remain administrator-only. Learners and
+  linked guardians see only the latest published release for their own record.
+- A corrected assessment produces a new sequenced report batch with a reason; previous published
+  assessment and report releases remain intact. The family report identifies corrected releases and
+  supports a print-safe view without exposing drafts or rankings.
+- Migration `042_configurable_grading_and_report_cards.sql` adds eleven institution-scoped policy,
+  mapping, snapshot and audit tables. Browser database grants are revoked and all new tables have RLS
+  enabled as defence in depth behind the authenticated application service.
+
+Verified local evidence: all 42 migrations apply to clean PostgreSQL 17 and a repeat migration is a
+no-op. The repeat-safe demo seed creates one active scheme, one published batch and 25 learner
+reports; all eleven new tables report RLS enabled. The real-database lifecycle test covers assessment
+publication, 80% report calculation, self-review denial, independent review, publication, unrelated-
+learner denial, relationship-scoped family access and a corrected 90% second release while retaining
+release one. Backend lint/typecheck/build and all 257 tests across 33 files pass. Frontend
+lint/typecheck/production build and all 241 tests across 40 files pass; the desktop client typecheck
+and production build also pass.
+
+Stage migration, deployment, authenticated smoke and representative-device acceptance remain open;
+this local record does not claim those release gates have passed. Open product boundaries include
+board/university policy packs, promotion decisions, transcripts, certificates, digital signatures,
+longitudinal analytics and institution-approved print/retention policy.
+
 ## Invitation SMTP delivery — 4 October 2026
 
 User request: send company/admin and school-member invitations using the

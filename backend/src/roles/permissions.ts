@@ -23,6 +23,7 @@ export const PERMISSIONS = [
   { code: "assessments.view", group: "Assessments", label: "View assigned assessments", description: "Read schedules and result registers only for explicitly assigned assessments." },
   { code: "assessments.mark", group: "Assessments", label: "Record assessment results", description: "Enter marks, result states and evidence only as the assigned examiner." },
   { code: "assessments.moderate", group: "Assessments", label: "Moderate assessment results", description: "Approve or return a complete result register only as its assigned moderator." },
+  { code: "reports.comment", group: "Assessments", label: "Add report remarks", description: "Add remarks only for an actively assigned class before report review." },
   { code: "ai.use", group: "Tools", label: "Use AI assistance", description: "Use existing permission-scoped AI tools." },
 ] as const;
 

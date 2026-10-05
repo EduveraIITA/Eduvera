@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Award, BookOpen, Bot, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck, FileSpreadsheet,
-  Handshake, MessageCircle, ReceiptIndianRupee, Rocket, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
+  FileText, Handshake, MessageCircle, ReceiptIndianRupee, Rocket, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
 
@@ -49,6 +49,7 @@ const TOOLS: Record<Portal, Tool[]> = {
   ],
   teacher: [
     { id: "assessments", name: "Assessments & marking", description: "Assigned offline assessments, marks and moderation", icon: Award, tone: "blue", path: "/teacher/assessments" },
+    { id: "report-cards", name: "Report remarks", description: "Review class reports and add assigned remarks", icon: FileText, tone: "blue", path: "/teacher/report-cards" },
     { id: "responsibilities", name: "My responsibilities", description: "Class, event and cover duties with clear dates and scope", icon: Handshake, tone: "blue", path: "/teacher/responsibilities" },
     { id: "leave", name: "My leave", description: "Balances, applications and approval history", icon: CalendarX2, tone: "rose", path: "/teacher/leave" },
     { id: "classes", name: "My classes", description: "Every class you teach, today's register status and the live roster", icon: Users, tone: "blue", path: "/teacher/classes" },
@@ -63,6 +64,7 @@ const TOOLS: Record<Portal, Tool[]> = {
   ],
   principal: [
     { id: "assessments", name: "Assessments & results", description: "Schedule offline assessments, moderate marks and publish results", icon: Award, tone: "blue", path: "/principal/assessments" },
+    { id: "report-cards", name: "Grading & report cards", description: "Configure grading, review calculations and publish term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },
     { id: "activation", name: "Institution setup", description: "Complete, review and activate first-day readiness", icon: Rocket, tone: "blue", path: "/principal/activation" },
     {id: "roles", name: "Roles & permissions", description: "Create custom roles and assign staff access", icon: ShieldCheck, tone: "blue", path: "/principal/roles"},
     { id: "staff", name: "Staff operations", description: "Onboarding, scoped responsibilities, leave and cover", icon: UserRoundCheck, tone: "teal", path: "/principal/staff" },

@@ -24,6 +24,7 @@ import { RestrictedCareModule } from "./restricted-care/restricted-care.module.j
 import { InstitutionOnboardingModule } from "./institution-onboarding/institution-onboarding.module.js";
 import { InstitutionActivationModule } from "./institution-activation/institution-activation.module.js";
 import { AssessmentsModule } from "./assessments/assessments.module.js";
+import { AcademicReportsModule } from "./academic-reports/academic-reports.module.js";
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AssessmentsModule } from "./assessments/assessments.module.js";
     InstitutionOnboardingModule,
     InstitutionActivationModule,
     AssessmentsModule,
+    AcademicReportsModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
