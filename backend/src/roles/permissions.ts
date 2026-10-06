@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   { code: "assessments.mark", group: "Assessments", label: "Record assessment results", description: "Enter marks, result states and evidence only as the assigned examiner." },
   { code: "assessments.moderate", group: "Assessments", label: "Moderate assessment results", description: "Approve or return a complete result register only as its assigned moderator." },
   { code: "reports.comment", group: "Assessments", label: "Add report remarks", description: "Add remarks only for an actively assigned class before report review." },
+  { code: "departure.manage", group: "Departure", label: "Manage departure", description: "Configure collection authority, departure plans, transport routes, trip rosters and exceptions." },
+  { code: "departure.collect", group: "Departure", label: "Operate assigned trips", description: "Start only assigned trips, share journey location and record rider outcomes." },
   { code: "ai.use", group: "Tools", label: "Use AI assistance", description: "Use existing permission-scoped AI tools." },
 ] as const;
 

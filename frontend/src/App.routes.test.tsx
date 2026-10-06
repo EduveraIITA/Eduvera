@@ -534,6 +534,36 @@ describe("implemented application routes", () => {
     expect(switchChild).toHaveBeenCalledWith("student-2");
   });
 
+  it("uses a stable portal accent for the active child", async () => {
+    const childOptions = [demoParentChild, { ...demoParentChild, id: "student-2", name: "Ananya Sharma" }];
+    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint === "/api/v1/students/"
+      ? Promise.resolve({ results: childOptions.map((option) => ({ id: option.id, user: { display_name: option.name }, current_enrollment: { grade: "7", section: "A" }, avatar_url: option.avatarUrl })) })
+      : original(endpoint));
+    const view=render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/parent/attendance?student_id=student-2"]}>
+      <ParentShell active="attendance" pageLabel="Attendance" child={childOptions[1]} childOptions={childOptions} selectedChildId="student-2"><span>Page content</span></ParentShell>
+    </MemoryRouter></QueryClientProvider>);
+    await waitFor(()=>expect(view.container.querySelector(".parent-app")).toHaveAttribute("data-child-accent","violet"));
+    const parentApp=view.container.querySelector<HTMLElement>(".parent-app")!;
+    expect(parentApp.style.getPropertyValue("--parent-primary")).toBe("#5b279b");
+    expect(parentApp.style.getPropertyValue("--edura-feature-gradient")).toContain("#7436bd");
+    expect(parentApp.style.getPropertyValue("--parent-stack-secondary-gradient")).toContain("#2969e7");
+    const profileColors=Array.from(view.container.querySelectorAll<HTMLElement>(".parent-child-profiles__layer")).map((layer)=>layer.style.getPropertyValue("--profile-accent"));
+    expect(profileColors).toEqual(["#7436bd","#1d4ed8"]);
+  });
+
+  it("keeps the selected child on More and in child-specific tool links",async()=>{
+    const childOptions=[demoParentChild,{...demoParentChild,id:"student-2",name:"Ananya Sharma"}];
+    const original=apiFetchMock.getMockImplementation() as (path:string)=>Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint:string)=>endpoint==="/api/v1/students/"
+      ? Promise.resolve({results:childOptions.map((option)=>({id:option.id,user:{display_name:option.name},current_enrollment:{grade:"7",section:"A"},avatar_url:option.avatarUrl}))})
+      : original(endpoint));
+    const view=render(<MemoryRouter initialEntries={["/parent/more?student_id=student-2"]}><App/></MemoryRouter>);
+    expect(await screen.findByRole("heading",{name:"More",level:1})).toBeVisible();
+    await waitFor(()=>expect(view.container.querySelector(".parent-app")).toHaveAttribute("data-child-accent","violet"));
+    expect(screen.getByRole("link",{name:"Open Results"})).toHaveAttribute("href","/parent/results?student_id=student-2");
+  });
+
   it("shows a child picker on the Attendance page when there are more than two children", async () => {
     const switchChild = vi.fn();
     const childOptions = [demoParentChild, { ...demoParentChild, id: "student-2", name: "Ananya Sharma" }, { ...demoParentChild, id: "student-3", name: "Rohan Sharma" }];

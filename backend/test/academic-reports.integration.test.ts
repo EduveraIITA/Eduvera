@@ -113,6 +113,7 @@ suite("configurable grading and immutable report cards", () => {
     batch = await reports.batchAction(admin, schoolId, batch.id, "publish", { expected_revision: batch.revision, note: "Term report published" });
     let family = await reports.familyReports(guardian, schoolId, studentId);
     expect(family.reports[0]).toMatchObject({ sequence: 1, overall_percentage: "80.00", overall_grade: "P", class_teacher_comment: "Steady progress" });
+    expect((family.reports[0] as any).subjects[0].assessment_ids).toContain(assessment.id);
     await expect(reports.familyReports(guardian, schoolId, randomUUID())).rejects.toThrow(/cannot view/i);
 
     assessmentDetail = await assessments.detail(examiner, schoolId, assessment.id);

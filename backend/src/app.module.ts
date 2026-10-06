@@ -25,6 +25,7 @@ import { InstitutionOnboardingModule } from "./institution-onboarding/institutio
 import { InstitutionActivationModule } from "./institution-activation/institution-activation.module.js";
 import { AssessmentsModule } from "./assessments/assessments.module.js";
 import { AcademicReportsModule } from "./academic-reports/academic-reports.module.js";
+import { DepartureCoordinationModule } from "./departure-coordination/departure-coordination.module.js";
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { AcademicReportsModule } from "./academic-reports/academic-reports.modul
     InstitutionActivationModule,
     AssessmentsModule,
     AcademicReportsModule,
+    DepartureCoordinationModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

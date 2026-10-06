@@ -1,30 +1,33 @@
 import { ArrowRight, Info, LockKeyhole } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import { useOptionalAuth, type Portal } from "../auth/AuthContext";
 import { toolsFor, type Tool } from "./tools";
 import "./more.css";
 
-function ToolTile({ tool }: { tool: Tool }) {
+function ToolTile({ tool, studentId }: { tool: Tool; studentId?: string }) {
   const Icon = tool.icon;
+  const path=tool.path&&studentId&&tool.path.startsWith("/parent/")?`${tool.path}${tool.path.includes("?")?"&":"?"}student_id=${encodeURIComponent(studentId)}`:tool.path;
   const status = tool.path ? null : <span className="more-status"><LockKeyhole size={11} />{tool.planned === "desktop" ? "Desktop" : "Planned"}</span>;
   const body = <>
     <div className="more-tile__top"><span className="more-tile__icon"><Icon size={21} /></span>{status}</div>
     <h3>{tool.name}</h3>
     <p>{tool.description}</p>
-    {tool.path ? <em>Open <ArrowRight size={14} /></em> : <em>{tool.planned === "desktop" ? "Available on the desktop app today" : "Coming in a future release"}</em>}
+    {path ? <em>Open <ArrowRight size={14} /></em> : <em>{tool.planned === "desktop" ? "Available on the desktop app today" : "Coming in a future release"}</em>}
   </>;
-  if (tool.path) return <Link className={`more-tile more-tile--${tool.tone}`} to={tool.path} aria-label={`Open ${tool.name}`}>{body}</Link>;
+  if (path) return <Link className={`more-tile more-tile--${tool.tone}`} to={path} aria-label={`Open ${tool.name}`}>{body}</Link>;
   return <article className={`more-tile more-tile--${tool.tone} more-tile--planned`}>{body}</article>;
 }
 
 /* The tool catalogue itself; the shell around it is chosen per portal below. */
 export function MoreContent({ portal }: { portal: Portal }) {
   const auth=useOptionalAuth();
+  const [params]=useSearchParams();
+  const studentId=portal==="parent"?params.get("student_id")??undefined:undefined;
   const member=auth?.memberships.find(m=>m.role==='staff');
-  const needed:Record<string,string>={classes:'attendance.view',registers:'attendance.view',weekly:'timetable.view',calendar:'timetable.view',messages:'messages.view',events:'events.view',safeguarding:'safeguarding.review'};
+  const needed:Record<string,string>={classes:'attendance.view',registers:'attendance.view',weekly:'timetable.view',calendar:'timetable.view',messages:'messages.view',events:'events.view',safeguarding:'safeguarding.review',transport:'departure.collect'};
   const tools = toolsFor(portal).filter(tool=>portal!=='teacher' || !member?.custom_role || !needed[tool.id] || member.permissions?.includes(needed[tool.id] ?? ""));
   if(portal==='teacher' && member?.permissions?.includes('fees.manage')) tools.push({id:'delegated-fees',name:'Fee ledger',description:'Delegated fee and receipt access',icon:LockKeyhole,tone:'amber',path:'/teacher/fees'});
   if(portal==='teacher' && member?.permissions?.includes('sis.manage')) tools.push({id:'delegated-office',name:'School administration',description:'Delegated school office access',icon:LockKeyhole,tone:'blue',path:'/teacher/administration'});
@@ -36,12 +39,12 @@ export function MoreContent({ portal }: { portal: Portal }) {
       {portal==='teacher' && member?.custom_role ? <p role="status">Your role: <strong>{member.custom_role.name}</strong></p> : null}
       <section className="more-section" aria-labelledby="more-tools-title">
         <header><div><h2 id="more-tools-title">Tools</h2></div><b>{live.length} available</b></header>
-        <div className="more-grid">{live.map((tool) => <ToolTile key={tool.id} tool={tool} />)}</div>
+        <div className="more-grid">{live.map((tool) => <ToolTile key={tool.id} tool={tool} studentId={studentId} />)}</div>
       </section>
       {planned.length ? (
         <section className="more-section" aria-labelledby="more-planned-title">
           <header><div><h2 id="more-planned-title">Coming to mobile</h2></div></header>
-          <div className="more-grid">{planned.map((tool) => <ToolTile key={tool.id} tool={tool} />)}</div>
+          <div className="more-grid">{planned.map((tool) => <ToolTile key={tool.id} tool={tool} studentId={studentId} />)}</div>
           <div className="more-note"><Info size={16} /><span>These tools need a wider screen today. Mobile versions will appear here when they are ready.</span></div>
         </section>
       ) : null}

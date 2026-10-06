@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ChevronDown, ChevronRight, ChevronUp, FileCheck2, Plus, Printer, Settings2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
-import { SchoolBrand } from "../school/SchoolBrand";
+import { MarksheetDocumentHeader } from "./MarksheetDocumentHeader";
 import {
   activateGradingScheme,
   createGradingScheme,
@@ -193,22 +193,25 @@ function SubjectDialog({ schoolId, data, scheme, close, saved }: { schoolId: str
   return <div className="report-dialog-backdrop"><section className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="subject-plan-title"><header><h2 id="subject-plan-title">Subject grading plan</h2><button onClick={close} aria-label="Close"><X /></button></header><form onSubmit={(event) => void submit(event)}><div className="report-form-grid"><label>Subject<select value={subjectId} onChange={(event) => { setSubjectId(event.target.value); setComponents((current) => current.map((item) => ({ ...item, assessmentIds: [] }))); }}>{data.references.subjects.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Pass percentage<input name="pass_percentage" type="number" min="0" max="100" step="0.01" defaultValue="40" /></label></div><fieldset><legend>Components</legend>{components.map((component, index) => <article className="report-component-form" key={index}><div><input aria-label={`Component name ${index + 1}`} value={component.name} onChange={(event) => setComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} /><input aria-label={`Component code ${index + 1}`} value={component.code} onChange={(event) => setComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, code: event.target.value } : item))} /><input aria-label={`Component weight ${index + 1}`} type="number" min="0.01" max="100" step="0.01" value={component.weight} onChange={(event) => setComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, weight: event.target.value } : item))} /></div><strong>Published assessments</strong>{eligible.length ? eligible.map((assessment) => <label className="report-check" key={assessment.id}><input type="checkbox" checked={component.assessmentIds.includes(assessment.id)} onChange={(event) => setComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, assessmentIds: event.target.checked ? [...item.assessmentIds, assessment.id] : item.assessmentIds.filter((id) => id !== assessment.id) } : item))} /><span>{assessment.title} · {assessment.maximum_marks} marks</span></label>) : <p>No published assessments for this class, term and subject.</p>}</article>)}<button type="button" className="report-add-component" onClick={() => setComponents((current) => [...current, { name: "", code: "", weight: "", assessmentIds: [] }])}><Plus size={16} />Add component</button></fieldset>{error ? <p className="report-error">{error}</p> : null}<footer><button type="button" className="is-secondary" onClick={close}>Cancel</button><button disabled={busy || !eligible.length}>{busy ? "Saving…" : "Save subject plan"}</button></footer></form></section></div>;
 }
 
-export function FamilyReportCardList({ data, schoolName = "Cambridge International School" }: { data: FamilyReportCards; schoolName?: string }) {
-  if (!data.reports.length) return null;
+export function FamilyReportMarksheet({ data, report, showPrintAction = false, printing = false, onPrint = () => window.print() }: { data: FamilyReportCards; report: FamilyReportCards["reports"][number]; showPrintAction?: boolean; printing?: boolean; onPrint?: () => void }) {
   const studentName = `${data.student.first_name} ${data.student.last_name}`;
-  return <section className="family-report-cards" aria-labelledby="published-marksheet-heading"><header><div><span>PUBLISHED RESULT</span><h2 id="published-marksheet-heading">Term marksheet</h2></div><button onClick={() => window.print()}><Printer size={17} />Print</button></header>{data.reports.map((report) => {
-    const completed = report.subjects.filter((subject) => subject.outcome === "complete").length;
-    const passed = report.subjects.filter((subject) => subject.passed === true).length;
-    const reference = report.batch_id.slice(0, 8).toUpperCase();
-    return <article className="marksheet" key={report.batch_id}>
-      <header className="marksheet__institution"><SchoolBrand name={schoolName} marksLayout="side-by-side" /><span className="marksheet__published"><ShieldCheck size={16} />Published</span></header>
-      <div className="marksheet__title"><div><span>{report.term_name} · {report.academic_year}</span><h3>{report.scheme_name}</h3><p>Official term result · Release {report.sequence}</p></div>{report.sequence > 1 ? <em>Corrected release</em> : null}</div>
+  const completed = report.subjects.filter((subject) => subject.outcome === "complete").length;
+  const passed = report.subjects.filter((subject) => subject.passed === true).length;
+  const reference = report.batch_id.slice(0, 8).toUpperCase();
+  return <article className={`marksheet marksheet--term-report result-document${printing ? " is-print-target" : ""}`}>
+      <MarksheetDocumentHeader kind="term" />
+      <div className="marksheet__title"><div className="marksheet__title-copy"><span>{report.term_name} · {report.academic_year}</span><h3>{report.scheme_name}</h3>{report.sequence > 1 ? <em>Corrected release</em> : null}</div></div>
       <dl className="marksheet__identity"><div><dt>Student</dt><dd>{studentName}</dd></div><div><dt>Admission no.</dt><dd>{data.student.admission_number}</dd></div><div><dt>Class</dt><dd>{data.student.class_name ?? "Current class"}</dd></div></dl>
       <div className="marksheet__summary" aria-label="Overall result"><span><small>OVERALL</small><strong>{report.overall_percentage ?? "—"}{report.overall_percentage ? "%" : ""}</strong></span><span><small>GRADE</small><strong>{report.overall_grade || "—"}</strong></span><span><small>RESULT</small><strong>{nice(report.outcome)}</strong><em>{completed}/{report.subjects.length} subjects complete</em></span></div>
       <div className="marksheet__subjects" role="table" aria-label="Subject results"><div className="marksheet__subject-head" role="row"><span role="columnheader">Subject</span><span role="columnheader">Score</span><span role="columnheader">Grade</span><span role="columnheader">Status</span></div>{report.subjects.map((subject) => <div className="marksheet__subject-row" role="row" key={subject.id}><span role="cell"><i style={{ background: subject.color }} /><b>{subject.subject_name}</b></span><strong role="cell">{subject.percentage ? `${subject.percentage}%` : "—"}</strong><b role="cell">{subject.grade || "—"}</b><em role="cell" className={`is-${subject.passed === false ? "below" : subject.outcome}`}>{subject.passed === false ? "Below pass" : nice(subject.outcome)}</em></div>)}</div>
       <div className="marksheet__subject-note"><span>{passed} passed</span><span>{report.subjects.length} subjects</span></div>
       {report.class_teacher_comment || report.principal_comment ? <section className="marksheet__remarks" aria-label="School remarks"><h4>Remarks</h4><div>{report.class_teacher_comment ? <p><b>Class teacher</b>{report.class_teacher_comment}</p> : null}{report.principal_comment ? <p><b>Principal</b>{report.principal_comment}</p> : null}</div></section> : null}
       <footer className="marksheet__verification"><ShieldCheck size={19} /><span><strong>Published school record</strong><small>{date(report.published_at)} · Reference {reference}</small></span><CheckCircle2 size={19} /></footer>
+      {showPrintAction ? <button type="button" className="marksheet__print" onClick={onPrint}><Printer size={17} />Print / save marksheet</button> : null}
     </article>;
-  })}</section>;
+}
+
+export function FamilyReportCardList({ data }: { data: FamilyReportCards }) {
+  if (!data.reports.length) return null;
+  return <section className="family-report-cards" aria-labelledby="published-marksheet-heading"><header><div><span>PUBLISHED RESULT</span><h2 id="published-marksheet-heading">Term marksheet</h2></div><button onClick={() => window.print()}><Printer size={17} />Print</button></header>{data.reports.map((report) => <FamilyReportMarksheet key={report.batch_id} data={data} report={report} />)}</section>;
 }

@@ -204,7 +204,7 @@ export function ParentHomePage({
           {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
         </div>
         {switchError ? <p className="parent-id-stack__error" role="alert">{switchError}</p> : null}
-        <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student=${data.child.id}`}/>
+        <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student_id=${data.child.id}`}/>
 
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
         <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
@@ -267,9 +267,10 @@ export function ParentHomePage({
               <span><strong>Submit Future Leave Application</strong><small>Medical, family, or personal leave</small></span>
               <ChevronRight size={21} />
             </button>
-            <button type="button" disabled aria-disabled="true" title="Transport self-service is planned for a later School OS module" aria-label={`${data.transport.passLabel}. ${data.transport.pickupWindow}. View only.`}>
+            <button type="button" onClick={() => navigate(parentPath("/parent/departure"))} aria-label="Open departure and transport">
               <span className="shortcut-icon"><Bus size={19} /></span>
-              <span><strong>{data.transport.passLabel}</strong><small className="green-text">{data.transport.pickupWindow} - View only</small></span>
+              <span><strong>Departure &amp; bus</strong><small className="green-text">{data.transport.passLabel} · {data.transport.pickupWindow}</small></span>
+              <ChevronRight size={21} />
             </button>
           </div>
         </section>

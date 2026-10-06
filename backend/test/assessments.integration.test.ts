@@ -75,7 +75,7 @@ suite("offline assessment and result lifecycle",()=>{
     await expect(service.action(examiner,schoolId,assessmentId,"approve",{expected_revision:state.revision,note:"Trying self approval"})).rejects.toThrow(/moderator/i);
     state=await service.action(moderator,schoolId,assessmentId,"approve",{expected_revision:state.revision,note:"Checked against paper totals"});
     state=await service.action(admin,schoolId,assessmentId,"publish",{expected_revision:state.revision,note:"First moderated release"});expect(state.status).toBe("published");
-    const first=await service.familyResults(guardian,schoolId,studentId);expect(first.results[0]).toMatchObject({marks:"64.00",sequence:1,grade:"A"});
+    const first=await service.familyResults(guardian,schoolId,studentId);expect(first.results[0]).toMatchObject({marks:"64.00",sequence:1,grade:"A",term_name:"Term 1",academic_year:"2031-32"});
 
     detail=await service.detail(examiner,schoolId,assessmentId);
     state=await service.recordResults(examiner,schoolId,assessmentId,{expected_assessment_revision:state.revision,results:[{result_id:(detail.results[0] as any).id,outcome:"scored",marks:66,grade:"A",feedback:"Total corrected after recount",expected_revision:(detail.results[0] as any).revision,reason:"Verified addition correction"}]});

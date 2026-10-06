@@ -23,7 +23,7 @@ export function FamilyResultsRoute({portal}:{portal:"parent"|"student"}){
   const reports=useQuery({queryKey:["academic-reports","family",schoolId,studentId],queryFn:()=>getFamilyReportCards(schoolId,studentId),enabled:Boolean(schoolId&&studentId)});
   if(students.isPending||(!studentId&&students.isFetching)||results.isPending||reports.isPending)return <ScreenLoading/>;
   if(students.error||results.error||reports.error||!results.data||!reports.data)return <LiveRouteError error={students.error??results.error??reports.error??new Error("Results are unavailable.")} onRetry={async()=>{await students.refetch();await results.refetch();await reports.refetch();}}/>;
-  return <FamilyResultsPage portal={portal} schoolName={membership?.school_name} data={results.data} reportCards={reports.data} children={students.data?.results??[]} onSelect={(id)=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}/>;
+  return <FamilyResultsPage portal={portal} data={results.data} reportCards={reports.data} children={students.data?.results??[]} onSelect={(id)=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}/>;
 }
 
 export function PrincipalAssessmentsRoute(){return <StaffAssessmentsRoute portal="principal"/>;}

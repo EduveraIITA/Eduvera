@@ -377,21 +377,19 @@
 .family-report-cards > header span { color: #1753c2; font-size: 11px; font-weight: 850; letter-spacing: .08em; }
 .family-report-cards > header h2 { margin: 3px 0; }
 .family-report-cards > header button { border-color: #c8d5e8; background: #fff; color: #1452c3; }
-.marksheet { overflow: hidden; border: 1px solid #d8e1ee; border-radius: 21px; background: #fff; box-shadow: 0 9px 25px rgba(28, 58, 112, .06); }
-.marksheet__institution { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #e4eaf2; }
-.marksheet__institution .school-brand { height: 38px; }
-.marksheet__institution .school-brand__name { max-width: 310px; font-size: 14px; }
-.marksheet__institution .school-brand__crest { width: 34px; height: 34px; }
-.marksheet__institution .school-brand__eduvera { width: 32px; height: 32px; }
-.marksheet__published { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 6px 9px; border-radius: 999px; background: #dcf5ed; color: #006d60; font-size: 11px; font-weight: 800; }
-.marksheet__title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 17px 18px 13px; }
-.marksheet__title span { color: #1853c2; font-size: 10px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.marksheet { --marksheet-accent: var(--parent-primary-bright, var(--edura-brand-bright)); --marksheet-soft: color-mix(in srgb, var(--marksheet-accent) 9%, #fff); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 21px; background: #fff; box-shadow: 0 9px 25px rgba(28, 58, 112, .06); }
+.marksheet__document-header { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; color: #fff; background: var(--marksheet-accent); }
+.marksheet__document-type { display: inline-flex; min-width: 0; align-items: center; gap: 9px; }
+.marksheet__document-header strong { font-size: 18px; line-height: 1.2; }
+.marksheet__status-badge { display: inline-flex; flex: none; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 999px; color: #006d60; background: rgba(255,255,255,.92); box-shadow: 0 1px 3px rgba(20,40,70,.1); font-size: 10px; font-weight: 820; }
+.marksheet__title { display: grid; min-height: 84px; align-content: center; padding: 13px 18px 16px; border-bottom: 1px solid color-mix(in srgb, var(--marksheet-accent) 13%, #e4eaf2); background: var(--marksheet-soft); }
+.marksheet__title-copy { min-width: 0; }
+.marksheet__title-copy > span { color: var(--marksheet-accent); font-size: 10px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
 .marksheet__title h3 { margin: 4px 0 2px; font-size: 22px; line-height: 1.18; }
-.marksheet__title p { margin: 0; color: #68758a; font-size: 12px; }
-.marksheet__title > em { padding: 6px 8px; border-radius: 8px; background: #fff2d7; color: #8a5700; font-size: 10px; font-style: normal; font-weight: 800; }
-.marksheet__identity { display: grid; grid-template-columns: 1.4fr 1fr 1fr; margin: 0 18px 15px; border: 1px solid #e2e8f1; border-radius: 12px; background: #f8faff; }
-.marksheet__identity > div { min-width: 0; padding: 10px 12px; border-right: 1px solid #e2e8f1; }
-.marksheet__identity > div:last-child { border: 0; }
+.marksheet__title-copy > em { display: inline-flex; margin-top: 6px; padding: 4px 7px; border-radius: 7px; background: #fff2d7; color: #8a5700; font-size: 9px; font-style: normal; font-weight: 800; }
+.marksheet__identity { display: grid; grid-template-columns: 1.4fr 1fr 1fr; margin: 0; padding: 0 18px 14px; background: #fff; }
+.marksheet__identity > div { min-width: 0; padding: 12px 0; }
+.marksheet__identity > div + div { margin-left: 12px; padding-left: 12px; border-left: 1px solid #e2e8f1; }
 .marksheet__identity dt { margin-bottom: 3px; color: #6d788b; font-size: 9px; font-weight: 820; letter-spacing: .05em; text-transform: uppercase; }
 .marksheet__identity dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
 .marksheet__summary { display: grid; grid-template-columns: .9fr .65fr 1.45fr; color: #fff; background: #0c4bc4; }
@@ -400,11 +398,11 @@
 .marksheet__summary small { color: #cfe0ff; font-size: 9px; font-weight: 800; letter-spacing: .07em; }
 .marksheet__summary strong { margin-top: 3px; font-size: 24px; line-height: 1.05; }
 .marksheet__summary em { margin-top: 3px; color: #dfe9ff; font-size: 9px; font-style: normal; }
-.marksheet__subjects { margin: 16px 18px 0; overflow: hidden; border: 1px solid #dfe6ef; border-radius: 12px; }
+.marksheet__subjects { margin: 14px 0 0; }
 .marksheet__subject-head,
 .marksheet__subject-row { display: grid; grid-template-columns: minmax(120px, 1.5fr) .75fr .55fr .8fr; align-items: center; column-gap: 8px; }
-.marksheet__subject-head { padding: 8px 11px; background: #edf3fd; color: #637087; font-size: 9px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
-.marksheet__subject-row { min-height: 48px; padding: 6px 11px; border-top: 1px solid #e8edf4; color: #26364e; font-size: 12px; }
+.marksheet__subject-head { padding: 8px 18px; border-block: 1px solid #dfe6ef; background: #edf3fd; color: #637087; font-size: 9px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.marksheet__subject-row { min-height: 48px; padding: 7px 18px; border-bottom: 1px solid #e8edf4; color: #26364e; font-size: 12px; }
 .marksheet__subject-row > span { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .marksheet__subject-row > span i { width: 5px; height: 28px; flex: none; border-radius: 4px; }
 .marksheet__subject-row > span b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -418,7 +416,7 @@
 .marksheet__remarks { padding: 14px 18px 0; }
 .marksheet__remarks h4 { margin: 0 0 7px; font-size: 13px; }
 .marksheet__remarks > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.marksheet__remarks p { display: grid; gap: 3px; margin: 0; padding: 10px 11px; border-left: 3px solid #8e65dc; border-radius: 0 9px 9px 0; background: #f6f4fb; color: #4f5e74; font-size: 11px; }
+.marksheet__remarks p { display: grid; gap: 3px; margin: 0; padding: 10px 11px; border-left: 3px solid var(--marksheet-accent); border-radius: 0 9px 9px 0; background: var(--marksheet-soft); color: #4f5e74; font-size: 11px; }
 .marksheet__remarks p b { color: #26364e; }
 .marksheet__verification { display: flex; align-items: center; gap: 9px; margin-top: 15px; padding: 11px 18px; border-top: 1px solid #e4eaf2; background: #f8faff; color: #1753c2; }
 .marksheet__verification > span { display: grid; flex: 1; }
@@ -491,23 +489,22 @@
   .report-dialog fieldset { margin-inline: 16px; }
   .report-component-form > div { grid-template-columns: 1fr; }
   .marksheet { border-radius: 18px; }
-  .marksheet__institution { padding: 12px 14px; }
-  .marksheet__institution .school-brand__name { max-width: 185px; font-size: 12px; }
-  .marksheet__published { padding: 5px 7px; }
-  .marksheet__title { padding: 15px 14px 12px; }
+  .marksheet__document-header { min-height: 52px; padding-inline: 14px; }
+  .marksheet__document-header strong { font-size: 17px; }
+  .marksheet__title { min-height: 82px; padding: 12px 14px 15px; }
   .marksheet__title h3 { font-size: 20px; }
-  .marksheet__identity { grid-template-columns: 1.25fr 1fr; margin: 0 14px 13px; }
-  .marksheet__identity > div { padding: 9px 10px; }
-  .marksheet__identity > div:nth-child(2) { border-right: 0; }
-  .marksheet__identity > div:last-child { grid-column: 1 / -1; border-top: 1px solid #e2e8f1; }
+  .marksheet__identity { grid-template-columns: 1.25fr 1fr; padding: 0 14px 12px; }
+  .marksheet__identity > div { padding: 11px 0; }
+  .marksheet__identity > div + div { margin-left: 10px; padding-left: 10px; }
+  .marksheet__identity > div:last-child { grid-column: 1 / -1; margin: 0; padding-left: 0; border-top: 1px solid #e2e8f1; border-left: 0; }
   .marksheet__summary { grid-template-columns: .95fr .65fr 1.4fr; }
   .marksheet__summary > span { min-height: 72px; padding: 10px 12px; }
   .marksheet__summary strong { font-size: 20px; }
-  .marksheet__subjects { margin: 14px 14px 0; }
+  .marksheet__subjects { margin-top: 12px; }
   .marksheet__subject-head,
   .marksheet__subject-row { grid-template-columns: minmax(100px, 1.45fr) .72fr .42fr .85fr; column-gap: 5px; }
-  .marksheet__subject-head { padding-inline: 8px; }
-  .marksheet__subject-row { padding-inline: 8px; font-size: 11px; }
+  .marksheet__subject-head { padding-inline: 14px; }
+  .marksheet__subject-row { padding-inline: 14px; font-size: 11px; }
   .marksheet__subject-row > span { gap: 6px; }
   .marksheet__subject-row > em { padding-inline: 5px; }
   .marksheet__subject-note { margin-inline: 14px; }
@@ -526,8 +523,7 @@
   .report-subject-grid,
   .family-report-subjects { grid-template-columns: 1fr; }
   .report-score { min-width: 64px; }
-  .marksheet__institution .school-brand__name { max-width: 135px; }
-  .marksheet__published svg { display: none; }
+  .marksheet__title { min-height: 80px; }
   .marksheet__summary > span { padding-inline: 9px; }
   .marksheet__summary strong { font-size: 18px; }
   .marksheet__subject-head,
@@ -555,7 +551,8 @@
   .family-results-page { padding: 0 !important; }
   .marksheet { break-inside: avoid; border-radius: 0; box-shadow: none; }
   .marksheet__summary,
-  .marksheet__published,
+  .marksheet__document-header,
+  .marksheet__status-badge,
   .marksheet__subject-head,
   .marksheet__subject-row > em { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .family-assessment-section { display: none !important; }

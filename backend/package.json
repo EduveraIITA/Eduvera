@@ -15,8 +15,9 @@
     "test:watch": "vitest",
     "db:migrate": "node --import tsx src/database/migrate.ts",
     "db:generate": "python3 scripts/generate_school_data.py",
-    "db:seed": "python3 scripts/generate_school_data.py --load && npm run db:seed:roles",
+    "db:seed": "python3 scripts/generate_school_data.py --load && npm run db:seed:roles && npm run db:seed:departure",
     "db:seed:roles": "DEMO_MODE=true node --import tsx src/database/seed-roles.ts",
+    "db:seed:departure": "DEMO_MODE=true node --import tsx src/database/seed-departure.ts",
     "test:seed": "python3 -m unittest discover -s scripts -p 'test_*.py' -v"
   },
   "dependencies": {

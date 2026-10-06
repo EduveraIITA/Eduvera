@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Award, BookOpen, Bot, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck, FileSpreadsheet,
+  Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck, FileSpreadsheet,
   FileText, Handshake, MessageCircle, ReceiptIndianRupee, Rocket, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
@@ -24,6 +24,7 @@ export interface Tool {
    where it will land. Order = how often a person reaches for it. */
 const TOOLS: Record<Portal, Tool[]> = {
   parent: [
+    { id: "departure", name: "Departure & bus", description: "Today's pickup plan, change requests and live school-bus journey", icon: Bus, tone: "blue", path: "/parent/departure" },
     { id: "results", name: "Results", description: "Moderated assessment results released by the institution", icon: Award, tone: "blue", path: "/parent/results" },
     { id: "calendar", name: "Calendar", description: "Month at a glance: attendance, approved leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/parent/calendar" },
     { id: "timetable", name: "Timetable", description: "Your child's published periods and teachers", icon: CalendarDays, tone: "blue", path: "/parent/timetable" },
@@ -48,6 +49,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   teacher: [
+    { id: "transport", name: "Transport journey", description: "Operate an assigned route, rider roster and journey location", icon: Bus, tone: "blue", path: "/teacher/transport" },
     { id: "assessments", name: "Assessments & marking", description: "Assigned offline assessments, marks and moderation", icon: Award, tone: "blue", path: "/teacher/assessments" },
     { id: "report-cards", name: "Report remarks", description: "Review class reports and add assigned remarks", icon: FileText, tone: "blue", path: "/teacher/report-cards" },
     { id: "responsibilities", name: "My responsibilities", description: "Class, event and cover duties with clear dates and scope", icon: Handshake, tone: "blue", path: "/teacher/responsibilities" },
@@ -63,6 +65,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   principal: [
+    { id: "departure", name: "Departure & transport", description: "Pickup authority, daily plans, routes, rosters and gate handover", icon: Bus, tone: "blue", path: "/principal/departure" },
     { id: "assessments", name: "Assessments & results", description: "Schedule offline assessments, moderate marks and publish results", icon: Award, tone: "blue", path: "/principal/assessments" },
     { id: "report-cards", name: "Grading & report cards", description: "Configure grading, review calculations and publish term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },
     { id: "activation", name: "Institution setup", description: "Complete, review and activate first-day readiness", icon: Rocket, tone: "blue", path: "/principal/activation" },

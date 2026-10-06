@@ -1816,6 +1816,120 @@ ready database/event dependencies and the same release SHA; both family result r
 200. An authenticated learner smoke returned Aarav with one published assessment and one report
 containing one subject. Representative physical-device acceptance remains pending.
 
+### Searchable family marksheet gallery and child context — 6 October 2026
+
+The individual assessment history has been replaced by a horizontally swipeable document gallery
+for both learner and guardian portals. A compact dot navigator reports position and opens any card.
+Every published assessment now renders as an institution-branded marksheet
+with learner/class identity, explicit score or non-scored outcome, percentage, subject total,
+feedback, release sequence and immutable publication reference. Search covers assessment, subject,
+cycle, term and year; academic-year and record-type controls filter both assessment marksheets and
+term reports. In the combined view, an assessment that is an actual source of a published term or
+annual report is represented only by the official aggregate marksheet; its individual record remains
+available under Assessments. This relationship is driven by source assessment IDs returned by the
+family report API rather than subject-name inference. Each record can be printed or saved through an
+isolated print view. Term reports remain the visual reference: assessment documents now use the same
+learner identity, three-part result band, subject table, remarks and verification layout. Both
+document types inherit the active learner's accent without record-type color overrides.
+Their title headers stay intentionally simple and inherit the active learner tint without record-type
+color overrides or decorative raster artwork. The document now starts directly with a solid accent
+header titled `Term report` or `Assessment report`; institution branding is intentionally omitted from
+the document card. Publication status sits at the right edge of the same header to avoid wasting a
+separate row. The term/year and actual report or assessment name follow without repeating the type,
+preventing collision at every mobile width while keeping the shared document body unchanged.
+Learner identity and subject results are flat document sections rather than inset cards: identity
+fields use only structural dividers, and the subject header and rows extend to the marksheet edges.
+Draft results, ranks and signatures remain absent.
+
+The repeat-safe Cambridge demo seed now supplies three independent class tests, six subject-level
+annual examinations and one six-subject annual examination report. Report source links are retained,
+so class tests remain separate gallery cards while the six annual paper records are not repeated in
+the combined view. Re-running the seed does not create duplicate assessments or report releases.
+
+The shared parent shell now assigns stable, accessible accent families to the ordered learner list.
+A single learner retains the existing blue theme; with multiple learners the active profile changes
+the inherited parent-portal brand, feature gradient, buttons, selections, soft surfaces and focus
+cues. Profile portraits and the stacked identity-card layers retain distinct learner colors, while
+the institution crest and official document crest stay institution-blue. The shared shell now reads
+the authoritative `student_id` query context on generic parent routes such as More, preserves it in
+service links and back navigation, and can switch profiles there without falling back to the first
+learner. This is a presentation context only: relationship-scoped authorization and the
+`student_id` route context remain authoritative.
+
+Verified locally: the live family-results API returned `Term 1 · 2026-27` for the seeded English
+publication; frontend typecheck, lint and production build pass; the new gallery tests pass; all 47
+application-route tests pass; and the complete frontend suite passes 247 tests in 41 files. Backend
+typecheck, lint and production build pass. The backend non-isolated unit set passed 67 tests, while
+the repository-wide backend command still requires its documented disposable `DATABASE_URL` for
+six integration suites. Physical mobile review of the new gallery and multi-child palette remains
+pending.
+
+## WF-LOCAL-022: Controlled departure and transport coordination
+
+Implemented locally on 6 October 2026. Detailed contract:
+[Departure and transport coordination](DEPARTURE_AND_TRANSPORT_COORDINATION.md).
+
+- One dated, revisioned departure plan now coordinates guardian pickup, verified external
+  collectors, reviewed independent departure, school transport and family/external transport.
+  Purpose-specific collection grants are institution/learner/date scoped and revocable; revocation
+  moves affected current plans into exception instead of leaving a cached receiver usable.
+- Guardian app changes and staff-recorded phone, paper or in-person requests remain separately
+  attributed. Approval creates a superseding current plan. Non-bus handover requires an explicit
+  ready check followed by a factual execution record; bus drop uses the frozen rider roster and
+  writes the terminal transport-handover evidence.
+- School transport separates reusable routes/stops/learner assignments from dated trips and frozen
+  rosters. Only the assigned collector account can open boarding, depart, publish location, update
+  rider outcomes and close the trip. Closure is refused while any rider remains expected, boarded
+  or unresolved.
+- The guardian API returns the latest precise phone observation only while the selected learner is
+  boarded on an in-progress trip. It withholds the same trip coordinates from a linked sibling who
+  has not boarded and removes them immediately at that learner's drop. Map failure never blocks
+  roster or handover work.
+- Institution policy configures enabled arrangements, same-day cutoff, sample retention and stale-
+  location threshold. The web collector explicitly requests geolocation and a screen wake lock;
+  it labels foreground-only operation rather than claiming guaranteed background tracking.
+- Migration `043_departure_and_transport_coordination.sql`, authenticated APIs, principal, collector
+  and family mobile views, role permissions, navigation, audit/outbox events and a repeat-safe
+  Cambridge demo scenario are included.
+
+Verified local evidence: migration 043 applied successfully and a second migration run was a no-op;
+the demo seed is repeat-safe. Authenticated smokes returned the expected parent, assigned-collector
+and principal workspaces. A real-database privacy smoke passed boarded visibility, sibling isolation
+and immediate post-drop removal. Backend typecheck/lint/build and 18 focused tests pass. Frontend
+typecheck/lint/build and all 247 tests pass. Live local API and proxied preview health return OK.
+The repository-wide backend command still needs its documented disposable integration database for
+six suites. Physical-device permission, suspension, weak-network and real gate/bus operations remain
+release gates; native background location and transport-vendor feeds remain deliberate later slices.
+
+## WF-LOCAL-023: Transport duty calendar, roster preparation and mutual swaps
+
+Implemented locally on 6 October 2026 as the staffing and planning continuation of WF-LOCAL-022.
+
+- Effective-dated service patterns now define route, direction, weekdays, departure time, primary
+  collector and optional backup. A six-week-bounded generator prepares dated trips and rider
+  rosters from the learner route assignments effective on each service date.
+- Principal transport operations now show a mobile-responsive seven-day calendar with each trip,
+  collector acceptance state and rider count. Operations can prepare a week, refresh an unfrozen
+  planned roster and reassign primary/backup staff. Reassignment returns the duty to pending;
+  boarding stays blocked until the current assignee accepts.
+- Staff can decline a new duty, request one-way cover or request a mutual exchange with a
+  colleague's accepted planned trip. The colleague accepts or rejects first. School operations
+  separately approves or declines an accepted request. Approval locks and revision-checks the
+  affected trip(s) and applies an exchange atomically; active, frozen or stale trips are refused.
+- Migration `044_transport_duty_planning_and_swaps.sql` adds protected service-pattern and swap
+  records plus dated-trip acceptance/backup fields. Browser roles have no direct table grants;
+  backend permission checks, audits and outbox notifications remain the application boundary.
+
+Verified local evidence: migration 044 applied and a second migration run was a no-op. The
+repeat-safe Cambridge transport seed still completes. A real authenticated smoke created two
+dated rosters, captured both staff acceptances, captured the colleague's mutual-exchange acceptance,
+approved it as principal and verified both assignments swapped while remaining accepted; smoke
+records were removed. A separate recurring-pattern smoke generated one pending trip with its two-
+rider roster and was also cleaned up. Backend build/lint/typecheck and six transport migration
+contract tests pass; frontend typecheck/lint/production build pass. The full frontend regression
+passes all 247 tests in 41 files. Physical mobile and real transport-operations
+review remain the final local acceptance gates for this slice.
+
 ## Invitation SMTP delivery — 4 October 2026
 
 User request: send company/admin and school-member invitations using the

@@ -388,7 +388,12 @@ export class AcademicReportsService {
       JOIN grading_schemes scheme ON scheme.id=batch.scheme_id JOIN academic_terms term ON term.id=scheme.term_id
       WHERE report.school_id=${schoolId}::uuid AND report.student_id=${studentId}::uuid ORDER BY scheme.id,batch.sequence DESC) latest ORDER BY latest.published_at DESC`.execute(this.db);
     const reportIds = reports.rows.map((report) => String((report as { report_student_id: string }).report_student_id));
-    const subjects = reportIds.length ? await sql`SELECT result.*,subject.name AS subject_name,subject.color,subject.icon FROM grading_report_subjects result JOIN subjects subject ON subject.id=result.subject_id WHERE result.report_student_id=ANY(${reportIds}::uuid[]) ORDER BY result.report_student_id,subject.name`.execute(this.db) : { rows: [] };
+    const subjects = reportIds.length ? await sql`SELECT result.*,subject.name AS subject_name,subject.color,subject.icon,
+      COALESCE((SELECT array_agg(DISTINCT source.assessment_id ORDER BY source.assessment_id) FROM grading_report_components component
+        JOIN grading_report_assessment_sources source ON source.report_component_id=component.id
+        WHERE component.report_subject_id=result.id),'{}'::uuid[]) AS assessment_ids
+      FROM grading_report_subjects result JOIN subjects subject ON subject.id=result.subject_id
+      WHERE result.report_student_id=ANY(${reportIds}::uuid[]) ORDER BY result.report_student_id,subject.name`.execute(this.db) : { rows: [] };
     return { student, reports: reports.rows.map((report) => ({ ...(report as Record<string, unknown>), subjects: subjects.rows.filter((subject) => String((subject as { report_student_id: string }).report_student_id) === String((report as { report_student_id: string }).report_student_id)) })) };
   }
 }
