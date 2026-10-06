@@ -1806,7 +1806,15 @@ applied, after which an authenticated learner smoke returned one published asses
 with one subject. The full frontend gate passes: lint, typecheck, production build and 243 tests in
 41 files. The general 200-student seed regeneration was not claimed: its existing picnic-payment
 integrity assertion failed against this reused local database before the targeted repeat-safe demo
-seed completed. Stage deployment and physical-device acceptance for this polish remain pending.
+seed completed.
+
+Stage workflow [37448393097](https://github.com/EduveraIITA/Eduvera/actions/runs/37448393097)
+then passed secret scanning, isolated backend integration tests, the complete mobile frontend gate,
+the desktop build, migration validation, repeat-safe demo-data repair and Railway deployment for
+application commit `63a40f247ed5cc53781a2c1911646066ac75ae77`. Independent public checks returned
+ready database/event dependencies and the same release SHA; both family result routes returned HTTP
+200. An authenticated learner smoke returned Aarav with one published assessment and one report
+containing one subject. Representative physical-device acceptance remains pending.
 
 ## Invitation SMTP delivery — 4 October 2026
 
