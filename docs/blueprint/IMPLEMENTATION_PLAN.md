@@ -1789,6 +1789,25 @@ evidence, not production approval or representative physical-device acceptance. 
 boundaries include board/university policy packs, promotion decisions, transcripts, certificates,
 digital signatures, longitudinal analytics and institution-approved print/retention policy.
 
+### Family marksheet and learner discovery polish — 6 October 2026
+
+The published family result now leads with a mobile-first official marksheet rather than presenting
+the term aggregate as another generic card. It shows institution identity, learner/admission/class
+identity, overall outcome and grade, a compact subject table, school remarks and an immutable
+publication reference. Individual assessment releases remain available as a denser history beneath
+the marksheet. Printing removes portal chrome and the assessment history, while retaining the
+published record styling. No rank, percentile, signature or board-specific claim was added.
+
+The learner module catalogue now exposes the existing relationship-scoped `/student/results` route;
+the former omission made the capability undiscoverable even though authorization and routing were
+already present. The parent context also normalizes the API's `Class 7A` label so it no longer renders
+as `Class Class 7A`. Local migration `042` and the repeat-safe assessment/report demo seed were
+applied, after which an authenticated learner smoke returned one published assessment and one report
+with one subject. The full frontend gate passes: lint, typecheck, production build and 243 tests in
+41 files. The general 200-student seed regeneration was not claimed: its existing picnic-payment
+integrity assertion failed against this reused local database before the targeted repeat-safe demo
+seed completed. Stage deployment and physical-device acceptance for this polish remain pending.
+
 ## Invitation SMTP delivery — 4 October 2026
 
 User request: send company/admin and school-member invitations using the

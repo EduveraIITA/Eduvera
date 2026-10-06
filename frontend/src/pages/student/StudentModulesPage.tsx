@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
+  Award,
   Bot,
   CalendarCheck2,
   CalendarRange,
@@ -15,6 +16,7 @@ import "./student-modules.css";
 type ModuleId = "launcher" | "fees" | "diary";
 
 const modules = [
+  { id: "results", name: "Results", description: "Published marksheets, grades, and assessment feedback", icon: Award, path: "/student/results", tone: "blue" },
   { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, path: "/student/calendar", tone: "blue" },
   { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas, and eligibility", icon: CalendarCheck2, path: "/student/attendance", tone: "blue" },
   { id: "copilot", name: "Attendance Copilot", description: "Ask policy and projection questions using your own data", icon: Bot, path: "/student/copilot", tone: "teal" },

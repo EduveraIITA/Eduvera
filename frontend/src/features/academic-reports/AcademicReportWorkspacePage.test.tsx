@@ -21,7 +21,9 @@ describe("published report cards", () => {
     }} />);
     expect(screen.getAllByText("82.50%")).toHaveLength(2);
     expect(screen.getByText("English")).toBeInTheDocument();
-    expect(screen.getByText("Correction 2")).toBeInTheDocument();
+    expect(screen.getByText("Corrected release")).toBeInTheDocument();
+    expect(screen.getByText("Official term result · Release 2")).toBeInTheDocument();
+    expect(screen.getByText("Published school record")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Print" }));
     expect(print).toHaveBeenCalledOnce();
     print.mockRestore();
