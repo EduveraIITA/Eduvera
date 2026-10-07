@@ -109,9 +109,9 @@ describe('Reviewed bulk student enrollment',()=>{
     expect((await pool.query("SELECT id FROM audit_events WHERE target_id=$1 AND action='people.import.committed'",[id])).rows).toHaveLength(1);
   });
   it('enforces school permission and tenant boundaries on every stage',async()=>{
-    const id=await upload([row()]);await expect(imports.detail(teacher.authUser,id,schoolId)).rejects.toThrow('sis.manage');await expect(imports.detail(admin.authUser,id,randomUUID())).rejects.toThrow('sis.manage');
+    const id=await upload([row()]);await expect(imports.detail(teacher.authUser,id,schoolId)).rejects.toThrow('sis.manage');await expect(imports.detail(admin.authUser,id,randomUUID())).rejects.toThrow(/sis\.manage|active membership/);
     const current=await detail(id);await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);
-    try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:1,validation_token:current.review!.validation_token,verified:true})).rejects.toThrow('sis.manage');}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
+    try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:1,validation_token:current.review!.validation_token,verified:true})).rejects.toThrow(/sis\.manage|active membership/);}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
   });
   it('warns about submitted registers, reopens once, and preserves historical roster boundaries',async()=>{
     const register=(await pool.query("INSERT INTO attendance_registers(school_id,class_section_id,term_id,date,state,revision,submitted_by,submitted_at) VALUES($1,$2,$3,$4,'submitted',1,$5,now()) RETURNING id",[schoolId,sectionA,termId,today,teacher.authUser.id])).rows[0].id;

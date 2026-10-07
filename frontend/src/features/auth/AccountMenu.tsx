@@ -96,6 +96,9 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
             </span>
           </div>
           {error ? <span className="account-menu__error" role="alert">{error}</span> : null}
+          <button className="account-menu__logout" role="menuitem" type="button" onClick={() => { setOpen(false); void navigate("/account/security"); }}>
+            <ShieldCheck size={16} /> Account security <ArrowRight size={14} />
+          </button>
           <button className="account-menu__logout" role="menuitem" type="button" disabled={pending} onClick={() => void signOut()}>
             <LogOut size={16} /> {pending ? "Signing out..." : "Sign out"} <ArrowRight size={14} />
           </button>

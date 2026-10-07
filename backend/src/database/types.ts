@@ -126,9 +126,25 @@ export interface StaffResponsibilityTypeTable {
   id: Generated<string>; school_id: string; code: string; name: string;
   category: "academic" | "student_support" | "event" | "examination" | "operations" | "governance";
   scope_kind: "school" | "class_section" | "event" | "scheduled_duty";
+  context_kind: Generated<"institution" | "class" | "event" | "assessment" | "trip" | "task" | "restricted_care">;
+  workflow_family: string; source_kind: Generated<"system" | "institute">;
+  cloned_from_type_id: string | null;
   description: Generated<string>; access_summary: Generated<string>;
+  capability_permissions: Generated<string[]>;
   requires_acceptance: Generated<boolean>; restricted: Generated<boolean>; is_active: Generated<boolean>;
-  created_at: Timestamp;
+  revision: Generated<number>; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface SchoolCustomRoleDutyTable {
+  school_id: string; role_id: string; responsibility_type_id: string; created_at: Timestamp;
+}
+export interface SchoolAccessExceptionTable {
+  id: Generated<string>; school_id: string; user_id: string; permission: string; reason: string;
+  source_kind: "manual" | "migration_profile" | "migration_individual";
+  scope_kind: Generated<"institution" | "assigned_resources">;
+  valid_from: DateOnly; valid_until: DateOnly; review_due_on: DateOnly;
+  status: Generated<"active" | "revoked" | "expired">; created_by: string | null;
+  revoked_by: string | null; revoked_at: NullableTimestamp; revocation_reason: Generated<string>;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
 }
 export interface StaffResponsibilityAssignmentTable {
   id: Generated<string>; school_id: string; responsibility_type_id: string; staff_profile_id: string;
@@ -201,8 +217,66 @@ export interface InstitutionPolicyAcknowledgementTable {
 }
 export interface InstitutionGovernanceAuditTable {
   id: Generated<string>; school_id: string; actor_id: string; action: string;
-  target_type: "regulatory_profile" | "policy_version" | "policy_acknowledgement";
+  target_type: "regulatory_profile" | "policy_version" | "policy_acknowledgement" | "authority_setup" | "authority_source" | "office" | "body" | "seat" | "appointment" | "mandate" | "decision_rule";
   target_id: string | null; metadata: Json; created_at: Timestamp;
+}
+export interface InstitutionAuthoritySourceTable {
+  id: Generated<string>; school_id: string; code: string; title: string;
+  source_kind: "law_regulation" | "affiliation_rule" | "governing_instrument" | "resolution" | "appointment_order" | "delegation" | "owner_declaration" | "other";
+  issuer: Generated<string>; jurisdiction: Generated<string>; reference: Generated<string>;
+  provision: Generated<string>; evidence_reference: Generated<string>;
+  verification_state: Generated<"draft" | "recorded" | "self_attested" | "verified" | "superseded">;
+  effective_from: DateOnly | null; effective_until: DateOnly | null;
+  verified_by: string | null; verified_at: NullableTimestamp; created_by: string;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionGovernanceOfficeTable {
+  id: Generated<string>; school_id: string; code: string; title: string; purpose: Generated<string>;
+  authority_source_id: string | null; status: Generated<"proposed" | "active" | "retired">;
+  created_by: string; revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionGovernanceBodyTable {
+  id: Generated<string>; school_id: string; code: string; title: string; purpose: Generated<string>;
+  authority_source_id: string | null; collective_authority: Generated<boolean>;
+  status: Generated<"proposed" | "active" | "retired">; created_by: string;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionGovernanceSeatTable {
+  id: Generated<string>; school_id: string; body_id: string; code: string; title: string;
+  seat_kind: Generated<"ordinary" | "chair" | "secretary" | "ex_officio" | "observer">;
+  voting_right: Generated<"voting" | "non_voting" | "conditional">;
+  qualifying_office_id: string | null; required: Generated<boolean>; term_months: number | null;
+  status: Generated<"proposed" | "active" | "retired">; sort_order: Generated<number>;
+  created_by: string; revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionGovernanceAppointmentTable {
+  id: Generated<string>; school_id: string; office_id: string | null; seat_id: string | null;
+  person_id: string; linked_user_id: string | null;
+  appointment_kind: Generated<"appointed" | "elected" | "nominated" | "ex_officio" | "acting">;
+  starts_on: DateOnly; ends_on: DateOnly | null;
+  status: Generated<"proposed" | "active" | "future" | "suspended" | "ended">;
+  authority_source_id: string | null; evidence_reference: Generated<string>; created_by: string;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionAuthorityMandateTable {
+  id: Generated<string>; school_id: string; code: string; title: string; authority_source_id: string;
+  holder_office_id: string | null; holder_body_id: string | null; responsibility_type_id: string | null;
+  powers: string[]; matter_codes: string[]; limit_summary: Generated<string>; conditions: Json;
+  effective_from: DateOnly; effective_until: DateOnly | null; delegable: Generated<boolean>;
+  status: Generated<"suggested" | "active" | "suspended" | "revoked" | "expired">;
+  created_by: string; revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionDecisionMatterRuleTable {
+  id: Generated<string>; school_id: string; code: string; title: string;
+  category: "academic" | "finance" | "people" | "safety" | "policy" | "operations" | "admission" | "complaint" | "other";
+  initiation_summary: Generated<string>; review_summary: Generated<string>;
+  decision_summary: string; execution_summary: string;
+  decision_mode: "standing" | "delegated" | "individual" | "collective" | "external" | "combined";
+  decision_office_id: string | null; decision_body_id: string | null; standing_mandate_id: string | null;
+  authority_source_ids: Generated<string[]>; conditions_summary: Generated<string>;
+  material_fields: Generated<string[]>; status: Generated<"suggested" | "confirmed" | "retired">;
+  effective_from: DateOnly | null; effective_until: DateOnly | null; created_by: string;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
 }
 export interface RestrictedCareRoleAssignmentTable {
   id: Generated<string>; school_id: string; user_id: string;
@@ -307,12 +381,17 @@ export interface CampusEventTable {
 }
 export interface ClassSectionStaffAssignmentTable {
   id: Generated<string>; school_id: string; class_section_id: string; user_id: string;
+  access_role_id: Generated<string | null>; access_revision: Generated<number>; ended_at: NullableTimestamp;
   role: "class_teacher" | "subject_teacher"; subject_id: string | null;
   valid_from: DateOnly; valid_until: DateOnly | null; assigned_by: string; created_at: Timestamp;
 }
 export interface CampusEventClassSectionTable { school_id: string; event_id: string; class_section_id: string }
 export interface CampusEventSelectedStudentTable { school_id: string; event_id: string; student_id: string }
-export interface CampusEventStaffTable { school_id: string; event_id: string; user_id: string; role: "organizer" | "duty_staff" | "attendance_taker"; assigned_at: Timestamp }
+export interface CampusEventStaffTable {
+  school_id: string; event_id: string; user_id: string;
+  role: "organizer" | "duty_staff" | "attendance_taker"; assigned_at: Timestamp;
+  access_role_id: Generated<string | null>; access_revision: Generated<number>;
+}
 export interface CampusEventSessionTable {
   id: Generated<string>; school_id: string; event_id: string; title: string;
   session_type: "general" | "rehearsal" | "departure" | "activity" | "return";
@@ -377,7 +456,7 @@ export interface FeePaymentTable { id: Generated<string>; school_id: string; inv
 export interface CampusEventParticipantWithdrawalTable { id: Generated<string>; school_id: string; event_id: string; student_id: string; reason: string; idempotency_key: string; request_hash: string; withdrawn_by: string; withdrawn_at: Timestamp }
 export interface FeeInvoiceCreditTable { id: Generated<string>; school_id: string; invoice_id: string; event_id: string; student_id: string; participant_withdrawal_id: string | null; amount_paise: number; source: "event_cancelled" | "participant_withdrawn"; reason: string; idempotency_key: string; request_hash: string; recorded_by: string; created_at: Timestamp }
 export interface FeeRefundTable { id: Generated<string>; school_id: string; invoice_id: string; credit_id: string; event_id: string; student_id: string; amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; reason: string; idempotency_key: string; request_hash: string; recorded_by: string; created_at: Timestamp }
-export interface ChatConversationTable { id: Generated<string>; school_id: string; kind: Generated<"direct" | "group" | "announcement">; title: Generated<string>; context_student_id: string | null; group_type: Generated<"student_group" | "parent_group" | "activity" | "staff" | "child_support" | "announcement" | null>; posting_mode: Generated<"all" | "moderators">; created_by: string; last_message_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
+export interface ChatConversationTable { id: Generated<string>; school_id: string; kind: Generated<"direct" | "group" | "announcement">; title: Generated<string>; context_student_id: string | null; group_type: Generated<"student_group" | "parent_group" | "activity" | "staff" | "child_support" | "announcement" | null>; posting_mode: Generated<"all" | "moderators">; created_by: string; last_message_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp; class_section_id: Generated<string | null>; }
 export interface ChatParticipantTable { conversation_id: string; user_id: string; participant_role: Generated<"member" | "moderator">; joined_at: Timestamp; last_read_at: NullableTimestamp; is_muted: Generated<boolean>; is_active: Generated<boolean> }
 export interface ChatMessageTable { id: Generated<string>; conversation_id: string; sender_id: string; client_id: string | null; body: Generated<string>; message_type: Generated<"text" | "file" | "system">; reply_to_id: string | null; is_deleted: Generated<boolean>; created_at: Timestamp; updated_at: Timestamp }
 export interface ChatAttachmentTable { id: Generated<string>; message_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; created_at: Timestamp }
@@ -385,7 +464,11 @@ export interface ChatMessageReportTable { id: Generated<string>; message_id: str
 export interface ChatMessagingRestrictionTable { id: Generated<string>; school_id: string; user_id: string; report_id: string; reason: string; starts_at: Timestamp; expires_at: Timestamp; created_by: string; revoked_at: NullableTimestamp; created_at: Timestamp }
 export interface AssessmentCycleTable { id: Generated<string>; school_id: string; term_id: string; name: string; code: string; starts_on: DateOnly; ends_on: DateOnly; status: Generated<"draft"|"active"|"completed"|"archived">; result_label: Generated<string>; revision: Generated<number>; created_by: string; updated_by: string; created_at: Timestamp; updated_at: Timestamp }
 export interface AssessmentTable { id: Generated<string>; school_id: string; cycle_id: string; class_section_id: string; subject_id: string; title: string; assessment_kind: "exam"|"class_test"|"quiz"|"assignment"|"practical"|"viva"|"project"|"other"; maximum_marks: string; weight_percent: string|null; scheduled_at: NullableTimestamp; duration_minutes: number|null; venue: Generated<string>; instructions: Generated<string>; evidence_requirement: Generated<"none"|"optional"|"required">; status: Generated<"draft"|"scheduled"|"marking"|"submitted"|"moderated"|"published"|"cancelled">; revision: Generated<number>; moderation_note: Generated<string>; submitted_by: string|null; submitted_at: NullableTimestamp; moderated_by: string|null; moderated_at: NullableTimestamp; cancelled_by: string|null; cancelled_at: NullableTimestamp; cancellation_reason: Generated<string>; created_by: string; updated_by: string; created_at: Timestamp; updated_at: Timestamp }
-export interface AssessmentStaffAssignmentTable { school_id: string; assessment_id: string; user_id: string; role: "examiner"|"moderator"; assigned_by: string; assigned_at: Timestamp }
+export interface AssessmentStaffAssignmentTable {
+  school_id: string; assessment_id: string; user_id: string; role: "examiner"|"moderator";
+  assigned_by: string; assigned_at: Timestamp;
+  access_role_id: Generated<string | null>; access_revision: Generated<number>;
+}
 export interface AssessmentResultTable { id: Generated<string>; school_id: string; assessment_id: string; student_id: string; outcome: Generated<"unrecorded"|"scored"|"absent"|"exempt"|"withheld"|"not_evaluated">; marks: string|null; grade: Generated<string>; feedback: Generated<string>; revision: Generated<number>; recorded_by: string|null; recorded_at: NullableTimestamp; updated_at: Timestamp }
 export interface AssessmentResultRevisionTable { id: Generated<number>; school_id: string; assessment_id: string; result_id: string; student_id: string; revision: number; previous_outcome: string|null; outcome: string; previous_marks: string|null; marks: string|null; previous_grade: Generated<string>; grade: Generated<string>; previous_feedback: Generated<string>; feedback: Generated<string>; reason: string; changed_by: string; created_at: Timestamp }
 export interface AssessmentEvidenceTable { id: Generated<string>; school_id: string; assessment_id: string; result_id: string; student_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; uploaded_by: string; uploaded_at: Timestamp }
@@ -410,7 +493,7 @@ export interface TransportRouteTable { id:Generated<string>; school_id:string; c
 export interface TransportStopTable { id:Generated<string>; school_id:string; route_id:string; direction:"to_institution"|"from_institution"; sequence:number; name:string; planned_time:TimeOnly|null; latitude:string|null; longitude:string|null; created_at:Timestamp }
 export interface TransportStudentAssignmentTable { id:Generated<string>; school_id:string; student_id:string; route_id:string; stop_id:string; direction:"to_institution"|"from_institution"; valid_from:DateOnly; valid_until:DateOnly|null; status:Generated<"active"|"ended">; created_by:string; created_at:Timestamp }
 export interface TransportServicePatternTable { id:Generated<string>; school_id:string; route_id:string; label:string; direction:"to_institution"|"from_institution"; weekdays:number[]; departure_time:TimeOnly; primary_collector_user_id:string; backup_collector_user_id:string|null; valid_from:DateOnly; valid_until:DateOnly|null; status:Generated<"active"|"inactive">; revision:Generated<number>; created_by:string; updated_by:string; created_at:Timestamp; updated_at:Timestamp }
-export interface TransportTripTable { id:Generated<string>; school_id:string; route_id:string; service_date:DateOnly; direction:"to_institution"|"from_institution"; assigned_collector_user_id:string; service_pattern_id:string|null; scheduled_departure_time:TimeOnly; backup_collector_user_id:string|null; collector_assignment_status:Generated<"pending"|"accepted"|"declined">; assignment_accepted_at:NullableTimestamp; assignment_declined_at:NullableTimestamp; assignment_note:Generated<string>; state:Generated<"planned"|"boarding"|"in_progress"|"completed"|"cancelled">; roster_frozen_at:NullableTimestamp; departed_at:NullableTimestamp; completed_at:NullableTimestamp; cancelled_at:NullableTimestamp; cancellation_reason:Generated<string>; location_started_at:NullableTimestamp; location_ended_at:NullableTimestamp; revision:Generated<number>; created_by:string; created_at:Timestamp; updated_at:Timestamp }
+export interface TransportTripTable { id:Generated<string>; school_id:string; route_id:string; service_date:DateOnly; direction:"to_institution"|"from_institution"; assigned_collector_user_id:string; service_pattern_id:string|null; scheduled_departure_time:TimeOnly; backup_collector_user_id:string|null; collector_assignment_status:Generated<"pending"|"accepted"|"declined">; assignment_accepted_at:NullableTimestamp; assignment_declined_at:NullableTimestamp; assignment_note:Generated<string>; state:Generated<"planned"|"boarding"|"in_progress"|"completed"|"cancelled">; roster_frozen_at:NullableTimestamp; departed_at:NullableTimestamp; completed_at:NullableTimestamp; cancelled_at:NullableTimestamp; cancellation_reason:Generated<string>; location_started_at:NullableTimestamp; location_ended_at:NullableTimestamp; revision:Generated<number>; created_by:string; created_at:Timestamp; updated_at:Timestamp; collector_access_role_id: Generated<string | null>; backup_access_role_id: Generated<string | null>; }
 export interface TransportTripRosterTable { school_id:string; trip_id:string; student_id:string; stop_id:string; state:Generated<"expected"|"boarded"|"dropped"|"not_riding"|"exception">; revision:Generated<number>; boarded_at:NullableTimestamp; dropped_at:NullableTimestamp; recorded_by:string|null; outcome_note:Generated<string>; updated_at:Timestamp }
 export interface TransportLocationSampleTable { id:Generated<number>; school_id:string; trip_id:string; recorded_by:string; latitude:string; longitude:string; accuracy_metres:string; heading_degrees:string|null; speed_metres_per_second:string|null; observed_at:Timestamp; received_at:Timestamp }
 export interface TransportDutySwapRequestTable { id:Generated<string>; school_id:string; request_type:"cover"|"exchange"; requester_trip_id:string; target_trip_id:string|null; requester_user_id:string; target_user_id:string; requester_trip_revision:number; target_trip_revision:number|null; reason:string; status:Generated<"submitted"|"accepted"|"rejected"|"approved"|"declined_by_school"|"cancelled">; response_note:Generated<string>; target_responded_at:NullableTimestamp; decided_by:string|null; decided_at:NullableTimestamp; decision_note:Generated<string>; revision:Generated<number>; created_at:Timestamp; updated_at:Timestamp }
@@ -461,6 +544,8 @@ export interface Database {
   staff_leave_requests: StaffLeaveRequestTable;
   staff_leave_request_audits: StaffLeaveRequestAuditTable;
   staff_responsibility_types: StaffResponsibilityTypeTable;
+  school_custom_role_duties: SchoolCustomRoleDutyTable;
+  school_access_exceptions: SchoolAccessExceptionTable;
   staff_responsibility_assignments: StaffResponsibilityAssignmentTable;
   staff_responsibility_audits: StaffResponsibilityAuditTable;
   staff_coverage_tasks: StaffCoverageTaskTable;
@@ -470,6 +555,13 @@ export interface Database {
   institution_policy_versions: InstitutionPolicyVersionTable;
   institution_policy_acknowledgements: InstitutionPolicyAcknowledgementTable;
   institution_governance_audits: InstitutionGovernanceAuditTable;
+  institution_authority_sources: InstitutionAuthoritySourceTable;
+  institution_governance_offices: InstitutionGovernanceOfficeTable;
+  institution_governance_bodies: InstitutionGovernanceBodyTable;
+  institution_governance_seats: InstitutionGovernanceSeatTable;
+  institution_governance_appointments: InstitutionGovernanceAppointmentTable;
+  institution_authority_mandates: InstitutionAuthorityMandateTable;
+  institution_decision_matter_rules: InstitutionDecisionMatterRuleTable;
   restricted_care_role_assignments: RestrictedCareRoleAssignmentTable;
   restricted_care_cases: RestrictedCareCaseTable;
   restricted_care_case_assignments: RestrictedCareCaseAssignmentTable;

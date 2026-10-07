@@ -273,7 +273,7 @@ export function PrincipalCalendarRoute() {
   const past = cal.selected <= schoolDateToday();
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
   return (
-    <OperationsShell portal="principal" active="more" title="Calendar" subtitle="School calendar">
+    <OperationsShell portal="principal" active="timetable" title="Calendar" subtitle="School calendar" backTo="/principal/timetable">
       <CalendarView {...cal} onSelect={cal.select} marks={merge(eventMarks(events.data?.items ?? []), holidayMarks(calendarDays.data?.results ?? []))} isSchoolDay={isSchoolDay} subtitle={timetable.data ? `${timetable.data.classes.length} classes · ${weekdays.size}-day week` : undefined} legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }]}
         detail={
           <div className="cal-detail">

@@ -87,7 +87,7 @@ function displayName(user: Pick<AuthUser, "first_name" | "last_name">): string {
 export class ChatService {
   constructor(private readonly db: DatabaseService) {}
 
-  private async conversationForUser(user: AuthUser, conversationId: string) {
+  private async conversationForUser(user: AuthUser, conversationId: string, action = "messages.view") {
     if (!uuid.safeParse(conversationId).success) throw new NotFoundException("Conversation not found.");
     const result = await sql<any>`
       SELECT c.*, cp.last_read_at, cp.joined_at, cp.is_muted
@@ -96,6 +96,7 @@ export class ChatService {
       JOIN school_memberships membership ON membership.school_id=c.school_id
         AND membership.user_id=${user.id}::uuid AND membership.is_active
       WHERE c.id=${conversationId}::uuid AND cp.user_id=${user.id}::uuid AND cp.is_active
+        AND (membership.role<>'staff' OR staff_has_conversation_permission(c.school_id,${user.id}::uuid,${action},c.id))
       LIMIT 1
     `.execute(this.db);
     const conversation = result.rows[0];
@@ -107,7 +108,7 @@ export class ChatService {
     const sections = await sql<any>`SELECT DISTINCT cs.id, cs.school_id, cs.grade, cs.section
       FROM class_sections cs JOIN school_memberships sm ON sm.school_id=cs.school_id
       WHERE sm.user_id=${user.id}::uuid AND sm.is_active
-        AND (sm.role IN ('admin', 'staff') OR (sm.role='student' AND EXISTS (
+        AND (sm.role='admin' OR (sm.role='staff' AND staff_has_class_permission(cs.school_id,${user.id}::uuid,'messages.view',cs.id)) OR (sm.role='student' AND EXISTS (
           SELECT 1 FROM students st JOIN enrollments e ON e.student_id=st.id
           WHERE st.user_id=${user.id}::uuid AND e.is_active AND e.class_section_id=cs.id
         ))) ORDER BY cs.id`.execute(this.db);
@@ -118,11 +119,12 @@ export class ChatService {
         const title = "Grade " + section.grade + " · " + section.section;
         const existing = await sql<any>`SELECT id FROM chat_conversations
           WHERE school_id=${section.school_id}::uuid AND kind='group' AND group_type='student_group'
-            AND context_student_id IS NULL AND title=${title} ORDER BY created_at, id LIMIT 1`.execute(tx);
+            AND context_student_id IS NULL AND (class_section_id=${section.id}::uuid OR (class_section_id IS NULL AND title=${title})) ORDER BY created_at, id LIMIT 1`.execute(tx);
         const conversation = existing.rows[0] ?? await tx.insertInto("chat_conversations").values({
-          school_id: section.school_id, kind: "group", title, context_student_id: null,
+          school_id: section.school_id, kind: "group", title, context_student_id: null,class_section_id:section.id,
           created_by: user.id, group_type: "student_group", posting_mode: "all",
         }).returning("id").executeTakeFirstOrThrow();
+        await tx.updateTable("chat_conversations").set({class_section_id:section.id}).where("id","=",conversation.id).where("class_section_id","is",null).execute();
         // Current enrollments are the source of truth, including students added after creation.
         const members = await sql<any>`SELECT DISTINCT u.id, 'member' AS participant_role
           FROM enrollments e JOIN students st ON st.id=e.student_id
@@ -133,10 +135,7 @@ export class ChatService {
           UNION SELECT DISTINCT u.id, 'moderator' AS participant_role
           FROM school_memberships sm JOIN users u ON u.id=sm.user_id AND u.is_active
           WHERE sm.school_id=${section.school_id}::uuid AND sm.is_active
-            AND (sm.role='admin' OR (sm.role='staff' AND EXISTS (
-              SELECT 1 FROM timetable_slots slot WHERE slot.class_section_id=${section.id}::uuid
-                AND slot.teacher_user_id=u.id
-            )))`.execute(tx);
+            AND (sm.role='admin' OR (sm.role='staff' AND staff_has_class_permission(${section.school_id}::uuid,u.id,'messages.view',${section.id}::uuid)))`.execute(tx);
         const roles = new Map<string, string>();
         for (const member of members.rows) {
           if (roles.get(member.id) !== "moderator") roles.set(member.id, member.participant_role);
@@ -218,6 +217,7 @@ export class ChatService {
         ORDER BY message.created_at DESC, message.id DESC LIMIT 1
       ) last_message ON true
       LEFT JOIN chat_attachments last_attachment ON last_attachment.message_id=last_message.id
+      WHERE membership.role<>'staff' OR staff_has_conversation_permission(c.school_id,${user.id}::uuid,'messages.view',c.id)
       ORDER BY COALESCE(last_message.created_at, c.created_at) DESC
       LIMIT 100
     `.execute(this.db);
@@ -267,10 +267,8 @@ export class ChatService {
                 target_membership.role='student'
                 AND EXISTS (
                   SELECT 1 FROM enrollments enrollment
-                  JOIN timetable_slots slot ON slot.class_section_id=enrollment.class_section_id
-                    AND slot.term_id=enrollment.term_id
                   WHERE enrollment.student_id=student.id AND enrollment.is_active
-                    AND slot.teacher_user_id=${user.id}::uuid
+                    AND staff_has_class_permission(${membership.school_id}::uuid,${user.id}::uuid,'messages.view',enrollment.class_section_id)
                     AND (${requestedStudentId ?? null}::uuid IS NULL OR student.id=${requestedStudentId ?? null}::uuid)
                 )
               )
@@ -280,9 +278,8 @@ export class ChatService {
                   SELECT 1 FROM parents parent
                   JOIN guardian_relationships relationship ON relationship.guardian_id=parent.id
                   JOIN enrollments enrollment ON enrollment.student_id=relationship.student_id AND enrollment.is_active
-                  JOIN timetable_slots slot ON slot.class_section_id=enrollment.class_section_id
-                    AND slot.term_id=enrollment.term_id AND slot.teacher_user_id=${user.id}::uuid
                   WHERE parent.user_id=target.id
+                    AND staff_has_class_permission(${membership.school_id}::uuid,${user.id}::uuid,'messages.view',enrollment.class_section_id)
                     AND (${requestedStudentId ?? null}::uuid IS NULL OR relationship.student_id=${requestedStudentId ?? null}::uuid)
                 )
               )
@@ -307,9 +304,8 @@ export class ChatService {
                   SELECT 1 FROM parents parent
                   JOIN guardian_relationships relationship ON relationship.guardian_id=parent.id
                   JOIN enrollments enrollment ON enrollment.student_id=relationship.student_id AND enrollment.is_active
-                  JOIN timetable_slots slot ON slot.class_section_id=enrollment.class_section_id
-                    AND slot.term_id=enrollment.term_id AND slot.teacher_user_id=target.id
                   WHERE parent.user_id=${user.id}::uuid
+                    AND staff_has_class_permission(${membership.school_id}::uuid,target.id,'messages.view',enrollment.class_section_id)
                     AND (${requestedStudentId ?? null}::uuid IS NULL OR relationship.student_id=${requestedStudentId ?? null}::uuid)
                 )
               )
@@ -335,9 +331,7 @@ export class ChatService {
               OR (
                 target_membership.role='staff'
                 AND EXISTS (
-                  SELECT 1 FROM timetable_slots slot
-                  WHERE slot.class_section_id=enrollment.class_section_id
-                    AND slot.term_id=enrollment.term_id AND slot.teacher_user_id=target.id
+                  SELECT 1 WHERE staff_has_class_permission(${membership.school_id}::uuid,target.id,'messages.view',enrollment.class_section_id)
                 )
               )
             )
@@ -412,6 +406,8 @@ export class ChatService {
         { conversation_id: created.id, user_id: user.id, participant_role: "member" },
         { conversation_id: created.id, user_id: recipient.id, participant_role: "member" },
       ]).execute();
+      const member=await tx.selectFrom("school_memberships").select("role").where("school_id","=",recipient.school_id).where("user_id","=",user.id).where("is_active","=",true).executeTakeFirst();
+      if(member?.role==='staff' && !(await sql<{allowed:boolean}>`SELECT staff_has_conversation_permission(${recipient.school_id}::uuid,${user.id}::uuid,'messages.send',${created.id}::uuid) AS allowed`.execute(tx)).rows[0]?.allowed)throw new ForbiddenException("This conversation is outside your assigned messaging access.");
       await tx.insertInto("audit_events").values({
         action: "chat.conversation.created",
         actor_id: user.id,
@@ -489,7 +485,7 @@ export class ChatService {
     upload: ChatUpload | undefined,
     request: AuthenticatedRequest,
   ) {
-    const conversation = await this.conversationForUser(user, conversationId);
+    const conversation = await this.conversationForUser(user, conversationId,"messages.send");
     const data = messageSchema.parse(input);
     const policy = await this.db.selectFrom("chat_policies").selectAll().where("school_id", "=", conversation.school_id).executeTakeFirst();
     const restriction = await this.db.selectFrom("chat_messaging_restrictions")
@@ -626,7 +622,7 @@ export class ChatService {
   }
 
   async editMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown) {
-    await this.conversationForUser(user, conversationId);
+    await this.conversationForUser(user, conversationId,"messages.send");
     if (!uuid.safeParse(messageId).success) throw new NotFoundException("Message not found.");
     const data = editMessageSchema.parse(body);
     const message = await this.db.selectFrom("chat_messages").selectAll().where("id", "=", messageId).where("conversation_id", "=", conversationId).executeTakeFirst();
@@ -984,6 +980,7 @@ export class ChatService {
       const conversation = await tx.insertInto("chat_conversations").values({ school_id: schoolId, kind: data.group_type === "announcement" ? "announcement" : "group", title: data.title, context_student_id: data.student_id ?? null, created_by: user.id, group_type: data.group_type, posting_mode: postingMode }).returning("id").executeTakeFirstOrThrow();
       const rows = [{ conversation_id: conversation.id, user_id: user.id, participant_role: "moderator" as const }, ...data.member_ids.filter((id) => id !== user.id).map((id) => ({ conversation_id: conversation.id, user_id: id, participant_role: "member" as const }))];
       await tx.insertInto("chat_participants").values(rows).execute();
+      if(membership.role==='staff' && !(await sql<{allowed:boolean}>`SELECT staff_has_conversation_permission(${schoolId}::uuid,${user.id}::uuid,'groups.create',${conversation.id}::uuid) AS allowed`.execute(tx)).rows[0]?.allowed)throw new ForbiddenException("Choose members within your assigned class scope.");
       await tx.insertInto("chat_messages").values({ conversation_id: conversation.id, sender_id: user.id, body: "Group created. Please keep communication respectful and school-related.", message_type: "system", client_id: randomUUID() }).execute();
       await tx.insertInto("audit_events").values({ action: "chat.group.created", actor_id: user.id, school_id: schoolId, target_type: "chat_conversation", target_id: conversation.id, request_id: request.requestId, ip_hash: null, metadata: { group_type: data.group_type, member_count: rows.length } }).execute();
       return conversation;

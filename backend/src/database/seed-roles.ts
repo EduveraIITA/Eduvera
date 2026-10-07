@@ -53,14 +53,134 @@ export async function seedRolesDemo(pool: Pool, demoMode: boolean) {
           AND EXISTS(SELECT 1 FROM enrollments enrollment JOIN students student ON student.id=enrollment.student_id WHERE student.school_id=$1 AND enrollment.is_active)
           AND EXISTS(SELECT 1 FROM timetable_slots slot JOIN class_sections section ON section.id=slot.class_section_id WHERE section.school_id=$1)`,[school.id,principal.id]);
     }
-    for(const role of [{name:'Accountant',description:'Fee ledger and offline receipts',permissions:['fees.manage']},{name:'Class Teacher',description:'Assigned classroom and family coordination',permissions:['attendance.view','attendance.record','timetable.view','dayplans.respond','followups.manage','messages.view','messages.send','events.view','events.attendance','departure.collect']},{name:'Teaching Observer',description:'Read assigned registers and schedules',permissions:['attendance.view','timetable.view','events.view']}]) {
-      await client.query(`INSERT INTO school_custom_roles(school_id,name,description,permissions,created_by)
-        SELECT $1::uuid,$2::varchar,$3::text,$4::text[],$5::uuid WHERE NOT EXISTS (
+    for(const profile of [
+      {name:'Finance staff',description:'Institution fee operations',template:'finance',duties:['finance_officer']},
+      {name:'Teaching staff',description:'Classroom, assessment, event and student-support responsibilities',template:'teaching',duties:['class_teacher','subject_teacher','section_coordinator','internal_examiner','invigilator','exam_in_charge','assessment_coordinator','event_coordinator','event_attendance','event_judge','event_escort','student_mentor','safety_officer']},
+      {name:'Teaching & transport',description:'Teaching staff who may also operate an assigned school journey',template:'teaching_transport',duties:['class_teacher','subject_teacher','section_coordinator','internal_examiner','invigilator','exam_in_charge','assessment_coordinator','event_coordinator','event_attendance','event_judge','event_escort','student_mentor','safety_officer','transport_attendant']},
+      {name:'Teaching & finance',description:'Teaching staff who also own institution fee operations',template:'teaching_finance',duties:['class_teacher','subject_teacher','section_coordinator','internal_examiner','invigilator','exam_in_charge','assessment_coordinator','event_coordinator','event_attendance','event_judge','event_escort','student_mentor','safety_officer','finance_officer']},
+      {name:'Transport staff',description:'Assigned route and journey responsibilities',template:'transport',duties:['transport_attendant']},
+      {name:'School office',description:'Student records, member onboarding, communications and event support',template:'office',duties:['student_records_officer','membership_coordinator','communications_coordinator','event_attendance','event_escort']},
+      {name:'Assessment staff',description:'Exam operations, invigilation and moderation responsibilities',template:'assessment',duties:['internal_examiner','invigilator','exam_in_charge','assessment_coordinator']},
+      {name:'Event staff',description:'Assigned event coordination, attendance and supervision',template:'events',duties:['event_coordinator','event_attendance','event_judge','event_escort']},
+      {name:'Student support',description:'Restricted safeguarding and student-support responsibilities',template:'student_support',duties:['student_mentor','safety_officer']},
+    ]) {
+      await client.query(`INSERT INTO school_custom_roles(school_id,name,description,permissions,template_key,created_by)
+        SELECT $1::uuid,$2::varchar,$3::text,'{}'::text[],$4::varchar,$5::uuid WHERE NOT EXISTS (
           SELECT 1 FROM school_custom_roles WHERE school_id=$1::uuid AND lower(name)=lower($2::text)
-        )`,[school.id,role.name,role.description,role.permissions,admin.id]);
+        )`,[school.id,profile.name,profile.description,profile.template,admin.id]);
+      await client.query(`UPDATE school_custom_roles SET description=$3,template_key=$4,permissions='{}'::text[],updated_at=now()
+        WHERE school_id=$1 AND lower(name)=lower($2)`,[school.id,profile.name,profile.description,profile.template]);
+      await client.query(`DELETE FROM school_custom_role_duties duty USING school_custom_roles role
+        WHERE duty.school_id=$1 AND role.school_id=duty.school_id AND role.id=duty.role_id AND lower(role.name)=lower($2)`,[school.id,profile.name]);
+      await client.query(`INSERT INTO school_custom_role_duties(school_id,role_id,responsibility_type_id)
+        SELECT role.school_id,role.id,type.id FROM school_custom_roles role
+        JOIN staff_responsibility_types type ON type.school_id=role.school_id AND type.code=ANY($3::text[])
+        WHERE role.school_id=$1 AND lower(role.name)=lower($2) ON CONFLICT DO NOTHING`,[school.id,profile.name,profile.duties]);
     }
-    await client.query("UPDATE school_custom_roles SET permissions=(SELECT array_agg(DISTINCT permission ORDER BY permission) FROM unnest(permissions||ARRAY['assessments.view','assessments.mark','reports.comment','departure.collect']::text[]) permission) WHERE school_id=$1 AND lower(name)='class teacher'",[school.id]);
-    await client.query("UPDATE school_custom_roles SET permissions=(SELECT array_agg(DISTINCT permission ORDER BY permission) FROM unnest(permissions||ARRAY['assessments.view']::text[]) permission) WHERE school_id=$1 AND lower(name)='teaching observer'",[school.id]);
+    await client.query(`INSERT INTO staff_profiles(
+        school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,department,employment_type,joined_on,status,created_by,updated_by
+      ) SELECT membership.school_id,account.id,'DEMO-'||upper(substr(replace(account.id::text,'-',''),1,8)),account.first_name,account.last_name,lower(account.email),
+        CASE WHEN account.username='sunita.attendance' THEN 'non_teaching' ELSE 'teaching' END,
+        CASE WHEN account.username='sunita.attendance' THEN 'School office coordinator' ELSE 'Teacher' END,
+        CASE WHEN account.username='sunita.attendance' THEN 'School office' ELSE 'Academic' END,
+        'full_time',membership.created_at::date,'active',$2,$2
+      FROM school_memberships membership JOIN users account ON account.id=membership.user_id
+      WHERE membership.school_id=$1 AND membership.role='staff'
+      ON CONFLICT(school_id,user_id) DO NOTHING`,[school.id,admin.id]);
+    await client.query(`INSERT INTO staff_onboarding_items(school_id,staff_profile_id,item_key,label,required,completed_at,completed_by)
+      SELECT profile.school_id,profile.id,item.item_key,item.label,true,now(),profile.user_id
+      FROM staff_profiles profile CROSS JOIN (VALUES
+        ('identity','Identity verified'),('service_contract','Service contract recorded'),
+        ('qualifications','Qualifications checked'),('emergency_contact','Emergency contact recorded'),
+        ('account_access','School account active')
+      ) AS item(item_key,label)
+      WHERE profile.school_id=$1 ON CONFLICT DO NOTHING`,[school.id]);
+    // Institute terminology layered over platform-owned workflows. The copied
+    // workflow family and capability package are immutable; schools only own
+    // the name, purpose and acceptance preference shown to staff.
+    for(const workType of [
+      {code:'institute_primary_class_guide',base:'class_teacher',name:'Primary class guide',description:'Own daily coordination and family follow-up for one primary class.',acceptance:false},
+      {code:'institute_route_collector',base:'transport_attendant',name:'Route collector',description:'Operate an assigned route roster, handovers and journey location sharing.',acceptance:true},
+      {code:'institute_exam_room_supervisor',base:'invigilator',name:'Exam room supervisor',description:'Supervise one scheduled examination room and follow the published checklist.',acceptance:true},
+    ]) await client.query(`INSERT INTO staff_responsibility_types(
+        school_id,code,name,category,scope_kind,workflow_family,source_kind,cloned_from_type_id,
+        description,access_summary,capability_permissions,requires_acceptance,restricted,updated_by
+      ) SELECT base.school_id,$2,$3,base.category,base.scope_kind,base.workflow_family,'institute',base.id,
+        $4,base.access_summary,base.capability_permissions,$5,base.restricted,$6
+      FROM staff_responsibility_types base WHERE base.school_id=$1 AND base.code=$7
+      ON CONFLICT(school_id,code) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,
+        requires_acceptance=EXCLUDED.requires_acceptance,is_active=true,updated_by=EXCLUDED.updated_by`,
+      [school.id,workType.code,workType.name,workType.description,workType.acceptance,admin.id,workType.base]);
+
+    const guide=(await client.query("SELECT id FROM users WHERE username='kavita.staff' AND is_active")).rows[0];
+    if(guide) await client.query(`INSERT INTO staff_responsibility_assignments(
+        school_id,responsibility_type_id,staff_profile_id,class_section_id,scope_label,starts_on,ends_on,status,assigned_by,responded_at
+      ) SELECT $1,type.id,profile.id,section.id,'Class 7A',term.starts_on,term.ends_on,'active',$2,now()
+      FROM staff_responsibility_types type
+      JOIN staff_profiles profile ON profile.school_id=type.school_id AND profile.user_id=$3
+      JOIN academic_terms term ON term.school_id=type.school_id AND term.is_active
+      JOIN class_sections section ON section.school_id=term.school_id AND section.academic_year=term.academic_year AND section.grade='7' AND section.section='A'
+      WHERE type.school_id=$1 AND type.code='institute_primary_class_guide' AND NOT EXISTS(
+        SELECT 1 FROM staff_responsibility_assignments existing
+        WHERE existing.school_id=$1 AND existing.responsibility_type_id=type.id AND existing.staff_profile_id=profile.id
+          AND existing.status IN ('offered','active') AND existing.ends_on>=current_date
+      )`,[school.id,admin.id,guide.id]);
+    // Demo staff use one understandable role. Specific classes, journeys, events and
+    // reviews are represented by responsibilities rather than extra role badges.
+    await client.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1",[school.id]);
+    await client.query(`INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by,is_primary,valid_from)
+      SELECT $1,profile.user_id,role.id,$2,true,current_date
+      FROM staff_profiles profile
+      JOIN school_custom_roles role ON role.school_id=$1 AND lower(role.name)=CASE WHEN profile.staff_kind='teaching' THEN 'teaching staff' ELSE 'school office' END
+      WHERE profile.school_id=$1 AND profile.user_id IS NOT NULL AND profile.status IN ('active','onboarding')
+      ON CONFLICT(school_id,user_id,role_id) DO UPDATE SET is_primary=true,valid_until=NULL`,[school.id,admin.id]);
+    const teacher=(await client.query("SELECT id FROM users WHERE username='kavita.staff' AND is_active")).rows[0];
+    if(teacher){
+      await client.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1 AND user_id=$2",[school.id,teacher.id]);
+      await client.query(`INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by,is_primary,valid_from)
+        SELECT role.school_id,$2,role.id,$3,true,current_date FROM school_custom_roles role
+        WHERE role.school_id=$1 AND lower(role.name)='teaching & transport'
+        ON CONFLICT(school_id,user_id,role_id) DO UPDATE SET is_primary=true,valid_until=NULL`,[school.id,teacher.id,admin.id]);
+    }
+    for(const assignment of [
+      {username:'ritu.malhotra',profile:'teaching & finance',duty:'finance_officer',scope:'Institution fee reconciliation'},
+      {username:'sunita.attendance',profile:'school office',duty:'student_records_officer',scope:'Student and enrolment records'},
+      {username:'sunita.attendance',profile:'school office',duty:'membership_coordinator',scope:'Ordinary member onboarding'},
+    ]){
+      const person=(await client.query("SELECT id FROM users WHERE username=$1 AND is_active",[assignment.username])).rows[0];
+      if(!person)continue;
+      await client.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1 AND user_id=$2",[school.id,person.id]);
+      await client.query(`INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by,is_primary,valid_from)
+        SELECT role.school_id,$2,role.id,$3,true,current_date FROM school_custom_roles role
+        WHERE role.school_id=$1 AND lower(role.name)=$4
+        ON CONFLICT(school_id,user_id,role_id) DO UPDATE SET is_primary=true,valid_until=NULL`,[school.id,person.id,admin.id,assignment.profile]);
+      await client.query(`INSERT INTO staff_responsibility_assignments(
+          school_id,responsibility_type_id,staff_profile_id,scope_label,starts_on,status,assigned_by,responded_at
+        ) SELECT $1,type.id,staff.id,$4,current_date,'active',$3,now()
+        FROM staff_responsibility_types type JOIN staff_profiles staff ON staff.school_id=type.school_id AND staff.user_id=$2
+        WHERE type.school_id=$1 AND type.code=$5 AND NOT EXISTS(
+          SELECT 1 FROM staff_responsibility_assignments existing
+          WHERE existing.school_id=$1 AND existing.responsibility_type_id=type.id AND existing.staff_profile_id=staff.id
+            AND existing.status IN ('offered','active') AND existing.ends_on IS NULL
+        )`,[school.id,person.id,admin.id,assignment.scope,assignment.duty]);
+    }
+    // Demo mode shows the calculated model rather than hundreds of continuity
+    // exceptions created while upgrading real customers. Keep one deliberate
+    // exception below so the review flow remains visible.
+    await client.query("DELETE FROM school_access_exceptions WHERE school_id=$1 AND source_kind IN ('migration_profile','migration_individual')",[school.id]);
+    await client.query(`DELETE FROM school_custom_role_assignments assignment USING school_custom_roles role
+      WHERE assignment.school_id=$1 AND role.school_id=assignment.school_id AND role.id=assignment.role_id
+        AND lower(role.name) IN ('accountant','class teacher','bus attendant')`,[school.id]);
+    await client.query(`DELETE FROM school_custom_roles role WHERE role.school_id=$1
+      AND lower(role.name) IN ('accountant','class teacher','bus attendant')
+      AND NOT EXISTS(SELECT 1 FROM school_invitations invitation WHERE invitation.school_id=role.school_id
+        AND invitation.custom_role_id=role.id AND invitation.accepted_at IS NULL AND invitation.revoked_at IS NULL AND invitation.expires_at>now())`,[school.id]);
+    const temporaryCover=(await client.query("SELECT id FROM users WHERE username='vikram.singh' AND is_active")).rows[0];
+    if(temporaryCover)await client.query(`INSERT INTO school_access_exceptions(
+        school_id,user_id,permission,reason,source_kind,scope_kind,valid_from,valid_until,review_due_on,created_by
+      ) SELECT $1,$2,'events.view','Temporary inter-school sports event observer cover','manual','assigned_resources',current_date,current_date+21,current_date+14,$3
+      WHERE NOT EXISTS(SELECT 1 FROM school_access_exceptions WHERE school_id=$1 AND user_id=$2
+        AND permission='events.view' AND status='active' AND valid_until>=current_date)`,[school.id,temporaryCover.id,admin.id]);
     const assessmentTables=(await client.query("SELECT to_regclass('public.assessments') IS NOT NULL AS ready")).rows[0]?.ready;
     if(assessmentTables){
       const context=(await client.query(`SELECT term.id AS term_id,term.starts_on,term.ends_on,section.id AS class_id,subject.id AS subject_id,

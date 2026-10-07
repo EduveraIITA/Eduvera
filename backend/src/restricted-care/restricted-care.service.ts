@@ -6,6 +6,7 @@ import type { AuthUser } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database, RestrictedCareCaseEntryTable } from "../database/types.js";
+import { assertActiveSchoolStaffMember } from "../roles/authorization.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type StaffRole = "admin" | "staff";
@@ -201,6 +202,7 @@ export class RestrictedCareService {
       const member = await trx.selectFrom("school_memberships").select("id").where("school_id", "=", schoolId)
         .where("user_id", "=", input.user_id).where("is_active", "=", true).where("role", "in", ["admin", "staff"]).executeTakeFirst();
       if (!member) throw new BadRequestException("The selected person must have an active staff membership.");
+      await assertActiveSchoolStaffMember(trx, input.user_id, schoolId, "safety_officer");
       const existing = await trx.selectFrom("restricted_care_role_assignments").select("id")
         .where("school_id", "=", schoolId).where("user_id", "=", input.user_id).where("role_kind", "=", input.role_kind)
         .where("route_kind", "=", input.route_kind).where("status", "=", "active").executeTakeFirst();

@@ -404,8 +404,6 @@ export class AuthService {
       .innerJoin("parents as p", "p.id", "gr.guardian_id")
       .select("gr.student_id as id").where("p.user_id", "=", user.id).execute();
     const ids = new Set([...own, ...linked].map((row) => row.id));
-    const grants = await sql<{ school_id: string; permission: string }>`SELECT g.school_id,g.permission FROM school_permission_grants g JOIN school_memberships m
-      ON m.school_id=g.school_id AND m.user_id=g.user_id WHERE m.user_id=${user.id}::uuid AND m.role='staff' AND m.is_active`.execute(this.db);
     const isReferenceInstitutionDemo = config().DEMO_MODE
       && Boolean(user.active_school_id)
       && institutionDemoUsernames.has(user.username);
@@ -419,7 +417,7 @@ export class AuthService {
           AND (${user.active_school_id ?? null}::uuid IS NULL OR state.school_id=${user.active_school_id ?? null}::uuid)
         LIMIT 1`.execute(this.db)).rows.length),
       company_operator: (await sql`SELECT 1 FROM company_operators WHERE user_id=${user.id}::uuid AND is_active`.execute(this.db)).rows.length>0,
-      permission_grants: grants.rows,
+      permission_grants: [],
       school_permissions: await Promise.all(memberships.map(async m => ({school_id:m.school_id,...await this.roles.effective(user,m.school_id)}))),
       demo_mode: config().DEMO_MODE,
     };

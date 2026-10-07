@@ -50,13 +50,14 @@ export async function attendanceDayPolicy(
       ) AS instructional,
       CASE
         WHEN ${actor?.role ?? "admin"}='admin' THEN true
+        WHEN staff_has_class_permission(${schoolId}::uuid,${actor?.userId ?? null}::uuid,'attendance.record',${classId}::uuid,${date}::date) THEN true
         ELSE EXISTS (
           SELECT 1 FROM effective_school_schedule(${schoolId}::uuid,${date}::date) slot
           WHERE slot.class_section_id=${classId}::uuid AND slot.term_id=${termId}::uuid
             AND slot.weekday=EXTRACT(ISODOW FROM ${date}::date)::int
             AND slot.slot_type IN ('class','activity') AND NOT slot.cancelled
             AND slot.teacher_user_id=${actor?.userId ?? null}::uuid
-            AND slot.coverage_status IN ('not_required','accepted')
+            AND slot.coverage_status='accepted'
         )
       END AS actor_scheduled,
       CASE WHEN actor.id IS NOT NULL THEN trim(concat_ws(' ',actor.first_name,actor.last_name)) END AS submitted_by_name
@@ -142,12 +143,12 @@ export async function attendanceWorkspace(
       (${date}::date <= (now() AT TIME ZONE school.timezone)::date
         AND COALESCE(l.instructional_slots,0)>0
         AND COALESCE(r.student_count,0)>0
-        AND (${role}='admin' OR COALESCE(l.periods_today,0)>0)) AS can_mark,
+        AND (${role}='admin' OR COALESCE(l.substitute,false) OR staff_has_class_permission(${schoolId}::uuid,${userId}::uuid,'attendance.record',cs.id,${date}::date))) AS can_mark,
       CASE
         WHEN ${date}::date > (now() AT TIME ZONE school.timezone)::date THEN 'Attendance opens on the selected date.'
         WHEN COALESCE(l.instructional_slots,0)=0 THEN 'No attendance is required because this class has no scheduled lesson.'
         WHEN COALESCE(r.student_count,0)=0 THEN 'No enrolled students require attendance for this date.'
-        WHEN ${role}<>'admin' AND COALESCE(l.periods_today,0)=0 THEN 'You have no scheduled or accepted cover period for this class on this date.'
+        WHEN ${role}<>'admin' AND NOT COALESCE(l.substitute,false) AND NOT staff_has_class_permission(${schoolId}::uuid,${userId}::uuid,'attendance.record',cs.id,${date}::date) THEN 'Your assignment does not allow recording attendance for this class on this date.'
         ELSE NULL
       END AS availability_reason
     FROM class_sections cs JOIN schools school ON school.id=cs.school_id
@@ -159,7 +160,7 @@ export async function attendanceWorkspace(
     LEFT JOIN users actor ON actor.id=reg.submitted_by
     WHERE cs.school_id=${schoolId}::uuid
       AND (COALESCE(l.instructional_slots,0)>0 OR reg.id IS NOT NULL)
-      AND (${role}='admin' OR COALESCE(l.periods_today,0)>0)
+      AND (${role}='admin' OR COALESCE(l.substitute,false) OR staff_has_class_permission(${schoolId}::uuid,${userId}::uuid,'attendance.view',cs.id,${date}::date))
     ORDER BY l.starts_at NULLS LAST, cs.grade, cs.section
   `.execute(db);
   return result.rows;

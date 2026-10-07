@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ChevronDown, ChevronRight, ChevronUp, FileCheck2, Plus, Printer, Settings2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { MarksheetDocumentHeader } from "./MarksheetDocumentHeader";
 import {
@@ -23,10 +24,11 @@ const nice = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (let
 const date = (value: string | null) => value ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) : "Not published";
 
 export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data, refresh }: { portal: "principal" | "teacher"; schoolId: string; schoolName?: string; data: AcademicReportWorkspace; refresh: () => Promise<void> }) {
-  const startsWithReleases = Boolean(data.batches.length);
+  const [params] = useSearchParams();
+  const startsWithReleases = params.get("view") !== "schemes" && Boolean(data.batches.length);
   const [activeList, setActiveList] = useState<"schemes" | "releases">(startsWithReleases ? "releases" : "schemes");
   const [selectedScheme, setSelectedScheme] = useState<string | null>(startsWithReleases ? null : data.schemes[0]?.id ?? null);
-  const [selectedBatch, setSelectedBatch] = useState<string | null>(data.batches[0]?.id ?? null);
+  const [selectedBatch, setSelectedBatch] = useState<string | null>(startsWithReleases ? data.batches[0]?.id ?? null : null);
   const [dialog, setDialog] = useState<"scheme" | "subject" | null>(null);
   const scheme = useQuery({ queryKey: ["grading-scheme", schoolId, selectedScheme], queryFn: () => getGradingScheme(schoolId, selectedScheme!), enabled: data.mode === "admin" && Boolean(selectedScheme) });
   const batch = useQuery({ queryKey: ["report-batch", schoolId, selectedBatch], queryFn: () => getReportBatch(schoolId, selectedBatch!), enabled: Boolean(selectedBatch) });

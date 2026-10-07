@@ -61,7 +61,7 @@ export default function PeoplePage() {
   const [selected, setSelected] = useState("");
   const schoolId = selected || schools[0]?.school_id;
   const portal=auth.hasPortal("principal")?"principal":"teacher";
-  return <OperationsShell portal={portal} active="home" title="Students & guardians" subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo={`/${portal}/more`} contentHasHeading>
+  return <OperationsShell portal={portal} active="more" title="Students & guardians" subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo={`/${portal}/more`} contentHasHeading>
     <div className="operations-stack">
       {schools.length > 1 ? <label className="people-school">School<select value={schoolId} onChange={(event) => setSelected(event.target.value)}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {schoolId ? <Directory key={schoolId} schoolId={schoolId} /> : <p role="alert">An active school administrator membership is required.</p>}
@@ -121,6 +121,8 @@ function Directory({ schoolId }: { schoolId: string }) {
     <header className="people-heading people-heading--actions">
       <div className="people-authority-actions">
         <Link className="people-secondary" to={`/${portal}/students/import?school=${schoolId}`}>Import</Link>
+        {auth.memberships.some(member => member.school_id === schoolId && (member.role === "admin" || member.permissions?.includes("members.invite"))) ? <Link className="people-secondary" to={`/${portal}/invitations?from=students&role=guardian&school=${schoolId}`}>Invite</Link> : null}
+        <Link className="people-secondary" to={`/${portal}/administration?section=promotion&school=${schoolId}`}>Promote class</Link>
         <button type="button" className="people-primary" disabled={!options.data?.results.length || adding} onClick={() => { setAdding(true); setSaved(""); }}><Plus size={17} />Add student</button>
       </div>
     </header>

@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AcademicReportWorkspacePage, FamilyReportCardList } from "./AcademicReportWorkspacePage";
-import { getReportBatch, type AcademicReportWorkspace, type ReportBatchDetail } from "./api";
+import { getGradingScheme, getReportBatch, type AcademicReportWorkspace, type ReportBatchDetail } from "./api";
 
 vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ children }: { children: ReactNode }) => <>{children}</> }));
 vi.mock("./api", async (importOriginal) => ({ ...(await importOriginal<typeof import("./api")>()), getReportBatch: vi.fn(), getGradingScheme: vi.fn() }));
@@ -49,7 +50,7 @@ describe("published report cards", () => {
       references: { terms: [{ id: "term-1", name: "Term 1", academic_year: "2026-27", starts_on: "2026-04-01", ends_on: "2027-03-31" }], classes: [{ id: "class-1", name: "Class 7A", academic_year: "2026-27" }], subjects: [], assessments: [] },
     } satisfies AcademicReportWorkspace;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const view = render(<QueryClientProvider client={client}><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /></QueryClientProvider>);
+    const view = render(<QueryClientProvider client={client}><MemoryRouter><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
     const page = within(view.container);
 
     expect(page.getByRole("tab", { name: /Releases 1/ })).toHaveAttribute("aria-selected", "true");
@@ -58,5 +59,15 @@ describe("published report cards", () => {
     fireEvent.click(page.getByRole("button", { name: /Ananya Iyer/ }));
     expect(page.getByText("English")).toBeInTheDocument();
     expect(page.getByText("Steady progress.")).toBeInTheDocument();
+
+    view.unmount();
+    vi.mocked(getReportBatch).mockClear();
+    vi.mocked(getGradingScheme).mockImplementation(() => new Promise(() => {}));
+    const grading = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/principal/report-cards?view=schemes"]}><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)}/></MemoryRouter></QueryClientProvider>);
+    expect(within(grading.container).getByRole("tab", { name: /Schemes 1/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(grading.container).getByText("Opening scheme…")).toBeVisible();
+    expect(getGradingScheme).toHaveBeenCalledWith("school-1", "scheme-1");
+    expect(getReportBatch).not.toHaveBeenCalled();
+    grading.unmount();
   });
 });

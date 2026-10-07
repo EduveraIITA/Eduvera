@@ -5,6 +5,7 @@ import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database, DepartureMode } from "../database/types.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { assertActiveSchoolStaffMember, hasScopedSchoolPermission } from "../roles/authorization.js";
 
 const uuid=z.string().uuid();
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -128,7 +129,10 @@ export class DepartureCoordinationService {
         WHERE swap.school_id=${schoolId}::uuid AND swap.status IN ('submitted','accepted') ORDER BY swap.created_at`.execute(this.db),
       sql<any>`SELECT req.*,concat(person.first_name,' ',person.last_name) student_name FROM departure_change_requests req JOIN students s ON s.id=req.student_id JOIN school_people person ON person.id=s.person_id WHERE req.school_id=${schoolId}::uuid AND req.status='submitted' ORDER BY req.created_at`.execute(this.db),
       sql<any>`SELECT s.id,s.admission_number,concat(p.first_name,' ',p.last_name) name FROM students s JOIN school_people p ON p.id=s.person_id WHERE s.school_id=${schoolId}::uuid ORDER BY p.first_name,p.last_name LIMIT 500`.execute(this.db),
-      sql<any>`SELECT m.user_id AS id,concat(u.first_name,' ',u.last_name) name,m.role FROM school_memberships m JOIN users u ON u.id=m.user_id WHERE m.school_id=${schoolId}::uuid AND m.is_active AND m.role IN ('staff','admin') ORDER BY u.first_name,u.last_name`.execute(this.db),
+      sql<any>`SELECT m.user_id AS id,concat(u.first_name,' ',u.last_name) name,m.role
+        FROM school_memberships m JOIN users u ON u.id=m.user_id
+        WHERE m.school_id=${schoolId}::uuid AND m.is_active AND m.role IN ('staff','admin')
+        ORDER BY u.first_name,u.last_name`.execute(this.db),
       sql<any>`SELECT a.*,concat(person.first_name,' ',person.last_name) collector_name FROM departure_collection_authorities a LEFT JOIN guardian_relationships gr ON gr.id=a.guardian_relationship_id LEFT JOIN guardian_school_profiles gp ON gp.school_id=a.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people person ON person.id=COALESCE(a.collector_person_id,gp.person_id) WHERE a.school_id=${schoolId}::uuid AND a.status='active' ORDER BY a.created_at DESC`.execute(this.db),
       sql<any>`SELECT gr.id,gr.student_id,person.id person_id,concat(person.first_name,' ',person.last_name) guardian_name,gr.relationship FROM guardian_relationships gr JOIN guardian_school_profiles gp ON gp.school_id=gr.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people person ON person.id=gp.person_id WHERE gr.school_id=${schoolId}::uuid ORDER BY person.first_name,person.last_name`.execute(this.db),
       sql<any>`SELECT p.*,concat(person.first_name,' ',person.last_name) student_name,a.collector_name FROM departure_plans p JOIN students s ON s.id=p.student_id JOIN school_people person ON person.id=s.person_id LEFT JOIN LATERAL (SELECT concat(cp.first_name,' ',cp.last_name) collector_name FROM departure_collection_authorities ca LEFT JOIN guardian_relationships gr ON gr.id=ca.guardian_relationship_id LEFT JOIN guardian_school_profiles gp ON gp.school_id=ca.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people cp ON cp.id=COALESCE(ca.collector_person_id,gp.person_id) WHERE ca.id=p.authority_id) a ON true WHERE p.school_id=${schoolId}::uuid AND p.is_current AND p.service_date BETWEEN current_date AND current_date+7 ORDER BY p.service_date,person.first_name`.execute(this.db),
@@ -173,6 +177,7 @@ export class DepartureCoordinationService {
   private async assertTripStaff(tx:Transaction<Database>,schoolId:string,userId:string,label="collector") {
     const membership=await tx.selectFrom("school_memberships").select("id").where("school_id","=",schoolId).where("user_id","=",userId).where("is_active","=",true).where("role","in",["staff","admin"]).executeTakeFirst();
     if(!membership) throw new BadRequestException(`Choose an active ${label} from this institution.`);
+    await assertActiveSchoolStaffMember(tx,userId,schoolId,"transport_attendant");
   }
 
   private async assertNoTripDutyConflict(tx:Transaction<Database>,schoolId:string,userId:string,serviceDate:string,departureTime:string,excludeTripIds:string[]=[]){
@@ -431,6 +436,7 @@ export class DepartureCoordinationService {
     if(!["accept","decline","boarding","start","complete","cancel"].includes(action)) throw new BadRequestException("Unsupported trip action.");
     return this.db.transaction().execute(async tx=>{
       const trip=await tx.selectFrom("transport_trips").selectAll().where("id","=",tripId).forUpdate().executeTakeFirst(); if(!trip) throw new NotFoundException("Trip not found."); if(trip.assigned_collector_user_id!==user.id) throw new ForbiddenException("Only the assigned collector can operate this trip."); if(trip.revision!==input.expected_revision) throw new ConflictException("Trip state changed. Reload the journey.");
+      if(!await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id))throw new ForbiddenException("Your current assignment does not allow operating this journey.");
       if(action==="accept"||action==="decline"){
         if(trip.state!=="planned"||trip.roster_frozen_at) throw new ConflictException("This duty can no longer be accepted or declined.");
         if(trip.collector_assignment_status!=="pending") throw new ConflictException("This duty response is already recorded.");
@@ -451,6 +457,7 @@ export class DepartureCoordinationService {
     const input=z.object({latitude:z.number().min(-90).max(90),longitude:z.number().min(-180).max(180),accuracy_metres:z.number().positive().max(5000),heading_degrees:z.number().min(0).max(360).nullable().optional(),speed_metres_per_second:z.number().min(0).max(100).nullable().optional(),observed_at:z.string().datetime()}).parse(body);
     return this.db.transaction().execute(async tx=>{
       const trip=await tx.selectFrom("transport_trips").selectAll().where("id","=",tripId).forUpdate().executeTakeFirst(); if(!trip) throw new NotFoundException("Trip not found."); if(trip.assigned_collector_user_id!==user.id) throw new ForbiddenException("Only the assigned collector can share this journey location."); if(trip.state!=="in_progress") throw new ConflictException("Location is accepted only while this trip is in progress.");
+      if(!await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id))throw new ForbiddenException("Your current assignment does not allow sharing this journey location.");
       const policy=await tx.selectFrom("departure_policies").selectAll().where("school_id","=",trip.school_id).executeTakeFirst(); const observed=new Date(input.observed_at); const skew=Math.abs(Date.now()-observed.getTime()); if(skew>120000) throw new BadRequestException("Location time is too old or ahead of the server clock."); if(input.accuracy_metres>(policy?.maximum_location_accuracy_metres??250)) throw new BadRequestException("Location accuracy is too low. Move to a clearer area and retry.");
       const last=await tx.selectFrom("transport_location_samples").select("observed_at").where("trip_id","=",trip.id).orderBy("observed_at","desc").executeTakeFirst(); if(last && observed.getTime()-new Date(last.observed_at).getTime()<(policy?.minimum_location_interval_seconds??10)*1000) return {accepted:false,reason:"too_frequent"};
       const row=await tx.insertInto("transport_location_samples").values({school_id:trip.school_id,trip_id:trip.id,recorded_by:user.id,latitude:String(input.latitude),longitude:String(input.longitude),accuracy_metres:String(input.accuracy_metres),heading_degrees:input.heading_degrees==null?null:String(input.heading_degrees),speed_metres_per_second:input.speed_metres_per_second==null?null:String(input.speed_metres_per_second),observed_at:observed}).returningAll().executeTakeFirstOrThrow();
@@ -462,6 +469,7 @@ export class DepartureCoordinationService {
     const input=z.object({state:z.enum(["boarded","dropped","not_riding","exception"]),expected_revision:z.number().int().positive(),note:z.string().trim().max(500).default("")}).parse(body);
     return this.db.transaction().execute(async tx=>{
       const trip=await tx.selectFrom("transport_trips").selectAll().where("id","=",tripId).forUpdate().executeTakeFirst(); if(!trip) throw new NotFoundException("Trip not found."); if(trip.assigned_collector_user_id!==user.id) throw new ForbiddenException("Only the assigned collector can record this rider."); if(!["boarding","in_progress"].includes(trip.state)) throw new ConflictException("The roster is not open.");
+      if(!await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id))throw new ForbiddenException("Your current assignment does not allow updating this journey.");
       const rider=await tx.selectFrom("transport_trip_roster").selectAll().where("trip_id","=",tripId).where("student_id","=",studentId).forUpdate().executeTakeFirst(); if(!rider) throw new NotFoundException("Rider not found on this trip."); if(rider.revision!==input.expected_revision) throw new ConflictException("Rider status changed. Reload the roster."); if(input.state==="dropped"&&rider.state!=="boarded") throw new ConflictException("Record boarding before drop-off.");
       const now=new Date(); const row=await tx.updateTable("transport_trip_roster").set({state:input.state,revision:rider.revision+1,boarded_at:input.state==="boarded"?now:rider.boarded_at,dropped_at:input.state==="dropped"?now:null,recorded_by:user.id,outcome_note:input.note,updated_at:now}).where("trip_id","=",tripId).where("student_id","=",studentId).returningAll().executeTakeFirstOrThrow();
       const plan=await tx.selectFrom("departure_plans").selectAll().where("trip_id","=",tripId).where("student_id","=",studentId).where("is_current","=",true).executeTakeFirst();

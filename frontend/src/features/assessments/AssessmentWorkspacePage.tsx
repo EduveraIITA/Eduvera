@@ -1,6 +1,7 @@
 import { Award, BookOpenCheck, CheckCircle2, ChevronRight, FileCheck2, Printer, Plus, Search, ShieldCheck, Upload, XCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import { StudentShell } from "../../pages/student/StudentShell";
@@ -17,10 +18,11 @@ const dateOnly=(value:string|null)=>value?new Intl.DateTimeFormat("en-IN",{day:"
 const field=(data:FormData,key:string)=>{const value=data.get(key);return typeof value==="string"?value.trim():"";};
 
 export function AssessmentWorkspacePage({portal,schoolId,schoolName,data,refresh}:{portal:"principal"|"teacher";schoolId:string;schoolName?:string;data:AssessmentWorkspace;refresh:()=>Promise<void>}){
-  const [selected,setSelected]=useState<string|null>(data.assessments[0]?.id??null); const [createMode,setCreateMode]=useState<"cycle"|"assessment"|null>(null);
+  const [searchParams]=useSearchParams();
+  const [selected,setSelected]=useState<string|null>(()=>data.assessments.find((item)=>item.id===searchParams.get("assessment"))?.id??data.assessments[0]?.id??null); const [createMode,setCreateMode]=useState<"cycle"|"assessment"|null>(null);
   const detail=useQuery({queryKey:["assessment-detail",schoolId,selected],queryFn:()=>getAssessmentDetail(schoolId,selected!),enabled:Boolean(selected)});
   const counts=useMemo(()=>({marking:data.assessments.filter((item)=>item.status==="marking").length,review:data.assessments.filter((item)=>item.status==="submitted").length,published:data.assessments.filter((item)=>item.status==="published").length}),[data.assessments]);
-  return <OperationsShell portal={portal} active="more" title={portal==="principal"?"Assessments & results":"My assessments"} schoolName={schoolName} backTo={`/${portal}/more`}>
+  return <OperationsShell portal={portal} active="more" title={portal==="principal"?"Assessments":"My assessments"} schoolName={schoolName} backTo={`/${portal}/more`}>
     <div className="assessment-page">
       <section className="assessment-summary" aria-label="Assessment status"><div className="assessment-hero__metrics"><span><b>{counts.marking}</b> marking</span><span><b>{counts.review}</b> to review</span><span><b>{counts.published}</b> published</span></div></section>
       {data.mode==="admin"?<div className="assessment-actions"><button onClick={()=>setCreateMode("cycle")}><Plus size={17}/>New cycle</button><button className="is-primary" onClick={()=>setCreateMode("assessment")} disabled={!data.cycles.length}><Plus size={17}/>New assessment</button></div>:null}

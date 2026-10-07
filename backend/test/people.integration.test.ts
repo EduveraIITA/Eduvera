@@ -128,7 +128,7 @@ describe("Account-optional school enrollment",()=>{
   it("requires current school permission at preview and commit, including after revocation",async()=>{
     await expect(people.preview(teacher,input())).rejects.toThrow("sis.manage");await expect(people.list(parent.authUser,{school_id:schoolId})).rejects.toThrow("sis.manage");
     const draft=await preview();await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);
-    try{await expect(commit(draft.id)).rejects.toThrow("sis.manage");}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
+    try{await expect(commit(draft.id)).rejects.toThrow(/sis\.manage|active membership/);}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
   });
   it("rejects expired reviews, missing guardians, foreign classes and invalid dates",async()=>{
     const draft=await preview();await pool.query("UPDATE people_intakes SET expires_at=now()-interval '1 second' WHERE id=$1",[draft.id]);await expect(commit(draft.id)).rejects.toThrow("expired");

@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
+import { currentStaffMembership, hasStaffPermission } from "../../features/auth/staffAccess";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
+import { PlanningNavigation } from "../../features/navigation/PlanningNavigation";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import "./operations.css";
 import "./operations-links.css";
@@ -35,10 +37,16 @@ const mobileNavIds = new Set(["home", "attendance", "timetable", "more"]);
 
 export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void }) {
   const auth = useOptionalAuth();
-  const member=auth?.memberships.find(m=>m.role==='staff');
+  const { pathname } = useLocation();
+  const planning = portal === "principal" && (pathname.startsWith("/principal/timetable") || pathname === "/principal/calendar");
+  const member=currentStaffMembership(auth?.memberships ?? []);
   const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
-  const navigation=nav[portal].filter(item=>portal!=='teacher' || !member?.custom_role || !required[item.id] || member.permissions?.includes(required[item.id] ?? ''));
-  const navigationActive = active === "events" ? "more" : active;
+  const navigation=nav[portal].filter(item=>{
+    if(portal!=='teacher') return true;
+    const permission=required[item.id];
+    return !permission || hasStaffPermission(member,permission);
+  });
+  const navigationActive = planning ? "timetable" : active === "events" ? "more" : active;
   const mobileActive = mobileNavIds.has(navigationActive) ? navigationActive : "more";
   const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
   return (
@@ -47,7 +55,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
         <SchoolBrand name={schoolName} className="operations-brand" />
         <nav aria-label={`${portal} portal navigation`}>
           {navigation.map(({ id, label, path, icon: Icon }) => (
-            <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
+            <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{portal === "principal" && id === "safeguarding" ? "Student concerns" : label}</span></NavLink>
           ))}
         </nav>
         <div className="operations-sidebar__scope"><span>Current scope</span><strong>School operations</strong><small>Attendance, timetable, and secure communication.</small></div>
@@ -58,7 +66,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
-        <main className="operations-main">{children}</main>
+        <main className="operations-main">{planning ? <PlanningNavigation/> : null}{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
           {navigation.filter(({ id }) => mobileNavIds.has(id)).map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={mobileActive === id ? "page" : undefined} className={mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>

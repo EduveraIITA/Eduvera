@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, CheckCircle2, Circle, LoaderCircle, LockKeyhole, RefreshCw, Rocket, Settings2 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { useAuth } from "../auth/AuthContext";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
@@ -10,11 +10,12 @@ import { QuickStartForm } from "./QuickStartForm";
 import "./activation.css";
 
 export default function InstitutionActivationPage(){
-  const auth=useAuth();const queryClient=useQueryClient();const schools=auth.memberships.filter(item=>item.role==="admin");const [selected,setSelected]=useState("");const schoolId=selected||auth.user?.active_school_id||schools[0]?.school_id||"";const [busy,setBusy]=useState<"review"|"activate"|null>(null);const [error,setError]=useState("");
+  const [params]=useSearchParams();
+  const auth=useAuth();const queryClient=useQueryClient();const schools=auth.memberships.filter(item=>item.role==="admin");const [selected,setSelected]=useState("");const schoolId=selected||schools.find(item=>item.school_id===params.get("school"))?.school_id||auth.user?.active_school_id||schools[0]?.school_id||"";const [busy,setBusy]=useState<"review"|"activate"|null>(null);const [error,setError]=useState("");
   const query=useQuery({queryKey:["institution-activation",schoolId],queryFn:()=>getActivation(schoolId),enabled:Boolean(schoolId)});const data=query.data;const blank=Boolean(data&&data.counts.terms===0&&data.counts.cohorts===0&&data.counts.subjects===0&&data.institution.status!=="active");
   async function review(){setBusy("review");setError("");try{await reviewActivation(schoolId);await queryClient.invalidateQueries({queryKey:["institution-activation",schoolId]});}catch(cause){setError((cause as Error).message);}finally{setBusy(null);}}
   async function activate(){if(!data)return;setBusy("activate");setError("");try{await activateInstitution(schoolId,data.institution.revision);await Promise.all([auth.refresh(),queryClient.invalidateQueries({queryKey:["institution-activation",schoolId]})]);}catch(cause){setError((cause as Error).message);}finally{setBusy(null);}}
-  return <OperationsShell portal="principal" active="more" title="Institution setup" subtitle="First-day readiness" backTo="/principal/more" contentHasHeading><main className="activation-page">
+  return <OperationsShell portal="principal" active="more" title="Setup status" backTo={`/principal/administration?school=${encodeURIComponent(schoolId)}`} contentHasHeading><main className="activation-page">
     {schools.length>1?<label className="activation-context">Institution<select value={schoolId} onChange={event=>setSelected(event.target.value)}>{schools.map(school=><option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label>:null}
     {!schoolId?<p className="activation-alert">An active administrator membership is required.</p>:query.isPending?<ScreenLoading/>:query.isError?<LiveRouteError error={query.error} onRetry={query.refetch}/>:data?<>
       <section className={`activation-status activation-hero--${data.institution.status}`}><header><span>Setup progress</span><strong>{data.summary.percent}%</strong><b>{data.institution.status.replace("_"," ")}</b></header><div className="activation-progress"><div><span style={{width:`${data.summary.percent}%`}}/></div></div><small>{data.summary.completed} of {data.summary.required} required checks</small></section>

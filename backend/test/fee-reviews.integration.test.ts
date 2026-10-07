@@ -80,7 +80,9 @@ describe.skipIf(!isolated)("fee payment claims and review", () => {
     await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff')", [school, reviewer.id]);
     const request = await service.submit(parent, school, await invoice(), claim());
     await expect(service.decide(reviewer, school, request.id, approve)).rejects.toThrow(/permission/);
-    await pool.query("INSERT INTO school_permission_grants(school_id,user_id,permission) VALUES($1,$2,'fees.manage')", [school, reviewer.id]);
+    await pool.query(`INSERT INTO school_access_exceptions(
+      school_id,user_id,permission,reason,source_kind,scope_kind,valid_from,valid_until,review_due_on,created_by
+    ) VALUES($1,$2,'fees.manage','Temporary finance review coverage for integration test','manual','institution',current_date,current_date+30,current_date+15,$3)`, [school, reviewer.id, admin.id]);
     await service.decide(reviewer, school, request.id, approve);
     await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'admin')", [school, parent.id]);
     const own = await service.submit(parent, school, await invoice(), claim());

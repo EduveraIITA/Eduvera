@@ -53,6 +53,11 @@ suite("configurable grading and immutable report cards", () => {
     guardian = mappedUsers[4]!;
     createdUsers.push(...users.map((row) => row.id));
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$6,'admin'),($2,$6,'admin'),($3,$6,'staff'),($4,$6,'staff'),($5,$6,'guardian')", [admin.id, reviewer.id, examiner.id, moderator.id, guardian.id, schoolId]);
+    const assessmentProfile = (await pool.query("INSERT INTO school_custom_roles(school_id,name,description,created_by) VALUES($1,'Assessment staff','Eligible for examiner and moderation assignments',$2) RETURNING id", [schoolId, admin.id])).rows[0].id;
+    await pool.query(`INSERT INTO school_custom_role_duties(school_id,role_id,responsibility_type_id)
+      SELECT $1,$2,id FROM staff_responsibility_types WHERE school_id=$1 AND code IN ('internal_examiner','exam_in_charge')`, [schoolId, assessmentProfile]);
+    await pool.query(`INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by,is_primary)
+      VALUES($1,$2,$4,$5,true),($1,$3,$4,$5,true)`, [schoolId, examiner.id, moderator.id, assessmentProfile, admin.id]);
     termId = (await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on) VALUES($1,'2032-33','Term 1','2032-04-01','2032-09-30') RETURNING id", [schoolId])).rows[0].id;
     classId = (await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2032-33','8','A') RETURNING id", [schoolId])).rows[0].id;
     subjectId = (await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'ENG','English','English') RETURNING id", [schoolId])).rows[0].id;
@@ -79,6 +84,8 @@ suite("configurable grading and immutable report cards", () => {
       await pool.query("DELETE FROM students WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM parents WHERE user_id=ANY($1::uuid[])", [createdUsers]);
       await pool.query("DELETE FROM school_people WHERE school_id=$1", [schoolId]);
+      await pool.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1", [schoolId]);
+      await pool.query("DELETE FROM school_custom_roles WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM school_memberships WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM subjects WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM class_sections WHERE school_id=$1", [schoolId]);

@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
-import { schoolPermission } from "../roles/authorization.js";
+import { hasScopedSchoolPermission, schoolPermission } from "../roles/authorization.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 const uuid = z.string().uuid();
@@ -67,12 +67,7 @@ export class AcademicReportsService {
     const admin = await db.selectFrom("school_memberships").select("id").where("school_id", "=", schoolId).where("user_id", "=", user.id).where("role", "=", "admin").where("is_active", "=", true).executeTakeFirst();
     if (admin) return "admin" as const;
     await schoolPermission(db, user, schoolId, "reports.comment");
-    const assignment = (await sql<{ ok: boolean }>`SELECT EXISTS(
-      SELECT 1 FROM class_section_staff_assignments assignment
-      WHERE assignment.school_id=${schoolId}::uuid AND assignment.class_section_id=${classSectionId}::uuid
-        AND assignment.user_id=${user.id}::uuid AND assignment.role='class_teacher'
-        AND assignment.valid_from<=CURRENT_DATE AND (assignment.valid_until IS NULL OR assignment.valid_until>=CURRENT_DATE)
-    ) AS ok`.execute(db)).rows[0]?.ok;
+    const assignment = await hasScopedSchoolPermission(db,user.id,schoolId,"reports.comment","class",classSectionId);
     if (!assignment) throw new ForbiddenException("Only the assigned class teacher can add report remarks.");
     return "class_teacher" as const;
   }
@@ -105,7 +100,7 @@ export class AcademicReportsService {
     if (!membership || !["admin", "staff"].includes(membership.role)) throw new ForbiddenException("Staff access is required.");
     const admin = membership.role === "admin";
     if (!admin) await schoolPermission(this.db, user, schoolId, "reports.comment");
-    const classScope = admin ? sql`` : sql`AND EXISTS(SELECT 1 FROM class_section_staff_assignments mine WHERE mine.school_id=scheme.school_id AND mine.class_section_id=scheme.class_section_id AND mine.user_id=${user.id}::uuid AND mine.role='class_teacher' AND mine.valid_from<=CURRENT_DATE AND (mine.valid_until IS NULL OR mine.valid_until>=CURRENT_DATE))`;
+    const classScope = admin ? sql`` : sql`AND EXISTS(SELECT 1 FROM staff_role_bindings mine WHERE mine.school_id=scheme.school_id AND mine.scope_id=scheme.class_section_id AND mine.context_kind='class' AND mine.user_id=${user.id}::uuid AND mine.role_active AND mine.status='active' AND 'reports.comment'=ANY(mine.permissions) AND mine.starts_on<=CURRENT_DATE AND (mine.ends_on IS NULL OR mine.ends_on>=CURRENT_DATE))`;
     const schemes = await sql`SELECT scheme.*,term.name AS term_name,term.academic_year,'Class '||section.grade||section.section AS class_name,
       (SELECT count(*)::int FROM grading_scheme_subjects subject_plan WHERE subject_plan.scheme_id=scheme.id) AS subject_count,
       (SELECT count(*)::int FROM grading_report_batches batch WHERE batch.scheme_id=scheme.id) AS report_count

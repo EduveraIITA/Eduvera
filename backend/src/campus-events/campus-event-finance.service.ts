@@ -9,6 +9,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
+import { effectiveSchoolAccess } from "../roles/authorization.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import {
   campusEventFinanceIdSchema,
@@ -105,13 +106,7 @@ export class CampusEventFinanceService {
 
   private async access(db: Db, user: AuthUser, event: EventFinanceEventRow, lock = false): Promise<FinanceAccess> {
     const role = await this.membership(db, user, event.school_id, lock);
-    const financeGranted = role === "admin" || role === "staff" && Boolean((await sql<{ allowed: boolean }>`
-      SELECT EXISTS(
-        SELECT 1 FROM school_permission_grants permission
-        WHERE permission.school_id=${event.school_id}::uuid AND permission.user_id=${user.id}::uuid
-          AND permission.permission='fees.manage'
-      ) AS allowed
-    `.execute(db)).rows[0]?.allowed);
+    const financeGranted = role === "admin" || role === "staff" && (await effectiveSchoolAccess(db,user.id,event.school_id,"fees.manage")).sources.length>0;
     if (financeGranted) {
       return { role, canViewDetails: true, canRecordRefund: true, familyStudentIds: [] };
     }
@@ -172,12 +167,21 @@ export class CampusEventFinanceService {
         FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
         WHERE membership.school_id=${event.school_id}::uuid AND membership.role='admin' AND membership.is_active
         UNION ALL
-        SELECT permission.user_id
-        FROM school_permission_grants permission
-        JOIN school_memberships membership ON membership.school_id=permission.school_id
-          AND membership.user_id=permission.user_id AND membership.role='staff' AND membership.is_active
-        JOIN users account ON account.id=permission.user_id AND account.is_active
-        WHERE permission.school_id=${event.school_id}::uuid AND permission.permission='fees.manage'
+        SELECT exception.user_id
+        FROM school_access_exceptions exception
+        JOIN school_memberships membership ON membership.school_id=exception.school_id
+          AND membership.user_id=exception.user_id AND membership.role='staff' AND membership.is_active
+        JOIN users account ON account.id=exception.user_id AND account.is_active
+        WHERE exception.school_id=${event.school_id}::uuid AND exception.permission='fees.manage'
+          AND exception.status='active' AND current_date BETWEEN exception.valid_from AND exception.valid_until
+        UNION ALL
+        SELECT profile.user_id
+        FROM staff_responsibility_assignments assignment
+        JOIN staff_profiles profile ON profile.id=assignment.staff_profile_id
+        JOIN staff_responsibility_types type ON type.id=assignment.responsibility_type_id AND type.is_active
+        WHERE assignment.school_id=${event.school_id}::uuid AND 'fees.manage'=ANY(type.capability_permissions)
+          AND assignment.status='active' AND assignment.starts_on<=current_date
+          AND (assignment.ends_on IS NULL OR assignment.ends_on>=current_date)
         UNION ALL
         SELECT staff.user_id
         FROM campus_event_staff staff

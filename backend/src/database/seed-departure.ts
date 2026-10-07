@@ -29,9 +29,10 @@ export async function seedDepartureDemo(pool:Pool,demoMode:boolean){
     await client.query(`INSERT INTO departure_policies(school_id,enabled,enabled_modes,change_cutoff,location_retention_hours,location_stale_seconds,updated_by)
       VALUES($1,true,ARRAY['guardian_pickup','authorized_collector','independent_departure','school_transport','external_transport']::text[],'23:59',24,90,$2)
       ON CONFLICT(school_id) DO NOTHING`,[scope.id,scope.admin_id]);
-    await client.query(`UPDATE school_custom_roles SET permissions=(SELECT array_agg(DISTINCT permission ORDER BY permission)
-      FROM unnest(permissions||ARRAY['departure.collect']::text[]) permission)
-      WHERE school_id=$1 AND lower(name)='class teacher'`,[scope.id]);
+    await client.query(`INSERT INTO school_custom_role_duties(school_id,role_id,responsibility_type_id)
+      SELECT role.school_id,role.id,type.id FROM school_custom_roles role
+      JOIN staff_responsibility_types type ON type.school_id=role.school_id AND type.code='transport_attendant'
+      WHERE role.school_id=$1 AND lower(role.name)='transport staff' ON CONFLICT DO NOTHING`,[scope.id]);
 
     for(const learner of learners){
       await client.query(`INSERT INTO departure_collection_authorities(id,school_id,student_id,guardian_relationship_id,valid_from,verification_method,verification_note,granted_by)

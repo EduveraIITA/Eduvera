@@ -40,6 +40,13 @@ const reviewInput = z.object({
   note: z.string().trim().min(5).max(1000), override_reason: z.string().trim().max(1000).default(""),
 });
 const acknowledgementInput = z.object({ acknowledgement_text: z.string().trim().min(5).max(240) });
+const authorityDraftInput = z.object({
+  legal_operator_name: z.string().trim().min(2).max(180),
+  lead_officeholder_name: z.string().trim().min(2).max(180),
+  lead_is_current_user: z.boolean().default(false),
+  authority_basis_title: z.string().trim().min(3).max(180),
+  authority_reference: z.string().trim().max(240).default(""),
+});
 
 @Injectable()
 export class GovernanceService {
@@ -58,7 +65,7 @@ export class GovernanceService {
     if (!memberRoles.includes("admin")) throw new ForbiddenException("Institution administrator access is required.");
   }
 
-  private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetType: "regulatory_profile" | "policy_version" | "policy_acknowledgement", targetId: string | null, metadata: Record<string, unknown> = {}) {
+  private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetType: "regulatory_profile" | "policy_version" | "policy_acknowledgement" | "authority_setup" | "authority_source" | "office" | "body" | "seat" | "appointment" | "mandate" | "decision_rule", targetId: string | null, metadata: Record<string, unknown> = {}) {
     await db.insertInto("institution_governance_audits").values({ school_id: schoolId, actor_id: user.id, action, target_type: targetType, target_id: targetId, metadata }).execute();
   }
 
@@ -94,6 +101,7 @@ export class GovernanceService {
     const applicable = families.filter((item) => item.applicable === true);
     return {
       profile, families, audits: audits.rows,
+      authority: await this.authorityData(this.db, schoolId),
       metrics: {
         applicable: applicable.length,
         published: applicable.filter((item) => item.current_status === "published").length,
@@ -101,6 +109,210 @@ export class GovernanceService {
         review_due: applicable.filter((item) => typeof item.current_review_due_on === "string" && item.current_review_due_on <= new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10)).length,
       },
     };
+  }
+
+  private async authorityData(db: Db, schoolId: string) {
+    const [sourcesResult, officesResult, bodiesResult, rulesResult] = await Promise.all([
+      sql<Record<string, unknown>>`SELECT id,code,title,source_kind,issuer,jurisdiction,reference,provision,
+        evidence_reference,verification_state,effective_from,effective_until,revision
+        FROM institution_authority_sources WHERE school_id=${schoolId}::uuid
+        ORDER BY CASE verification_state WHEN 'verified' THEN 0 WHEN 'self_attested' THEN 1 WHEN 'recorded' THEN 2 ELSE 3 END,title`.execute(db),
+      sql<Record<string, unknown>>`SELECT office.id,office.code,office.title,office.purpose,office.status,office.revision,
+        person.first_name,person.last_name,appointment.id AS appointment_id,appointment.status AS appointment_status,
+        appointment.starts_on,appointment.ends_on,appointment.linked_user_id
+        FROM institution_governance_offices office
+        LEFT JOIN LATERAL (
+          SELECT item.* FROM institution_governance_appointments item
+          WHERE item.school_id=office.school_id AND item.office_id=office.id
+            AND item.status IN ('active','future','proposed')
+          ORDER BY CASE item.status WHEN 'active' THEN 0 WHEN 'future' THEN 1 ELSE 2 END,item.starts_on DESC LIMIT 1
+        ) appointment ON true
+        LEFT JOIN school_people person ON person.school_id=office.school_id AND person.id=appointment.person_id
+        WHERE office.school_id=${schoolId}::uuid AND office.status<>'retired'
+        ORDER BY office.title`.execute(db),
+      sql<Record<string, unknown>>`SELECT body.id,body.code,body.title,body.purpose,body.status,body.collective_authority,
+        count(seat.id)::int AS seat_count,
+        count(appointment.id) FILTER (WHERE appointment.status IN ('active','future'))::int AS filled_seats
+        FROM institution_governance_bodies body
+        LEFT JOIN institution_governance_seats seat ON seat.school_id=body.school_id AND seat.body_id=body.id AND seat.status<>'retired'
+        LEFT JOIN institution_governance_appointments appointment ON appointment.school_id=seat.school_id
+          AND appointment.seat_id=seat.id AND appointment.status IN ('active','future')
+        WHERE body.school_id=${schoolId}::uuid AND body.status<>'retired'
+        GROUP BY body.id ORDER BY body.title`.execute(db),
+      sql<Record<string, unknown>>`SELECT rule.id,rule.code,rule.title,rule.category,rule.initiation_summary,
+        rule.review_summary,rule.decision_summary,rule.execution_summary,rule.decision_mode,
+        rule.conditions_summary,rule.material_fields,rule.status,rule.effective_from,rule.effective_until,
+        office.title AS decision_office_title,body.title AS decision_body_title,mandate.title AS mandate_title,
+        mandate.status AS mandate_status
+        FROM institution_decision_matter_rules rule
+        LEFT JOIN institution_governance_offices office ON office.school_id=rule.school_id AND office.id=rule.decision_office_id
+        LEFT JOIN institution_governance_bodies body ON body.school_id=rule.school_id AND body.id=rule.decision_body_id
+        LEFT JOIN institution_authority_mandates mandate ON mandate.school_id=rule.school_id AND mandate.id=rule.standing_mandate_id
+        WHERE rule.school_id=${schoolId}::uuid AND rule.status<>'retired'
+        ORDER BY CASE rule.status WHEN 'confirmed' THEN 0 ELSE 1 END,rule.category,rule.title`.execute(db),
+    ]);
+    const sources = sourcesResult.rows;
+    const offices = officesResult.rows;
+    const bodies = bodiesResult.rows;
+    const rules = rulesResult.rows;
+    const issues: Array<{ code: string; label: string; count: number }> = [];
+    const unverified = sources.filter((item) => !["verified", "self_attested"].includes(String(item.verification_state))).length;
+    const vacancies = offices.filter((item) => !item.appointment_id).length;
+    const suggested = rules.filter((item) => item.status === "suggested").length;
+    const bodyVacancies = bodies.reduce((total, item) => total + Math.max(0, Number(item.seat_count) - Number(item.filled_seats)), 0);
+    if (unverified) issues.push({ code: "source_review", label: "Authority sources need review", count: unverified });
+    if (vacancies) issues.push({ code: "office_vacancy", label: "Offices need an officeholder", count: vacancies });
+    if (bodyVacancies) issues.push({ code: "seat_vacancy", label: "Body seats are vacant", count: bodyVacancies });
+    if (suggested) issues.push({ code: "rule_confirmation", label: "Decision routes need confirmation", count: suggested });
+    return {
+      sources, offices, bodies, rules, issues,
+      metrics: {
+        sources: sources.length,
+        active_appointments: offices.filter((item) => item.appointment_status === "active").length,
+        confirmed_rules: rules.filter((item) => item.status === "confirmed").length,
+        needs_review: issues.reduce((total, item) => total + item.count, 0),
+      },
+    };
+  }
+
+  async authorityWorkspace(user: AuthUser, schoolId: string) {
+    await this.admin(user, schoolId);
+    return this.authorityData(this.db, schoolId);
+  }
+
+  async prepareAuthorityDraft(user: AuthUser, schoolId: string, body: unknown) {
+    const input = authorityDraftInput.parse(body);
+    return this.db.transaction().execute(async (trx) => {
+      await this.admin(user, schoolId, trx);
+      const profile = await trx.selectFrom("institution_regulatory_profiles").selectAll()
+        .where("school_id", "=", schoolId).forUpdate().executeTakeFirst();
+      if (!profile) throw new NotFoundException("Institution regulatory profile is not initialised.");
+      const school = await trx.selectFrom("schools").select(["onboarding_model", "verification_status"])
+        .where("id", "=", schoolId).executeTakeFirstOrThrow();
+      const existing = await trx.selectFrom("institution_authority_sources").select("id")
+        .where("school_id", "=", schoolId).executeTakeFirst();
+      if (existing) throw new ConflictException("Authority setup already exists. Review the current records instead of preparing a second foundation.");
+
+      const source = await trx.insertInto("institution_authority_sources").values({
+        school_id: schoolId, code: "institution_foundation", title: input.authority_basis_title,
+        source_kind: profile.institution_kind === "coaching" ? "owner_declaration" : "governing_instrument",
+        issuer: input.legal_operator_name, jurisdiction: [profile.district, profile.state_code, profile.country_code].filter(Boolean).join(", "),
+        reference: input.authority_reference, provision: "", evidence_reference: input.authority_reference,
+        verification_state: school.onboarding_model === "self_service_coaching" ? "self_attested" : "recorded",
+        effective_from: new Date().toISOString().slice(0, 10), effective_until: null,
+        verified_by: null, verified_at: null, created_by: user.id,
+      }).returningAll().executeTakeFirstOrThrow();
+
+      const nameParts = input.lead_officeholder_name.split(/\s+/).filter(Boolean);
+      const person = await trx.insertInto("school_people").values({
+        school_id: schoolId, first_name: nameParts.shift()!, last_name: nameParts.join(" "),
+        contact_phone: "", contact_email: "",
+      }).returning("id").executeTakeFirstOrThrow();
+      const today = new Date().toISOString().slice(0, 10);
+      const proposed = source.verification_state === "recorded" ? "proposed" as const : "active" as const;
+      const lead = profile.institution_kind === "coaching" ? { code: "director", title: "Director" }
+        : profile.institution_kind === "college" ? { code: "principal", title: "Principal" }
+          : { code: "principal", title: "Principal" };
+      const leadOffice = await trx.insertInto("institution_governance_offices").values({
+        school_id: schoolId, code: lead.code, title: lead.title,
+        purpose: "Lead day-to-day institution operations within recorded authority.", authority_source_id: source.id,
+        status: proposed, created_by: user.id,
+      }).returningAll().executeTakeFirstOrThrow();
+      await trx.insertInto("institution_governance_appointments").values({
+        school_id: schoolId, office_id: leadOffice.id, seat_id: null, person_id: person.id,
+        linked_user_id: input.lead_is_current_user ? user.id : null, appointment_kind: "appointed",
+        starts_on: today, ends_on: null, status: proposed, authority_source_id: source.id,
+        evidence_reference: input.authority_reference, created_by: user.id,
+      }).execute();
+
+      const responsibility = await trx.selectFrom("staff_responsibility_types").select("id")
+        .where("school_id", "=", schoolId)
+        .where("code", "=", profile.institution_kind === "coaching" ? "student_records_officer" : "class_teacher")
+        .executeTakeFirst();
+      if (!responsibility) throw new ConflictException("The responsibility catalogue is not ready for authority setup.");
+      const routineMandate = await trx.insertInto("institution_authority_mandates").values({
+        school_id: schoolId, code: "routine_learning_operations", title: "Routine learning operations",
+        authority_source_id: source.id, holder_office_id: null, holder_body_id: null,
+        responsibility_type_id: responsibility.id, powers: ["execute"],
+        matter_codes: ["routine_learning_record"],
+        limit_summary: "Only assigned learners, groups and published operating policies.",
+        conditions: { requires_active_assignment: true, requires_published_policy: true },
+        effective_from: today, effective_until: null, delegable: false,
+        status: source.verification_state === "self_attested" ? "active" : "suggested", created_by: user.id,
+      }).returningAll().executeTakeFirstOrThrow();
+      await trx.insertInto("institution_decision_matter_rules").values({
+        school_id: schoolId, code: "routine_learning_record", title: "Routine learning records", category: "operations",
+        initiation_summary: "Assigned staff performs the scheduled work.", review_summary: "Exceptions follow the published correction route.",
+        decision_summary: "Standing operational authority; no new committee decision for each record.",
+        execution_summary: "The currently assigned staff member records the work within scope.",
+        decision_mode: "standing", decision_office_id: null, decision_body_id: null,
+        standing_mandate_id: routineMandate.id, authority_source_ids: [source.id],
+        conditions_summary: "Active staff role, current responsibility and applicable published policy are all required.",
+        material_fields: ["institution", "assigned_scope", "effective_date"], status: "suggested",
+        effective_from: today, effective_until: null, created_by: user.id,
+      }).execute();
+
+      if (profile.institution_kind === "coaching") {
+        await trx.insertInto("institution_decision_matter_rules").values({
+          school_id: schoolId, code: "policy_or_financial_exception", title: "Policy or financial exception", category: "finance",
+          initiation_summary: "Authorised staff prepares the request and evidence.", review_summary: "The director reviews the applicable agreement and limits.",
+          decision_summary: "Director decides within the recorded owner-led authority.",
+          execution_summary: "Assigned staff implements only the approved, bounded effect.",
+          decision_mode: "individual", decision_office_id: leadOffice.id, decision_body_id: null,
+          standing_mandate_id: null, authority_source_ids: [source.id],
+          conditions_summary: "Jurisdiction-specific restrictions and the applicable agreement still apply.",
+          material_fields: ["amount", "learner", "agreement_version"], status: "suggested",
+          effective_from: today, effective_until: null, created_by: user.id,
+        }).execute();
+      } else {
+        const management = await trx.insertInto("institution_governance_bodies").values({
+          school_id: schoolId, code: "management", title: profile.institution_kind === "college" ? "Management body" : "Management entity",
+          purpose: "Exercise reserved institutional powers recorded in the governing instruments.",
+          authority_source_id: source.id, collective_authority: true, status: "proposed", created_by: user.id,
+        }).returningAll().executeTakeFirstOrThrow();
+        const advisory = await trx.insertInto("institution_governance_bodies").values({
+          school_id: schoolId, code: profile.institution_kind === "college" ? "academic_council" : "school_management_committee",
+          title: profile.institution_kind === "college" ? "Academic Council" : "School Management Committee",
+          purpose: profile.institution_kind === "college" ? "Consider academic matters within the applicable college framework." : "Review school matters within its applicable constitution and rules.",
+          authority_source_id: source.id, collective_authority: true, status: "proposed", created_by: user.id,
+        }).returningAll().executeTakeFirstOrThrow();
+        await trx.insertInto("institution_governance_seats").values({
+          school_id: schoolId, body_id: advisory.id, code: "lead_ex_officio", title: `${lead.title} ex-officio seat`,
+          seat_kind: "ex_officio", voting_right: "conditional", qualifying_office_id: leadOffice.id,
+          required: true, term_months: null, status: "proposed", sort_order: 10, created_by: user.id,
+        }).execute();
+        await trx.insertInto("institution_decision_matter_rules").values([
+          {
+            school_id: schoolId, code: profile.institution_kind === "college" ? "curriculum_revision" : "annual_budget",
+            title: profile.institution_kind === "college" ? "Curriculum revision" : "Annual budget", category: profile.institution_kind === "college" ? "academic" : "finance",
+            initiation_summary: `${lead.title} prepares the proposal and supporting papers.`,
+            review_summary: `${advisory.title} reviews or decides only as the applicable instrument provides.`,
+            decision_summary: `${management.title} retains the recorded reserved or final decision where applicable.`,
+            execution_summary: "A currently authorised operational owner implements the adopted version and conditions.",
+            decision_mode: "combined", decision_office_id: null, decision_body_id: management.id,
+            standing_mandate_id: null, authority_source_ids: [source.id],
+            conditions_summary: "The exact body powers, procedure and any external approval must be confirmed before activation.",
+            material_fields: ["proposal_version", "scope", "effective_date"], status: "suggested", effective_from: null, effective_until: null, created_by: user.id,
+          },
+          {
+            school_id: schoolId, code: "policy_change", title: "Institution policy change", category: "policy",
+            initiation_summary: "An authorised owner prepares a versioned change and impact summary.",
+            review_summary: "The applicable office or body reviews the exact version.",
+            decision_summary: "The authority named by the current governing instrument adopts the change.",
+            execution_summary: "The approved version is published from its effective date.",
+            decision_mode: "combined", decision_office_id: null, decision_body_id: management.id,
+            standing_mandate_id: null, authority_source_ids: [source.id],
+            conditions_summary: "A draft cannot create the authority needed to approve itself.",
+            material_fields: ["policy_version", "affected_population", "effective_date"], status: "suggested", effective_from: null, effective_until: null, created_by: user.id,
+          },
+        ]).execute();
+      }
+      await this.audit(trx, user, schoolId, "governance.authority.draft_prepared", "authority_setup", source.id, {
+        institution_kind: profile.institution_kind, legal_operator_name: input.legal_operator_name,
+        source_state: source.verification_state,
+      });
+      return this.authorityData(trx, schoolId);
+    });
   }
 
   async updateProfile(user: AuthUser, schoolId: string, body: unknown) {

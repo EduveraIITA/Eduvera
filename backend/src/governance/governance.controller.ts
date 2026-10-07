@@ -11,6 +11,16 @@ export class GovernanceController {
     return this.governance.workspace(req.authUser, schoolId);
   }
 
+  @Get("authority/")
+  authority(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.governance.authorityWorkspace(req.authUser, schoolId);
+  }
+
+  @Post("authority/draft/")
+  draftAuthority(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Body() body: unknown) {
+    return this.governance.prepareAuthorityDraft(req.authUser, schoolId, body);
+  }
+
   @Patch("profile/")
   profile(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Body() body: unknown) {
     return this.governance.updateProfile(req.authUser, schoolId, body);

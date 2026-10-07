@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
+import { assertActiveSchoolStaffMember, effectiveSchoolAccess } from "../roles/authorization.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import {
   attendanceCommandSchema,
@@ -114,22 +115,24 @@ export class CampusEventsService {
     const row = (await sql<{ allowed: boolean }>`
       SELECT EXISTS (
         SELECT 1
-        FROM class_section_staff_assignments assignment
+        FROM staff_role_bindings assignment
         JOIN school_memberships membership ON membership.school_id=assignment.school_id
           AND membership.user_id=assignment.user_id AND membership.role='staff' AND membership.is_active
         JOIN users account ON account.id=membership.user_id AND account.is_active
         JOIN schools school ON school.id=assignment.school_id
         WHERE assignment.school_id=${schoolId}::uuid
-          AND assignment.class_section_id=${classSectionId}::uuid
-          AND ((assignment.role='subject_teacher' AND assignment.subject_id=${subjectId}::uuid)
-            OR (assignment.role='class_teacher' AND EXISTS(
+          AND assignment.context_kind='class' AND assignment.scope_id=${classSectionId}::uuid
+          AND assignment.status='active' AND assignment.role_active AND 'events.manage'=ANY(assignment.permissions)
+          AND current_date BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
+          AND (assignment.subject_id=${subjectId}::uuid
+            OR (assignment.subject_id IS NULL AND EXISTS(
               SELECT 1 FROM timetable_slots slot
-              WHERE slot.class_section_id=assignment.class_section_id AND slot.subject_id=${subjectId}::uuid
+              WHERE slot.class_section_id=assignment.scope_id AND slot.subject_id=${subjectId}::uuid
             )))
           AND assignment.user_id=${userId}::uuid
           AND (${at}::timestamptz AT TIME ZONE school.timezone)::date
-            BETWEEN assignment.valid_from AND COALESCE(assignment.valid_until,'infinity'::date)
-        ${lock ? sql`FOR SHARE OF assignment,membership,account` : sql``}
+            BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
+        ${lock ? sql`FOR SHARE OF membership,account` : sql``}
       ) AS allowed
     `.execute(db)).rows[0];
     return Boolean(row?.allowed);
@@ -138,30 +141,27 @@ export class CampusEventsService {
   private async access(db: Db, user: AuthUser, event: EventRow, lock = false): Promise<ActorAccess> {
     const role = await this.membership(db, user, event.school_id, lock);
     const assignment = role === "staff" ? (await sql<{
-      assigned: boolean; organizer_assigned: boolean; attendance_assigned: boolean; finance_granted: boolean;
+      assigned: boolean; organizer_assigned: boolean; attendance_assigned: boolean;
     }>`
-      SELECT EXISTS(SELECT 1 FROM campus_event_staff staff
-        WHERE staff.school_id=${event.school_id}::uuid AND staff.event_id=${event.id}::uuid
-          AND staff.user_id=${user.id}::uuid) AS assigned,
-        EXISTS(SELECT 1 FROM campus_event_staff staff
-          WHERE staff.school_id=${event.school_id}::uuid AND staff.event_id=${event.id}::uuid
-            AND staff.user_id=${user.id}::uuid AND staff.role='organizer') AS organizer_assigned,
-        EXISTS(SELECT 1 FROM campus_event_staff staff
-          WHERE staff.school_id=${event.school_id}::uuid AND staff.event_id=${event.id}::uuid
-            AND staff.user_id=${user.id}::uuid AND staff.role='attendance_taker') AS attendance_assigned,
-        EXISTS(SELECT 1 FROM school_permission_grants permission
-          WHERE permission.school_id=${event.school_id}::uuid AND permission.user_id=${user.id}::uuid
-            AND permission.permission='fees.manage') AS finance_granted
+      SELECT coalesce(bool_or('events.view'=ANY(binding.permissions)),false) AS assigned,
+        coalesce(bool_or('events.manage'=ANY(binding.permissions)),false) AS organizer_assigned,
+        coalesce(bool_or('events.attendance'=ANY(binding.permissions)),false) AS attendance_assigned
+      FROM staff_role_bindings binding
+      WHERE binding.school_id=${event.school_id}::uuid AND binding.context_kind='event' AND binding.scope_id=${event.id}::uuid
+        AND binding.user_id=${user.id}::uuid AND binding.role_active
+        AND (binding.source_kind='event_assignment' OR binding.status='active')
+        AND binding.starts_on<=current_date AND (binding.ends_on IS NULL OR binding.ends_on>=current_date)
     `.execute(db)).rows[0] : {
-      assigned: false, organizer_assigned: false, attendance_assigned: false, finance_granted: false,
+      assigned: false, organizer_assigned: false, attendance_assigned: false,
     };
+    const financeGranted = role === "admin" || role === "staff" && (await effectiveSchoolAccess(db,user.id,event.school_id,"fees.manage")).sources.length>0;
     const assigned = Boolean(assignment?.assigned);
     const classTarget = event.event_type === "class_test" ? (await sql<{ class_section_id: string }>`
       SELECT class_section_id FROM campus_event_class_sections
       WHERE school_id=${event.school_id}::uuid AND event_id=${event.id}::uuid
       ORDER BY class_section_id LIMIT 1
     `.execute(db)).rows[0]?.class_section_id : undefined;
-    const ownsClassTest = role === "staff" && event.created_by === user.id && Boolean(
+    const ownsClassTest = role === "staff" && Boolean(
       classTarget && event.subject_id && await this.isAssignedClassTestTeacher(
         db, user.id, event.school_id, classTarget, event.subject_id, event.starts_at, lock,
       ),
@@ -172,7 +172,7 @@ export class CampusEventsService {
       organizerAssigned: Boolean(assignment?.organizer_assigned),
       attendanceAssigned: Boolean(assignment?.attendance_assigned),
       ownsClassTest,
-      financeGranted: role === "admin" || Boolean(assignment?.finance_granted),
+      financeGranted,
     };
     if (event.status !== "draft") {
       const family = (await sql<{ ok: boolean }>`
@@ -443,16 +443,18 @@ export class CampusEventsService {
   ) {
     return (await sql<{ user_id: string }>`
       SELECT assignment.user_id
-      FROM class_section_staff_assignments assignment
+      FROM staff_role_bindings assignment
       JOIN school_memberships membership ON membership.school_id=assignment.school_id
         AND membership.user_id=assignment.user_id AND membership.role='staff' AND membership.is_active
       JOIN users account ON account.id=membership.user_id AND account.is_active
       JOIN schools school ON school.id=assignment.school_id
-      WHERE assignment.school_id=${schoolId}::uuid AND assignment.class_section_id=${classSectionId}::uuid
-        AND assignment.role='subject_teacher' AND assignment.subject_id=${subjectId}::uuid
+      WHERE assignment.school_id=${schoolId}::uuid AND assignment.context_kind='class' AND assignment.scope_id=${classSectionId}::uuid
+        AND assignment.subject_id=${subjectId}::uuid AND assignment.status='active' AND assignment.role_active
+        AND 'events.manage'=ANY(assignment.permissions)
+        AND current_date BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
         AND (${at}::timestamptz AT TIME ZONE school.timezone)::date
-          BETWEEN assignment.valid_from AND COALESCE(assignment.valid_until,'infinity'::date)
-      ORDER BY assignment.valid_from DESC,assignment.user_id LIMIT 1
+          BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
+      ORDER BY assignment.starts_on DESC,assignment.user_id LIMIT 1
     `.execute(db)).rows[0]?.user_id;
   }
 
@@ -464,11 +466,12 @@ export class CampusEventsService {
       SELECT DISTINCT section.id,concat('Class ',section.grade,section.section) AS name,section.grade,section.section
       FROM class_sections section
       WHERE section.school_id=${schoolId}::uuid AND (${role}='admin' OR EXISTS (
-        SELECT 1 FROM class_section_staff_assignments assignment
-        WHERE assignment.school_id=section.school_id AND assignment.class_section_id=section.id
+        SELECT 1 FROM staff_role_bindings assignment
+        WHERE assignment.school_id=section.school_id AND assignment.context_kind='class' AND assignment.scope_id=section.id
+          AND assignment.status='active' AND assignment.role_active AND 'events.manage'=ANY(assignment.permissions)
           AND assignment.user_id=${user.id}::uuid
           AND (now() AT TIME ZONE (SELECT timezone FROM schools WHERE id=section.school_id))::date
-            BETWEEN assignment.valid_from AND COALESCE(assignment.valid_until,'infinity'::date)
+            BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
       )) ORDER BY section.grade,section.section,section.id
     `.execute(this.db)).rows;
     const students = role === "admin" ? (await sql<{ id: string; name: string; class_section_id: string; admission_number: string }>`
@@ -499,13 +502,14 @@ export class CampusEventsService {
         WHERE section.school_id=subject.school_id AND (
           (${role}='admin' AND EXISTS(SELECT 1 FROM timetable_slots slot
             WHERE slot.class_section_id=section.id AND slot.subject_id=subject.id))
-          OR EXISTS(SELECT 1 FROM class_section_staff_assignments assignment
-            WHERE assignment.school_id=section.school_id AND assignment.class_section_id=section.id
+          OR EXISTS(SELECT 1 FROM staff_role_bindings assignment
+            WHERE assignment.school_id=section.school_id AND assignment.context_kind='class' AND assignment.scope_id=section.id
+              AND assignment.status='active' AND assignment.role_active AND 'events.manage'=ANY(assignment.permissions)
               AND assignment.user_id=${user.id}::uuid
               AND (now() AT TIME ZONE (SELECT timezone FROM schools WHERE id=section.school_id))::date
-                BETWEEN assignment.valid_from AND COALESCE(assignment.valid_until,'infinity'::date)
-              AND ((assignment.role='subject_teacher' AND assignment.subject_id=subject.id)
-                OR (assignment.role='class_teacher' AND EXISTS(SELECT 1 FROM timetable_slots slot
+                BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
+              AND (assignment.subject_id=subject.id
+                OR (assignment.subject_id IS NULL AND EXISTS(SELECT 1 FROM timetable_slots slot
                   WHERE slot.class_section_id=section.id AND slot.subject_id=subject.id)))
           ))
       ) scope ON true
@@ -551,8 +555,11 @@ export class CampusEventsService {
             WHERE selected_participant.event_id=event.id AND selected_participant.student_id=${input.student_id ?? null}::uuid))
           AND (
             ${role}='admin'
-            OR (${role}='staff' AND EXISTS(SELECT 1 FROM campus_event_staff staff
-              WHERE staff.event_id=event.id AND staff.user_id=${user.id}::uuid))
+            OR (${role}='staff' AND EXISTS(SELECT 1 FROM staff_role_bindings binding
+              WHERE binding.school_id=event.school_id AND binding.scope_id=event.id AND binding.context_kind='event'
+                AND binding.user_id=${user.id}::uuid AND binding.role_active AND 'events.view'=ANY(binding.permissions)
+                AND (binding.source_kind='event_assignment' OR binding.status='active')
+                AND binding.starts_on<=current_date AND (binding.ends_on IS NULL OR binding.ends_on>=current_date)))
             OR (${role}='student' AND event.status<>'draft' AND EXISTS(
               SELECT 1 FROM campus_event_participants participant JOIN students student ON student.id=participant.student_id
               WHERE participant.event_id=event.id AND student.user_id=${user.id}::uuid))
@@ -912,6 +919,11 @@ export class CampusEventsService {
   }
 
   private async writeDefinition(db: Db, eventId: string, input: z.infer<typeof createEventSchema>, creatorId: string) {
+    for (const staff of input.staff) {
+      const responsibility = staff.role === "organizer" ? "event_coordinator"
+        : staff.role === "attendance_taker" ? "event_attendance" : "event_escort";
+      await assertActiveSchoolStaffMember(db, staff.user_id, input.school_id, responsibility);
+    }
     await sql`DELETE FROM campus_event_class_sections WHERE event_id=${eventId}::uuid`.execute(db);
     await sql`DELETE FROM campus_event_selected_students WHERE event_id=${eventId}::uuid`.execute(db);
     await sql`DELETE FROM campus_event_staff WHERE event_id=${eventId}::uuid`.execute(db);

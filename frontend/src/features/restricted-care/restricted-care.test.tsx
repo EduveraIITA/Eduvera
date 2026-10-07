@@ -42,7 +42,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("RestrictedCarePage", () => {
   it("keeps emergency action and assigned-case limits explicit", async () => {
     renderPage();
-    expect(await screen.findByRole("heading", { name: "Restricted care", level: 1 })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Student concerns", level: 1 })).toBeVisible();
     expect(await screen.findByRole("link", { name: "Call 112" })).toHaveAttribute("href", "tel:112");
     expect(screen.getByText("Primary route · 1 available")).toBeVisible();
     expect(screen.getByText("Alternate route · 1 available")).toBeVisible();

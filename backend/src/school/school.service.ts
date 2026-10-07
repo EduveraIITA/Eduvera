@@ -95,6 +95,20 @@ function sortHomeActions(actions: HomeAction[]): HomeAction[] {
   });
 }
 
+export function moreAttentionCounts(actions: readonly HomeAction[], viewer: "guardian" | "student" | "staff"): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const action of actions) {
+    if (viewer === "student" && (action.kind === "event_consent"
+      || (action.kind === "event_rsvp" && action.action_label === "View event"))) continue;
+    const tool = ["event_rsvp", "event_consent", "event_payment", "event_checklist"].includes(action.kind) ? "events"
+      : action.kind === "leave_signature" ? "leave"
+      : action.kind === "diary_acknowledgement" ? "diary"
+      : action.kind === "attendance_register" ? "registers" : null;
+    if (tool) counts[tool] = (counts[tool] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export interface UploadInput { filename: string; mimetype: string; data: Buffer }
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -504,12 +518,10 @@ export class SchoolService {
             FROM school_memberships m
             JOIN enrollments assigned_enrollment
               ON assigned_enrollment.student_id = st.id AND assigned_enrollment.is_active
-            JOIN timetable_slots assigned_slot
-              ON assigned_slot.class_section_id = assigned_enrollment.class_section_id
-              AND assigned_slot.term_id = assigned_enrollment.term_id
-              AND assigned_slot.teacher_user_id = m.user_id
             WHERE m.user_id = ${user.id}::uuid
               AND m.school_id = st.school_id AND m.role = 'staff' AND m.is_active
+              AND (staff_has_class_permission(st.school_id,m.user_id,'attendance.view',assigned_enrollment.class_section_id)
+                OR staff_has_class_permission(st.school_id,m.user_id,'followups.manage',assigned_enrollment.class_section_id))
           )
         )
       ORDER BY CASE WHEN st.user_id = ${user.id}::uuid THEN 0 ELSE 1 END,
@@ -531,12 +543,10 @@ export class SchoolService {
           SELECT 1
           FROM school_memberships m
           JOIN enrollments assigned_enrollment ON assigned_enrollment.student_id=st.id AND assigned_enrollment.is_active
-          JOIN timetable_slots assigned_slot
-            ON assigned_slot.class_section_id=assigned_enrollment.class_section_id
-            AND assigned_slot.term_id=assigned_enrollment.term_id
-            AND assigned_slot.teacher_user_id=m.user_id
           WHERE m.user_id=${user.id}::uuid AND m.school_id=st.school_id
             AND m.role='staff' AND m.is_active
+            AND (staff_has_class_permission(st.school_id,m.user_id,'attendance.view',assigned_enrollment.class_section_id)
+              OR staff_has_class_permission(st.school_id,m.user_id,'followups.manage',assigned_enrollment.class_section_id))
         )
       )
       ORDER BY st.id
@@ -1606,12 +1616,14 @@ export class SchoolService {
         due_at: diaryAcknowledgements[0]!.due_at ? new Date(diaryAcknowledgements[0]!.due_at).toISOString() : null,
       }] : []),
     ];
+    const allHomeActions = [...localActions, ...followupActions, ...eventActions];
     return {
       student: await this.studentDto(student, enrollment), siblings: siblings.filter((item) => item.id !== student.id),
       campus_presence: campus, attendance: summary,
       ranking,
       action_required: actionRequired,
-      home_actions: sortHomeActions([...localActions, ...followupActions, ...eventActions]).slice(0, 6),
+      home_actions: sortHomeActions(allHomeActions).slice(0, 6),
+      more_attention: moreAttentionCounts(allHomeActions, "guardian"),
       today_schedule: schedule, day_plan:await this.dayPlanSummary(enrollment.class_section_id,schoolDate), diary_preview: diary.slice(0, 3), unread_notifications: Number(unread?.count ?? 0),
       homework_items: homeworkItems,
       semester_metrics: {
@@ -1725,6 +1737,22 @@ export class SchoolService {
         .where("recipient_id", "=", user.id).where("read_at", "is", null).executeTakeFirst(),
       this.familyHomeActions(user, student, "student"),
     ]);
+    const allHomeActions: HomeAction[] = [
+      ...diary.filter((item) => item.requires_acknowledgement && !item.acknowledged).slice(0, 1).map((item) => ({
+        id: `diary-acknowledgement:${item.id}`,
+        kind: "diary_acknowledgement" as const,
+        priority: "normal" as const,
+        title: "A diary note needs acknowledgement",
+        detail: item.title,
+        status_label: "Unread school note",
+        action_label: "Open diary",
+        href: "/student/diary",
+        source_id: item.id,
+        occurs_at: new Date(item.published_at).toISOString(),
+        due_at: item.due_at ? new Date(item.due_at).toISOString() : null,
+      })),
+      ...homeActions,
+    ];
     return {
       student: await this.studentDto(student, enrollment),
       term: {
@@ -1742,22 +1770,8 @@ export class SchoolService {
       diary_preview: diary.slice(0, 4),
       active_leave_count: Number(activeLeaves?.count ?? 0),
       unread_notifications: Number(unread?.count ?? 0),
-      home_actions: sortHomeActions([
-        ...diary.filter((item) => item.requires_acknowledgement && !item.acknowledged).slice(0, 1).map((item) => ({
-          id: `diary-acknowledgement:${item.id}`,
-          kind: "diary_acknowledgement" as const,
-          priority: "normal" as const,
-          title: "A diary note needs acknowledgement",
-          detail: item.title,
-          status_label: "Unread school note",
-          action_label: "Open diary",
-          href: "/student/diary",
-          source_id: item.id,
-          occurs_at: new Date(item.published_at).toISOString(),
-          due_at: item.due_at ? new Date(item.due_at).toISOString() : null,
-        })),
-        ...homeActions,
-      ]).slice(0, 5),
+      home_actions: sortHomeActions(allHomeActions).slice(0, 5),
+      more_attention: moreAttentionCounts(allHomeActions, "student"),
     };
   }
 
@@ -1923,12 +1937,14 @@ export class SchoolService {
         occurs_at: item.starts_at ? `${selectedDate}T${String(item.starts_at).slice(0, 8)}` : null,
         due_at: item.ends_at ? `${selectedDate}T${String(item.ends_at).slice(0, 8)}` : null,
       }));
+    const allHomeActions = [...followupActions, ...registerActions, ...eventActions];
     return {
       date: selectedDate,
       teacher: { id: user.id, name: `${user.first_name} ${user.last_name}`.trim(), role: membership.role },
       classes,
       weekly_timetable: weekly.rows.map((row) => ({ ...row, class_name: `Class ${row.grade}${row.section}`, weekday_label: weekdayLabels[row.weekday] })),
-      home_actions: sortHomeActions([...followupActions, ...registerActions, ...eventActions]).slice(0, 6),
+      home_actions: sortHomeActions(allHomeActions).slice(0, 6),
+      more_attention: moreAttentionCounts(allHomeActions, "staff"),
     };
   }
 
@@ -1951,11 +1967,9 @@ export class SchoolService {
     if (!section) throw new NotFoundException("Class section not found.");
     const membership = await this.requireSchoolRole(user, ["staff", "admin"], section.school_id);
     if (membership.role !== "admin") {
-      const assigned = await this.db.selectFrom("timetable_slots").select("id")
-        .where("class_section_id", "=", classSectionId).where("term_id", "=", section.term_id)
-        .where("teacher_user_id", "=", user.id).executeTakeFirst();
       const substitute=(await sql`SELECT id FROM effective_school_schedule(${section.school_id}::uuid,${selectedDate}::date) WHERE class_section_id=${classSectionId}::uuid AND term_id=${section.term_id}::uuid AND teacher_user_id=${user.id}::uuid AND NOT cancelled AND coverage_status='accepted' LIMIT 1`.execute(this.db)).rows[0];
-      if (!assigned&&!substitute) throw new ForbiddenException("This class is not assigned to the signed-in teacher.");
+      const scoped=(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${section.school_id}::uuid,${user.id}::uuid,'attendance.view',${classSectionId}::uuid,${selectedDate}::date) AS allowed`.execute(this.db)).rows[0]?.allowed;
+      if (!substitute&&!scoped) throw new ForbiddenException("This class is not assigned with attendance access to the signed-in teacher.");
     }
     const [roster, register] = await Promise.all([sql<any>`
       SELECT st.id AS student_id, st.admission_number, st.avatar_url, e.roll_number,
@@ -2208,18 +2222,9 @@ export class SchoolService {
       const currentRole = currentMembership.rows[0]?.role;
       if (!currentRole) throw new ForbiddenException("An active school staff membership is required.");
       if (currentRole !== "admin") {
-        const currentAssignment = await sql<{ id: string }>`
-          SELECT slot.id
-          FROM timetable_slots slot
-          WHERE slot.class_section_id=${data.class_section_id}::uuid
-            AND slot.term_id=${screen.class.term_id}::uuid
-            AND slot.teacher_user_id=${user.id}::uuid
-          ORDER BY slot.id
-          LIMIT 1
-          FOR SHARE OF slot
-        `.execute(tx);
         const currentSubstitute=(await sql`SELECT id FROM effective_school_schedule(${membership.school_id}::uuid,${data.date}::date) WHERE class_section_id=${data.class_section_id}::uuid AND term_id=${screen.class.term_id}::uuid AND teacher_user_id=${user.id}::uuid AND NOT cancelled AND coverage_status='accepted' LIMIT 1`.execute(tx)).rows[0];
-        if (!currentAssignment.rows[0]&&!currentSubstitute) {
+        const scoped=(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${membership.school_id}::uuid,${user.id}::uuid,'attendance.record',${data.class_section_id}::uuid,${data.date}::date) AS allowed`.execute(tx)).rows[0]?.allowed;
+        if (!currentSubstitute&&!scoped) {
           throw new ForbiddenException("This class is no longer assigned to the signed-in teacher.");
         }
       }
@@ -3111,13 +3116,15 @@ export class SchoolService {
           occurs_at: null,
           due_at: `${selectedDate}T23:59:59`,
         }];
+    const allHomeActions = [...followupActions, ...registerActions, ...eventActions];
     return {
       date: selectedDate,
       principal: { id: user.id, name: `${user.first_name} ${user.last_name}`.trim() },
       summary: { ...totals, attendance_percentage: totals.scored ? Math.round(totals.attending * 10_000 / totals.scored) / 100 : 0, classes_total: dueRows.length, classes_submitted: dueRows.filter((row) => ["submitted", "locked"].includes(row.register_state) && classContext.get(row.id)?.submission_authorized !== false).length },
       classes: operationalRows.map((row) => ({ ...classContext.get(row.id), ...row, name: `Class ${row.grade}${row.section}`, submission_status: classContext.get(row.id)?.submission_status ?? "not_started", attendance_percentage: Number(row.scored_count) ? Math.round(Number(row.attending_count) * 10_000 / Number(row.scored_count)) / 100 : 0 })),
       exceptions: exceptions.rows.map((row) => ({ ...row, name: `${row.first_name} ${row.last_name}`.trim(), class_name: `Class ${row.grade}${row.section}`, percentage: Number(row.percentage), threshold: Number(row.attendance_threshold) })),
-      home_actions: sortHomeActions([...followupActions, ...registerActions, ...eventActions]).slice(0, 6),
+      home_actions: sortHomeActions(allHomeActions).slice(0, 6),
+      more_attention: moreAttentionCounts(allHomeActions, "staff"),
     };
   }
 

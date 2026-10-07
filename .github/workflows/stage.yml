@@ -84,6 +84,8 @@ jobs:
           node --import tsx src/database/seed-operations.ts
           node --import tsx src/database/seed-roles.ts
           node --import tsx src/database/seed-departure.ts
+          node --import tsx src/database/seed-governance-authority.ts
+          node --import tsx src/database/seed-access-roles.ts
 
       - name: Backend · integration tests
         working-directory: backend
@@ -256,7 +258,7 @@ jobs:
           export DEPLOYMENT_ENVIRONMENT=stage
           npm run db:migrate
 
-      - name: Add Stage demo admin, role and transport examples
+      - name: Add Stage demo role, transport and governance examples
         working-directory: backend
         run: |
           set -eu
@@ -265,6 +267,8 @@ jobs:
           export DEPLOYMENT_ENVIRONMENT=stage
           DEMO_MODE=true node --import tsx src/database/seed-roles.ts
           DEMO_MODE=true node --import tsx src/database/seed-departure.ts
+          DEMO_MODE=true node --import tsx src/database/seed-governance-authority.ts
+          DEMO_MODE=true node --import tsx src/database/seed-access-roles.ts
 
       - uses: actions/setup-python@v5
         if: github.event_name == 'workflow_dispatch' && inputs.seed
@@ -283,6 +287,9 @@ jobs:
           node --import tsx src/database/seed.ts
           DEMO_MODE=true node --import tsx src/database/seed-operations.ts
           DEMO_MODE=true node --import tsx src/database/seed-departure.ts
+          DEMO_MODE=true node --import tsx src/database/seed-roles.ts
+          DEMO_MODE=true node --import tsx src/database/seed-governance-authority.ts
+          DEMO_MODE=true node --import tsx src/database/seed-access-roles.ts
 
       - name: Bind deployment to this commit and preserve Stage demo access
         run: railway variable set "RELEASE_SHA=$GITHUB_SHA" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --skip-deploys

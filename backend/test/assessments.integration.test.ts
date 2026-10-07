@@ -28,6 +28,11 @@ suite("offline assessment and result lifecycle",()=>{
     const mappedUsers=users.map(user);
     admin=mappedUsers[0]!;examiner=mappedUsers[1]!;moderator=mappedUsers[2]!;guardian=mappedUsers[3]!;
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$5,'admin'),($2,$5,'staff'),($3,$5,'staff'),($4,$5,'guardian')",[admin.id,examiner.id,moderator.id,guardian.id,schoolId]);
+    const assessmentProfile=(await pool.query("INSERT INTO school_custom_roles(school_id,name,description,created_by) VALUES($1,'Assessment staff','Eligible for examiner and moderation assignments',$2) RETURNING id",[schoolId,admin.id])).rows[0].id;
+    await pool.query(`INSERT INTO school_custom_role_duties(school_id,role_id,responsibility_type_id)
+      SELECT $1,$2,id FROM staff_responsibility_types WHERE school_id=$1 AND code IN ('internal_examiner','exam_in_charge')`,[schoolId,assessmentProfile]);
+    await pool.query(`INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by,is_primary)
+      VALUES($1,$2,$4,$5,true),($1,$3,$4,$5,true)`,[schoolId,examiner.id,moderator.id,assessmentProfile,admin.id]);
     termId=(await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on) VALUES($1,'2031-32','Term 1','2031-04-01','2031-09-30') RETURNING id",[schoolId])).rows[0].id;
     classId=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2031-32','7','A') RETURNING id",[schoolId])).rows[0].id;
     subjectId=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'ENG','English','English') RETURNING id",[schoolId])).rows[0].id;
@@ -53,6 +58,8 @@ suite("offline assessment and result lifecycle",()=>{
       await pool.query("DELETE FROM students WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM parents WHERE user_id=ANY($1::uuid[])",[userIds]);
       await pool.query("DELETE FROM school_people WHERE school_id=$1",[schoolId]);
+      await pool.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1",[schoolId]);
+      await pool.query("DELETE FROM school_custom_roles WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM school_memberships WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM subjects WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM class_sections WHERE school_id=$1",[schoolId]);
@@ -72,7 +79,7 @@ suite("offline assessment and result lifecycle",()=>{
     let detail=await service.detail(examiner,schoolId,assessmentId);expect(detail.results).toHaveLength(1);expect(detail.results[0]).toMatchObject({outcome:"unrecorded",first_name:"Learner"});
     state=await service.recordResults(examiner,schoolId,assessmentId,{expected_assessment_revision:state.revision,results:[{result_id:(detail.results[0] as any).id,outcome:"scored",marks:64,grade:"A",feedback:"Clear written work",expected_revision:(detail.results[0] as any).revision,reason:"Initial marks entry"}]});
     state=await service.action(examiner,schoolId,assessmentId,"submit",{expected_revision:state.revision,note:"Register complete"});
-    await expect(service.action(examiner,schoolId,assessmentId,"approve",{expected_revision:state.revision,note:"Trying self approval"})).rejects.toThrow(/moderator/i);
+    await expect(service.action(examiner,schoolId,assessmentId,"approve",{expected_revision:state.revision,note:"Trying self approval"})).rejects.toThrow(/moderator|assessments\.moderate/i);
     state=await service.action(moderator,schoolId,assessmentId,"approve",{expected_revision:state.revision,note:"Checked against paper totals"});
     state=await service.action(admin,schoolId,assessmentId,"publish",{expected_revision:state.revision,note:"First moderated release"});expect(state.status).toBe("published");
     const first=await service.familyResults(guardian,schoolId,studentId);expect(first.results[0]).toMatchObject({marks:"64.00",sequence:1,grade:"A",term_name:"Term 1",academic_year:"2031-32"});

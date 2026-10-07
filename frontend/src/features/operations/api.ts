@@ -65,6 +65,7 @@ export interface TeacherHomeResponse {
   classes: TeacherClassSummary[];
   weekly_timetable: TeacherTimetableSlot[];
   home_actions: HomeAction[];
+  more_attention?: Record<string, number>;
 }
 
 export interface TeacherRosterStudent {
@@ -219,6 +220,7 @@ export interface PrincipalHomeResponse {
   classes: PrincipalClassSummary[];
   exceptions: Array<{ id: string; admission_number: string; name: string; class_section_id: string; class_name: string; recorded_days: number; percentage: number; threshold: number }>;
   home_actions: HomeAction[];
+  more_attention?: Record<string, number>;
 }
 
 export interface PrincipalTimetableResponse {

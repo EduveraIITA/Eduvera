@@ -34,6 +34,7 @@ export interface SchoolMembership {
   role: MembershipRole;
   permissions?: string[];
   custom_role?: {id:string;name:string} | null;
+  work_profiles?: Array<{id:string;name:string;is_primary:boolean}>;
 }
 
 interface SessionResponse {
@@ -46,7 +47,7 @@ interface SessionResponse {
 interface MeResponse {
   company_operator?:boolean;
   institution_setup_required?:boolean;
-  school_permissions?: Array<{school_id:string;permissions:string[];custom_role:{id:string;name:string}|null}>;
+  school_permissions?: Array<{school_id:string;permissions:string[];custom_role:{id:string;name:string}|null;work_profiles?:Array<{id:string;name:string;is_primary:boolean}>}>;
   user: AuthUser;
   students: Array<{ id: string }>;
   memberships: SchoolMembership[];
@@ -252,6 +253,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("omnischool:session-expired", handleSessionExpiry);
   }, [queryClient]);
 
+  useEffect(()=>{
+    if(state.status!=="authenticated")return;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const update=()=>{if(timer)clearTimeout(timer);timer=setTimeout(()=>{void refresh();void queryClient.invalidateQueries();},150);};
+    window.addEventListener("omnischool:access-updated",update);
+    return()=>{if(timer)clearTimeout(timer);window.removeEventListener("omnischool:access-updated",update);};
+  },[state.status,refresh,queryClient]);
+
   const login = useCallback(
     async (input: LoginInput) => {
       const response = await authMutation<AuthResponse | MfaChallengeResponse>("/api/v1/auth/login/", input);
@@ -358,7 +367,7 @@ export function authDestination(auth: Pick<AuthContextValue, "status" | "portals
   if (auth.companyOperator) return "/company";
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
-  if (auth.portals.includes("teacher")) return auth.memberships.some(m=>m.role==='staff' && m.custom_role) ? "/teacher/more" : "/teacher";
+  if (auth.portals.includes("teacher")) return "/teacher";
   if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/activation" : "/principal";
   if (auth.memberships.length === 0) return "/onboarding/start";
   return "/workspace";

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { z } from "zod";
+import { sql } from "kysely";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
@@ -81,9 +82,15 @@ export class PhotoAttendanceService {
     return membership;
   }
 
+  private async requireClassPhotoAccess(user:AuthUser,schoolId:string,classId:string,date:string) {
+    const membership=await this.membership(user,schoolId);
+    if(membership.role!=="admin" && !(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${schoolId}::uuid,${user.id}::uuid,'photo.use',${classId}::uuid,${date}::date) AS allowed`.execute(this.db)).rows[0]?.allowed)throw new ForbiddenException("Your assignment does not allow photo attendance for this class.");
+  }
+
   async setup(user: AuthUser, classSectionId: string, date: string) {
     const screen = await this.school.teacherAttendanceScreen(user, classSectionId, date);
     const membership = await this.membership(user, screen.class.school_id);
+    await this.requireClassPhotoAccess(user,screen.class.school_id,classSectionId,date);
     const profiles = await this.db
       .selectFrom("photo_attendance_profiles")
       .select(["student_id", "sample_count", "model_id", "updated_at"])
@@ -308,6 +315,7 @@ export class PhotoAttendanceService {
     const input = analysisSchema.parse(fields);
     const screen = await this.school.teacherAttendanceScreen(request.authUser, classSectionId, input.date);
     await this.membership(request.authUser, screen.class.school_id);
+    await this.requireClassPhotoAccess(request.authUser,screen.class.school_id,classSectionId,input.date);
     if (!screen.availability.can_mark) {
       throw new BadRequestException(screen.availability.reason ?? "Attendance is not available for this class and date.");
     }
@@ -389,6 +397,7 @@ export class PhotoAttendanceService {
     if (!stored) throw new NotFoundException("Photo-attendance analysis not found.");
     if (stored.expires_at < new Date()) throw new NotFoundException("Photo-attendance analysis has expired.");
     const screen = await this.school.teacherAttendanceScreen(user, stored.class_section_id, String(stored.date));
+    await this.requireClassPhotoAccess(user,stored.school_id,stored.class_section_id,String(stored.date));
     const profiles = await this.db.selectFrom("photo_attendance_profiles")
       .selectAll().where("school_id", "=", stored.school_id)
       .where("class_section_id", "=", stored.class_section_id)

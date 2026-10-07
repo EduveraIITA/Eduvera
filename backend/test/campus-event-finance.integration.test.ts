@@ -53,10 +53,10 @@ describe.skipIf(!isolated)("campus-event withdrawal and manual refund service", 
     dutyStaff = request(users.find((user) => user.username === "vikram.singh")!);
     feeManager = request(users.find((user) => user.username === "ritu.malhotra")!);
     await pool.query(`
-      INSERT INTO school_permission_grants(school_id,user_id,permission)
-      VALUES($1,$2,'fees.manage')
-      ON CONFLICT(school_id,user_id,permission) DO NOTHING
-    `, [schoolId, feeManager.authUser.id]);
+      INSERT INTO school_access_exceptions(
+        school_id,user_id,permission,reason,source_kind,scope_kind,valid_from,valid_until,review_due_on,created_by
+      ) VALUES($1,$2,'fees.manage','Temporary event finance reconciliation coverage','manual','institution',current_date,current_date+30,current_date+15,$3)
+    `, [schoolId, feeManager.authUser.id, principal.authUser.id]);
     studentId = (await pool.query<{ id: string }>(`
       SELECT student.id FROM students student
       JOIN users account ON account.id=student.user_id

@@ -33,6 +33,11 @@ decisions cannot be replaced by synthetic software tests.
   bringing already-admitted learners into Eduvera. A pre-admission/enquiry/application pipeline is
   parked for a later release. Current reviewed individual/bulk enrolment remains the supported
   starting workflow; do not make admissions CRM a dependency for the next academic-operations slice.
+- Product decision, 7 October 2026 (latest correction): descriptive **Position**, reusable
+  **Role** (supported actions), and **Assignment** (person, role, scope and dates). A workflow is
+  the actual domain process, not another name for a role. Remove the Work types / Workflow-alias
+  editor. Normal staffing uses ready-made roles; custom roles can change allowed actions.
+  No separate eligibility matrix. Domain-native staffing appears on the staff profile automatically.
 
 ## Repository audit and dependency order
 
@@ -69,6 +74,145 @@ The complete frontend regression suite passes locally (35 files, 222 tests). Vis
 remains open, so this is not yet a release gate. This is domain hardening and does not represent
 compliance certification. G5-G10 remain planned and must not be represented as implemented until
 their separate high-risk workflows and evidence pass.
+
+### Authority and mobile-governance overhaul — 7 October 2026
+
+The user-supplied governance framework has been reviewed against the repository blueprint and
+adopted as Version 2.1. The engineering contract is
+[Institute governance, authority and mobile operations](INSTITUTE_GOVERNANCE_AUTHORITY_ARCHITECTURE.md).
+It supersedes any interpretation that a software role, administrator account or generic approval
+creates institutional authority. Effective operational assignments activate technical capability;
+offices, body seats, appointments, mandates and decision rules establish
+the separate institutional-authority model.
+
+The A1 foundation is implemented locally in migration
+`048_governance_authority_foundation.sql`. It adds typed authority sources, offices, bodies, seats,
+appointments, standing/delegated mandates and matter-specific decision routes with institution-scoped
+foreign keys, revisions, RLS and revoked browser-role grants. Migration
+`049_governance_authority_integrity.sql` also rejects cross-institution source citations and linked-user
+appointments at the database boundary. The governance workspace now leads with
+a concise **Authority** surface and **Who can decide what?** view. An empty institution supplies four
+necessary facts and the app prepares a reviewable draft; no generated record silently becomes adopted
+authority. The repeat-safe Cambridge seed supplies two verified sources, five appointments, two mandates
+and five confirmed routes for demonstration.
+
+Verified locally on 7 October 2026: a fresh PostgreSQL 14 database migrated from `001` through `049`,
+the focused governance API suite passed 6/6, the governance UI suite passed 3/3, both applications built,
+both linters passed, the repeat seed remained stable, and the live workspace returned two sources, two
+active office appointments and five confirmed routes. The fresh-database run also exposed and corrected
+an older PostgreSQL-15-only column-list `SET NULL` clause in migration `033`; the invitation relationship
+now uses the already-adopted restricted deletion path and fresh PostgreSQL 14 setup succeeds.
+
+A2 remains planned, but is not the active product slice. The user explicitly prioritised simple
+institution setup and daily operations before further governance expansion. Physical mobile review and
+the full automated regression remain open for A1; it is not yet claimed as deployed or institutionally accepted.
+
+### Scoped roles and assignments — 7 October 2026 (current)
+
+The rejected work-type alias editor is replaced by **People / Roles / Leave / Settings**.
+The contract is [Roles and contextual assignments](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
+
+- Built-in roles are ready to assign. Custom roles can start from a template or blank and select
+  real supported actions in plain language, with automatic prerequisites. The context limits the
+  available actions; naming a role never creates a new workflow or institutional authority.
+- One profile projects direct class/institution assignments and native event, assessment and
+  journey staffing. The same native record carries its optional custom access role; no second
+  responsibility or eligibility record is required. Assignment links open their owning work.
+- Role edits are revision/impact checked, tenant scoped and audited. Native assignment changes
+  have revision checks; ending a class grant retains history and prevents timetable fallback from
+  restoring removed permissions. Access-update events refresh staff navigation and data.
+- Per-resource checks tie actions to the same class, event, assessment or trip. Teaching does not
+  automatically make someone an examiner. Marking and independent review remain separate.
+  Class follow-up, photo attendance and messaging use the contextual checks as well.
+- Migration `052_scoped_access_roles.sql` keeps existing data and evolves the physical catalogue;
+  it removes the immutable-workflow alias restriction. Old work-type mutation routes return 410.
+  Compatibility role/eligibility records do not grant operational access or appear in setup.
+- An add-only, repeat-safe seed demonstrates **Anil Sharma → Attendance reviewer → Class 6A**.
+  It grants read-only attendance, not marking or unrelated institution access. Existing local
+  staffing choices were not reset by a full reseed.
+
+Verified locally: fresh PostgreSQL `001`–`052` migration and full demo seed; repeat access-role seed;
+**282 backend tests in 39 files**, **253 frontend tests in 42 files**, both typechecks/linters and
+production builds. Real Chromium checks cover 320, 390 and 768 px: role catalogue, action editor,
+automatic prerequisites, staff profile, assignment form, no horizontal overflow, Escape dismissal
+and no page errors. The frontend-engineering workflow retained existing theme/header/navigation
+and used an accessible modal rather than introducing another setup surface. Final regression rerun
+on 7 October passed the same 282 backend / 253 frontend tests after the access-event refresh and
+database-type changes. Local `/healthz`, `/readyz` and the app returned 200; the ngrok health check
+also returned 200.
+
+Local migration `052` and the add-only example are applied to `omnischool_node`. The pre-existing
+local checksum difference for migration `033` was not rewritten: `052` was applied independently
+after checking its `051` prerequisite. Reconcile that older checksum before using the ordinary
+migration runner for deployment. No production push/deployment is claimed. Physical phone/product
+review and the broader blueprint release gates remain open.
+
+### Staff profile role overview — 7 October 2026
+
+User feedback: repeating every exam/journey assignment as a full card made it difficult to see
+which roles a person holds. Staff profiles now group assignments by role identity, with a compact
+role/assignment total and expandable rows. Class roles appear first. Search matches role names,
+classes, subjects, exams and journeys, and opens matching scoped work when appropriate.
+
+**Assigned / Not assigned / History** separates current/planned/offered bindings from ended records
+and identifies available roles not held by the selected person. Scheduled and offered states retain
+their actual labels; they are not relabelled as active. Historical assignments have no edit action.
+Choosing an unassigned class/institution role preselects it in the existing assignment form; event,
+exam and journey roles still link to their authoritative planning screens. Allowed actions appear
+once per role group, not on every repeated assignment.
+
+Verification: **262 frontend tests in 43 files**, frontend lint, typecheck and production build pass.
+Chromium checks at **320, 390, 768, 1024 and 1440 px** verify grouping, exact-work search, unassigned
+roles, preselected assignment forms, read-only history, keyboard expansion and no horizontal
+overflow or page errors. Cambridge demo Kavita's **28 current assignments appear as six roles**.
+The frontend-engineering pass preserves the established theme, shared headers and navigation.
+No permissions, staffing records, migrations or seed data changed in this UI increment. Physical
+phone/product review remains open; no push or production deployment is claimed.
+
+### Staff setup simplification — 7 October 2026 (superseded)
+
+Historical record only. The work-type model below was rejected by the user and replaced by the
+scoped-role implementation above. Its former verification counts describe that older revision.
+
+The current operations priority is implemented locally around one clear administrator entry:
+**Staff setup & leave**. Its tabs are People, Work types, Leave and Settings.
+
+- **People** is the only individual setup surface. A staff record contains descriptive position,
+  active scoped assignments, onboarding and leave balance. Assignments are created from the record.
+- The People directory and an individual staff record are separate mobile pages. Directory rows use
+  the stable `/principal/staff/:staffProfileId` route, and each record returns explicitly to People;
+  a selected profile is never appended below the directory list.
+- An unfinished onboarding checklist remains visible and actionable. Once every check is recorded,
+  the profile replaces it with one compact **Onboarding complete** disclosure; the historical checks
+  remain available on demand without occupying the normal staff-profile workflow.
+- **Work types** lets an institution name supported kinds of work. Each one is based on an immutable
+  platform workflow family; required access, scope kind and safety restrictions are not editable.
+- **Leave** contains leave review and the resulting cover queue. Cover is temporary and does not
+  create another role or permanent responsibility.
+- **My work** is staff self-service only. It is not another administrator configuration surface.
+  The old standalone Roles URL redirects into Staff setup → Work types.
+- The effective-access query no longer joins the legacy role/eligibility tables. Active dated
+  assignments and domain-native staffing records activate their controlled capability packages
+  directly, with resource checks retained in each owning service.
+- Staff onboarding and ordinary invitations no longer ask for a role. Account type remains separate;
+  position and work are completed in Staff setup.
+- Migration `050` adds workflow family, institute clone lineage, revision and update attribution to
+  the work-type catalogue. Migration `051` enforces the lineage at the database boundary: every
+  institute work type must clone a same-institution built-in workflow and keep its scope, capability
+  package, safety restriction and access explanation unchanged.
+- The Cambridge seed contains three institute examples—Primary class guide, Route collector and
+  Exam room supervisor—and an active Class 7A Primary class guide assignment for Kavita Mehta.
+- Legacy role tables and API identifiers remain read-only compatibility details. Dated access
+  exceptions remain an internal support mechanism and are removed from the normal setup experience.
+
+The current contract is [Staff position, work types, assignments and automatic access](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
+Migrations `050` and `051` are applied to the local review database and the repeat-safe demo work
+types and assignment are present. A fresh isolated PostgreSQL database migrated from `001` through
+`051` and loaded the complete demo seed. The full backend regression passes **281 tests in 39 files**;
+the full frontend regression passes **252 tests in 42 files**. Both linters and production builds
+pass. Local API health, database/event readiness, the frontend document and the active ngrok tunnel
+all return success. Physical mobile review by the product owner remains the only local acceptance
+check for this overhaul; no production deployment is claimed.
 
 ## Active delivery: offline assessments and results — 5 October 2026
 
@@ -1377,6 +1521,10 @@ Verification:
 
 ## Staff responsibilities, leave coverage and contextual duties — 3 October 2026
 
+Historical foundation record. The People/Duties split and “My responsibilities” vocabulary below
+were superseded on 7 October 2026 by **People / Work types / Leave / Settings** and **My work**.
+The current architecture contract is linked in the Staff setup simplification section above.
+
 - Added the research-backed product and engineering specification in
   [STAFF_RESPONSIBILITIES_AND_COVERAGE.md](STAFF_RESPONSIBILITIES_AND_COVERAGE.md). It keeps a
   person's account role stable while modelling class ownership, subject teaching, mentoring,
@@ -1479,6 +1627,10 @@ Verification:
 
 
 ## WF-LOCAL-016: Custom school roles and permission assignment
+
+Historical implementation record. The administrator-facing custom-role workflow below was removed
+from normal navigation on 7 October 2026. `/principal/roles` now redirects to **Staff setup → Work
+types**; invitations do not grant a staff role, and effective access comes from current scoped work.
 
 Admins/principals open **More → Roles & permissions** (`/principal/roles`),
 create a named role, choose grouped permission checkboxes, and assign the role
@@ -1930,6 +2082,94 @@ contract tests pass; frontend typecheck/lint/production build pass. The full fro
 passes all 247 tests in 41 files. Physical mobile and real transport-operations
 review remain the final local acceptance gates for this slice.
 
+### Restricted staff navigation correction — 6 October 2026
+
+- Teacher-portal tool cards, bottom navigation and direct route authorization now use one shared
+  permission map. A custom transport role with only `departure.collect` no longer sees or enters
+  assessment marking (`assessments.view`) or report remarks (`reports.comment`). Backend guards
+  remain authoritative for every request.
+- Restricted custom roles now retain a safe **Today** landing page instead of being forced to
+  **More** or into the teaching-day API, which requires `timetable.view`. The page exposes only
+  permission-backed operational links plus the staff member's own scoped responsibilities.
+- Route guards reject unauthorized module URLs before their lazy pages load or issue module API
+  requests. Default teaching roles retain the existing teaching-day home and navigation.
+
+Verified local evidence: frontend typecheck, lint and production build pass; the complete frontend
+regression passes 251 tests in 42 files, including restricted-role visibility, direct-route denial
+and scoped-home coverage. Local preview/API health returns OK. Physical mobile validation with the
+actual Bus Attendant account remains pending.
+
+### Role duty planning and access recommendations — 6 October 2026
+
+Historical implementation record. Its separate Duties and recommendation UI was superseded on
+7 October 2026 by **Staff setup & leave** and automatic access.
+
+- The earlier permission-enforcement proposal was reverted before release. Duty-to-access mapping
+  is advisory: schools may have temporary duties and intentional permission exceptions, and a duty
+  must never silently grant account access.
+- Migration `045_role_duty_planning.sql` adds a school-scoped role-duty relation and recommended
+  permission metadata to the controlled duty catalogue. Transport attendant is represented as a
+  first-class operational duty with `departure.collect` as its access recommendation.
+- The role editor now starts with **duties this role can perform**, derives explainable access
+  recommendations, and offers an explicit **Add recommended** action. Administrators retain final
+  control and can save with recommendation gaps.
+- Actual offered/active appointments and current transport trips are compared with the staff
+  member's custom-role duties. Mismatches are visible in **Roles & permissions** and **Staff
+  operations → Duties**, but do not block role changes, appointments or temporary cover.
+- Existing roles receive a conservative initial duty selection inferred from current permissions;
+  this is reviewable configuration rather than a claim that every inferred duty is correct.
+
+Verified local evidence: migration 045 applied and repeat-safe demo role/transport seeds complete.
+The Cambridge Bus Attendant role is initialized with only **Transport attendant**; its eight existing
+teaching/event appointments are reported as duty-list mismatches rather than permission failures.
+Backend typecheck, lint and production build pass; 75 non-database tests pass and 13 focused role/
+staff integration tests pass against an isolated database. Frontend typecheck, lint and production
+build pass; all 253 tests in 42 files pass, including duty-first recommendation and mismatch UI.
+Physical mobile review remains an acceptance gate.
+
+### Work-profile authorization redesign — 6 October 2026
+
+Historical implementation record. The role/work-profile eligibility layer described below was
+superseded on 7 October 2026 by Position → Work type → Assignment. Migrations `046`–`047` remain in
+the immutable migration history for deployed-schema compatibility, but current authorization no
+longer joins their profile or duty tables. See the current contract linked above.
+
+- Product decision: institution administrators describe work; the platform calculates access.
+  `WORK_PROFILE_ACCESS_ARCHITECTURE.md` is the authoritative vocabulary, invariant and migration
+  contract. Account type, work-profile eligibility, actual scoped responsibilities, internal
+  capability packs and dated access exceptions are distinct concepts.
+- The earlier duty-plus-manual-access editor is superseded. Atomic permission codes remain an
+  internal server enforcement contract and must not appear in the normal administrator workflow.
+- Migrations `046_work_profiles_and_calculated_access.sql` and
+  `047_work_profile_domain_alignment.sql` implement multiple profiles with one
+  presentation-only primary, a controlled capability catalogue, bounded migration continuity and
+  dated, reasoned access exceptions. The effective-access evaluator requires active membership,
+  profile eligibility and a live domain assignment, then leaves concrete resource and workflow
+  checks with the owning service.
+- Work-profile and exception APIs are tenant-scoped, revision checked and audited. Overlapping
+  exceptions for the same outcome are rejected. Assessment, event, transport, cover and protected-
+  care assignment now reject staff who lack matching profile eligibility. Removing
+  eligibility immediately removes derived access while leaving the responsibility visible for
+  administrator review. Realtime fee/event replay uses the same calculated finance authority.
+- The administrator UI now uses templates, plain-language responsibility selection, multiple
+  profile assignment, one primary profile, current-access explanations and a bounded temporary-
+  exception flow. Raw permission and module-access checklists were removed from role and member UI.
+- Auth projection, staff navigation and route guards consume calculated outcomes; backend guards
+  remain authoritative. Existing administrator authority and domain-level class, learner, event,
+  assessment, transport and case checks remain unchanged.
+- The repeat-safe Cambridge demo now gives all 17 active staff at least one profile and exactly one
+  primary profile. It includes seven meaningful profile types, Teaching profiles for 16 academic
+  staff, event profiles for five assigned event staff, Finance, School-office and protected-care
+  examples, and one dated exception for visible review. Migration continuity noise and superseded
+  demo roles are removed only from the reference institution. The full generator and companion
+  role/transport seeds complete successfully on repeated runs.
+
+Verified local evidence: a fresh isolated PostgreSQL database applied migrations 001–047 and loaded the
+complete demo seed. Backend typecheck, lint and production build pass; all 276 backend tests in 37
+files pass against the isolated database. Frontend typecheck, lint and production build pass; all
+251 frontend tests in 42 files pass. Physical mobile review of Work profiles, staff assignment and
+Current access remains the local acceptance gate. This slice is not yet claimed as deployed.
+
 ## Invitation SMTP delivery — 4 October 2026
 
 User request: send company/admin and school-member invitations using the
@@ -1975,3 +2215,109 @@ tests pass; backend typecheck, lint and build, both web typechecks and productio
 builds pass. Live Resend sending is blocked until a valid API key and allowed
 sender are configured. Live Gmail authentication remains unverified. This work
 does not claim email delivery is fixed merely because tests pass.
+
+## Dated transport assignments in staff profiles — 7 October 2026
+
+The four South Bengaluru entries in Kavita Mehta's staff profile are four distinct
+trip records, one for each 3:30 PM departure on 7–10 October, not duplicate role
+grants. The trip pattern prepares dated rosters in advance. The role-binding view
+uses the earlier trip creation date as the access-window start so staff can see and
+accept future work; that window was mistakenly presented in the profile as the
+journey's duration. Route-only labels compounded the confusion. Its generic
+`active` binding status also did not mean a pending collector had accepted a trip.
+
+The staff-assignment read projection now includes each trip's service date, departure
+time, direction, journey state and collector response. The profile and staff self-view
+show the actual dated journey; the administrator profile uses the date as the row
+heading and the route/time/direction beneath it. Pending, scheduled, in-progress,
+completed and cancelled labels reflect the transport record. Date search and
+per-trip accessible action labels distinguish journeys on the same route. The
+underlying trip records, advance-access window and authorization rules are unchanged.
+
+Verified: a fresh disposable PostgreSQL database applied migrations 001–052 and
+the eight staff-operations integration cases passed, including two distinct trip
+projections. All 264 frontend tests in 43 files, including the ten focused profile
+UI cases, pass; frontend/backend typecheck and
+lint and both production builds pass. A live local-preview browser smoke on the
+Cambridge demo showed four distinct dated journeys with their current responses,
+no browser error or horizontal overflow at 390 px; the broader profile smoke also
+passed at 320, 390, 768, 1024 and 1440 px. Physical-phone review remains open.
+
+## More navigation and actionable markers — 7 October 2026
+
+The parent, student, teacher and principal More pages now use one tool catalogue and offer
+the existing two-column grid or a compact settings-style list. The choice is stored per user;
+switching views does not change route access, role filtering, or the parent's selected-child
+links. The student launcher uses the same control and includes its existing destinations.
+
+A small red marker appears only when a supported current action exists. The home APIs expose
+`more_attention` derived from RSVP, guardian consent, event-payment/preparation, leave-signature,
+diary-acknowledgement and attendance-register action projections. A transport-only staff member
+uses the authorized collector journey response for pending trip acceptance or incoming duty swaps;
+the More page does not request the teaching home without `timetable.view`. Informational updates,
+upcoming events, guardian-only decisions in the student view and the bell's unread notification
+total do not create tool markers. Markers are
+deliberately non-numeric: some source projections group or cap actions, so a displayed number
+would imply a complete domain queue that the app does not yet provide. Other modules do not claim
+zero pending work when no marker is shown; the B5 action-inbox contract remains the path to
+complete cross-module counts.
+
+Verified locally: backend and frontend typechecks, lint and production builds pass; the two focused
+badge derivation tests pass; all 267 frontend tests in 43 files pass. A live browser smoke on the
+managed preview showed principal and parent grid/list pages, the parent's real pending Leave
+marker, and no horizontal overflow at 320, 390 or 430 px. The preview health endpoint returned
+OK and the existing ngrok tunnel remained active. Physical-phone/user review remains open; this
+increment has not been deployed to production.
+
+## Grouped More hierarchy across all portals — 7 October 2026
+
+User decision: apply the settings-style hierarchy to **every** institutional view,
+not only admin. Keep the app's theme and primary navigation. Group headings organize
+the same screen; they do not add a layer of navigation. The default is now a compact
+list, while an explicitly saved grid/list preference is retained per account.
+
+| View | Stable groups |
+| --- | --- |
+| Admin | People; Academics; Operations; Institute; Account |
+| Staff | My work; Schedule & activities; Communication & care; Administration (only when delegated); Staff services; Account |
+| Parent / student | Learning; Schedule & attendance; School life; Payments & policies; Account |
+
+Search indexes accessible destinations, familiar task synonyms and the admin's
+nested tasks, displaying each result's location in the hierarchy. Hidden staff
+modules are excluded before grouping/search; empty groups disappear. Parent links
+retain `student_id` in either layout and in search. Existing action-dot semantics
+remain unchanged: this navigation slice does not invent counts or widen access.
+
+Canonical homes and routes:
+
+- Students & guardians owns import, class promotion and family invitations.
+- Staff owns its directory, roles, assignments, leave and staff invitations.
+- A single invitation UI handles contextual entry from People/Staff/Account access,
+  preselects the account type, and returns to the originating module. The older
+  duplicate invitation creation/revocation UI in Administration was removed.
+- Institute settings is a short list leading to Academic setup, Account access,
+  Administrative history and Setup status. Its children have explicit back routes.
+  Completed onboarding is not displayed in More or ongoing academic setup. A
+  Finish setup shortcut appears only for a successfully loaded non-active institution.
+- Timetable & calendar owns the daily plan, weekly timetable and calendar, with
+  shared local navigation. The primary Timetable tab uses the same entry point.
+- Assessments and Report cards stay separate; search can open grading schemes
+  directly. Policies & governance has addressable profile/register tabs.
+- Account security remains findable under Account and is also accessible from the
+  shared profile menu. No additional account-management screen is introduced.
+
+This is navigation/presentation only: existing institutional permissions, protected
+care scope, audit writes, invitations and domain workflows retain their server checks.
+No database migration or reseeding is required. All route URLs remain compatible.
+
+Verified locally: all 286 frontend tests in 46 files passed, including hierarchy,
+permission filtering, selected-child search links, layout persistence, incomplete-only
+setup, contextual invitations and nested settings navigation. A subsequent focused
+report-workspace regression passed after correcting the grading deep link to load
+the scheme detail rather than a report batch. Frontend lint, typecheck and production
+build pass. Live Cambridge demo smoke covered all four More views in grid and list
+at 320, 390, 768, 1024 and 1440 px without horizontal overflow or runtime exceptions.
+Nested settings, invitations, grading, governance profile and planning routes opened
+successfully; a real task-search → staff invitation → back-to-Staff sequence passed.
+The managed preview health/readiness checks and existing ngrok tunnel are healthy.
+Physical-phone/user review remains open. No production deployment is included.

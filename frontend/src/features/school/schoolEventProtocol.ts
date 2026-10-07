@@ -1,6 +1,7 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 export const SCHOOL_EVENT_TYPES = [
+  "staff.access.updated",
   "day_plan.updated",
   "people.updated",
   "coordination.updated",
@@ -24,6 +25,7 @@ export const SCHOOL_EVENT_TYPES = [
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
 
 export const REFRESH_TARGETS = [
+  "staff.access",
   "day-plans",
   "people",
   "coordination",
@@ -81,6 +83,7 @@ interface EventResolution {
 const targetSet = new Set<string>(REFRESH_TARGETS);
 
 const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
+  "staff.access.updated": ["staff.access","teacher.home","teacher.attendance","principal.home"],
   "day_plan.updated": ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "notifications"],
   "people.updated": ["people", "teacher.home", "teacher.attendance", "principal.home", "principal.attendance", "parent.home"],
   "coordination.updated": ["coordination", "parent.home", "teacher.home", "principal.home", "notifications"],
@@ -122,6 +125,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
 };
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
+  { queryKey: ["staff-operations"] },
   { queryKey: ["school"] },
   { queryKey: ["teacher-home"] },
   { queryKey: ["teacher-attendance"] },
@@ -207,6 +211,7 @@ function scopedOperationsInvalidation(
 
 function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPayload, userId?: string): QueryInvalidation[] {
   switch (target) {
+    case "staff.access": return [{queryKey:["staff-operations"]},{queryKey:["roles"]},{queryKey:["assessments"]},{queryKey:["academic-reports"]}];
     case "day-plans": return [{ queryKey: ["school", "day-plans"] }];
     case "people": return [{ queryKey: ["school", "people"] }, { queryKey: ["school", "parent"] }];
     case "coordination": return [{ queryKey: ["school", "coordination"] }];

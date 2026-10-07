@@ -1,32 +1,89 @@
-import { AlertTriangle, BookOpenCheck, Building2, CheckCircle2, ChevronRight, ClipboardCheck, FileClock, History, Scale, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, Building2, CheckCircle2, ChevronRight, ClipboardCheck, FileClock, History, Landmark, Route, Scale, ShieldCheck, UserRoundCheck, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
-import { reviewPolicy, savePolicyDraft, submitPolicy, updateRegulatoryProfile, type GovernanceWorkspace, type PolicyFamily } from "./api";
+import { prepareAuthorityDraft, reviewPolicy, savePolicyDraft, submitPolicy, updateRegulatoryProfile, type AuthorityWorkspace, type GovernanceWorkspace, type PolicyFamily } from "./api";
 import "./governance.css";
 
-type Tab = "register" | "profile" | "history";
+type Tab = "authority" | "register" | "profile" | "history";
 const label = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const formatDate = (value: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
 
 export function GovernanceAdminPage({ schoolId, schoolName, data, refresh }: { schoolId: string; schoolName?: string; data: GovernanceWorkspace; refresh: () => Promise<void> }) {
-  const [tab, setTab] = useState<Tab>("register");
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("section");
+  const tab: Tab = requested === "register" || requested === "profile" || requested === "history" ? requested : "authority";
+  const setTab = (next: Tab) => setParams(current => { current.set("section", next); return current; });
   const [selected, setSelected] = useState<PolicyFamily | null>(null);
-  return <OperationsShell portal="principal" active="more" title="Policies & compliance" schoolName={schoolName} backTo="/principal/more">
+  return <OperationsShell portal="principal" active="more" title="Policies & governance" schoolName={schoolName} backTo="/principal/more">
     <div className="governance-page">
-      <section className="governance-summary" aria-label="Policy readiness summary">
-        <div><span className="governance-summary__icon"><Scale size={24} /></span><div><small>{label(data.profile.institution_kind)} governance</small><h1>Policy centre</h1><p>Institution-owned rules, review evidence and member acknowledgements.</p></div></div>
-        <dl><div><dt>Applicable</dt><dd>{data.metrics.applicable}</dd></div><div><dt>Published</dt><dd>{data.metrics.published}</dd></div><div><dt>In review</dt><dd>{data.metrics.in_review}</dd></div><div className={data.metrics.review_due ? "is-alert" : ""}><dt>Review due</dt><dd>{data.metrics.review_due}</dd></div></dl>
+      <section className="governance-summary" aria-label="Governance readiness summary">
+        <div><span className="governance-summary__icon"><Scale size={24} /></span><div><small>{label(data.profile.institution_kind)} governance</small><h1>Authority & policies</h1><p>Decision powers, officeholders and adopted rules.</p></div></div>
+        <dl><div><dt>Sources</dt><dd>{data.authority.metrics.sources}</dd></div><div><dt>Officeholders</dt><dd>{data.authority.metrics.active_appointments}</dd></div><div><dt>Decision routes</dt><dd>{data.authority.metrics.confirmed_rules}</dd></div><div className={data.authority.metrics.needs_review ? "is-alert" : ""}><dt>Needs review</dt><dd>{data.authority.metrics.needs_review}</dd></div></dl>
       </section>
-      <p className="governance-boundary"><ShieldCheck size={18} /><span><strong>School review required.</strong> This workspace records your institution’s decisions; it does not certify legal compliance.</span></p>
+      <p className="governance-boundary"><ShieldCheck size={18} /><span><strong>Institution review required.</strong> App access does not create decision authority.</span></p>
       <nav className="governance-tabs" aria-label="Governance sections">
+        <button className={tab === "authority" ? "is-active" : ""} onClick={() => setTab("authority")}><Landmark size={17} />Authority</button>
         <button className={tab === "register" ? "is-active" : ""} onClick={() => setTab("register")}><BookOpenCheck size={17} />Policy register</button>
         <button className={tab === "profile" ? "is-active" : ""} onClick={() => setTab("profile")}><Building2 size={17} />Institution profile</button>
         <button className={tab === "history" ? "is-active" : ""} onClick={() => setTab("history")}><History size={17} />History</button>
       </nav>
-      {tab === "register" ? <PolicyRegister families={data.families} onSelect={setSelected} /> : tab === "profile" ? <ProfileForm schoolId={schoolId} data={data} refresh={refresh} /> : <AuditHistory items={data.audits} />}
+      {tab === "authority" ? <AuthorityMap schoolId={schoolId} institutionKind={data.profile.institution_kind} data={data.authority} refresh={refresh} /> : tab === "register" ? <PolicyRegister families={data.families} onSelect={setSelected} /> : tab === "profile" ? <ProfileForm schoolId={schoolId} data={data} refresh={refresh} /> : <AuditHistory items={data.audits} />}
       {selected ? <PolicyEditor key={`${selected.id}:${selected.work_revision ?? 0}`} schoolId={schoolId} family={selected} onClose={() => setSelected(null)} onChanged={async () => { await refresh(); setSelected(null); }} /> : null}
     </div>
   </OperationsShell>;
+}
+
+function AuthorityMap({ schoolId, institutionKind, data, refresh }: { schoolId: string; institutionKind: string; data: AuthorityWorkspace; refresh: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  async function prepare(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); const values = new FormData(event.currentTarget);
+    const text = (name: string) => {
+      const value = values.get(name);
+      return typeof value === "string" ? value.trim() : "";
+    };
+    try {
+      await prepareAuthorityDraft(schoolId, {
+        legal_operator_name: text("legal_operator_name"), lead_officeholder_name: text("lead_officeholder_name"),
+        lead_is_current_user: values.has("lead_is_current_user"), authority_basis_title: text("authority_basis_title"),
+        authority_reference: text("authority_reference"),
+      });
+      await refresh();
+    } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); }
+  }
+  if (!data.sources.length) return <section className="governance-panel governance-authority-start">
+    <header><div><span className="governance-panel__icon"><Landmark size={20} /></span><div><h2>Set up decision authority</h2><p>The app prepares the structure from four facts.</p></div></div></header>
+    <form className="governance-form" onSubmit={(event) => void prepare(event)}>
+      <div className="governance-auto-note"><Route size={18} /><span><strong>{label(institutionKind)} starting model</strong> Offices, bodies and routine decision routes will be prepared as a draft.</span></div>
+      <div className="governance-form-grid">
+        <label>Who operates the institution?<input name="legal_operator_name" required minLength={2} placeholder="Trust, society, company or proprietor" /></label>
+        <label>Who leads daily operations?<input name="lead_officeholder_name" required minLength={2} placeholder="Full name" /></label>
+        <label>Authority record<input name="authority_basis_title" required minLength={3} placeholder="Trust deed, scheme or owner declaration" /></label>
+        <label>Reference <small>Optional for a self-run coaching workspace</small><input name="authority_reference" placeholder="Document number or link" /></label>
+      </div>
+      <label className="governance-checkbox"><input type="checkbox" name="lead_is_current_user" /> I am the named daily operations lead</label>
+      {error ? <p className="governance-error" role="alert">{error}</p> : null}
+      <footer><button className="governance-primary" disabled={busy}>{busy ? "Preparing…" : "Prepare authority draft"}</button></footer>
+    </form>
+  </section>;
+
+  return <div className="governance-authority-grid">
+    {data.issues.length ? <section className="governance-review-strip" aria-label="Authority items needing review">
+      {data.issues.map((issue) => <div key={issue.code}><span>{issue.count}</span><p>{issue.label}</p></div>)}
+    </section> : <p className="governance-authority-ready"><ShieldCheck size={18} /> Current authority map is confirmed.</p>}
+    <section className="governance-panel governance-decision-map"><header><div><span className="governance-panel__icon"><Route size={20} /></span><div><h2>Who can decide what?</h2><p>{data.rules.length} recorded routes</p></div></div></header>
+      <div className="governance-decision-list">{data.rules.map((rule) => <article key={rule.id}>
+        <div><span className={`governance-rule-state governance-rule-state--${rule.status}`}>{rule.status === "confirmed" ? "Confirmed" : "Review"}</span><small>{label(rule.category)}</small></div>
+        <h3>{rule.title}</h3><p>{rule.decision_summary}</p>
+        <dl><div><dt>Route</dt><dd>{rule.decision_body_title ?? rule.decision_office_title ?? rule.mandate_title ?? label(rule.decision_mode)}</dd></div><div><dt>Then</dt><dd>{rule.execution_summary}</dd></div></dl>
+      </article>)}</div>
+    </section>
+    <section className="governance-authority-columns">
+      <div className="governance-panel"><header><div><span className="governance-panel__icon"><UserRoundCheck size={20} /></span><div><h2>Offices</h2><p>Current officeholders</p></div></div><b>{data.offices.length}</b></header><ul className="governance-compact-list">{data.offices.map((office) => <li key={office.id}><span><strong>{office.title}</strong><small>{[office.first_name, office.last_name].filter(Boolean).join(" ") || "Vacant"}</small></span><b className={`governance-state governance-state--${office.appointment_status ?? "missing"}`}>{office.appointment_status ?? "Vacant"}</b></li>)}</ul></div>
+      <div className="governance-panel"><header><div><span className="governance-panel__icon"><Landmark size={20} /></span><div><h2>Bodies</h2><p>Collective authorities</p></div></div><b>{data.bodies.length}</b></header><ul className="governance-compact-list">{data.bodies.map((body) => <li key={body.id}><span><strong>{body.title}</strong><small>{body.filled_seats} of {body.seat_count} seats filled</small></span><b>{body.status}</b></li>)}</ul></div>
+    </section>
+    <section className="governance-source-line"><strong>Authority sources</strong>{data.sources.map((source) => <span key={source.id}><ShieldCheck size={14} />{source.title}<b>{label(source.verification_state)}</b></span>)}</section>
+  </div>;
 }
 
 function PolicyRegister({ families, onSelect }: { families: PolicyFamily[]; onSelect: (family: PolicyFamily) => void }) {

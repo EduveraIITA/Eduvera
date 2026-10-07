@@ -316,6 +316,15 @@ describe.skipIf(!isolated)("campus event business rules", () => {
       ORDER BY assignment.id
     `, [schoolId, classId, teacher.authUser.id, subjectId])).rows;
     expect(assignments.length).toBeGreaterThan(0);
+    // Roles are additive: expire direct contextual grants as well as native
+    // teaching records when testing removal of all class-test authority.
+    const directAssignments=(await pool.query<{id:string;starts_on:string;ends_on:string|null}>(`
+      SELECT a.id,a.starts_on::text,a.ends_on::text FROM staff_responsibility_assignments a
+      JOIN staff_profiles p ON p.id=a.staff_profile_id
+      JOIN staff_responsibility_types r ON r.id=a.responsibility_type_id
+      WHERE a.school_id=$1 AND a.class_section_id=$2 AND p.user_id=$3 AND a.status='active'
+        AND 'events.manage'=ANY(r.capability_permissions) AND (a.subject_id IS NULL OR a.subject_id=$4)
+    `,[schoolId,classId,teacher.authUser.id,subjectId])).rows;
     const expiredOn = (await pool.query<{ value: string }>(`
       SELECT (($1::timestamptz AT TIME ZONE school.timezone)::date - 1)::text AS value
       FROM class_section_staff_assignments assignment
@@ -324,6 +333,7 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     `, [validStart, assignments[0]!.id])).rows[0]!.value;
 
     try {
+      await pool.query("UPDATE staff_responsibility_assignments SET starts_on=LEAST(starts_on,$1::date),ends_on=$1::date WHERE id=ANY($2::uuid[])",[expiredOn,directAssignments.map((item)=>item.id)]);
       await pool.query(`
         UPDATE class_section_staff_assignments
         SET valid_from=LEAST(valid_from,$1::date),valid_until=$1::date
@@ -339,6 +349,7 @@ describe.skipIf(!isolated)("campus event business rules", () => {
         [draft.id],
       )).rows[0]?.status).toBe("draft");
     } finally {
+      for(const assignment of directAssignments)await pool.query("UPDATE staff_responsibility_assignments SET starts_on=$1::date,ends_on=$2::date WHERE id=$3",[assignment.starts_on,assignment.ends_on,assignment.id]);
       for (const assignment of assignments) {
         await pool.query(
           "UPDATE class_section_staff_assignments SET valid_from=$1::date,valid_until=$2::date WHERE id=$3",
@@ -377,6 +388,21 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     const adminView = await service.detail(principal.authUser, picnicId, schoolId);
     expect(adminView.permissions.can_view_finance_details).toBe(true);
     expect(adminView.viewer_participants.some((row) => row.fee_invoice_id && row.payment_amount_paise > 0)).toBe(true);
+  });
+
+  it("removes event access when the concrete event assignment ends", async () => {
+    const assignment = (await pool.query<{ role: string }>(`
+      SELECT role FROM campus_event_staff
+      WHERE school_id=$1 AND event_id=$2 AND user_id=$3
+    `, [schoolId, picnicId, picnicDutyStaff.authUser.id])).rows[0]!;
+    try {
+      await pool.query("DELETE FROM campus_event_staff WHERE school_id=$1 AND event_id=$2 AND user_id=$3", [schoolId, picnicId, picnicDutyStaff.authUser.id]);
+      await expect(service.detail(picnicDutyStaff.authUser, picnicId, schoolId)).rejects.toThrow(/not found|accessible/i);
+    } finally {
+      await pool.query(`INSERT INTO campus_event_staff(school_id,event_id,user_id,role)
+        VALUES($1,$2,$3,$4) ON CONFLICT(event_id,user_id) DO UPDATE SET role=excluded.role`,
+      [schoolId, picnicId, picnicDutyStaff.authUser.id, assignment.role]);
+    }
   });
 
   it("projects only the selected family's child and keeps register locking separate from marking", async () => {

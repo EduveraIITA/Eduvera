@@ -17,6 +17,12 @@ university-affiliated college, skill/vocational and coaching-centre requirements
 must add its own applicability evidence and acceptance tests; it must not silently reuse school
 rules.
 
+Governance authority is now a separate first-class layer. The detailed, superseding architecture is
+[Institute governance, authority and mobile operations](INSTITUTE_GOVERNANCE_AUTHORITY_ARCHITECTURE.md).
+Policy drafting access does not authorise policy adoption. Office, body, seat, appointment, mandate and
+decision-matter records establish the source-backed route; technical access remains governed by
+[Work profiles, assignments and calculated access](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
+
 ## Slice plan and progress
 
 | Slice | Outcome | State | Verification evidence |
@@ -31,6 +37,9 @@ rules.
 | G8 | Inclusion, health, emergency and reasonable-accommodation workflow | Planned | Restricted-data boundary required |
 | G9 | Staff service records, POSH committee/training and statutory reminders | Planned | Employment-law/state applicability review required |
 | G10 | Public disclosures, evidence register and inspection export | Planned | Regulator-specific templates required |
+| A1 | Authority sources, offices, bodies, seats, appointments, mandates and decision map | Implemented locally; UI sign-off pending | Migration 048; guided setup API/UI; Cambridge verified fixture |
+| A2 | Protected adoption, appointment evidence, vacancy/expiry continuity | Planned | Must use current authority; no self-adoption |
+| A3 | Complete collective decision procedure and resolution | Planned | Eligibility, conflicts, quorum, threshold and certification required |
 
 ## G1-G4 scope
 

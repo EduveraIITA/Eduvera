@@ -13,7 +13,6 @@ const CompanyPage=lazy(()=>import('./features/onboarding/CompanyPage'));
 const SelfServiceOnboardingPage=lazy(()=>import('./features/onboarding/SelfServiceOnboardingPage'));
 const JoinPage=lazy(()=>import('./features/onboarding/JoinPage'));
 const InvitationsPage=lazy(()=>import('./features/onboarding/InvitationsPage'));
-const RolesPage = lazy(() => import("./features/roles/RolesPage"));
 
 const LoginPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).LoginPage,
@@ -268,11 +267,12 @@ export function App() {
               <Route path="/principal/timetable/weekly" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
               <Route path="/principal/students" element={<PortalOnly portal="principal"><PeoplePage /></PortalOnly>} />
               <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
-              <Route path="/principal/roles" element={<PortalOnly portal="principal"><RolesPage /></PortalOnly>} />
+              <Route path="/principal/roles" element={<PortalOnly portal="principal"><Navigate to="/principal/staff?section=roles" replace /></PortalOnly>} />
               <Route path="/principal/administration" element={<PortalOnly portal="principal"><AdministrationPage /></PortalOnly>} />
               <Route path="/principal/activation" element={<PortalOnly portal="principal"><InstitutionActivationPage /></PortalOnly>} />
               <Route path="/principal/fees" element={<PortalOnly portal="principal"><FeeLedgerPage /></PortalOnly>} />
               <Route path="/principal/staff" element={<PortalOnly portal="principal"><PrincipalStaffRoute /></PortalOnly>} />
+              <Route path="/principal/staff/:staffProfileId" element={<PortalOnly portal="principal"><PrincipalStaffRoute /></PortalOnly>} />
               <Route path="/principal/messages" element={<PortalOnly portal="principal"><PrincipalChatRoute /></PortalOnly>} />
               <Route path="/principal/safeguarding" element={<PortalOnly portal="principal"><PrincipalSafeguardingRoute /></PortalOnly>} />
               <Route path="/principal/events" element={<PortalOnly portal="principal"><PrincipalEventsRoute /></PortalOnly>} />

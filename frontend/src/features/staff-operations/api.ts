@@ -1,4 +1,5 @@
 import { apiFetch } from "../../lib/api";
+import type { AccessRole, RoleAssignment, RoleOptions } from "./access-api";
 
 export interface StaffProfile {
   id: string; user_id: string | null; staff_code: string; first_name: string; last_name: string;
@@ -11,7 +12,8 @@ export interface OnboardingItem { id: string; staff_profile_id: string; item_key
 export interface LeavePolicy { id: string; academic_year: string; code: string; name: string; annual_allowance: string; carry_forward_limit: string; requires_document_after_days: string | null; is_paid: boolean; is_statutory: boolean; is_active: boolean; revision: number }
 export interface LeaveBalance { staff_profile_id?: string; policy_id: string; code: string; name: string; annual_allowance: string; adjustments: string; used: string; pending: string; carry_forward_limit?: string; requires_document_after_days?: string | null; is_paid?: boolean; is_statutory?: boolean; academic_year?: string }
 export interface StaffLeaveRequest { id: string; staff_profile_id: string; policy_id: string; policy_name: string; policy_code: string; first_name: string; last_name: string; staff_code: string; designation: string; starts_on: string; ends_on: string; portion: "full_day" | "first_half" | "second_half"; requested_days: string; reason: string; handover_note: string; status: "submitted" | "approved" | "rejected" | "withdrawn"; revision: number; decision_note: string; submitted_at: string; affected_periods: number; coverage_tasks?: number; coverage_open?: number }
-export interface ResponsibilityType { id: string; code: string; name: string; category: "academic" | "student_support" | "event" | "examination" | "operations" | "governance"; scope_kind: "school" | "class_section" | "event" | "scheduled_duty"; description: string; access_summary: string; requires_acceptance: boolean; restricted: boolean }
+export interface WorkType { id: string; code: string; name: string; category: "academic" | "student_support" | "event" | "examination" | "operations" | "governance"; scope_kind: "school" | "class_section" | "event" | "scheduled_duty"; workflow_family: string; source_kind: "system" | "institute"; cloned_from_type_id: string | null; description: string; access_summary: string; requires_acceptance: boolean; restricted: boolean; is_active: boolean; revision: number; active_assignment_count?: number }
+export type ResponsibilityType = WorkType;
 export interface ResponsibilityAssignment {
   id: string; responsibility_type_id: string; staff_profile_id: string; type_code: string; type_name: string;
   category: ResponsibilityType["category"]; scope_kind: ResponsibilityType["scope_kind"];
@@ -31,7 +33,7 @@ export interface CoverageTask {
   status: "open" | "offered" | "accepted" | "declined" | "completed" | "cancelled";
   handover_note: string; response_note: string; revision: number;
 }
-interface ResponsibilityWorkspace { responsibility_types: ResponsibilityType[]; assignments: ResponsibilityAssignment[]; coverage_tasks: CoverageTask[] }
+interface ResponsibilityWorkspace { access_roles?: AccessRole[]; role_assignments?: RoleAssignment[]; role_options?: RoleOptions; work_types: WorkType[]; responsibility_types: WorkType[]; assignments: ResponsibilityAssignment[]; coverage_tasks: CoverageTask[] }
 export interface AdminStaffWorkspace extends ResponsibilityWorkspace { mode: "admin"; academic_year: string; profiles: StaffProfile[]; onboarding_items: OnboardingItem[]; policies: LeavePolicy[]; balances: LeaveBalance[]; requests: StaffLeaveRequest[]; references: { classes: { id: string; name: string }[]; subjects: { id: string; name: string }[]; events: { id: string; title: string; starts_at: string; ends_at: string }[] } }
 export interface TeacherStaffWorkspace extends ResponsibilityWorkspace { mode: "staff"; academic_year: string; profile: StaffProfile; policies: LeavePolicy[]; balances: LeaveBalance[]; requests: StaffLeaveRequest[] }
 export type StaffWorkspace = AdminStaffWorkspace | TeacherStaffWorkspace;

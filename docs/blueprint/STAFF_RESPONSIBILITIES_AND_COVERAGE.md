@@ -1,8 +1,15 @@
 # Staff Responsibilities & Coverage
 
-**Status:** implemented release design  
-**Date:** 3 October 2026  
-**Scope:** Indian K–12 schools; principal and staff mobile workflows
+**Status:** historical domain foundation; administrator model superseded
+**Date:** updated 7 October 2026
+**Scope:** configurable schools, colleges and coaching institutions; administrator and staff mobile workflows
+
+The assignment, leave-cover, conflict and audit requirements in this document remain valid. Its
+former fixed “responsibility catalogue”, Duties board and work-profile references are no longer the
+administrator experience. The authoritative current model is
+[Roles and contextual assignments](WORK_PROFILE_ACCESS_ARCHITECTURE.md):
+institutes use built-in or custom roles containing supported actions, and assign people to those
+roles with scope and dates. There is no second work-type catalogue or role/duty eligibility gate.
 
 ## 1. Product decision
 
@@ -25,7 +32,7 @@ Payroll, salary, performance surveillance, disciplinary casework, biometric moni
 
 ## 2. Evidence and school operating model
 
-The design follows the repository blueprint rule that assignments need scope, effective dates, backups and revocation, and that authorization must combine role with relationship and purpose.
+The design follows the repository blueprint rule that assignments need scope, effective dates, backups and revocation, and that authorization must combine active membership, assignment, relationship and purpose. A generic staff role is not a second eligibility gate.
 
 It also reflects Indian school operations:
 
@@ -44,7 +51,7 @@ These sources support the operating pattern; they do not create a uniform statut
 | Student support | Student mentor | Class/cohort | Required; restricted |
 | Event | Coordinator, judge, escort, attendance lead | One event | Required; judge and escort are restricted |
 | Examination | Exam in-charge, invigilator, internal examiner | Named dated duty | Required; restricted |
-| Operations | School duty | Date, time, location | Required |
+| Operations | School duty, transport attendant | Date, time, location or assigned journey | Required |
 | Governance | Safety officer, committee member | Named school-wide scope | Required; restricted |
 
 School-created arbitrary permission codes are intentionally not supported. The catalogue is controlled because each type carries a known scope shape, acceptance rule and access explanation.
@@ -63,6 +70,16 @@ School-created arbitrary permission codes are intentionally not supported. The c
 - Non-acceptance types activate immediately.
 - Every transition is written to a domain audit table and the school operations audit.
 - Notifications use the transactional outbox.
+- A work profile lists the controlled responsibilities the staff member is eligible to perform. It
+  does not activate access without actual assigned work.
+- An active, in-date appointment activates the platform-owned capability pack only when a current
+  work profile contains the same responsibility type.
+- Creating an incompatible appointment is rejected. If a profile is removed after appointment,
+  the appointment remains visible for correction but stops activating access immediately.
+- Legitimate work that the responsibility catalogue cannot express uses a dated, reasoned access
+  exception. Technical permission checklists are not exposed in the normal administrator workflow.
+- The complete authorization contract is defined in
+  [Work profiles, assignments and calculated access](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
 
 ### Coverage
 
@@ -81,6 +98,8 @@ The current UI does not expose manual completion/cancellation because those tran
 ## 5. Data ownership
 
 - `staff_responsibility_types`: school catalogue, scope shape and safety metadata.
+- `school_custom_role_duties`: responsibility eligibility selected for each work profile; profile
+  membership alone grants no operational access.
 - `staff_responsibility_assignments`: staff, purpose, scope links, dates, optional time/location, backup and lifecycle.
 - `staff_responsibility_audits`: immutable assignment transitions.
 - `staff_coverage_tasks`: one actionable duty created from approved leave.
@@ -130,6 +149,8 @@ All records carry `school_id`; database constraint triggers reject cross-school 
 8. Every state change produces audit evidence; notification-worthy changes use the outbox.
 9. Principal and teacher views remain usable at a 390-pixel phone width with visible focus states and 40-pixel-or-larger actions.
 10. Migration, backend integration, frontend interaction, typecheck, lint and production builds pass before release.
+11. Work-profile eligibility plus an active scoped appointment produces explainable calculated
+    access; incompatible new appointments are blocked and existing mismatches are visible for review.
 
 ## 9. Follow-on domain work
 

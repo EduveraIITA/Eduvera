@@ -163,6 +163,7 @@ export interface ParentHomeResponse {
   ranking?: ApiAttendanceRanking;
   action_required: ApiLeaveRequest | null;
   home_actions: HomeAction[];
+  more_attention?: Record<string, number>;
   today_schedule: ApiTimetableSlot[];
   diary_preview: ApiDiaryItem[];
   unread_notifications: number;
@@ -262,6 +263,7 @@ export interface StudentHomeResponse {
   active_leave_count: number;
   unread_notifications: number;
   home_actions: HomeAction[];
+  more_attention?: Record<string, number>;
 }
 
 export interface StudentEligibilityResponse {

@@ -11,7 +11,7 @@ export const PERMISSIONS = [
   { code: "attendance.record", group: "Attendance", label: "Record attendance", description: "Submit and correct attendance in assigned classes, including offline batches." },
   { code: "photo.use", group: "Attendance", label: "Use photo attendance", description: "Review photo attendance and manage samples within the existing authorised class scope." },
   { code: "timetable.view", group: "Teaching", label: "View timetable and day plans", description: "Read published teaching schedules and assigned day plans." },
-  { code: "dayplans.respond", group: "Teaching", label: "Respond to cover duties", description: "Accept or decline assigned day-plan coverage." },
+  { code: "dayplans.respond", group: "Teaching", label: "Respond to cover assignments", description: "Accept or decline assigned day-plan coverage." },
   { code: "followups.manage", group: "Coordination", label: "Manage attendance follow-ups", description: "Raise and review follow-ups for assigned students; guardian rights remain separate." },
   { code: "messages.view", group: "Communication", label: "Read school messages", description: "Read conversations and permitted recipients under existing messaging relationships." },
   { code: "messages.send", group: "Communication", label: "Send school messages", description: "Start conversations, send and edit own messages and upload attachments." },

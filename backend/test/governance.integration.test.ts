@@ -70,6 +70,32 @@ suite("institution governance and policy lifecycle against disposable PostgreSQL
     expect((await request(adminCookies, path("profile"), input, "PATCH")).status).toBe(409);
   });
 
+  it("prepares a source-backed authority draft without treating app access as adopted power", async () => {
+    const prepared = await request(adminCookies, path("authority/draft"), {
+      legal_operator_name: "Governance Test Trust",
+      lead_officeholder_name: "Meera Kapoor",
+      lead_is_current_user: true,
+      authority_basis_title: "Governance Test Trust management scheme",
+      authority_reference: "GTT-GOV-2026-01",
+    });
+    expect(prepared.status).toBe(201);
+    expect(prepared.data.sources).toContainEqual(expect.objectContaining({
+      code: "institution_foundation", verification_state: "recorded",
+    }));
+    expect(prepared.data.offices).toContainEqual(expect.objectContaining({
+      code: "principal", appointment_status: "proposed",
+    }));
+    expect(prepared.data.rules).toContainEqual(expect.objectContaining({
+      code: "routine_learning_record", status: "suggested", decision_mode: "standing",
+    }));
+    expect(prepared.data.issues).toContainEqual(expect.objectContaining({ code: "source_review" }));
+    expect((await request(staffCookies, path("authority"))).status).toBe(403);
+    expect((await request(adminCookies, path("authority/draft"), {
+      legal_operator_name: "Duplicate", lead_officeholder_name: "Another Person",
+      authority_basis_title: "Duplicate scheme", authority_reference: "DUP-1",
+    })).status).toBe(409);
+  });
+
   it("drafts, submits and publishes an immutable policy with an explicit single-admin override", async () => {
     const draft = await request(adminCookies, path("policies/child_protection/draft"), {
       title: "Child protection and mandatory reporting", summary: "How our institution protects children and responds to concerns.",

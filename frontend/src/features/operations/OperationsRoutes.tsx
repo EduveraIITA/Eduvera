@@ -14,6 +14,8 @@ import {
 import { AttendanceWorkspacePage } from "../../pages/operations/AttendanceWorkspacePage";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../auth/AuthContext";
+import { ScopedStaffHomePage } from "../auth/ScopedStaffHomePage";
+import { currentStaffMembership, hasStaffPermission } from "../auth/staffAccess";
 import {
   applyQueuedCapture,
   attendanceDeviceId,
@@ -150,6 +152,14 @@ function useDateParam() {
 }
 
 export function TeacherHomeRoute() {
+  const auth = useAuth();
+  const member = currentStaffMembership(auth.memberships);
+  if (!member) return null;
+  if (!hasStaffPermission(member, "timetable.view")) return <ScopedStaffHomePage member={member} />;
+  return <TeachingDayHomeRoute />;
+}
+
+function TeachingDayHomeRoute() {
   const [date, setDate] = useDateParam();
   const query = useQuery({ queryKey: ["teacher-home", date], queryFn: () => getTeacherHome(date) });
   if (query.isPending) return <Loading />;

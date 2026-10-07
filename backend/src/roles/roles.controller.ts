@@ -10,4 +10,7 @@ export class RolesController {
   @Patch(":id/") update(@Req() req: AuthenticatedRequest,@Param("schoolId") school: string,@Param("id") id: string) { return this.roles.save(req.authUser,school,req.body,id); }
   @Post(":id/delete/") remove(@Req() req: AuthenticatedRequest,@Param("schoolId") school: string,@Param("id") id: string) { return this.roles.remove(req.authUser,school,id,req.body); }
   @Post("members/:userId/assignment/") assign(@Req() req: AuthenticatedRequest,@Param("schoolId") school: string,@Param("userId") member: string) { return this.roles.assign(req.authUser,school,member,req.body); }
+  @Get("members/:userId/access/") memberAccess(@Req() req: AuthenticatedRequest,@Param("schoolId") school: string,@Param("userId") member: string) { return this.roles.memberAccess(req.authUser,school,member); }
+  @Post("members/:userId/exceptions/") addException(@Req() req: AuthenticatedRequest,@Param("schoolId") school: string,@Param("userId") member: string) { return this.roles.addException(req.authUser,school,member,req.body); }
+  @Post("exceptions/:id/revoke/") revokeException(@Req() req: AuthenticatedRequest,@Param("schoolId") school: string,@Param("id") id: string) { return this.roles.revokeException(req.authUser,school,id,req.body); }
 }

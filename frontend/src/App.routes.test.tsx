@@ -29,6 +29,7 @@ const user = {
 };
 
 function mockSession(membershipRoles: Array<"guardian" | "student" | "staff"> = ["guardian", "student"]) {
+  const staffPermissions=["attendance.view","attendance.record","photo.use","timetable.view","dayplans.respond","followups.manage","messages.view","messages.send","groups.create","safeguarding.review","events.view","events.manage","events.attendance","assessments.view","assessments.mark","assessments.moderate","reports.comment","departure.collect","ai.use"];
   apiFetchMock.mockImplementation((path: string) => {
     if (path === "/api/v1/auth/session/") {
       return Promise.resolve({ authenticated: true, user, csrf_token: "csrf", demo_mode: true });
@@ -43,11 +44,31 @@ function mockSession(membershipRoles: Array<"guardian" | "student" | "staff"> = 
           school_name: "Cambridge International School",
           role,
         })),
+        school_permissions: membershipRoles.includes("staff") ? [{school_id:"school-1",permissions:staffPermissions,custom_role:{id:"teaching",name:"Teaching staff"}}] : [],
         demo_mode: true,
       });
     }
     if (path === "/api/v1/onboarding/workspace/") {
       return Promise.resolve({ applications: [], coaching_workspaces: [] });
+    }
+    return Promise.resolve(schoolApiFixture(path));
+  });
+}
+
+function mockCustomStaffSession(permissions: string[]) {
+  const staffUser = { ...user, role: "staff" as const, username: "rashmi.attendant", display_name: "Rashmi Joshi" };
+  apiFetchMock.mockImplementation((path: string) => {
+    if (path === "/api/v1/auth/session/") {
+      return Promise.resolve({ authenticated: true, user: staffUser, csrf_token: "csrf", demo_mode: true });
+    }
+    if (path === "/api/v1/auth/me/") {
+      return Promise.resolve({
+        user: staffUser,
+        students: [],
+        memberships: [{ id: "membership-1", school_id: "school-1", school_name: "Cambridge International School", role: "staff" }],
+        school_permissions: [{ school_id: "school-1", permissions, custom_role: null }],
+        demo_mode: true,
+      });
     }
     return Promise.resolve(schoolApiFixture(path));
   });
@@ -84,6 +105,47 @@ const implementedScreenRoutes: RouteSmokeCase[] = [
 ];
 
 describe("implemented application routes", () => {
+  it("keeps a permission-scoped staff home available without loading the teaching-day API", async () => {
+    mockCustomStaffSession(["departure.collect"]);
+    const { container } = render(<MemoryRouter initialEntries={["/teacher"]}><App /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "Today’s assigned work" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Transport journey/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /My work/ })).toBeVisible();
+    expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
+    expect(container.querySelectorAll(".operations-mobile-nav a")).toHaveLength(2);
+    expect(container.querySelector(".operations-mobile-nav")?.textContent).toBe("TodayMore");
+  });
+
+  it("hides and guards modules that current work assignments did not grant", async () => {
+    mockCustomStaffSession(["departure.collect"]);
+    render(<MemoryRouter initialEntries={["/teacher/more"]}><App /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "My work" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Transport journey/ })).toBeVisible();
+    expect(screen.queryByText("Assessments & marking")).not.toBeInTheDocument();
+    expect(screen.queryByText("Report remarks")).not.toBeInTheDocument();
+
+    cleanup();
+    mockCustomStaffSession(["departure.collect"]);
+    render(<MemoryRouter initialEntries={["/teacher/assessments"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Today’s assigned work" })).toBeVisible();
+    expect(apiFetchMock.mock.calls.some(([path]) => String(path).includes("/assessments/"))).toBe(false);
+  });
+
+  it("shows transport actions without requesting a teaching home for transport-only staff", async () => {
+    mockCustomStaffSession(["departure.collect"]);
+    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint === "/api/v1/departure/collector/"
+      ? Promise.resolve({ trips: [{ assigned_collector_user_id: "user-1", service_date: "2099-01-01", state: "planned", collector_assignment_status: "pending" }],
+        swaps: [{ target_user_id: "user-1", status: "submitted" }] })
+      : original(endpoint));
+    render(<MemoryRouter initialEntries={["/teacher/more"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("link", { name: "Open Transport journey, action needed" })).toBeVisible();
+    expect(screen.queryByText("Assessments & marking")).not.toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
+  });
+
   it.each(implementedScreenRoutes)("renders $path for an authorized session", async ({ path, heading }) => {
     render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: heading }, { timeout: 5000 })).toBeVisible();
@@ -175,7 +237,7 @@ describe("implemented application routes", () => {
   it("renders a real launcher instead of silently changing portals", async () => {
     render(<MemoryRouter initialEntries={["/student/apps"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "More" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Attendance" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Attendance" })).toHaveAttribute("href", "/student/attendance");
   });
 
   it("keeps one established primary navigation destination selected on every event portal", async () => {
@@ -562,6 +624,29 @@ describe("implemented application routes", () => {
     expect(await screen.findByRole("heading",{name:"More",level:1})).toBeVisible();
     await waitFor(()=>expect(view.container.querySelector(".parent-app")).toHaveAttribute("data-child-accent","violet"));
     expect(screen.getByRole("link",{name:"Open Results"})).toHaveAttribute("href","/parent/results?student_id=student-2");
+  });
+
+  it("shows only actionable More badges and remembers the list layout", async () => {
+    window.localStorage.removeItem("omnischool:more-layout:user-1");
+    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
+    apiFetchMock.mockImplementation(async (endpoint: string) => {
+      const result = await original(endpoint);
+      if (endpoint.startsWith("/api/v1/screens/parent/home/")) {
+        return { ...(result as object), unread_notifications: 97, more_attention: { events: 3, diary: 1 } };
+      }
+      return result;
+    });
+    const view = render(<MemoryRouter initialEntries={["/parent/more"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("link", { name: "Open Events & activities, action needed" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Diary, action needed" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Messages" })).toBeVisible();
+    expect(view.container.querySelector(".more-grid--list")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    expect(view.container.querySelector(".more-grid--grid")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "List view" }));
+    expect(view.container.querySelector(".more-grid--list")).toBeInTheDocument();
+    expect(window.localStorage.getItem("omnischool:more-layout:user-1")).toBe("list");
+    window.localStorage.removeItem("omnischool:more-layout:user-1");
   });
 
   it("shows a child picker on the Attendance page when there are more than two children", async () => {

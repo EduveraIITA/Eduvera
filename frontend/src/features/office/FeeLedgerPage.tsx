@@ -63,7 +63,7 @@ export default function FeeLedgerPage() {
     finally { setBusy(false); }
   }
 
-  return <OperationsShell portal={auth.hasPortal("principal") ? "principal" : "teacher"} active="more" title="Fee ledger" subtitle="Leadership workspace" schoolName={schools.find((school) => school.school_id === currentSchoolId)?.school_name} backTo={auth.hasPortal("principal") ? "/principal/more" : "/teacher/more"} contentHasHeading>
+  return <OperationsShell portal={auth.hasPortal("principal") ? "principal" : "teacher"} active="more" title="Fees & receipts" subtitle="Leadership workspace" schoolName={schools.find((school) => school.school_id === currentSchoolId)?.school_name} backTo={auth.hasPortal("principal") ? "/principal/more" : "/teacher/more"} contentHasHeading>
     <div className="office-page office-page--fees">
       {schools.length > 1 ? <label className="office-field office-context-field">School<select value={currentSchoolId} onChange={(event) => { setSchoolId(event.target.value); setStudentId(""); reset(); }}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {!currentSchoolId ? <p className="office-alert">An active administrator membership is required.</p> : students.isPending || ledger.isPending ? <ScreenLoading /> : students.isError || ledger.isError ? <LiveRouteError error={students.error ?? ledger.error} onRetry={async () => { await Promise.all([students.refetch(), ledger.refetch()]); }} /> : <>

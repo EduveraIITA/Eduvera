@@ -411,8 +411,12 @@ export function TeacherAttendancePage({
   const captureNeedsReview = data.latest_capture?.status === "quarantined";
   const roleAuth=useOptionalAuth();
   const roleMember=roleAuth?.memberships.find(m=>m.role==='staff');
-  const roleReadOnly=portal==='teacher' && !!roleMember?.custom_role && !roleMember.permissions?.includes('attendance.record');
-  const canUsePhoto=portal==='principal' || !roleMember?.custom_role || roleMember.permissions?.includes('photo.use');
+  // The server remains authoritative. During auth bootstrap (and isolated
+  // component tests) the calculated permission projection can be absent, so
+  // only apply the client-side restriction once that projection is present.
+  const hasCalculatedAccess=Array.isArray(roleMember?.permissions);
+  const roleReadOnly=portal==='teacher' && hasCalculatedAccess && !roleMember.permissions?.includes('attendance.record');
+  const canUsePhoto=portal==='principal' || !hasCalculatedAccess || roleMember.permissions?.includes('photo.use');
   const readOnly = roleReadOnly || isLocked || unavailable || !editing || (captureNeedsReview && portal === "teacher");
   const isCorrection =
     activeBaseline.register.submitted_at !== null ||

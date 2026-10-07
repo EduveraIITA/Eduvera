@@ -16,7 +16,7 @@ vi.mock('../auth/AuthContext',async original=>({...await original(),useAuth:()=>
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children}:{children:React.ReactNode})=><main>{children}</main>}));
 vi.mock('./api',async original=>({...await original(),getCompany:vi.fn(),createInstitution:vi.fn(),getInvitations:vi.fn(),inviteMember:vi.fn(),getOnboardingWorkspace:vi.fn(),submitInstitutionApplication:vi.fn(),createCoachingWorkspace:vi.fn()}));
 vi.mock('../../lib/api',async original=>({...await original(),apiFetch:vi.fn()}));
-function mount(element:React.ReactNode){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter>{element}</MemoryRouter></QueryClientProvider>);}
+function mount(element:React.ReactNode,path='/'){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[path]}>{element}</MemoryRouter></QueryClientProvider>);}
 afterEach(cleanup);
 beforeEach(()=>{
   vi.clearAllMocks();auth.companyOperator=true;auth.hasPortal.mockReturnValue(true);
@@ -29,6 +29,11 @@ beforeEach(()=>{
   vi.mocked(createCoachingWorkspace).mockResolvedValue({id:'coaching',name:'Lotus Tutorials',code:'lotus-tutorials'});
 });
 describe('company and school onboarding',()=>{
+  it.each(['staff','guardian'])('preselects the contextual %s invitation without creating one',async role=>{
+    mount(<InvitationsPage/>,`/principal/invitations?role=${role}&from=${role==='staff'?'staff':'students'}`);
+    expect(await screen.findByLabelText('Account type')).toHaveValue(role);
+    expect(inviteMember).not.toHaveBeenCalled();
+  });
   it('reports mail-server acceptance without claiming inbox delivery',()=>{
     mount(<InvitationReceipt invite={{token:'private-code',email:'recipient@example.test',expires_at:'2099-10-04',delivery:'email_accepted'}} onClose={()=>{}}/>);
     expect(screen.getByText(/accepted by the mail server/)).toBeInTheDocument();
@@ -61,7 +66,7 @@ describe('company and school onboarding',()=>{
   it('hides administrator and role assignment from a delegated inviter and links a student',async()=>{
     auth.hasPortal.mockReturnValue(false);const user=userEvent.setup();mount(<InvitationsPage/>);await screen.findByRole('heading',{name:'Create invitation'});
     expect(screen.queryByRole('option',{name:'Administrator'})).not.toBeInTheDocument();expect(screen.queryByLabelText('Role on joining')).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Account role'),'student');await user.selectOptions(screen.getByLabelText('Student record'),'student');await user.type(screen.getByLabelText('Recipient email'),'learner@example.test');await user.click(screen.getByRole('button',{name:'Create invitation'}));
+    await user.selectOptions(screen.getByLabelText('Account type'),'student');await user.selectOptions(screen.getByLabelText('Student record'),'student');await user.type(screen.getByLabelText('Recipient email'),'learner@example.test');await user.click(screen.getByRole('button',{name:'Create invitation'}));
     expect(inviteMember).toHaveBeenCalledWith('school',{email:'learner@example.test',role:'student',student_id:'student'});expect(await screen.findByRole('heading',{name:'Invitation ready'})).toBeInTheDocument();
   });
   it('accepts a code with CSRF and shows account activation success',async()=>{

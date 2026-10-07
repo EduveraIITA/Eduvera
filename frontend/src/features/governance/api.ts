@@ -32,6 +32,16 @@ export interface GovernanceWorkspace {
   profile: RegulatoryProfile; families: PolicyFamily[];
   metrics: { applicable: number; published: number; in_review: number; review_due: number };
   audits: Array<{ id: string; action: string; target_type: string; metadata: Record<string, unknown>; created_at: string; first_name: string; last_name: string }>;
+  authority: AuthorityWorkspace;
+}
+
+export interface AuthorityWorkspace {
+  sources: Array<{ id: string; code: string; title: string; source_kind: string; issuer: string; jurisdiction: string; reference: string; provision: string; evidence_reference: string; verification_state: "draft" | "recorded" | "self_attested" | "verified" | "superseded"; effective_from: string | null; effective_until: string | null; revision: number }>;
+  offices: Array<{ id: string; code: string; title: string; purpose: string; status: string; revision: number; first_name: string | null; last_name: string | null; appointment_id: string | null; appointment_status: string | null; starts_on: string | null; ends_on: string | null; linked_user_id: string | null }>;
+  bodies: Array<{ id: string; code: string; title: string; purpose: string; status: string; collective_authority: boolean; seat_count: number; filled_seats: number }>;
+  rules: Array<{ id: string; code: string; title: string; category: string; initiation_summary: string; review_summary: string; decision_summary: string; execution_summary: string; decision_mode: string; conditions_summary: string; material_fields: string[]; status: "suggested" | "confirmed" | "retired"; effective_from: string | null; effective_until: string | null; decision_office_title: string | null; decision_body_title: string | null; mandate_title: string | null; mandate_status: string | null }>;
+  issues: Array<{ code: string; label: string; count: number }>;
+  metrics: { sources: number; active_appointments: number; confirmed_rules: number; needs_review: number };
 }
 
 export interface PublishedPolicy {
@@ -43,6 +53,7 @@ export interface PublishedPolicy {
 
 const root = (schoolId: string, path: string) => `/api/v1/schools/${encodeURIComponent(schoolId)}/governance/${path}/`;
 export const getGovernanceWorkspace = (schoolId: string) => apiFetch<GovernanceWorkspace>(root(schoolId, "workspace"));
+export const prepareAuthorityDraft = (schoolId: string, input: { legal_operator_name: string; lead_officeholder_name: string; lead_is_current_user: boolean; authority_basis_title: string; authority_reference: string }) => apiFetch<AuthorityWorkspace>(root(schoolId, "authority/draft"), { method: "POST", body: JSON.stringify(input) });
 export const updateRegulatoryProfile = (schoolId: string, input: Record<string, unknown>) => apiFetch<RegulatoryProfile>(root(schoolId, "profile"), { method: "PATCH", body: JSON.stringify(input) });
 export const savePolicyDraft = (schoolId: string, code: string, input: Record<string, unknown>) => apiFetch(root(schoolId, `policies/${code}/draft`), { method: "POST", body: JSON.stringify(input) });
 export const submitPolicy = (schoolId: string, versionId: string, expectedRevision: number) => apiFetch(root(schoolId, `policy-versions/${versionId}/submit`), { method: "POST", body: JSON.stringify({ expected_revision: expectedRevision }) });

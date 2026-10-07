@@ -24,6 +24,13 @@ const workspace: GovernanceWorkspace = {
   profile: { school_id: "school-1", institution_kind: "school", country_code: "IN", state_code: "KA", district: "Bengaluru Urban", management_kind: "private_unaided", delivery_mode: "in_person", education_levels: ["primary", "secondary"], regulator_codes: ["CBSE"], capability_packs: ["india_school_core"], recognition_reference: "REC-1", affiliation_reference: "AFF-1", residential: false, transport_provided: true, minors_enrolled: true, staff_count_band: "50_99", reviewed_on: "2026-10-04", review_note: "Reviewed by the principal.", revision: 3, updated_at: "2026-10-04T00:00:00Z" },
   families: [family], metrics: { applicable: 13, published: 4, in_review: 1, review_due: 2 },
   audits: [{ id: "audit-1", action: "governance.profile.updated", target_type: "regulatory_profile", metadata: { revision: 3 }, created_at: "2026-10-04T06:00:00Z", first_name: "Meera", last_name: "Kapoor" }],
+  authority: {
+    sources: [{ id: "source-1", code: "management_scheme", title: "Institution management scheme", source_kind: "governing_instrument", issuer: "Management", jurisdiction: "Karnataka, India", reference: "GOV-1", provision: "", evidence_reference: "GOV-1", verification_state: "verified", effective_from: "2026-04-01", effective_until: null, revision: 1 }],
+    offices: [{ id: "office-1", code: "principal", title: "Principal", purpose: "Lead daily operations.", status: "active", revision: 1, first_name: "Meera", last_name: "Kapoor", appointment_id: "appointment-1", appointment_status: "active", starts_on: "2026-04-01", ends_on: null, linked_user_id: "admin-1" }],
+    bodies: [{ id: "body-1", code: "smc", title: "School Management Committee", purpose: "Review school matters.", status: "active", collective_authority: true, seat_count: 3, filled_seats: 3 }],
+    rules: [{ id: "rule-1", code: "annual_budget", title: "Annual budget", category: "finance", initiation_summary: "Principal prepares the budget.", review_summary: "SMC reviews it.", decision_summary: "Management entity approves the annual budget.", execution_summary: "Finance implements the adopted budget.", decision_mode: "combined", conditions_summary: "", material_fields: ["budget_version"], status: "confirmed", effective_from: "2026-04-01", effective_until: null, decision_office_title: null, decision_body_title: "Management entity", mandate_title: null, mandate_status: null }],
+    issues: [], metrics: { sources: 1, active_appointments: 1, confirmed_rules: 1, needs_review: 0 },
+  },
 };
 
 function shell(children: React.ReactNode) { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>{children}</MemoryRouter></QueryClientProvider>); }
@@ -32,8 +39,9 @@ afterEach(cleanup);
 describe("governance policy centre", () => {
   it("shows applicability, lifecycle state and a complete mobile policy editor", async () => {
     shell(<GovernanceAdminPage schoolId="school-1" schoolName="Cambridge International School" data={workspace} refresh={vi.fn().mockResolvedValue(undefined)} />);
-    expect(screen.getByRole("heading", { name: "Policy centre" })).toBeVisible();
-    expect(screen.getByText("13")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Authority & policies" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Who can decide what?" })).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: /Policy register/ }));
     expect(screen.getByText("Draft v1")).toBeVisible();
     await userEvent.setup().click(screen.getByRole("button", { name: /Child protection and mandatory reporting/ }));
     const dialog = screen.getByRole("dialog", { name: "Child protection and mandatory reporting" });

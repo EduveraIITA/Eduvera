@@ -9,7 +9,7 @@ import type { AuthUser } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
-import { schoolPermission } from "../roles/authorization.js";
+import { assertActiveSchoolStaffMember, hasScopedSchoolPermission, schoolPermission } from "../roles/authorization.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 export interface AssessmentUpload { filename: string; mimetype: string; data: Buffer }
@@ -39,6 +39,8 @@ export class AssessmentsService {
     if (role) query = query.where("role", "=", role);
     const assignment = await query.executeTakeFirst();
     if (!assignment) throw new ForbiddenException(role ? `Only the assigned ${role} can do this.` : "This assessment is not assigned to you.");
+    const action=role==="examiner" ? "assessments.mark" : role==="moderator" ? "assessments.moderate" : "assessments.view";
+    if (!await hasScopedSchoolPermission(db,user.id,schoolId,action,"assessment",assessmentId)) throw new ForbiddenException("Your role does not allow this action on this assessment.");
     return assignment;
   }
 
@@ -97,7 +99,9 @@ export class AssessmentsService {
       LEFT JOIN assessment_evidence evidence ON evidence.result_id=result.id
       WHERE result.assessment_id=${assessmentId}::uuid GROUP BY result.id,person.first_name,person.last_name,student.admission_number,enrollment.roll_number ORDER BY enrollment.roll_number NULLS LAST,person.first_name,person.last_name`.execute(this.db);
     const publications = await sql`SELECT * FROM assessment_publications WHERE assessment_id=${assessmentId}::uuid ORDER BY sequence DESC`.execute(this.db);
-    return { assessment, results: results.rows, publications: publications.rows, viewer_role: access.role };
+    const canMark=await hasScopedSchoolPermission(this.db,user.id,schoolId,"assessments.mark","assessment",assessmentId);
+    const canModerate=await hasScopedSchoolPermission(this.db,user.id,schoolId,"assessments.moderate","assessment",assessmentId);
+    return { assessment, results: results.rows, publications: publications.rows, viewer_role: access.role === "admin" ? "admin" : access.role === "examiner" && canMark ? "examiner" : access.role === "moderator" && canModerate ? "moderator" : "viewer" };
   }
 
   async createCycle(user: AuthUser, schoolId: string, body: unknown) {
@@ -124,6 +128,8 @@ export class AssessmentsService {
       if(!classRow||!subject) throw new BadRequestException("Choose a class and subject in this institution.");
       const memberCount=(await sql<{count:number}>`SELECT count(*)::int AS count FROM school_memberships WHERE school_id=${schoolId}::uuid AND user_id IN (${data.examiner_user_id}::uuid,${data.moderator_user_id}::uuid) AND role IN ('staff','admin') AND is_active`.execute(db)).rows[0]!.count;
       if(memberCount!==2) throw new BadRequestException("Examiner and moderator need active staff access.");
+      await assertActiveSchoolStaffMember(db,data.examiner_user_id,schoolId,"internal_examiner");
+      await assertActiveSchoolStaffMember(db,data.moderator_user_id,schoolId,"exam_in_charge");
       const assessment=await db.insertInto("assessments").values({school_id:schoolId,cycle_id:data.cycle_id,class_section_id:data.class_section_id,subject_id:data.subject_id,title:data.title,assessment_kind:data.assessment_kind,maximum_marks:String(data.maximum_marks),weight_percent:data.weight_percent===null?null:String(data.weight_percent),scheduled_at:data.scheduled_at?new Date(data.scheduled_at):null,duration_minutes:data.duration_minutes,venue:data.venue,instructions:data.instructions,evidence_requirement:data.evidence_requirement,created_by:user.id,updated_by:user.id}).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("assessment_staff_assignments").values([{school_id:schoolId,assessment_id:assessment.id,user_id:data.examiner_user_id,role:"examiner",assigned_by:user.id},{school_id:schoolId,assessment_id:assessment.id,user_id:data.moderator_user_id,role:"moderator",assigned_by:user.id}]).execute();
       await this.audit(db,user,schoolId,assessment.id,"assessment.created",null,"draft",{examiner_user_id:data.examiner_user_id,moderator_user_id:data.moderator_user_id});

@@ -107,6 +107,7 @@ export function SchoolEventBridge() {
       handledEventIds.add(envelope.id);
       if (handledEventIds.size > 512) handledEventIds.delete(handledEventIds.values().next().value!);
       batcher.enqueue(resolution.invalidations);
+      if(expectedType==="staff.access.updated")window.dispatchEvent(new Event("omnischool:access-updated"));
       return true;
     };
     const expireSession = (share: boolean) => {

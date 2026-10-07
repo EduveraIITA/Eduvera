@@ -65,6 +65,7 @@ export default function PrincipalDayPlanPage() {
       portal="principal"
       active="timetable"
       title="Daily school plan"
+      backTo="/principal/more"
       subtitle="Timetable"
       schoolName={schools.find((s) => s.school_id === schoolId)?.school_name}
       contentHasHeading

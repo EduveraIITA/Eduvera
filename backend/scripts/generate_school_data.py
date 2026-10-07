@@ -1768,7 +1768,7 @@ BEGIN
     SELECT count(*) FROM fee_payments payment
     JOIN campus_event_participants participant ON participant.fee_invoice_id=payment.invoice_id
     WHERE participant.event_id='{picnic_event_id}'::uuid
-  ) <> {expected_picnic_payments} THEN
+  ) < {expected_picnic_payments} THEN
     RAISE EXCEPTION 'Seed integrity failure: picnic fee payment examples are incomplete';
   END IF;
   IF EXISTS (

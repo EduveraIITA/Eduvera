@@ -21,12 +21,13 @@ is exposed in school roles, signup, invitations or ordinary account APIs.
 4. **More → Invite members** issues staff, student and guardian invitations.
    Select the existing student/guardian record to activate account access
    without creating duplicate school people. Administrators may invite other
-   admins and select a custom staff role at invitation time. Staff profile,
+   admins and select an initial work profile at invitation time. Staff profile,
    responsibility and class assignment tools remain school leadership actions.
-5. **More → Roles & permissions** creates an Admissions Coordinator with
-   `sis.manage` and `members.invite`, then assigns it to staff. That role can
-   enroll/import students and manage non-admin invitations in its institution.
-   It cannot create institutions, invite admins, change custom role assignments,
+5. **More → Work profiles & access** creates an Admissions Coordinator profile
+   eligible for Membership Coordinator and Student Records Officer work. Active
+   assignments calculate the required onboarding and student-record access. That
+   staff member can enroll/import students and manage non-admin invitations in the
+   institution. They cannot create institutions, invite admins, change work profiles,
    grant company authority or edit guardian leave authority.
 
 Company creation/admin invite/revoke/accept and school invitations/roles/enrollment

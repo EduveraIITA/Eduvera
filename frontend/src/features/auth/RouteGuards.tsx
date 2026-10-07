@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authDestination, useAuth, type Portal } from "./AuthContext";
+import { currentStaffMembership, teacherPathIsAuthorized } from "./staffAccess";
 
 function SessionLoader() {
   return (
@@ -56,13 +57,8 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
   if (auth.user?.email_verified === false) return <Navigate to="/account/security" replace />;
   if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
   if(portal==='teacher') {
-    const member=auth.memberships.find(m=>m.role==='staff');
-    if(member?.custom_role) {
-      if(location.pathname==='/teacher') return <Navigate to="/teacher/more" replace/>;
-      const permissions:Record<string,string>={attendance:'attendance.view',classes:'attendance.view',calendar:'timetable.view',timetable:'timetable.view',messages:'messages.view',safeguarding:'safeguarding.review',events:'events.view',transport:'departure.collect',fees:'fees.manage',administration:'sis.manage',students:'sis.manage',invitations:'members.invite'};
-      const section=location.pathname.split('/')[2] ?? '';
-      if(permissions[section] && !member.permissions?.includes(permissions[section] ?? '')) return <Navigate to="/teacher/more" replace/>;
-    }
+    const member=currentStaffMembership(auth.memberships);
+    if(!teacherPathIsAuthorized(member,location.pathname)) return <Navigate to="/teacher" replace/>;
   }
   return children;
 }

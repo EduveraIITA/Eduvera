@@ -108,6 +108,9 @@ describe("school event protocol", () => {
   });
 
   it("uses event defaults when a valid envelope omits refresh hints", () => {
+    const access=resolveSchoolEvent(eventData("staff.access.updated",{}),"staff.access.updated","teacher-1");
+    expect(access.usedFallback).toBe(false);
+    expect(access.invalidations).toContainEqual({queryKey:["staff-operations"]});
     const leave = resolveSchoolEvent(eventData("leave.updated", { student_id: "student-1" }), "leave.updated", "guardian-1");
     expect(leave.usedFallback).toBe(false);
     expect(leave.invalidations).toEqual(expect.arrayContaining([

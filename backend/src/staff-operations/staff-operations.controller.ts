@@ -1,10 +1,36 @@
-import { Controller, Get, Param, Patch, Post, Req } from "@nestjs/common";
+import { Controller, Get, GoneException, Param, Patch, Post, Req } from "@nestjs/common";
+import { AccessRolesService } from "../roles/access-roles.service.js";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { StaffOperationsService } from "./staff-operations.service.js";
 
 @Controller("api/v1/schools/:schoolId/staff")
 export class StaffOperationsController {
-  constructor(private readonly staff: StaffOperationsService) {}
+  constructor(private readonly staff: StaffOperationsService, private readonly accessRoles: AccessRolesService) {}
+
+  @Post("access-roles/")
+  createRole(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.accessRoles.save(req.authUser, schoolId, req.body);
+  }
+
+  @Patch("access-roles/:roleId/")
+  updateRole(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("roleId") roleId: string) {
+    return this.accessRoles.save(req.authUser, schoolId, req.body, roleId);
+  }
+
+  @Post("role-assignments/")
+  assignRole(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.accessRoles.assign(req.authUser, schoolId, req.body);
+  }
+
+  @Post("role-assignments/change-role/")
+  changeRole(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.accessRoles.changeAssignmentRole(req.authUser, schoolId, req.body);
+  }
+
+  @Post("role-assignments/end-class/")
+  endClassRole(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.accessRoles.endClassAssignment(req.authUser,schoolId,req.body);
+  }
 
   @Get("workspace/")
   workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
@@ -14,6 +40,18 @@ export class StaffOperationsController {
   @Post("profiles/")
   createProfile(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
     return this.staff.createProfile(req.authUser, schoolId, req.body);
+  }
+
+  @Post("work-types/")
+  createWorkType(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    void req; void schoolId;
+    throw new GoneException("Work types have been replaced by Roles & access. Refresh the app.");
+  }
+
+  @Patch("work-types/:workTypeId/")
+  updateWorkType(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("workTypeId") workTypeId: string) {
+    void req; void schoolId; void workTypeId;
+    throw new GoneException("Work types have been replaced by Roles & access. Refresh the app.");
   }
 
   @Patch("profiles/:profileId/onboarding/")
