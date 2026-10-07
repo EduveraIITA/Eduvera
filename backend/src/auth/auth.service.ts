@@ -184,8 +184,9 @@ export class AuthService {
       .innerJoin("parents as p", "p.id", "gr.guardian_id")
       .select("gr.student_id as id").where("p.user_id", "=", user.id).execute();
     const ids = new Set([...own, ...linked].map((row) => row.id));
+    const companyOperator = await sql`SELECT 1 FROM company_operators WHERE user_id=${user.id}::uuid`.execute(this.db);
     return {
-      user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || null },
+      user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || null, is_company_operator: companyOperator.rows.length > 0 },
       students: [...ids].map((id) => ({ id })),
       memberships,
       demo_mode: config().DEMO_MODE,

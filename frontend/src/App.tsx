@@ -11,6 +11,8 @@ import {
 const LoginPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).LoginPage,
 }));
+const CompanyInstitutionsPage = lazy(async () => ({ default: (await import("./features/institutions/InstitutionPages")).CompanyInstitutionsPage }));
+const AcceptInstitutionInvitationPage = lazy(async () => ({ default: (await import("./features/institutions/InstitutionPages")).AcceptInstitutionInvitationPage }));
 const SignupPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).SignupPage,
 }));
@@ -122,6 +124,9 @@ export function App() {
         <div className="app-viewport">
           <Suspense fallback={<PageLoader />}>
             <Routes>
+              <Route path="/company" element={<AuthenticatedOnly><CompanyInstitutionsPage /></AuthenticatedOnly>} />
+              <Route path="/company/institutions/:id" element={<AuthenticatedOnly><CompanyInstitutionsPage /></AuthenticatedOnly>} />
+              <Route path="/join-institution" element={<AuthenticatedOnly><AcceptInstitutionInvitationPage /></AuthenticatedOnly>} />
               <Route path="/" element={<RoleLanding />} />
               <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
               <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />

@@ -7,9 +7,10 @@ import { CsrfGuard, SessionGuard } from "./auth/guards.js";
 import { DatabaseModule } from "./database/database.module.js";
 import { SchoolModule } from "./school/school.module.js";
 import { SpaController } from "./spa.controller.js";
+import { InstitutionsModule } from "./institutions/institutions.module.js";
 
 @Module({
-  imports: [DatabaseModule, AuthModule, SchoolModule, AiModule],
+  imports: [DatabaseModule, AuthModule, SchoolModule, AiModule, InstitutionsModule],
   controllers: [AppController, SpaController],
   providers: [
     { provide: APP_GUARD, useClass: SessionGuard },

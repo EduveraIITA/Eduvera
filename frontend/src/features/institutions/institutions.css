@@ -1,0 +1,40 @@
+.institution-page { width: min(100%, 960px); margin: 0 auto; padding: 24px; font-size: 14px; line-height: 1.6; }
+.institution-page header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; color: var(--secondary); }
+.institution-page a { color: var(--primary); overflow-wrap: anywhere; }
+.institution-panel { padding: 24px; background: var(--surface-lowest); border: 1px solid var(--outline-variant); border-radius: 16px; box-shadow: var(--shadow-card); }
+.institution-panel h1 { margin-top: 0; font-size: 24px; }
+.institution-panel h2 { font-size: 19px; }
+.institution-panel h3 { font-size: 15px; }
+.institution-panel label { display: grid; gap: 6px; font-weight: 600; }
+.institution-panel input:not([type=checkbox]), .institution-panel select { width: 100%; min-width: 0; padding: 12px; background: var(--surface-lowest); border: 1px solid var(--outline); border-radius: 8px; }
+.institution-panel button { min-height: 44px; padding: 10px 16px; border-radius: 8px; background: var(--surface-low); color: var(--primary); font-weight: 600; }
+.institution-panel :focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.institution-panel .institution-primary { background: var(--primary); color: var(--surface-lowest); }
+.institution-panel button:disabled { opacity: .6; }
+.institution-panel form > button { margin-top: 16px; }
+.institution-step, .institution-search small { color: var(--secondary); }
+.institution-search { position: relative; }
+.institution-dropdown { margin-top: 8px; border: 1px solid var(--outline-variant); border-radius: 8px; box-shadow: var(--shadow-floating); overflow: hidden; }
+.institution-dropdown [role=status] { padding: 12px; color: var(--secondary); }
+.institution-dropdown ul { list-style: none; padding: 0; margin: 0; max-height: 420px; overflow-y: auto; }
+.institution-dropdown li { display: grid; gap: 4px; padding: 16px; border-bottom: 1px solid var(--outline-variant); cursor: pointer; overflow-wrap: anywhere; }
+.institution-dropdown li:hover, .institution-dropdown li.is-highlighted { background: var(--surface-low); }
+.institution-result-action { color: var(--primary); font-weight: 700; }
+.institution-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.institution-badge { display: inline-flex; border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+.institution-badge.is-official, .institution-badge.is-available { background: var(--surface-low); color: var(--primary); }
+.institution-badge.is-active { background: var(--tertiary-fixed); color: var(--tertiary); }
+.institution-badge.is-pending { background: #fff1cc; color: #704600; }
+.institution-badge.is-manual { background: var(--surface); color: var(--secondary); border: 1px solid var(--outline-variant); }
+.institution-manual-option { display: grid; gap: 8px; padding: 16px; }
+.institution-text-button { margin-top: 16px; text-align: left; }
+.institution-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.institution-fields label:first-child, .institution-fields label:last-of-type, .institution-fields small { grid-column: 1 / -1; }
+.institution-selection, .institution-invitation { background: var(--surface-low); padding: 16px; border-radius: 8px; margin: 16px 0; }
+.institution-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 24px; }
+.institution-error { color: var(--error); }
+.institution-duplicates { padding: 16px; border: 1px solid var(--outline); border-radius: 8px; margin-top: 16px; }
+.institution-duplicates > div { padding: 12px 0; border-bottom: 1px solid var(--outline-variant); }
+.institution-panel .institution-checkbox { display: flex; align-items: flex-start; margin-top: 16px; }
+.institution-checkbox input { margin-top: 6px; }
+@media (max-width: 600px) { .institution-page { padding: 16px; } .institution-panel { padding: 16px; } .institution-fields { grid-template-columns: 1fr; } }

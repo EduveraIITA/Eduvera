@@ -15,6 +15,7 @@ export type MembershipRole = "student" | "guardian" | "staff" | "admin";
 export type Portal = "parent" | "student" | "teacher" | "principal";
 
 export interface AuthUser {
+  is_company_operator?: boolean;
   id: string;
   username: string;
   email: string;
@@ -278,8 +279,9 @@ export function useOptionalAuth() {
   return useContext(AuthContext);
 }
 
-export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships">) {
+export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships"> & { user?: Pick<AuthUser, "is_company_operator"> | null }) {
   if (auth.status !== "authenticated") return "/login";
+  if (auth.user?.is_company_operator) return "/company";
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
   if (auth.portals.includes("teacher")) return "/teacher";
