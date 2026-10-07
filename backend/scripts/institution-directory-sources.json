@@ -1,0 +1,28 @@
+{
+  "udise": {
+    "snapshot": "udise-idp-20240930",
+    "file": "udise-schools.csv",
+    "url": "https://ckandev.indiadataportal.com/dataset/f1b2fdba-3b56-47ca-bfc6-819fc64b712a/resource/457fddf1-982f-4c85-855d-5095578accc1/download/basic-details-of-schools.csv",
+    "sha256": "e4e9c4330757c5e6e1286d938fea012cb5b7ca5454f88fb275945ca8a2e608f4",
+    "publisher": "India Data Portal / Indian School of Business",
+    "original_source": "Ministry of Education, UDISE+",
+    "source_url": "https://ckandev.indiadataportal.com/dataset/udise",
+    "source_retrieval_date": "2022-01-12",
+    "resource_modified": "2024-09-30",
+    "license": "Open Data Commons Attribution License (ODC-By)",
+    "expected_rows": 1372195
+  },
+  "aishe": {
+    "snapshot": "aishe-public-0fc395e",
+    "file": "aishe-institutions.json",
+    "url": "https://raw.githubusercontent.com/BrahmjotSingh0/aishe-institutions-list/0fc395ecb9d3e60d76ddeb9ce0d3853d4b52282e/data/institutions.json",
+    "sha256": "635bd0aa53232aadfe5d669698e5a3e47c5c28daa4987e70ba91b03a555adb7d",
+    "publisher": "Brahmjot Singh, aishe-institutions-list",
+    "original_source": "AISHE Higher Education Institution Directory (publisher-declared)",
+    "source_url": "https://github.com/BrahmjotSingh0/aishe-institutions-list",
+    "source_retrieval_date": null,
+    "repository_commit_date": "2025-12-15",
+    "license": "MIT, copyright Brahmjot Singh",
+    "expected_rows": 70865
+  }
+}

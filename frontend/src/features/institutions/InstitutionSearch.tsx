@@ -73,5 +73,6 @@ export function InstitutionSearch({ onSelect, onManual }: { onSelect: (item: Ins
       <div className="institution-manual-option"><span>Can’t find your institution?</span><button type="button" onClick={onManual}>+ Add institution manually</button></div>
     </div>}
     {!visible && <button type="button" className="institution-text-button" onClick={onManual}>Can’t find your institution? + Add institution manually</button>}
+    <small>Public directory snapshots may be outdated. Sources: <a href="https://ckandev.indiadataportal.com/dataset/udise" target="_blank" rel="noreferrer">UDISE via India Data Portal (ODC-By)</a> · <a href="https://github.com/BrahmjotSingh0/aishe-institutions-list" target="_blank" rel="noreferrer">AISHE snapshot © Brahmjot Singh (MIT)</a>.</small>
   </div>;
 }

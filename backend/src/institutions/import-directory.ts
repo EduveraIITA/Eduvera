@@ -32,7 +32,7 @@ export async function* csvRows(stream: AsyncIterable<string | Buffer>): AsyncGen
   if (field || row.length || afterQuote) yield [...row, field];
 }
 
-const importSchema = z.object({
+export const importSchema = z.object({
   name: z.string().trim().min(2).max(180), institution_type: institutionType,
   source: z.enum(["UDISE", "AISHE"]), source_code: z.string().trim().toUpperCase().min(1).max(64),
   state: z.string().trim().max(120), district: z.string().trim().max(120), city: z.string().trim().max(120), address: z.string().trim().max(1000),
