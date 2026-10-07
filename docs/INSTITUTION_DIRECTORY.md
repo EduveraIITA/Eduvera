@@ -1,5 +1,13 @@
 # Institution directory and company onboarding
 
+**Stage population status:** the full public snapshot import is blocked by database
+disk capacity (`53100`, workflow `37671492107`). The transaction rolled back; the
+prepared national counts below are not live coverage. Increase database storage
+before manually running the import workflow. Pushes validate tooling but no longer
+automatically import national data. A maintenance commit marked
+`[directory-maintenance]` runs ordinary VACUUM on the directory and reports committed
+counts; it does not delete live records or modify tenant links.
+
 ## Base branch and scope
 
 The original main-based PR is integrated with Stage's existing company console,

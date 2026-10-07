@@ -79,7 +79,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     const before = await client.query<{ bytes: string }>('SELECT pg_database_size(current_database()) AS bytes');
     console.log(`Database bytes before import: ${before.rows[0]?.bytes}`);
-    console.log(JSON.stringify(await importPublicSnapshot(client, createReadStream(process.argv[2], { encoding: 'utf8' }))));
+    if (process.argv[2] === '--reclaim') {
+      // Ordinary VACUUM only removes dead tuples from failed imports; live rows,
+      // tenant links and indexes remain intact. Never use VACUUM FULL here.
+      await client.query("SET lock_timeout='10s'");
+      await client.query('VACUUM (ANALYZE) institution_directory');
+      console.log('Reclaimed dead directory tuples. No live records were removed.');
+      const after = await client.query('SELECT pg_database_size(current_database()) AS database_bytes,pg_total_relation_size(\'institution_directory\') AS directory_bytes');
+      console.log(JSON.stringify({ storage_after_maintenance: after.rows[0] }));
+    } else {
+      console.log(JSON.stringify(await importPublicSnapshot(client, createReadStream(process.argv[2], { encoding: 'utf8' }))));
+    }
     const totals = await client.query('SELECT source,institution_type,count(*) FROM institution_directory GROUP BY source,institution_type ORDER BY source,institution_type');
     console.log(JSON.stringify({ directory_totals: totals.rows }));
   } finally { client.release(); await pool.end(); }

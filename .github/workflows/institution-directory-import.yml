@@ -50,7 +50,8 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_prepare_institution_directory.py'
   import:
     needs: validate
-    if: github.ref == 'refs/heads/Stage'
+    # Full snapshots require an explicit run after storage capacity is confirmed.
+    if: github.ref == 'refs/heads/Stage' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -86,3 +87,25 @@ jobs:
           name: institution-directory-import-summary
           path: ${{ runner.temp }}/directory.summary.json
           retention-days: 90
+  reclaim:
+    needs: validate
+    if: github.ref == 'refs/heads/Stage' && github.event_name == 'push' && contains(github.event.head_commit.message, '[directory-maintenance]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID || 'e502f870-10b0-4e13-b42e-124e6373a277' }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'omnischool' }}
+      RAILWAY_ENVIRONMENT: stage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reclaim failed directory import tuples and report committed counts
+        working-directory: backend
+        run: |
+          npm ci --ignore-scripts
+          npm install -g @railway/cli@5.54.0
+          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
+            node --import tsx src/institutions/import-public-snapshot.ts --reclaim

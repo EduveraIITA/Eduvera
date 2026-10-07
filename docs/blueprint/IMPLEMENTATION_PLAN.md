@@ -2365,3 +2365,11 @@ loader against isolated PostgreSQL before using the existing Stage credentials;
 its summary artifact records actual accepted/rejected counts. Live counts and
 search verification must be taken from a successful run, not inferred from source
 row totals. See `docs/INSTITUTION_DIRECTORY.md` for attribution and snapshot dates.
+
+Stage import attempt `37671492107` failed with PostgreSQL `53100` (no space left
+on device) after validating all 1,440,856 rows. Its atomic transaction rolled back;
+these are prepared counts, not live directory coverage. The loader now respects
+per-statement limits with 5,000-row windows, verified by a late-window rollback
+test. Automatic imports are disabled: full import requires a manual workflow run
+after database storage is increased. Ordinary VACUUM is available for reclaiming
+dead tuples without removing live records; no tenant records are deleted.
