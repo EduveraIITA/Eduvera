@@ -92,7 +92,7 @@ interface RouteSmokeCase {
 
 const implementedScreenRoutes: RouteSmokeCase[] = [
   { path: "/parent/home", heading: "Today's activities" },
-  { path: "/parent/attendance", heading: "Today's attendance" },
+  { path: "/parent/attendance", heading: "Attendance calendar" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
   { path: "/student", heading: "Aarav Sharma" },
@@ -352,6 +352,7 @@ describe("implemented application routes", () => {
   it("opens the full attendance standings from each top student and the student's own row", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);
+    await interact.click(await screen.findByText('Class attendance',{selector:'summary'}));
     for (const rank of [1, 2, 3]) {
       await interact.click(await screen.findByRole("button", { name: `View all class attendance, starting at rank ${rank}` }));
       const dialog = screen.getByRole("dialog", { name: "Class 7A standings" });
@@ -566,7 +567,7 @@ describe("implemented application routes", () => {
     });
 
     render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Today's attendance" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Attendance calendar" })).toBeVisible();
     expect(document.querySelector(".child-switcher")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Aarav Sharma - Class/ })).not.toBeInTheDocument();
     const chooseChild = await screen.findByRole("button", { name: "Choose child profile" });
@@ -748,13 +749,31 @@ describe("implemented application routes", () => {
   }, 90000);
 
   it("renders the timetable with the shared day view switcher", async () => {
-    render(<MemoryRouter initialEntries={["/student/timetable"]}><App /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/student/timetable?date=2026-10-07"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Period schedule" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Timetable" })).toHaveAttribute("href", "/student/timetable");
-    expect(screen.getByRole("tab", { name: "Day" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Week" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Month" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Year" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("day");
+    expect(screen.queryByRole("option", { name: "Week" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Month" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Year" })).toBeInTheDocument();
+  });
+
+  it.each(["student", "parent"])("keeps %s timetable dates in Month and hides daily content in Year", async (portal) => {
+    render(<MemoryRouter initialEntries={[`/${portal}/timetable?date=2026-10-07&view=month`]}><App /></MemoryRouter>);
+    const picker = await screen.findByRole("combobox", { name: "Timetable view" });
+    expect(picker).toHaveValue("month");
+    fireEvent.click(screen.getByRole("button", { name: /^Thursday, 8 October.*$/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Thursday, 8 October.*$/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("month");
+    fireEvent.change(screen.getByRole("combobox", { name: "Timetable view" }), { target: { value: "year" } });
+    await waitFor(() => expect(document.querySelector(".timetable-year")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Period schedule" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No timetable published")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save bell reminder preference" })).not.toBeInTheDocument();
+    expect(document.querySelector(".timetable-kit-card")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^November,.*open month view$/ }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("month"));
+    expect(screen.getByRole("button", { name: /^Sunday, 1 November.*$/ })).toHaveAttribute("aria-pressed", "true");
   });
 });
 

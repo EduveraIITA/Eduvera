@@ -1,6 +1,32 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { CalendarOff, Check, Copy, LoaderCircle, Save, Trash2, X } from "lucide-react";
 import type { CopyTimetableDayInput, CurriculumTargetInput, NewTimetableSlot, PrincipalTimetableResponse, SchoolClosureInput } from "../../features/operations/api";
+
+function useSheetFocus(closeRef: RefObject<HTMLButtonElement | null>, onClose: () => void, busy: boolean) {
+  const current = useRef({ onClose, busy });
+  useEffect(() => { current.current = { onClose, busy }; }, [onClose, busy]);
+  useEffect(() => {
+    const previous = document.activeElement;
+    const sheet = closeRef.current?.closest(".timetable-sheet");
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!current.current.busy) current.current.onClose();
+      }
+      if (event.key !== "Tab" || !sheet) return;
+      const controls = [...sheet.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]')];
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [closeRef]);
+}
 
 function addMinutes(value: string, minutes: number) {
   const [hour = "8", minute = "0"] = value.slice(0, 5).split(":");
@@ -47,7 +73,7 @@ export function SlotEditorSheet({ data, selectedClass, initial, editingId, onClo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeRef.current?.focus(), []);
+  useSheetFocus(closeRef, onClose, busy);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -114,7 +140,7 @@ export function CopyDaySheet({ className, termId, classSectionId, sourceWeekday,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeRef.current?.focus(), []);
+  useSheetFocus(closeRef, onClose, busy);
   const selectedFilled = targets.some((day) => filledDays.has(day));
 
   const submit = async (event: FormEvent) => {
@@ -165,7 +191,7 @@ export function CurriculumTargetSheet({ term, selectedClass, subject, coverage, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeRef.current?.focus(), []);
+  useSheetFocus(closeRef, onClose, busy);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const minutes = Math.round(Number(hours) * 60);
@@ -235,7 +261,7 @@ export function SchoolCalendarSheet({ term, schoolDate, exceptions, onClose, onC
   const [removing, setRemoving] = useState<PrincipalTimetableResponse["calendar_exceptions"][number] | null>(null);
   const [removalReason, setRemovalReason] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeRef.current?.focus(), []);
+  useSheetFocus(closeRef, onClose, busy);
   const upcoming = exceptions.filter((item) => !item.is_instructional && item.date >= schoolDate);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError("");

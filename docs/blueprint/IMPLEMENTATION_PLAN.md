@@ -2341,3 +2341,389 @@ for `/` and `/staff/`; `/readyz` reported database and events OK; `/releasez`
 reported the exact commit above and `environment: stage`. The local review preview
 also remained ready. Physical-phone/user review is still open, and this evidence
 does not assert a production release.
+
+## Timetable and calendar simplification — 7 October 2026
+
+User decision: simplify the planning screens using a calm, content-first hierarchy.
+This supersedes the earlier large blue date board and stacked planning/view tabs,
+while retaining the established school header, bottom navigation, typeface and
+per-child accent. Blueprint sections 6–7 remain the basis: daily expectations and
+scoped work are primary, with a stable navigation model. The UI approach follows
+[Apple's toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars)
+and [layout hierarchy guidance](https://developer.apple.com/design/human-interface-guidelines/layout),
+adapted to the existing web components rather than a native Apple implementation.
+
+- Admin planning has two browsing destinations, **Timetable** and **Calendar**.
+  **Edit timetable** opens the existing weekly management workspace; it is no longer
+  a competing browsing tab plus a duplicate management button. Links retain the
+  selected school, date and class. Existing route URLs remain compatible.
+- All four timetable readers use one compact view picker and neutral date surface.
+  Day view shows a complete Monday–Sunday rail, selected-date text, a separate Today
+  marker and previous/next-week controls. Month and Year keep their drill-downs;
+  period navigation handles month ends and leap years without overflowing dates.
+- Admin daily change/revision and printing controls are in **Schedule actions**.
+  The published schedule appears earlier on mobile. Drafting, publication, coverage,
+  history and server authorization are unchanged; no new mutation is introduced.
+- Parent/student Day views use a vertical agenda with full subject names, times,
+  teacher, room, cancellation and supplied materials. Existing lesson details remain
+  accessible by tapping a row. Week view retains the comparative weekly grid.
+- The shared calendar uses a compact Month/Day picker, lighter date grid, explicit
+  today/selection semantics and an expandable **Calendar key**. Its role-specific
+  events, leave, attendance and school closure details remain unchanged.
+
+Verified locally: the 76-test timetable/calendar/navigation/day-plan/route run passed;
+the subsequent 17-test calendar/navigation/timetable/weekly-builder run passed.
+The new family agenda regression and five affected route tests passed after the
+agenda change. Frontend lint, typecheck and production build pass. Browser smoke
+covered admin, teacher, parent and student timetable/calendar at 320, 390, 768,
+1024 and 1440 CSS pixels with no horizontal page overflow or runtime exceptions.
+Month-to-Day selection, Today, calendar Day navigation, keyboard dismissal of
+schedule actions, family lesson details and return to the weekly grid were exercised.
+Local and ngrok readiness both report database and events OK. No database changes
+or reseeding are required. This slice has not been pushed or deployed to Stage. Physical-phone/user
+acceptance remains open; please review the live preview before further UI expansion.
+
+### Timetable navigation follow-up — 7 October 2026
+
+Latest user decisions supersede the Week browsing behavior above:
+
+- Retain the **Day / Month / Year** dropdown. Remove Week from the shared
+  timetable reader; Day already includes the seven-day rail. Existing `view=week`
+  links safely open Day. The separate admin weekly timetable editor is unchanged.
+- Day and Month are the compact and expanded forms of the same date selector.
+  The bottom toggle is **arrow-only**, with an accessible name, expanded state,
+  keyboard activation and a 44-pixel-high target. The month heading also toggles it.
+  No visible Expand/Collapse wording and **no swipe gesture**: ordinary touch
+  scrolling remains with the browser. This supersedes the initial gesture idea.
+- Selecting dates or another month preserves expanded Month and updates
+  the daily schedule beneath it. **Today selects today and collapses to Day**,
+  including when invoked from Year. URL state retains the view through reload/back.
+  Dates remain selectable while totals load or fail; unloaded totals are not
+  presented as free days.
+- Year shows only its overview in admin, teacher, parent and student timetables:
+  no daily periods, empty-day messages, notices or materials list. Opening a month
+  returns to the expanded Month selector. School/class/child context is retained.
+- During date fetches, keep the date selector and same-person/class context stable,
+  show a loading state instead of the previous day's work, and never reuse a
+  different child's placeholder data. Teachers can still change school in Year.
+- Selected dates share the same solid-accent circle and white number in compact
+  Day and expanded Month; Today uses the same accent outline in both. Shared theme
+  tokens retain each child's colour instead of a separate pale Month selection.
+
+Verified locally: 30 focused timetable/calendar/navigation/day-plan tests and seven
+affected route tests passed. Browser checks passed for all four roles: the three
+dropdown choices, expansion/collapse controls, no gesture-triggered mode change,
+Month persistence after selection and reload, Year hiding of daily content, and
+Year-to-Month drill-down. Day/Month/Year had no horizontal page overflow at 320,
+390, 768, 1024 and 1440 CSS pixels, and no runtime exceptions were observed.
+The final arrow-only control and delayed parent-date fetch were also checked in a
+mobile browser: the calendar stayed expanded and the old day's agenda was hidden
+during loading. Frontend lint, typecheck and production build pass. Local and ngrok
+readiness report database and events OK. These navigation changes alone need no database changes. Physical-phone
+user review remains open; this follow-up is not pushed or deployed.
+
+### Timetable editing repair — 7 October 2026
+
+- **Prepare changes:** reproduced a mobile Safari/WebKit event-order bug. Tapping
+  the menu action blurred the native disclosure with a null focus target, closing
+  it before its click could fire. The shared ScheduleActions wrapper now dismisses
+  on outside pointer interaction, actual keyboard focus departure or Escape, not
+  a null-target blur from a tap inside. Existing draft authorization and command
+  behavior remain unchanged.
+- **Edit timetable:** the route opened, but its API failed because the runtime
+  database role could not read `curriculum_subject_targets`. That table had retained
+  a different migration-account owner. Migration **053** aligns table and scope
+  validator ownership with `students`, following the existing direct-database
+  application boundary. RLS stays enabled; PUBLIC, anon and authenticated do not
+  gain table access. No timetable data is rewritten. The editor also now retains
+  the selected date/week from the daily view, with invalid/out-of-term fallback.
+- Applied only the reviewed 053 SQL transactionally to the local preview database
+  and a dedicated test clone. **No remote database or Stage changes were made.**
+  The ordinary migration runner is blocked locally by a pre-existing checksum
+  mismatch for migration **047**. Its source/history were not rewritten or bypassed
+  in the migration ledger; reconcile that drift before using the normal deployment
+  migration path. Do not treat this local repair as a clean deployment gate.
+
+Verified: all **44** focused frontend tests across timetable/navigation/calendar,
+day-plan API/editor and schedule-menu suites pass; lint, typecheck and production
+build pass. **21** backend day-plan integration and migration checks pass against
+the isolated database using the runtime role. Real mobile WebKit created a draft
+and displayed the editor against that clone; no draft was created in the user's
+review data. Chromium and WebKit opened the live weekly/period editor; WebKit also
+verified retained date context and Today collapsing from Year. The broad existing
+API test was attempted but stopped before timetable assertions on an unrelated
+fixed demo-count expectation (200 students versus the clone's 203); it is not
+claimed passing. Physical-phone acceptance and deployment remain open.
+
+### Separate timetable settings page — 8 October 2026
+
+User decision: the repeating-timetable editor is a settings destination, inspired
+by iPhone Settings, not another Timetable/Calendar browsing tab. This follows
+blueprint sections 3 and 6–7 while retaining the existing shared header, theme,
+navigation and authorization. Frontend UI engineering guidance informed the grouped
+rows, full-row tap targets, keyboard focus handling and progressive disclosure.
+
+- **Edit timetable** now opens a standalone page at the existing `/weekly` route.
+  Browsing tabs are absent during loading, errors and normal editing. Back retains
+  the selected class, school, date and browsing view.
+- Class and term use compact grouped settings rows. A weekday selector leads
+  directly to tappable period rows. Removed decorative totals, duplicate date/week
+  navigation, the class-card carousel and the always-visible success banner.
+- Existing add/edit/remove/copy operations remain intact. Real allocation conflicts
+  appear in the class picker, affected weekday and period; they are not hidden by
+  the simplified layout. Breaks no longer show meaningless unassigned-teacher text.
+- School dates and coverage targets are grouped settings entries. Coverage opens
+  as a focused subpage with its own title/back action; query-only page changes
+  reset scroll so the scope controls do not disappear behind the header.
+- Existing sheets now trap keyboard focus, support Escape (unless saving), and
+  restore focus on dismissal. Loading and retry states keep the editor's header
+  and back navigation instead of dropping the user onto an unframed error.
+
+**Scheduling scope, not a new temporal model:** the user pointed out that the
+screen appears limited to the current week. Inspection of the slot commands confirms
+that a slot is keyed by term and weekday, not by calendar week. The editor now
+explicitly says **Every week in this term** and shows its start/end dates. The
+existing daily-planning link remains available for date-specific changes. Changing
+the selected weekday does not create a future-effective timetable version.
+The follow-up choice is still open: a different pattern for one selected future
+week, a new repeating pattern effective from a future date, or both. Do not claim
+these future-scheduling semantics are implemented or simulate them with a date picker.
+
+Verification: 49 focused editor/navigation/calendar/day-plan tests and four affected
+route tests pass. After adding explicit term scope, the 22-test editor/navigation
+rerun also passes. Lint, typecheck and production build pass. Chromium and WebKit
+UI checks covered 320, 390, 768, 1024 and 1440 px: no horizontal overflow; period
+dialog opening, focus trapping/restoration, coverage navigation and scroll reset
+passed. WebKit also retained Month/class/date on return to the timetable; its
+navigation run emitted existing aborted auth-session/event-stream diagnostics, so
+this is not a claim of a clean browser-console audit. A separate Chromium check
+passed the delayed loading, failed API and successful retry sequence. Local and
+ngrok readiness report database and events OK. No new backend/schema/seed changes
+were made in this UI slice. Not pushed or deployed; the earlier migration-047 drift
+gate and physical-phone review remain open.
+
+## 8 October 2026 — Annual schedule preparation and dated publication
+
+Supersedes the preceding open future-scheduling choice: the user approved both
+future repeating arrangements and bounded temporary arrangements. Contract and
+research references: `ANNUAL_SCHEDULE_PLANNING.md`. Blueprint sections 3 and 6–8
+remain the primary domain reference; shared navigation/theme are preserved.
+
+Implemented standalone Schedule settings, next-year terms/class reuse into
+unpublished drafts, school-day timing generation, period editing/day copy,
+teaching allocation and existing closure/coverage controls. Publication uses
+explicit dates, revision checks, idempotency, active staff checks, class/teacher/
+room conflict checks, audit, transactional outbox and deduplicated notifications.
+Migration 054 adds immutable dated recurring versions and freezes legacy baseline
+identities at first publication. Closures and published daily changes retain
+precedence; temporary expiry restores the preceding pattern. Legacy weekly writes
+are blocked once a dated version exists. Teaching-access fallback uses effective
+dates. Calendar working-day indicators use actual effective schedules; assessment
+dates are projected without marks and scoped to permitted staff or learners.
+
+Verified: 29 backend integration tests (10 annual planning, 19 existing daily-plan)
+pass against an isolated full-schema database. Frontend full suite: 320 tests in
+50 files pass. Backend/frontend lint, typecheck and production builds passed.
+Chromium and WebKit settings checks passed at 320/390/768/1024/1440 px without
+horizontal overflow; real-database draft creation and discard passed in both.
+Local migration 054 applied transactionally; local and ngrok `/readyz` both report
+database/events OK. Demo schedules/enrollments were not replaced by test data.
+
+Boundaries: no automatic timetable solver, student rollover, published-version
+cancellation, or remote deployment is claimed. Starts must be after today; same-day
+changes remain Daily Plan. Existing migration-ledger drift at 047 still blocks a
+normal release until deliberately reconciled; historical checksums were not
+rewritten. Physical-phone acceptance remains requested. No push/deploy this turn.
+
+### Daily Plan entry correction — 8 October 2026
+
+The settings link previously returned to the timetable reader, leaving its edit
+action inside the overflow menu. It now opens explicit Daily Plan editing mode,
+retains class/date, sets Day view, and shows Prepare changes/Create revision as a
+primary action. Existing drafts still open in the editor; navigation alone never
+creates a draft. Past dates remain read-only. Back returns to Schedule settings.
+Five focused navigation/action tests passed, including context preservation,
+no write on entry, explicit preparation and historical-date protection. Production
+build passed. Chromium/WebKit mobile checks confirmed the actual link destination,
+visible preparation action and no horizontal overflow. Local readiness is healthy.
+No database change, push or remote deployment for this correction.
+
+### Discard proxy-error handling — 8 October 2026
+
+The reported discard dialog displayed an ngrok HTML document. Current local and
+public readiness checks pass; the original transient failure is not conclusively
+identified. Shared API handling now rejects HTML proxy responses (including HTTP
+200), displays a concise uncertainty/retry message, and preserves JSON domain
+errors. Ngrok-hosted API requests send the browser-warning bypass header. An HTML
+response cannot be mistaken for a successful command. Six regression tests,
+frontend build/typecheck and lint passed. A WebKit mobile check against an isolated
+database injected an HTML 502 on discard, verified the readable error, then retried
+against the actual backend: discard succeeded with the identical idempotency key.
+The user's live draft was not altered. No migration or remote deployment.
+
+### Simplified day editing — 8 October 2026
+
+User decision supersedes the separate Daily Plan entry mode above: remove the
+large Change this day panel. The ordinary Day schedule overflow menu now offers
+Edit day schedule (or Resume editing for an existing draft). The editor opens
+only after that action; opening the timetable does not create or open a draft.
+Schedule settings retains a plainly labelled View day schedule navigation link,
+not a required editing gateway. Date/class context and past-date safeguards remain.
+Five focused tests, production build/typecheck and lint pass. WebKit mobile testing
+against the isolated database verified menu → editor, reload → read-only schedule,
+Resume editing → discard. No live user draft was modified, no schema change or
+deployment. Uses the existing accessible overflow-menu pattern and shared theme.
+
+Menu polish: Edit day schedule/Resume editing now has a decorative 19px pencil
+icon matching Print. Both actions use equal horizontal padding and nonshrinking
+icons. Three focused tests and typecheck pass; local readiness remains healthy.
+
+## 8 October 2026 — Attendance presentation simplification
+
+Applied the user's timetable-style simplification to staff/admin workspaces and
+registers, plus parent/student attendance. Blueprint sections 6, 8, 10 and 12
+invariants retained: unsubmitted is not absence, gate observations remain separate,
+offline/reconciliation states remain explicit, correction/locking rules unchanged.
+
+- Shared compact attendance date control: native date entry, Previous/Next day,
+  Today and arrow-only month disclosure. Picking a date keeps the month expanded;
+  Today collapses it. Register date changes still use the unsaved-edit confirmation.
+- Removed the staff workspace gradient hero; kept compact factual totals, search
+  and status filters. Class cards form a flatter grouped list. Attendance desk
+  starts collapsed unless review cases/errors require attention; paper entry and
+  reconciliation remain available within it.
+- Register header is flatter with the shared date control. Removed redundant
+  principal-review prose; retained the explicit edit/correction action, attribution,
+  revision history, source handling, offline warnings and submission safeguards.
+- Parent calendar and subject records precede optional breakdown/arrival details.
+  Student subject attendance precedes optional class standings/absence simulation.
+  These secondary sections use disclosures, not deleted features. Family summaries
+  use existing surfaces and child accents with corrected text contrast. Source
+  order follows visual order for keyboard users. No data/permission/schema changes.
+
+Evidence: full frontend suite 331/331 passed; post-reordering focused tests 17/17
+passed. Build/typecheck and lint passed. WebKit checks covered principal, teacher,
+parent and student at 320/390/768/1024/1440 px with no horizontal overflow; expanded
+calendar and real register navigation checked. Local/ngrok readiness both healthy.
+Physical-phone review requested. No push or remote deployment this turn.
+
+### Attendance-first correction — 8 October 2026
+
+The user rejected copying timetable controls into attendance. This decision
+supersedes the expandable attendance calendar and workspace totals above.
+Staff/admin attendance is a daily register queue: one inline native date picker
+with adjacent-day navigation (Today only when viewing another day), followed by
+one status select with counts and optional search/attendance-desk tools. Removed
+the separate calendar card/expander, repeated totals, Registers heading and four
+filter chips. Registers now follow the controls directly. Existing filter logic,
+record states and marking/correction rules are unchanged.
+
+Desk cases retain a badge plus visible review notice; load failures retain an
+explicit notice, never an implied zero queue. Paper/reconciliation tools open
+from the desk button. Search opens with focus and closes/clears with Escape or
+its close button, returning focus to its trigger. The native date picker also
+simplifies individual registers while retaining unsaved-edit protection.
+
+Verified: 23 focused date/workspace/register tests, build/typecheck and lint pass.
+WebKit shows no horizontal overflow at 320/390/768/1024/1440 px. Real preview
+principal and teacher search/filter entry and principal desk opening verified;
+mobile screenshot confirms class records visible immediately below two control
+rows. Local and ngrok readiness healthy. No data/schema edits, push or deployment.
+Request phone validation of this revised hierarchy rather than claiming acceptance.
+
+### Shared date navigation — 8 October 2026
+
+Latest user decisions supersede the previous per-module picker treatments:
+
+- One shared date-navigation component, date grid and view selector now serve
+  timetable and Calendar across all four portals, plus admin/teacher attendance
+  workspaces and individual registers. Module-specific data and actions remain
+  separate; this does not add new attendance aggregates or permissions.
+- Tapping the top-left date/month/year uses the same native date input in each
+  module. It does **not** expand/collapse the inline calendar. Only the separate
+  arrow (or Day/Month selector) changes inline presentation. Timetable retains
+  its Year overview without a daily agenda. No swipe gestures were added.
+- Attendance remains one compact date row, with adjacent-day arrows and **no
+  inline expansion**. Timetable/Calendar use Monday-first seven-day strips and
+  week arrows; expanded month and year arrows move the displayed period. All
+  arrows have explicit accessible period labels.
+- Today is shown only when the selected school date differs from today. Returning
+  to today also collapses the timetable/calendar month view. Calendar updates
+  date and view atomically while retaining other URL context. Picking another
+  date does not collapse an already expanded month.
+- The same accent-filled circle marks selection; an outline marks unselected
+  today. Event/status dots and timetable totals remain domain-specific; indicator
+  space is reserved across a row to keep date numbers aligned. Month/year changes
+  clamp to valid dates; date arithmetic uses UTC calendar days, not device offsets.
+- Removed the repeated visible selected-date/Today line next to the expansion
+  arrow and tightened bottom spacing. A screen-reader announcement remains.
+  Touch targets, keyboard month-boundary navigation and visible focus are retained.
+- Schedule settings is an unboxed text link with its chevron and keyboard focus
+  outline. The actual destination and class/date context are unchanged.
+- Register date changes still go through the unsaved-work confirmation. Rejected
+  changes do not update the controlled date. No attendance commands, access rules,
+  schema changes, live-data edits or remote deployment are part of this change.
+
+Evidence: full frontend suite passed 339/339 before final minor styling/metadata
+polish. Focused shared-control checks cover native input changes vs expansion,
+Today visibility/collapse, guard rejection, leap years, month-end clamping,
+keyboard focus and calendar indicators. WebKit exercised date selection, month
+selection persistence and Today across principal/teacher/parent/student timetable
+and Calendar plus both staff attendance queues; no horizontal overflow at
+320/390/768/1024/1440 px. Local and ngrok readiness passed. Physical-phone native
+picker and visual acceptance remain requested; browser emulation is not that sign-off.
+
+Final polish verification: 19 focused date/navigation tests, production build,
+typecheck and lint passed. WebKit confirmed the Schedule settings link has zero
+border, transparent background and a retained 44px hit area on both routes;
+320/390px rechecks and local readiness passed after the final changes.
+
+### Timetable compact counts and monthly year overview — 8 October 2026
+
+User clarification: Year is an overview of monthly scheduled classes, **not** a
+grid of miniature calendars. The interim mini-calendar design was rejected and
+removed. Year now displays twelve tappable month totals with a restrained selected
+month accent, no date cells, bar chart, or daily agenda. Tapping a month retains
+the established Month-view destination. Counts retain the existing "periods"
+unit: these are scheduled lesson periods, not distinct class sections.
+
+The compact seven-day strip now shows the same per-date count as the expanded
+month (dash for a known free day). Missing or failed data is never presented as
+zero/free. The shared implementation serves all timetable portals and preserves
+child accent colours. Month totals without summary data read "Not loaded".
+
+Verified: 12 date/timetable component tests passed after the correction, including
+compact counts, missing data and the explicit absence of calendar dates in Year.
+Seven route-level timetable checks passed during this slice. WebKit verified the
+final monthly-total layout and month drill-down at 320/390/768/1024/1440 px with no
+horizontal overflow; all four portal count/navigation flows were also exercised.
+Phone visual acceptance remains open. No data, permission or schema changes.
+
+### Attendance paper/offline review clarity — 8 October 2026
+
+User feedback: the "Operational continuity / Evidence and reconciliation" panel
+did not explain its purpose and repeated headings, zero summaries and nested boxes.
+The panel is now named **Paper & offline entries**, with one short explanation,
+flat class/date review rows, and a collapsed **Enter a paper register** action.
+The empty state is a single "Nothing to review" line. Processing details no longer
+dominate the view: pending entries appear only when nonzero; applied/rejected
+totals are disclosed under their actual attendance date. Missing, loading and
+failed responses never imply a zero/clear queue.
+
+Scope was checked against the existing backend: open cases and pending/review
+counts span all dates, while processed totals are date-specific. Every case shows
+its own date; the toolbar uses the full review count rather than the loaded list
+(the server caps that list at 50). Review details retain the original server
+reason, recorder, observation time, source reference and current revision. Required
+notes, locked-register protection, revision checks and accept/reject command
+semantics remain intact. Busy actions cannot be duplicated or switched mid-save.
+
+Verification: 347 frontend tests passed before the final additional toolbar-count
+regression; the final focused panel/workspace set passes 16 tests. Production
+build/typecheck and lint passed. WebKit inspected the real empty/paper-entry flow
+and read-only mocked review/locked/error states; no overflow at
+320/390/768/1024/1440px, with 44px controls and keyboard focus verified. A navigation
+abort of the existing events stream produced an access-control console error;
+this is not represented as a clean console or a resolved event-stream issue.
+Local preview readiness is healthy. No attendance records, permissions or schema
+were changed; no push or deployment. Physical-phone visual validation is pending.

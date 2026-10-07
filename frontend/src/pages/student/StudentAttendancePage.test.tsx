@@ -17,6 +17,7 @@ describe("StudentAttendancePage", () => {
       </MemoryRouter></TestQueryProvider>,
     );
 
+    await user.click(screen.getByText('Plan an absence'));
     const stepper = screen.getByRole("group", { name: "Projected absences" });
     const increase = within(stepper).getByRole("button", { name: "Increase projected absences" });
 

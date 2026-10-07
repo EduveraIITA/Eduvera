@@ -39,6 +39,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
   const auth = useOptionalAuth();
   const { pathname } = useLocation();
   const planning = portal === "principal" && (pathname.startsWith("/principal/timetable") || pathname === "/principal/calendar");
+  const planningTabs = portal === "principal" && (pathname === "/principal/timetable" || pathname === "/principal/calendar");
   const member=currentStaffMembership(auth?.memberships ?? []);
   const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
   const navigation=nav[portal].filter(item=>{
@@ -66,7 +67,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
-        <main className="operations-main">{planning ? <PlanningNavigation/> : null}{children}</main>
+        <main className="operations-main">{planningTabs ? <PlanningNavigation/> : null}{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
           {navigation.filter(({ id }) => mobileNavIds.has(id)).map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={mobileActive === id ? "page" : undefined} className={mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>

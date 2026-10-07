@@ -462,7 +462,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       audienceUserIds: audience.rows.map((row) => row.user_id),
       payload: {
         action: input.action, class_section_id: input.classSectionId, slot_id: input.slotId,
-        refresh: ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.timetable", "principal.home"],
+        refresh: ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.timetable", "principal.home", "notifications", "calendar"],
       },
       idempotencyKey: `timetable:${input.requestId}:${input.classSectionId}:${input.slotId}:${input.action}`,
     });

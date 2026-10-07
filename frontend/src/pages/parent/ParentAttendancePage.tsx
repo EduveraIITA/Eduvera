@@ -21,6 +21,7 @@ import { schoolDateToday } from "../../lib/schoolTime";
 import { AttendanceRankingDialog } from "../../features/school/AttendanceRankingDialog";
 import type { ParentAttendanceData, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
+import '../../features/attendance/attendance-simple.css';
 
 export interface ParentAttendancePageProps {
   data?: ParentAttendanceData;
@@ -81,7 +82,7 @@ export function ParentAttendancePage({
 
   return (
     <ParentShell active="attendance" pageLabel="Attendance" child={data.child} onSelectChild={onSelectChild}>
-      <div className="parent-stack attendance-page">
+      <div className="parent-stack attendance-page attendance-family-simple">
         <div className="attendance-context-row">
           <span><span className="presence-dot" />Campus Presence</span>
           <strong>{data.termLabel}</strong>
@@ -111,48 +112,6 @@ export function ParentAttendancePage({
           </div>
         </section>
         {rankingOpen && <AttendanceRankingDialog ranking={data.ranking} className={`${data.child.grade} - Section ${data.child.section}`} currentLabel="Your child" onClose={() => setRankingOpen(false)} />}
-
-        <section className="attendance-stat-grid" aria-label="Attendance summary">
-          <article className="attendance-stat-card">
-            <div className="attendance-stat-card__title"><span>Attended</span><ClipboardCheck size={18} /></div>
-            <strong>{data.stats.attended}<small>/{data.stats.totalDays} d</small></strong>
-            <p className="green-text">{hasAttendance ? `${data.stats.dailyRatePercent.toFixed(1)}% Rate` : "Not recorded"}</p>
-          </article>
-          <article className="attendance-stat-card">
-            <div className="attendance-stat-card__title"><span>Active Streak</span><Flame className="flame-icon" size={19} /></div>
-            <strong>{data.stats.activeStreakDays} <small>Days</small></strong>
-            <p className="blue-text">{data.stats.streakDetail}</p>
-          </article>
-          <article className="attendance-stat-card">
-            <div className="attendance-stat-card__title"><span>Excused</span><CheckCircle2 size={18} /></div>
-            <strong>{data.stats.excusedCount} <small>Approved</small></strong>
-            <p>{data.stats.excusedDetail}</p>
-          </article>
-          <article className="attendance-stat-card">
-            <div className="attendance-stat-card__title"><span>Unexcused</span><MoreHorizontal size={18} /></div>
-            <strong>{data.stats.pendingCount} <small>Days</small></strong>
-            <p className="red-text">{data.stats.pendingDetail}</p>
-          </article>
-        </section>
-
-        <section aria-labelledby="presence-pulse-heading">
-          <h2 className="parent-section-title" id="presence-pulse-heading">Today's attendance</h2>
-          <div className="surface-card presence-event-list">
-            <article>
-              <span className="presence-event-icon"><Radio size={19} /></span>
-              <div><strong>Gate Check-in</strong><time>{data.today.checkInTime}</time><small>{data.today.checkInLocation} - {data.today.checkInSource}</small></div>
-              <span className={data.today.checkInVerified ? "mini-status mini-status--verified" : "mini-status"}>
-                {data.today.checkInVerified ? <span className="presence-dot" /> : null}
-                {data.today.checkInVerified ? "Verified" : "No event"}
-              </span>
-            </article>
-            <article>
-              <span className="presence-event-icon presence-event-icon--muted"><Bus size={18} /></span>
-              <div><strong>Expected Dismissal</strong><time>{data.today.dismissalTime}</time><small>{data.today.dismissalDetail}</small></div>
-              <span className="mini-status">Scheduled</span>
-            </article>
-          </div>
-        </section>
 
         <section aria-labelledby="monthly-ledger-heading">
           <div className="attendance-section-heading">
@@ -229,6 +188,48 @@ export function ParentAttendancePage({
           </button>
           {messageState === "error" ? <p className="form-error" role="alert">Messaging is unavailable. Please try again.</p> : null}
         </section>
+        <details className="attendance-simple-disclosure"><summary>Attendance breakdown</summary><section className="attendance-stat-grid" aria-label="Attendance summary">
+          <article className="attendance-stat-card">
+            <div className="attendance-stat-card__title"><span>Attended</span><ClipboardCheck size={18} /></div>
+            <strong>{data.stats.attended}<small>/{data.stats.totalDays} d</small></strong>
+            <p className="green-text">{hasAttendance ? `${data.stats.dailyRatePercent.toFixed(1)}% Rate` : "Not recorded"}</p>
+          </article>
+          <article className="attendance-stat-card">
+            <div className="attendance-stat-card__title"><span>Active Streak</span><Flame className="flame-icon" size={19} /></div>
+            <strong>{data.stats.activeStreakDays} <small>Days</small></strong>
+            <p className="blue-text">{data.stats.streakDetail}</p>
+          </article>
+          <article className="attendance-stat-card">
+            <div className="attendance-stat-card__title"><span>Excused</span><CheckCircle2 size={18} /></div>
+            <strong>{data.stats.excusedCount} <small>Approved</small></strong>
+            <p>{data.stats.excusedDetail}</p>
+          </article>
+          <article className="attendance-stat-card">
+            <div className="attendance-stat-card__title"><span>Unexcused</span><MoreHorizontal size={18} /></div>
+            <strong>{data.stats.pendingCount} <small>Days</small></strong>
+            <p className="red-text">{data.stats.pendingDetail}</p>
+          </article>
+        </section></details>
+
+        <details className="attendance-simple-disclosure"><summary>Arrival & dismissal</summary><section aria-labelledby="presence-pulse-heading">
+          <h2 className="parent-section-title" id="presence-pulse-heading">Today's attendance</h2>
+          <div className="surface-card presence-event-list">
+            <article>
+              <span className="presence-event-icon"><Radio size={19} /></span>
+              <div><strong>Gate Check-in</strong><time>{data.today.checkInTime}</time><small>{data.today.checkInLocation} - {data.today.checkInSource}</small></div>
+              <span className={data.today.checkInVerified ? "mini-status mini-status--verified" : "mini-status"}>
+                {data.today.checkInVerified ? <span className="presence-dot" /> : null}
+                {data.today.checkInVerified ? "Verified" : "No event"}
+              </span>
+            </article>
+            <article>
+              <span className="presence-event-icon presence-event-icon--muted"><Bus size={18} /></span>
+              <div><strong>Expected Dismissal</strong><time>{data.today.dismissalTime}</time><small>{data.today.dismissalDetail}</small></div>
+              <span className="mini-status">Scheduled</span>
+            </article>
+          </div>
+        </section></details>
+
       </div>
     </ParentShell>
   );

@@ -4,8 +4,10 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   History,
+  Pencil,
   Printer,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -20,10 +22,11 @@ import {
   type DayPeriod,
   type PlanOptions,
 } from "./api";
-import { TimetableNavigator, timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
+import { TimetableNavigator, timetableSummaryRange, readTimetableView } from "../timetable/TimetableNavigator";
 import { DayPeriodList } from "./DayPeriodList";
 import { PlanEditor } from "./PlanEditor";
 import { CoverageResponse } from "./CoverageResponse";
+import { ScheduleActions } from "./ScheduleActions";
 import "./day-plans.css";
 export default function PrincipalDayPlanPage() {
   const auth = useAuth(),
@@ -32,13 +35,11 @@ export default function PrincipalDayPlanPage() {
   const schools = auth.memberships.filter((m) => m.role === "admin");
   const schoolId = params.get("school") || schools[0]?.school_id || "";
   const date = params.get("date") || schoolDateToday();
-  const requestedView = params.get("view");
-  const view: TimetableView = ["day", "week", "month", "year"].includes(requestedView ?? "")
-    ? requestedView as TimetableView
-    : "day";
+  const view = readTimetableView(params.get("view"));
   const query = useQuery({
     queryKey: ["school", "day-plans", "options", schoolId, date],
     queryFn: () => getPlanOptions(schoolId, date),
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[3] === schoolId ? previous : undefined,
     enabled: !!schoolId,
   });
   const section =
@@ -64,18 +65,13 @@ export default function PrincipalDayPlanPage() {
     <OperationsShell
       portal="principal"
       active="timetable"
-      title="Daily school plan"
+      title="Timetable"
       backTo="/principal/more"
       subtitle="Timetable"
       schoolName={schools.find((s) => s.school_id === schoolId)?.school_name}
       contentHasHeading
     >
       <div className="day-workspace">
-        <div className="day-page-actions">
-          <Link className="day-secondary" to="/principal/timetable/weekly">
-            Manage timetable <ArrowRight size={16} />
-          </Link>
-        </div>
         <TimetableNavigator
           date={date}
           view={view}
@@ -83,9 +79,10 @@ export default function PrincipalDayPlanPage() {
           loading={summary.isPending}
           error={summary.isError ? summary.error.message : undefined}
           contextControl={
-            <label className="timetable-context-select">
+            <label className="timetable-context-select date-view-select">
               <span className="sr-only">Class</span>
               <select
+                className="date-view-select__input"
                 aria-label="Class"
                 value={section?.id ?? ""}
                 disabled={!query.data?.classes.length}
@@ -101,6 +98,7 @@ export default function PrincipalDayPlanPage() {
                   <option value="">No classes</option>
                 )}
               </select>
+              <ChevronDown size={16} aria-hidden="true" />
             </label>
           }
           onDateChange={(nextDate) => set({ date: nextDate })}
@@ -125,7 +123,7 @@ export default function PrincipalDayPlanPage() {
             </label>
           </div>
         ) : null}
-        {query.isPending ? (
+        {view === "year" ? null : query.isPending || query.isPlaceholderData ? (
           <DayLoading />
         ) : query.isError ? (
           <DayFailure
@@ -187,6 +185,7 @@ function PlanWorkspace({
   onDirty: (dirty: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
   const [startedId, setStartedId] = useState("");
   const id = startedId || section.plan_id || "";
   const [busy, setBusy] = useState(false),
@@ -215,6 +214,7 @@ function PlanWorkspace({
       });
       startKey.current = null;
       setStartedId(result.id);
+      setEditing(true);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not prepare the draft.");
@@ -241,18 +241,17 @@ function PlanWorkspace({
     );
   }
   const scheduleActions = (
-    <div className="day-actions day-schedule-actions">
-      {plan?.draft_version ? null : canEdit ? (
+    <ScheduleActions>
+      {canEdit ? (
         <button
-          className="day-primary"
-          disabled={busy}
-          onClick={() => void start()}
+          className="day-secondary"
+          disabled={busy || (Boolean(id) && detail.isPending) || detail.isError}
+          onClick={() => plan?.draft_version ? setEditing(true) : void start()}
         >
+          <Pencil size={19} aria-hidden="true" />
           {busy
             ? "Preparing…"
-            : plan?.published_version
-              ? "Create revision"
-              : "Prepare changes"}
+            : plan?.draft_version ? "Resume editing" : "Edit day schedule"}
         </button>
       ) : (
         <span className="day-status">Past schedule</span>
@@ -263,10 +262,10 @@ function PlanWorkspace({
           aria-label="Print published day plan"
           onClick={() => window.print()}
         >
-          <Printer size={19} />
+          <Printer size={19} /> Print
         </button>
       ) : null}
-    </div>
+    </ScheduleActions>
   );
   return (
     <>
@@ -278,7 +277,7 @@ function PlanWorkspace({
           message={detail.error.message}
           retry={() => void detail.refetch()}
         />
-      ) : plan?.draft_version ? (
+      ) : plan?.draft_version && editing ? (
         <PlanEditor
           key={`${plan.id}:${plan.draft_version}`}
           plan={plan}
@@ -294,10 +293,10 @@ function PlanWorkspace({
       >
         <header className="day-heading">
           <div>
-            <span className="day-eyebrow">{section.name}</span>
-            <h2 id="published-heading">Published timetable</h2>
+            <h2 id="published-heading">Day schedule</h2>
+            <span className="day-schedule-meta">{live.filter((period) => !period.cancelled).length} periods{plan?.published_version ? " · Published changes" : ""}</span>
           </div>
-          {scheduleActions}
+          {canEdit || live.length || plan?.published_version ? scheduleActions : null}
         </header>
         {plan?.versions.find((v) => v.version === plan.published_version)
           ?.notice ? (

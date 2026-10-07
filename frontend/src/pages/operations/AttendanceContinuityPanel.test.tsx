@@ -2,6 +2,7 @@ import { cleanup, render, screen, within, waitFor } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import type { ComponentProps } from "react";
 import type { AttendanceContinuityWorkspace, TeacherClassSummary } from "../../features/operations/api";
 import { AttendanceContinuityPanel } from "./AttendanceContinuityPanel";
 
@@ -58,6 +59,10 @@ const workspace: AttendanceContinuityWorkspace = {
   }],
 };
 
+function panel(props: Partial<ComponentProps<typeof AttendanceContinuityPanel>> = {}) {
+  return <MemoryRouter><AttendanceContinuityPanel data={workspace} classes={classes} date="2026-10-03" loading={false} error={null} onDecision={vi.fn(() => Promise.resolve())} {...props} /></MemoryRouter>;
+}
+
 describe("attendance continuity review", () => {
   it("routes paper capture into a class register and applies reviewed evidence with a note", async () => {
     const interact = userEvent.setup();
@@ -71,16 +76,24 @@ describe("attendance continuity review", () => {
       onDecision={onDecision}
     /></MemoryRouter>);
 
+    expect(screen.getByRole("link", { name: /Enter sheet/ })).not.toBeVisible();
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Paper & offline entries");
+    expect(screen.queryByText(workspace.cases[0]!.reason)).not.toBeInTheDocument();
+    await interact.click(screen.getByText("Enter a paper register"));
     expect(screen.getByRole("link", { name: /Enter sheet/ })).toHaveAttribute(
       "href",
       "/principal/attendance?class_section_id=class-7a&date=2026-10-03&source=paper",
     );
+    expect(screen.getByText("4")).not.toBeVisible();
+    await interact.click(screen.getByText("Processed · 3 Oct 2026"));
     expect(screen.getByText("4")).toBeVisible();
     const card = screen.getByRole("article");
     await interact.click(within(card).getByRole("button", { name: "Review" }));
     const apply = within(card).getByRole("button", { name: "Apply to register" });
     expect(apply).toBeDisabled();
-    await interact.type(within(card).getByRole("textbox", { name: "Decision note" }), "Matched all rows to the signed paper sheet");
+    expect(within(card).getByText(workspace.cases[0]!.reason)).toBeVisible();
+    expect(within(card).getByText("Register book 7A, page 42")).toBeVisible();
+    await interact.type(within(card).getByRole("textbox", { name: "Review note" }), "Matched all rows to the signed paper sheet");
     await interact.click(apply);
     await waitFor(() => expect(onDecision).toHaveBeenCalledWith(
       "case-1",
@@ -101,8 +114,86 @@ describe("attendance continuity review", () => {
       onDecision={vi.fn(() => Promise.resolve())}
     /></MemoryRouter>);
     await interact.click(screen.getByRole("button", { name: "Review" }));
-    await interact.type(screen.getByRole("textbox", { name: "Decision note" }), "Verified against signed register");
+    await interact.type(screen.getByRole("textbox", { name: "Review note" }), "Verified against signed register");
     expect(screen.getByText(/Unlock this register/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Apply to register" })).toBeDisabled();
+  });
+
+  it("keeps the empty state short without zero-count summaries", () => {
+    render(panel({ data: { ...workspace, summary: { pending: 0, quarantined: 0, accepted: 0, rejected: 0 }, cases: [] } }));
+    expect(screen.getByText("Nothing to review.")).toBeVisible();
+    expect(screen.queryByText(/Processed|to review$|Quarantined|Syncing/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.getByRole("combobox")).not.toBeVisible();
+  });
+
+  it("does not present missing, loading or failed data as an empty review queue", () => {
+    const view = render(panel({ loading: true }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading entries");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing to review.")).not.toBeInTheDocument();
+    view.rerender(panel({ error: new Error("Unable to load entries") }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Unable to load entries");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.queryByText(/to review$/)).not.toBeInTheDocument();
+    view.rerender(panel({ data: undefined }));
+    expect(screen.getByText("Review status unavailable.")).toBeVisible();
+    expect(screen.queryByText("Nothing to review.")).not.toBeInTheDocument();
+  });
+
+  it("shows each entry's date, full queue total and date-scoped processed counts", async () => {
+    const interact = userEvent.setup();
+    render(panel({ date: "2026-10-08", data: { ...workspace, date: "2026-10-08", summary: { ...workspace.summary, quarantined: 51 } } }));
+    expect(screen.getByText("3 Oct 2026 · Paper register")).toBeVisible();
+    expect(screen.getByText("51 to review")).toBeVisible();
+    expect(screen.getByText(/Showing 1 of 51 entries/)).toBeVisible();
+    expect(screen.getByText("Processed · 8 Oct 2026")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("1 entry awaiting processing");
+    await interact.click(screen.getByText("Enter a paper register"));
+    expect(screen.getByRole("link", { name: /Enter sheet/ })).toHaveAttribute("href", expect.stringContaining("date=2026-10-08"));
+  });
+
+  it("uses the available class when the roster loads or changes, and avoids an empty link", async () => {
+    const interact = userEvent.setup();
+    const view = render(panel({ classes: [] }));
+    await interact.click(screen.getByText("Enter a paper register"));
+    expect(screen.getByText("No classes available for paper entry.")).toBeVisible();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    view.rerender(panel());
+    expect(screen.getByRole("combobox", { name: "Class" })).toHaveValue("class-7a");
+    view.rerender(panel({ classes: [{ ...classes[0]!, class_section_id: "class-8a", class_name: "Class 8A" }] }));
+    expect(screen.getByRole("link", { name: /Enter sheet/ })).toHaveAttribute("href", expect.stringContaining("class_section_id=class-8a"));
+  });
+
+  it("retains verification warnings, the required note and expected revision on rejection", async () => {
+    const interact = userEvent.setup();
+    const onDecision = vi.fn(() => Promise.resolve());
+    render(panel({ onDecision, data: { ...workspace, cases: [{ ...workspace.cases[0]!, current_revision: 7, reason_code: "roster_changed", reason: "The saved roster signature is invalid." }] } }));
+    expect(screen.getByText("Student list needs checking")).toBeVisible();
+    await interact.click(screen.getByRole("button", { name: "Review" }));
+    expect(screen.getByText("The saved roster signature is invalid.")).toBeVisible();
+    const reject = screen.getByRole("button", { name: "Reject entry" });
+    await interact.type(screen.getByRole("textbox", { name: "Review note" }), "  ");
+    expect(reject).toBeDisabled();
+    await interact.type(screen.getByRole("textbox", { name: "Review note" }), "Could not verify the original sheet");
+    await interact.click(reject);
+    await waitFor(() => expect(onDecision).toHaveBeenCalledWith("case-1", "reject", "Could not verify the original sheet", 7));
+  });
+
+  it("prevents duplicate decisions while saving and keeps a failed review open", async () => {
+    const interact = userEvent.setup();
+    let rejectDecision!: (error: Error) => void;
+    const onDecision = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectDecision = reject; }));
+    render(panel({ onDecision }));
+    await interact.click(screen.getByRole("button", { name: "Review" }));
+    await interact.type(screen.getByRole("textbox", { name: "Review note" }), "Verified the sheet");
+    await interact.click(screen.getByRole("button", { name: "Apply to register" }));
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject entry" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Review note" })).toBeDisabled();
+    rejectDecision(new Error("The register changed. Reload before applying."));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The register changed");
+    expect(screen.getByRole("textbox", { name: "Review note" })).toHaveValue("Verified the sheet");
+    expect(onDecision).toHaveBeenCalledTimes(1);
   });
 });

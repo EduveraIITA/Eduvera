@@ -27,6 +27,7 @@ import { StudentShell, type StudentNavKey, type StudentRouteMap } from "./Studen
 import { AttendanceCopilotSheet, type AttendanceCopilotHandler } from "./AttendanceCopilotSheet";
 import { AttendanceRankingDialog, type AttendanceRankingData } from "../../features/school/AttendanceRankingDialog";
 import "./student-pages.css";
+import '../../features/attendance/attendance-simple.css';
 
 export type AttendanceSubjectGroup = "core" | "language" | "activity";
 
@@ -284,7 +285,7 @@ export function StudentAttendancePage({
 
   return (
     <StudentShell activeNav={activeNav} routes={routes} className={data.className}>
-      <div className="student-page-stack attendance-page">
+      <div className="student-page-stack attendance-page attendance-family-simple">
         <section className="attendance-hero" aria-labelledby="overall-attendance-heading">
           <h1 className="sr-only">{data.studentName}</h1>
           <div className="attendance-hero__headline">
@@ -308,72 +309,19 @@ export function StudentAttendancePage({
             <small><span>Min. required: {data.minimumPercent}%</span><span>Current status: {data.aggregate >= data.minimumPercent ? "Eligible" : "Below minimum"}</span></small>
           </div>
 
-          <div className="attendance-stat-grid">
+          <details className="attendance-simple-disclosure"><summary>Attendance breakdown</summary><div className="attendance-stat-grid">
             <StatTile icon={<UserCheck size={18} />} label="Attended" value={`${data.attended}/${data.held}`} tone="green" />
             {data.streak !== undefined
               ? <StatTile icon={<Flame size={18} />} label="Active Streak" value={`${data.streak} Days`} tone="amber" />
               : <StatTile icon={<Flame size={18} />} label="Half Days" value={`${data.halfDays ?? 0} Recorded`} tone="amber" />}
             <StatTile icon={<FileCheck2 size={18} />} label="Excused Leaves" value={`${data.excused} Recorded`} />
             <StatTile icon={<ClipboardCheck size={18} />} label="Unexcused" value={`${data.unexcused} Recorded`} tone="rose" />
-          </div>
-        </section>
-
-        <section className="student-card attendance-leaderboard" aria-labelledby="leaderboard-heading">
-          <header className="section-heading">
-            <span className="section-heading__icon"><Medal size={18} /></span>
-            <div><h2 id="leaderboard-heading"><button className="attendance-leaderboard__open" type="button" onClick={() => openRanking()}>Top Attendees - {data.className} <span aria-hidden="true">↗</span></button></h2></div>
-            <span className={`status-chip ${leaders.length > 0 ? "status-chip--green" : ""}`}>{leaders.length > 0 ? data.termLabel.split(" (")[0] : "Not published"}</span>
-          </header>
-          <p className="section-subcopy">{leaders.length > 0 ? `Punctual attendance and active on-time streaks for ${data.className}${data.rankingAsOf ? ` - Updated ${data.rankingAsOf}` : ""}.` : "A ranking appears after at least two classmates have five recorded school days."}</p>
-          <div className="leader-list">
-            {leaders.map((leader) => (
-              <button className="leader-row leader-row--clickable" type="button" key={leader.rank} aria-label={`View all class attendance, starting at rank ${leader.rank}`} onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.rank === leader.rank) ?? undefined)}>
-                <RankedAvatar name={leader.name} avatarUrl={leader.avatar_url} rank={leader.rank} />
-                <span className="leader-copy"><strong>{leader.name}</strong><small>{leader.attended}/{leader.held} days{leader.streak !== undefined ? ` - ${leader.streak}d streak` : ""}</small></span>
-                <strong className="leader-percent">{leader.percent.toFixed(1)}%</strong>
-              </button>
-            ))}
-          </div>
-          {data.currentRank !== undefined && <div className="current-standing">
-            <div className="current-standing__label"><strong>Your Current Standing</strong><span>#{data.currentRank} in {data.className}</span><em>{data.rankingCohortSize ?? leaders.length + 1} eligible</em></div>
-            <button className="leader-row leader-row--current leader-row--clickable" type="button" aria-label="View all class attendance, starting at your standing" onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.current) ?? undefined)}>
-              <RankedAvatar name={data.studentName} avatarUrl={data.avatarUrl} rank={data.currentRank} current />
-              <span className="leader-copy"><strong>{data.studentName}</strong><small>{data.attended}/{data.held} days{data.streak !== undefined ? ` - ${data.streak}d streak` : ""}</small></span>
-              <strong className="leader-percent">{data.aggregate.toFixed(1)}%</strong>
-            </button>
-            {nextRank ? <div className="current-standing__next"><span>Next milestone: Rank #{nextRank.rank}</span><strong>{attendanceDaysToOvertake ? `+${attendanceDaysToOvertake} consecutive days to overtake` : "Keep your attendance streak active"}</strong></div> : null}
-          </div>}
-          {data.rankingMethodology && leaders.length > 0 ? <p className="ranking-methodology">{data.rankingMethodology}</p> : null}
-        </section>
-
-        {rankingOpen && <AttendanceRankingDialog ranking={data.ranking} className={data.className} focusIndex={rankingFocusIndex !== null && rankingFocusIndex >= 0 ? rankingFocusIndex : undefined} onClose={() => setRankingOpen(false)} />}
-
-        <section className="student-card simulator-card" aria-labelledby="simulator-heading">
-          <header className="section-heading">
-            <span className="section-heading__icon"><Calculator size={18} /></span>
-            <h2 id="simulator-heading">What-If Simulator</h2>
-            <span className="status-chip">Interactive</span>
-          </header>
-          <p className="section-subcopy">Project missed lecture impacts instantly before requesting upcoming leave.</p>
-          <div className="simulator-well">
-            <div className="simulator-stepper-row">
-              <strong>Projected Absences:</strong>
-              <div className="number-stepper" role="group" aria-label="Projected absences">
-                <button type="button" aria-label="Decrease projected absences" disabled={projectedAbsences === 0} onClick={() => setProjectedAbsences((value) => Math.max(0, value - 1))}><Minus size={17} /></button>
-                <output aria-live="polite">{projectedAbsences}</output>
-                <button type="button" aria-label="Increase projected absences" disabled={projectedAbsences === 15} onClick={() => setProjectedAbsences((value) => Math.min(15, value + 1))}><Plus size={17} /></button>
-              </div>
-            </div>
-            <div className="projection-result">
-              <span><small>Resulting Aggregate</small><strong>{projected.toFixed(1)}% <em>({delta.toFixed(1)}%)</em></strong></span>
-              <span className={`projection-status projection-status--${projectionStatus === "Safe & Eligible" ? "safe" : projectionStatus === "Near Threshold" ? "near" : "critical"}`}><Check size={14} />{projectionStatus}</span>
-            </div>
-          </div>
+          </div></details>
         </section>
 
         <section className="subject-health" aria-labelledby="subject-health-heading">
           <header className="subject-health__header">
-            <h2 id="subject-health-heading">Subject Health Matrix <span>Live</span></h2>
+            <h2 id="subject-health-heading">Subject attendance</h2>
           </header>
           <div className="horizontal-pills" role="tablist" aria-label="Filter subjects">
             {([
@@ -405,6 +353,59 @@ export function StudentAttendancePage({
           <button className="primary-action" type="button" onClick={onApplyMedicalExcuse ?? (() => navigate("/student/leave/new"))}><Camera size={19} />Apply Leave / Upload Slip</button>
           <button className="secondary-action" type="button" onClick={() => setCopilotOpen(true)}><Sparkles size={19} />Ask AI Copilot about Attendance Policy <ArrowRight size={16} /></button>
         </div>
+        <details className="attendance-simple-disclosure"><summary>Class attendance</summary><section className="student-card attendance-leaderboard" aria-labelledby="leaderboard-heading">
+          <header className="section-heading">
+            <span className="section-heading__icon"><Medal size={18} /></span>
+            <div><h2 id="leaderboard-heading"><button className="attendance-leaderboard__open" type="button" onClick={() => openRanking()}>Top Attendees - {data.className} <span aria-hidden="true">↗</span></button></h2></div>
+            <span className={`status-chip ${leaders.length > 0 ? "status-chip--green" : ""}`}>{leaders.length > 0 ? data.termLabel.split(" (")[0] : "Not published"}</span>
+          </header>
+          <p className="section-subcopy">{leaders.length > 0 ? `Punctual attendance and active on-time streaks for ${data.className}${data.rankingAsOf ? ` - Updated ${data.rankingAsOf}` : ""}.` : "A ranking appears after at least two classmates have five recorded school days."}</p>
+          <div className="leader-list">
+            {leaders.map((leader) => (
+              <button className="leader-row leader-row--clickable" type="button" key={leader.rank} aria-label={`View all class attendance, starting at rank ${leader.rank}`} onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.rank === leader.rank) ?? undefined)}>
+                <RankedAvatar name={leader.name} avatarUrl={leader.avatar_url} rank={leader.rank} />
+                <span className="leader-copy"><strong>{leader.name}</strong><small>{leader.attended}/{leader.held} days{leader.streak !== undefined ? ` - ${leader.streak}d streak` : ""}</small></span>
+                <strong className="leader-percent">{leader.percent.toFixed(1)}%</strong>
+              </button>
+            ))}
+          </div>
+          {data.currentRank !== undefined && <div className="current-standing">
+            <div className="current-standing__label"><strong>Your Current Standing</strong><span>#{data.currentRank} in {data.className}</span><em>{data.rankingCohortSize ?? leaders.length + 1} eligible</em></div>
+            <button className="leader-row leader-row--current leader-row--clickable" type="button" aria-label="View all class attendance, starting at your standing" onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.current) ?? undefined)}>
+              <RankedAvatar name={data.studentName} avatarUrl={data.avatarUrl} rank={data.currentRank} current />
+              <span className="leader-copy"><strong>{data.studentName}</strong><small>{data.attended}/{data.held} days{data.streak !== undefined ? ` - ${data.streak}d streak` : ""}</small></span>
+              <strong className="leader-percent">{data.aggregate.toFixed(1)}%</strong>
+            </button>
+            {nextRank ? <div className="current-standing__next"><span>Next milestone: Rank #{nextRank.rank}</span><strong>{attendanceDaysToOvertake ? `+${attendanceDaysToOvertake} consecutive days to overtake` : "Keep your attendance streak active"}</strong></div> : null}
+          </div>}
+          {data.rankingMethodology && leaders.length > 0 ? <p className="ranking-methodology">{data.rankingMethodology}</p> : null}
+        </section></details>
+
+        {rankingOpen && <AttendanceRankingDialog ranking={data.ranking} className={data.className} focusIndex={rankingFocusIndex !== null && rankingFocusIndex >= 0 ? rankingFocusIndex : undefined} onClose={() => setRankingOpen(false)} />}
+
+        <details className="attendance-simple-disclosure"><summary>Plan an absence</summary><section className="student-card simulator-card" aria-labelledby="simulator-heading">
+          <header className="section-heading">
+            <span className="section-heading__icon"><Calculator size={18} /></span>
+            <h2 id="simulator-heading">What-If Simulator</h2>
+            <span className="status-chip">Interactive</span>
+          </header>
+          <p className="section-subcopy">Project missed lecture impacts instantly before requesting upcoming leave.</p>
+          <div className="simulator-well">
+            <div className="simulator-stepper-row">
+              <strong>Projected Absences:</strong>
+              <div className="number-stepper" role="group" aria-label="Projected absences">
+                <button type="button" aria-label="Decrease projected absences" disabled={projectedAbsences === 0} onClick={() => setProjectedAbsences((value) => Math.max(0, value - 1))}><Minus size={17} /></button>
+                <output aria-live="polite">{projectedAbsences}</output>
+                <button type="button" aria-label="Increase projected absences" disabled={projectedAbsences === 15} onClick={() => setProjectedAbsences((value) => Math.min(15, value + 1))}><Plus size={17} /></button>
+              </div>
+            </div>
+            <div className="projection-result">
+              <span><small>Resulting Aggregate</small><strong>{projected.toFixed(1)}% <em>({delta.toFixed(1)}%)</em></strong></span>
+              <span className={`projection-status projection-status--${projectionStatus === "Safe & Eligible" ? "safe" : projectionStatus === "Near Threshold" ? "near" : "critical"}`}><Check size={14} />{projectionStatus}</span>
+            </div>
+          </div>
+        </section></details>
+
       </div>
       <AttendanceCopilotSheet open={copilotOpen} onClose={() => { setCopilotOpen(false); onCopilotClose?.(); }} onAsk={onAskCopilot} />
     </StudentShell>
