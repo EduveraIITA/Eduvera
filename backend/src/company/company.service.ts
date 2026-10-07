@@ -1,3 +1,5 @@
+import { InstitutionsService } from '../institutions/institutions.service.js';
+import { manualSchema } from '../institutions/schemas.js';
 import { deliverInvitation } from '../common/invitation-email.js';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
@@ -10,7 +12,7 @@ type Db = Kysely<Database> | Transaction<Database>;
 const email = z.email().trim().toLowerCase().max(254);
 @Injectable()
 export class CompanyService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly directory: InstitutionsService) {}
   async authorize(user: AuthUser, db: Db = this.db) {
     const result = await sql`SELECT 1 FROM company_operators o JOIN users u ON u.id=o.user_id
       WHERE o.user_id=${user.id}::uuid AND o.is_active AND u.is_active FOR SHARE OF o,u`.execute(db);
@@ -22,10 +24,10 @@ export class CompanyService {
   }
   async workspace(user: AuthUser) {
     await this.authorize(user);
-    const schools = await sql`SELECT s.id,s.name,s.code,s.timezone,s.institution_kind,
+    const schools = await sql`SELECT s.id,s.name,s.code,s.timezone,s.institution_kind,o.status AS onboarding_status,
       (SELECT count(*)::int FROM school_memberships m JOIN users u ON u.id=m.user_id AND u.is_active WHERE m.school_id=s.id AND m.role='admin' AND m.is_active) AS admin_count,
       (SELECT count(*)::int FROM school_invitations i WHERE i.school_id=s.id AND i.source='company' AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>now()) AS pending_admins
-      FROM schools s ORDER BY s.name`.execute(this.db);
+      FROM schools s LEFT JOIN institution_onboarding o ON o.school_id=s.id ORDER BY s.name`.execute(this.db);
     const invitations = await sql`SELECT i.id,i.school_id,s.name AS school_name,i.email,i.expires_at,i.accepted_at,i.revoked_at
       FROM school_invitations i JOIN schools s ON s.id=i.school_id WHERE i.source='company' ORDER BY i.created_at DESC LIMIT 100`.execute(this.db);
     const applications = await sql`SELECT a.id,a.institution_name,a.requested_code,a.institution_kind,a.timezone,a.state_code,a.district,
@@ -49,18 +51,20 @@ export class CompanyService {
   }
   async create(user: AuthUser, body: unknown) {
     await this.authorize(user);
-    const data = z.object({name:z.string().trim().min(2).max(180),code:z.string().trim().regex(/^[a-z0-9-]{2,32}$/),institution_kind:z.enum(['school','college']),timezone:z.string().max(80).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Choose a valid timezone.').default('Asia/Kolkata'),admin_email:email}).strict().parse(body);
+    const data = z.object({name:z.string().trim().min(2).max(180),code:z.string().trim().regex(/^[a-z0-9-]{2,32}$/),institution_kind:z.enum(['school','college']),timezone:z.string().max(80).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Choose a valid timezone.').default('Asia/Kolkata'),admin_email:email,directory_id:z.uuid().optional(),manual:manualSchema.optional(),acknowledged_duplicate_ids:z.array(z.uuid()).max(50).default([])}).strict().refine(value=>!(value.directory_id && value.manual),'Select a directory record or enter manual details, not both.').parse(body);
     try {
       const result = await this.db.transaction().execute(async db=>{
         await this.authorize(user,db);
+        const selected = await this.directory.prepare(db,data);
         const school = (await sql<{id:string;name:string}>`INSERT INTO schools(name,code,timezone,institution_kind)
-          VALUES(${data.name},${data.code},${data.timezone},${data.institution_kind}) RETURNING *`.execute(db)).rows[0]!;
-        const capability = data.institution_kind === 'college' ? 'india_college_core' : 'india_school_core';
-        await sql`UPDATE institution_regulatory_profiles SET institution_kind=${data.institution_kind},
+          VALUES(${selected.name},${data.code},${data.timezone},${selected.institution_kind}) RETURNING *`.execute(db)).rows[0]!;
+        await this.directory.link(db,school.id,selected.directory_id);
+        const capability = selected.institution_kind === 'college' ? 'india_college_core' : 'india_school_core';
+        await sql`UPDATE institution_regulatory_profiles SET institution_kind=${selected.institution_kind},
           capability_packs=ARRAY[${capability}]::text[],review_note='Company-managed provisioning; administrator must complete the regulatory profile.'
           WHERE school_id=${school.id}::uuid`.execute(db);
         await sql`SELECT pg_advisory_xact_lock(hashtextextended(${school.id},0))`.execute(db);
-        await this.audit(db,user,school.id,'company.institution_created',{kind:data.institution_kind});
+        await this.audit(db,user,school.id,'company.institution_created',{kind:selected.institution_kind,directory_id:selected.directory_id,acknowledged_duplicate_ids:data.acknowledged_duplicate_ids});
         const invitation=await this.invitation(db,user,school.id,data.admin_email);
         return {school,invitation};
       });
@@ -100,7 +104,7 @@ export class CompanyService {
         await this.authorize(user,db);
         const application = (await sql<{
           id:string;applicant_user_id:string;institution_name:string;requested_code:string;institution_kind:'school'|'college'|'hybrid';
-          timezone:string;state_code:string;district:string;regulator_reference:string;status:string;
+          timezone:string;state_code:string;district:string;regulator_type:string;regulator_reference:string;status:string;
         }>`SELECT * FROM institution_onboarding_applications WHERE id=${applicationId}::uuid FOR UPDATE`.execute(db)).rows[0];
         if (!application) throw new NotFoundException('Institution onboarding application not found.');
         if (!['submitted','needs_information'].includes(application.status)) throw new ConflictException('This application has already reached a final decision.');
@@ -121,10 +125,15 @@ export class CompanyService {
           return { status: 'rejected' };
         }
         const institutionCode = input.institution_code ?? application.requested_code;
+        const official = (await sql<{id:string}>`SELECT id FROM institution_directory
+          WHERE source=upper(${application.regulator_type}) AND source_code=upper(trim(${application.regulator_reference}))
+          AND source IN ('UDISE','AISHE')`.execute(db)).rows[0];
+        const selected = official ? await this.directory.prepare(db,{directory_id:official.id,name:application.institution_name,institution_kind:application.institution_kind}) : null;
         const school = (await sql<{id:string;name:string;code:string}>`INSERT INTO schools(
           name,code,timezone,institution_kind,onboarding_model,verification_status,created_by_user_id)
           VALUES(${application.institution_name},${institutionCode},${application.timezone},${application.institution_kind},'company_verified','approved',${application.applicant_user_id}::uuid)
           RETURNING id,name,code`.execute(db)).rows[0]!;
+        if (selected) await this.directory.link(db,school.id,selected.directory_id);
         await sql`INSERT INTO school_memberships(user_id,school_id,role) VALUES(${application.applicant_user_id}::uuid,${school.id}::uuid,'admin')`.execute(db);
         const capability = application.institution_kind === 'college' ? 'india_college_core' : 'india_school_core';
         await sql`UPDATE institution_regulatory_profiles SET institution_kind=${application.institution_kind},state_code=${application.state_code},district=${application.district},

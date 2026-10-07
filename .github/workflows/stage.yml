@@ -92,11 +92,12 @@ jobs:
         working-directory: backend
         run: npm test
 
-      - name: Mobile app · install, typecheck, build, test
+      - name: Mobile app · install, typecheck, lint, build, test
         working-directory: frontend
         run: |
           npm ci
           npm run typecheck
+          npm run lint
           npm run build
           npm test
 

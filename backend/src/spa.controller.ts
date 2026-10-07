@@ -71,7 +71,7 @@ export class SpaController {
   }
 
   @Public()
-  @Get(["/", "login", "signup", "company", "join", "launcher", "workspace", "parent", "parent/*", "student", "student/*", "teacher", "teacher/*", "principal", "principal/*", "onboarding/*"])
+  @Get(["/", "login", "signup", "company", "company/*", "join", "launcher", "workspace", "parent", "parent/*", "student", "student/*", "teacher", "teacher/*", "principal", "principal/*", "onboarding/*"])
   async index(@Res() reply: FastifyReply) {
     return this.serve(reply, config().spaDistDir, "Build the React application before serving the SPA.");
   }

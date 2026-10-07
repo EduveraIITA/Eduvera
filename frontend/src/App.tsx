@@ -195,6 +195,7 @@ export function App() {
               <Route path="/onboarding/start" element={<AuthenticatedOnly><SelfServiceOnboardingPage /></AuthenticatedOnly>} />
               <Route path="/onboarding/pending" element={<Navigate to="/onboarding/start" replace />} />
               <Route path="/company" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
+              <Route path="/company/institutions/:id" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
               <Route path="/join" element={<JoinPage />} />
               <Route path="/principal/invitations" element={<PortalOnly portal="principal"><InvitationsPage /></PortalOnly>} />
               <Route path="/teacher/invitations" element={<PortalOnly portal="teacher"><InvitationsPage /></PortalOnly>} />

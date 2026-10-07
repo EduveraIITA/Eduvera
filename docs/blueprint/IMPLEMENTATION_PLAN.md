@@ -2322,6 +2322,18 @@ successfully; a real task-search → staff invitation → back-to-Staff sequence
 The managed preview health/readiness checks and existing ngrok tunnel are healthy.
 Physical-phone/user review remains open. No production deployment is included.
 
+
+### Institution directory — 7 October 2026
+
+The searchable local UDISE/AISHE directory is integrated into the company console.
+Migration 053 keeps master directory identities separate from school tenants,
+protects official source/code and tenant links with database uniqueness, and tracks
+Stage activation status. Creation and invitations use the existing CompanyService
+and email delivery path; university/standalone records use the existing college
+workspace. CSV upsert and explicit legacy mappings preserve stable identities.
+See ../INSTITUTION_DIRECTORY.md. Integrated Stage CI and deployed UI review are
+required before claiming this change live; no national dataset is committed.
+
 ## Stage release verification — 7 October 2026
 
 The grouped More hierarchy, staff access/governance work and companion migrations
