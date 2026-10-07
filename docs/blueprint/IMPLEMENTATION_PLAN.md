@@ -2779,3 +2779,19 @@ typecheck/build passed locally. Deployment is pending the push-triggered Stage
 verification, migration and exact-release health gates; this entry does not claim
 that the new revision is already live. No full demo reset or national-directory
 import was requested or started.
+
+Release verified: [Stage run 37687825563](https://github.com/EduveraIITA/Eduvera/actions/runs/37687825563)
+passed all gates and deployed application revision
+`f77127bd1f7b83018be506a17b7183022646e391`. CI passed **317 backend tests in 45
+files** and **358 frontend tests in 55 files**, plus secret scanning, all builds,
+and fresh PostgreSQL 17 migration/seed verification. Stage then applied
+`053_timetable_curriculum_ownership.sql` and `054_annual_schedule_planning.sql`
+through the normal checksum-validating runner. Full reseeding was skipped.
+
+Independent public checks returned that exact SHA and `environment: stage`, with
+database/events ready. Authenticated WebKit mobile checks opened the new
+paper/offline attendance panel and paper-entry selector, navigated from timetable
+to Schedule settings, and loaded all eight class arrangements without alerts or
+horizontal overflow. The local preview also remained ready. This records a Stage
+release, not production approval or physical-device acceptance. The documentation-
+only evidence commit does not require redeploying the unchanged application.
