@@ -61,7 +61,8 @@ beforeAll(async () => {
       [id, `${label}-${run}`, `${label}-${run}@example.test`, await hashPassword(password)]);
   }
   await pool.query("INSERT INTO company_operators(user_id) VALUES ($1)", [operatorId]);
-  server = spawn(process.execPath, ["dist/main.js"], { env: { ...process.env, PORT: "8024", HOST: "127.0.0.1", NODE_ENV: "test", COOKIE_SECRET: "institution-integration-secret-at-least-32-chars", DEMO_MODE: "false", LOG_LEVEL: "silent" }, stdio: ["ignore", "pipe", "pipe"] });
+  // A separate test server must not consume the existing API suite's shared IP/login bucket.
+  server = spawn(process.execPath, ["dist/main.js"], { env: { ...process.env, PORT: "8024", HOST: "127.0.0.1", NODE_ENV: "test", COOKIE_SECRET: "institution-integration-secret-at-least-32-chars", DEMO_MODE: "false", RATE_LIMIT_STORE: "memory", LOG_LEVEL: "silent" }, stdio: ["ignore", "pipe", "pipe"] });
   server.stderr?.on("data", (data: Buffer) => { serverErrors += data.toString(); });
   let ready = false;
   for (let i = 0; i < 100; i++) {
