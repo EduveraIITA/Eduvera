@@ -2321,3 +2321,23 @@ Nested settings, invitations, grading, governance profile and planning routes op
 successfully; a real task-search → staff invitation → back-to-Staff sequence passed.
 The managed preview health/readiness checks and existing ngrok tunnel are healthy.
 Physical-phone/user review remains open. No production deployment is included.
+
+## Stage release verification — 7 October 2026
+
+The grouped More hierarchy, staff access/governance work and companion migrations
+were released to **Stage**, not production, at commit `bc22e550bad2dacd7199fc1922c35bb7eb582b4d`.
+[Stage workflow 37655645215](https://github.com/EduveraIITA/Eduvera/actions/runs/37655645215)
+passed secret scanning, backend build and integration tests, a fresh PostgreSQL 17
+migration/seed, all 286 mobile tests, the desktop build, existing Stage migrations,
+and Railway deployment. The Stage demo seed completed for roles, a two-rider
+transport trip, governance sources/offices/bodies/appointments/decision rules,
+and an Attendance reviewer scoped to Class 6A. The transport pattern seed now
+upserts by its stable demo ID so a later calendar date does not collide with an
+existing primary key. The Stage workflow's public smoke check passed both SPAs,
+API readiness, demo login, install icons, OpenAPI and protected metrics.
+
+Independent checks of `https://omnischool-stage.up.railway.app` returned HTTP 200
+for `/` and `/staff/`; `/readyz` reported database and events OK; `/releasez`
+reported the exact commit above and `environment: stage`. The local review preview
+also remained ready. Physical-phone/user review is still open, and this evidence
+does not assert a production release.
