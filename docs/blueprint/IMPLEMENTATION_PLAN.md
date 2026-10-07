@@ -2353,3 +2353,15 @@ for `/` and `/staff/`; `/readyz` reported database and events OK; `/releasez`
 reported the exact commit above and `environment: stage`. The local review preview
 also remained ready. Physical-phone/user review is still open, and this evidence
 does not assert a production release.
+
+### Public institution directory population — 8 October 2026
+
+Prepared a checksum-pinned, Stage-only import of the publicly licensed India Data
+Portal UDISE snapshot and an AISHE-derived public snapshot. Rows retain provenance,
+remain unverified, and cannot overwrite existing official identities or tenant
+links. Normalization rejects invalid identifiers and quarantines conflicting
+AISHE codes. Source files remain outside Git. The dedicated workflow verifies the
+loader against isolated PostgreSQL before using the existing Stage credentials;
+its summary artifact records actual accepted/rejected counts. Live counts and
+search verification must be taken from a successful run, not inferred from source
+row totals. See `docs/INSTITUTION_DIRECTORY.md` for attribution and snapshot dates.

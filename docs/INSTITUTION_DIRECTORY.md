@@ -161,3 +161,50 @@ use Stage's existing higher-education (`college`) workspace/capability pack.
 Legacy company clients can still provide the original name/code/type/email body;
 they receive an unverified manual directory record and the same duplicate check.
 The new UI always collects complete manual location/address fields.
+
+## Initial public snapshot import — October 2026
+
+The Stage-only `Import public institution directory` workflow downloads the pinned
+sources in `backend/scripts/institution-directory-sources.json`, verifies SHA-256,
+normalizes them outside Git, validates against isolated PostgreSQL, then imports
+through the existing Railway Stage connection. Dataset files are never committed.
+
+- Schools: Ministry of Education / UDISE+ data redistributed by India Data Portal
+  (Indian School of Business), **Open Data Commons Attribution License**.
+  https://ckandev.indiadataportal.com/dataset/udise
+  Resource last modified 30 September 2024; publisher's source-retrieval date is
+  12 January 2022. This is not the latest national UDISE register.
+- Higher education: AISHE-derived public snapshot published by **Brahmjot Singh**,
+  **MIT license**, repository commit `0fc395ecb9d3e60d76ddeb9ce0d3853d4b52282e`
+  dated 15 December 2025. Original extraction date is not supplied.
+  https://github.com/BrahmjotSingh0/aishe-institutions-list
+  The official AISHE dashboard was unavailable during retrieval; AIKosh's official
+  export requires authenticated download access. This source is an independently
+  published snapshot, not a freshly verified government export.
+
+Each imported row is **unverified** and has a compact `metadata.snapshot` key
+resolving to that source manifest. Search displays attribution and a staleness
+notice. Blank addresses remain blank; village names are used as localities, not
+invented street addresses. Ten-digit numeric UDISE codes regain the leading zero;
+alphanumeric/unrecognized codes, names beyond the supported length, invalid
+locations and conflicting AISHE identities are quarantined/count-reported.
+Research-only AISHE `R-` codes are outside the supported directory types.
+
+This initial snapshot loader uses a temporary staging table and one atomic insert
+transaction. It **never overwrites an existing identity**, marks records verified,
+creates tenants, sends invitations, or infers tenant links from names. Reruns are
+idempotent. The regular normalized CSV upsert tool remains the path for reviewed
+future official dataset updates and explicit tenant mappings. Validation counts
+and complete source manifests are retained as a workflow artifact.
+
+Local preparation (no database access):
+
+```sh
+python3 backend/scripts/prepare_institution_directory.py --directory /tmp/directory-sources --output /tmp/directory.csv
+```
+
+Run the Stage workflow or, from trusted Stage runtime access, invoke
+`node --import tsx src/institutions/import-public-snapshot.ts /tmp/directory.csv`
+from `backend`. Runtime credentials stay in the existing Railway/GitHub secret
+boundary and are not logged or copied into Git. No account registration, protected
+government portal scraping, or runtime dependency on an external directory is used.
