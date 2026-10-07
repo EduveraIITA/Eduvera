@@ -57,10 +57,12 @@ export async function seedDepartureDemo(pool:Pool,demoMode:boolean){
         SELECT 1 FROM transport_student_assignments WHERE student_id=$3 AND direction='from_institution' AND status='active' AND valid_until IS NULL)
       ON CONFLICT(id) DO NOTHING`,[demoId(`departure-assignment-${learner.admission_number}`),scope.id,learner.id,routeId,stops[index+1]!.id,scope.admin_id]);
 
+    // The natural key includes valid_from, which moves with the calendar. Re-seeding
+    // must reuse the stable demo record instead of inserting its existing UUID again.
     const requestedPatternId=demoId("departure-pattern-south-afternoon");
     const patternId=(await client.query(`INSERT INTO transport_service_patterns(id,school_id,route_id,label,direction,weekdays,departure_time,primary_collector_user_id,backup_collector_user_id,valid_from,created_by,updated_by)
       VALUES($1,$2,$3,'South route afternoon','from_institution',ARRAY[1,2,3,4,5,6]::smallint[],'15:30',$4,$5,current_date-30,$5,$5)
-      ON CONFLICT(school_id,route_id,direction,departure_time,valid_from) DO UPDATE SET label=EXCLUDED.label,primary_collector_user_id=EXCLUDED.primary_collector_user_id,backup_collector_user_id=EXCLUDED.backup_collector_user_id
+      ON CONFLICT(id) DO UPDATE SET label=EXCLUDED.label,primary_collector_user_id=EXCLUDED.primary_collector_user_id,backup_collector_user_id=EXCLUDED.backup_collector_user_id
       RETURNING id`,[requestedPatternId,scope.id,routeId,scope.collector_id,scope.admin_id])).rows[0].id;
 
     const serviceDate=indiaDate();const tripId=demoId(`departure-trip-${serviceDate}`);
