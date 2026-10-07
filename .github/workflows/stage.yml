@@ -14,7 +14,8 @@ on:
         default: false
 
 concurrency:
-  group: stage
+  # PR verification must not cancel an in-flight Stage deployment.
+  group: stage-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
