@@ -2759,3 +2759,23 @@ per-statement limits with 5,000-row windows, verified by a late-window rollback
 test. Automatic imports are disabled: full import requires a manual workflow run
 after database storage is increased. Ordinary VACUUM is available for reclaiming
 dead tuples without removing live records; no tenant records are deleted.
+
+### Scheduling/attendance Stage integration — 8 October 2026
+
+Pulled Stage through `196e93a` and preserved its institution-directory work alongside
+the scheduling and attendance changes. The only merge conflict was the appended
+implementation record; both histories are retained. The three unrelated local
+duplicate files named with ` 2` remain untracked and are excluded from the release.
+
+Historical migration sources, including 047, are unchanged relative to the latest
+successfully deployed Stage revision. The earlier 047 checksum warning concerns
+the local preview ledger; it was not bypassed or rewritten. The two independently
+named 053 migrations are distinct immutable entries in the existing filename-keyed
+runner. New curriculum ownership and annual schedule migrations remain subject to
+fresh PostgreSQL 17 integration tests and normal Stage checksum enforcement.
+
+Merged backend typecheck/lint/build, mobile typecheck/lint/build and desktop
+typecheck/build passed locally. Deployment is pending the push-triggered Stage
+verification, migration and exact-release health gates; this entry does not claim
+that the new revision is already live. No full demo reset or national-directory
+import was requested or started.
