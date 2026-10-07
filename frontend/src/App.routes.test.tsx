@@ -726,6 +726,9 @@ describe("implemented application routes", () => {
       fireEvent.touchEnd(card, { changedTouches: [{ clientX: endX, clientY: 100 }] });
       await screen.findByRole("button", { name: new RegExp(`^Open digital student ID for ${to} Sharma`) }, { timeout: 5000 });
       await waitFor(() => expect(document.querySelector(".parent-id-stack.is-animating")).not.toBeInTheDocument(), { timeout: 5000 });
+      // The card can show the prepared child before the route's cached query has
+      // committed. A second swipe is valid only once that switch has settled.
+      await waitFor(() => expect(screen.getByRole("button", { name: "Choose child profile" })).toBeEnabled(), { timeout: 10_000 });
     };
 
     expect(await screen.findByRole("button", { name: /^Open digital student ID for Aarav Sharma/ })).toBeVisible();
