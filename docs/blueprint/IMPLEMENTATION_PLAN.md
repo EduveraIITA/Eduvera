@@ -2322,6 +2322,18 @@ successfully; a real task-search → staff invitation → back-to-Staff sequence
 The managed preview health/readiness checks and existing ngrok tunnel are healthy.
 Physical-phone/user review remains open. No production deployment is included.
 
+
+### Institution directory — 7 October 2026
+
+The searchable local UDISE/AISHE directory is integrated into the company console.
+Migration 053 keeps master directory identities separate from school tenants,
+protects official source/code and tenant links with database uniqueness, and tracks
+Stage activation status. Creation and invitations use the existing CompanyService
+and email delivery path; university/standalone records use the existing college
+workspace. CSV upsert and explicit legacy mappings preserve stable identities.
+See ../INSTITUTION_DIRECTORY.md. Integrated Stage CI and deployed UI review are
+required before claiming this change live; no national dataset is committed.
+
 ## Stage release verification — 7 October 2026
 
 The grouped More hierarchy, staff access/governance work and companion migrations
@@ -2727,3 +2739,23 @@ abort of the existing events stream produced an access-control console error;
 this is not represented as a clean console or a resolved event-stream issue.
 Local preview readiness is healthy. No attendance records, permissions or schema
 were changed; no push or deployment. Physical-phone visual validation is pending.
+
+### Public institution directory population — 8 October 2026
+
+Prepared a checksum-pinned, Stage-only import of the publicly licensed India Data
+Portal UDISE snapshot and an AISHE-derived public snapshot. Rows retain provenance,
+remain unverified, and cannot overwrite existing official identities or tenant
+links. Normalization rejects invalid identifiers and quarantines conflicting
+AISHE codes. Source files remain outside Git. The dedicated workflow verifies the
+loader against isolated PostgreSQL before using the existing Stage credentials;
+its summary artifact records actual accepted/rejected counts. Live counts and
+search verification must be taken from a successful run, not inferred from source
+row totals. See `docs/INSTITUTION_DIRECTORY.md` for attribution and snapshot dates.
+
+Stage import attempt `37671492107` failed with PostgreSQL `53100` (no space left
+on device) after validating all 1,440,856 rows. Its atomic transaction rolled back;
+these are prepared counts, not live directory coverage. The loader now respects
+per-statement limits with 5,000-row windows, verified by a late-window rollback
+test. Automatic imports are disabled: full import requires a manual workflow run
+after database storage is increased. Ordinary VACUUM is available for reclaiming
+dead tuples without removing live records; no tenant records are deleted.

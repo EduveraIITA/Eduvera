@@ -46,21 +46,21 @@ describe('company and school onboarding',()=>{
   });
 
   it('creates a college with first admin and explains manual invitation delivery',async()=>{
-    const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));
-    await user.type(screen.getByLabelText('Institution name'),'Lotus College');await user.selectOptions(screen.getByLabelText('Institution type'),'college');await user.type(screen.getByLabelText('First administrator email'),'admin@example.test');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
-    expect(createInstitution).toHaveBeenCalledWith({name:'Lotus College',code:'lotus-college',institution_kind:'college',timezone:'Asia/Kolkata',admin_email:'admin@example.test'});
+    const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));await user.click(screen.getByRole('button',{name:/Add institution manually/}));
+    await user.type(screen.getByLabelText('Institution name'),'Lotus College');await user.selectOptions(screen.getByLabelText('Institution type'),'college');await user.type(screen.getByLabelText('First administrator email'),'admin@example.test');await user.type(screen.getByLabelText('State'),'Delhi');await user.type(screen.getByLabelText('City'),'Delhi');await user.type(screen.getByLabelText('Address'),'Campus Road');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
+    expect(createInstitution).toHaveBeenCalledWith(expect.objectContaining({name:'Lotus College',code:'lotus-college',institution_kind:'college',timezone:'Asia/Kolkata',admin_email:'admin@example.test'}));
     expect(await screen.findByRole('heading',{name:'Invitation ready'})).toBeInTheDocument();expect(screen.getByText(/No email has been sent/)).toBeInTheDocument();
   });
   it('normalizes a manually edited institution code instead of silently blocking submission',async()=>{
-    const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));
+    const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));await user.click(screen.getByRole('button',{name:/Add institution manually/}));
     await user.type(screen.getByLabelText('Institution name'),'Delhi Public School');const code=screen.getByLabelText('Unique code');expect(code).toHaveValue('delhi-public-school');
     await user.clear(code);await user.type(code,'DPS South Campus');await user.tab();expect(code).toHaveValue('dps-south-campus');
-    await user.type(screen.getByLabelText('First administrator email'),'principal@example.test');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
-    expect(createInstitution).toHaveBeenCalledWith({name:'Delhi Public School',code:'dps-south-campus',institution_kind:'school',timezone:'Asia/Kolkata',admin_email:'principal@example.test'});
+    await user.type(screen.getByLabelText('First administrator email'),'principal@example.test');await user.type(screen.getByLabelText('State'),'Delhi');await user.type(screen.getByLabelText('City'),'Delhi');await user.type(screen.getByLabelText('Address'),'Campus Road');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
+    expect(createInstitution).toHaveBeenCalledWith(expect.objectContaining({name:'Delhi Public School',code:'dps-south-campus',institution_kind:'school',timezone:'Asia/Kolkata',admin_email:'principal@example.test'}));
   });
   it('keeps entered institution details on a server error',async()=>{
-    vi.mocked(createInstitution).mockRejectedValue(new Error('Institution code is already in use.'));const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));
-    await user.type(screen.getByLabelText('Institution name'),'Lotus');await user.type(screen.getByLabelText('Unique code'),'lotus');await user.type(screen.getByLabelText('First administrator email'),'admin@example.test');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
+    vi.mocked(createInstitution).mockRejectedValue(new Error('Institution code is already in use.'));const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));await user.click(screen.getByRole('button',{name:/Add institution manually/}));
+    await user.type(screen.getByLabelText('Institution name'),'Lotus');await user.type(screen.getByLabelText('Unique code'),'lotus');await user.type(screen.getByLabelText('First administrator email'),'admin@example.test');await user.type(screen.getByLabelText('State'),'Delhi');await user.type(screen.getByLabelText('City'),'Delhi');await user.type(screen.getByLabelText('Address'),'Campus Road');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
     expect(await screen.findByRole('alert')).toHaveTextContent('already in use');expect(screen.getByLabelText('Institution name')).toHaveValue('Lotus');
   });
   it('hides administrator and role assignment from a delegated inviter and links a student',async()=>{
