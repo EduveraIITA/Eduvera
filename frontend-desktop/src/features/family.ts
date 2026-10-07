@@ -21,7 +21,8 @@ export interface AttendanceRecord { id: string; date: string; status: Attendance
 export interface GateEvent { occurred_at: string; direction: "in" | "out" }
 export interface Slot {
   id: string; weekday: number; weekday_label: string; period_number: number; starts_at: string; ends_at: string; display_title: string; room: string;
-  subject: { id: string; code: string; name: string; short_name: string } | null; teacher: { id: string; name: string; designation: string } | null;
+  slot_type?: "class" | "break" | "activity";
+  subject: { id: string; code: string; name: string; short_name: string; color?: string | null } | null; teacher: { id: string; name: string; designation: string } | null;
 }
 export interface Leave {
   id: string; student_id: string; category: string; category_label: string; starts_on: string; ends_on: string; duration_days: number;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, CircleUserRound, LogOut, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { profileAvatar } from "../../lib/profileAvatars";
 import { useOptionalAuth } from "./AuthContext";
 import "./auth.css";
 
@@ -63,7 +64,8 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
   }
 
   const displayName = auth.user.display_name || auth.user.username;
-  const avatarUrl = auth.user.avatar_url || undefined;
+  const avatarKind = auth.user.role === "student" ? "student" : auth.user.role === "parent" ? "guardian" : undefined;
+  const avatarUrl = profileAvatar(displayName, auth.user.avatar_url, avatarKind, auth.user.id);
   const avatar = avatarUrl
     ? <img className="account-menu-trigger-avatar" src={avatarUrl} alt="" />
     : <span className="account-menu-trigger-initials" aria-hidden="true">{initials(displayName)}</span>;
@@ -94,8 +96,11 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
             </span>
           </div>
           {error ? <span className="account-menu__error" role="alert">{error}</span> : null}
+          <button className="account-menu__logout" role="menuitem" type="button" onClick={() => { setOpen(false); void navigate("/account/security"); }}>
+            <ShieldCheck size={16} /> Account security <ArrowRight size={14} />
+          </button>
           <button className="account-menu__logout" role="menuitem" type="button" disabled={pending} onClick={() => void signOut()}>
-            <LogOut size={16} /> {pending ? "Signing out…" : "Sign out"} <ArrowRight size={14} />
+            <LogOut size={16} /> {pending ? "Signing out..." : "Sign out"} <ArrowRight size={14} />
           </button>
         </div>
       ) : null}

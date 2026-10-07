@@ -1,8 +1,10 @@
-import { apiFetch } from "../../lib/api";
+import { ApiError, apiFetch } from "../../lib/api";
 import { schoolDateToday } from "../../lib/schoolTime";
+import type {PublishedDayNotice} from '../day-plans/DayPlanNotice';
+import type { HomeAction } from "../home-actions/types";
 
 export interface ApiUser {
-  id: string;
+  id: string | null;
   display_name: string;
 }
 
@@ -62,7 +64,21 @@ export interface ApiGateEvent {
   source: string;
 }
 
+export interface ApiSchoolCalendarDay {
+  date: string;
+  is_instructional: boolean;
+  label: string;
+  kind?: "public_holiday" | "local_holiday" | "emergency_closure" | "instructional_override";
+  reason?: string;
+  revision?: number;
+}
+
+export function getSchoolCalendarDays(schoolId: string, from: string, to: string) {
+  return apiFetch<{ results: ApiSchoolCalendarDay[] }>(withQuery("/api/v1/calendar/days/", { school_id: schoolId, from, to }));
+}
+
 export interface ApiTimetableSlot {
+  cancelled?:boolean; materials?:string[]; day_plan_id?:string|null; plan_version?:number|null; notice?:string;date?:string|null;
   id: string;
   weekday: number;
   weekday_label: string;
@@ -71,7 +87,7 @@ export interface ApiTimetableSlot {
   ends_at: string;
   display_title: string;
   room: string;
-  subject: { id: string; code: string; name: string; short_name: string } | null;
+  subject: { id: string; code: string; name: string; short_name: string; color?: string; icon?: string } | null;
   teacher: { id: string; name: string; designation: string } | null;
 }
 
@@ -139,19 +155,30 @@ export interface ApiSchoolContact {
 }
 
 export interface ParentHomeResponse {
+  day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
   siblings: ApiStudent[];
   campus_presence: ApiGateEvent | null;
   attendance: ApiAttendanceSummary;
+  ranking?: ApiAttendanceRanking;
   action_required: ApiLeaveRequest | null;
+  home_actions: HomeAction[];
+  more_attention?: Record<string, number>;
   today_schedule: ApiTimetableSlot[];
   diary_preview: ApiDiaryItem[];
   unread_notifications: number;
+  homework_items?: Array<{ id: string; title: string; body: string; subject_name: string | null; due_at: string | null; published_at: string; completed_at: string | null }>;
   semester_metrics: {
     attendance_percentage: number;
     attendance_threshold?: number;
+    attendance_trend_percent?: number | null;
+    attendance_rank?: number | null;
+    attendance_cohort_size?: number | null;
     periods_today: number;
     homework_due: number;
+    homework_total?: number;
+    homework_recent?: number;
+    homework_previous?: number;
     dues_status: string;
     dues_status_scope?: string;
   };
@@ -162,6 +189,7 @@ export interface ParentAttendanceResponse {
   student: ApiStudent;
   term: { name: string; academic_year: string; threshold: string | number };
   summary: ApiAttendanceSummary;
+  ranking?: ApiAttendanceRanking;
   today: ApiAttendanceRecord | null;
   latest_gate_event: ApiGateEvent | null;
   expected_dismissal_at?: string | null;
@@ -201,24 +229,29 @@ export interface ParentLeaveRouteResponse {
   constraints?: LeaveConstraints;
 }
 
+export interface ApiAttendanceRanking {
+  published: boolean;
+  as_of: string;
+  cohort_size: number;
+  minimum_recorded_days: number;
+  methodology: string;
+  current_rank: number | null;
+  current_streak?: number;
+  leaders: Array<{ rank: number; name: string; avatar_url?: string | null; attended: number; held: number; streak?: number; percentage: number }>;
+  students?: Array<{ rank: number | null; name: string; avatar_url?: string | null; attended: number; held: number; streak?: number; percentage: number | null; is_current: boolean }>;
+}
+
 export interface StudentAttendanceResponse {
   student: ApiStudent;
   term: { name: string; academic_year: string; threshold: string | number };
   summary: ApiAttendanceSummary;
   subjects: ApiSubjectAttendance[];
-  ranking?: {
-    published: boolean;
-    as_of: string;
-    cohort_size: number;
-    minimum_recorded_days: number;
-    methodology: string;
-    current_rank: number | null;
-    current_streak?: number;
-    leaders: Array<{ rank: number; name: string; avatar_url?: string | null; attended: number; held: number; streak?: number; percentage: number }>;
-  };
+  ranking?: ApiAttendanceRanking;
+  calendar?: ApiAttendanceRecord[];
 }
 
 export interface StudentHomeResponse {
+  day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
   term: { name: string; academic_year: string; threshold: string | number };
   date: string;
@@ -229,6 +262,8 @@ export interface StudentHomeResponse {
   diary_preview: ApiDiaryItem[];
   active_leave_count: number;
   unread_notifications: number;
+  home_actions: HomeAction[];
+  more_attention?: Record<string, number>;
 }
 
 export interface StudentEligibilityResponse {
@@ -244,11 +279,34 @@ export interface StudentEligibilityResponse {
 }
 
 export interface StudentTimetableResponse {
+  day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
   mode: "day" | "week";
   selected_date: string;
   class_name: string;
   days: Array<{ weekday: number; weekday_label: string; periods: ApiTimetableSlot[] }>;
+}
+
+export interface TimetableSummaryResponse {
+  start: string;
+  end: string;
+  days: Array<{
+    date: string;
+    periods: number;
+    classes: number;
+    pending: number;
+    accepted: number;
+    declined: number;
+    cancelled: number;
+  }>;
+  totals: {
+    periods: number;
+    classes: number;
+    pending: number;
+    accepted: number;
+    declined: number;
+    cancelled: number;
+  };
 }
 
 export interface StudentLeaveStatusResponse {
@@ -265,7 +323,7 @@ export interface StudentLeaveApplyResponse {
     relationship: string;
     is_primary: boolean;
     can_authorize_leave: boolean;
-    guardian: { id: string; user_id: string; name: string; email: string; phone: string };
+    guardian: { id: string; user_id: string | null; name: string; email: string; phone: string };
   }>;
   recent_requests: ApiLeaveRequest[];
   constraints: LeaveConstraints;
@@ -293,6 +351,12 @@ export function getAccessibleStudents() {
 
 export function getParentHome(studentId?: string) {
   return apiFetch<ParentHomeResponse>(withQuery("/api/v1/screens/parent/home/", { student_id: studentId }));
+}
+
+export function setHomeworkCompleted(itemId: string, studentId: string, completed: boolean) {
+  return apiFetch(`/api/v1/homework/${itemId}/complete/${completed ? "" : `?student_id=${encodeURIComponent(studentId)}`}`, completed
+    ? { method: "POST", body: JSON.stringify({ student_id: studentId }) }
+    : { method: "DELETE" });
 }
 
 export function getParentAttendance(studentId?: string) {
@@ -380,33 +444,143 @@ export function getStudentTimetable(date?: string) {
 }
 
 export async function getParentTimetable(date?: string, studentId?: string): Promise<StudentTimetableResponse> {
-  const [home, timetable] = await Promise.all([
-    getParentHome(studentId),
-    apiFetch<{ results: ApiTimetableSlot[] }>(withQuery("/api/v1/students/timetable/", {
-      date,
-      student_id: studentId,
-    })),
-  ]);
-  const grouped = new Map<number, ApiTimetableSlot[]>();
-  for (const slot of timetable.results) {
-    const periods = grouped.get(slot.weekday) ?? [];
-    periods.push(slot);
-    grouped.set(slot.weekday, periods);
+  return apiFetch<StudentTimetableResponse>(withQuery('/api/v1/screens/parent/timetable/week/',{date,student_id:studentId}));
+}
+
+function timetableDatesBetween(start: string, end: string) {
+  const dates: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
-  const selectedDate = date ?? schoolDateToday();
-  return {
-    student: home.student,
-    mode: "week",
-    selected_date: selectedDate,
-    class_name: home.student.current_enrollment.class_name,
-    days: [...grouped.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([weekday, periods]) => ({
-        weekday,
-        weekday_label: periods[0]?.weekday_label ?? `Day ${weekday}`,
-        periods: periods.sort((left, right) => left.period_number - right.period_number),
-      })),
-  };
+  return dates;
+}
+
+function timetableWeekStart(date: string) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() - ((value.getUTCDay() + 6) % 7));
+  return value.toISOString().slice(0, 10);
+}
+
+function timetableDateForWeekday(weekStart: string, weekday: number) {
+  const value = new Date(`${weekStart}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + Math.max(0, Math.min(6, weekday - 1)));
+  return value.toISOString().slice(0, 10);
+}
+
+/**
+ * Older review deployments expose the published week screen but not the newer
+ * summary route. Build the same calendar totals from those dated, effective
+ * schedules so role portals continue to work during a rolling deployment.
+ */
+export function buildTimetableSummaryFromWeeklyTimetables(
+  timetables: StudentTimetableResponse[],
+  start: string,
+  end: string,
+): TimetableSummaryResponse {
+  const days = timetableDatesBetween(start, end).map((date) => ({
+    date,
+    periods: 0,
+    classes: 0,
+    pending: 0,
+    accepted: 0,
+    declined: 0,
+    cancelled: 0,
+  }));
+  const byDate = new Map(days.map((day) => [day.date, day]));
+
+  for (const timetable of timetables) {
+    const weekStart = timetableWeekStart(timetable.selected_date);
+    for (const day of timetable.days) {
+      const datedPeriod = day.periods.find((period) => period.date)?.date;
+      const date = datedPeriod ?? timetableDateForWeekday(weekStart, day.weekday);
+      const summary = byDate.get(date);
+      if (!summary) continue;
+      const activePeriods = day.periods.filter((period) => !period.cancelled).length;
+      summary.periods = activePeriods;
+      summary.classes = activePeriods > 0 ? 1 : 0;
+      summary.cancelled = day.periods.length - activePeriods;
+    }
+  }
+
+  const totals = days.reduce(
+    (sum, day) => ({
+      periods: sum.periods + day.periods,
+      classes: sum.classes + day.classes,
+      pending: sum.pending + day.pending,
+      accepted: sum.accepted + day.accepted,
+      declined: sum.declined + day.declined,
+      cancelled: sum.cancelled + day.cancelled,
+    }),
+    { periods: 0, classes: 0, pending: 0, accepted: 0, declined: 0, cancelled: 0 },
+  );
+  return { start, end, days, totals };
+}
+
+async function legacyTimetableSummary(
+  start: string,
+  end: string,
+  loadWeek: (date: string) => Promise<StudentTimetableResponse>,
+) {
+  const weekStarts: string[] = [];
+  const cursor = new Date(`${timetableWeekStart(start)}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    weekStarts.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
+  }
+
+  const timetables: StudentTimetableResponse[] = [];
+  // Keep a year view bounded instead of sending every compatibility request at once.
+  for (let index = 0; index < weekStarts.length; index += 6) {
+    const batch = await Promise.all(
+      weekStarts.slice(index, index + 6).map(async (weekStart) => {
+        try {
+          return await loadWeek(weekStart);
+        } catch (error) {
+          // A week outside the student's enrolled term is legitimately empty.
+          if (error instanceof ApiError && error.status === 404) return undefined;
+          throw error;
+        }
+      }),
+    );
+    timetables.push(...batch.filter((item): item is StudentTimetableResponse => Boolean(item)));
+  }
+  return buildTimetableSummaryFromWeeklyTimetables(timetables, start, end);
+}
+
+async function timetableSummaryWithCompatibility(
+  path: string,
+  start: string,
+  end: string,
+  loadWeek: (date: string) => Promise<StudentTimetableResponse>,
+) {
+  try {
+    return await apiFetch<TimetableSummaryResponse>(path);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    return legacyTimetableSummary(start, end, loadWeek);
+  }
+}
+
+export function getStudentTimetableSummary(start: string, end: string, date?: string) {
+  return timetableSummaryWithCompatibility(
+    withQuery("/api/v1/screens/student/timetable-summary/", { start, end, date }),
+    start,
+    end,
+    (weekStart) => getStudentTimetable(weekStart),
+  );
+}
+
+export function getParentTimetableSummary(start: string, end: string, date?: string, studentId?: string) {
+  return timetableSummaryWithCompatibility(
+    withQuery("/api/v1/screens/parent/timetable-summary/", { start, end, date, student_id: studentId }),
+    start,
+    end,
+    (weekStart) => getParentTimetable(weekStart, studentId),
+  );
 }
 
 export function getStudentLeaveStatus() {

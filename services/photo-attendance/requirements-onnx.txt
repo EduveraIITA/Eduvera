@@ -1,0 +1,3 @@
+# Optional SCRFD + ArcFace adapter; not required for OpenCV CPU mode.
+# Select a compatible platform wheel and lock it after validation in your environment.
+onnxruntime>=1.20,<2

@@ -122,7 +122,7 @@ export function ParentDiaryPage({
       <div className="parent-stack diary-page">
         <section className="diary-date-section" aria-labelledby="diary-date-heading">
           <div className="diary-date-section__heading">
-            <div><span>{data.termLabel}</span><h1 id="diary-date-heading">{dayHeading(selectedDayId, data.dateHeading)}</h1></div>
+            <div><span>{data.termLabel}</span><h2 id="diary-date-heading">{dayHeading(selectedDayId, data.dateHeading)}</h2></div>
             <span className="diary-date-section__calendar" aria-hidden="true"><CalendarDays size={19} /></span>
           </div>
           <div className="diary-day-strip" role="tablist" aria-label={data.weekLabel}>
@@ -148,7 +148,7 @@ export function ParentDiaryPage({
             <div className="diary-overview-card__live"><span><i className="presence-dot" />{data.currentPeriod.stateLabel}</span><strong>{data.currentPeriod.dayRangeLabel}</strong></div>
             <div className="diary-current-period">
               <span className="diary-current-period__icon"><Calculator size={20} /></span>
-              <div><h2 id="current-diary-period">{data.currentPeriod.subject}</h2><p>{data.currentPeriod.room} • {data.currentPeriod.teacher}</p></div>
+              <div><h2 id="current-diary-period">{data.currentPeriod.subject}</h2><p>{data.currentPeriod.room} - {data.currentPeriod.teacher}</p></div>
               <span>{data.currentPeriod.untilLabel}</span>
             </div>
           </> : <div className="parent-empty-state"><CalendarDays size={21} /><div><strong id="current-diary-period">No classes scheduled</strong><span>This date has no published class periods.</span></div></div>}
@@ -176,7 +176,7 @@ export function ParentDiaryPage({
               {data.schedule.map((period) => (
                 <article key={period.id} className={period.state ? `is-${period.state}` : ""}>
                   <span>P{period.period}<small>{period.timeLabel}</small></span>
-                  <div><strong>{period.subject}</strong><small>{period.location} • {period.teacher}</small></div>
+                  <div><strong>{period.subject}</strong><small>{period.location} - {period.teacher}</small></div>
                   {period.state === "complete" ? <CheckCircle2 size={16} /> : period.state === "current" ? <span className="current-label">Ongoing</span> : null}
                 </article>
               ))}
@@ -185,7 +185,7 @@ export function ParentDiaryPage({
             <div className="schedule-preview-grid">
               {schedulePreview.map((period) => (
                 <article className="surface-card" key={period.id}>
-                  <span>P{period.period} • {period.timeLabel}</span>
+                  <span>P{period.period} - {period.timeLabel}</span>
                   <strong>{period.subject}</strong>
                   <small>{period.location}</small>
                 </article>
@@ -204,7 +204,7 @@ export function ParentDiaryPage({
               <article className="surface-card teacher-note" key={entry.id}>
                 <div className="teacher-note__title"><h3><i className={`note-dot note-dot--${entry.tone}`} />{entry.subject}</h3><span className={`note-kind note-kind--${entry.tone}`}>{entry.kind}</span></div>
                 <p>{entry.body}</p>
-                <div className="teacher-note__meta"><span><UserRound size={14} />{entry.author}{entry.timeLabel ? ` • ${entry.timeLabel}` : ""}</span>{entry.verified ? <strong><CheckCircle2 size={14} />Verified</strong> : null}</div>
+                <div className="teacher-note__meta"><span><UserRound size={14} />{entry.author}{entry.timeLabel ? ` - ${entry.timeLabel}` : ""}</span>{entry.verified ? <strong><CheckCircle2 size={14} />Verified</strong> : null}</div>
                 {entry.attachmentLabel && onOpenAttachment ? <button type="button" onClick={() => void onOpenAttachment(entry.id)}><Paperclip size={15} />{entry.attachmentLabel}</button> : null}
               </article>
             ))}
@@ -216,7 +216,7 @@ export function ParentDiaryPage({
           {signatureState === "success" ? (
             <div className="signed-box" role="status">
               <CheckCircle2 size={23} />
-              <div><strong>Digitally Signed & Acknowledged</strong><span>Signed • {data.guardian.name} ({data.guardian.relationship})</span><small>Edura Parent Verified ID: {data.guardian.verifiedId}</small></div>
+              <div><strong>Digitally Signed & Acknowledged</strong><span>Signed - {data.guardian.name} ({data.guardian.relationship})</span><small>Edura Parent Verified ID: {data.guardian.verifiedId}</small></div>
             </div>
           ) : !data.requiresAcknowledgement ? (
             <div className="signed-box signed-box--neutral" role="status"><CheckCircle2 size={23} /><div><strong>No sign-off required</strong><span>There are no diary items requiring guardian acknowledgment on this date.</span></div></div>
@@ -226,7 +226,7 @@ export function ParentDiaryPage({
               <p>By signing, you confirm that {data.child.name} has reviewed the homework and preparation requirements shown above.</p>
               <button className="button button--primary button--primary-deep" type="button" disabled={signatureState === "pending"} onClick={() => void acknowledge()}>
                 {signatureState === "pending" ? <LoaderCircle className="spin" size={17} /> : <BookOpenCheck size={17} />}
-                {signatureState === "pending" ? "Signing…" : "Tap to Sign This Diary"}
+                {signatureState === "pending" ? "Signing..." : "Tap to Sign This Diary"}
               </button>
               {signatureState === "error" ? <p className="form-error" role="alert">The diary could not be signed. Please try again.</p> : null}
             </div>
@@ -236,12 +236,12 @@ export function ParentDiaryPage({
         <section className="surface-card parent-note-card" aria-labelledby="parent-note-heading">
           <div className="parent-note-card__heading"><PenLine size={19} /><h2 id="parent-note-heading">Parent Note on Daily Diary</h2><span>Visible to<br />Teachers</span></div>
           <label className="sr-only" htmlFor="parent-diary-note">Parent note to homeroom</label>
-          <textarea id="parent-diary-note" rows={3} maxLength={500} value={note} disabled={!onSendNote} onChange={(event) => setNote(event.target.value)} placeholder={onSendNote ? "Write a short response or question about this daily diary…" : "A diary item is required before a parent note can be added."} />
+          <textarea id="parent-diary-note" rows={3} maxLength={500} value={note} disabled={!onSendNote} onChange={(event) => setNote(event.target.value)} placeholder={onSendNote ? "Write a short response or question about this daily diary..." : "A diary item is required before a parent note can be added."} />
           <div className="parent-note-card__actions">
             <span><LockKeyhole size={12} />Private to {classLabel} Staff</span>
             <button className="button button--soft button--small" type="button" disabled={!onSendNote || !note.trim() || noteState === "pending" || noteState === "success"} onClick={() => void sendNote()}>
               {noteState === "pending" ? <LoaderCircle className="spin" size={14} /> : noteState === "success" ? <Check size={14} /> : <Send size={14} />}
-              {noteState === "pending" ? "Sending…" : noteState === "success" ? "Note sent" : "Send Note"}
+              {noteState === "pending" ? "Sending..." : noteState === "success" ? "Note sent" : "Send Note"}
             </button>
           </div>
           {noteState === "success" ? <p className="note-success" role="status"><CheckCircle2 size={14} />Note shared with the {classLabel} homeroom team.</p> : null}

@@ -1,0 +1,675 @@
+.results-library {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dce5f1;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(29, 61, 120, .05);
+}
+
+.results-library > header,
+.family-assessment-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.results-library > header span,
+.family-assessment-heading span {
+  color: var(--edura-brand-bright);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.results-library > header h2,
+.family-assessment-heading h2 {
+  margin: 3px 0 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.results-library > header > b,
+.family-assessment-heading > b {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--edura-brand-soft);
+  color: var(--edura-brand);
+  font-size: 12px;
+}
+
+.results-library__filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 9px;
+}
+
+.results-library__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid #ccd7e7;
+  border-radius: 12px;
+  color: #617087;
+  background: #fbfcff;
+}
+
+.results-library__search:focus-within,
+.results-library__year select:focus-visible {
+  border-color: var(--edura-brand-bright);
+  outline: 3px solid color-mix(in srgb, var(--edura-brand-bright) 14%, transparent);
+}
+
+.results-library__search input,
+.results-library__year select {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  border: 0;
+  outline: 0;
+  color: #13233d;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+}
+
+.results-library__year select {
+  padding: 0 10px;
+  border: 1px solid #ccd7e7;
+  border-radius: 12px;
+  background: #fff;
+  font-weight: 750;
+}
+
+.results-library__tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--edura-brand-soft);
+}
+
+.results-library__tabs button {
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  color: #5e6b80;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.results-library__tabs button.is-active {
+  color: var(--edura-brand);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(23, 66, 145, .08);
+}
+
+.result-gallery {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.result-gallery__navigator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.result-gallery__navigator > span {
+  color: #647188;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.result-gallery__navigator > div {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.result-gallery__navigator button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.result-gallery__navigator button::after {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #c5cfdd;
+  content: "";
+  transition: width .18s ease, background .18s ease;
+}
+
+.result-gallery__navigator button.is-active::after {
+  width: 18px;
+  background: var(--edura-brand-bright);
+}
+
+.result-gallery__navigator button:focus-visible {
+  border-radius: 999px;
+  outline: 3px solid color-mix(in srgb, var(--edura-brand-bright) 20%, transparent);
+}
+
+.result-gallery__track {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.result-gallery__track::-webkit-scrollbar {
+  display: none;
+}
+
+.result-gallery__slide {
+  min-width: 0;
+  flex: 0 0 calc(100% - 14px);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.result-gallery__slide:only-child {
+  flex-basis: 100%;
+}
+
+.result-gallery__slide > .marksheet,
+.result-gallery__slide > .assessment-marksheet {
+  height: 100%;
+}
+
+.assessment-marksheet {
+  overflow: hidden;
+  border: 1px solid #d6e0ee;
+  border-top: 5px solid var(--edura-brand-bright);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(27, 59, 117, .07);
+}
+
+.term-marksheet {
+  --term-document-accent: color-mix(in srgb, var(--edura-brand-bright) 64%, #078b75);
+  --term-document-soft: color-mix(in srgb, var(--edura-brand-soft) 78%, #dcf7f0);
+  border-top-color: var(--term-document-accent);
+}
+
+.term-marksheet .assessment-marksheet__title > span,
+.term-marksheet .assessment-marksheet__learner > b,
+.term-marksheet .assessment-marksheet__verification,
+.term-marksheet .assessment-marksheet__details {
+  color: var(--term-document-accent);
+}
+
+.term-marksheet .assessment-marksheet__learner > b,
+.term-marksheet .assessment-marksheet__score {
+  background: var(--term-document-soft);
+}
+
+.term-marksheet .assessment-marksheet__score,
+.term-marksheet .assessment-marksheet__table > div:last-child {
+  color: var(--term-document-accent);
+}
+
+.term-marksheet .assessment-marksheet__print {
+  border-color: var(--term-document-accent);
+  background: var(--term-document-accent);
+}
+
+.assessment-marksheet__institution {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid #e5eaf2;
+}
+
+.assessment-marksheet__institution .school-brand {
+  height: 36px;
+}
+
+.assessment-marksheet__institution .school-brand__name {
+  max-width: 300px;
+  font-size: 13px;
+}
+
+.assessment-marksheet__institution .school-brand__crest {
+  width: 33px;
+  height: 33px;
+}
+
+.assessment-marksheet__institution .school-brand__eduvera {
+  width: 31px;
+  height: 31px;
+}
+
+.assessment-marksheet__institution > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 6px 8px;
+  border-radius: 999px;
+  color: #006d60;
+  background: #dcf5ed;
+  font-size: 10px;
+  font-weight: 820;
+}
+
+.assessment-marksheet__title {
+  display: grid;
+  gap: 3px;
+  padding: 17px 18px 15px;
+}
+
+.assessment-marksheet__title > span {
+  color: var(--edura-brand-bright);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .07em;
+}
+
+.assessment-marksheet__title h3 {
+  margin: 2px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 27px;
+  line-height: 1.12;
+  letter-spacing: -.02em;
+}
+
+.assessment-marksheet__learner {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) minmax(90px, auto);
+  align-items: center;
+  gap: 11px;
+  margin: 0 18px 15px;
+  padding: 11px;
+  border-radius: 13px;
+  background: #f6f9fe;
+}
+
+.assessment-marksheet__learner > b {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--edura-brand);
+  background: var(--edura-brand-soft);
+  font-size: 13px;
+}
+
+.assessment-marksheet__learner > span {
+  display: grid;
+  min-width: 0;
+}
+
+.assessment-marksheet__learner > span:last-child {
+  justify-items: end;
+}
+
+.assessment-marksheet__learner small {
+  color: #718096;
+  font-size: 8px;
+  font-weight: 820;
+  letter-spacing: .06em;
+}
+
+.assessment-marksheet__learner strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assessment-marksheet__score {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 18px;
+  border-radius: 14px;
+  color: var(--edura-brand);
+  background: var(--edura-brand-soft);
+}
+
+.assessment-marksheet__score > span {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(38px, auto) 16px auto;
+  align-content: center;
+  min-height: 94px;
+  padding: 14px 18px;
+  border-right: 1px solid #d7e2f2;
+}
+
+.assessment-marksheet__score > span:last-child {
+  border: 0;
+  text-align: center;
+}
+
+.assessment-marksheet__value {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  align-self: end;
+  white-space: nowrap;
+}
+
+.assessment-marksheet__score > span:last-child .assessment-marksheet__value {
+  justify-content: center;
+}
+
+.assessment-marksheet__score strong {
+  overflow-wrap: anywhere;
+  font-size: clamp(27px, 8vw, 35px);
+  line-height: 1;
+}
+
+.assessment-marksheet__score small {
+  color: #526078;
+  font-size: 13px;
+}
+
+.assessment-marksheet__score-detail {
+  overflow: hidden;
+  align-self: center;
+  font-size: 10px !important;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assessment-marksheet__score em {
+  margin-top: 6px;
+  color: #66758a;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.assessment-marksheet__score.is-outcome > span:first-child strong {
+  font-size: 21px;
+}
+
+.assessment-marksheet__table {
+  margin: 16px 18px 0;
+  overflow: hidden;
+  border-block: 1px solid #dfe6ef;
+}
+
+.assessment-marksheet__table > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) .7fr .7fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 41px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #e7ecf3;
+  font-size: 12px;
+}
+
+.assessment-marksheet__table > div:first-child {
+  min-height: auto;
+  color: #69768a;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.assessment-marksheet__table > div:last-child {
+  border: 0;
+  color: var(--edura-brand);
+  background: #f2f6fc;
+}
+
+.assessment-marksheet__table span:not(:first-child),
+.assessment-marksheet__table strong:not(:first-child) {
+  text-align: right;
+}
+
+.assessment-marksheet__table [role="cell"]:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assessment-marksheet__table i {
+  width: 5px;
+  height: 25px;
+  flex: none;
+  border-radius: 4px;
+}
+
+.assessment-marksheet__remarks {
+  margin: 15px 18px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--edura-brand-bright);
+}
+
+.assessment-marksheet__remarks span {
+  color: var(--edura-brand-bright);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .06em;
+}
+
+.assessment-marksheet__remarks p {
+  margin: 4px 0 0;
+  color: #44536a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.term-marksheet__remarks {
+  border-left-color: var(--term-document-accent);
+}
+
+.term-marksheet__remarks > span {
+  color: var(--term-document-accent);
+}
+
+.term-marksheet__remarks p + p {
+  margin-top: 9px;
+}
+
+.term-marksheet__remarks p b {
+  display: block;
+  margin-bottom: 2px;
+  color: #26364e;
+  font-size: 10px;
+}
+
+.term-marksheet__subject-note {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 7px 18px 0;
+  color: #69758a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.assessment-marksheet__verification {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 12px 18px;
+  border-top: 1px solid #e3e9f1;
+  color: var(--edura-brand-bright);
+  background: #f8faff;
+}
+
+.assessment-marksheet__verification > span {
+  display: grid;
+  flex: 1;
+}
+
+.assessment-marksheet__verification strong {
+  font-size: 11px;
+}
+
+.assessment-marksheet__verification small {
+  color: #68758a;
+  font-size: 9px;
+}
+
+.assessment-marksheet__verification em {
+  padding: 5px 7px;
+  border-radius: 8px;
+  color: #8a5700;
+  background: #fff2d7;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 820;
+}
+
+.marksheet__print,
+.assessment-marksheet__print {
+  width: calc(100% - 36px);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 14px 18px 0;
+  border: 1px solid var(--edura-brand-bright);
+  border-radius: 12px;
+  color: #fff;
+  background: var(--edura-brand-bright);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.assessment-marksheet__details {
+  color: var(--edura-brand);
+  font-size: 11px;
+}
+
+.marksheet__print {
+  margin-bottom: 14px;
+}
+
+.assessment-marksheet__details summary {
+  padding: 12px 18px 14px;
+  text-align: center;
+  font-weight: 790;
+  cursor: pointer;
+}
+
+.assessment-marksheet__details dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 0;
+  border-top: 1px solid #e2e8f1;
+  background: #e2e8f1;
+}
+
+.assessment-marksheet__details dl > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 14px;
+  color: #1e2c43;
+  background: #f8faff;
+}
+
+.assessment-marksheet__details dt {
+  color: #6a778b;
+  font-size: 8px;
+  font-weight: 820;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.assessment-marksheet__details dd {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 730;
+}
+
+@media (max-width: 760px) {
+  .results-library { padding: 14px; border-radius: 18px; }
+  .results-library__filters { grid-template-columns: minmax(0, 1fr) 112px; }
+  .results-library__search input { font-size: 12px; }
+  .assessment-marksheet { border-radius: 18px; }
+  .assessment-marksheet__institution { padding: 11px 13px; }
+  .assessment-marksheet__institution .school-brand__name { max-width: 180px; font-size: 11px; }
+  .assessment-marksheet__institution > span { padding: 5px 7px; }
+  .assessment-marksheet__institution > span svg { display: none; }
+  .assessment-marksheet__title { padding: 15px 14px 13px; }
+  .assessment-marksheet__title h3 { font-size: 24px; }
+  .assessment-marksheet__learner,
+  .assessment-marksheet__score,
+  .assessment-marksheet__table,
+  .assessment-marksheet__remarks { margin-inline: 14px; }
+  .assessment-marksheet__score > span { min-height: 86px; padding: 12px 14px; }
+  .assessment-marksheet__score strong { font-size: 31px; }
+  .assessment-marksheet__verification { padding-inline: 14px; }
+  .marksheet__print,
+  .assessment-marksheet__print { width: calc(100% - 28px); margin-inline: 14px; }
+}
+
+@media (max-width: 380px) {
+  .results-library__filters { grid-template-columns: 1fr; }
+  .results-library__year select { height: 40px; }
+  .results-library__tabs button { padding-inline: 4px; font-size: 11px; }
+  .assessment-marksheet__institution .school-brand__name { max-width: 140px; }
+  .assessment-marksheet__learner { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 8px; padding: 9px; }
+  .assessment-marksheet__learner > b { width: 38px; height: 38px; }
+  .assessment-marksheet__score strong { font-size: 27px; }
+  .assessment-marksheet__score > span { padding-inline: 10px; }
+}
+
+@media print {
+  .results-library,
+  .family-results-page.is-printing .result-gallery__navigator,
+  .family-results-page.is-printing .result-gallery__slide:not(.is-print-target),
+  .family-results-page.is-printing .marksheet__print,
+  .family-results-page.is-printing .assessment-marksheet__print,
+  .family-results-page.is-printing .assessment-marksheet__details { display: none !important; }
+  .family-results-page.is-printing .result-gallery,
+  .family-results-page.is-printing .result-gallery__track,
+  .family-results-page.is-printing .result-gallery__slide { display: block !important; overflow: visible; }
+  .family-results-page.is-printing .result-gallery__slide { width: 100%; }
+  .family-results-page.is-printing .marksheet,
+  .family-results-page.is-printing .assessment-marksheet { border-radius: 0; box-shadow: none; }
+  .assessment-marksheet__score,
+  .assessment-marksheet__institution > span,
+  .assessment-marksheet__verification,
+  .assessment-marksheet__table > div:last-child { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
+
+.parent-app .marksheet__summary { background: var(--edura-feature-gradient); }
+.parent-app .marksheet__title span,
+.parent-app .marksheet__subject-row > strong,
+.parent-app .marksheet__verification,
+.parent-app .family-report-cards > header span,
+.parent-app .family-report-cards > header button { color: var(--parent-primary-bright); }
+.parent-app .marksheet__institution .school-brand__crest,
+.parent-app .assessment-marksheet__institution .school-brand__crest { background: #0037b0; }

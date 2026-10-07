@@ -1,7 +1,9 @@
+import { RequirePermission } from "../roles/permissions.js";
 import { Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
 import type { AuthenticatedRequest } from "../common/request.js";
+import { SchoolEventService } from "./school-event.service.js";
 import { SchoolService, type UploadInput } from "./school.service.js";
 
 async function bodyAndUpload(request: AuthenticatedRequest): Promise<{ body: Record<string, unknown>; upload?: UploadInput }> {
@@ -24,7 +26,7 @@ async function bodyAndUpload(request: AuthenticatedRequest): Promise<{ body: Rec
 @ApiCookieAuth()
 @Controller("api/v1")
 export class SchoolController {
-  constructor(private readonly school: SchoolService) {}
+  constructor(private readonly school: SchoolService, private readonly events: SchoolEventService) {}
 
   @Get("students/")
   async students(@Req() request: AuthenticatedRequest) {
@@ -53,20 +55,16 @@ export class SchoolController {
     return { results: await this.school.timetable(enrollment, weekday) };
   }
 
+  @Get("calendar/days/")
+  async calendarDays(@Req() request: AuthenticatedRequest, @Query() query: Record<string, string>) {
+    return { results: await this.school.calendarDays(request.authUser, query) };
+  }
+
   @Get("attendance-records/")
   async attendanceRecords(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     const student = await this.school.studentForUser(request.authUser, studentId);
-    return { results: await this.school.attendanceRecords(student.id) };
-  }
-
-  @Post("attendance-records/")
-  async attendanceCreate(@Req() request: AuthenticatedRequest) {
-    return this.school.attendanceCreate(request.authUser, request.body);
-  }
-
-  @Patch("attendance-records/:id/")
-  async attendanceUpdate(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
-    return this.school.attendanceUpdate(request.authUser, id, request.body);
+    const enrollment = await this.school.enrollment(student.id);
+    return { results: await this.school.attendanceRecords(student.id, enrollment) };
   }
 
   @Get("leave-requests/")
@@ -128,8 +126,8 @@ export class SchoolController {
   }
 
   @Get("notifications/")
-  async notifications(@Req() request: AuthenticatedRequest) {
-    return { results: await this.school.notifications(request.authUser) };
+  async notifications(@Req() request: AuthenticatedRequest, @Query("limit") limit?: string, @Query("cursor") cursor?: string) {
+    return this.school.notifications(request.authUser, { limit, cursor });
   }
 
   @Post("notifications/:notificationId/read/")
@@ -141,6 +139,17 @@ export class SchoolController {
   @Get("screens/parent/home/")
   parentHome(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     return this.school.parentHome(request.authUser, studentId);
+  }
+
+  @Post("homework/:itemId/complete/")
+  @HttpCode(200)
+  completeHomework(@Req() request: AuthenticatedRequest, @Param("itemId") itemId: string) {
+    return this.school.setHomeworkCompleted(request.authUser, itemId, (request.body as { student_id?: string })?.student_id, true);
+  }
+
+  @Delete("homework/:itemId/complete/")
+  async reopenHomework(@Req() request: AuthenticatedRequest, @Param("itemId") itemId: string, @Query("student_id") studentId?: string) {
+    return this.school.setHomeworkCompleted(request.authUser, itemId, studentId, false);
   }
 
   @Get("screens/parent/attendance/")
@@ -163,6 +172,11 @@ export class SchoolController {
     return this.school.timetableScreen(request.authUser, mode, studentId, date, "guardian");
   }
 
+  @Get("screens/parent/timetable-summary/")
+  parentTimetableSummary(@Req() request: AuthenticatedRequest, @Query("start") start: string, @Query("end") end: string, @Query("date") date?: string, @Query("student_id") studentId?: string) {
+    return this.school.timetableSummaryScreen(request.authUser, start, end, date, studentId, "guardian");
+  }
+
   @Get("screens/student/attendance/")
   studentAttendance(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     return this.school.studentAttendanceScreen(request.authUser, studentId);
@@ -183,6 +197,11 @@ export class SchoolController {
     return this.school.timetableScreen(request.authUser, mode, studentId, date);
   }
 
+  @Get("screens/student/timetable-summary/")
+  studentTimetableSummary(@Req() request: AuthenticatedRequest, @Query("start") start: string, @Query("end") end: string, @Query("date") date?: string, @Query("student_id") studentId?: string) {
+    return this.school.timetableSummaryScreen(request.authUser, start, end, date, studentId);
+  }
+
   @Get("screens/student/leave/apply/")
   leaveApply(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
     return this.school.leaveApplyScreen(request.authUser, studentId, request);
@@ -194,19 +213,63 @@ export class SchoolController {
   }
 
   @Get("screens/teacher/home/")
+  @RequirePermission("timetable.view")
   teacherHome(@Req() request: AuthenticatedRequest, @Query("date") date?: string) {
     return this.school.teacherHomeScreen(request.authUser, date);
   }
 
   @Get("screens/teacher/attendance/")
+  @RequirePermission("attendance.view")
   teacherAttendance(@Req() request: AuthenticatedRequest, @Query("class_section_id") classSectionId?: string, @Query("date") date?: string) {
     return this.school.teacherAttendanceScreen(request.authUser, classSectionId, date);
   }
 
   @Post("teacher/attendance/bulk/")
   @HttpCode(200)
+  @RequirePermission("attendance.record")
   teacherAttendanceSave(@Req() request: AuthenticatedRequest) {
     return this.school.saveTeacherAttendance(request.authUser, request.body, request);
+  }
+
+  @Post("attendance-continuity/batches/")
+  @HttpCode(200)
+  @RequirePermission("attendance.record")
+  attendanceContinuitySave(@Req() request: AuthenticatedRequest) {
+    return this.school.saveAttendanceContinuityBatch(request.authUser, request.body, request);
+  }
+
+  @Get("screens/principal/attendance/continuity/")
+  attendanceContinuityWorkspace(@Req() request: AuthenticatedRequest, @Query("date") date?: string) {
+    return this.school.attendanceContinuityWorkspace(request.authUser, date);
+  }
+
+  @Post("attendance-continuity/cases/:caseId/decision/")
+  @HttpCode(200)
+  attendanceContinuityDecision(@Req() request: AuthenticatedRequest, @Param("caseId") caseId: string) {
+    return this.school.decideAttendanceReconciliation(request.authUser, caseId, request.body, request);
+  }
+
+  @Post("attendance-registers/:classSectionId/lock/")
+  @HttpCode(200)
+  attendanceRegisterLock(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
+    return this.school.setAttendanceRegisterLock(request.authUser, classSectionId, true, { ...(request.body ?? {}), date }, request);
+  }
+
+  @Delete("attendance-registers/:classSectionId/lock/")
+  @HttpCode(200)
+  attendanceRegisterUnlock(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
+    return this.school.setAttendanceRegisterLock(request.authUser, classSectionId, false, { ...(request.body ?? {}), date }, request);
+  }
+
+  @Get("attendance-registers/:classSectionId/history/")
+  @RequirePermission("attendance.view")
+  attendanceRegisterHistory(@Req() request: AuthenticatedRequest, @Param("classSectionId") classSectionId: string, @Query("date") date?: string) {
+    return this.school.attendanceRegisterHistory(request.authUser, classSectionId, date ?? "");
+  }
+
+  @Get("events/stream/")
+  eventStream(@Req() request: AuthenticatedRequest, @Res() reply: FastifyReply) {
+    return this.events.openStream(request.authUser, reply, request);
   }
 
   @Get("screens/principal/home/")
@@ -215,8 +278,8 @@ export class SchoolController {
   }
 
   @Get("screens/principal/timetable/")
-  principalTimetable(@Req() request: AuthenticatedRequest) {
-    return this.school.principalTimetableScreen(request.authUser);
+  principalTimetable(@Req() request: AuthenticatedRequest, @Query("term_id") termId?: string) {
+    return this.school.principalTimetableScreen(request.authUser, termId);
   }
 
   @Post("principal/timetable/slots/")
@@ -233,5 +296,26 @@ export class SchoolController {
   @HttpCode(200)
   principalTimetableDelete(@Req() request: AuthenticatedRequest, @Param("slotId") slotId: string) {
     return this.school.deleteTimetableSlot(request.authUser, slotId, request);
+  }
+
+  @Post("principal/timetable/copy-day/")
+  principalTimetableCopyDay(@Req() request: AuthenticatedRequest) {
+    return this.school.copyTimetableDay(request.authUser, request.body, request);
+  }
+
+  @Post("principal/timetable/targets/")
+  principalTimetableTarget(@Req() request: AuthenticatedRequest) {
+    return this.school.setCurriculumSubjectTarget(request.authUser, request.body, request);
+  }
+
+  @Post("principal/calendar/closures/")
+  principalCalendarClosureCreate(@Req() request: AuthenticatedRequest) {
+    return this.school.createSchoolClosure(request.authUser, request.body, request);
+  }
+
+  @Delete("principal/calendar/closures/:date/")
+  @HttpCode(200)
+  principalCalendarClosureDelete(@Req() request: AuthenticatedRequest, @Param("date") date: string) {
+    return this.school.deleteSchoolClosure(request.authUser, date, request.body, request);
   }
 }

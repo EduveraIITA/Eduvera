@@ -1,8 +1,9 @@
-export type SchoolDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+export type SchoolDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 export type TimetableTone = "math" | "science" | "english" | "language" | "humanities" | "lab" | "activity" | "neutral";
 
 export interface TimetablePeriod {
+  cancelled?:boolean; materials?:string[];
   id: string;
   period: string;
   time: string;
@@ -16,6 +17,7 @@ export interface TimetablePeriod {
 }
 
 export interface TimetableDay {
+  isoDate?:string;
   key: SchoolDayKey;
   shortLabel: string;
   longLabel: string;
@@ -52,7 +54,7 @@ export const demoTimetableDays: TimetableDay[] = [
       { id: "tue-3", period: "P3", time: "10:15 AM", subject: "Geography", room: "Room 204", tone: "humanities" },
       { id: "tue-4", period: "P4", time: "11:30 AM", subject: "Computer Science", room: "IT Lab 1", tone: "lab" },
       { id: "tue-5", period: "P5", time: "12:15 PM", subject: "English Lit", room: "Room 204", tone: "english" },
-      { id: "tue-6", period: "P6–7", time: "01:00 PM", subject: "Art & Craft Workshop", room: "Art Studio", tone: "activity" },
+      { id: "tue-6", period: "P6-7", time: "01:00 PM", subject: "Art & Craft Workshop", room: "Art Studio", tone: "activity" },
     ],
   },
   {
@@ -62,7 +64,7 @@ export const demoTimetableDays: TimetableDay[] = [
     date: 16,
     meta: "Active Today",
     periods: [
-      { id: "wed-1", period: "P1", time: "08:30 AM", endTime: "09:15 AM", subject: "English Literature", teacher: "Mrs. Catherine Roy", room: "Room 204", detail: "Ch. 4 “The Merchant of Venice” Act I", tone: "english" },
+      { id: "wed-1", period: "P1", time: "08:30 AM", endTime: "09:15 AM", subject: "English Literature", teacher: "Mrs. Catherine Roy", room: "Room 204", detail: "Ch. 4: The Merchant of Venice, Act I", tone: "english" },
       { id: "wed-2", period: "P2", time: "09:15 AM", endTime: "10:00 AM", subject: "Hindi Vyakaran", teacher: "Mr. S. Shastri", room: "Room 204", detail: "Sandhi & Samas worksheet checked", tone: "language" },
       { id: "wed-3", period: "P3", time: "10:15 AM", endTime: "11:00 AM", subject: "Mathematics", teacher: "Prof. Rajesh Mehta", room: "Room 204", detail: "Ongoing: Linear Equations Practice", tone: "math" },
       { id: "wed-4", period: "P4", time: "11:30 AM", endTime: "12:15 PM", subject: "Physics Practicum", teacher: "Dr. Ananya Sen", room: "Science Lab C (Ground Floor)", flag: "Mandatory: Wear White Lab Coat & Carry Manual", tone: "lab" },
@@ -98,7 +100,7 @@ export const demoTimetableDays: TimetableDay[] = [
       { id: "fri-2", period: "P2", time: "09:30 AM", subject: "Science Quiz", room: "Lab A", tone: "science" },
       { id: "fri-3", period: "P3", time: "10:15 AM", subject: "Library Reading", room: "Central Library", tone: "english" },
       { id: "fri-4", period: "P4", time: "11:30 AM", subject: "Hindi Kavitayein", room: "Room 204", tone: "language" },
-      { id: "fri-5", period: "P5–6", time: "12:15 PM", subject: "House Tournaments", room: "Indoor Sports Arena", tone: "activity" },
+      { id: "fri-5", period: "P5-6", time: "12:15 PM", subject: "House Tournaments", room: "Indoor Sports Arena", tone: "activity" },
     ],
   },
   {

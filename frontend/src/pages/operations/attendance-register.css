@@ -1,0 +1,372 @@
+/* Attendance uses the same surfaces and controls as the family portals.
+   Only the submit bar occupies the existing fixed-navigation layer. */
+.roll-call-page {
+  gap: 24px;
+  padding-bottom: 88px;
+}
+.roll-call-summary {
+  padding: 20px 24px 0;
+  border: 0;
+  border-radius: var(--edura-radius-feature);
+  background: var(--edura-surface);
+  box-shadow: var(--edura-shadow-card);
+}
+.roll-call-summary__top,
+.roll-call-summary__context,
+.roll-call-class-heading,
+.roll-call-toolbar__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.roll-call-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.roll-call-toolbar__actions svg { flex-shrink: 0; }
+.roll-call-class-heading { justify-content: flex-start; gap: 10px; min-width: 0; }
+.roll-call-class-heading > div { min-width: 0; }
+.roll-call-class-heading p { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 5px; color: var(--edura-ink-muted); font-size: 11px; }
+.roll-call-class-heading p > span { white-space: nowrap; }
+.roll-call-back {
+  display: inline-flex;
+  min-height: 36px;
+  width: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  color: var(--edura-ink-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.roll-call-back:hover { color: var(--edura-brand); }
+.roll-call-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--edura-radius-pill);
+  background: var(--edura-surface-soft);
+  color: var(--edura-ink-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.roll-call-state.is-submitted { background: var(--edura-positive-soft); color: var(--edura-positive); }
+.roll-call-state.is-locked { background: var(--edura-warning-soft); color: var(--edura-warning); }
+.roll-call-summary__context { padding: 16px 0; flex-wrap: wrap; }
+.roll-call-summary h1 { font-size: 28px; line-height: 1.2; letter-spacing: -0.04em; }
+.roll-call-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  background: var(--edura-surface-soft);
+  color: var(--edura-brand);
+}
+.roll-call-date input {
+  width: 145px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  color: var(--edura-ink);
+  background: transparent;
+  font-weight: 600;
+}
+.roll-call-totals {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  padding: 16px 0;
+  border-top: 1px solid var(--edura-border);
+}
+.roll-call-totals > div { display: grid; gap: 2px; text-align: center; }
+.roll-call-totals > div + div { border-left: 1px solid var(--edura-border); }
+.roll-call-totals strong { font-size: 24px; font-weight: 750; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.roll-call-totals span { color: var(--edura-ink-muted); font-size: 11px; }
+.roll-call-totals .is-present strong { color: var(--edura-positive); }
+.roll-call-totals .is-absent strong { color: var(--edura-danger); }
+.roll-call-totals .is-incomplete strong { color: var(--edura-brand); }
+.roll-call-saved-details {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--edura-border);
+  font-size: 11px;
+  color: var(--edura-ink-muted);
+}
+.roll-call-saved-details > span { padding-block: 8px; }
+.roll-call-admin-actions { display: flex; align-items: center; gap: 4px; }
+.roll-call-admin-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: var(--edura-radius-control);
+  background: transparent;
+  color: var(--edura-ink-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.roll-call-admin-actions svg { flex-shrink: 0; }
+.roll-call-admin-actions button:hover:not(:disabled),
+.roll-call-admin-actions button[aria-expanded="true"] {
+  background: var(--edura-surface-soft);
+  color: var(--edura-brand);
+}
+.roll-call-admin-actions button:focus-visible,
+.roll-call-toolbar__actions button:focus-visible {
+  outline: 2px solid var(--edura-brand-bright);
+  outline-offset: 3px;
+}
+.roll-call-register { min-width: 0; }
+.roll-call-toolbar { display: grid; gap: 12px; margin-bottom: 16px; }
+.roll-call-toolbar h2 { font-size: 20px; line-height: 1.3; letter-spacing: -0.035em; }
+.roll-call-page .roll-call-mark-all {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--edura-radius-control);
+  color: var(--edura-brand);
+  background: var(--edura-brand-soft);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.roll-call-page .roll-call-photo {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 14px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--edura-brand-bright);
+  border-radius: var(--edura-radius-control);
+  color: #ffffff;
+  background: var(--edura-brand-bright);
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.photo-draft-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #9bb3f3;
+  border-radius: var(--edura-radius-card);
+  color: var(--edura-brand);
+  background: var(--edura-brand-soft);
+}
+.photo-draft-notice > svg { flex-shrink: 0; }
+.photo-draft-notice strong { display: block; color: var(--edura-ink); font-size: 13px; }
+.photo-draft-notice p { margin-top: 3px; color: var(--edura-ink-secondary); font-size: 11px; }
+.photo-draft-notice button { min-height: 40px; padding: 0 12px; border-radius: var(--edura-radius-control); color: var(--edura-brand); background: #ffffff; font-size: 11px; font-weight: 750; }
+.attendance-continuity-status { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #a9d8cb; border-radius: var(--edura-radius-card); color: var(--edura-positive); background: var(--edura-positive-soft); }
+.attendance-continuity-status.is-offline { color: var(--edura-warning); border-color: #e6c979; background: var(--edura-warning-soft); }
+.attendance-continuity-status.needs-review { color: var(--edura-danger); border-color: #efb4b4; background: var(--edura-danger-soft); }
+.attendance-continuity-status strong { display: block; color: var(--edura-ink); font-size: 13px; }
+.attendance-continuity-status p { margin: 3px 0 0; color: var(--edura-ink-secondary); font-size: 11px; line-height: 1.55; }
+.attendance-capture-source { display: grid; grid-template-columns: minmax(180px,1fr) auto; align-items: center; gap: 12px 18px; padding: 16px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-surface); }
+.attendance-capture-source > div:first-child { display: flex; align-items: center; gap: 10px; color: var(--edura-brand); }
+.attendance-capture-source > div:first-child span { display: grid; gap: 3px; color: var(--edura-ink); }
+.attendance-capture-source small { color: var(--edura-ink-muted); font-size: 10px; font-weight: 500; }
+.attendance-capture-source > div[role="group"] { display: flex; gap: 6px; overflow-x: auto; }
+.attendance-capture-source button { min-height: 40px; padding: 0 11px; flex-shrink: 0; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-pill); color: var(--edura-ink-muted); background: var(--edura-surface); font-size: 11px; font-weight: 700; }
+.attendance-capture-source button[aria-pressed="true"] { color: #fff; border-color: var(--edura-brand); background: var(--edura-brand); }
+.attendance-capture-source > label { display: grid; grid-column: 1 / -1; gap: 6px; color: var(--edura-ink-secondary); font-size: 11px; font-weight: 700; }
+.attendance-capture-source input { min-height: 44px; padding: 0 12px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-ink); font: inherit; font-size: 12px; }
+.roll-call-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  color: var(--edura-ink-muted);
+  background: var(--edura-surface);
+}
+.roll-call-search input { width: 100%; min-width: 0; min-height: 44px; padding: 0; border: 0; outline: 0; background: transparent; font-size: 13px; }
+.roll-call-search:focus-within, .roll-call-date:focus-within { outline: 2px solid var(--edura-brand-bright); outline-offset: 2px; }
+.roll-call-filters { display: flex; gap: 8px; overflow-x: auto; }
+.roll-call-filters button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: var(--edura-radius-pill);
+  color: var(--edura-ink-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.roll-call-filters button span { font-variant-numeric: tabular-nums; opacity: 0.8; }
+.roll-call-filters button[aria-pressed="true"] { background: var(--edura-brand); color: white; }
+.roll-call-filters button:hover:not([aria-pressed="true"]) { background: var(--edura-surface-strong); color: var(--edura-brand); }
+.roll-call-roster { display: grid; gap: 10px; }
+.roll-call-student {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px) 36px;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 20px;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-card);
+  background: var(--edura-surface);
+  box-shadow: 0 2px 4px rgba(0, 55, 176, 0.025);
+}
+.roll-call-student.has-conflict { border-color: var(--edura-warning); }
+.roll-call-student__identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.roll-call-student__identity > div { min-width: 0; }
+.roll-call-student h3 { margin: 0; color: var(--edura-ink); font-size: 15px; font-weight: 750; line-height: 1.45; letter-spacing: -0.025em; overflow-wrap: anywhere; }
+.roll-call-student__identity p { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 3px; color: var(--edura-ink-muted); font-size: 11px; overflow-wrap: anywhere; }
+.roll-call-student__identity p > span + span { padding-left: 8px; border-left: 1px solid var(--edura-border); }
+.roll-call-avatar { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; background: var(--edura-brand-soft); color: var(--edura-brand); font-size: 13px; font-weight: 700; overflow: hidden; }
+.roll-call-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.roll-call-note-toggle { grid-column: 3; grid-row: 1; display: grid; width: 36px; height: 44px; place-items: center; border-radius: var(--edura-radius-control); background: transparent; color: var(--edura-ink-muted); }
+.roll-call-note-toggle:hover, .roll-call-note-toggle.has-note, .roll-call-note-toggle[aria-expanded="true"] { background: var(--edura-surface-soft); color: var(--edura-brand); }
+.roll-call-choices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; grid-column: 2; grid-row: 1; }
+.roll-call-page .roll-call-choice, .roll-call-other {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  color: var(--edura-ink-muted);
+  background: var(--edura-surface);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background var(--edura-motion), border-color var(--edura-motion), color var(--edura-motion);
+}
+.roll-call-choice svg { flex-shrink: 0; }
+.roll-call-choice:hover { background: var(--edura-surface-soft); border-color: var(--edura-brand-bright); }
+.roll-call-choice.is-present[aria-pressed="true"] { color: var(--edura-positive); border-color: var(--edura-positive); background: var(--edura-positive-soft); }
+.roll-call-choice.is-absent[aria-pressed="true"] { color: var(--edura-danger); border-color: var(--edura-danger); background: var(--edura-danger-soft); }
+.roll-call-other { position: relative; }
+.roll-call-other > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.roll-call-other select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.roll-call-other:focus-within { outline: 2px solid var(--edura-brand-bright); outline-offset: 2px; }
+.roll-call-other.is-selected { color: var(--edura-warning); border-color: var(--edura-warning); background: var(--edura-warning-soft); }
+.roll-call-other.is-excused { color: var(--edura-positive); border-color: var(--edura-positive); background: var(--edura-positive-soft); }
+.roll-call-page button:disabled, .roll-call-other.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.roll-call-conflict { display: block; color: var(--edura-warning); margin-top: 4px; }
+.roll-call-note { display: grid; grid-column: 1 / -1; gap: 6px; padding-top: 12px; border-top: 1px solid var(--edura-border); }
+.roll-call-note > span { color: var(--edura-ink-muted); font-size: 11px; font-weight: 600; }
+.roll-call-note input { min-width: 0; width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-ink); font-size: 13px; }
+.roll-call-empty { display: grid; justify-items: center; gap: 8px; padding: 40px 16px; color: var(--edura-ink-muted); text-align: center; }
+.roll-call-empty h3 { margin: 4px 0 0; font-size: 16px; color: var(--edura-ink); }
+.roll-call-empty p { font-size: 13px; }
+.roll-call-empty button { min-height: 44px; padding: 0 12px; color: var(--edura-brand); background: var(--edura-brand-soft); border-radius: var(--edura-radius-control); font-size: 13px; font-weight: 600; }
+.roll-call-submit-bar {
+  position: fixed;
+  z-index: 40;
+  left: 240px;
+  right: 0;
+  bottom: 0;
+  padding: 12px clamp(22px, 4vw, 52px);
+  border-top: 1px solid var(--edura-border);
+  background: var(--edura-surface);
+  box-shadow: 0 -4px 20px rgba(0, 55, 176, 0.04);
+}
+.roll-call-submit-bar__inner { display: flex; max-width: 1176px; margin: 0 auto; align-items: center; justify-content: space-between; gap: 16px; }
+.roll-call-progress { display: grid; gap: 8px; max-width: 55%; }
+.roll-call-progress > span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--edura-ink-secondary); }
+.roll-call-progress progress { display: block; width: 128px; max-width: 100%; height: 4px; border: 0; border-radius: var(--edura-radius-pill); overflow: hidden; appearance: none; background: var(--edura-brand-soft); }
+.roll-call-progress progress::-webkit-progress-bar { background: var(--edura-brand-soft); }
+.roll-call-progress progress::-webkit-progress-value { background: var(--edura-brand-bright); border-radius: var(--edura-radius-pill); }
+.roll-call-progress progress::-moz-progress-bar { background: var(--edura-brand-bright); border-radius: var(--edura-radius-pill); }
+.roll-call-submit-bar__inner > button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; padding: 0 20px; border-radius: var(--edura-radius-control); background: var(--edura-brand-bright); color: white; font-size: 13px; font-weight: 700; }
+.roll-call-submit-bar .operations-error { max-width: 1176px; margin: 8px auto 0; }
+.roll-call-register .attendance-correction-reason { margin-top: 16px; padding: 16px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-surface); }
+.roll-call-register .attendance-correction-reason label { font-size: 13px; }
+.roll-call-register .attendance-correction-reason small { font-size: 12px; }
+@media (min-width: 1100px) {
+  .roll-call-summary { display: grid; grid-template-columns: 1fr auto; gap: 0 24px; }
+  .roll-call-summary__context { padding-top: 0; }
+  .roll-call-summary__top { padding-bottom: 16px; }
+  .roll-call-totals, .roll-call-saved-details { grid-column: 1 / -1; }
+  .roll-call-toolbar { grid-template-columns: 1fr 320px; }
+  .roll-call-toolbar__title { grid-column: 1 / -1; }
+  .roll-call-search { grid-column: 2; grid-row: 2; }
+  .roll-call-filters { grid-column: 1; grid-row: 2; align-self: center; }
+}
+@media (max-width: 1000px) and (min-width: 681px) {
+  .roll-call-submit-bar { left: 78px; }
+}
+@media (max-width: 1099px) {
+  .roll-call-student { grid-template-columns: minmax(0, 1fr) 36px; }
+  .roll-call-note-toggle { grid-column: 2; }
+  .roll-call-choices { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 680px) {
+  .roll-call-page { gap: 20px; }
+  .roll-call-summary { padding: 16px 14px 0; }
+  .roll-call-summary__context { padding: 14px 0; gap: 12px; }
+  .roll-call-summary h1 { font-size: 24px; }
+  .roll-call-class-heading { gap: 6px; }
+  .roll-call-class-heading p { font-size: 10px; }
+  .roll-call-state { font-size: 10px; padding-inline: 8px; gap: 4px; }
+  .roll-call-totals { padding: 14px 0; }
+  .roll-call-totals strong { font-size: 22px; }
+  .roll-call-totals span { font-size: 10px; }
+  .roll-call-toolbar { gap: 10px; margin-bottom: 12px; }
+  .roll-call-toolbar h2 { font-size: 18px; }
+  .roll-call-toolbar__title { flex-direction: column; align-items: stretch; }
+  .roll-call-toolbar__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .roll-call-page .roll-call-photo, .roll-call-page .roll-call-mark-all { min-width: 0; padding-inline: 8px; }
+  .roll-call-saved-details { gap: 0; }
+  .roll-call-admin-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .roll-call-admin-actions button + button { border-left: 1px solid var(--edura-border); border-radius: 0; }
+  .photo-draft-notice { grid-template-columns: auto minmax(0, 1fr); }
+  .photo-draft-notice button { grid-column: 2; justify-self: start; }
+  .attendance-capture-source { grid-template-columns: 1fr; }
+  .attendance-capture-source > div[role="group"], .attendance-capture-source > label { grid-column: 1; }
+  .attendance-capture-source > div[role="group"] { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .attendance-capture-source button { padding-inline: 6px; }
+  .roll-call-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; overflow: visible; }
+  .roll-call-filters button { min-width: 0; gap: 4px; padding: 0 6px; font-size: 11px; }
+  .roll-call-student { padding: 14px; }
+  .roll-call-submit-bar { left: 0; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); padding: 12px 16px; }
+  .roll-call-submit-bar__inner { gap: 12px; }
+  .roll-call-submit-bar__inner > button { padding: 0 16px; font-size: 12px; }
+  .roll-call-progress > span { font-size: 11px; }
+}
+@media (max-width: 440px) {
+  .roll-call-date { width: 100%; }
+  .roll-call-date input { flex: 1; }
+  .roll-call-totals { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 0; }
+  .roll-call-totals > div { display: flex; align-items: baseline; justify-content: center; gap: 5px; }
+  .roll-call-totals > div:nth-child(4) { border-left: 0; }
+  .roll-call-totals strong { font-size: 20px; }
+  .roll-call-totals span { font-size: 11px; }
+}
+@media (max-width: 360px) {
+  .roll-call-summary { padding-inline: 12px; }
+  .roll-call-toolbar h2 { font-size: 16px; }
+  .roll-call-page .roll-call-photo, .roll-call-page .roll-call-mark-all { font-size: 11px; gap: 6px; }
+  .roll-call-admin-actions button { padding-inline: 4px; font-size: 11px; }
+  .roll-call-student { padding: 12px; }
+  .roll-call-page .roll-call-choice, .roll-call-other { font-size: 11px; padding-inline: 4px; }
+  .roll-call-submit-bar { padding-inline: 12px; }
+  .roll-call-submit-bar__inner > button { padding-inline: 12px; }
+}

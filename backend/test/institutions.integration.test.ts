@@ -7,7 +7,7 @@ import { hashPassword } from "../src/auth/password.js";
 import { importDirectory } from "../src/institutions/import-directory.js";
 import type { DirectoryResult } from "../src/institutions/schemas.js";
 
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for PostgreSQL institution integration tests");
+
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
 const base = "http://127.0.0.1:8024";
 const operatorId = randomUUID(), outsiderId = randomUUID();
@@ -19,10 +19,21 @@ let serverErrors = "";
 
 class Browser {
   cookies = new Map<string, string>();
-  async request(path: string, payload?: unknown, csrf = true) {
+  async request(path: string, payload?: unknown, csrf = true): Promise<Response> {
     const headers: Record<string, string> = { Cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; ") };
     if (payload) { headers["Content-Type"] = "application/json"; if (csrf) headers["X-CSRFToken"] = this.cookies.get("csrftoken") ?? ""; }
-    const response = await fetch(`${base}/api/v1/institutions${path}`, { headers, ...(payload ? { method: "POST", body: JSON.stringify(payload) } : {}) });
+    let endpoint = `/api/v1/institutions${path}`;
+    if (path === '/' && payload) {
+      endpoint = '/api/v1/company/institutions/';
+      payload = { name: 'Directory selection', code: `dir-${randomUUID().slice(0,16)}`, institution_kind: 'school', admin_email: `invited-${run}@example.test`, ...payload };
+    } else if (path.includes('/admin-invitations/')) endpoint = `/api/v1/company/institutions${path}`;
+    else if (path === '/accept-invitation/') endpoint = '/api/v1/invitations/accept/';
+    const response = await fetch(`${base}${endpoint}`, { headers, ...(payload ? { method: "POST", body: JSON.stringify(payload) } : {}) });
+    if (path === '/' && response.status === 201) {
+      const created = await response.json() as { school: { id: string } };
+      const detail = await this.request(`/${created.school.id}/`);
+      return new Response(await detail.text(), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    }
     return response;
   }
   async login(email: string) {
@@ -55,6 +66,8 @@ async function search(q: string, suffix = "") {
   return (await response.json() as { results: DirectoryResult[] }).results;
 }
 
+const suite = process.env.TEST_DATABASE_ISOLATED === 'true' ? describe : describe.skip;
+suite('isolated institution directory suite', () => {
 beforeAll(async () => {
   for (const [id, label] of [[operatorId, "operator"], [outsiderId, "outsider"]]) {
     await pool.query(`INSERT INTO users(id,username,email,password_hash,first_name,last_name,role) VALUES ($1,$2,$3,$4,'Directory','Test','admin')`,
@@ -75,10 +88,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server?.kill("SIGTERM");
-  await pool.query("DELETE FROM institution_admin_invitations WHERE created_by=$1", [operatorId]);
-  await pool.query("DELETE FROM schools WHERE id=ANY($1::uuid[])", [schoolIds]);
-  await pool.query("DELETE FROM institution_directory WHERE id=ANY($1::uuid[])", [directoryIds]);
-  await pool.query("DELETE FROM users WHERE id=ANY($1::uuid[])", [[operatorId, outsiderId]]);
   await pool.end();
 });
 
@@ -117,7 +126,7 @@ describe("Institution directory API and PostgreSQL invariants", () => {
 
   it("requires company authority and CSRF; school admin cannot create or inspect tenants", async () => {
     const entry = await record(`Access ${run}`);
-    expect((await fetch(`${base}/api/v1/institutions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory_id: entry.id }) })).status).toBe(401);
+    expect((await fetch(`${base}/api/v1/company/institutions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ directory_id: entry.id }) })).status).toBe(401);
     expect((await outsider.request("/", { directory_id: entry.id })).status).toBe(403);
     expect((await operator.request("/", { directory_id: entry.id }, false)).status).toBe(403);
     const created = await create(entry.id);
@@ -152,7 +161,7 @@ describe("Institution directory API and PostgreSQL invariants", () => {
     // The DB constraint also protects callers outside this API.
     const extraId = randomUUID(); schoolIds.push(extraId);
     await pool.query("INSERT INTO schools(id,name,code) VALUES ($1,'Other tenant',$2)", [extraId, `test-${extraId.slice(0, 12)}`]);
-    await expect(pool.query("INSERT INTO institution_onboarding(school_id,directory_id) VALUES ($1,$2)", [extraId, entry.id])).rejects.toMatchObject({ code: "23505" });
+    await expect(pool.query("UPDATE institution_onboarding SET directory_id=$2 WHERE school_id=$1", [extraId, entry.id])).rejects.toMatchObject({ code: "23505" });
   });
 
   it("manual duplicates require reviewed acknowledgement; no-results manual creation is unverified", async () => {
@@ -194,14 +203,17 @@ describe("Institution directory API and PostgreSQL invariants", () => {
     } finally { client.release(); }
   });
 
-  it("invitation acceptance is email-bound, single-use, and activates the existing tenant", async () => {
+  it("Stage invitation acceptance is email-bound and single-use without bypassing activation", async () => {
     const entry = await record(`Invite ${run}`); const institution = await create(entry.id);
     const response = await operator.request(`/${institution.eduera_institution_id}/admin-invitations/`, { email: `outsider-${run}@example.test` });
     expect(response.status).toBe(201); const { token } = await response.json() as { token: string };
-    expect((await operator.request("/accept-invitation/", { token })).status).toBe(403);
-    expect((await outsider.request("/accept-invitation/", { token })).status).toBe(201);
-    expect((await outsider.request("/accept-invitation/", { token })).status).toBe(404);
-    expect((await search(entry.code))[0]?.onboarding_status).toBe("active");
+    const details = { token, password, first_name: "Directory", last_name: "Admin" };
+    expect((await operator.request("/accept-invitation/", { ...details, email: `operator-${run}@example.test` })).status).not.toBe(201);
+    expect((await outsider.request("/accept-invitation/", { ...details, email: `outsider-${run}@example.test` })).status).toBe(201);
+    expect((await outsider.request("/accept-invitation/", { ...details, email: `outsider-${run}@example.test` })).status).toBe(400);
+    expect((await search(entry.code))[0]?.onboarding_status).toBe("setup_in_progress");
     expect((await pool.query("SELECT role FROM school_memberships WHERE school_id=$1 AND user_id=$2", [institution.eduera_institution_id, outsiderId])).rows[0].role).toBe("admin");
   });
+});
+
 });

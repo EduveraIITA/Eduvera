@@ -18,6 +18,7 @@ import {
 import { fallbackAttendanceData } from "./parentDemoData";
 import { ParentShell } from "./ParentShell";
 import { schoolDateToday } from "../../lib/schoolTime";
+import { AttendanceRankingDialog } from "../../features/school/AttendanceRankingDialog";
 import type { ParentAttendanceData, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
@@ -38,6 +39,7 @@ export function ParentAttendancePage({
   onRequestLeave,
   onMessageTeacher,
 }: ParentAttendancePageProps) {
+  const hasAttendance = data.stats.totalDays > data.stats.excusedCount;
   const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState(
     data.month.days.find((day) => day.id === schoolDateToday())?.id ??
@@ -45,6 +47,7 @@ export function ParentAttendancePage({
       data.month.days[0]?.id ?? "",
   );
   const [messageState, setMessageState] = useState<MessageState>("idle");
+  const [rankingOpen, setRankingOpen] = useState(false);
   const selectedDay = data.month.days.find((day) => day.id === selectedDate);
   const firstDay = data.month.days[0]?.id;
   const leadingBlankDays = firstDay
@@ -87,30 +90,33 @@ export function ParentAttendancePage({
         <section className="aggregate-card" aria-labelledby="aggregate-heading">
           <div className="aggregate-card__top">
             <div>
-              <span id="aggregate-heading">Overall Aggregate</span>
-              <div className="aggregate-card__score">
-                <strong>{data.aggregatePercent.toFixed(1)}%</strong>
-                {data.trendPercent === undefined ? <span>Live term</span> : (
+              <button type="button" id="aggregate-heading" className="attendance-ranking-trigger" onClick={() => setRankingOpen(true)}>Overall Aggregate <span aria-hidden="true">↗</span></button>
+              <button type="button" className="aggregate-card__score aggregate-card__score--open" aria-label="View all class attendance from the attendance score" onClick={() => setRankingOpen(true)}>
+                <strong>{hasAttendance ? `${data.aggregatePercent.toFixed(1)}%` : "N/A"}</strong>
+                {!hasAttendance ? <span>Not recorded</span> : data.trendPercent === undefined ? <span>Live term</span> : (
                   <span>
                     {data.trendPercent < 0 ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
                     {data.trendPercent > 0 ? "+" : ""}{data.trendPercent.toFixed(1)}%
                   </span>
                 )}
-              </div>
+              </button>
             </div>
             <span className="aggregate-card__seal"><BadgeCheck size={27} /></span>
           </div>
           <div className="aggregate-card__cushion">
             <ShieldCheck size={18} />
-            <span><strong>Safe Zone: +{data.safeCushionDays} Days</strong> cushion buffer before {data.minimumPercent}% CBSE minimum threshold.</span>
+            {!hasAttendance ? <span>Attendance will appear after the school publishes a register.</span> : data.aggregatePercent < data.minimumPercent
+              ? <span><strong>Below school minimum.</strong> Current threshold: {data.minimumPercent}%.</span>
+              : <span><strong>Safe Zone: +{data.safeCushionDays} Days</strong> cushion buffer before the {data.minimumPercent}% school minimum.</span>}
           </div>
         </section>
+        {rankingOpen && <AttendanceRankingDialog ranking={data.ranking} className={`${data.child.grade} - Section ${data.child.section}`} currentLabel="Your child" onClose={() => setRankingOpen(false)} />}
 
         <section className="attendance-stat-grid" aria-label="Attendance summary">
           <article className="attendance-stat-card">
             <div className="attendance-stat-card__title"><span>Attended</span><ClipboardCheck size={18} /></div>
             <strong>{data.stats.attended}<small>/{data.stats.totalDays} d</small></strong>
-            <p className="green-text">{data.stats.dailyRatePercent.toFixed(1)}% Rate</p>
+            <p className="green-text">{hasAttendance ? `${data.stats.dailyRatePercent.toFixed(1)}% Rate` : "Not recorded"}</p>
           </article>
           <article className="attendance-stat-card">
             <div className="attendance-stat-card__title"><span>Active Streak</span><Flame className="flame-icon" size={19} /></div>
@@ -130,11 +136,11 @@ export function ParentAttendancePage({
         </section>
 
         <section aria-labelledby="presence-pulse-heading">
-          <h2 className="parent-section-title" id="presence-pulse-heading">Today's Presence Pulse</h2>
+          <h2 className="parent-section-title" id="presence-pulse-heading">Today's attendance</h2>
           <div className="surface-card presence-event-list">
             <article>
               <span className="presence-event-icon"><Radio size={19} /></span>
-              <div><strong>Gate Check-in</strong><time>{data.today.checkInTime}</time><small>{data.today.checkInLocation} • {data.today.checkInSource}</small></div>
+              <div><strong>Gate Check-in</strong><time>{data.today.checkInTime}</time><small>{data.today.checkInLocation} - {data.today.checkInSource}</small></div>
               <span className={data.today.checkInVerified ? "mini-status mini-status--verified" : "mini-status"}>
                 {data.today.checkInVerified ? <span className="presence-dot" /> : null}
                 {data.today.checkInVerified ? "Verified" : "No event"}
@@ -150,7 +156,7 @@ export function ParentAttendancePage({
 
         <section aria-labelledby="monthly-ledger-heading">
           <div className="attendance-section-heading">
-            <h2 id="monthly-ledger-heading">Monthly Ledger</h2>
+            <h2 id="monthly-ledger-heading">Attendance calendar</h2>
             <span>{data.month.label}</span>
           </div>
           <div className="surface-card calendar-card">
@@ -215,11 +221,11 @@ export function ParentAttendancePage({
 
         <section className="attendance-actions" aria-label="Attendance actions">
           <button className="button button--primary" type="button" onClick={() => void requestLeave()}>
-            <PlusCircle size={18} />+ Request Leave / Medical Slip
+            <PlusCircle size={18} />Request Leave / Medical Slip
           </button>
           <button className="button button--white" type="button" disabled={!onMessageTeacher || messageState === "sending" || messageState === "sent"} onClick={() => void messageTeacher()}>
             {messageState === "sending" ? <LoaderCircle className="spin" size={18} /> : messageState === "sent" ? <CheckCircle2 size={18} /> : <MessageSquareText size={18} />}
-            {messageState === "sending" ? "Opening contact…" : messageState === "sent" ? "Contact opened" : onMessageTeacher ? "Message Homeroom Advisor" : "Teacher contact unavailable"}
+            {messageState === "sending" ? "Opening contact..." : messageState === "sent" ? "Contact opened" : onMessageTeacher ? "Message Homeroom Advisor" : "Teacher contact unavailable"}
           </button>
           {messageState === "error" ? <p className="form-error" role="alert">Messaging is unavailable. Please try again.</p> : null}
         </section>

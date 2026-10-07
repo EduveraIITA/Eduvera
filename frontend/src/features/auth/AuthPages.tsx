@@ -9,30 +9,30 @@ import {
   Eye,
   EyeOff,
   GraduationCap,
+  KeyRound,
   LoaderCircle,
   LockKeyhole,
   Mail,
   RefreshCw,
   School,
   ShieldCheck,
-  Sparkles,
   UserRound,
   UsersRound,
 } from "lucide-react";
 import { authDestination, useAuth, type RegisterInput } from "./AuthContext";
 import type { DemoPersona } from "../../lib/api";
+import { SchoolBrand } from "../school/SchoolBrand";
 import "./auth.css";
 
 function AuthBrand() {
   return (
-    <Link className="auth-brand" to="/" aria-label="Cambridge International School">
-      <span className="auth-brand__mark"><GraduationCap size={22} strokeWidth={2.1} /></span>
-      <span><strong>Cambridge International School</strong></span>
+    <Link className="auth-brand" to="/" aria-label="Cambridge International School and Eduvera">
+      <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" />
     </Link>
   );
 }
 
-function AuthLayout({ eyebrow, title, description, children }: {
+export function AuthLayout({ eyebrow, title, description, children }: {
   eyebrow: string;
   title: string;
   description: string;
@@ -43,16 +43,14 @@ function AuthLayout({ eyebrow, title, description, children }: {
       <section className="auth-story" aria-label="Edura OS introduction">
         <AuthBrand />
         <div className="auth-story__content">
-          <span className="auth-story__badge"><Sparkles size={14} /> Attendance intelligence</span>
-          <h1>Every school day,<br /><em>in one calm view.</em></h1>
-          <p>Presence, leave, diary, and school communication built around students and families.</p>
+          <h1>School records that stay current.</h1>
+          <p>Attendance, timetables, leave and communication for every school role.</p>
           <div className="auth-story__proof">
             <span><ShieldCheck size={17} /><b>Role-safe access</b></span>
             <span><Clock3 size={17} /><b>Live attendance</b></span>
             <span><BookOpenCheck size={17} /><b>One source of truth</b></span>
           </div>
         </div>
-        <p className="auth-story__footnote">Secure school workspace • Built for families</p>
       </section>
 
       <section className="auth-panel">
@@ -84,7 +82,7 @@ function PasswordInput({ value, onChange, autoComplete = "current-password" }: {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
-        minLength={10}
+        minLength={12}
         required
       />
       <button type="button" aria-label={visible ? "Hide password" : "Show password"} onClick={() => setVisible((current) => !current)}>
@@ -105,6 +103,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
   const [pending, setPending] = useState<"login" | DemoPersona | null>(null);
   const [error, setError] = useState(auth.serviceError);
 
@@ -115,10 +115,30 @@ export function LoginPage() {
     setError(null);
     setPending("login");
     try {
-      await auth.login({ identifier: identifier.trim(), password });
+      const result = await auth.login({ identifier: identifier.trim(), password });
+      if (result.challengeToken) {
+        setMfaChallenge(result.challengeToken);
+        setPassword("");
+        return;
+      }
       void navigate(safeNextPath(location.search) ?? "/", { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Sign in could not be completed.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function submitMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mfaChallenge) return;
+    setError(null);
+    setPending("login");
+    try {
+      await auth.completeMfa(mfaChallenge, mfaCode.trim());
+      void navigate(safeNextPath(location.search) ?? "/", { replace: true });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The verification code could not be confirmed.");
     } finally {
       setPending(null);
     }
@@ -129,7 +149,7 @@ export function LoginPage() {
     setPending(persona);
     try {
       await auth.enterDemo(persona);
-      const destination = persona === "parent" ? "/parent/home" : persona === "student" ? "/student" : persona === "staff" ? "/teacher" : "/principal";
+      const destination = persona === "company" ? "/company" : persona === "parent" ? "/parent/home" : persona === "student" ? "/student" : persona === "staff" ? "/teacher" : "/principal";
       void navigate(destination, { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The demo workspace is unavailable.");
@@ -140,7 +160,14 @@ export function LoginPage() {
 
   return (
     <AuthLayout eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
-      <form className="auth-form" onSubmit={submit}>
+      <p className="auth-invite-link">Have an invitation? <Link to="/join">Join your institution</Link></p>
+      {mfaChallenge ? <form className="auth-form" onSubmit={submitMfa}>
+        {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
+        <div className="auth-verification-intro"><ShieldCheck size={20}/><div><strong>Two-step verification</strong><p>Enter the six-digit authenticator code or one unused recovery code.</p></div></div>
+        <label className="auth-field"><span>Verification code</span><div className="auth-input-wrap"><KeyRound size={18}/><input value={mfaCode} onChange={(event)=>setMfaCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" autoFocus required/></div></label>
+        <button className="auth-primary-button" type="submit" disabled={pending !== null}>{pending === "login" ? <><LoaderCircle className="auth-spin" size={18}/> Verifying…</> : <>Verify and sign in <ArrowRight size={18}/></>}</button>
+        <button className="auth-text-button" type="button" onClick={()=>{setMfaChallenge(null);setMfaCode("");setError(null);}}>Use another account</button>
+      </form> : <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <label className="auth-field">
           <span>Email or username</span>
@@ -158,34 +185,39 @@ export function LoginPage() {
           </div>
         </label>
         <label className="auth-field">
-          <span>Password</span>
+          <span className="auth-field__split">Password <Link to="/forgot-password">Forgot password?</Link></span>
           <PasswordInput value={password} onChange={setPassword} />
         </label>
         <button className="auth-primary-button" type="submit" disabled={pending !== null}>
-          {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in…</> : <>Sign in <ArrowRight size={18} /></>}
+          {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
-      </form>
+      </form>}
 
       {auth.demoMode ? (
         <div className="demo-entry">
           <div className="auth-divider"><span>or explore the live demo</span></div>
           <div className="demo-entry__buttons">
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("parent")}>
-              <span><UsersRound size={18} /></span><b>Parent view</b><small>Pooja Sharma</small>
+              <span><img src="/assets/pooja-sharma.png" alt="" /></span><b>Parent view</b><small>Pooja Sharma</small>
               {pending === "parent" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("student")}>
-              <span><GraduationCap size={18} /></span><b>Student view</b><small>Aarav Sharma</small>
+              <span><img src="/assets/aarav-sharma.png" alt="" /></span><b>Student view</b><small>Aarav Sharma</small>
               {pending === "student" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("staff")}>
-              <span><School size={18} /></span><b>Teacher view</b><small>Kavita Mehta</small>
+              <span><img src="/assets/kavita-mehta.png" alt="" /></span><b>Teacher view</b><small>Kavita Mehta</small>
               {pending === "staff" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
             <button type="button" disabled={pending !== null} onClick={() => void enterDemo("admin")}>
-              <span><ShieldCheck size={18} /></span><b>Principal view</b><small>Meera Kapoor</small>
+              <span><img src="/assets/meera-kapoor.png" alt="" /></span><b>Principal view</b><small>Meera Kapoor</small>
               {pending === "admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
             </button>
+            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("school_admin")}>
+              <span aria-hidden="true">A</span><b>Admin view</b><small>Arjun Rao · Roles & access</small>
+              {pending === "school_admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
+            </button>
+            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("company")}><span><ShieldCheck size={20}/></span><b>Company view</b><small>Eduera · Institution provisioning</small>{pending === "company" ? <LoaderCircle className="auth-spin" size={16}/> : <ArrowRight size={16}/>}</button>
           </div>
         </div>
       ) : null}
@@ -230,7 +262,7 @@ export function SignupPage() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
       });
-      void navigate("/onboarding/pending", { replace: true });
+      void navigate("/account/security", { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Your account could not be created.");
     } finally {
@@ -239,17 +271,20 @@ export function SignupPage() {
   }
 
   return (
-    <AuthLayout eyebrow="Join your school" title="Create your Edura account" description="Choose your role now. Your school verifies access before records become visible.">
+    <AuthLayout eyebrow="Get started" title="Create your Edura account" description="Join an institution, apply to onboard one, or create a coaching workspace.">
       <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <fieldset className="auth-role-picker">
-          <legend>I’m joining as</legend>
+          <legend>I'm joining as</legend>
           <div>
             <button type="button" className={form.role === "parent" ? "is-selected" : ""} aria-pressed={form.role === "parent"} onClick={() => update("role", "parent")}>
               <UsersRound size={18} /><span><b>Parent</b><small>Family portal</small></span>{form.role === "parent" ? <Check size={15} /> : null}
             </button>
             <button type="button" className={form.role === "student" ? "is-selected" : ""} aria-pressed={form.role === "student"} onClick={() => update("role", "student")}>
               <GraduationCap size={18} /><span><b>Student</b><small>Learning portal</small></span>{form.role === "student" ? <Check size={15} /> : null}
+            </button>
+            <button type="button" className={form.role === "admin" ? "is-selected" : ""} aria-pressed={form.role === "admin"} onClick={() => update("role", "admin")}>
+              <School size={18} /><span><b>Institution owner</b><small>School or coaching setup</small></span>{form.role === "admin" ? <Check size={15} /> : null}
             </button>
           </div>
         </fieldset>
@@ -258,10 +293,10 @@ export function SignupPage() {
           <label className="auth-field"><span>Last name</span><div className="auth-input-wrap"><UserRound size={18} /><input value={form.last_name} onChange={(event) => update("last_name", event.target.value)} autoComplete="family-name" required /></div></label>
         </div>
         <label className="auth-field"><span>Email address</span><div className="auth-input-wrap"><Mail size={18} /><input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} autoComplete="email" placeholder="you@example.com" required /></div></label>
-        <label className="auth-field"><span>Create password</span><PasswordInput value={form.password} onChange={(value) => update("password", value)} autoComplete="new-password" /><small>Use at least 10 characters with a mix of letters and numbers.</small></label>
+        <label className="auth-field"><span>Create password</span><PasswordInput value={form.password} onChange={(value) => update("password", value)} autoComplete="new-password" /><small>Use at least 12 characters with upper- and lowercase letters, a number and a symbol.</small></label>
         <label className="auth-field"><span>Confirm password</span><PasswordInput value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" /></label>
         <button className="auth-primary-button" type="submit" disabled={pending}>
-          {pending ? <><LoaderCircle className="auth-spin" size={18} /> Creating account…</> : <>Create secure account <ArrowRight size={18} /></>}
+          {pending ? <><LoaderCircle className="auth-spin" size={18} /> Creating account...</> : <>Create secure account <ArrowRight size={18} /></>}
         </button>
       </form>
       <p className="auth-privacy"><ShieldCheck size={14} /> Your account sees no student records until school membership is approved.</p>
@@ -307,7 +342,7 @@ export function PendingOnboardingPage() {
         </ol>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <button className="auth-primary-button" type="button" disabled={checking} onClick={() => void checkAccess()}>
-          {checking ? <><LoaderCircle className="auth-spin" size={18} /> Checking access…</> : <><RefreshCw size={18} /> Check access again</>}
+          {checking ? <><LoaderCircle className="auth-spin" size={18} /> Checking access...</> : <><RefreshCw size={18} /> Check access again</>}
         </button>
         <button className="auth-text-button" type="button" onClick={() => void auth.logout()}>Sign out and use another account</button>
       </div>

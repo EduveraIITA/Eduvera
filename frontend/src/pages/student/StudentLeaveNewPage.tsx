@@ -1,7 +1,6 @@
 import { useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
@@ -179,7 +178,7 @@ export function StudentLeaveNewPage({
       window.localStorage.removeItem(draftStorageKey);
       setSubmitState("success");
     } catch {
-      setError("We couldn’t submit the request. Please try again.");
+      setError("We couldn't submit the request. Please try again.");
       setSubmitState("idle");
     }
   }
@@ -199,13 +198,11 @@ export function StudentLeaveNewPage({
   }
 
   return (
-    <StudentShell activeNav="attendance" variant="edura" routes={routes}>
+    <StudentShell activeNav="attendance" variant="edura" routes={routes} pageTitle="Apply leave" onBack={onBack}>
       <form className="student-page-stack leave-new-page" onSubmit={submit}>
-        <header className="page-title-row">
-          <button className="square-soft-button" type="button" aria-label="Go back" onClick={onBack ?? (() => navigate(-1))}><ArrowLeft size={20} /></button>
-          <div><h1>Apply Leave</h1><p>{context ? `Excusal request for ${context.studentName}` : "Excusal Request for Homeroom"}</p></div>
+        <div className="page-context-row page-context-row--end">
           <span className="term-indicator"><i />{context?.termLabel ?? "Term 1"}</span>
-        </header>
+        </div>
 
         <div className="segmented-control" role="tablist" aria-label="Leave application views">
           <button className="is-active" type="button" role="tab" aria-selected="true"><CheckCircle2 size={16} />+ Apply Leave</button>
@@ -235,7 +232,7 @@ export function StudentLeaveNewPage({
 
         <section className="student-card reason-card">
           <header className="form-section__heading"><label htmlFor="leave-reason">Detailed Reason / Symptoms</label><span>Character Count: {reason.length}/300</span></header>
-          <textarea id="leave-reason" rows={3} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Provide clarity for homeroom attendance records…" required />
+          <textarea id="leave-reason" rows={3} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Provide clarity for homeroom attendance records..." required />
           <small>Quick Suggestions</small>
           <div className="suggestion-row">{suggestionText.map((suggestion) => <button type="button" key={suggestion} onClick={() => addSuggestion(suggestion)}>+ {suggestion}</button>)}</div>
         </section>
@@ -245,7 +242,7 @@ export function StudentLeaveNewPage({
           {attachmentLabel ? (
             <div className="attachment-file">
               <span className="attachment-file__icon"><FileText size={22} /></span>
-              <span><strong>{attachmentLabel}</strong><small>{attachment ? `${(attachment.size / 1024 / 1024).toFixed(1)} MB` : "Ready"} • <em>Selected just now</em></small></span>
+              <span><strong>{attachmentLabel}</strong><small>{attachment ? `${(attachment.size / 1024 / 1024).toFixed(1)} MB` : "Ready"} - <em>Selected just now</em></small></span>
               <button type="button" aria-label="Remove supporting document" onClick={() => { setAttachment(null); setAttachmentLabel(""); }}><Trash2 size={18} /></button>
             </div>
           ) : null}
@@ -261,7 +258,7 @@ export function StudentLeaveNewPage({
         {error && <p className="form-message form-message--error" role="alert">{error}</p>}
         <div className="student-action-stack leave-submit-actions">
           <button className={`primary-action ${submitState === "success" ? "is-success" : ""}`} type="submit" disabled={submitState !== "idle"}>
-            {submitState === "loading" ? <><span className="button-spinner" />Routing to Parent…</> : submitState === "success" ? <><Check size={19} />Sent for Digital Signature!</> : <>Submit for Parent Verification <ArrowRight size={19} /></>}
+            {submitState === "loading" ? <><span className="button-spinner" />Routing to Parent...</> : submitState === "success" ? <><Check size={19} />Sent for Digital Signature!</> : <>Submit for Parent Verification <ArrowRight size={19} /></>}
           </button>
           <button className="quiet-action" type="button" onClick={saveDraft}><Save size={16} />{draftSaved ? "Draft Saved" : "Save Application as Draft"}</button>
         </div>

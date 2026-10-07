@@ -1,7 +1,15 @@
+import { GraduationCap } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+
+const DEMO = [
+  { u: "meera.principal", name: "Meera Kapoor", role: "Principal", hint: "Every register, every decision" },
+  { u: "kavita.staff", name: "Kavita Mehta", role: "Teacher", hint: "Class registers and leave" },
+  { u: "pooja.parent", name: "Pooja Sharma", role: "Parent", hint: "Aarav and Ananya" },
+  { u: "aarav.student", name: "Aarav Sharma", role: "Student", hint: "Class 7A" },
+];
 
 export function LoginPage() {
   const { status, persona, login, demoMode } = useAuth();
@@ -12,29 +20,30 @@ export function LoginPage() {
 
   if (status === "signed-in" && persona) return <Navigate to="/" replace />;
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function run(id: string, pw: string) {
     setBusy(true); setError(null);
-    try { await login(identifier.trim(), password); }
+    try { await login(id.trim(), pw); }
     catch (err) { setError(err instanceof ApiError ? err.message : "Could not sign in."); }
     finally { setBusy(false); }
   }
+  function submit(e: FormEvent) { e.preventDefault(); void run(identifier, password); }
 
   const notStaff = status === "signed-in" && !persona;
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <form onSubmit={submit} className="card" style={{ width: "min(420px, 100%)", padding: 30, display: "flex", flexDirection: "column", gap: 18, borderRadius: "var(--r-lg)", boxShadow: "var(--shadow-float)" }}>
+    <div className="login">
+      <form onSubmit={submit} className="login-card">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="icon-sq fill" style={{ width: 36, height: 36, borderRadius: 12 }}><GraduationCap size={20} strokeWidth={2} /></span>
+          <div><div className="t-hsm">OmniSchool</div><div className="lbl" style={{ color: "var(--brand-text)", letterSpacing: ".06em" }}>Portal</div></div>
+        </div>
         <div>
-          <div className="brand" style={{ padding: 0 }}><span className="dot" /><span className="name">OmniSchool</span></div>
-          <h1 className="dsp" style={{ marginTop: 10 }}>Sign in</h1>
-          <p className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>Principals, teachers, guardians and students all sign in here. What you see is decided by your school membership.</p>
+          <h1 className="t-hxl">Sign in</h1>
+          <p className="t-bmd ink2" style={{ marginTop: 6 }}>Principals, teachers, parents and students all sign in here. What you see is decided by your school membership.</p>
         </div>
 
         {notStaff ? (
-          <div style={{ background: "var(--cau-bg)", color: "var(--cau-ink)", borderRadius: 7, padding: "11px 13px", fontSize: 13, lineHeight: 1.5 }}>
-            This account has no active school membership yet. Ask your school to complete onboarding, or try the <a href={import.meta.env.DEV ? "http://127.0.0.1:5173/" : "/"}>mobile app</a>.
-          </div>
+          <div className="callout cau"><span className="t-bsm">This account has no active school membership yet. Ask your school to complete onboarding, or try the <a href={import.meta.env.DEV ? "http://127.0.0.1:5173/" : "/"}>mobile app</a>.</span></div>
         ) : null}
 
         <label className="field">
@@ -46,14 +55,20 @@ export function LoginPage() {
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </label>
 
-        {error ? <div style={{ color: "var(--cri)", fontSize: 13 }}>{error}</div> : null}
+        {error ? <div className="t-bsm cri-c">{error}</div> : null}
 
         <button className="btn pri" type="submit" disabled={busy} style={{ padding: 12 }}>{busy ? "Signing in…" : "Sign in"}</button>
 
         {demoMode ? (
-          <div style={{ fontSize: 12.5, color: "var(--faint)", lineHeight: 1.6 }}>
-            Demo accounts · password <span className="mono">OmniDemo@2026</span><br />
-            <span className="mono">meera.principal</span> · <span className="mono">kavita.staff</span> · <span className="mono">pooja.parent</span> · <span className="mono">aarav.student</span>
+          <div className="col xs">
+            <div className="lbl">Demo accounts · password <span className="mono" style={{ textTransform: "none" }}>OmniDemo@2026</span></div>
+            <div className="demo-grid">
+              {DEMO.map((d) => (
+                <button key={d.u} type="button" className="demo-acc" disabled={busy} onClick={() => { setIdentifier(d.u); setPassword("OmniDemo@2026"); void run(d.u, "OmniDemo@2026"); }}>
+                  <b>{d.name}</b><span>{d.role} · {d.hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
       </form>

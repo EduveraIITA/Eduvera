@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { shiftSchoolDate } from "../../lib/schoolTime";
+import { useNavigate,useSearchParams } from "react-router-dom";
+import { schoolDateToday, shiftSchoolDate } from "../../lib/schoolTime";
+import { timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
 import { askAttendanceCopilot } from "../attendance/api";
 import { StudentAttendancePage } from "../../pages/student/StudentAttendancePage";
 import { StudentHomePage } from "../../pages/student/StudentHomePage";
@@ -22,6 +23,7 @@ import {
   getStudentLeaveApply,
   getStudentLeaveStatus,
   getStudentTimetable,
+  getStudentTimetableSummary,
   performLeaveAction,
 } from "./api";
 import {
@@ -170,7 +172,7 @@ export function StudentLeaveNewRoute() {
       context={{
         studentName: response.student.user.display_name,
         className: response.student.current_enrollment.class_name,
-        termLabel: `${response.student.current_enrollment.term.name} • ${response.student.current_enrollment.term.academic_year}`,
+        termLabel: `${response.student.current_enrollment.term.name} - ${response.student.current_enrollment.term.academic_year}`,
         categories: response.categories.map((category) => ({
           value: category.value === "personal" ? "urgent" : category.value as StudentLeaveDraft["category"],
           label: category.label,
@@ -212,17 +214,31 @@ export function StudentLeaveStatusRoute() {
 }
 
 export function StudentTimetableRoute() {
+  const [params,setParams]=useSearchParams();
+  const date=params.get('date')||undefined;
+  const requestedView=params.get("view");
+  const view: TimetableView=["day","week","month","year"].includes(requestedView??"")?requestedView as TimetableView:"day";
+  const anchor=date??schoolDateToday();
+  const range=timetableSummaryRange(anchor,view);
   const query = useQuery({
-    queryKey: ["school", "student", "timetable"],
-    queryFn: () => getStudentTimetable(),
+    queryKey: ["school", "student", "timetable",date],
+    queryFn: () => getStudentTimetable(date),
+  });
+  const summary=useQuery({
+    queryKey:["school","student","timetable-summary",range.start,range.end,anchor],
+    queryFn:()=>getStudentTimetableSummary(range.start,range.end,anchor),
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   return (
     <StudentTimetablePage
+      dayPlan={query.data.day_plan} selectedDate={query.data.selected_date} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
+      view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next);}}
+      onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next);}}
+      summary={summary.data} summaryLoading={summary.isPending} summaryError={summary.isError?summary.error.message:undefined} onSummaryRetry={()=>void summary.refetch()}
       className={query.data.class_name}
       studentName={query.data.student.user.display_name}
-      termLabel={`${query.data.student.current_enrollment.term.name} • ${query.data.student.current_enrollment.term.academic_year}`}
+      termLabel={`${query.data.student.current_enrollment.term.name} - ${query.data.student.current_enrollment.term.academic_year}`}
       days={adaptTimetable(query.data)}
     />
   );

@@ -1,6 +1,8 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { schoolDateToday } from "../../lib/schoolTime";
+import { timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
 import { ParentAttendancePage } from "../../pages/parent/ParentAttendancePage";
 import { ParentDiaryPage } from "../../pages/parent/ParentDiaryPage";
 import { ParentHomePage } from "../../pages/parent/ParentHomePage";
@@ -15,7 +17,9 @@ import {
   getParentHome,
   getParentLeave,
   getParentTimetable,
+  getParentTimetableSummary,
   performLeaveAction,
+  setHomeworkCompleted,
 } from "./api";
 import {
   adaptParentAttendance,
@@ -59,9 +63,12 @@ function contactAction(contact?: { name: string; email?: string | null; phone?: 
 
 export function ParentHomeRoute() {
   const { studentId, selectStudent } = useSelectedStudent();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["school", "parent", "home", studentId ?? "default"],
     queryFn: () => getParentHome(studentId),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
@@ -72,7 +79,16 @@ export function ParentHomeRoute() {
     <ParentHomePage
       data={data}
       onSelectChild={selectStudent}
+      onPrepareChild={(childId) => queryClient.fetchQuery({
+        queryKey: ["school", "parent", "home", childId],
+        queryFn: () => getParentHome(childId),
+        staleTime: 30_000,
+      }).then(adaptParentHome)}
       onContactTeacher={contactAction(teacher)}
+      onToggleHomework={async (itemId, completed) => {
+        await setHomeworkCompleted(itemId, data.child.id, completed);
+        await queryClient.invalidateQueries({ queryKey: ["school", "parent", "home", studentId ?? "default"] });
+      }}
     />
   );
 }
@@ -185,21 +201,35 @@ export function ParentDiaryRoute() {
 }
 
 export function ParentTimetableRoute() {
+  const [params,setParams]=useSearchParams();
+  const date=params.get('date')||undefined;
+  const requestedView=params.get("view");
+  const view: TimetableView=["day","week","month","year"].includes(requestedView??"")?requestedView as TimetableView:"day";
+  const anchor=date??schoolDateToday();
+  const range=timetableSummaryRange(anchor,view);
   const { studentId, selectStudent } = useSelectedStudent();
   const query = useQuery({
-    queryKey: ["school", "parent", "timetable", studentId ?? "default"],
-    queryFn: () => getParentTimetable(undefined, studentId),
+    queryKey: ["school", "parent", "timetable", studentId ?? "default",date],
+    queryFn: () => getParentTimetable(date, studentId),
+  });
+  const summary=useQuery({
+    queryKey:["school","parent","timetable-summary",studentId??"default",range.start,range.end,anchor],
+    queryFn:()=>getParentTimetableSummary(range.start,range.end,anchor,studentId),
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   return (
     <StudentTimetablePage
       audience="parent"
+      dayPlan={query.data.day_plan} selectedDate={query.data.selected_date} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
+      view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next);}}
+      onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next);}}
+      summary={summary.data} summaryLoading={summary.isPending} summaryError={summary.isError?summary.error.message:undefined} onSummaryRetry={()=>void summary.refetch()}
       child={adaptStudentSummary(query.data.student)}
       onSelectChild={selectStudent}
       className={query.data.class_name}
       studentName={query.data.student.user.display_name}
-      termLabel={`${query.data.student.current_enrollment.term.name} • ${query.data.student.current_enrollment.term.academic_year}`}
+      termLabel={`${query.data.student.current_enrollment.term.name} - ${query.data.student.current_enrollment.term.academic_year}`}
       days={adaptTimetable(query.data)}
     />
   );

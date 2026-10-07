@@ -1,50 +1,74 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
-import { BarChart3, CalendarDays, ClipboardCheck, GraduationCap, Home, LayoutDashboard } from "lucide-react";
+import { NavLink, useLocation } from "react-router-dom";
+import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
+import { currentStaffMembership, hasStaffPermission } from "../../features/auth/staffAccess";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
+import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
+import { PlanningNavigation } from "../../features/navigation/PlanningNavigation";
+import { SchoolBrand } from "../../features/school/SchoolBrand";
 import "./operations.css";
 import "./operations-links.css";
+import "./operations-brand.css";
 
 type Portal = "teacher" | "principal";
-type Active = "home" | "attendance" | "timetable";
+type Active = "home" | "attendance" | "timetable" | "chat" | "safeguarding" | "more" | "events";
 
 const nav = {
   teacher: [
     { id: "home", label: "Today", path: "/teacher", icon: Home },
     { id: "attendance", label: "Attendance", path: "/teacher/attendance", icon: ClipboardCheck },
     { id: "timetable", label: "Timetable", path: "/teacher/timetable", icon: CalendarDays },
+    { id: "chat", label: "Messages", path: "/teacher/messages", icon: MessageCircle },
+    { id: "safeguarding", label: "Safeguarding", path: "/teacher/safeguarding", icon: ShieldAlert },
+    { id: "more", label: "More", path: "/teacher/more", icon: MoreHorizontal },
   ],
   principal: [
     { id: "home", label: "Overview", path: "/principal", icon: LayoutDashboard },
     { id: "attendance", label: "Attendance", path: "/principal/attendance", icon: BarChart3 },
     { id: "timetable", label: "Timetable", path: "/principal/timetable", icon: CalendarDays },
+    { id: "chat", label: "Messages", path: "/principal/messages", icon: MessageCircle },
+    { id: "safeguarding", label: "Safeguarding", path: "/principal/safeguarding", icon: ShieldAlert },
+    { id: "more", label: "More", path: "/principal/more", icon: MoreHorizontal },
   ],
 } as const;
+const mobileNavIds = new Set(["home", "attendance", "timetable", "more"]);
 
-export function OperationsShell({ portal, active, title, subtitle, children }: { portal: Portal; active: Active; title: string; subtitle: string; children: ReactNode }) {
+export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void }) {
   const auth = useOptionalAuth();
-  const schoolName = auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
+  const { pathname } = useLocation();
+  const planning = portal === "principal" && (pathname.startsWith("/principal/timetable") || pathname === "/principal/calendar");
+  const member=currentStaffMembership(auth?.memberships ?? []);
+  const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
+  const navigation=nav[portal].filter(item=>{
+    if(portal!=='teacher') return true;
+    const permission=required[item.id];
+    return !permission || hasStaffPermission(member,permission);
+  });
+  const navigationActive = planning ? "timetable" : active === "events" ? "more" : active;
+  const mobileActive = mobileNavIds.has(navigationActive) ? navigationActive : "more";
+  const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
   return (
     <div className={`operations-app operations-app--${portal}`}>
       <aside className="operations-sidebar">
-        <div className="operations-brand"><span><GraduationCap size={23} /></span><div><strong>{schoolName}</strong></div></div>
+        <SchoolBrand name={schoolName} className="operations-brand" />
         <nav aria-label={`${portal} portal navigation`}>
-          {nav[portal].map(({ id, label, path, icon: Icon }) => (
-            <NavLink key={id} to={path} end={id === "home"} className={active === id ? "is-active" : ""}><Icon size={19} /><span>{label}</span></NavLink>
+          {navigation.map(({ id, label, path, icon: Icon }) => (
+            <NavLink key={id} to={path} end={id === "home"} aria-current={navigationActive === id ? "page" : undefined} className={navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{portal === "principal" && id === "safeguarding" ? "Student concerns" : label}</span></NavLink>
           ))}
         </nav>
-        <div className="operations-sidebar__scope"><span>Current scope</span><strong>Attendance &amp; Timetable</strong><small>Other School OS modules stay outside this release.</small></div>
+        <div className="operations-sidebar__scope"><span>Current scope</span><strong>School operations</strong><small>Attendance, timetable, and secure communication.</small></div>
       </aside>
       <div className="operations-workspace">
         <header className="operations-topbar">
-          <div><span>{subtitle}</span><h1>{title}</h1></div>
-          <div><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
+          <SchoolBrand name={schoolName} className="operations-topbar__brand" />
+          <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} /></div>
+          <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
-        <main className="operations-main">{children}</main>
+        <main className="operations-main">{planning ? <PlanningNavigation/> : null}{children}</main>
         <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
-          {nav[portal].map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} className={active === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
+          {navigation.filter(({ id }) => mobileNavIds.has(id)).map(({ id, label, path, icon: Icon }) => <NavLink key={id} to={path} end={id === "home"} aria-current={mobileActive === id ? "page" : undefined} className={mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>)}
         </nav>
       </div>
     </div>

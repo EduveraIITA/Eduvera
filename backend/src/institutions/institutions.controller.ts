@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Req, Param } from "@nestjs/common";
+import { Controller, Get, Req, Param } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { Public } from "../common/decorators.js";
 import type { AuthenticatedRequest } from "../common/request.js";
@@ -19,24 +19,10 @@ export class InstitutionsController {
     return { is_company_operator: true };
   }
 
-  @Post("/")
-  async create(@Req() request: AuthenticatedRequest) {
-    await this.institutions.requireOperator(request.authUser.id);
-    return this.institutions.create(request.authUser.id, request.body);
-  }
-
-  @Post("accept-invitation/")
-  accept(@Req() request: AuthenticatedRequest) { return this.institutions.accept(request.authUser.id, request.body); }
-
   @Get(":id/")
   async get(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
     await this.institutions.requireOperator(request.authUser.id);
     return this.institutions.get(id);
   }
 
-  @Post(":id/admin-invitations/")
-  async invite(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
-    await this.institutions.requireOperator(request.authUser.id);
-    return this.institutions.invite(request.authUser.id, id, request.body);
-  }
 }

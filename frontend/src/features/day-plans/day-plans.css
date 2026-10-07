@@ -1,0 +1,1073 @@
+.day-workspace {
+  display: grid;
+  gap: 1.125rem;
+  max-width: 1120px;
+  margin: 0 auto;
+  color: var(--edura-ink);
+}
+.day-page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.day-page-actions h1 { margin: 0; font-size: 1.5rem; line-height: 1.2; letter-spacing: -0.035em; }
+.day-muted {
+  color: var(--edura-ink-muted);
+  line-height: 1.6;
+}
+.day-panel {
+  min-width: 0;
+  background: var(--edura-surface);
+  border: 0;
+  border-radius: var(--edura-radius-feature);
+  padding: 1.5rem;
+  box-shadow: var(--edura-shadow-card);
+}
+.day-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.day-heading h2,
+.day-dialog h2 {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+  margin: 0.375rem 0;
+}
+.day-workspace h3,
+.day-teaching-content h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  letter-spacing: -0.02em;
+}
+.day-workspace button,
+.day-dialog button {
+  cursor: pointer;
+}
+.day-primary,
+.day-secondary,
+.day-icon-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--edura-radius-control);
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+}
+.day-primary {
+  background: var(--edura-brand-bright);
+  color: var(--edura-surface);
+  border: 1px solid var(--edura-brand-bright);
+}
+.day-secondary,
+.day-icon-button {
+  background: var(--edura-surface);
+  color: var(--edura-brand);
+  border: 1px solid var(--edura-border);
+}
+.day-icon-button {
+  width: 44px;
+  flex-shrink: 0;
+  padding: 0.5rem;
+}
+.day-primary:hover {
+  background: var(--edura-brand);
+}
+.day-secondary:hover,
+.day-icon-button:hover {
+  background: var(--edura-surface-soft);
+}
+.day-workspace button:disabled,
+.day-dialog button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.day-workspace :focus-visible,
+.day-dialog :focus-visible {
+  outline: 3px solid var(--edura-brand-bright);
+  outline-offset: 3px;
+}
+.day-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0.875rem;
+  background: var(--edura-surface-soft);
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-card);
+}
+.day-filters > label {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.day-filters.is-date-only {
+  grid-template-columns: minmax(0, 20rem);
+}
+.day-filters input,
+.day-filters select {
+  box-sizing: border-box;
+  inline-size: auto;
+  width: auto;
+  max-inline-size: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding-block: 0.625rem;
+  align-self: stretch;
+}
+.day-filters input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+.day-workspace label,
+.day-dialog label {
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--edura-ink-secondary);
+}
+.day-workspace input,
+.day-workspace select,
+.day-workspace textarea,
+.day-dialog input,
+.day-dialog select,
+.day-dialog textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  background: var(--edura-surface);
+  padding: 0.75rem;
+  color: var(--edura-ink);
+  font-size: 1rem;
+  font-weight: 400;
+}
+.day-workspace textarea,
+.day-dialog textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.day-workspace fieldset,
+.day-dialog fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.day-editor > fieldset {
+  margin-top: 1.25rem;
+}
+.day-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.day-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.day-actions > div {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.day-schedule-actions {
+  margin-left: auto;
+  flex-wrap: nowrap;
+}
+.day-editor > footer {
+  border-top: 1px solid var(--edura-border);
+  padding-top: 1.25rem;
+  margin-top: 1.25rem;
+}
+.day-period-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+.day-period {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--edura-border);
+}
+.day-period:last-child {
+  border-bottom: 0;
+}
+.day-period-number {
+  display: grid;
+  gap: 0.125rem;
+  border-right: 2px solid var(--edura-border);
+  padding: 0.125rem 0.75rem 0.125rem 0;
+}
+.day-period-number > span {
+  color: var(--edura-brand);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+.day-period-number > time {
+  color: var(--edura-ink-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.day-period-number small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--edura-ink-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.day-period-content {
+  flex: 1;
+  min-width: 0;
+}
+.day-period-content header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 0.75rem;
+}
+.day-period-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--edura-ink-muted);
+  margin-top: 0.5rem;
+  line-height: 1.6;
+}
+.day-period-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.day-period-meta svg,
+.day-materials svg {
+  flex-shrink: 0;
+}
+.day-materials {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  color: var(--edura-brand);
+  font-size: 0.8125rem;
+  margin: 0.75rem 0 0;
+  line-height: 1.6;
+}
+.day-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  font-weight: 700;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--edura-radius-pill);
+  background: var(--edura-surface-soft);
+  color: var(--edura-ink-muted);
+}
+.day-status.is-pending,
+.day-status.is-unassigned {
+  color: var(--edura-warning);
+  background: var(--edura-warning-soft);
+}
+.day-status.is-accepted {
+  color: var(--edura-positive);
+  background: var(--edura-positive-soft);
+}
+.day-status.is-declined {
+  color: var(--edura-danger);
+  background: var(--edura-danger-soft);
+}
+.day-period.is-cancelled h3,
+.day-teaching-list > .is-cancelled h3 {
+  text-decoration: line-through;
+  color: var(--edura-ink-muted);
+}
+.day-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: var(--edura-surface-soft);
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-card);
+  padding: 1rem;
+  color: var(--edura-brand);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.day-change-reason {
+  margin-top: 1.25rem;
+}
+.day-error,
+.day-success {
+  padding: 1rem;
+  border-radius: var(--edura-radius-control);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  margin: 1rem 0;
+  overflow-wrap: anywhere;
+}
+.day-error {
+  color: var(--edura-danger);
+  background: var(--edura-danger-soft);
+}
+.day-success {
+  color: var(--edura-positive);
+  background: var(--edura-positive-soft);
+}
+.day-error ul {
+  padding-left: 1.25rem;
+}
+.day-empty {
+  text-align: center;
+  color: var(--edura-ink-muted);
+  padding: 1.5rem;
+  line-height: 1.6;
+}
+.day-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 0;
+  color: var(--edura-ink-muted);
+}
+.day-empty-state > svg {
+  flex: 0 0 auto;
+  color: var(--edura-brand);
+}
+.day-empty-state span {
+  display: grid;
+  gap: 0.125rem;
+}
+.day-empty-state strong {
+  color: var(--edura-ink);
+  font-size: 0.9375rem;
+}
+.day-empty-state small {
+  line-height: 1.5;
+}
+.day-closed-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
+}
+.day-closed-state__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--edura-radius-control);
+  background: var(--edura-brand-soft);
+  color: var(--edura-brand);
+}
+.day-closed-state h2 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+.day-closed-state p {
+  margin: 0.2rem 0 0;
+  color: var(--edura-ink-muted);
+  font-size: 0.8125rem;
+}
+.day-closed-state__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--edura-brand);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.day-empty svg {
+  color: var(--edura-brand);
+}
+.day-coverage-strip {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 1rem;
+  border-radius: var(--edura-radius-card);
+  background: var(--edura-warning-soft);
+}
+.day-coverage-strip strong {
+  font-size: 0.875rem;
+  margin-right: auto;
+}
+.day-assisted-row {
+  padding: 0.75rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid var(--edura-border);
+  font-size: 0.875rem;
+}
+.day-assisted-row small {
+  display: block;
+  color: var(--edura-ink-muted);
+  margin-top: 0.375rem;
+  line-height: 1.6;
+}
+.day-history summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.day-history summary span {
+  margin-left: auto;
+  color: var(--edura-ink-muted);
+}
+.day-history ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.day-history li {
+  border-top: 1px solid var(--edura-border);
+  padding: 1rem 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.day-history li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.day-history li span {
+  font-size: 0.75rem;
+  color: var(--edura-ink-muted);
+}
+.day-dialog {
+  position: fixed;
+  margin: auto;
+  width: min(580px, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-feature);
+  padding: 1.5rem;
+  background: var(--edura-surface);
+  color: var(--edura-ink);
+  box-shadow: var(--edura-shadow-raised);
+}
+.day-dialog::backdrop {
+  background: rgb(11 28 48 / 0.4);
+  backdrop-filter: blur(4px);
+}
+.day-dialog form,
+.day-dialog fieldset {
+  display: grid;
+  gap: 1.25rem;
+}
+.day-dialog p {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--edura-ink-secondary);
+}
+.day-dialog .day-checkbox {
+  display: flex;
+  align-items: flex-start;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.day-dialog .day-checkbox input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin: 0.125rem 0.25rem 0 0;
+  accent-color: var(--edura-brand-bright);
+}
+.day-dialog > footer {
+  margin-top: 1.5rem;
+}
+.day-skeleton {
+  display: grid;
+  gap: 1rem;
+}
+.day-skeleton span {
+  display: block;
+  height: 3rem;
+  background: var(--edura-surface-soft);
+  border-radius: var(--edura-radius-control);
+}
+.day-skeleton span:last-child {
+  width: 65%;
+}
+.day-teaching-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+.day-teaching-list > li {
+  display: flex;
+  gap: 1.5rem;
+  border-top: 1px solid var(--edura-border);
+  padding: 1.25rem 0;
+}
+.day-teaching-time {
+  min-width: 5.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+}
+.day-teaching-time small {
+  color: var(--edura-ink-muted);
+}
+.day-teaching-content {
+  flex: 1;
+  min-width: 0;
+}
+.day-teaching-content header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.day-teaching-content > p {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.day-teaching-content > .day-actions {
+  margin-top: 1rem;
+}
+.teacher-date-navigation {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.teacher-date-board {
+  min-width: 0;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-feature);
+  background: var(--edura-surface);
+  box-shadow: 0 4px 12px rgba(11, 28, 48, 0.04);
+}
+.teacher-date-band {
+  min-width: 0;
+  padding: 1rem 0 0.875rem;
+  border-radius: calc(var(--edura-radius-feature) - 1px) calc(var(--edura-radius-feature) - 1px) 0 0;
+  background: linear-gradient(rgba(0, 30, 96, 0.16), rgba(0, 30, 96, 0.16)), var(--edura-feature-gradient);
+  color: var(--edura-surface);
+}
+.teacher-date-context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 1.25rem 0.625rem;
+}
+.day-workspace .teacher-date-context {
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.teacher-date-context--control {
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.teacher-today-jump {
+  min-height: 2rem;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--edura-radius-pill);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--edura-surface);
+  padding: 0.25rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 800;
+}
+.teacher-today-jump:hover,
+.teacher-today-jump[aria-current="date"] {
+  background: var(--edura-surface);
+  color: var(--edura-brand);
+}
+.timetable-context-select {
+  min-width: 0;
+}
+.timetable-context-select select {
+  min-width: 7.5rem;
+  max-width: 11rem;
+  min-height: 2.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: var(--edura-radius-control);
+  background-color: rgba(255, 255, 255, 0.16);
+  color: var(--edura-surface);
+  padding: 0.375rem 2rem 0.375rem 0.75rem;
+  font: inherit;
+  font-weight: 750;
+}
+.timetable-context-select select:focus-visible {
+  outline: 3px solid var(--edura-positive-soft);
+  outline-offset: 2px;
+}
+.timetable-context-select select:disabled {
+  opacity: 0.65;
+}
+.timetable-context-select option {
+  color: var(--edura-ink);
+  background: var(--edura-surface);
+}
+.teacher-date-mode {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  padding: 0.375rem;
+}
+.teacher-date-mode.timetable-view-switcher {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.teacher-date-mode button,
+.teacher-date-mode a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--edura-radius-control);
+  padding: 0.625rem 0.875rem;
+  background: transparent;
+  color: var(--edura-ink-secondary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.teacher-date-mode button:hover,
+.teacher-date-mode a:hover {
+  background: var(--edura-surface-soft);
+  color: var(--edura-brand);
+}
+.teacher-date-mode button[aria-pressed="true"] {
+  background: var(--edura-brand-soft);
+  color: var(--edura-brand);
+}
+.timetable-week-overview {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+.timetable-week-overview button {
+  position: relative;
+  min-width: 0;
+  min-height: 6rem;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  background: var(--edura-surface);
+  color: var(--edura-ink);
+  padding: 0.5rem 0.25rem;
+}
+.timetable-week-overview button[aria-pressed="true"] {
+  border-color: var(--edura-brand-bright);
+  background: var(--edura-brand-soft);
+  color: var(--edura-brand);
+}
+.timetable-week-overview span,
+.timetable-week-overview small {
+  color: var(--edura-ink-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+.timetable-week-overview strong { font-size: 1.25rem; }
+.teacher-day-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 4.75rem;
+  min-width: 0;
+  gap: 0.25rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 0.375rem 1rem;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  mask-image: linear-gradient(to right, transparent, black 1.5rem, black calc(100% - 1.5rem), transparent);
+}
+.teacher-day-strip::-webkit-scrollbar { display: none; }
+.teacher-day-chip {
+  position: relative;
+  display: grid;
+  min-height: 5.75rem;
+  align-content: center;
+  justify-items: center;
+  gap: 0.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--edura-radius-card);
+  background: transparent;
+  color: var(--edura-surface);
+  padding: 0.75rem 0.25rem;
+  scroll-snap-align: center;
+  text-align: center;
+}
+.teacher-day-chip[aria-pressed="true"] {
+  border-color: var(--edura-surface);
+  background: var(--edura-surface);
+  color: var(--edura-brand);
+}
+.teacher-day-chip[aria-pressed="true"] span,
+.teacher-day-chip[aria-pressed="true"] small { color: var(--edura-brand); }
+.teacher-day-chip:hover:not([aria-pressed="true"]) { background: rgba(255, 255, 255, 0.12); }
+.teacher-date-board .teacher-day-chip:focus-visible { outline-color: var(--edura-positive-soft); }
+.teacher-date-board .teacher-date-mode :focus-visible { outline-offset: -3px; }
+.teacher-calendar-panel header span {
+  color: var(--edura-ink-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.teacher-day-chip span {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.teacher-day-chip strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.teacher-day-chip.is-today strong,
+.timetable-week-overview button.is-today strong,
+.teacher-month-grid button.is-today strong {
+  min-width: 1.875rem;
+  min-height: 1.875rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px currentColor;
+}
+.teacher-day-chip small {
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+.teacher-day-chip span,
+.teacher-day-chip small { color: var(--edura-surface); }
+.teacher-calendar-panel {
+  display: grid;
+  gap: 0.875rem;
+}
+.teacher-calendar-overview {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 0;
+  border-radius: var(--edura-radius-card);
+  background: var(--edura-surface);
+  box-shadow: var(--edura-shadow-card);
+  color: var(--edura-ink);
+}
+.teacher-calendar-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.teacher-calendar-dialog-header h2 {
+  margin: 0.375rem 0 0;
+}
+.teacher-calendar-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.teacher-calendar-panel header strong {
+  color: var(--edura-brand);
+  font-size: 0.875rem;
+}
+.teacher-month-calendar {
+  display: grid;
+  gap: 0.375rem;
+}
+.teacher-month-weekdays,
+.teacher-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+.teacher-month-weekdays span {
+  min-width: 0;
+  color: var(--edura-ink-muted);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+.teacher-month-grid__spacer {
+  min-width: 0;
+}
+.teacher-month-grid button {
+  position: relative;
+  min-width: 0;
+  min-height: 4.25rem;
+  display: grid;
+  align-content: space-between;
+  justify-items: start;
+  gap: 0.125rem;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  background: var(--edura-surface);
+  color: var(--edura-ink);
+  padding: 0.5rem 0.375rem;
+}
+.teacher-month-grid button[aria-pressed="true"] {
+  border-color: var(--edura-brand-bright);
+  background: color-mix(in srgb, var(--edura-brand-bright) 9%, white);
+}
+.teacher-month-grid strong {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+.teacher-month-grid small {
+  color: var(--edura-ink-muted);
+  font-size: 0.6875rem;
+  font-weight: 750;
+}
+.teacher-month-grid button[aria-pressed="true"] small {
+  color: var(--edura-brand);
+}
+.teacher-year-chart {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--edura-border);
+  border-radius: var(--edura-radius-control);
+  background: var(--edura-surface);
+}
+.teacher-year-chart__head,
+.teacher-year-chart button {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+.teacher-year-chart__head {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.75rem;
+  color: var(--edura-ink-muted);
+  background: var(--edura-surface-soft);
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+.teacher-year-chart__head span:last-child { text-align: right; }
+.teacher-year-chart button {
+  min-width: 0;
+  min-height: 2.875rem;
+  border: 0;
+  border-top: 1px solid var(--edura-border);
+  background: var(--edura-surface);
+  color: var(--edura-ink);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.teacher-year-chart button:hover {
+  background: var(--edura-surface-soft);
+}
+.teacher-year-chart button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--edura-brand-bright) 9%, white);
+}
+.teacher-year-chart button > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--edura-ink-secondary);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.teacher-year-chart button.is-current-month > span::after {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--edura-brand-bright);
+  box-shadow: 0 0 0 3px var(--edura-brand-soft);
+  content: "";
+}
+.teacher-year-chart button > i {
+  display: block;
+  overflow: hidden;
+  height: 0.5rem;
+  border-radius: var(--edura-radius-pill);
+  background: var(--edura-surface-soft);
+}
+.teacher-year-chart button > i > em {
+  display: block;
+  width: var(--timetable-month-load);
+  height: 100%;
+  border-radius: var(--edura-radius-pill);
+  background: var(--edura-brand-bright);
+}
+.teacher-year-chart button > strong {
+  color: var(--edura-brand);
+  font-size: 0.8125rem;
+  text-align: right;
+}
+@media (max-width: 680px) {
+  .day-workspace {
+    gap: 1rem;
+  }
+  .day-panel {
+    padding: 1rem;
+  }
+  .teacher-date-context-row {
+    margin-inline: 1rem;
+  }
+  .teacher-date-context--control {
+    flex: 1 1 auto;
+  }
+  .teacher-date-mode button,
+  .teacher-date-mode a {
+    min-height: 42px;
+    padding-inline: 0.35rem;
+    font-size: 0.8125rem;
+  }
+  .timetable-week-overview {
+    grid-template-columns: repeat(7, 4.25rem);
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 0.25rem;
+  }
+  .timetable-week-overview::-webkit-scrollbar { display: none; }
+  .day-filters {
+    padding: 0.75rem;
+    gap: 0.625rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .day-filters.is-date-only { grid-template-columns: minmax(0, 1fr); }
+  .day-closed-state {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .day-closed-state__link {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .day-period {
+    gap: 0.75rem;
+    grid-template-columns: 4.25rem minmax(0, 1fr) auto;
+    padding: 0.875rem 0;
+  }
+  .day-period-number {
+    padding-right: 0.625rem;
+  }
+  .day-period-content header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .day-period-meta {
+    font-size: 0.75rem;
+    gap: 0.375rem 0.625rem;
+  }
+  .day-heading h2 {
+    font-size: 1.125rem;
+  }
+  .day-assisted-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .day-teaching-list > li {
+    gap: 0.75rem;
+  }
+  .day-teaching-time {
+    min-width: 3.75rem;
+    font-size: 0.75rem;
+  }
+  .day-dialog {
+    padding: 1.25rem;
+  }
+  .teacher-day-strip {
+    grid-auto-columns: 4.25rem;
+  }
+  .teacher-month-grid {
+    gap: 0.25rem;
+  }
+  .teacher-month-grid button {
+    min-height: 3.625rem;
+    padding: 0.375rem;
+  }
+  .teacher-year-chart__head,
+  .teacher-year-chart button {
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    gap: 0.5rem;
+  }
+  .day-editor > footer > div {
+    width: 100%;
+  }
+  .day-editor > footer > div > button {
+    flex: 1;
+  }
+}
+@media print {
+  .operations-sidebar,
+  .operations-topbar,
+  .operations-mobile-nav,
+  .day-filters,
+  .day-page-actions,
+  .day-editor,
+  .day-actions,
+  .day-history,
+  .day-assisted-row,
+  .day-coverage-strip,
+  .day-dialog {
+    display: none !important;
+  }
+  .operations-workspace {
+    margin: 0 !important;
+  }
+  .operations-main {
+    padding: 0 !important;
+  }
+  .day-panel {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+  .day-published {
+    display: block !important;
+  }
+}

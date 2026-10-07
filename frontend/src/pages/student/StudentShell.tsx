@@ -1,18 +1,17 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
-  AppWindow,
-  BookOpen,
   Bot,
   CalendarDays,
   ClipboardCheck,
-  GraduationCap,
   Home,
-  WalletCards,
+  MoreHorizontal,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
+import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
+import { SchoolBrand } from "../../features/school/SchoolBrand";
 
 import "./student-pages.css";
 
@@ -23,7 +22,8 @@ export type StudentNavKey =
   | "diary"
   | "copilot"
   | "fees"
-  | "launcher";
+  | "launcher"
+  | "chat";
 
 export interface StudentRouteMap {
   home: string;
@@ -33,6 +33,7 @@ export interface StudentRouteMap {
   copilot: string;
   fees: string;
   launcher: string;
+  chat: string;
 }
 
 export const defaultStudentRoutes: StudentRouteMap = {
@@ -43,6 +44,7 @@ export const defaultStudentRoutes: StudentRouteMap = {
   copilot: "/student/copilot",
   fees: "/student/fees",
   launcher: "/student/apps",
+  chat: "/student/messages",
 };
 
 export interface StudentShellProps {
@@ -56,38 +58,62 @@ export interface StudentShellProps {
   notificationCount?: number;
   onNotifications?: () => void;
   onProfile?: () => void;
+  pageTitle?: string;
+  backTo?: string;
+  onBack?: () => void;
 }
 
 const schoolNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
   { key: "copilot" as const, label: "Copilot", icon: Bot },
-  { key: "fees" as const, label: "Fees", icon: WalletCards },
-  { key: "launcher" as const, label: "Launcher", icon: AppWindow },
+  { key: "launcher" as const, label: "More", icon: MoreHorizontal },
 ];
 
 const eduraNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
-  { key: "classes" as const, label: "Classes", icon: CalendarDays },
-  { key: "diary" as const, label: "Diary", icon: BookOpen },
-  { key: "launcher" as const, label: "Launcher", icon: AppWindow },
+  { key: "classes" as const, label: "Timetable", icon: CalendarDays },
+  { key: "launcher" as const, label: "More", icon: MoreHorizontal },
 ];
+
+function pageTitleFor(pathname: string, activeNav: StudentNavKey, section?: string) {
+  if (pathname === "/student") return "Home";
+  if (pathname.startsWith("/student/attendance/eligibility")) return "Attendance eligibility";
+  if (pathname.startsWith("/student/leave/new")) return "Apply leave";
+  if (pathname.startsWith("/student/leave")) return "Leave Tracker";
+  if (pathname.startsWith("/student/timetable/week")) return "Weekly timetable";
+  if (pathname.startsWith("/student/timetable")) return "Timetable";
+  if (pathname.startsWith("/student/events")) return "Events";
+  if (pathname.startsWith("/student/calendar")) return "Calendar";
+  if (pathname.startsWith("/student/messages")) return "Messages";
+  if (pathname.startsWith("/student/fees")) return "Fees & receipts";
+  if (pathname.startsWith("/student/apps")) return "More";
+  if (pathname.startsWith("/student/diary")) return "Diary";
+  if (pathname.startsWith("/student/attendance")) return "Attendance";
+  if (pathname.startsWith("/student/copilot")) return "Attendance Copilot";
+  return section ?? ({ home: "Home", attendance: "Attendance", classes: "Classes", diary: "Diary", copilot: "Attendance Copilot", fees: "Fees & receipts", launcher: "More", chat: "Messages" } satisfies Record<StudentNavKey, string>)[activeNav];
+}
 
 export function StudentShell({
   children,
   activeNav,
   variant = "edura",
-  section = variant === "school" ? "Attendance" : "Classes",
+  section,
   schoolName,
   routes,
   notificationCount,
   onNotifications,
   onProfile,
+  pageTitle,
+  backTo,
+  onBack,
 }: StudentShellProps) {
+  const location = useLocation();
   const auth = useOptionalAuth();
   const routeMap = { ...defaultStudentRoutes, ...routes };
   const navItems = variant === "school" ? schoolNav : eduraNav;
+  const mobileActive = navItems.some((item) => item.key === activeNav) ? activeNav : "launcher";
   const studentSchools = auth?.memberships.filter((membership) => membership.role === "student") ?? [];
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;
   const resolvedSchoolName = schoolName ?? membershipSchoolName;
@@ -95,24 +121,20 @@ export function StudentShell({
   return (
     <div className={`student-app student-app--${variant}`}>
       <header className={`student-topbar student-topbar--${variant}`}>
-        <div className="student-topbar__brand" aria-label={`${resolvedSchoolName ?? "Cambridge International School"} • ${section}`}>
-          <span className="student-brand-mark" aria-hidden="true">
-            <GraduationCap size={variant === "edura" ? 22 : 20} strokeWidth={2.1} />
-          </span>
-          <span className="student-brand-copy">
-            <strong>{resolvedSchoolName ?? "Cambridge International School"}</strong>
-          </span>
-          {resolvedSchoolName && <span className="student-verified-dot" title="Active school membership">✓</span>}
+        <div className="student-topbar__top">
+          <SchoolBrand name={resolvedSchoolName ?? "Cambridge International School"} className="student-topbar__brand" />
+          <div className="student-topbar__actions">
+            <NotificationCenter
+              buttonClassName="student-icon-button student-notification-button"
+              iconSize={21}
+              fallbackUnreadCount={notificationCount}
+              onOpen={onNotifications}
+            />
+            <AccountMenu buttonClassName="student-profile-button" ariaLabel="Open profile" iconSize={21} onOpen={onProfile} />
+          </div>
         </div>
-
-        <div className="student-topbar__actions">
-          <NotificationCenter
-            buttonClassName="student-icon-button student-notification-button"
-            iconSize={21}
-            fallbackUnreadCount={notificationCount}
-            onOpen={onNotifications}
-          />
-          <AccountMenu buttonClassName="student-profile-button" ariaLabel="Open profile" iconSize={21} onOpen={onProfile} />
+        <div className="student-topbar__context">
+          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} />
         </div>
       </header>
 
@@ -124,10 +146,11 @@ export function StudentShell({
             key={key}
             to={routeMap[key]}
             end={key === "home"}
-            className={({ isActive }) => `student-bottom-nav__item ${activeNav === key || isActive ? "is-active" : ""}`}
+            aria-current={mobileActive === key ? "page" : undefined}
+            className={({ isActive }) => `student-bottom-nav__item ${mobileActive === key || isActive ? "is-active" : ""}`}
           >
             {({ isActive }) => {
-              const selected = activeNav === key || isActive;
+              const selected = mobileActive === key || isActive;
               return (
                 <>
                   <Icon size={22} strokeWidth={selected ? 2.35 : 1.9} />

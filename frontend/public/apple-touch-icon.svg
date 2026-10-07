@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Edura OS">
+  <rect width="180" height="180" rx="42" fill="#0045c7"/>
+  <rect x="20" y="20" width="140" height="140" rx="34" fill="#0a56f5"/>
+  <path d="M48 51h86v23H77v19h49v23H77v9h57v23H48V51Z" fill="#fff"/>
+  <circle cx="136" cy="43" r="18" fill="#86efe1"/>
+</svg>

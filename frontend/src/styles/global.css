@@ -28,6 +28,35 @@
   --error-container: #ffdad6;
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(29, 78, 216, 0.025);
   --shadow-floating: 0 12px 28px rgba(15, 23, 42, 0.12);
+
+  /* Edura design foundations. Role-specific styles alias these tokens instead
+     of inventing a separate palette for each portal. */
+  --edura-canvas: #f8f9ff;
+  --edura-surface: #ffffff;
+  --edura-surface-soft: #eff4ff;
+  --edura-surface-strong: #e5eeff;
+  --edura-ink: #0b1c30;
+  --edura-ink-secondary: #434655;
+  --edura-ink-muted: #5c667a;
+  --edura-border: #dce3f0;
+  --edura-brand: #0037b0;
+  --edura-brand-bright: #1d4ed8;
+  --edura-feature-gradient: linear-gradient(132deg, #164ed0 0%, #2969e7 58%, #3d7af0 100%);
+  --edura-brand-soft: #dce6ff;
+  --edura-positive: #00685f;
+  --edura-positive-soft: #d9f6f1;
+  --edura-warning: #8a5a00;
+  --edura-warning-soft: #fff0cf;
+  --edura-danger: #ba1a1a;
+  --edura-danger-soft: #ffdad6;
+  --edura-radius-control: 10px;
+  --edura-radius-card: 16px;
+  --edura-radius-feature: 22px;
+  --edura-radius-pill: 999px;
+  --edura-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.045), 0 8px 24px rgba(29, 78, 216, 0.045);
+  --edura-shadow-raised: 0 14px 36px rgba(15, 23, 42, 0.13);
+  --edura-motion: 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --edura-page-gutter: 16px;
 }
 
 * {
@@ -49,7 +78,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background: #f8f9ff;
+  background: var(--edura-canvas);
 }
 
 button,
@@ -133,20 +162,39 @@ svg {
   min-height: 100vh;
   place-content: center;
   justify-items: center;
-  gap: 12px;
+  gap: 14px;
   color: var(--on-surface-variant);
   background: var(--surface);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .route-loader__mark {
-  width: 38px;
-  height: 38px;
-  border: 4px solid var(--primary-fixed);
-  border-top-color: var(--primary-bright);
-  border-radius: 999px;
-  animation: route-spin 0.8s linear infinite;
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  background: var(--edura-brand-soft);
+  box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.08);
+  overflow: hidden;
+}
+
+.route-loader__mark::before,
+.route-loader__mark::after {
+  position: absolute;
+  left: 12px;
+  height: 4px;
+  border-radius: var(--edura-radius-pill);
+  background: var(--edura-brand-bright);
+  content: "";
+  animation: route-breathe 1.1s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
+}
+
+.route-loader__mark::before { top: 16px; width: 24px; }
+.route-loader__mark::after { top: 28px; width: 16px; animation-delay: 140ms; }
+
+.route-loader span:last-child {
+  color: var(--edura-ink-secondary);
 }
 
 .route-error {
@@ -155,13 +203,13 @@ svg {
   align-content: center;
   justify-items: start;
   gap: 12px;
-  padding: 32px;
+  padding: 32px 24px;
   background: var(--surface);
 }
 
 .route-error__brand {
   color: var(--primary-bright);
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -187,7 +235,7 @@ svg {
   min-height: 44px;
   margin-top: 4px;
   padding: 0 18px;
-  border-radius: 10px;
+  border-radius: var(--edura-radius-control);
   color: #ffffff;
   background: var(--primary-bright);
   font-weight: 700;
@@ -201,9 +249,7 @@ svg {
   justify-items: center;
   gap: 10px;
   color: var(--on-surface);
-  background:
-    radial-gradient(circle at 50% 38%, rgba(29, 78, 216, 0.09), transparent 190px),
-    var(--surface);
+  background: var(--edura-canvas);
   text-align: center;
 }
 
@@ -213,10 +259,10 @@ svg {
   height: 52px;
   margin-bottom: 4px;
   place-items: center;
-  border-radius: 16px;
+  border-radius: var(--edura-radius-card);
   color: var(--primary);
   background: var(--primary-fixed);
-  box-shadow: 0 8px 22px rgba(29, 78, 216, 0.12);
+  box-shadow: var(--edura-shadow-card);
 }
 
 .live-route-error__eyebrow {
@@ -251,12 +297,12 @@ svg {
   min-height: 43px;
   margin-top: 7px;
   padding: 0 16px;
-  border-radius: 10px;
+  border-radius: var(--edura-radius-control);
   align-items: center;
   gap: 7px;
   color: #ffffff;
   background: var(--primary-bright);
-  box-shadow: 0 4px 12px rgba(0, 55, 176, 0.2);
+  box-shadow: var(--edura-shadow-card);
   font-size: 12px;
   font-weight: 700;
 }
@@ -265,10 +311,9 @@ svg {
   background: var(--primary);
 }
 
-@keyframes route-spin {
-  to {
-    transform: rotate(360deg);
-  }
+@keyframes route-breathe {
+  from { transform: scaleX(0.68); opacity: 0.52; }
+  to { transform: scaleX(1); opacity: 1; }
 }
 
 @media (max-width: 779px) {

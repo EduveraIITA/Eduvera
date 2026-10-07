@@ -1,6 +1,8 @@
 import { Injectable, OnApplicationShutdown } from "@nestjs/common";
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool, types as pgTypes } from "pg";
+import { config } from "../config.js";
+import { postgresClientConnectionConfig } from "./connection-policy.js";
 import type { Database } from "./types.js";
 
 @Injectable()
@@ -8,14 +10,18 @@ export class DatabaseService extends Kysely<Database> implements OnApplicationSh
   private readonly pool: Pool;
 
   constructor() {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error("DATABASE_URL is required");
+    const settings = config();
     // PostgreSQL DATE is a calendar value, not an instant. Keep it as YYYY-MM-DD
     // so timezone conversion cannot move attendance and leave dates by one day.
     pgTypes.setTypeParser(1082, (value) => value);
+    const connection = postgresClientConnectionConfig(settings.DATABASE_URL, {
+      name: "DATABASE_URL",
+      purpose: "application",
+      requireRemoteTls: settings.DEPLOYMENT_ENVIRONMENT === "stage" || settings.DEPLOYMENT_ENVIRONMENT === "production",
+    });
     const pool = new Pool({
-      connectionString,
-      max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+      ...connection,
+      max: settings.DATABASE_POOL_MAX,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       application_name: "omnischool_node_api",

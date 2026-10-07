@@ -1,0 +1,24 @@
+.operations-brand .school-brand__crest {
+  width: 37px;
+  height: 37px;
+  color: #fff;
+  background: var(--edura-brand);
+}
+
+.operations-brand .school-brand__name {
+  color: var(--edura-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.operations-topbar__brand { display: none; }
+
+@media (max-width: 1000px) and (min-width: 681px) {
+  .operations-brand .school-brand__name { display: none; }
+}
+
+@media (max-width: 680px) {
+  .operations-topbar__brand { display: flex; flex: 1; }
+  .operations-topbar .school-brand__crest { display: grid; }
+  .operations-topbar .school-brand__name { display: block; }
+}

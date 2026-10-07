@@ -70,10 +70,6 @@ function iconForKind(kind: StudentDiaryKind, isCatchUp: boolean) {
   return <MessageSquareText size={18} />;
 }
 
-function compactName(name: string) {
-  return name.split(" ")[0] ?? name;
-}
-
 export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiaryPageProps) {
   const [filter, setFilter] = useState<StudentDiaryFilter>("all");
   const [selected, setSelected] = useState<StudentDiaryItem | null>(null);
@@ -140,21 +136,11 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
   return (
     <StudentShell activeNav="diary" section="Diary" className={data.className}>
       <div className="student-page-stack student-diary-page">
-        <section className="student-diary-hero" aria-labelledby="student-diary-heading">
+        <section className="student-diary-hero" aria-label="Diary summary">
           <div className="student-diary-hero__top">
             <div>
-              <span>Student diary</span>
-              <h1 id="student-diary-heading">Today’s work desk</h1>
-              <p>{data.rangeLabel} • {data.termLabel}</p>
+              <p>{data.rangeLabel} - {data.termLabel}</p>
             </div>
-            <span className="student-diary-avatar">
-              {data.avatarUrl ? <img src={data.avatarUrl} alt="" /> : compactName(data.studentName).slice(0, 2)}
-            </span>
-          </div>
-          <div className="student-diary-id">
-            <span><small>Student</small><strong>{data.studentName}</strong></span>
-            <span><small>Class</small><strong>{data.className}</strong></span>
-            <span><small>Roll</small><strong>{data.rollNumber}</strong></span>
           </div>
           <div className="student-diary-stats" aria-label="Diary summary">
             <span><strong>{stats.homework}</strong><small>Homework</small></span>
@@ -185,7 +171,7 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
 
         <section className="student-diary-list" aria-labelledby="student-diary-list-heading">
           <header>
-            <div><span>Class desk</span><h2 id="student-diary-list-heading">Diary entries</h2></div>
+            <div><h2 id="student-diary-list-heading">Diary entries</h2></div>
             <strong>{filtered.length}</strong>
           </header>
           {filtered.length ? filtered.map((item) => (
@@ -193,10 +179,10 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
               <button type="button" onClick={() => setSelected(item)} aria-label={`Open ${item.title}`}>
                 <span className="student-diary-entry__icon">{iconForKind(item.kind, item.isCatchUp)}</span>
                 <span className="student-diary-entry__copy">
-                  <small>{item.subjectShort} • {item.kindLabel}{item.dueLabel ? ` • ${item.dueLabel}` : ""}</small>
+                  <small>{item.subjectShort} - {item.kindLabel}{item.dueLabel ? ` - ${item.dueLabel}` : ""}</small>
                   <strong>{item.title}</strong>
                   <p>{item.body}</p>
-                  <em>{item.author} • {item.publishedLabel}</em>
+                  <em>{item.author} - {item.publishedLabel}</em>
                 </span>
                 <span className={item.acknowledged ? "student-diary-status is-done" : item.requiresAcknowledgement ? "student-diary-status is-pending" : "student-diary-status"}>
                   {item.acknowledged ? <CheckCircle2 size={14} /> : null}
@@ -221,7 +207,7 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
             <header>
               <span className={`student-diary-entry__icon tone-${selected.kind}`}>{iconForKind(selected.kind, selected.isCatchUp)}</span>
               <div>
-                <p>{selected.subject} • {selected.kindLabel}</p>
+                <p>{selected.subject} - {selected.kindLabel}</p>
                 <h2 id="student-diary-detail-heading">{selected.title}</h2>
               </div>
               <button className="student-icon-button" type="button" onClick={() => setSelected(null)} aria-label="Close diary detail"><X size={18} /></button>

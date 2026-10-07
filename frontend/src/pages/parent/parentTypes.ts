@@ -1,3 +1,7 @@
+import type { AttendanceRankingData } from "../../features/school/AttendanceRankingDialog";
+import type { HomeAction } from "../../features/home-actions/types";
+import type { TodayActivityPeriod } from "../../features/today-activities/TodayActivities";
+
 export type ParentPageAction = void | Promise<void>;
 
 export interface ParentChildSummary {
@@ -11,7 +15,23 @@ export interface ParentChildSummary {
 }
 
 export interface ParentHomeData {
+  dayPlan?:import('../../features/day-plans/DayPlanNotice').PublishedDayNotice|null;
+  ranking?: AttendanceRankingData;
+  homeworkItems?: Array<{ id: string; title: string; body: string; subject: string | null; dueAt: string | null; completedAt: string | null }>;
   child: ParentChildSummary;
+  homeActions: HomeAction[];
+  idCard: {
+    studentName: string;
+    avatarUrl?: string;
+    className: string;
+    rollNumber: string;
+    studentId: string;
+    termLabel: string;
+    dateLabel: string;
+    attendancePercent: number;
+    attendanceRecorded?: boolean;
+    attendanceThreshold: number;
+  };
   sibling?: { id: string; name: string; grade: string; section: string };
   presence: { status: string; detail: string };
   pendingLeave?: {
@@ -23,6 +43,7 @@ export interface ParentHomeData {
   };
   unreadDiaryCount: number;
   diarySender: string;
+  schedule?: TodayActivityPeriod[];
   currentPeriod?: {
     number: number;
     startsAt: string;
@@ -38,10 +59,16 @@ export interface ParentHomeData {
   metrics: {
     attendance: string;
     attendanceStatus: string;
+    attendanceTrend?: number | null;
+    attendanceRank?: number | null;
+    attendanceCohortSize?: number | null;
     threshold: string;
     periodsToday: number;
     dismissal: string;
     homeworkTasks: number;
+    homeworkTotal?: number;
+    homeworkRecent?: number;
+    homeworkPrevious?: number;
     homeworkDetail: string;
     duesStatus: string;
     duesDetail: string;
@@ -66,6 +93,7 @@ export interface AttendanceCalendarDay {
 }
 
 export interface ParentAttendanceData {
+  ranking?: AttendanceRankingData;
   child: ParentChildSummary;
   termLabel: string;
   aggregatePercent: number;

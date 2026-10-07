@@ -33,6 +33,8 @@ const slot = {
     code: "MAT",
     name: "Mathematics",
     short_name: "Maths",
+    color: "#1D4ED8",
+    icon: "calculator",
   },
   teacher: {
     id: "50000000-0000-4000-a000-000000000001",
@@ -90,6 +92,27 @@ const summary = {
   percentage: 95,
 };
 
+const ranking = {
+  published: true,
+  as_of: "2026-09-16",
+  cohort_size: 4,
+  minimum_recorded_days: 5,
+  methodology: "Daily attendance points: present or late = 1, half day = 0.5, absent or excused = 0; ranked by percentage, then attendance points and recorded days.",
+  current_rank: 4,
+  current_streak: 9,
+  leaders: [
+    { rank: 1, name: "Ananya S.", avatar_url: "/assets/ananya-iyer.png", attended: 20, held: 20, streak: 20, percentage: 100 },
+    { rank: 2, name: "Kavya N.", avatar_url: "/assets/kavya-nair.png", attended: 19.5, held: 20, streak: 1, percentage: 97.5 },
+    { rank: 3, name: "Rohan V.", avatar_url: "/assets/rohan-verma.png", attended: 19, held: 20, streak: 1, percentage: 95 },
+  ],
+  students: [
+    { rank: 1, name: "Ananya S.", avatar_url: "/assets/ananya-iyer.png", attended: 20, held: 20, streak: 20, percentage: 100, is_current: false },
+    { rank: 2, name: "Kavya N.", avatar_url: "/assets/kavya-nair.png", attended: 19.5, held: 20, streak: 1, percentage: 97.5, is_current: false },
+    { rank: 3, name: "Rohan V.", avatar_url: "/assets/rohan-verma.png", attended: 19, held: 20, streak: 1, percentage: 95, is_current: false },
+    { rank: 4, name: "Aarav Sharma", avatar_url: "/assets/aarav-sharma.png", attended: 19, held: 20, streak: 9, percentage: 95, is_current: true },
+  ],
+};
+
 const contacts = [
   {
     id: "90000000-0000-4000-a000-000000000001",
@@ -97,12 +120,13 @@ const contacts = [
     name: "Kavita Mehta",
     phone: "+91 80 4567 1200",
     email: "kavita.mehta@cis.example",
-    availability: "Weekdays, 3:30–4:30 PM",
+    availability: "Weekdays, 3:30-4:30 PM",
   },
 ];
 
 const home = {
   student,
+  ranking,
   siblings: [],
   campus_presence: {
     occurred_at: "2026-09-16T02:34:00.000Z",
@@ -112,13 +136,41 @@ const home = {
   },
   attendance: summary,
   action_required: leave,
+  home_actions: [{
+    id: `leave-signature:${leave.id}`,
+    kind: "leave_signature",
+    priority: "urgent",
+    title: "Review and sign the leave request",
+    detail: "Medical leave for 2 days.",
+    status_label: "Guardian decision needed",
+    action_label: "Review request",
+    href: `/parent/leave?leave_id=${leave.id}&student_id=${student.id}`,
+    source_id: leave.id,
+    occurs_at: leave.submitted_at,
+    due_at: `${leave.starts_on}T00:00:00.000Z`,
+  }],
   today_schedule: [slot],
   diary_preview: [],
   unread_notifications: 0,
+  homework_items: Array.from({ length: 12 }, (_, index) => ({
+    id: `homework-${index + 1}`,
+    title: index === 0 ? "Algebra practice" : `Homework assignment ${index + 1}`,
+    body: index === 0 ? "Complete exercises 1-5." : "Review classwork.",
+    subject_name: "Mathematics",
+    due_at: "2026-09-20T10:00:00.000Z",
+    published_at: "2026-09-10T10:00:00.000Z",
+    completed_at: index === 0 ? null : "2026-09-11T10:00:00.000Z",
+  })),
   semester_metrics: {
     attendance_percentage: 95,
+    attendance_trend_percent: 5,
+    attendance_rank: 4,
+    attendance_cohort_size: 32,
     periods_today: 1,
     homework_due: 1,
+    homework_total: 12,
+    homework_recent: 3,
+    homework_previous: 4,
     dues_status: "Clear",
   },
   contacts,
@@ -141,6 +193,7 @@ export function schoolApiFixture(path: string): unknown {
       student,
       term: { name: "Term 1", academic_year: "2026-27", threshold: 85 },
       summary,
+      ranking,
       today: {
         id: "a0000000-0000-4000-a000-000000000001",
         date: "2026-09-16",
@@ -172,7 +225,7 @@ export function schoolApiFixture(path: string): unknown {
           item_type_label: "Homework",
           subject: slot.subject,
           title: "Algebra practice",
-          body: "Complete exercises 6–12 and show each step.",
+          body: "Complete exercises 6-12 and show each step.",
           author_name: "Kavita Mehta",
           due_at: "2026-09-18T12:00:00.000Z",
           requires_acknowledgement: true,
@@ -212,20 +265,7 @@ export function schoolApiFixture(path: string): unknown {
       term: { name: "Term 1", academic_year: "2026-27", threshold: 85 },
       summary,
       subjects: [subjectAttendance],
-      ranking: {
-        published: true,
-        as_of: "2026-09-16",
-        cohort_size: 4,
-        minimum_recorded_days: 5,
-        methodology: "Daily attendance points: present or late = 1, half day = 0.5, absent or excused = 0; ranked by percentage, then attendance points and recorded days.",
-        current_rank: 4,
-        current_streak: 9,
-        leaders: [
-          { rank: 1, name: "Ananya S.", avatar_url: "/assets/ananya-iyer.png", attended: 20, held: 20, streak: 20, percentage: 100 },
-          { rank: 2, name: "Kavya N.", avatar_url: "/assets/kavya-nair.png", attended: 19.5, held: 20, streak: 1, percentage: 97.5 },
-          { rank: 3, name: "Rohan V.", avatar_url: "/assets/rohan-verma.png", attended: 19, held: 20, streak: 1, percentage: 95 },
-        ],
-      },
+      ranking,
     };
   }
   if (path === "/api/v1/screens/student/attendance/eligibility/") {
@@ -253,6 +293,6 @@ export function schoolApiFixture(path: string): unknown {
     };
   }
   if (path === "/api/v1/screens/student/leave/status/") return { student, active: [leave], history: [] };
-  if (path.startsWith("/api/v1/screens/student/timetable/week/")) return timetable;
+  if (path.startsWith("/api/v1/screens/student/timetable/week/") || path.startsWith("/api/v1/screens/parent/timetable/week/")) return timetable;
   throw new Error(`No school API fixture for ${path}`);
 }

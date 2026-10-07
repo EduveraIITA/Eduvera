@@ -30,13 +30,19 @@ async function bootstrap(): Promise<void> {
   await app.register(cookie, { secret: settings.COOKIE_SECRET, hook: "onRequest" });
   await app.register(helmet, settings.NODE_ENV === "production" ? {} : { contentSecurityPolicy: false });
   await app.register(compress);
-  await app.register(multipart, { limits: { files: 1, fileSize: 10 * 1024 * 1024, fields: 20, parts: 21 } });
+  await app.register(multipart, { limits: { files: 1, fileSize: 24 * 1024 * 1024, fields: 20, parts: 21 } });
   try {
     await access(join(settings.spaDistDir, "index.html"));
     await app.register(fastifyStatic, {
       root: join(settings.spaDistDir, "assets"),
       prefix: "/assets/",
       wildcard: true,
+    });
+    await app.register(fastifyStatic, {
+      root: join(settings.spaDistDir, "icons"),
+      prefix: "/icons/",
+      wildcard: true,
+      decorateReply: false,
     });
   } catch {
     // The API remains runnable before the separately-built React bundle exists.

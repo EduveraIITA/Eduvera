@@ -8,7 +8,7 @@ export function ScreenLoading() {
   return (
     <div className="route-loader" role="status" aria-live="polite">
       <span className="route-loader__mark" aria-hidden="true" />
-      <span>Syncing school records…</span>
+      <span>Syncing school records...</span>
     </div>
   );
 }
@@ -46,17 +46,17 @@ export function LiveRouteError({ error, onRetry }: LiveRouteErrorProps) {
   return (
     <main className="live-route-error" role="alert" aria-live="assertive">
       <span className="live-route-error__icon" aria-hidden="true"><Icon size={24} /></span>
-      <span className="live-route-error__eyebrow">Edura OS • Live records</span>
-      <h1>{unauthorized ? "Your secure session has ended." : "We couldn’t sync this view."}</h1>
+      <span className="live-route-error__eyebrow">Live school records</span>
+      <h1>{unauthorized ? "Your secure session has ended." : "We couldn't sync this view."}</h1>
       <p>
         {unauthorized
           ? "Taking you to sign in. Your intended page will open after you reconnect."
-          : "No placeholder records are being shown. Check your connection and try the school service again."}
+          : "We couldn't reach the school service. Check your connection, then try again."}
       </p>
       {!unauthorized ? (
         <button type="button" disabled={retrying} onClick={() => void retry()}>
           <RefreshCw className={retrying ? "spin" : undefined} size={17} />
-          {retrying ? "Trying again…" : "Retry live records"}
+          {retrying ? "Trying again..." : "Try again"}
         </button>
       ) : null}
     </main>

@@ -2,19 +2,17 @@
 
 ## Base branch and scope
 
-This feature is based on `main` at `a6407743a3dca4088aca6d8eaddf5e59f33df2b6`.
-That version has no company onboarding, company-operator authority, or invitation
-service. This PR therefore includes a small separate company-operator grant,
-institution detail screen, and expiring first-admin invitation flow. It does not
-bring across unrelated changes from Stage. Coordinate integration with Stage's
-newer company onboarding/role tables before merging those branches together.
+The original main-based PR is integrated with Stage's existing company console,
+operator grants, invitation email delivery, `/join` account activation and institution
+readiness workflow. Migration `053_institution_directory.sql` is additive; existing
+applied migrations and the schools schema remain unchanged.
 
 ## Runtime and access
 
 - `/company`: company Super Admin → search → select → confirm → create.
 - `/company/institutions/:schoolId`: view existing institution / continue setup /
   invite an administrator. It exposes institution metadata, not student data.
-- `/join-institution`: signed-in recipient accepts a private invitation code.
+- `/join`: existing Stage invitation acceptance flow (new or existing account).
 - `GET /api/v1/institutions/search/?q=...`: public catalogue, with optional `type`,
   `state`, and `limit` (1–50, default 15). Requires 2–180 trimmed characters.
 - All tenant creation, institution-detail reads and invitation issuance require
@@ -33,7 +31,7 @@ Grant company access to an existing active account through trusted backend acces
 ```sh
 cd backend
 npm run db:migrate
-node --import tsx src/institutions/company-operator.ts grant operator@example.com
+node --import tsx src/database/company-operator.ts grant operator@example.com
 # Revoke with the same command, replacing grant with revoke.
 ```
 
@@ -54,17 +52,18 @@ event in one transaction. A second concurrent request waits, then receives HTTP
 callers. No orphan school survives a failed transaction. Suspended accounts retain
 their identity and cannot be created again.
 
-New accounts are `setup_in_progress` until an invited administrator accepts;
-they then become `active`. `suspended` is supported for backend-managed suspension
+New accounts are `setup_in_progress` until Stage's readiness/activation workflow
+publishes an active institution. Invitation acceptance alone does not activate it. `suspended` is supported for backend-managed suspension
 but this PR does not add a suspension-management UI. Invitations are hashed,
 single-use, bound to recipient email, valid for 72 hours and invalidated by
 replacement. Acceptance rechecks current company authority and account status.
-Invitation issuance and acceptance are audited. In this main-based foundation,
-invitations are **shared manually**: the UI never claims an email was sent. There
-are no runtime email credentials or connections to the official datasets.
+Invitation issuance and acceptance reuse Stage's audit trail and email transport.
+The company console shows mail-server acceptance, delivery failure or private-code
+fallback honestly. No parallel invitation or operator implementation is installed.
 
 Existing schools at migration time receive unverified MANUAL directory entries
-and active links. Existing internal school codes are not assumed to be official
+and links reflecting their existing activation status. All later school creation
+paths also receive a manual fallback link through a trigger. Existing internal school codes are not assumed to be official
 identifiers. Link them via the importer using an explicitly reviewed
 `existing_school_id`; never use a name match as proof of official identity.
 The old manual master entry is removed on relink to avoid a second selectable
@@ -127,8 +126,8 @@ limits. Confirm query plans with real imported data before national-scale rollou
 
 ## Validation
 
-The dedicated `Institution directory checks` workflow uses an isolated PostgreSQL
-16 service and no staging/production credentials. It runs migrations, seeds the
+The existing `Stage` workflow uses isolated PostgreSQL and no staging/production
+credentials during verification. It runs migrations, seeds the
 existing synthetic school fixture, runs existing backend integration/seed tests,
 new directory/import/concurrency tests, frontend tests, lint, typechecks and builds.
 Locally, the same backend checks need a disposable `DATABASE_URL`:
@@ -148,5 +147,17 @@ npm run typecheck && npm run build
 Manual UI review: check `/company` at mobile and desktop widths; search official
 and manual entries; use arrow keys, Enter, Escape, Tab and outside click; select an
 available institution and confirm; reopen it as setup-in-progress; accept an admin
-invitation; confirm that the active result offers View institution; review a manual
+invitation; confirm that the activated result offers View institution; review a manual
 duplicate warning before acknowledging a different campus.
+
+### Stage integration details
+
+`POST /api/v1/company/institutions/` remains the creation endpoint. It accepts
+`directory_id` or validated `manual` details plus the existing internal code,
+timezone and first-admin email. The same transaction claims the directory record,
+creates the school and audit records, and issues the existing Stage invitation.
+Universities and standalone institutions retain their precise directory type and
+use Stage's existing higher-education (`college`) workspace/capability pack.
+Legacy company clients can still provide the original name/code/type/email body;
+they receive an unverified manual directory record and the same duplicate check.
+The new UI always collects complete manual location/address fields.

@@ -8,8 +8,11 @@ export interface AuthUser {
   email: string;
   first_name: string;
   last_name: string;
+  avatar_url?: string;
   role: UserRole;
   is_active: boolean;
+  email_verified_at?: Date | null;
+  active_school_id?: string | null;
 }
 
 export type AuthenticatedRequest = FastifyRequest & {

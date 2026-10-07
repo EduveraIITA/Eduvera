@@ -1,0 +1,4 @@
+.planning-navigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-bottom: 16px; padding: 4px; border-radius: var(--edura-radius-control); background: var(--edura-surface-strong); }
+.planning-navigation a { display: flex; min-height: 44px; align-items: center; justify-content: center; padding: 8px 5px; border-radius: 9px; color: var(--edura-ink-muted); font-size: 12px; font-weight: 700; text-decoration: none; text-align: center; }
+.planning-navigation a[aria-current="page"] { color: var(--edura-brand); background: var(--edura-surface); }
+.planning-navigation a:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: 2px; }

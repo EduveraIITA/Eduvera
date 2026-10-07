@@ -77,7 +77,7 @@ export const demoEligibilityData: StudentEligibilityData = {
   exempted: 2,
   nextClass: {
     name: "Computer Science & AI Lab",
-    time: "03:00 PM – 04:15 PM",
+    time: "03:00 PM - 04:15 PM",
     startsIn: "In 25 Min",
     room: "Turing Lab 1",
     block: "Science Block",
@@ -159,7 +159,7 @@ export function StudentEligibilityPage({
     } catch (error) {
       setFormError(error instanceof Error && error.message.trim()
         ? error.message
-        : "We couldn’t submit the document. Please try again.");
+        : "We couldn't submit the document. Please try again.");
       setSubmitState("idle");
     }
   }
@@ -175,28 +175,26 @@ export function StudentEligibilityPage({
               <span>{periodLabel}</span>
             </span>
           </div>
-          <h1>Hey {data.studentName}! <span aria-hidden="true">👋</span></h1>
-          <p>{data.streak !== undefined ? "Your current on-time streak is shown below." : "Review your current subject attendance position."}</p>
         </section>
 
         <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
           <span><Sparkles size={18} /></span>
-          <span><small>AI Academic Copilot</small><strong>“{attendanceQuestion}”</strong></span>
+          <span><small>AI Academic Copilot</small><strong>"{attendanceQuestion}"</strong></span>
           <ChevronRight size={20} />
         </button>
 
         <section className="student-card next-class-card" aria-labelledby="next-class-heading">
           {data.nextClass && <div className="next-class-card__top">
-            <span className="live-pill"><i />Next Up • {data.nextClass.startsIn}</span>
+            <span className="live-pill"><i />Next Up - {data.nextClass.startsIn}</span>
             <strong>{data.nextClass.time}</strong>
           </div>}
           <div className="next-class-card__body">
             <span className="next-class-card__icon">{data.nextClass ? <Code2 size={27} /> : <CalendarDays size={27} />}</span>
             {data.nextClass
-              ? <span><h2 id="next-class-heading">{data.nextClass.name}</h2><p><strong>{data.nextClass.room}</strong> • {data.nextClass.block} • {data.nextClass.teacher}</p></span>
-              : <span><h2 id="next-class-heading">Next class details</h2><p>Open the timetable to see the school’s published schedule.</p></span>}
+              ? <span><h2 id="next-class-heading">{data.nextClass.name}</h2><p><strong>{data.nextClass.room}</strong> - {data.nextClass.block} - {data.nextClass.teacher}</p></span>
+              : <span><h2 id="next-class-heading">Next class details</h2><p>Open the timetable to see the school's published schedule.</p></span>}
           </div>
-          <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />View Full Timetable</button>
+          <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />View timetable</button>
         </section>
 
         <section className="eligibility-hero" aria-labelledby="semester-health-heading">
@@ -206,7 +204,7 @@ export function StudentEligibilityPage({
           </div>
           <div className="eligibility-safe-zone">
             <ShieldCheck size={20} />
-            <span><strong>{data.aggregate >= data.threshold ? "Eligible" : "Below Threshold"} <em>{data.safeLeaves > 0 ? `+${data.safeLeaves} Classes` : "No buffer"}</em></strong><p>{data.safeLeaves > 0 ? `You can miss up to ${data.safeLeaves} more ${data.subjectName} classes before reaching` : "Your current attendance is at or below"} the <b>{data.threshold}% minimum exam eligibility threshold</b>.</p></span>
+            <span><strong>{data.aggregate >= data.threshold ? "Eligible" : "Below threshold"} <em>{data.safeLeaves > 0 ? `+${data.safeLeaves} classes` : "No buffer"}</em></strong><p>{data.threshold}% minimum required</p></span>
           </div>
           <div className="eligibility-stats">
             <span><small>Attended</small><strong>{data.attended}</strong></span>
@@ -246,7 +244,7 @@ export function StudentEligibilityPage({
               </label>
               {formError && <p className="form-message form-message--error" id={formErrorId} role="alert">{formError}</p>}
               <button className={`primary-action primary-action--container ${submitState === "success" ? "is-success" : ""}`} type="submit" disabled={!file || !startDate || !endDate || startDate > endDate || submitState !== "idle"}>
-                {submitState === "loading" ? <><span className="button-spinner" />Submitting…</> : submitState === "success" ? <><Check size={18} />Document Uploaded!</> : "Confirm & Send for Approval"}
+                {submitState === "loading" ? <><span className="button-spinner" />Submitting...</> : submitState === "success" ? <><Check size={18} />Document Uploaded!</> : "Confirm & Send for Approval"}
               </button>
             </form>
           </section>

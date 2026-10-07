@@ -85,9 +85,12 @@ describe("Create Institution flow", () => {
     await user.type(screen.getByRole("combobox"), "Delhi");
     await user.click(await screen.findByRole("option"));
     expect(screen.getByRole("heading", { name: "Confirm institution details" })).toBeVisible();
-    apiMock.mockResolvedValue({ ...available, is_onboarded: true, eduera_institution_id: "school-1" });
-    await user.click(screen.getByRole("button", { name: "Create Eduera account" }));
-    expect(apiMock).toHaveBeenLastCalledWith("/api/v1/institutions/", { method: "POST", body: JSON.stringify({ directory_id: available.id, acknowledged_duplicate_ids: [] }) });
+    apiMock.mockResolvedValue({ school: { id: "school-1" }, invitation: { token: "invite" } });
+    await user.type(screen.getByLabelText("First administrator email"), "admin@example.test");
+    await user.click(screen.getByRole("button", { name: "Create & invite admin" }));
+    expect(apiMock).toHaveBeenLastCalledWith("/api/v1/company/institutions/", expect.objectContaining({ method: "POST" }));
+    const payload = JSON.parse((apiMock.mock.calls.at(-1)![1] as RequestInit).body as string) as { directory_id: string };
+    expect(payload.directory_id).toBe(available.id);
     expect(await screen.findByRole("heading", { name: "Institution setup" })).toBeVisible();
   });
 
@@ -104,17 +107,17 @@ describe("Create Institution flow", () => {
     apiMock.mockRejectedValue(new ApiError("Possible existing institutions found.", 409, { error: { fields: { duplicates: [duplicate] } } }));
     const user = userEvent.setup(); renderCreate();
     await user.click(screen.getByRole("button", { name: /Add institution manually/ }));
-    for (const [label, value] of [["Institution name", "Delhi Public School"], ["State", "Chhattisgarh"], ["City", "Raipur"], ["Address", "New campus"]]) {
+    for (const [label, value] of [["Institution name", "Delhi Public School"], ["State", "Chhattisgarh"], ["City", "Raipur"], ["Address", "New campus"], ["First administrator email", "admin@example.test"]]) {
       await user.type(screen.getByLabelText(label!), value!);
     }
-    await user.click(screen.getByRole("button", { name: "Create Eduera account" }));
+    await user.click(screen.getByRole("button", { name: "Create & invite admin" }));
     expect(await screen.findByRole("heading", { name: "Possible existing institutions" })).toBeVisible();
     expect(screen.getByRole("link", { name: "View institution" })).toHaveAttribute("href", "/company/institutions/school-1");
-    expect(screen.getByRole("button", { name: "Create Eduera account" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create & invite admin" })).toBeDisabled();
     await user.click(screen.getByRole("checkbox"));
-    expect(screen.getByRole("button", { name: "Create Eduera account" })).toBeEnabled();
-    apiMock.mockResolvedValue({ ...available, eduera_institution_id: "school-2" });
-    await user.click(screen.getByRole("button", { name: "Create Eduera account" }));
+    expect(screen.getByRole("button", { name: "Create & invite admin" })).toBeEnabled();
+    apiMock.mockResolvedValue({ school: { id: "school-2" }, invitation: { token: "invite" } });
+    await user.click(screen.getByRole("button", { name: "Create & invite admin" }));
     const payload = JSON.parse((apiMock.mock.calls.at(-1)![1] as RequestInit).body as string) as { acknowledged_duplicate_ids: string[] };
     expect(payload.acknowledged_duplicate_ids).toEqual(["school-1"]);
   });
