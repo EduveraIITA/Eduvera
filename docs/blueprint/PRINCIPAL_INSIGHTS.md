@@ -1,0 +1,44 @@
+# Principal insights
+
+The principal home page adds school-level review signals to existing daily operations.
+`GET /api/v1/schools/:schoolId/principal-insights/` requires an active administrator
+membership and account; an active school context cannot access another school.
+Class filters are checked against the same school. Responses are private/no-store.
+Queries run in one repeatable-read transaction; restricted safeguarding records are
+not read. No schema change is required.
+
+## Metric definitions
+
+| Insight | Definition and interpretation |
+| --- | --- |
+| Review window | 14, 28 or 56 calendar days, ending at the requested date capped at today in the school timezone. Prior window has the same length. |
+| Attendance | Current enrolled cohort and effective scheduled school days. Present/late = 1, half-day = 0.5, absent = 0; excused is excluded from the scored denominator. Missing registers are not absences. |
+| Completeness | Recorded student-days / expected student-days. Weekly chart values use summed points / summed scored days, not averaged class percentages. |
+| Engagement change | Attendance falls at least 10 percentage points versus the prior window, with at least five scored days and 80% recording completeness in each window. Distinct students are counted once. |
+| Homework combination | A flagged student also has at least two due, published homework items without a completion record. Missing completion records do not prove non-submission. |
+| No open follow-up | Flagged students without a current open follow-up. It suggests review, not an automatic instruction to contact families. |
+| Learning review | Latest published result snapshot per assessment, published within the review window. Counts scored results below a configurable percentage of marks. Unpublished marks and missing scores are excluded. This is not topic mastery or a pass/fail rule. |
+| Follow-through | Current awaiting/review statuses, overdue open follow-ups, and resolutions within the review window. Counts are records, not unique students or a conversion funnel. |
+| Teaching coverage | Effective periods over the next seven days from today. Missing teachers or unaccepted coverage count as unassigned. Cancelled periods are shown separately. Assignment does not establish delivery. |
+| Deadline pressure | Class-days with at least three published homework or scheduled assessment deadlines over the next seven days. No estimate of effort or difficulty. |
+| Fee ageing | Invoices due as of today, net of credits, allocated payments and refunds. Future instalments are excluded; no student balances are returned. |
+
+## Interaction and boundaries
+
+Filters persist in the URL and retain the existing page date. The dashboard refreshes
+on school events and every minute. Loading, incomplete data, empty results and
+recoverable errors have explicit states. Charts have text/table alternatives; detail
+dialogs support keyboard dismissal and restore focus. Student details are capped
+at 50 with that limit disclosed. Aggregate totals remain uncapped.
+
+Historical attendance uses current enrolments and the effective calendar, rather
+than a frozen historical cohort. Follow-up state, fee balances and forward schedule
+are operational views as of today, even when the selected attendance date is older.
+Topic mastery, verified instructional time, intervention impact, transport causes
+and reopened complaints need additional evidence and are not inferred.
+
+Backend integration fixtures exercise attendance denominators, missing and excused
+records, half-days, latest assessment publications, fees, owner/deadline joins and
+cross-school/role denial. Frontend tests cover filters, accessible details, empty
+results, retry states and event invalidation. Responsive browser validation uses
+synthetic fixtures; actual institution-data verification remains a Stage gate.

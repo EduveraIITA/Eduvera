@@ -1,3 +1,4 @@
+import { PrincipalInsightsDashboard } from "../../features/principal-insights/PrincipalInsightsDashboard";
 import { Link } from "react-router-dom";
 import { ArrowRight, CalendarCheck, CalendarDays, CheckCircle2 } from "lucide-react";
 import type { PrincipalHomeResponse } from "../../features/operations/api";
@@ -32,6 +33,7 @@ export function PrincipalHomePage({ data, date, onDateChange }: { data: Principa
         {data.summary.classes_total ? <div className="teacher-home__progress" aria-label={`${coverage}% of class registers submitted`}><i style={{ width: `${coverage}%` }} /></div> : null}
         {primaryAction ? <HomeActionSpotlight action={primaryAction} tone="brand" /> : <div className="teacher-home__caught-up" role="status"><CheckCircle2 size={20} aria-hidden="true" /><span><strong>Operations are clear</strong><small>No school action needs your attention right now.</small></span></div>}
       </section>
+      <PrincipalInsightsDashboard date={date} />
       <HomeActionDeck actions={remainingActions.slice(0, 4)} title="Later" variant="quiet" />
       <FollowupInbox context="staff" hideWithoutOpenFollowups />
       {data.exceptions.length ? <section className="operations-panel principal-exceptions"><header><h2>Attendance exceptions</h2><b>Minimum 5 recorded days</b></header><div>{data.exceptions.map((student) => <article key={student.id}><span className="exception-score">{student.percentage}%</span><span><strong>{student.name}</strong><small>{student.class_name} - {student.admission_number}</small></span><span><small>School threshold</small><strong>{student.threshold}%</strong></span></article>)}</div></section> : null}

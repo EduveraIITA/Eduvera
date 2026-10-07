@@ -2353,3 +2353,22 @@ for `/` and `/staff/`; `/readyz` reported database and events OK; `/releasez`
 reported the exact commit above and `environment: stage`. The local review preview
 also remained ready. Physical-phone/user review is still open, and this evidence
 does not assert a production release.
+
+
+### Principal intelligence dashboard — 7 October 2026
+
+Implemented on the principal home route using the existing blue/mint theme and
+shared navigation. The read-only, school-scoped insights endpoint aggregates
+attendance trends and completeness, engagement changes, latest published assessment
+results, follow-up ownership, upcoming teaching coverage, deadline clusters and
+fee ageing. Review windows, class filters, academic thresholds and source-record
+drill-downs are available. Existing daily operational workflows remain in place.
+See [metric definitions](PRINCIPAL_INSIGHTS.md). No migration or reseed is required.
+
+Verified locally: backend lint, typecheck and build; frontend lint, typecheck and
+production build; 8 focused backend tests (including integration on PGlite with all
+repository migrations applied); 18 focused frontend tests. Browser checks at 320,
+768, 1024 and 1440 px passed for overflow, filter requests, dialog fit, Escape
+dismissal and runtime errors using clearly synthetic API fixtures. This is not
+PostgreSQL 17 CI or live-data validation. Integrated Stage CI, deployed school-data
+checks and user UI review remain open. No merge or deployment is included.
