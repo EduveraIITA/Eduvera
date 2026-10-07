@@ -637,7 +637,7 @@ describe("implemented application routes", () => {
       return result;
     });
     const view = render(<MemoryRouter initialEntries={["/parent/more"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("link", { name: "Open Events & activities, action needed" }, { timeout: 10_000 })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Open Events & activities, action needed" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Diary, action needed" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Messages" })).toBeVisible();
     expect(view.container.querySelector(".more-grid--list")).toBeInTheDocument();
