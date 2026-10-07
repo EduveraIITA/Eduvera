@@ -12,6 +12,7 @@ export async function importPublicSnapshot(client: PoolClient, stream: AsyncIter
     if (!lock.rows[0]?.acquired) throw new Error('Another public directory import is running.');
     await client.query("SET LOCAL lock_timeout='10s'");
     await client.query(`CREATE TEMP TABLE directory_snapshot_stage (
+      import_row bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       name varchar(180) NOT NULL,institution_type text NOT NULL,source text NOT NULL,source_code text NOT NULL,
       state text NOT NULL,district text NOT NULL,city text NOT NULL,address text NOT NULL,
       is_verified boolean NOT NULL,metadata jsonb NOT NULL,UNIQUE(source,source_code)
@@ -21,7 +22,9 @@ export async function importPublicSnapshot(client: PoolClient, stream: AsyncIter
     let staged = 0;
     async function flush() {
       if (!batch.length) return;
-      await client.query(`INSERT INTO directory_snapshot_stage SELECT * FROM jsonb_to_recordset($1::jsonb)
+      await client.query(`INSERT INTO directory_snapshot_stage
+        (name,institution_type,source,source_code,state,district,city,address,is_verified,metadata)
+        SELECT * FROM jsonb_to_recordset($1::jsonb)
         AS r(name varchar(180),institution_type text,source text,source_code text,state text,district text,
           city text,address text,is_verified boolean,metadata jsonb)`, [JSON.stringify(batch)]);
       staged += batch.length; batch = [];
@@ -38,19 +41,27 @@ export async function importPublicSnapshot(client: PoolClient, stream: AsyncIter
       batch.push({ name: row.name, institution_type: row.institution_type, source: row.source,
         source_code: row.source_code, state: row.state, district: row.district, city: row.city,
         address: row.address, is_verified: false, metadata });
-      if (batch.length === 1000) await flush();
+      if (batch.length === 5000) await flush();
     }
     await flush();
     if (!staged) throw new Error('Public snapshot has no valid records.');
     console.log(`Importing ${staged} validated records; existing official identities are preserved.`);
-    const inserted = await client.query<{ source: string; count: string }>(`WITH imported AS (
-      INSERT INTO institution_directory(name,institution_type,source,source_code,state,district,city,address,is_verified,metadata)
-      SELECT name,institution_type,source,source_code,state,district,city,address,is_verified,metadata FROM directory_snapshot_stage
-      ON CONFLICT(source,source_code) DO NOTHING RETURNING source
-    ) SELECT source,count(*) FROM imported GROUP BY source ORDER BY source`);
+    const totals = new Map<string, number>();
+    // Respect the provider's per-statement timeout: small indexed windows, still
+    // inside this one transaction so a failed window rolls the entire import back.
+    for (let first = 1; first <= staged; first += 5000) {
+      const inserted = await client.query<{ source: string; count: string }>(`WITH imported AS (
+        INSERT INTO institution_directory(name,institution_type,source,source_code,state,district,city,address,is_verified,metadata)
+        SELECT name,institution_type,source,source_code,state,district,city,address,is_verified,metadata FROM directory_snapshot_stage
+        WHERE import_row >= $1 AND import_row < $2
+        ON CONFLICT(source,source_code) DO NOTHING RETURNING source
+      ) SELECT source,count(*) FROM imported GROUP BY source ORDER BY source`, [first, first + 5000]);
+      for (const row of inserted.rows) totals.set(row.source, (totals.get(row.source) ?? 0) + Number(row.count));
+      if ((first - 1) % 50000 === 0) console.log(`Inserted snapshot window ending at ${Math.min(first + 4999, staged)} of ${staged}.`);
+    }
     await client.query('COMMIT');
     await client.query('ANALYZE institution_directory');
-    return { staged, inserted: inserted.rows };
+    return { staged, inserted: [...totals].map(([source, count]) => ({ source, count: String(count) })) };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

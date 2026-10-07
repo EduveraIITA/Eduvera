@@ -38,4 +38,20 @@ suite('atomic public snapshot import', () => {
       await expect(importPublicSnapshot(client, Readable.from([`${withLink}Fake link,college,AISHE,C-99900002,Delhi,Delhi,,,false,{},${randomUUID()}\n`]))).rejects.toThrow('cannot verify');
     } finally { client.release(); }
   });
+  it('rolls back earlier insertion windows if a later window fails', async () => {
+    const client = await pool.connect();
+    const prefix = Date.now();
+    try {
+      await client.query(`CREATE FUNCTION reject_snapshot_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN IF NEW.name='Reject late snapshot fixture' THEN RAISE EXCEPTION 'late fixture rejected'; END IF; RETURN NEW; END $$`);
+      await client.query('CREATE TRIGGER reject_snapshot_fixture BEFORE INSERT ON institution_directory FOR EACH ROW EXECUTE FUNCTION reject_snapshot_fixture()');
+      const lines = Array.from({ length: 5001 }, (_, i) => `${i === 5000 ? 'Reject late snapshot fixture' : 'Window fixture'},college,AISHE,C-${prefix}${i},Delhi,Delhi,,,false,{}`);
+      await expect(importPublicSnapshot(client, Readable.from([header + lines.join('\n') + '\n']))).rejects.toThrow('late fixture rejected');
+      expect((await client.query('SELECT 1 FROM institution_directory WHERE source_code LIKE $1', [`C-${prefix}%`])).rowCount).toBe(0);
+    } finally {
+      await client.query('DROP TRIGGER IF EXISTS reject_snapshot_fixture ON institution_directory');
+      await client.query('DROP FUNCTION IF EXISTS reject_snapshot_fixture()');
+      client.release();
+    }
+  });
 });
