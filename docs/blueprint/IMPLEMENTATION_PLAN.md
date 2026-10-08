@@ -3234,6 +3234,275 @@ also remained healthy. These checks do not claim every device or workflow is
 certified; user phone validation remains requested. The documentation-only
 evidence commit does not require another application deployment.
 
+### Role-specific Analytics: decision model and first academic slice — 8 October 2026 (local)
+
+The user requested Analytics for all four portals, then clarified the design:
+Apple Health-like compact overview charts may share one page; tapping a topic
+must open a separate focused detail page. Highlights must carry information, not
+decoration. Subject/class/institution aggregates must be deliberately placed,
+and the product must serve decisions rather than accumulating requested charts.
+Home screens, shared headers and bottom navigation remain unchanged.
+
+#### Research and design decisions
+
+- [Apple's chart guidance](https://developer.apple.com/design/human-interface-guidelines/charts)
+  prioritizes a clear message, prominent data, contextual labels and accessible
+  exploration. The implementation uses a compact overview followed by focused
+  pages, native controls, visible values and a table alternative for trends.
+  Lines show change, bars compare quantities, histograms show distributions and
+  doughnuts show parts of one total. No decorative or three-dimensional charts.
+- [IES instructional-data guidance](https://ies.ed.gov/ncee/wwc/practiceguide/12)
+  recommends an ongoing improvement cycle and helping students examine their
+  own data and goals. These are practice recommendations, not proof that a
+  dashboard alone improves outcomes. Each proposed insight needs a decision,
+  an authorized owner, source evidence and a next action.
+- [EEF attendance monitoring](https://educationendowmentfoundation.org.uk/education-evidence/leadership-and-planning/supporting-attendance/monitor-the-impact-of-approaches)
+  emphasizes intended outcomes, granular patterns hidden by headlines and
+  sustainable staff workload. Use existing records automatically; do not ask
+  staff to re-enter numbers for Analytics. Averages alone are insufficient.
+- [EEF feedback guidance](https://educationendowmentfoundation.org.uk/education-evidence/teaching-learning-toolkit/feedback)
+  emphasizes task/subject-specific information that learners can act upon.
+  [PARAKH's Holistic Progress Card](https://parakh.ncert.gov.in/index.php/hpc)
+  also goes beyond marks. The product therefore links to published feedback;
+  it must not invent competency, motivation or wellbeing scores from marks.
+- [UDISE+](https://www.udiseplus.gov.in/) covers students, teachers and institution
+  facilities. This supports a broader administrator planning lens, not just
+  examination averages. It is not a claim of UDISE integration or compliance.
+
+International guidance informs product design; it does not prescribe Indian
+attendance thresholds, grades or legal duties. Institution policy remains the
+source of those rules. No cross-institution benchmark data is imported.
+
+#### What each view should help its user decide (target, not a completion claim)
+
+| View | Decisions and useful analytics | Timing and next action |
+| --- | --- | --- |
+| Principal / administrator | Participation and data completeness; class/subject learning patterns and result distributions; assessment bottlenecks; planned teaching versus actual coverage; staffing/capacity; fee collection and review backlog where authorized | Daily exceptions belong in existing work queues; weekly trends support follow-up and cover planning; term summaries support resource and academic review. Open the corresponding register, assessment, coverage task or ledger. |
+| Teacher | Attendance patterns in assigned classes/subjects; recorded versus missing evidence; comparable assessment outcomes and published feedback; marking/review workload; assigned lessons and cover | Before lessons, review relevant evidence; weekly, plan support or reteaching; before reporting, finish marking/review. Open the owning class, register or assessment. No institution-wide access or teacher league table. |
+| Parent | One selected child's participation and published subject progress; teacher feedback; actual homework completion where recorded; outstanding school requests | Review weekly and after new results; respond to a request or discuss a specific issue with the teacher. Keep fees and logistics in their own detail areas, not mixed into academic scores. |
+| Student | Own attendance and subject progress; specific feedback; recorded task completion; progress against explicit learning goals if supported | Before study, choose a task/feedback item; periodically review personal progress. No peer ranking, sibling comparison, school finance or staff work queues. |
+
+The common path is **overview → topic → class/subject/period → source record or
+work queue**. Defaults come from the authenticated institution, assignments,
+selected child and active term. A user should choose only meaningful scope or
+period changes. An average never creates a decision or automatically assigns an
+intervention. Authorized people interpret evidence and record any action in its
+own workflow.
+
+#### Current implementation scope
+
+- More includes Analytics for principal, teacher, parent and student. Teacher
+  discoverability follows attendance/assessment access. Separate routes own
+  attendance, results and staff-only assessment progress; Back preserves filters.
+- A dedicated read-only analytics API checks active school/portal membership,
+  family relationships and same-resource staff permissions. Current and historical
+  attendance access are checked together. Query keys include user, school, portal,
+  learner, class and period. No schema or source-record mutation is introduced.
+- Overview cards show recorded attendance and its trend, a scoped published-score
+  average and short subject preview, plus assessment-stage composition for staff.
+  Detail pages expose class/subject comparisons, recorded-day composition,
+  score-band distribution and links to the existing workspaces.
+- Institution/class/assigned-work/personal averages are explicitly labelled.
+  Results use only the latest immutable publication, normalize marks to percent
+  and weight individual scored results equally. The total is not an unweighted
+  mean of class averages and is not an official term grade. Different tests and
+  sample sizes make these descriptive comparisons, not a fair ranking. Score
+  bands count results, not unique children or pass/fail judgements.
+- Attendance uses actual daily records; late counts as present, half day as half,
+  excused records are excluded and missing is not zero. Subject attendance is a
+  labelled projection from recorded days and the effective timetable, matching
+  existing half-day/checkout behavior. It is not separately observed lesson
+  attendance. Subject counts are lessons/student-lessons, not days/student-days.
+- Term/30-day/90-day windows are bounded by the term, school-local date and a
+  366-day maximum. Attendance/access events invalidate Analytics. Result updates
+  are fetched on refresh/re-entry/focus; a new result-specific live push contract
+  is not claimed. Charts have empty, loading, denied-access and error states.
+
+#### Remaining decision-support work (not implemented by this slice)
+
+1. **Completeness before stronger conclusions:** the follow-on institution KPI
+   slice below adds scheduled-register submission using current active rosters
+   and the effective schedule. Historical roster/schedule reconstruction and
+   verified-observation completeness remain open. Do not call the recorded-day
+   attendance percentage a completion rate. Assessment roster completion and
+   publication lag still need separate denominators.
+2. **Like-for-like learning progress:** add subject/cycle/assessment-kind filters,
+   repeated comparable assessment series and skill-level evidence where genuinely
+   captured. Do not claim mastery or causal teaching effectiveness from aggregate
+   marks. Feedback and homework analytics must distinguish sent/read/acknowledged
+   from completed or teacher-verified work.
+3. **Operations and resources:** add authorized read models for teaching minutes
+   versus cover, staffing gaps/capacity and workflow age. Scheduled is not taught;
+   assigning cover is not accepted cover. No productivity or behavioral score.
+4. **Finance and administration:** compute overdue aging and verified receipts
+   from the immutable ledger, separating pending claims, credits, reversals and
+   actual receipts. Confidential care remains purpose-restricted; never expose
+   narratives or infer an absence's cause. Cross-school analytics requires a
+   separately authorized scope and must not be inferred from an admin portal.
+5. **Action and review:** support explicit follow-up owners, review dates and
+   outcomes; evaluate change with its limitations rather than asserting that an
+   intervention caused an improvement. Thresholds require adopted policy, not
+   arbitrary red/green cutoffs or imported chronic-absence rules.
+
+These are the proposed engineering direction derived from the request and research,
+not claims that all institution analytics are complete. The frontend UI engineering
+skill guided readable chart hierarchy, semantic theme colours, native controls and
+accessible alternatives. Database guidance led to bounded batched read models and
+same-resource permission tests rather than client-side aggregation of private rosters.
+
+#### Verification and handoff
+
+- Full frontend regression: **456 tests in 65 files passed**. After the final
+  compact-toolbar/empty-state adjustment, all **19 Analytics component tests**
+  passed again. Frontend typecheck, lint and production build passed.
+- Backend: **14 focused tests passed** (five metric tests, seven PostgreSQL
+  Analytics integration tests and two existing assessment integration tests).
+  Typecheck, lint and build passed. Integration ran on an isolated schema-only
+  copy of an existing complete test database, not the preview/Stage data. This
+  does not certify a fresh migration chain; the initial fresh local PostgreSQL
+  14 attempt stopped on the existing migration 033 compatibility issue.
+- Tests cover tenant/persona/guardian isolation, effective-dated staff grants and
+  revocation, publication revisions, scored versus non-scored outcomes, weighted
+  institution/class totals, score bands, missing data, half days/checkout,
+  non-instructional dates, subject projections, URL filters and Back navigation.
+- Live WebKit opened Analytics through More in all four portals, followed the
+  topic pages and Back, changed periods/classes/children, switched class/subject
+  comparisons and used the trend-data disclosure by keyboard. API responses were
+  200, with no page errors. Overview and result-detail overflow checks passed at
+  320/768/1024/1440px, and phone renders were visually reviewed.
+- Preview testing exposed permission checks repeated per attendance row. The
+  queries now materialize distinct class/date and assessment scopes before those
+  checks, preserving the same authorization. In the synthetic preview, observed
+  teacher navigation-to-API time fell from about 43.6 seconds to 2.1 seconds;
+  this is local evidence, not a production performance guarantee.
+- Local and phone-preview readiness report database/events healthy. No real
+  attendance, marks, fees, roles or relationships were changed. No migration,
+  dependency, home-page or deployment change is included. Nothing was pushed or
+  deployed. User phone validation and wider operational Analytics remain open.
+
+### Institution aggregate KPIs — 8 October 2026 (local follow-on)
+
+The user requested more institution-specific aggregates on Analytics home. The
+principal/admin overview now adds two focused entry points, without changing the
+four portal home screens, theme or shared navigation:
+
+- **Institution snapshot:** enrolled students, active staff, classes with students
+  and average class size. Tapping opens `/principal/analytics/institution`, with
+  class-enrolment comparison bars, teaching/non-teaching staff composition and
+  students per teacher. Links lead to the existing student and staff directories.
+- **Register submission:** submitted or locked registers as a proportion of
+  scheduled class-days, with an unsubmitted count. Tapping opens
+  `/principal/analytics/registers`, with register-state composition and class
+  breakdowns. Each incomplete class links to its latest unsubmitted date's
+  actual register; the period/class filters and Analytics Back link are retained.
+
+#### Definitions and boundaries
+
+- Snapshot enrolment is the selected term's currently active records, effective
+  by the earlier of school-local today and term end. Future enrolments, other
+  years/terms and other institutions are excluded. An app account is not needed.
+  Populated classes have at least one such enrolment; mean class size excludes
+  empty classes, whose count and zero values remain visible in detail.
+- Staff means active staff profiles with a joining date no later than today;
+  onboarding, inactive and future joiners are excluded. Students per teacher
+  uses teaching headcount, including part-time staff, not FTE or teaching load.
+  It is not a regulatory staffing-ratio or room-capacity assessment. Missing
+  denominators produce a dash, never infinity or a made-up zero.
+- The snapshot is explicitly dated/current, not a period-change or intake-growth
+  metric. Period changes do not change its totals. It is hidden in class-filtered
+  overviews; its dedicated page has no misleading period/class controls.
+- Register expectations match `attendanceDayPolicy`: one class/date with active
+  enrolled students and a non-cancelled class or activity in the effective
+  published schedule. Multiple lessons do not create multiple registers.
+  Calendar closures, pre-enrolment dates, future dates and cancelled lessons
+  are excluded. Submitted and locked are distinct slices but both count toward
+  submission. Reopened drafts count as not submitted; no attendance mutation
+  occurs. Includes today, so **not submitted is not synonymous with overdue**.
+- This is a current-record projection, not a historical audit reconstruction.
+  Changing active enrolments or published schedules can change expectations for
+  previous dates. Enrolled classes without any scheduled days are called out
+  instead of treated as 100% complete. No schedule yields an unavailable rate.
+  Formal submission does not independently prove accuracy or verified attendance.
+- Only an active administrator in the principal portal receives these new read
+  models. Teacher/family responses return null, including an admin+guardian
+  acting in the parent portal. Tenant predicates apply throughout; no private
+  student rows, personnel details or new authority is exposed. The existing
+  event invalidation applies to attendance, timetable, access and people changes.
+  Staff profile changes without a broadcast refresh on normal query refresh,
+  re-entry after cache staleness or focus; no universal instant update is claimed.
+
+The frontend UI engineering skill guided the small numeric summary, semantic
+colours and separate accessible detail pages. Database guidance kept calculations
+in bounded, batched server queries using existing indexed relationships rather
+than fetching private rosters to the browser. No schema or dependency change.
+
+#### Verified evidence
+
+- **463 frontend tests in 65 files passed**, including 26 Analytics tests.
+  Frontend typecheck, lint and production build passed.
+- **17 focused backend tests passed**: ten Analytics PostgreSQL integration,
+  five metric and two assessment integration tests. Backend typecheck, lint and
+  build passed. Same isolated schema-only test database as the prior slice.
+- Added tests for school/portal isolation, account-optional headcounts, active
+  versus future/inactive staff and enrolment, null denominators, empty classes,
+  period-independent snapshots, class-scoped submission, duplicate lessons,
+  closures, date overrides/cancellations, activities and reopened registers.
+- Live WebKit verified both new detail routes, period-preserving Back, keyboard
+  disclosures, class filters, and opening the actual dated Class 6A attendance
+  register. New detail pages passed overflow checks at 320/768/1024/1440px and
+  phone screenshots were visually inspected. The final in-app navigation run
+  completed with no page errors. Earlier test-script hard reloads during pending
+  requests produced WebKit cancellation/access-control errors; replacing those
+  artificial reloads with actual app navigation resolved the test harness issue.
+- Local and ngrok phone-preview readiness both report database/events healthy.
+  Source records were not changed. Nothing pushed or deployed. Phone validation
+  remains requested; finance, FTE/workload, historical completeness and comparable
+  learning-progress analytics remain separate future work, not implemented claims.
+
+#### Analytics spacing follow-up — 8 October 2026 (local)
+
+The user reported chart captions touching the axis labels, with similar cramped
+supporting text elsewhere. Browser measurements confirmed a shared shell CSS
+specificity problem: paragraph resets reduced the intended chart-caption margin
+to **0px in principal, teacher and student**, versus 10px in parent.
+
+- Analytics paragraph spacing is now scoped above the shell reset, independent
+  of lazy stylesheet load order. Chart-to-note gaps are 16px; supporting copy
+  uses 8px above / 12px below, with 12px between explanatory paragraphs. Chart
+  legends have explicit top spacing. Final notes retain the card's own padding
+  without an extra trailing margin. Warning/positive text keeps semantic colour.
+- The change covers shared Analytics overview and topic components across all
+  four portals. Shell resets and home pages are unchanged. This is not a claim
+  that every unrelated application page has been audited for spacing.
+- Live WebKit measured **16px chart-to-caption gaps in all four portals** and
+  confirmed the supporting-copy margins survive each portal shell. Overview
+  and result pages passed 320/768/1024/1440px overflow checks; mobile overview
+  and attendance-detail screenshots were inspected. No page errors in that run.
+  All 26 Analytics component tests passed again after the CSS change.
+
+### Analytics Stage release preparation — 8 October 2026
+
+The user requested pull, push and deployment. Fetched Stage at `aa32218`, which
+contains the separately developed Principal Insights dashboard and its approved
+navigation. This release will preserve those changes alongside the role-specific
+Analytics pages, institution aggregates and chart-caption spacing correction.
+The three unrelated untracked duplicate files named with ` 2` are excluded.
+
+No migration, dependency or deployment-workflow edit, database reset, full demo
+reseed or national-directory import is requested. The normal Stage workflow must
+verify the integrated commit against fresh PostgreSQL 17, build all clients,
+deploy and confirm the exact release revision. Integration and deployment results
+will be recorded after verification; this preparation entry is not a success claim.
+
+Integration verification passed locally: **475 frontend tests in 67 files**, all
+frontend/backend typecheck, lint and builds, and desktop typecheck/build.
+**25 focused backend tests** passed on the isolated database, including both
+Analytics and Principal Insights. Browser checks retained principal/teacher
+Analytics navigation, scoped data, period/class filters and Back with no page
+errors. The merge retains both backend modules and both sets of event-cache
+invalidation rules. The existing Stage pipeline will re-run the full backend
+suite against a newly migrated/seeded isolated PostgreSQL 17 database.
+
 ### Principal Insights navigation — 8 October 2026
 
 User-approved placement supersedes the initial all-on-Overview layout above.
