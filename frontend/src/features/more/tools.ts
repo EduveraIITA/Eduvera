@@ -1,9 +1,11 @@
+import { Activity } from 'lucide-react';
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity, Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck,
+  Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck,
   FileText, Handshake, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
+import { ChartNoAxesCombined } from "lucide-react";
 
 export type ToolTone = "blue" | "teal" | "violet" | "amber" | "rose" | "slate";
 
@@ -24,6 +26,7 @@ export interface Tool {
    where it will land. Order = how often a person reaches for it. */
 const TOOLS: Record<Portal, Tool[]> = {
   parent: [
+    { id: "analytics", name: "Analytics", description: "Attendance trends and your child's published progress", icon: ChartNoAxesCombined, tone: "blue", path: "/parent/analytics" },
     { id: "departure", name: "Departure & bus", description: "Today's pickup plan, change requests and live school-bus journey", icon: Bus, tone: "blue", path: "/parent/departure" },
     { id: "results", name: "Results", description: "Moderated assessment results released by the institution", icon: Award, tone: "blue", path: "/parent/results" },
     { id: "calendar", name: "Calendar", description: "Month at a glance: attendance, approved leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/parent/calendar" },
@@ -37,6 +40,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   student: [
+    { id: "analytics", name: "Analytics", description: "Your attendance trends and published subject scores", icon: ChartNoAxesCombined, tone: "blue", path: "/student/analytics" },
     { id: "results", name: "Results", description: "Your published assessment results and feedback", icon: Award, tone: "blue", path: "/student/results" },
     { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/student/calendar" },
     { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas and eligibility", icon: CalendarCheck2, tone: "teal", path: "/student/attendance" },
@@ -52,6 +56,7 @@ const TOOLS: Record<Portal, Tool[]> = {
   ],
   teacher: [
     { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/teacher/student-pulse" },
+    { id: "analytics", name: "Analytics", description: "Assigned-class attendance and assessment progress", icon: ChartNoAxesCombined, tone: "blue", path: "/teacher/analytics" },
     { id: "transport", name: "Transport journey", description: "Operate an assigned route, rider roster and journey location", icon: Bus, tone: "blue", path: "/teacher/transport" },
     { id: "assessments", name: "Assessments & marking", description: "Assigned offline assessments, marks and moderation", icon: Award, tone: "blue", path: "/teacher/assessments" },
     { id: "report-cards", name: "Report remarks", description: "Review class reports and add assigned remarks", icon: FileText, tone: "blue", path: "/teacher/report-cards" },
@@ -69,6 +74,7 @@ const TOOLS: Record<Portal, Tool[]> = {
   ],
   principal: [
     { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/principal/student-pulse" },
+    { id: "analytics", name: "Analytics", description: "School attendance, class comparisons and assessment progress", icon: ChartNoAxesCombined, tone: "blue", path: "/principal/analytics" },
     { id: "departure", name: "Transport & pickup", description: "Routes, rosters and student handover", icon: Bus, tone: "blue", path: "/principal/departure" },
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },
     { id: "report-cards", name: "Report cards", description: "Grading schemes and term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },

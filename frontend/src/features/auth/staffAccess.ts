@@ -41,6 +41,7 @@ export function hasStaffPermission(member: SchoolMembership | undefined, permiss
 }
 
 export function teacherToolIsVisible(member: SchoolMembership | undefined, toolId: string) {
+  if (toolId === "analytics") return !member || ["attendance.view", "assessments.view"].some(permission => hasStaffPermission(member, permission));
   const permission = TEACHER_TOOL_PERMISSIONS[toolId];
   return !permission || hasStaffPermission(member, permission);
 }

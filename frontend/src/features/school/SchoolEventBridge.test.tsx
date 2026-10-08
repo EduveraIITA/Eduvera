@@ -241,13 +241,14 @@ describe("SchoolEventBridge", () => {
     expect(invalidate).not.toHaveBeenCalled();
 
     await act(() => vi.advanceTimersByTimeAsync(75));
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["analytics"], exact: undefined });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["school", "student", "attendance"], exact: undefined });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications", "user-1"], exact: undefined });
 
     act(() => source.emit("attendance.updated", eventData("attendance.updated", ["student.attendance", "notifications"], "attendance-1")));
     await act(() => vi.advanceTimersByTimeAsync(75));
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
   });
 
   it("refreshes notifications when a distinct notification event arrives", async () => {

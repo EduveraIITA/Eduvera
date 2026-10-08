@@ -11,6 +11,7 @@ import {
 } from "./features/auth/RouteGuards";
 
 const CompanyPage=lazy(()=>import('./features/onboarding/CompanyPage'));
+const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage'));
 const SelfServiceOnboardingPage=lazy(()=>import('./features/onboarding/SelfServiceOnboardingPage'));
 const JoinPage=lazy(()=>import('./features/onboarding/JoinPage'));
 const InvitationsPage=lazy(()=>import('./features/onboarding/InvitationsPage'));
@@ -210,6 +211,9 @@ export function App() {
               <Route path="/teacher/students" element={<PortalOnly portal="teacher"><PeoplePage /></PortalOnly>} />
               <Route path="/teacher/students/import" element={<PortalOnly portal="teacher"><PeopleImportPage /></PortalOnly>} />
               <Route path="/workspace" element={<AuthenticatedOnly><WorkspaceUnavailablePage /></AuthenticatedOnly>} />
+              {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`analytics-${portal}`} path={`/${portal}/analytics`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} /></PortalOnly>} />)}
+              {(["principal", "teacher", "parent", "student"] as const).flatMap(portal => (["attendance", "results", "progress"] as const).filter(topic => topic !== "progress" || portal === "principal" || portal === "teacher").map(topic => <Route key={`analytics-${portal}-${topic}`} path={`/${portal}/analytics/${topic}`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} topic={topic} /></PortalOnly>} />))}
+              {(["institution", "registers"] as const).map(topic => <Route key={`analytics-principal-${topic}`} path={`/principal/analytics/${topic}`} element={<PortalOnly portal="principal"><AnalyticsPage portal="principal" topic={topic} /></PortalOnly>} />)}
 
               <Route path="/parent" element={<Navigate to="/parent/home" replace />} />
               <Route path="/parent/home" element={<PortalOnly portal="parent"><ParentHomeRoute /></PortalOnly>} />

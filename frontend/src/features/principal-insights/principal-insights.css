@@ -64,9 +64,6 @@
 .principal-insights__finance>summary{padding:18px;font-size:14px;font-weight:700}
 .principal-insights__finance>summary>span{display:block;color:var(--op-muted);font-size:12px;font-weight:500;margin-top:5px}
 .principal-insights__finance .principal-insights__panel-body>p{color:var(--op-muted);font-size:12px}
-.principal-insights__method{color:var(--op-muted);font-size:12px}
-.principal-insights__method summary>svg{vertical-align:middle;margin-right:6px}
-.principal-insights__method p{padding:8px 0}
 .principal-insights__loading{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .principal-insights__loading span{height:90px;background:var(--edura-surface-soft);border-radius:var(--edura-radius-card)}
 .principal-insights__loading p{grid-column:1/-1;color:var(--op-muted)}

@@ -95,7 +95,6 @@ export function InsightContent({data,summaryOnly=false}:{data:PrincipalInsights;
       {data.fees.length?[...data.fees].sort((a,b)=>["Due today","1–30 days","31–60 days","61–90 days","91+ days"].indexOf(a.band)-["Due today","1–30 days","31–60 days","61–90 days","91+ days"].indexOf(b.band)).map(f=><InsightBar key={f.band} label={f.band} value={f.balance_paise} total={Math.max(...data.fees.map(r=>r.balance_paise),1)} detail={money(f.balance_paise)}/>):<p className="principal-insights__empty">No fee invoices are due.</p>}<Link to="/principal/fees">Open fee ledger <ArrowRight size={15}/></Link>
     </div></details></section>
     </>:null}
-    <details className="principal-insights__method"><summary>How to read these insights</summary><p>Engagement compares {shortDate(data.period.start)}–{shortDate(data.period.end)} with {shortDate(data.period.baseline_start)}–{shortDate(data.period.baseline_end)}. Flags need at least 5 scored days and 80% recording completeness in each window. They suggest a human review, not a diagnosis or prediction.</p><p>Follow-up status, fees and the upcoming schedule reflect current records. Historical attendance uses currently active enrolments and the effective calendar. Topic mastery, verified teaching-time loss, intervention impact, transport causes and reopened complaints need additional structured evidence and are not inferred here. Restricted safeguarding narratives are not included.</p></details>
     {detail?<InsightDetail kind={detail} data={data} onClose={()=>setDetail(null)}/>:null}
   </>;
 }
