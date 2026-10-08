@@ -1,3 +1,4 @@
+import { Activity } from 'lucide-react';
 import type { LucideIcon } from "lucide-react";
 import {
   Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck,
@@ -54,6 +55,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   teacher: [
+    { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/teacher/student-pulse" },
     { id: "analytics", name: "Analytics", description: "Assigned-class attendance and assessment progress", icon: ChartNoAxesCombined, tone: "blue", path: "/teacher/analytics" },
     { id: "transport", name: "Transport journey", description: "Operate an assigned route, rider roster and journey location", icon: Bus, tone: "blue", path: "/teacher/transport" },
     { id: "assessments", name: "Assessments & marking", description: "Assigned offline assessments, marks and moderation", icon: Award, tone: "blue", path: "/teacher/assessments" },
@@ -71,6 +73,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   principal: [
+    { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/principal/student-pulse" },
     { id: "analytics", name: "Analytics", description: "School attendance, class comparisons and assessment progress", icon: ChartNoAxesCombined, tone: "blue", path: "/principal/analytics" },
     { id: "departure", name: "Transport & pickup", description: "Routes, rosters and student handover", icon: Bus, tone: "blue", path: "/principal/departure" },
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },

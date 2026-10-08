@@ -1,6 +1,7 @@
 import type { SchoolMembership } from "./AuthContext";
 
 export const TEACHER_TOOL_PERMISSIONS: Readonly<Record<string, string>> = {
+  "student-pulse": "followups.manage",
   transport: "departure.collect",
   assessments: "assessments.view",
   "report-cards": "reports.comment",
@@ -14,6 +15,7 @@ export const TEACHER_TOOL_PERMISSIONS: Readonly<Record<string, string>> = {
 };
 
 const TEACHER_SECTION_PERMISSIONS: Readonly<Record<string, string>> = {
+  "student-pulse": "followups.manage",
   attendance: "attendance.view",
   classes: "attendance.view",
   calendar: "timetable.view",

@@ -3559,3 +3559,15 @@ completed successfully, including deployment and public-release verification.
 
 This verifies the Stage release, not a production rollout or physical-device
 acceptance. Please refresh and review the Analytics spacing on a phone.
+
+## Student Pulse — 8 October 2026
+
+User-approved named subject-attendance review prompts, evidence, private check-in
+planning and principal oversight are implemented in the StudentPulseModule and
+shared staff screens. See [Student Pulse scope and source boundaries](STUDENT_PULSE.md).
+Migration `055_student_pulse.sql` adds revision-checked follow-ups, scoped owners,
+immutable opening totals and append-only history. Existing term totals support
+provisional gaps only; no dated-period sequence, intent, diagnosis or automatic
+family escalation is inferred. Frontend/backend builds and 16 focused rule/UI tests
+pass locally. Database CI, full regression and visual school-owner acceptance are
+separate release evidence; no Stage merge or deployment is claimed here.

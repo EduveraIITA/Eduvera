@@ -7,7 +7,7 @@ const groups: Record<Portal, Group[]> = {
   principal: [
     { name: "Insights", ids: ["analytics"] },
     { name: "People", ids: ["people", "staff"] },
-    { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
+    { name: "Academics", ids: ["weekly", "assessments", "report-cards", "student-pulse"] },
     { name: "Operations", ids: ["departure", "events", "messages", "fees", "safeguarding"] },
     { name: "Institute", ids: ["administration", "governance"] },
     { name: "Account", ids: ["security"] },
@@ -15,7 +15,7 @@ const groups: Record<Portal, Group[]> = {
   teacher: [
     { name: "My work", ids: ["analytics", "responsibilities", "classes", "registers", "transport", "assessments", "report-cards"] },
     { name: "Schedule & activities", ids: ["weekly", "calendar", "events"] },
-    { name: "Communication & care", ids: ["messages", "safeguarding"] },
+    { name: "Communication & care", ids: ["messages", "student-pulse", "safeguarding"] },
     { name: "Administration", ids: ["delegated-people", "delegated-office", "delegated-fees", "member-invitations"] },
     { name: "Staff services", ids: ["leave", "policies"] },
     { name: "Account", ids: ["security"] },

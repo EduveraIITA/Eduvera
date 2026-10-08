@@ -84,6 +84,7 @@ const TeacherHomeRoute = lazy(async () => ({ default: (await import("./features/
 const TeacherAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherAttendanceRoute }));
 const TeacherTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherTimetableRoute }));
 const PrincipalHomeRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalHomeRoute }));
+const StudentPulsePage = lazy(() => import('./features/student-pulse/StudentPulsePage'));
 const PrincipalInsightsPage = lazy(async () => ({ default: (await import("./features/principal-insights/PrincipalInsightsPage")).PrincipalInsightsPage }));
 const PrincipalAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalAttendanceRoute }));
 const PrincipalTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalTimetableRoute }));
@@ -201,7 +202,11 @@ export function App() {
               <Route path="/company" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
               <Route path="/company/institutions/:id" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
               <Route path="/join" element={<JoinPage />} />
+              <Route path="/principal/student-pulse" element={<PortalOnly portal="principal"><StudentPulsePage /></PortalOnly>} />
+              <Route path="/principal/student-pulse/:studentId/:termId/:subjectId" element={<PortalOnly portal="principal"><StudentPulsePage /></PortalOnly>} />
               <Route path="/principal/invitations" element={<PortalOnly portal="principal"><InvitationsPage /></PortalOnly>} />
+              <Route path="/teacher/student-pulse" element={<PortalOnly portal="teacher"><StudentPulsePage /></PortalOnly>} />
+              <Route path="/teacher/student-pulse/:studentId/:termId/:subjectId" element={<PortalOnly portal="teacher"><StudentPulsePage /></PortalOnly>} />
               <Route path="/teacher/invitations" element={<PortalOnly portal="teacher"><InvitationsPage /></PortalOnly>} />
               <Route path="/teacher/students" element={<PortalOnly portal="teacher"><PeoplePage /></PortalOnly>} />
               <Route path="/teacher/students/import" element={<PortalOnly portal="teacher"><PeopleImportPage /></PortalOnly>} />
