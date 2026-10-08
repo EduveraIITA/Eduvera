@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck,
+  Activity, Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck,
   FileText, Handshake, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
@@ -51,6 +51,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   teacher: [
+    { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/teacher/student-pulse" },
     { id: "transport", name: "Transport journey", description: "Operate an assigned route, rider roster and journey location", icon: Bus, tone: "blue", path: "/teacher/transport" },
     { id: "assessments", name: "Assessments & marking", description: "Assigned offline assessments, marks and moderation", icon: Award, tone: "blue", path: "/teacher/assessments" },
     { id: "report-cards", name: "Report remarks", description: "Review class reports and add assigned remarks", icon: FileText, tone: "blue", path: "/teacher/report-cards" },
@@ -67,6 +68,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   principal: [
+    { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/principal/student-pulse" },
     { id: "departure", name: "Transport & pickup", description: "Routes, rosters and student handover", icon: Bus, tone: "blue", path: "/principal/departure" },
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },
     { id: "report-cards", name: "Report cards", description: "Grading schemes and term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },

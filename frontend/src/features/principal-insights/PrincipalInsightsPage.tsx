@@ -1,4 +1,6 @@
-import { useSearchParams } from "react-router-dom";
+import { Activity, ArrowRight } from 'lucide-react';
+import '../student-pulse/student-pulse.css';
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { PrincipalInsightsDashboard } from "./PrincipalInsightsDashboard";
@@ -14,6 +16,7 @@ export function PrincipalInsightsPage() {
           setParams(previous => { const next = new URLSearchParams(previous); next.set("date", event.target.value); return next; });
         }}/></label>
       </div>
+      <Link className="pulse-entry" to="/principal/student-pulse"><Activity size={22}/><span><strong>Student Pulse</strong><small>Who needs a supportive check-in? Review subject attendance gaps and follow-through.</small></span><ArrowRight size={18}/></Link>
       <PrincipalInsightsDashboard date={date}/>
     </div>
   </OperationsShell>;

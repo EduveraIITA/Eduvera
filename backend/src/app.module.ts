@@ -1,3 +1,4 @@
+import { StudentPulseModule } from './student-pulse/student-pulse.module.js';
 import { CompanyModule } from "./company/company.module.js";
 import { PrincipalInsightsModule } from "./principal-insights/principal-insights.module.js";
 import { SchedulePlanningModule } from "./schedule-planning/schedule-planning.module.js";
@@ -34,6 +35,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
     SchedulePlanningModule,
     CompanyModule,
     PrincipalInsightsModule,
+    StudentPulseModule,
     RolesModule,
     DatabaseModule,
     AuthModule,
