@@ -3691,3 +3691,8 @@ User-requested visual refinement keeps all four rating options in one row, inclu
 ### Teacher feedback segmented selector — 8 October 2026
 
 User refined the visual request with a segmented attendance-control reference. Ratings now share one compact rounded track with a colored active pill translating horizontally between Low, Okay, High and Not sure. Native radio tap and arrow-key behavior is retained, unanswered parameters remain unselected, and reduced-motion preferences disable transitions. Typecheck and all four existing feedback tests pass. Synthetic browser checks cover 320/768/1024/1440px, no overflow, submissions, and keyboard-driven pill movement left/right. Deployment and user acceptance of this refinement remain pending.
+
+
+### Compact feedback home prompt — 8 October 2026
+
+Confirmed the sliding selector release passed deployment and public revision verification in Actions run 37817363937. User requested a cleaner home prompt: replace the large blue multi-line appeal with one white linked row, small feedback icon, Teacher feedback title, pending request count and chevron. The shared student/parent prompt retains eligibility filtering. Typecheck passes; fixture-backed student home browser checks verify no link overflow and successful navigation at 320/768/1024/1440px. Mobile row visually inspected. This follow-up's deployment and user visual acceptance are pending.
