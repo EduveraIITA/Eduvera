@@ -6,6 +6,7 @@ on:
     branches: [Stage]
     paths:
       - 'frontend/**'
+      - 'backend/**'
       - '.github/workflows/student-pulse.yml'
 permissions:
   contents: read
@@ -13,40 +14,64 @@ concurrency:
   group: student-pulse-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  frontend:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: student_pulse_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/student_pulse_ci
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/student_pulse_ci
+      TEST_DATABASE_ISOLATED: 'true'
     steps:
       - uses: actions/checkout@v4
-      - name: Collect source for feature verification
-        uses: actions/upload-artifact@v4
-        with:
-          name: student-pulse-source
-          retention-days: 1
-          path: |
-            frontend
-            backend/src
-            backend/migrations
-            backend/package.json
-            backend/package-lock.json
-            backend/tsconfig.json
-            backend/tsconfig.build.json
-            backend/vitest.config.ts
-            backend/test
-            docs/blueprint
-            School_Operations_Blueprint.pdf
-            AGENTS.md
-          if-no-files-found: error
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
       - run: npm ci
         working-directory: frontend
+      - run: npm ci
+        working-directory: backend
+      - name: Package locked verification dependencies
+        run: tar -czf pulse-dependencies.tar.gz frontend/node_modules backend/node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pulse-dependencies
+          path: pulse-dependencies.tar.gz
+          retention-days: 1
       - run: npm run build
         working-directory: frontend
       - run: npm run lint
         working-directory: frontend
       - run: npm test -- --run
         working-directory: frontend
+      - run: npm run build
+        working-directory: backend
+      - run: npm run db:migrate
+        working-directory: backend
+      - name: Student Pulse database and rule tests
+        run: npx vitest run test/student-pulse*.test.ts --passWithNoTests
+        working-directory: backend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pulse-ui-build
+          path: frontend/dist
+          if-no-files-found: ignore
+          retention-days: 3
