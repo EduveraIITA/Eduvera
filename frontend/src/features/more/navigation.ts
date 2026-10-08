@@ -5,7 +5,7 @@ import { ClipboardCheck } from "lucide-react";
 type Group = { name: string; ids: string[] };
 const groups: Record<Portal, Group[]> = {
   principal: [
-    { name: "People", ids: ["people", "staff"] },
+    { name: "People", ids: ["people", "staff", "teacher-feedback"] },
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
     { name: "Operations", ids: ["departure", "events", "messages", "fees", "safeguarding"] },
     { name: "Institute", ids: ["administration", "governance"] },
@@ -20,14 +20,14 @@ const groups: Record<Portal, Group[]> = {
     { name: "Account", ids: ["security"] },
   ],
   parent: [
-    { name: "Learning", ids: ["results", "diary"] },
+    { name: "Learning", ids: ["results", "diary", "teacher-feedback"] },
     { name: "Schedule & attendance", ids: ["timetable", "calendar", "leave"] },
     { name: "School life", ids: ["departure", "events", "messages"] },
     { name: "Payments & policies", ids: ["fees", "policies"] },
     { name: "Account", ids: ["security"] },
   ],
   student: [
-    { name: "Learning", ids: ["results", "diary"] },
+    { name: "Learning", ids: ["results", "diary", "teacher-feedback"] },
     { name: "Schedule & attendance", ids: ["timetable", "calendar", "attendance", "leave", "copilot"] },
     { name: "School life", ids: ["events", "messages"] },
     { name: "Payments & policies", ids: ["fees", "policies"] },

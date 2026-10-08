@@ -3259,3 +3259,27 @@ Removed the “How to read these insights” disclosure and its unused styles at
 the user’s request. Metric definitions remain in PRINCIPAL_INSIGHTS.md.
 Dashboard graphs, filters and source-record dialogs are unchanged.
 Frontend typecheck and diff whitespace checks passed.
+
+
+### Teacher quick feedback — 8 October 2026
+
+User-requested extension: principal administrators can publish a teacher/class feedback request
+for students or parents, choose 1–10 preset/custom parameters and a closing deadline, and close early.
+Migration `055_teacher_feedback.sql` stores campaigns, unique account responses and lifecycle audits.
+The separate Nest module validates current institution membership, current-term enrollment and guardian
+relationships, exact rating keys, deadlines and duplicate submissions. Submission and closure share
+a campaign row lock. Responses are confidential, not truly anonymous; identities remain stored to
+prevent duplicates, with no individual-response API or teacher results access.
+
+The React flow preserves existing shells/theme and adds More entries, a principal Insights link and
+pending home prompts. Low / Okay / High / Not sure ratings are collected with native radio controls.
+Private aggregate distributions unlock only on closed requests with at least five responses; each
+parameter independently requires five non-abstaining ratings. Signals suggest a supportive review
+(40% Low) or strength (70% High), not a staff performance verdict. No public teacher leaderboard.
+
+Verification: backend and frontend type checks/builds pass; focused rating-rule tests (4) and UI/
+navigation tests (20) pass. Five isolated PostgreSQL integration tests cover roles, tenant isolation,
+current relationships, concurrent duplicate submission, closure, abstention suppression and revoked
+access; local PostgreSQL is unavailable, so execution remains a CI release gate. Browser checks pass at 320/768/1024/1440 pixels for creation, private results and student submission;
+the parent route also passes with no browser errors. These browser checks use synthetic API fixtures.
+User visual acceptance and CI database verification remain open; this record does not claim deployment.

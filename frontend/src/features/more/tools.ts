@@ -24,6 +24,7 @@ export interface Tool {
    where it will land. Order = how often a person reaches for it. */
 const TOOLS: Record<Portal, Tool[]> = {
   parent: [
+    { id: "teacher-feedback", name: "Teacher feedback", description: "Share your experience in a quick teaching check-in", icon: MessageCircle, tone: "teal", path: "/parent/teacher-feedback" },
     { id: "departure", name: "Departure & bus", description: "Today's pickup plan, change requests and live school-bus journey", icon: Bus, tone: "blue", path: "/parent/departure" },
     { id: "results", name: "Results", description: "Moderated assessment results released by the institution", icon: Award, tone: "blue", path: "/parent/results" },
     { id: "calendar", name: "Calendar", description: "Month at a glance: attendance, approved leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/parent/calendar" },
@@ -37,6 +38,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   student: [
+    { id: "teacher-feedback", name: "Teacher feedback", description: "Share your experience in a quick teaching check-in", icon: MessageCircle, tone: "teal", path: "/student/teacher-feedback" },
     { id: "results", name: "Results", description: "Your published assessment results and feedback", icon: Award, tone: "blue", path: "/student/results" },
     { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/student/calendar" },
     { id: "attendance", name: "Attendance", description: "Live aggregate, subject quotas and eligibility", icon: CalendarCheck2, tone: "teal", path: "/student/attendance" },
@@ -67,6 +69,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   principal: [
+    { id: "teacher-feedback", name: "Teacher feedback", description: "Create quick check-ins and review private results", icon: MessageCircle, tone: "teal", path: "/principal/teacher-feedback" },
     { id: "departure", name: "Transport & pickup", description: "Routes, rosters and student handover", icon: Bus, tone: "blue", path: "/principal/departure" },
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },
     { id: "report-cards", name: "Report cards", description: "Grading schemes and term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },

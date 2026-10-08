@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { PrincipalInsightsDashboard } from "./PrincipalInsightsDashboard";
@@ -14,6 +14,7 @@ export function PrincipalInsightsPage() {
           setParams(previous => { const next = new URLSearchParams(previous); next.set("date", event.target.value); return next; });
         }}/></label>
       </div>
+      <Link className="principal-insights__view-all" to="/principal/teacher-feedback">Teacher feedback · requests and results →</Link>
       <PrincipalInsightsDashboard date={date}/>
     </div>
   </OperationsShell>;
