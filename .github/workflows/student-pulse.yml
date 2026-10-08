@@ -1,0 +1,52 @@
+name: Student Pulse checks
+on:
+  push:
+    branches: [feature/student-pulse-screens]
+  pull_request:
+    branches: [Stage]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/student-pulse.yml'
+permissions:
+  contents: read
+concurrency:
+  group: student-pulse-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect source for feature verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-pulse-source
+          retention-days: 1
+          path: |
+            frontend
+            backend/src
+            backend/migrations
+            backend/package.json
+            backend/package-lock.json
+            backend/tsconfig.json
+            backend/tsconfig.build.json
+            backend/vitest.config.ts
+            backend/test
+            docs/blueprint
+            School_Operations_Blueprint.pdf
+            AGENTS.md
+          if-no-files-found: error
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm test -- --run
+        working-directory: frontend
