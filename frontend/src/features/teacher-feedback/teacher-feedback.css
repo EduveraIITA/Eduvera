@@ -10,20 +10,22 @@
 .teacher-feedback__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.teacher-feedback fieldset{padding:0;border:0;min-width:0}.teacher-feedback legend{font-size:13px;font-weight:700;margin-bottom:10px}
 .teacher-feedback__checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.teacher-feedback__checks label{display:flex;align-items:center;gap:10px;min-height:44px;font-size:13px}.teacher-feedback input:is([type=checkbox],[type=radio]){accent-color:var(--edura-brand,#174bb8);width:18px;height:18px;flex-shrink:0}
 .teacher-feedback__custom{display:flex;align-items:end;gap:12px}.teacher-feedback__custom label{flex:1}.teacher-feedback__actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
-/* A single, touch-friendly rating row at every screen size. */
-.teacher-feedback__ratings{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.teacher-feedback__rating--low{--rating-ink:#875000;--rating-soft:#fff2da}
-.teacher-feedback__rating--okay{--rating-ink:#174bb8;--rating-soft:#eaf1ff}
-.teacher-feedback__rating--high{--rating-ink:#166b52;--rating-soft:#e2f6ef}
-.teacher-feedback__rating--na{--rating-ink:#52637a;--rating-soft:#eef3f9}
-.teacher-feedback__ratings label{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 8px;min-height:48px;min-width:0;border:2px solid transparent;border-radius:var(--edura-radius-control,10px);font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer;color:var(--rating-ink);background:var(--rating-soft)}
-.teacher-feedback__rating-icon{display:flex;flex-shrink:0}
+/* One shared track; the selected pill slides between native radio choices. */
+.teacher-feedback__ratings{position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:4px;max-width:420px;border-radius:14px;background:var(--edura-surface-soft,#eef3f9);--rating-active:#52637a;--rating-position:0}
+.teacher-feedback__ratings[data-selected=low]{--rating-active:#875000;--rating-position:0}
+.teacher-feedback__ratings[data-selected=okay]{--rating-active:#174bb8;--rating-position:1}
+.teacher-feedback__ratings[data-selected=high]{--rating-active:#166b52;--rating-position:2}
+.teacher-feedback__ratings[data-selected=na]{--rating-active:#52637a;--rating-position:3}
+.teacher-feedback__ratings::before{content:"";position:absolute;left:4px;top:4px;bottom:4px;width:calc((100% - 8px)/4);border-radius:10px;background:var(--rating-active);transform:translateX(calc(var(--rating-position)*100%));opacity:0;transition:transform 220ms ease,background-color 220ms ease,opacity 120ms ease;pointer-events:none;z-index:-1}
+.teacher-feedback__ratings[data-selected]::before{opacity:1}
+.teacher-feedback__ratings label{position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;min-width:0;padding:8px 2px;border-radius:10px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer;color:var(--feedback-muted);transition:color 180ms ease}
 .teacher-feedback__ratings input[type=radio]{position:absolute;opacity:0;width:1px;height:1px;margin:0}
-.teacher-feedback__ratings label:hover{border-color:var(--rating-ink)}
-.teacher-feedback__ratings label:has(:focus-visible){outline:3px solid var(--edura-brand,#174bb8);outline-offset:3px}
-.teacher-feedback__ratings .is-selected{background:var(--rating-ink);color:#fff;border-color:var(--rating-ink)}
-.teacher-feedback__ratings label:has(:disabled){opacity:.55;cursor:default}
+.teacher-feedback__ratings label:has(:focus-visible){outline:3px solid var(--edura-brand,#174bb8);outline-offset:2px}
+.teacher-feedback__ratings .is-selected{color:#fff}
+.teacher-feedback__ratings:has(:disabled){opacity:.55}
+.teacher-feedback__ratings label:has(:disabled){cursor:default}
+@media(prefers-reduced-motion:reduce){.teacher-feedback__ratings::before,.teacher-feedback__ratings label{transition:none}}
 .teacher-feedback__status,.teacher-feedback__signal{font-size:11px;font-weight:700;padding:6px 10px;border-radius:var(--edura-radius-control,10px);background:var(--edura-surface-soft,#eef3f9)}.teacher-feedback__signal--review{background:var(--edura-warning-soft,#fff2da);color:var(--edura-warning,#875000)}.teacher-feedback__signal--strength{background:var(--edura-success-soft,#e2f6ef);color:var(--edura-success,#166b52)}
 .teacher-feedback__results{display:grid;gap:16px;margin-top:20px;padding-top:16px;border-top:1px solid var(--edura-border,#d7e0ed)}.teacher-feedback__results article{display:grid;gap:10px}.teacher-feedback__bars{display:flex;gap:3px;height:10px;overflow:hidden;border-radius:5px}.teacher-feedback__bars span{flex-basis:0}.teacher-feedback__bar--low{background:var(--edura-warning,#b87405)}.teacher-feedback__bar--okay{background:var(--edura-brand,#174bb8)}.teacher-feedback__bar--high{background:var(--edura-success,#168361)}.teacher-feedback__confirm{padding:16px;background:var(--edura-surface-soft,#eef3f9);margin-top:12px;border-radius:var(--edura-radius-control,10px)}.teacher-feedback__confirm button{margin:8px 8px 0 0}
-@media(max-width:650px){.teacher-feedback__heading{align-items:stretch;flex-direction:column}.teacher-feedback__card{padding:16px}.teacher-feedback__grid,.teacher-feedback__checks{grid-template-columns:1fr}.teacher-feedback__ratings{gap:4px}.teacher-feedback__ratings label{flex-direction:column;gap:4px;padding:8px 2px;font-size:11px;min-height:60px}.teacher-feedback__result-heading{flex-wrap:wrap}.teacher-feedback h1{font-size:21px}}
+@media(max-width:650px){.teacher-feedback__heading{align-items:stretch;flex-direction:column}.teacher-feedback__card{padding:16px}.teacher-feedback__grid,.teacher-feedback__checks{grid-template-columns:1fr}.teacher-feedback__ratings label{font-size:11px}.teacher-feedback__result-heading{flex-wrap:wrap}.teacher-feedback h1{font-size:21px}}
 .teacher-feedback-nudge{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-radius:var(--edura-radius-card,16px);background:var(--edura-brand-soft,#eaf1ff);color:var(--edura-brand,#174bb8)}.teacher-feedback-nudge strong,.teacher-feedback-nudge small{display:block}.teacher-feedback-nudge strong{font-size:13px}.teacher-feedback-nudge small{font-size:12px;margin-top:6px}.teacher-feedback-nudge a{display:inline-flex;align-items:center;min-height:44px;font-size:13px;font-weight:700;color:inherit;flex-shrink:0}@media(max-width:500px){.teacher-feedback-nudge{align-items:start;flex-direction:column;gap:4px}}

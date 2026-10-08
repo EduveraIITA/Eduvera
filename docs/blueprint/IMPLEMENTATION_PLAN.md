@@ -3686,3 +3686,8 @@ User visual acceptance and merging/deployment remain pending; no deployment is c
 ### Teacher feedback rating redesign — 8 October 2026
 
 User-requested visual refinement keeps all four rating options in one row, including 320px phones. Amber/blue/green/slate surfaces and labelled expression icons distinguish Low, Okay, High and Not sure. Selected choices use a solid surface; native radios retain keyboard operation and visible focus. Existing submission and confidentiality rules are unchanged. Frontend typecheck and all four feedback tests pass. Synthetic-fixture browser checks pass at 320/768/1024/1440px for principal creation/results and student submission, plus the parent route, with no overflow or page errors. Visual acceptance and deployment of this refinement are pending.
+
+
+### Teacher feedback segmented selector — 8 October 2026
+
+User refined the visual request with a segmented attendance-control reference. Ratings now share one compact rounded track with a colored active pill translating horizontally between Low, Okay, High and Not sure. Native radio tap and arrow-key behavior is retained, unanswered parameters remain unselected, and reduced-motion preferences disable transitions. Typecheck and all four existing feedback tests pass. Synthetic browser checks cover 320/768/1024/1440px, no overflow, submissions, and keyboard-driven pill movement left/right. Deployment and user acceptance of this refinement remain pending.
