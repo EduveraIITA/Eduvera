@@ -1,0 +1,80 @@
+name: Reconcile Student Pulse with Stage
+on:
+  push:
+    branches: [feature/student-pulse-screens]
+    paths: ['.github/workflows/student-pulse-sync.yml']
+permissions:
+  contents: write
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve Stage analytics and Student Pulse wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 - <<'PY'
+          import pathlib,re,subprocess
+          stage='bcdf8bb38cb44fbaf4484f8b9ab3c62cae2aa8c6'
+          baseline='09047b7ba4a60f4c0431c2037a63c8ce438d7043'
+          def show(ref,path): return subprocess.check_output(['git','show',ref+':'+path]).decode()
+          def once(text,old,new):
+              assert text.count(old)==1, 'Expected unique merge anchor: '+old
+              return text.replace(old,new,1)
+          files={}
+          path='backend/src/app.module.ts'
+          text=show(stage,path)
+          text="import { StudentPulseModule } from './student-pulse/student-pulse.module.js';\n"+text
+          files[path]=once(text,'    PrincipalInsightsModule,','    PrincipalInsightsModule,\n    StudentPulseModule,')
+          path='frontend/src/App.tsx'
+          text=show(stage,path)
+          text=once(text,'const PrincipalInsightsPage =',"const StudentPulsePage = lazy(() => import('./features/student-pulse/StudentPulsePage'));\nconst PrincipalInsightsPage =")
+          for portal in ['principal','teacher']:
+              anchor='              <Route path="/'+portal+'/invitations"'
+              routes=''.join('              <Route path="/'+portal+'/student-pulse'+suffix+'" element={<PortalOnly portal="'+portal+'"><StudentPulsePage /></PortalOnly>} />\n' for suffix in ['', '/:studentId/:termId/:subjectId'])
+              text=once(text,anchor,routes+anchor)
+          files[path]=text
+          path='frontend/src/features/auth/staffAccess.ts'
+          text=show(stage,path)
+          for key in ['TEACHER_TOOL_PERMISSIONS','TEACHER_SECTION_PERMISSIONS']:
+              anchor=key+': Readonly<Record<string, string>> = {'
+              text=once(text,anchor,anchor+'\n  "student-pulse": "followups.manage",')
+          files[path]=text
+          path='frontend/src/features/more/navigation.ts'
+          text=show(stage,path)
+          text=once(text,'{ name: "Academics", ids: ["weekly", "assessments", "report-cards"] }','{ name: "Academics", ids: ["weekly", "assessments", "report-cards", "student-pulse"] }')
+          text=once(text,'{ name: "Communication & care", ids: ["messages", "safeguarding"] }','{ name: "Communication & care", ids: ["messages", "student-pulse", "safeguarding"] }')
+          files[path]=text
+          path='frontend/src/features/more/tools.ts'
+          text=show(stage,path)
+          assert not re.search(r'\bActivity\b',text)
+          text="import { Activity } from 'lucide-react';\n"+text
+          for portal in ['principal','teacher']:
+              anchor='  '+portal+': ['
+              tool='    { id: "student-pulse", name: "Student Pulse", description: "Subject attendance gaps, evidence and supportive check-ins", icon: Activity, tone: "teal", path: "/'+portal+'/student-pulse" },'
+              text=once(text,anchor,anchor+'\n'+tool)
+          files[path]=text
+          path='docs/blueprint/IMPLEMENTATION_PLAN.md'
+          original=show(baseline,path)
+          ours=show('HEAD',path)
+          assert ours.startswith(original)
+          addition=ours[len(original):]
+          assert addition.count('## Student Pulse')==1
+          files[path]=show(stage,path)+addition
+          result=subprocess.run(['git','merge','--no-commit','--no-ff',stage])
+          assert result.returncode in (0,1)
+          conflicts=set(subprocess.check_output(['git','diff','--name-only','--diff-filter=U']).decode().splitlines())
+          assert conflicts.issubset(files.keys()), 'Unexpected conflicts: '+repr(conflicts)
+          for path,text in files.items(): pathlib.Path(path).write_text(text)
+          subprocess.run(['git','add','--',*files.keys()],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          assert not subprocess.check_output(['git','diff','--name-only','--diff-filter=U']).strip()
+          subprocess.run(['git','commit','-m','Merge Stage analytics while preserving Student Pulse screens and permissions'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/feature/student-pulse-screens'],check=True)
+          PY
