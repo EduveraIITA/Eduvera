@@ -3701,3 +3701,29 @@ Confirmed the sliding selector release passed deployment and public revision ver
 ### Drag to change feedback rating — 8 October 2026
 
 The shared native-radio selector now supports horizontal pointer dragging, updates the selected rating across segments, clamps at either end, and preserves tap/keyboard behavior. Vertical touch scrolling remains available; pointer cancellation restores the original answer. Capture transfer from touch targets does not terminate the drag. Typecheck, focused lint and four existing feedback tests pass. Browser tests using Chromium mouse dragging left and CDP touch dragging right pass at 320/768/1024/1440px alongside submission and overflow checks. Physical iOS acceptance and deployment remain pending.
+
+### Teacher feedback results analytics — 8 October 2026
+
+Built the requested animated View results dashboard on Stage revision `633cb05` in
+an isolated branch. The [results contract](TEACHER_FEEDBACK_RESULTS.md) records the
+principal questions, denominators, comparable-history rules and UX boundaries.
+The existing theme, shell, feedback slider and confidentiality gates are preserved.
+
+Results now include a rating-mix donut, sortable expandable parameter distributions,
+strength/support summaries with practical suggestions, cumulative response activity
+and comparable closed-round history. Hidden parameters cannot contribute to summary
+ratings or trends. Historical comparisons require the same institution, teacher,
+class, audience and question set with five actual ratings on every parameter; no
+respondent identity is returned. Regular open requests expose collection activity only. Per the user’s follow-up,
+seeded Cambridge demo administrators can preview graphs after one response while
+open, with a visible demo label; other accounts retain five-response gates.
+No migration, new package or demonstration data write is required.
+
+Local frontend/backend typechecks and scoped lint passed. Five backend policy/rating
+unit tests and eleven frontend feedback tests passed. Chromium fixture checks passed
+at 320/768/1024/1440 pixels, including sort, native keyboard disclosure, historical
+table, locked state, reduced motion and no browser errors. Phone/tablet screenshots
+were visually inspected. The automatic approval review blocked publishing the branch because this turn did
+not explicitly authorize source publication. The local commit is retained; PostgreSQL
+integration verification in PR CI, Stage deployment and physical-phone acceptance
+remain pending. No shared database was accessed for tests.

@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
+import { config } from '../config.js';
 import type { AuthUser } from '../common/request.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { Database } from '../database/types.js';
-import { campaignInput, DEFAULT_PARAMETERS, responseInput, summarizeRatings, validRatingKeys, type Ratings } from './feedback-rules.js';
+import { campaignInput, DEFAULT_PARAMETERS, responseInput, feedbackReleasePolicy, summarizeRatings, validRatingKeys, type Ratings } from './feedback-rules.js';
 type Db = DatabaseService | Transaction<Database>;
 interface Campaign { id:string; school_id:string; teacher_user_id:string; class_section_id:string; title:string; audience:'students'|'parents'; parameters:string[]; closes_at:Date; closed_at:Date|null; teacher_name:string; class_name:string; is_closed:boolean; response_count:number; submitted?:boolean }
 const projection = sql`c.id,c.school_id,c.teacher_user_id,c.class_section_id,c.title,c.audience,c.parameters,c.closes_at,c.closed_at,
@@ -77,12 +78,48 @@ export class TeacherFeedbackService {
   async results(user:AuthUser,school:string,id:string) {
     return this.db.transaction().execute(async db=>{
     await this.member(db,user,school,true);const campaign=await this.campaign(db,school,id,true);
-    const count=(await sql<{count:number}>`SELECT count(*)::int AS count FROM teacher_feedback_responses WHERE school_id=${school}::uuid AND campaign_id=${id}::uuid`.execute(db)).rows[0]!.count;
+    const activity=(await sql<{date:string;count:number}>`SELECT
+      to_char(r.submitted_at AT TIME ZONE s.timezone,'YYYY-MM-DD') AS date,count(*)::int AS count
+      FROM teacher_feedback_responses r JOIN schools s ON s.id=r.school_id
+      WHERE r.school_id=${school}::uuid AND r.campaign_id=${id}::uuid GROUP BY 1 ORDER BY 1`.execute(db)).rows;
+    const count=activity.reduce((sum,day)=>sum+day.count,0);
+    const schoolRecord=await db.selectFrom('schools').select('code').where('id','=',school).executeTakeFirstOrThrow();
+    const policy=feedbackReleasePolicy(config().DEMO_MODE,user,schoolRecord.code);
     // Closed, immutable cohorts prevent successive dashboard reads from revealing an individual's vote.
-    if(!campaign.is_closed||count<5) return {campaign,response_count:count,available:false,parameters:[]};
+    if((!campaign.is_closed&&!policy.demo_preview)||count<policy.minimum_responses) return {campaign,response_count:count,available:false,parameters:[],activity,history:[],...policy};
     const rows=(await sql<{ratings:Ratings}>`SELECT ratings FROM teacher_feedback_responses WHERE school_id=${school}::uuid AND campaign_id=${id}::uuid`.execute(db)).rows;
-    return {campaign,response_count:count,available:true,parameters:summarizeRatings(campaign.parameters,rows.map(r=>r.ratings))};
+    const parameters=summarizeRatings(campaign.parameters,rows.map(r=>r.ratings),policy.minimum_responses);
+    // Compare only the same teacher, class, audience and exact question set. Every
+    // parameter must independently pass suppression; a hidden answer never feeds a trend.
+    const history=campaign.is_closed&&parameters.every(p=>p.counts!==null)?await this.history(db,school,id,policy.minimum_responses):[];
+    return {campaign,response_count:count,available:true,parameters,activity,history,...policy};
     });
+  }
+  private async history(db:Db,school:string,id:string,minimum:number) {
+    return (await sql<{id:string;closed_at:string;response_count:number;rated_count:number;high_percent:number}>`
+      WITH current_request AS (
+        SELECT * FROM teacher_feedback_campaigns WHERE school_id=${school}::uuid AND id=${id}::uuid
+      ), rounds AS (
+        SELECT c.id,c.parameters,LEAST(c.closed_at,c.closes_at) AS ended
+        FROM teacher_feedback_campaigns c CROSS JOIN current_request current
+        WHERE c.school_id=${school}::uuid AND c.teacher_user_id=current.teacher_user_id
+          AND c.class_section_id=current.class_section_id AND c.audience=current.audience
+          AND c.parameters @> current.parameters AND current.parameters @> c.parameters
+          AND (c.closed_at IS NOT NULL OR c.closes_at<=now())
+          AND LEAST(c.closed_at,c.closes_at)<=LEAST(current.closed_at,current.closes_at)
+        ORDER BY ended DESC,c.id DESC LIMIT 6
+      ), counts AS (
+        SELECT c.id,c.ended,jsonb_array_length(c.parameters) AS parameter_count,q.parameter,
+          count(*)::int AS responses,
+          count(*) FILTER(WHERE r.ratings->>q.parameter IN ('low','okay','high'))::int AS rated,
+          count(*) FILTER(WHERE r.ratings->>q.parameter='high')::int AS high
+        FROM rounds c JOIN teacher_feedback_responses r ON r.campaign_id=c.id AND r.school_id=${school}::uuid
+        CROSS JOIN LATERAL jsonb_array_elements_text(c.parameters) AS q(parameter)
+        GROUP BY c.id,c.ended,c.parameters,q.parameter
+      ) SELECT id,to_char(ended AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS closed_at,max(responses)::int AS response_count,
+        sum(rated)::int AS rated_count,round(100.0*sum(high)/sum(rated),1)::float8 AS high_percent
+      FROM counts GROUP BY id,ended HAVING min(rated)>=${minimum} AND count(*)=max(parameter_count)
+      ORDER BY ended,id`.execute(db)).rows;
   }
   async pending(user:AuthUser,school:string) {
     await this.member(this.db,user,school);

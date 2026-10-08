@@ -58,7 +58,7 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
     expect(await service.results(admin,school,campaignId)).toMatchObject({available:false,response_count:5,parameters:[]});
     await service.close(admin,school,campaignId);
     const results=await service.results(admin,school,campaignId);
-    expect(results.available).toBe(true);expect(results.parameters[0]).toMatchObject({counts:{low:1,high:4,okay:0,na:0},signal:'strength'});
+    expect(results.available).toBe(true);expect(results.history).toEqual([]);expect(results.activity.reduce((sum,day)=>sum+day.count,0)).toBe(5);expect(results.parameters[0]).toMatchObject({counts:{low:1,high:4,okay:0,na:0},signal:'strength'});
     expect(results.parameters[1]).toMatchObject({counts:null,signal:'insufficient'});
     expect(JSON.stringify(results)).not.toContain(students[0]!.id);
     await expect(service.submit(students[5]!,school,campaignId,payload)).rejects.toThrow(/closed/);
@@ -72,6 +72,55 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
     const second=(await service.create(admin,school,{...input(),audience:'parents'})).id;
     await pool.query('DELETE FROM guardian_relationships WHERE student_id=$1',[studentId]);
     await expect(service.submit(parent,school,second,{ratings:{Punctuality:'high',Clarity:'high'}})).rejects.toThrow(/not assigned/);
+  });
+  it('compares only complete closed rounds with the same teacher, class, audience and questions',async()=>{
+    async function fixture(overrides:Record<string,unknown>={},rating='high',close=true){
+      const data={...input(),...overrides};const id=(await service.create(admin,school,data)).id;
+      for(const [index,user] of students.entries()){
+        const ratings=Object.fromEntries(data.parameters.map(parameter=>[parameter,rating==='partial'&&parameter==='Clarity'&&index<2?'na':rating==='mixed'&&index<3?'low':'high']));
+        if(rating==='na')for(const parameter of data.parameters)ratings[parameter]='na';
+        await pool.query('INSERT INTO teacher_feedback_responses(school_id,campaign_id,respondent_user_id,ratings) VALUES($1,$2,$3,$4)',[school,id,user.id,JSON.stringify(ratings)]);
+      }
+      if(close)await service.close(admin,school,id);return id;
+    }
+    await fixture({},'partial');
+    await fixture({},'na');
+    await fixture({audience:'parents'});
+    await fixture({parameters:['Different question']});
+    const colleague=await account('staff');
+    await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$2,'staff')",[colleague.id,school]);
+    await fixture({teacher_user_id:colleague.id});
+    const otherLocalClass=(await row("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','B') RETURNING id",[school])).id;
+    await fixture({class_section_id:otherLocalClass});
+    const earlier=await fixture({parameters:['Clarity','Punctuality']});
+    const open=await fixture({},'high',false);
+    const current=await fixture({},'mixed');
+    // Later closures must not change the historical view for an older round.
+    const future=await fixture();
+    const results=await service.results(admin,school,current);
+    expect(results.history.map(r=>r.id)).toEqual([earlier,current]);
+    expect(results.history[0]).toMatchObject({response_count:6,rated_count:12,high_percent:100});
+    expect(results.history[1]).toMatchObject({response_count:6,rated_count:12,high_percent:50});
+    expect(results.activity.reduce((sum,day)=>sum+day.count,0)).toBe(6);
+    expect(JSON.stringify(results.history)).not.toContain(future);
+    expect((await service.results(admin,school,open)).history).toEqual([]);
+  });
+  it('unlocks one open demo response while keeping ordinary administrators protected',async()=>{
+    const demo=await row("SELECT u.*,s.id AS active_school_id FROM users u JOIN school_memberships m ON m.user_id=u.id AND m.role='admin' JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis'") as AuthUser;
+    const demoSchool=demo.active_school_id!;
+    const classroom=await row('SELECT id FROM class_sections WHERE school_id=$1 LIMIT 1',[demoSchool]);
+    const id=(await service.create(demo,demoSchool,{...input(),teacher_user_id:demo.id,class_section_id:classroom.id})).id;
+    expect(await service.results(demo,demoSchool,id)).toMatchObject({available:false,demo_preview:true,minimum_responses:1});
+    await pool.query('INSERT INTO teacher_feedback_responses(school_id,campaign_id,respondent_user_id,ratings) VALUES($1,$2,$3,$4)',[demoSchool,id,students[0]!.id,JSON.stringify({Punctuality:'high',Clarity:'na'})]);
+    const preview=await service.results(demo,demoSchool,id);
+    expect(preview).toMatchObject({available:true,demo_preview:true,response_count:1,minimum_responses:1,history:[]});
+    expect(preview.parameters[0]).toMatchObject({counts:{high:1},signal:'strength'});
+    expect(preview.parameters[1]).toMatchObject({counts:null,signal:'insufficient'});
+    await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$2,'admin')",[admin.id,demoSchool]);
+    const regular={...admin,active_school_id:demoSchool};
+    expect(await service.results(regular,demoSchool,id)).toMatchObject({available:false,demo_preview:false,minimum_responses:5,parameters:[]});
+    await service.close(demo,demoSchool,id);
+    expect(await service.results(regular,demoSchool,id)).toMatchObject({available:false,parameters:[]});
   });
   it('rejects expired requests and revoked memberships',async()=>{
     const id=(await service.create(admin,school,input())).id;

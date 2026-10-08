@@ -11,13 +11,20 @@ export type Ratings = z.infer<typeof responseInput>['ratings'];
 export function validRatingKeys(parameters: string[], ratings: Ratings) {
   return Object.keys(ratings).length === parameters.length && parameters.every(p => Object.hasOwn(ratings, p));
 }
-export function summarizeRatings(parameters: string[], responses: Ratings[]) {
+export function summarizeRatings(parameters: string[], responses: Ratings[], minimum = 5) {
   return parameters.map(parameter => {
     const counts = { low: 0, okay: 0, high: 0, na: 0 };
     for (const response of responses) { const rating = response[parameter]; if (rating) counts[rating]++; }
     const rated = counts.low + counts.okay + counts.high;
     // A parameter with too few actual ratings is suppressed independently of total responses.
-    return { parameter, rated, counts: rated >= 5 ? counts : null,
-      signal: rated < 5 ? 'insufficient' : counts.low / rated >= 0.4 ? 'review' : counts.high / rated >= 0.7 ? 'strength' : 'mixed' };
+    return { parameter, rated, counts: rated >= minimum ? counts : null,
+      signal: rated < minimum ? 'insufficient' : counts.low / rated >= 0.4 ? 'review' : counts.high / rated >= 0.7 ? 'strength' : 'mixed' };
   });
+}
+
+export function feedbackReleasePolicy(demoMode: boolean, user: {username: string; email: string}, schoolCode: string) {
+  const demoIdentity = (user.username === 'meera.principal' && user.email === 'meera.kapoor@example.test')
+    || (user.username === 'arjun.admin' && user.email === 'arjun.rao@example.test');
+  const demo = demoMode && schoolCode === 'cis' && demoIdentity;
+  return { demo_preview: demo, minimum_responses: demo ? 1 : 5 };
 }
