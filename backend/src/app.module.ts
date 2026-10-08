@@ -1,4 +1,5 @@
 import { CompanyModule } from "./company/company.module.js";
+import { AnalyticsModule } from "./analytics/analytics.module.js";
 import { SchedulePlanningModule } from "./schedule-planning/schedule-planning.module.js";
 import { RolesModule } from "./roles/roles.module.js";
 import { PermissionGuard } from "./roles/permission.guard.js";
@@ -30,6 +31,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
 
 @Module({
   imports: [
+    AnalyticsModule,
     SchedulePlanningModule,
     CompanyModule,
     RolesModule,

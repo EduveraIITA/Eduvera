@@ -5,6 +5,7 @@ import { ClipboardCheck } from "lucide-react";
 type Group = { name: string; ids: string[] };
 const groups: Record<Portal, Group[]> = {
   principal: [
+    { name: "Insights", ids: ["analytics"] },
     { name: "People", ids: ["people", "staff"] },
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
     { name: "Operations", ids: ["departure", "events", "messages", "fees", "safeguarding"] },
@@ -12,7 +13,7 @@ const groups: Record<Portal, Group[]> = {
     { name: "Account", ids: ["security"] },
   ],
   teacher: [
-    { name: "My work", ids: ["responsibilities", "classes", "registers", "transport", "assessments", "report-cards"] },
+    { name: "My work", ids: ["analytics", "responsibilities", "classes", "registers", "transport", "assessments", "report-cards"] },
     { name: "Schedule & activities", ids: ["weekly", "calendar", "events"] },
     { name: "Communication & care", ids: ["messages", "safeguarding"] },
     { name: "Administration", ids: ["delegated-people", "delegated-office", "delegated-fees", "member-invitations"] },
@@ -20,14 +21,14 @@ const groups: Record<Portal, Group[]> = {
     { name: "Account", ids: ["security"] },
   ],
   parent: [
-    { name: "Learning", ids: ["results", "diary"] },
+    { name: "Learning", ids: ["analytics", "results", "diary"] },
     { name: "Schedule & attendance", ids: ["timetable", "calendar", "leave"] },
     { name: "School life", ids: ["departure", "events", "messages"] },
     { name: "Payments & policies", ids: ["fees", "policies"] },
     { name: "Account", ids: ["security"] },
   ],
   student: [
-    { name: "Learning", ids: ["results", "diary"] },
+    { name: "Learning", ids: ["analytics", "results", "diary"] },
     { name: "Schedule & attendance", ids: ["timetable", "calendar", "attendance", "leave", "copilot"] },
     { name: "School life", ids: ["events", "messages"] },
     { name: "Payments & policies", ids: ["fees", "policies"] },
@@ -65,6 +66,7 @@ const adminShortcuts: Shortcut[] = [
   { owner: "governance", name: "Policy register", path: "/principal/governance?section=register", keywords: "compliance policies" },
 ];
 const aliases: Record<string, string> = {
+  analytics: "charts graphs insights overview trends progress statistics attendance scores",
   results: "marks marksheet exam report card grades", assessments: "tests exam marks marking moderation results",
   "report-cards": "marksheet grades grading term reports remarks", departure: "bus pickup drop collector route transport",
   transport: "bus pickup drop collector route roster", fees: "payment invoice receipt balance dues",

@@ -125,6 +125,7 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
 };
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
+  { queryKey: ["analytics"] },
   { queryKey: ["staff-operations"] },
   { queryKey: ["school"] },
   { queryKey: ["teacher-home"] },
@@ -260,6 +261,9 @@ export function resolveSchoolEvent(
   }
   const targets = envelope.payload.refresh ?? defaultsByType[expectedType];
   const invalidations = targets.flatMap((target) => invalidationsForTarget(target, envelope.payload, userId));
+  if (expectedType.startsWith("attendance.") || ["staff.access.updated", "people.updated", "administration.updated", "timetable.updated"].includes(expectedType)) {
+    invalidations.push({ queryKey: ["analytics"] });
+  }
   return { envelope, invalidations: deduplicateInvalidations(invalidations), usedFallback: false };
 }
 

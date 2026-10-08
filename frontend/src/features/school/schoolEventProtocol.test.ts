@@ -147,6 +147,7 @@ describe("school event protocol", () => {
     expect(result.invalidations).toEqual([
       { queryKey: ["office", "administration"] },
       { queryKey: ["principal-timetable"] },
+      { queryKey: ["analytics"] },
     ]);
   });
 
