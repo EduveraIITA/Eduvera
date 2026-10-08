@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate,useSearchParams } from "react-router-dom";
 import { schoolDateToday, shiftSchoolDate } from "../../lib/schoolTime";
-import { timetableSummaryRange, type TimetableView } from "../timetable/TimetableNavigator";
+import { timetableSummaryRange, readTimetableView } from "../timetable/TimetableNavigator";
 import { askAttendanceCopilot } from "../attendance/api";
 import { StudentAttendancePage } from "../../pages/student/StudentAttendancePage";
 import { StudentHomePage } from "../../pages/student/StudentHomePage";
@@ -216,13 +216,13 @@ export function StudentLeaveStatusRoute() {
 export function StudentTimetableRoute() {
   const [params,setParams]=useSearchParams();
   const date=params.get('date')||undefined;
-  const requestedView=params.get("view");
-  const view: TimetableView=["day","week","month","year"].includes(requestedView??"")?requestedView as TimetableView:"day";
+  const view = readTimetableView(params.get("view"));
   const anchor=date??schoolDateToday();
   const range=timetableSummaryRange(anchor,view);
   const query = useQuery({
     queryKey: ["school", "student", "timetable",date],
     queryFn: () => getStudentTimetable(date),
+    placeholderData: (previous) => previous,
   });
   const summary=useQuery({
     queryKey:["school","student","timetable-summary",range.start,range.end,anchor],
@@ -232,7 +232,7 @@ export function StudentTimetableRoute() {
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   return (
     <StudentTimetablePage
-      dayPlan={query.data.day_plan} selectedDate={query.data.selected_date} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
+      dayPlan={query.data.day_plan} selectedDate={anchor} scheduleLoading={query.isPlaceholderData} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
       view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next);}}
       onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next);}}
       summary={summary.data} summaryLoading={summary.isPending} summaryError={summary.isError?summary.error.message:undefined} onSummaryRetry={()=>void summary.refetch()}

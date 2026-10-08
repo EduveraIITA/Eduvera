@@ -1,3 +1,4 @@
+import { requireLegacyTimetable } from '../schedule-planning/legacy-guard.js';
 import {
   BadRequestException,
   ConflictException,
@@ -17,6 +18,7 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { SchoolEventService } from "./school-event.service.js";
+import { classUpdates } from "./class-updates.js";
 import {lockSchedule,protectPublishedPlans} from '../day-plans/schedule.js';
 import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendance-workspace.js';
 
@@ -1903,6 +1905,13 @@ export class SchoolService {
     return { student: await this.studentDto(student), active: leaves.filter((item) => ["pending_guardian", "authorized"].includes(item.status)), history: leaves.filter((item) => !["pending_guardian", "authorized"].includes(item.status)) };
   }
 
+  async teacherClassUpdates(user: AuthUser, selectedDateValue?: string) {
+    const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
+    const date = z.iso.date().parse(selectedDateValue ?? await this.schoolLocalDate(membership.school_id));
+    const classes = await attendanceWorkspace(this.db, membership.school_id, user.id, membership.role, date);
+    return classUpdates(this.db, classes.map(item => item.class_section_id), user.id, date);
+  }
+
   async teacherHomeScreen(user: AuthUser, selectedDateValue?: string) {
     const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
     const selectedDate = selectedDateValue ?? await this.schoolLocalDate(membership.school_id);
@@ -1911,10 +1920,11 @@ export class SchoolService {
     const weekly = await sql<any>`
       SELECT ts.id, ts.weekday, ts.period_number, ts.starts_at, ts.ends_at, ts.room,
         COALESCE(s.name, ts.title) AS subject_name, cs.id AS class_section_id, cs.grade, cs.section
-      FROM timetable_slots ts JOIN class_sections cs ON cs.id=ts.class_section_id
+      FROM generate_series(date_trunc('week',${selectedDate}::date),date_trunc('week',${selectedDate}::date)+interval '6 days',interval '1 day') day
+      CROSS JOIN LATERAL effective_school_schedule(${membership.school_id}::uuid,day::date) ts JOIN class_sections cs ON cs.id=ts.class_section_id
       JOIN academic_terms t ON t.id=ts.term_id AND ${selectedDate}::date BETWEEN t.starts_on AND t.ends_on
       LEFT JOIN subjects s ON s.id=ts.subject_id
-      WHERE cs.school_id=${membership.school_id}::uuid
+      WHERE cs.school_id=${membership.school_id}::uuid AND NOT ts.cancelled
         AND (${membership.role}='admin' OR ts.teacher_user_id=${user.id}::uuid)
       ORDER BY ts.weekday, ts.period_number, cs.grade, cs.section
     `.execute(this.db);
@@ -3432,6 +3442,7 @@ export class SchoolService {
     }
     return this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
+      await requireLegacyTimetable(tx,data.class_section_id,term.id);
       const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", term.id).where("weekday", "=", data.weekday)
         .where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at)
         .where((eb) => eb.or([
@@ -3467,6 +3478,8 @@ export class SchoolService {
     }
     return this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
+      await requireLegacyTimetable(tx,current.class_section_id,current.term_id);
+      await requireLegacyTimetable(tx,data.class_section_id,current.term_id);
       const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", current.term_id).where("id", "!=", slotId).where("weekday", "=", data.weekday).where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at).where((eb) => eb.or([...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []), ...(data.room ? [eb("room", "=", data.room)] : [])])).executeTakeFirst() : undefined;
       if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
       const slot = await tx.updateTable("timetable_slots").set({ class_section_id: data.class_section_id, subject_id: data.subject_id ?? null, teacher_user_id: data.teacher_user_id ?? null, weekday: data.weekday, period_number: data.period_number, starts_at: data.starts_at, ends_at: data.ends_at, slot_type: data.slot_type, title: data.title, room: data.room, teacher_designation: data.teacher_designation }).where("id", "=", slotId).returningAll().executeTakeFirstOrThrow();
@@ -3484,6 +3497,7 @@ export class SchoolService {
     const membership = await this.requireSchoolRole(user, ["admin"], current.school_id);
     await this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
+      await requireLegacyTimetable(tx,current.class_section_id);
       await tx.deleteFrom("timetable_slots").where("id", "=", slotId).execute();
       await protectPublishedPlans(tx,membership.school_id);
       await tx.insertInto("audit_events").values({ action: "timetable.slot.deleted", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slotId, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: current.class_section_id } }).execute();
@@ -3502,6 +3516,7 @@ export class SchoolService {
     if (!term || !section || term.academic_year !== section.academic_year) throw new BadRequestException("The selected class and term do not match.");
     return this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx, membership.school_id);
+      await requireLegacyTimetable(tx,section.id,term.id);
       const source = await tx.selectFrom("timetable_slots").selectAll()
         .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "=", data.source_weekday)
         .orderBy("period_number").execute();

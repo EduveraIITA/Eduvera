@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronRight, Grid2X2, Info, List, LockKeyhole, Search, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
@@ -24,7 +24,8 @@ function savedLayout(userId: string): MoreLayout {
 
 function ToolTile({ tool, studentId, attention = 0 }: { tool: Tool; studentId?: string; attention?: number }) {
   const Icon = tool.icon;
-  const path = tool.path && studentId && tool.path.startsWith("/parent/")
+  const location = useLocation();
+  const path = tool.path === "/account/security" ? `/account/security?from=${encodeURIComponent(location.pathname + location.search)}` : tool.path && studentId && tool.path.startsWith("/parent/")
     ? `${tool.path}${tool.path.includes("?") ? "&" : "?"}student_id=${encodeURIComponent(studentId)}` : tool.path;
   const body = <>
     <span className="more-tile__icon" aria-hidden="true"><Icon size={21} /></span>

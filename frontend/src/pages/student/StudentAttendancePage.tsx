@@ -1,32 +1,20 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ArrowRight,
-  ArrowUp,
-  Bot,
-  BookOpenText,
   Calculator,
-  Camera,
   Check,
-  ClipboardCheck,
-  FileCheck2,
-  Flame,
-  FlaskConical,
-  Medal,
-  Microscope,
+  ChevronDown,
+  ChevronRight,
   Minus,
   Plus,
-  ShieldCheck,
-  Sigma,
-  Sparkles,
-  Trophy,
-  UserCheck,
 } from "lucide-react";
 
 import { StudentShell, type StudentNavKey, type StudentRouteMap } from "./StudentShell";
 import { AttendanceCopilotSheet, type AttendanceCopilotHandler } from "./AttendanceCopilotSheet";
 import { AttendanceRankingDialog, type AttendanceRankingData } from "../../features/school/AttendanceRankingDialog";
 import "./student-pages.css";
+import '../../features/attendance/attendance-simple.css';
+import './student-attendance.css';
 
 export type AttendanceSubjectGroup = "core" | "language" | "activity";
 
@@ -40,6 +28,8 @@ export interface StudentAttendanceSubject {
   held: number;
   status: string;
   note: string;
+  /** Estimated additional missed classes before falling below the minimum. */
+  safeBuffer?: number;
   group: AttendanceSubjectGroup;
   nextClass?: string;
 }
@@ -53,18 +43,6 @@ export interface AttendanceLeader {
   streak?: number;
   percent: number;
   current?: boolean;
-}
-
-function RankedAvatar({ name, avatarUrl, rank, current = false }: { name: string; avatarUrl?: string | null; rank: number; current?: boolean }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const fallback = name.split(/\s+/).map((part) => part[0]).filter(Boolean).join("").slice(0, 2).toUpperCase();
-  const rankLabel = rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : `#${rank}`;
-  return (
-    <span className={`leader-avatar leader-avatar--rank-${Math.min(rank, 4)}${current ? " leader-avatar--current" : ""}`}>
-      {avatarUrl && !imageFailed ? <img src={avatarUrl} alt="" onError={() => setImageFailed(true)} /> : fallback}
-      <i aria-label={`Rank ${rank}`}>{rankLabel}</i>
-    </span>
-  );
 }
 
 export interface StudentAttendanceData {
@@ -115,7 +93,8 @@ const demoSubjects: StudentAttendanceSubject[] = [
     attended: 49,
     held: 50,
     status: "Flawless",
-    note: "+4 leaves safe buffer",
+    note: "+7 classes safe buffer",
+    safeBuffer: 7,
     group: "core",
     nextClass: "Today at 03:00 PM",
   },
@@ -129,6 +108,7 @@ const demoSubjects: StudentAttendanceSubject[] = [
     held: 25,
     status: "Safe Zone",
     note: "+3 leaves buffer",
+    safeBuffer: 3,
     group: "core",
   },
   {
@@ -141,6 +121,7 @@ const demoSubjects: StudentAttendanceSubject[] = [
     held: 15,
     status: "Perfect Attendance 🏆",
     note: "Optimal Quota",
+    safeBuffer: 2,
     group: "activity",
   },
   {
@@ -153,6 +134,7 @@ const demoSubjects: StudentAttendanceSubject[] = [
     held: 20,
     status: "Safe Zone",
     note: "+2 leaves buffer",
+    safeBuffer: 2,
     group: "core",
   },
   {
@@ -165,6 +147,7 @@ const demoSubjects: StudentAttendanceSubject[] = [
     held: 25,
     status: "Good",
     note: "Need +2 for 95% mark",
+    safeBuffer: 2,
     group: "core",
   },
   {
@@ -177,6 +160,7 @@ const demoSubjects: StudentAttendanceSubject[] = [
     held: 20,
     status: "Passing Threshold",
     note: "Min. required: 85%",
+    safeBuffer: 1,
     group: "language",
   },
 ];
@@ -218,29 +202,32 @@ export const demoStudentAttendanceData: StudentAttendanceData = {
   subjects: demoSubjects,
 };
 
-function SubjectGlyph({ id }: { id: string }) {
-  const props = { size: 21, strokeWidth: 2 };
-  if (id.includes("computer")) return <Bot {...props} />;
-  if (id.includes("math")) return <Sigma {...props} />;
-  if (id.includes("physical")) return <Trophy {...props} />;
-  if (id.includes("chem")) return <FlaskConical {...props} />;
-  if (id.includes("physics")) return <Microscope {...props} />;
-  return <BookOpenText {...props} />;
+function SubjectAttendanceRow({subject,minimum}:{subject:StudentAttendanceSubject;minimum:number}) {
+  const recorded=subject.held>0;
+  const warning=recorded&&subject.percent<minimum?`Below ${minimum}% minimum`:recorded&&subject.percent<minimum+5?"Near minimum":null;
+  const buffer=recorded&&subject.safeBuffer!==undefined&&Number.isFinite(subject.safeBuffer)?subject.safeBuffer:undefined;
+  const bufferTone=subject.percent<minimum?'is-below':buffer===0?'is-near':'is-safe';
+  return <details className="student-attendance-subject">
+    <summary>
+      <span className="student-attendance-subject__name"><strong>{subject.name}</strong><small>{recorded?`${subject.attended} of ${subject.held} classes attended`:"No attendance recorded"}</small>{warning?<em className={subject.percent<minimum?'is-below':'is-near'}>{warning}</em>:null}</span>
+      <strong className="student-attendance-subject__percent">{recorded?`${subject.percent}%`:"—"}</strong><ChevronDown size={16} aria-hidden="true"/>
+    </summary>
+    <div className="student-attendance-subject__details">
+    <dl className="student-attendance-subject__metrics">
+      {buffer!==undefined?<div className={bufferTone}><dt>Safe buffer</dt><dd><strong>{buffer}</strong> <span>{buffer===1?'class':'classes'}</span></dd></div>:null}
+      <div><dt>Minimum required</dt><dd><strong>{minimum}%</strong></dd></div>
+    </dl>
+    {recorded&&(buffer!==undefined||subject.note)?<p className="student-attendance-planning-note">{buffer===undefined?<strong>{subject.note}</strong>:null}<small>Planning estimate only; the school's attendance policy still applies.</small></p>:null}
+    <dl className="student-attendance-subject__context">
+      {recorded?<div><dt>Status</dt><dd>{subject.status}</dd></div>:null}
+      {subject.teacher?<div><dt>Teacher</dt><dd>{subject.teacher}</dd></div>:null}
+      {subject.location?<div><dt>Room</dt><dd>{subject.location}</dd></div>:null}
+      {subject.nextClass?<div><dt>Next class</dt><dd>{subject.nextClass}</dd></div>:null}
+    </dl></div>
+  </details>;
 }
 
-function StatTile({ icon, label, value, tone = "blue" }: { icon: ReactNode; label: string; value: string; tone?: string }) {
-  return (
-    <div className={`attendance-stat attendance-stat--${tone}`}>
-      <span className="attendance-stat__icon">{icon}</span>
-      <span>
-        <small>{label}</small>
-        <strong>{value}</strong>
-      </span>
-    </div>
-  );
-}
-
-type SubjectFilter = "all" | "near" | "core" | "language";
+type SubjectFilter = "all" | "near" | "core" | "language" | "activity";
 
 export function StudentAttendancePage({
   data = demoStudentAttendanceData,
@@ -252,109 +239,78 @@ export function StudentAttendancePage({
   activeNav = "attendance",
 }: StudentAttendancePageProps) {
   const navigate = useNavigate();
+  const [params,setParams]=useSearchParams();
   const [projectedAbsences, setProjectedAbsences] = useState(1);
-  const [filter, setFilter] = useState<SubjectFilter>("all");
+  const filter:SubjectFilter=(['near','core','language','activity'] as const).find(value=>value===params.get('subjects'))??'all';
   const [copilotOpen, setCopilotOpen] = useState(initialCopilotOpen);
-  const [rankingFocusIndex, setRankingFocusIndex] = useState<number | null>(null);
   const [rankingOpen, setRankingOpen] = useState(false);
-  const openRanking = (index?: number) => { setRankingFocusIndex(index ?? null); setRankingOpen(true); };
+  const overallRecorded = data.held > 0;
+  const overallTone = !overallRecorded ? 'unrecorded' : data.aggregate < data.minimumPercent ? 'below' : data.aggregate < data.minimumPercent + 5 ? 'near' : 'above';
+  const overallStatus = {unrecorded:'Not recorded',below:'Below minimum',near:'Near minimum',above:'Above minimum'}[overallTone];
   const projectedTotal = data.held + projectedAbsences;
   const projected = projectedTotal > 0 ? (data.attended / projectedTotal) * 100 : 0;
   const delta = projected - data.aggregate;
   const projectionStatus = projected >= data.minimumPercent + 5
-    ? "Safe & Eligible"
+    ? "Above minimum"
     : projected >= data.minimumPercent
       ? "Near Threshold"
       : "Below Threshold";
-  const leaders = data.leaders ?? [];
-  const nextRank = data.currentRank !== undefined ? leaders.find((leader) => leader.rank === data.currentRank! - 1) : undefined;
-  const attendanceDaysToOvertake = nextRank && nextRank.percent < 100
-    ? Math.max(1, Math.floor(((nextRank.percent / 100) * data.held - data.attended) / (1 - nextRank.percent / 100)) + 1)
-    : undefined;
-  const attendanceSummary = data.aggregate >= data.minimumPercent
-    ? `Eligible across ${data.subjects.length} subjects`
-    : "Below the attendance minimum";
+  const attentionCount=data.subjects.filter(subject=>subject.held>0&&subject.percent<data.minimumPercent+5).length;
 
   const visibleSubjects = useMemo(() => {
     if (filter === "core") return data.subjects.filter((subject) => subject.group === "core");
     if (filter === "language") return data.subjects.filter((subject) => subject.group === "language");
-    if (filter === "near") return data.subjects.filter((subject) => subject.percent < data.minimumPercent + 5);
+    if (filter === "activity") return data.subjects.filter((subject) => subject.group === "activity");
+    if (filter === "near") return data.subjects.filter((subject) => subject.held>0&&subject.percent < data.minimumPercent + 5);
     return data.subjects;
   }, [data.minimumPercent, data.subjects, filter]);
 
   return (
     <StudentShell activeNav={activeNav} routes={routes} className={data.className}>
-      <div className="student-page-stack attendance-page">
-        <section className="attendance-hero" aria-labelledby="overall-attendance-heading">
-          <h1 className="sr-only">{data.studentName}</h1>
-          <div className="attendance-hero__headline">
-            <div>
-              <p className="eyebrow" id="overall-attendance-heading">Overall Aggregate</p>
-              <button className="attendance-hero__number attendance-hero__number--open" type="button" aria-label="View all class attendance from your percentage" onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.current) ?? undefined)}>
-                <strong>{data.aggregate.toFixed(1)}</strong><span>%</span>
-                {data.trend !== undefined && <span className="trend-pill"><ArrowUp size={12} />{data.trend >= 0 ? "+" : ""}{data.trend.toFixed(1)}%</span>}
-              </button>
-              <p>{attendanceSummary}</p>
-            </div>
-            <div className="attendance-ring">
-              <svg viewBox="0 0 36 36" aria-hidden="true"><circle className="attendance-ring__track" cx="18" cy="18" r="15.9155" /><circle className="attendance-ring__value" cx="18" cy="18" r="15.9155" pathLength="100" strokeDasharray={`${Math.max(0, Math.min(100, data.aggregate))} 100`} /></svg>
-              <span className="attendance-ring__label"><ShieldCheck size={24} /></span>
-            </div>
+      <div className="student-page-stack student-attendance-page">
+        <section className="student-attendance-overview" aria-labelledby="overall-attendance-heading">
+          <h2 id="overall-attendance-heading"><span className="sr-only">Overall attendance · </span>{data.termLabel}</h2>
+          <div className="student-attendance-overview__main">
+            <strong>{overallRecorded?`${data.aggregate.toFixed(1)}%`:"—"}</strong>
+            <div className={`student-attendance-overview__status is-${overallTone}`}><span>{overallStatus}</span><small>{data.minimumPercent}% required</small></div>
           </div>
+          <p className="student-attendance-overview__context">{overallRecorded?<><strong>{data.attended}</strong> of <strong>{data.held}</strong> days attended</>:"No attendance recorded"}</p>
+          <details className="student-attendance-breakdown"><summary>Breakdown<ChevronDown size={16} aria-hidden="true"/></summary><dl>
+            <div><dt>Excused</dt><dd><strong>{data.excused}</strong> recorded</dd></div>
+            <div><dt>Unexcused absence</dt><dd><strong>{data.unexcused}</strong> recorded</dd></div>
+            <div><dt>Half days</dt><dd><strong>{data.halfDays??0}</strong> recorded</dd></div>
+            {data.streak!==undefined?<div><dt>Current streak</dt><dd><strong>{data.streak}</strong> days</dd></div>:null}
+            {data.trend!==undefined?<div><dt>Trend</dt><dd><strong>{data.trend>=0?"+":""}{data.trend.toFixed(1)}%</strong></dd></div>:null}
+          </dl></details>
+        </section>
 
-          <div className="safe-zone-panel">
-            <div><ShieldCheck size={17} /><strong>Attendance Policy Cushion</strong><span>{data.safeBuffer > 0 ? `+${data.safeBuffer} Lectures` : "No buffer"}</span></div>
-            <div className="safe-zone-track"><i style={{ width: `${Math.max(0, Math.min(100, data.aggregate))}%` }} /></div>
-            <small><span>Min. required: {data.minimumPercent}%</span><span>Current status: {data.aggregate >= data.minimumPercent ? "Eligible" : "Below minimum"}</span></small>
-          </div>
-
-          <div className="attendance-stat-grid">
-            <StatTile icon={<UserCheck size={18} />} label="Attended" value={`${data.attended}/${data.held}`} tone="green" />
-            {data.streak !== undefined
-              ? <StatTile icon={<Flame size={18} />} label="Active Streak" value={`${data.streak} Days`} tone="amber" />
-              : <StatTile icon={<Flame size={18} />} label="Half Days" value={`${data.halfDays ?? 0} Recorded`} tone="amber" />}
-            <StatTile icon={<FileCheck2 size={18} />} label="Excused Leaves" value={`${data.excused} Recorded`} />
-            <StatTile icon={<ClipboardCheck size={18} />} label="Unexcused" value={`${data.unexcused} Recorded`} tone="rose" />
+        <section className="student-attendance-subjects" aria-label="Subject attendance">
+          <div className="attendance-queue-toolbar"><label><span className="sr-only">Filter subjects</span><select value={filter} onChange={event=>setParams(current=>{if(event.target.value==="all")current.delete("subjects");else current.set("subjects",event.target.value);return current;})}>
+            <option value="all">All subjects · {data.subjects.length}</option>
+            <option value="near">Needs attention · {attentionCount}</option>
+            <option value="core">Core subjects</option>
+            <option value="language">Languages</option>
+            <option value="activity">Activities</option>
+          </select></label></div>
+          <div className="student-attendance-subject-list">
+            {visibleSubjects.length?visibleSubjects.map(subject=><SubjectAttendanceRow key={subject.id} subject={subject} minimum={data.minimumPercent}/>):<p className="student-attendance-empty" role="status">{!data.subjects.length?"No subject attendance is available yet.":filter==="near"?"No recorded subjects are below or near the minimum.":"No subjects in this group."}</p>}
           </div>
         </section>
 
-        <section className="student-card attendance-leaderboard" aria-labelledby="leaderboard-heading">
-          <header className="section-heading">
-            <span className="section-heading__icon"><Medal size={18} /></span>
-            <div><h2 id="leaderboard-heading"><button className="attendance-leaderboard__open" type="button" onClick={() => openRanking()}>Top Attendees - {data.className} <span aria-hidden="true">↗</span></button></h2></div>
-            <span className={`status-chip ${leaders.length > 0 ? "status-chip--green" : ""}`}>{leaders.length > 0 ? data.termLabel.split(" (")[0] : "Not published"}</span>
-          </header>
-          <p className="section-subcopy">{leaders.length > 0 ? `Punctual attendance and active on-time streaks for ${data.className}${data.rankingAsOf ? ` - Updated ${data.rankingAsOf}` : ""}.` : "A ranking appears after at least two classmates have five recorded school days."}</p>
-          <div className="leader-list">
-            {leaders.map((leader) => (
-              <button className="leader-row leader-row--clickable" type="button" key={leader.rank} aria-label={`View all class attendance, starting at rank ${leader.rank}`} onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.rank === leader.rank) ?? undefined)}>
-                <RankedAvatar name={leader.name} avatarUrl={leader.avatar_url} rank={leader.rank} />
-                <span className="leader-copy"><strong>{leader.name}</strong><small>{leader.attended}/{leader.held} days{leader.streak !== undefined ? ` - ${leader.streak}d streak` : ""}</small></span>
-                <strong className="leader-percent">{leader.percent.toFixed(1)}%</strong>
-              </button>
-            ))}
-          </div>
-          {data.currentRank !== undefined && <div className="current-standing">
-            <div className="current-standing__label"><strong>Your Current Standing</strong><span>#{data.currentRank} in {data.className}</span><em>{data.rankingCohortSize ?? leaders.length + 1} eligible</em></div>
-            <button className="leader-row leader-row--current leader-row--clickable" type="button" aria-label="View all class attendance, starting at your standing" onClick={() => openRanking(data.ranking?.students.findIndex((item) => item.current) ?? undefined)}>
-              <RankedAvatar name={data.studentName} avatarUrl={data.avatarUrl} rank={data.currentRank} current />
-              <span className="leader-copy"><strong>{data.studentName}</strong><small>{data.attended}/{data.held} days{data.streak !== undefined ? ` - ${data.streak}d streak` : ""}</small></span>
-              <strong className="leader-percent">{data.aggregate.toFixed(1)}%</strong>
-            </button>
-            {nextRank ? <div className="current-standing__next"><span>Next milestone: Rank #{nextRank.rank}</span><strong>{attendanceDaysToOvertake ? `+${attendanceDaysToOvertake} consecutive days to overtake` : "Keep your attendance streak active"}</strong></div> : null}
-          </div>}
-          {data.rankingMethodology && leaders.length > 0 ? <p className="ranking-methodology">{data.rankingMethodology}</p> : null}
-        </section>
+        <section className="student-attendance-tools" aria-label="Attendance options">
+          <button type="button" onClick={onApplyMedicalExcuse??(()=>navigate("/student/leave/new"))}>Apply for leave<ChevronRight size={17} aria-hidden="true"/></button>
+          <button type="button" onClick={()=>setCopilotOpen(true)}>Attendance help<ChevronRight size={17} aria-hidden="true"/></button>
+          <button type="button" onClick={event=>{event.currentTarget.focus();setRankingOpen(true);}}>Class attendance<ChevronRight size={17} aria-hidden="true"/></button>
 
-        {rankingOpen && <AttendanceRankingDialog ranking={data.ranking} className={data.className} focusIndex={rankingFocusIndex !== null && rankingFocusIndex >= 0 ? rankingFocusIndex : undefined} onClose={() => setRankingOpen(false)} />}
+        {rankingOpen&&<AttendanceRankingDialog ranking={data.ranking} className={data.className} onClose={()=>setRankingOpen(false)}/>}
 
-        <section className="student-card simulator-card" aria-labelledby="simulator-heading">
+        <details className="attendance-simple-disclosure"><summary>Plan an absence<ChevronDown size={16} aria-hidden="true"/></summary>{data.held>0?<section className="student-card simulator-card" aria-labelledby="simulator-heading">
           <header className="section-heading">
             <span className="section-heading__icon"><Calculator size={18} /></span>
             <h2 id="simulator-heading">What-If Simulator</h2>
             <span className="status-chip">Interactive</span>
           </header>
-          <p className="section-subcopy">Project missed lecture impacts instantly before requesting upcoming leave.</p>
+          <p className="section-subcopy">An estimate from recorded attendance, not approval to miss classes.</p>
           <div className="simulator-well">
             <div className="simulator-stepper-row">
               <strong>Projected Absences:</strong>
@@ -366,45 +322,11 @@ export function StudentAttendancePage({
             </div>
             <div className="projection-result">
               <span><small>Resulting Aggregate</small><strong>{projected.toFixed(1)}% <em>({delta.toFixed(1)}%)</em></strong></span>
-              <span className={`projection-status projection-status--${projectionStatus === "Safe & Eligible" ? "safe" : projectionStatus === "Near Threshold" ? "near" : "critical"}`}><Check size={14} />{projectionStatus}</span>
+              <span className={`projection-status projection-status--${projectionStatus === "Above minimum" ? "safe" : projectionStatus === "Near Threshold" ? "near" : "critical"}`}><Check size={14} />{projectionStatus}</span>
             </div>
           </div>
+        </section>:<p className="student-attendance-empty">An estimate needs recorded attendance first.</p>}</details>
         </section>
-
-        <section className="subject-health" aria-labelledby="subject-health-heading">
-          <header className="subject-health__header">
-            <h2 id="subject-health-heading">Subject Health Matrix <span>Live</span></h2>
-          </header>
-          <div className="horizontal-pills" role="tablist" aria-label="Filter subjects">
-            {([
-              ["all", `All Subjects (${data.subjects.length})`],
-              ["near", `Near Threshold (${data.subjects.filter((subject) => subject.percent < data.minimumPercent + 5).length})`],
-              ["core", "Core STEM"],
-              ["language", "Languages"],
-            ] as const).map(([value, label]) => (
-              <button key={value} type="button" role="tab" aria-selected={filter === value} className={filter === value ? "is-active" : ""} onClick={() => setFilter(value)}>{label}</button>
-            ))}
-          </div>
-          <div className="subject-card-list" aria-live="polite">
-            {visibleSubjects.length === 0 && <div className="student-empty-state"><Check size={20} /><strong>No subjects are near the threshold.</strong></div>}
-            {visibleSubjects.map((subject) => (
-              <article className="student-card subject-card" key={subject.id}>
-                <div className="subject-card__top">
-                  <span className={`subject-icon subject-icon--${subject.percent >= 98 ? "green" : "blue"}`}><SubjectGlyph id={subject.id} /></span>
-                  <span className="subject-copy"><strong>{subject.name}</strong><small>{subject.nextClass ? `Next: ${subject.nextClass}` : [subject.teacher, subject.location].filter(Boolean).join(" - ") || "Teacher and room not yet published"}</small></span>
-                  <strong className={subject.percent >= 98 ? "positive" : ""}>{subject.percent}%</strong>
-                </div>
-                <div className="subject-progress" aria-label={`${subject.percent}% attendance`}><i style={{ width: `${subject.percent}%` }} /></div>
-                <div className="subject-card__meta"><span>{subject.attended}/{subject.held} Attended - <strong>{subject.status}</strong></span><em>{subject.note}</em></div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <div className="student-action-stack">
-          <button className="primary-action" type="button" onClick={onApplyMedicalExcuse ?? (() => navigate("/student/leave/new"))}><Camera size={19} />Apply Leave / Upload Slip</button>
-          <button className="secondary-action" type="button" onClick={() => setCopilotOpen(true)}><Sparkles size={19} />Ask AI Copilot about Attendance Policy <ArrowRight size={16} /></button>
-        </div>
       </div>
       <AttendanceCopilotSheet open={copilotOpen} onClose={() => { setCopilotOpen(false); onCopilotClose?.(); }} onAsk={onAskCopilot} />
     </StudentShell>

@@ -40,6 +40,7 @@ import type { HomeAction } from "../../features/home-actions/types";
 import { CreateAttendanceFollowup } from "../../features/coordination/CreateAttendanceFollowup";
 import { AttendanceStudentRow } from "./AttendanceStudentRow";
 import { PhotoAttendanceDialog } from "./PhotoAttendanceDialog";
+import { AttendanceDateControl } from '../../features/attendance/AttendanceDateControl';
 import "./attendance-register.css";
 import "./attendance-workspace.css";
 
@@ -766,13 +767,14 @@ export function TeacherAttendancePage({
       contentHasHeading
     >
       <div className="operations-stack roll-call-page">
+        <AttendanceDateControl date={date} onChange={next=>{if(!confirmDiscard())return false;onDateChange(next);}}/>
         <section
           className="roll-call-summary"
         >
           <div className="roll-call-summary__top">
             <div className="roll-call-class-heading">
             <div>
-              <h1>{data.class.name}</h1>
+              <h2>{data.class.name}</h2>
               <p><span>Attendance · {data.roster.length} students</span>{data.class.room ? <span>{/^room\b/i.test(data.class.room) ? data.class.room : `Room ${data.class.room}`}</span> : null}</p>
             </div>
             </div>
@@ -786,19 +788,6 @@ export function TeacherAttendancePage({
               )}
               {registerStateLabel}
             </span>
-          </div>
-          <div className="roll-call-summary__context">
-              <label className="roll-call-date">
-                <CalendarDays size={18} aria-hidden="true" />
-                <span className="sr-only">Register date</span>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(event) => {
-                    if (event.target.value && confirmDiscard()) onDateChange(event.target.value);
-                  }}
-                />
-              </label>
           </div>
           <div className="roll-call-totals" aria-label="Attendance status counts">
             {(["present", "absent", "late", "excused", "half_day"] as const).map((status) => (
@@ -863,7 +852,7 @@ export function TeacherAttendancePage({
         </section>
 
         {unavailable ? <section className="operations-alert is-neutral" role="status"><CalendarDays size={20} /><div><strong>Read-only date</strong><p>{data.availability?.reason}</p></div></section> : null}
-        {portal === "principal" && !isLocked && !unavailable ? <section className="roll-call-review-mode"><div><strong>{editing ? "Editing register" : "Principal review"}</strong><p>{editing ? "Changes to a submitted register need a correction reason." : isCorrection ? "Check the record and its history, then lock it when reviewed." : "This class is awaiting submission. You can complete the register if needed."}</p></div><button type="button" disabled={busy} onClick={() => { if (editing) { if (!confirmDiscard()) return; setRecords(activeBaseline.records); setReason(""); setPhotoSessionId(null); } setEditing(!editing); }}>{editing ? "Cancel editing" : <><Pencil size={15} />{isCorrection ? "Make correction" : "Complete register"}</>}</button></section> : null}
+        {portal === "principal" && !isLocked && !unavailable ? <section className="roll-call-review-mode"><div><strong>{editing ? "Editing register" : "Principal review"}</strong></div><button type="button" disabled={busy} onClick={() => { if (editing) { if (!confirmDiscard()) return; setRecords(activeBaseline.records); setReason(""); setPhotoSessionId(null); } setEditing(!editing); }}>{editing ? "Cancel editing" : <><Pencil size={15} />{isCorrection ? "Make correction" : "Complete register"}</>}</button></section> : null}
         {portal === "principal" && editing && !isLocked && !unavailable ? <section className="attendance-capture-source" aria-labelledby="attendance-capture-source-heading">
           <div><FileInput size={20} /><span><strong id="attendance-capture-source-heading">Observation source</strong><small>The source remains attached to every attendance revision.</small></span></div>
           <div role="group" aria-label="Attendance observation source">{(["live_app", "paper", "office"] as const).map((source) => <button type="button" key={source} aria-pressed={captureSource === source} onClick={() => { setCaptureSource(source); setSourceReference(""); }}>{source === "live_app" ? "Live register" : source === "paper" ? "Paper sheet" : "Office entry"}</button>)}</div>
@@ -1230,12 +1219,7 @@ export function TeacherTimetablePage({ data }: { data: TeacherHomeResponse }) {
       subtitle={`${data.teacher.name} - Published schedule`}
     >
       <div className="operations-stack">
-        <section className="operations-hero">
-          <div>
-            <span>Weekly teaching plan</span>
-            <h2>{data.weekly_timetable.length} periods this week</h2>
-          </div>
-        </section>
+        <p className="workspace-context">{data.weekly_timetable.length} periods this week</p>
         <section className="teacher-week-grid">
           {days.map(([day, slots]) => (
             <article className="operations-panel" key={day}>

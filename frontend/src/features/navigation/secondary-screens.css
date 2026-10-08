@@ -1,0 +1,108 @@
+/* Opt-in at route level. Home routes never receive this class. Existing brand,
+   severity, document/marksheet and live-map styles deliberately remain intact. */
+.portal-secondary-screen .workspace-context { margin:0; color:var(--edura-ink-secondary); font-size:14px; line-height:1.5; }
+.portal-secondary-screen .workspace-text-action { display:inline-flex; justify-self:start; align-items:center; gap:8px; min-height:44px; padding:0 4px; color:var(--edura-brand); background:none; border:0; font:inherit; font-size:14px; cursor:pointer; }
+.portal-secondary-screen .roll-call-summary h2 { font-size:20px; margin:0; line-height:1.4; }
+.portal-secondary-screen .workspace-disclosure { border:1px solid var(--edura-border); background:var(--edura-surface); border-radius:var(--edura-radius-control); padding:0 12px; }
+.portal-secondary-screen .workspace-disclosure > summary { padding:12px 0; min-height:44px; font-size:14px; font-weight:600; cursor:pointer; }
+.portal-secondary-screen .workspace-disclosure .surface-card { box-shadow:none; }
+.portal-secondary-screen .office-finance-overview { border-radius:var(--edura-radius-control); box-shadow:none; }
+.portal-secondary-screen .office-finance-balance { min-height:0; padding:12px 16px; background:var(--edura-surface); color:var(--edura-ink); grid-template-columns:1fr auto; align-items:center; gap:4px 12px; }
+.portal-secondary-screen .office-finance-balance > :is(span,small) { color:var(--edura-ink-secondary); }
+.portal-secondary-screen .office-finance-balance > strong { font-size:22px; margin:0; }
+.portal-secondary-screen .office-finance-stats > div { padding:12px; }
+.portal-secondary-screen .office-action-grid { display:flex; flex-wrap:wrap; gap:8px; }
+.portal-secondary-screen .office-action-grid > button { display:flex; min-height:44px; padding:8px 12px; align-items:center; gap:8px; border-radius:var(--edura-radius-control); box-shadow:none; }
+.portal-secondary-screen .office-action-grid > button > span { width:auto; height:auto; background:transparent; }
+.portal-secondary-screen .office-action-grid > button > small { display:none; }
+.portal-secondary-screen .departure-status { min-height:0; padding:12px 16px; gap:12px; border:1px solid var(--edura-border); background:var(--edura-surface); color:var(--edura-ink); border-radius:var(--edura-radius-control); box-shadow:none; }
+.portal-secondary-screen .departure-status h2 { margin:4px 0; font-size:18px; line-height:1.4; }
+.portal-secondary-screen .departure-status p { color:var(--edura-ink-secondary); font-size:14px; }
+.portal-secondary-screen .departure-status > .departure-state { color:var(--edura-ink); background:var(--edura-brand-soft); white-space:normal; }
+.portal-secondary-screen .departure-status > :is(.departure-state--exception,.departure-state--missing,.departure-state--cancelled) { color:var(--edura-danger); background:var(--edura-danger-soft); }
+.portal-secondary-screen .departure-status > :is(.departure-state--completed,.departure-state--dropped,.departure-state--ready) { color:var(--edura-positive); background:var(--edura-positive-soft); }
+.portal-secondary-screen .departure-status > :is(.departure-state--change_pending,.departure-state--submitted,.departure-state--expected) { color:var(--edura-warning); background:var(--edura-warning-soft); }
+.portal-secondary-screen .attendance-family-simple .attendance-hero { padding:16px; min-height:0; }
+.portal-secondary-screen .attendance-family-simple .attendance-hero__headline { margin:0; }
+.portal-secondary-screen .attendance-family-simple .attendance-hero__number strong { font-size:28px; }
+.portal-secondary-screen .eligibility-hero { padding:16px; background:var(--edura-surface); color:var(--edura-ink); border:1px solid var(--edura-border); box-shadow:none; }
+.portal-secondary-screen .eligibility-hero__headline strong { font-size:28px; }
+.portal-secondary-screen .eligibility-ring { display:none; }
+.portal-secondary-screen .eligibility-safe-zone { margin-top:12px; color:var(--edura-ink); background:var(--edura-brand-soft); }
+.portal-secondary-screen .eligibility-stats { margin-top:12px; }
+.portal-secondary-screen .eligibility-stats :is(strong,small) { color:var(--edura-ink); }
+.portal-secondary-screen .eligibility-hero::before,.portal-secondary-screen .eligibility-hero::after { content:none; }
+.portal-secondary-screen .eligibility-hero .eyebrow,.portal-secondary-screen .eligibility-safe-zone p { color:var(--edura-ink-secondary); }
+.portal-secondary-screen .eligibility-safe-zone > svg,.portal-secondary-screen .eligibility-hero__headline span { color:var(--edura-brand); }
+.portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero,.campus-event-register-hero) { padding:16px; min-height:0; background:var(--edura-surface); color:var(--edura-ink); border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); box-shadow:none; gap:12px; }
+.portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) dl { margin-top:12px; gap:12px; }
+.portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) dd { font-size:14px; font-weight:500; }
+.portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) .campus-event-status { color:var(--edura-ink); background:var(--edura-surface-alt, #f3f5fa); }
+.portal-secondary-screen .campus-event-detail-actions { flex-direction:row; flex-wrap:wrap; min-width:0; }
+.portal-secondary-screen .campus-event-detail-actions .campus-event-secondary { color:var(--edura-brand); background:var(--edura-brand-soft); }
+.portal-secondary-screen .campus-event-detail-actions .campus-event-primary { color:var(--edura-surface); background:var(--edura-brand); }
+.portal-secondary-screen .campus-event-detail-actions .campus-event-danger-link { color:var(--edura-danger, #a52940); }
+.portal-secondary-screen .campus-event-register-hero { flex-direction:row; align-items:center; }
+.portal-secondary-screen .campus-event-register-hero h2 { margin:0; font-size:18px; }
+.portal-secondary-screen .campus-event-register-hero p { margin:4px 0 0; font-size:13px; opacity:1; color:var(--edura-ink-secondary); }
+.portal-secondary-screen :is(.campus-event-metrics,.campus-event-register-summary) { gap:0; border-bottom:1px solid var(--edura-border); }
+.portal-secondary-screen :is(.campus-event-metrics,.campus-event-register-summary) article { min-height:0; padding:12px; border:0; border-radius:0; box-shadow:none; background:transparent; }
+.portal-secondary-screen .campus-event-metrics article > span { display:none; }
+.portal-secondary-screen .campus-event-metrics article strong { font-size:20px; }
+.portal-secondary-screen :is(.campus-event-collection,.campus-event-detail-panel,.campus-event-register-workspace,.campus-event-card) { box-shadow:none; }
+.portal-secondary-screen :is(.staff-panel,.office-panel,.governance-panel,.assessment-panel,.report-panel,.departure-panel,.student-card,.parent-card) { box-shadow: none; }
+.portal-secondary-screen :is(.staff-hero,.student-diary-hero,.governance-summary,.policy-library__intro) {
+  background: var(--edura-surface); color: var(--edura-ink); box-shadow: none;
+  border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); padding: 16px;
+}
+.portal-secondary-screen :is(.staff-hero,.student-diary-hero)::before,
+.portal-secondary-screen :is(.staff-hero,.student-diary-hero)::after { content: none; }
+.portal-secondary-screen :is(.staff-hero,.student-diary-hero) :is(h1,h2,strong,b) { color: var(--edura-ink); }
+.portal-secondary-screen :is(.staff-hero,.student-diary-hero) :is(p,small) { color: var(--edura-ink-secondary); }
+.portal-secondary-screen .staff-hero > div > span { color: var(--edura-ink-secondary); letter-spacing: normal; }
+.portal-secondary-screen .staff-hero :is(h1,h2) { font-size: 20px; line-height: 1.4; margin: 4px 0; }
+.portal-secondary-screen .staff-hero__metrics { gap: 12px; }
+.portal-secondary-screen .staff-hero__metrics > span { background: transparent; border: 0; padding: 0; border-radius: 0; color: var(--edura-ink-secondary); }
+.portal-secondary-screen .staff-hero > button { background: var(--edura-brand); color: var(--edura-surface); min-height: 44px; }
+.portal-secondary-screen .staff-tabs { position: static; }
+.portal-secondary-screen .staff-inline-summary { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; color:var(--edura-ink-secondary); font-size:14px; }
+.portal-secondary-screen .staff-directory-actions { display:flex; align-items:center; gap:12px; }
+.portal-secondary-screen .staff-directory-actions a { display:inline-flex; align-items:center; min-height:44px; color:var(--edura-brand); text-decoration:none; font-size:14px; font-weight:600; }
+.portal-secondary-screen .staff-directory-actions .staff-primary { box-shadow:none; }
+.portal-secondary-screen .staff-directory > header { gap:8px; flex-wrap:wrap; }
+.portal-secondary-screen .staff-directory > header > div > span { text-transform:none; }
+.portal-secondary-screen :is(.staff-panel,.departure-panel) > header > div > span { font-size: 12px; color: var(--edura-ink-secondary); letter-spacing: normal; }
+.portal-secondary-screen :is(.staff-panel,.departure-panel,.office-panel,.governance-panel) > header { padding: 16px; }
+.portal-secondary-screen :is(.staff-panel,.departure-panel,.office-panel,.governance-panel) :is(h2,h3) { line-height: 1.4; }
+.portal-secondary-screen .student-diary-stats > span { background: transparent; border-radius: 0; color: var(--edura-ink-secondary); padding: 4px 8px; }
+.portal-secondary-screen .student-diary-stats > span + span { border-left: 1px solid var(--edura-border); }
+.portal-secondary-screen .student-diary-hero__top { color: var(--edura-ink-secondary); }
+.portal-secondary-screen .student-diary-hero__top p { margin: 0 0 8px; }
+.portal-secondary-screen :is(.assessment-layout,.report-workspace) { display: block; }
+.portal-secondary-screen .policy-library__intro { padding: 12px 16px; }
+.portal-secondary-screen .policy-library__intro p { margin: 0; }
+.portal-secondary-screen .policy-library__list { gap: 0; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); overflow: hidden; background: var(--edura-surface); }
+.portal-secondary-screen .policy-library__item { border: 0; border-radius: 0; box-shadow: none; }
+.portal-secondary-screen .policy-library__item + .policy-library__item { border-top: 1px solid var(--edura-border); }
+.portal-secondary-screen .policy-library__item > a { display: flex; align-items: center; gap: 12px; padding: 16px; color: var(--edura-ink); text-decoration: none; min-height: 56px; }
+.portal-secondary-screen .policy-library__item > a > span:nth-child(2) { flex: 1; min-width: 0; }
+.portal-secondary-screen .policy-library__item > a strong,.portal-secondary-screen .policy-library__item > a small { display: block; }
+.portal-secondary-screen .policy-library__item > a small { color: var(--edura-ink-secondary); font-size: 12px; margin-top: 4px; }
+.portal-secondary-screen .policy-library__item > a > span:last-child { font-size: 12px; }
+.portal-secondary-screen .workspace-sections { display: flex; flex-wrap: wrap; gap: 8px; }
+.portal-secondary-screen .workspace-sections a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: var(--edura-radius-control); color: var(--edura-ink-secondary); text-decoration: none; }
+.portal-secondary-screen .workspace-sections a[aria-current="page"] { background: var(--edura-brand-soft); color: var(--edura-brand); font-weight: 700; }
+.portal-secondary-screen :is(.assessment-panel,.report-panel) { min-width: 0; }
+.portal-secondary-screen .workspace-directory { display: grid; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); overflow: hidden; background: var(--edura-surface); }
+.portal-secondary-screen .workspace-directory a { display: flex; align-items: center; gap: 12px; padding: 16px; min-height: 64px; text-decoration: none; color: var(--edura-ink); }
+.portal-secondary-screen .workspace-directory a + a { border-top: 1px solid var(--edura-border); }
+.portal-secondary-screen .workspace-directory a > span { flex: 1; min-width: 0; }
+.portal-secondary-screen .workspace-directory strong { font-size: 16px; }
+.portal-secondary-screen .workspace-directory small { display: block; font-size: 13px; line-height: 1.5; color: var(--edura-ink-secondary); margin-top: 4px; }
+.portal-secondary-screen .workspace-directory b { color: var(--edura-brand); }
+.portal-secondary-screen .workspace-directory a:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: -3px; }
+@media(max-width:600px) {
+  .portal-secondary-screen .staff-hero { gap: 12px; }
+  .portal-secondary-screen .staff-hero__metrics strong { font-size: 18px; }
+  .portal-secondary-screen .governance-summary dl { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

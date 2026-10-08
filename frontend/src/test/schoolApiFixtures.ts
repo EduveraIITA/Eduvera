@@ -185,6 +185,14 @@ const timetable = {
 };
 
 export function schoolApiFixture(path: string): unknown {
+  if (/^\/api\/v1\/screens\/(student|parent)\/timetable-summary\//.test(path)) {
+    const params = new URL(path, "http://localhost").searchParams;
+    return {
+      start: params.get("start"), end: params.get("end"),
+      days: [{ date: "2026-10-07", periods: 1, classes: 1, pending: 0, accepted: 0, declined: 0, cancelled: 0 }],
+      totals: { periods: 1, classes: 1, pending: 0, accepted: 0, declined: 0, cancelled: 0 },
+    };
+  }
   if (path === "/api/v1/notifications/") return { results: [] };
   if (path === "/api/v1/students/") return { results: [student] };
   if (path.startsWith("/api/v1/screens/parent/home/")) return home;

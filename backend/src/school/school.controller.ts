@@ -224,6 +224,12 @@ export class SchoolController {
     return this.school.teacherAttendanceScreen(request.authUser, classSectionId, date);
   }
 
+  @Get("screens/teacher/class-updates/")
+  @RequirePermission("attendance.view")
+  teacherClassUpdates(@Req() request: AuthenticatedRequest, @Query("date") date?: string) {
+    return this.school.teacherClassUpdates(request.authUser, date);
+  }
+
   @Post("teacher/attendance/bulk/")
   @HttpCode(200)
   @RequirePermission("attendance.record")

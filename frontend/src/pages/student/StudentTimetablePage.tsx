@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   BellRing,
   BookOpen,
@@ -12,6 +12,7 @@ import {
 import { schoolClock } from "../../lib/schoolTime";
 import {DayPlanNotice,type PublishedDayNotice} from '../../features/day-plans/DayPlanNotice';
 import { TimetableNavigator, type TimetableSummary, type TimetableView } from "../../features/timetable/TimetableNavigator";
+import { FamilyScheduleAgenda } from "../../features/timetable/FamilyScheduleAgenda";
 import { StudentShell, type StudentRouteMap } from "./StudentShell";
 import { ParentShell } from "../parent/ParentShell";
 import type { ParentChildSummary, ParentPageAction } from "../parent/parentTypes";
@@ -78,6 +79,7 @@ function kitForPeriod(period: TimetablePeriod) {
 }
 
 export interface StudentTimetablePageProps {
+  scheduleLoading?: boolean;
   dayPlan?:PublishedDayNotice|null;selectedDate?:string;onDateChange?:(date:string)=>void;
   view?: TimetableView;
   onViewChange?: (view: TimetableView) => void;
@@ -120,6 +122,7 @@ function TimetableShell({
 }
 
 export function StudentTimetablePage({
+  scheduleLoading = false,
   dayPlan,selectedDate,onDateChange,
   view = "day",
   onViewChange,
@@ -142,8 +145,6 @@ export function StudentTimetablePage({
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [selectedPeriod, setSelectedPeriod] = useState<{ day: TimetableDay; period: TimetablePeriod } | null>(null);
-  const chartScrollerRef = useRef<HTMLDivElement | null>(null);
-  const focusCellRef = useRef<HTMLTableCellElement | null>(null);
   const currentSchoolClock = schoolClock(now);
   const todayKey = weekdayKeys[currentSchoolClock.weekday];
   const nowMinutes = currentSchoolClock.minutes;
@@ -157,13 +158,9 @@ export function StudentTimetablePage({
     const starts = timeMinutes(period.time);
     return !period.cancelled&&starts !== undefined && starts > nowMinutes;
   });
-  const chartFocusPeriod = currentPeriod ?? nextPeriod;
   const bellPeriod = currentPeriod ?? nextPeriod;
   const bellTarget = currentPeriod ? timeMinutes(currentPeriod.endTime) : timeMinutes(nextPeriod?.time);
   const bellMinutes = bellTarget === undefined ? undefined : Math.max(0, bellTarget - nowMinutes);
-  const periodColumns = useMemo(() => {
-    return [...new Set(days.flatMap(day=>day.periods.map(p=>Number(p.period.replace('P','')))))].filter(Number.isFinite).sort((a,b)=>a-b);
-  }, [days]);
   const todayKit = useMemo(() => {
     const source = selectedDate?days.find(d=>d.isoDate===selectedDate):today;
     const items = source?.periods
@@ -177,9 +174,7 @@ export function StudentTimetablePage({
   const selectedKey = selectedDate
     ? weekdayKeys[new Date(`${selectedDate}T00:00:00Z`).getUTCDay()]
     : undefined;
-  const displayDays = view === "week"
-    ? days
-    : days.filter((day) => day.isoDate === selectedDate || (!day.isoDate && day.key === selectedKey));
+  const displayDays = days.filter((day) => day.isoDate === selectedDate || (!day.isoDate && day.key === selectedKey));
   const navigator = selectedDate && onDateChange && onViewChange ? (
     <TimetableNavigator
       date={selectedDate}
@@ -206,20 +201,6 @@ export function StudentTimetablePage({
     return () => window.clearInterval(interval);
   }, []);
 
-  useLayoutEffect(() => {
-    const scroller = chartScrollerRef.current;
-    const cell = focusCellRef.current;
-    if (!scroller || !cell) return;
-    const alignFocusedCell = () => {
-      const left = cell.offsetLeft - (scroller.clientWidth / 2) + (cell.clientWidth / 2);
-      if (typeof scroller.scrollTo === "function") scroller.scrollTo({ left, behavior: "auto" });
-      else scroller.scrollLeft = left;
-    };
-    alignFocusedCell();
-    const frame = window.requestAnimationFrame(alignFocusedCell);
-    return () => window.cancelAnimationFrame(frame);
-  }, [chartFocusPeriod?.id, periodColumns.length]);
-
   function toggleBellAlerts() {
     const enabled = !bellAlerts;
     setBellAlerts(enabled);
@@ -232,15 +213,21 @@ export function StudentTimetablePage({
       : "Bell reminder preference paused.");
   }
 
+  if (view === "year" || scheduleLoading) {
+    return <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
+      <div className="student-page-stack timetable-page">
+        {navigator}
+        {view !== "year" ? <div className="day-panel day-skeleton" role="status" aria-label="Loading selected day"><span /><span /></div> : null}
+      </div>
+    </TimetableShell>;
+  }
+
   if (!days.length) {
     return (
       <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
         <div className="student-page-stack timetable-page">
           {navigator}
-          <section className="timetable-intro">
-            <h1>{className} Timetable</h1>
-          </section>
-          {view === "day" ? <DayPlanNotice plan={dayPlan}/> : null}
+          <DayPlanNotice plan={dayPlan}/>
           <section className="student-card student-empty-state timetable-empty-state">
             <BookOpen size={24} />
             <div><strong>No timetable published</strong><p>No periods are scheduled for the selected date.</p></div>
@@ -256,10 +243,10 @@ export function StudentTimetablePage({
         {navigator}
         <section className="timetable-intro">
           <header>
-            <div><h1>{className} Timetable</h1><p>{view === "week" ? "Week view" : "Selected day"} · {termLabel}</p></div>
+            <p className="workspace-context">{className} · {termLabel}</p>
             <button className={bellAlerts ? "square-soft-button is-active" : "square-soft-button"} type="button" aria-pressed={bellAlerts} aria-label="Save bell reminder preference" onClick={toggleBellAlerts}><Clock3 size={23} /></button>
           </header>
-          {view === "day" && bellPeriod ? (
+          {bellPeriod && (!selectedDate || selectedDate === currentSchoolClock.date) ? (
             <div className="next-bell-banner" aria-label="Today bell status">
               <span><BellRing size={19} /></span>
               <span><small>{currentPeriod ? "Current period ends" : "Next bell"} <i /> <b>{bellMinutes ?? "-"} mins</b></small><strong>{bellPeriod.period} - {bellPeriod.subject}</strong></span>
@@ -268,7 +255,7 @@ export function StudentTimetablePage({
           ) : null}
         </section>
 
-        {view === "day" ? <DayPlanNotice plan={dayPlan}/> : null}
+        <DayPlanNotice plan={dayPlan}/>
 
         {displayDays.length === 0 ? (
           <section className="student-card student-empty-state timetable-empty-state">
@@ -277,40 +264,13 @@ export function StudentTimetablePage({
           </section>
         ) : <section className="student-card timetable-week-chart" aria-labelledby="week-chart-heading">
           <header>
-            <div><h2 id="week-chart-heading">{view === "week" ? "Weekly period chart" : view === "day" ? "Period schedule" : "Selected day schedule"}</h2><p>{view === "week" ? "Published schedule for this week" : dateLabelForStudent(selectedDate)}</p></div>
-            <strong>{displayDays.reduce((total, day) => total + day.periods.filter(p=>!p.cancelled).length, 0)} periods{view === "week" ? "/wk" : ""}</strong>
+            <div><h2 id="week-chart-heading">Period schedule</h2><p>{dateLabelForStudent(selectedDate)}</p></div>
+            <strong>{displayDays.reduce((total, day) => total + day.periods.filter(p=>!p.cancelled).length, 0)} periods</strong>
           </header>
-          <div className="timetable-week-chart__scroller" ref={chartScrollerRef}>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Day</th>
-                  {periodColumns.map((index) => <th key={index} scope="col">P{index}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {displayDays.map((day) => (
-                  <tr key={day.isoDate??day.key} className={day.key === todayKey&&(!day.isoDate||day.isoDate===currentSchoolClock.date) ? "is-today" : ""}>
-                    <th scope="row"><span>{day.shortLabel}</span><small>{day.date}</small></th>
-                    {periodColumns.map((index) => {
-                      const period = day.periods.find(p=>p.period===`P${index}`);
-                      const isCurrent = day.key === todayKey && period?.id === currentPeriod?.id;
-                      const isChartFocus = day.key === todayKey && period?.id === chartFocusPeriod?.id;
-                      return (
-                        <td ref={isChartFocus ? focusCellRef : undefined} key={`${day.key}-${index}`} className={period ? `tone-${period.tone} ${isCurrent ? "is-current" : ""} ${isChartFocus ? "is-chart-focus" : ""}` : "is-empty"}>
-                          {period ? <button type="button" className={period.cancelled?'is-cancelled':''} onClick={() => setSelectedPeriod({ day, period })} aria-label={`${period.cancelled?'Cancelled: ':''}${period.subject}, ${day.longLabel} ${period.period}, ${periodRange(period)}`}><strong>{compactSubject(period.subject)}</strong><small>{period.cancelled?'Cancelled':`${period.period} - ${period.time.replace(/\s(?:AM|PM)$/, "")}`}</small>{isCurrent ? <em>Now</em> : null}</button> : <span aria-label="No period scheduled">-</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="timetable-legend"><span><i className="tone-math" />Maths</span><span><i className="tone-science" />Science</span><span><i className="tone-english" />English</span><span><i className="tone-language" />Languages</span><span><i className="tone-lab" />Labs</span><span><i className="tone-activity" />Activities</span></div>
+          <FamilyScheduleAgenda days={displayDays} currentPeriodId={currentPeriod?.id} onOpen={setSelectedPeriod} />
         </section>}
 
-        {view === "day" && todayKit.items.length ? (
+        {todayKit.items.length ? (
           <section className="student-card timetable-kit-card" aria-labelledby="timetable-kit-heading">
             <header><div><h2 id="timetable-kit-heading">{todayKit.day?.isoDate===currentSchoolClock.date?"Today's kit":"Materials to bring"}</h2><p>{todayKit.day?.longLabel ?? "Today"} · requested by your school.</p></div><strong>{todayKit.items.length}</strong></header>
             <div>{todayKit.items.map((item) => <span key={item}><Check size={13} />{item}</span>)}</div>

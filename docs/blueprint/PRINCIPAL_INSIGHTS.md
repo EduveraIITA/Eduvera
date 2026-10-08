@@ -1,6 +1,17 @@
 # Principal insights
 
-The principal home page adds school-level review signals to existing daily operations.
+The principal Overview keeps four summary cards and a compact action brief beside
+daily operations. Its dated **View all insights** link opens `/principal/insights`.
+The dedicated page groups graphs into Attendance & learning, Operations and Finance,
+with an ending-date picker plus review-window, class and threshold filters.
+Principal mobile navigation is Overview / Attendance / Insights / More; Timetable
+remains in More and the desktop sidebar. Teacher navigation is unchanged.
+
+Overview always uses a whole-school 28-day review window and 50% academic threshold,
+ignoring full-dashboard query filters to avoid a silently narrowed daily summary.
+Both views retain source-record dialogs; the deadline brief opens the full page at
+the deadline section. Filters survive in-page deadline links and ending-date changes.
+
 `GET /api/v1/schools/:schoolId/principal-insights/` requires an active administrator
 membership and account; an active school context cannot access another school.
 Class filters are checked against the same school. Responses are private/no-store.

@@ -92,16 +92,16 @@ interface RouteSmokeCase {
 
 const implementedScreenRoutes: RouteSmokeCase[] = [
   { path: "/parent/home", heading: "Today's activities" },
-  { path: "/parent/attendance", heading: "Today's attendance" },
+  { path: "/parent/attendance", heading: "Attendance calendar" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
   { path: "/student", heading: "Aarav Sharma" },
-  { path: "/student/attendance", heading: /Aarav Sharma/ },
+  { path: "/student/attendance", heading: "Attendance" },
   { path: "/student/attendance/eligibility", heading: "Attendance eligibility" },
   { path: "/student/leave/new", heading: "Apply leave" },
-  { path: "/student/leave", heading: "Leave Tracker" },
-  { path: "/student/timetable", heading: "Class 7A Timetable" },
-  { path: "/student/timetable/week", heading: "My Timetable" },
+  { path: "/student/leave", heading: "Leave" },
+  { path: "/student/timetable", heading: "Timetable" },
+  { path: "/student/timetable/week", heading: "Weekly timetable" },
 ];
 
 describe("implemented application routes", () => {
@@ -153,7 +153,7 @@ describe("implemented application routes", () => {
 
   it("renders the parent timetable alias", async () => {
     render(<MemoryRouter initialEntries={["/parent/timetable"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Class 7A Timetable" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Timetable", exact: true })).toBeVisible();
   });
 
   it("uses the same school crest and name in parent, student, and teacher headers", async () => {
@@ -272,10 +272,10 @@ describe("implemented application routes", () => {
     });
     render(<MemoryRouter initialEntries={["/teacher/events?view=draft"]}><App /></MemoryRouter>);
 
-    expect(await screen.findByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("combobox", { name: "Filter events" })).toHaveValue("draft");
     await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
     await waitFor(() => expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).includes("cursor=event-cursor-1"))).toBe(true));
-    expect(screen.getByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("combobox", { name: "Filter events" })).toHaveValue("draft");
   });
 
   it("keeps student home distinct and routes Attendance from its navigation", async () => {
@@ -287,7 +287,7 @@ describe("implemented application routes", () => {
     expect(screen.getByRole("dialog", { name: "Aarav Sharma" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Close digital student ID" }));
     await user.click(screen.getByRole("link", { name: "Attendance" }));
-    expect(await screen.findByText("Overall Aggregate")).toBeVisible();
+    expect(await screen.findByRole("region",{name:/Overall attendance/})).toBeVisible();
   }, 12000);
 
   it("opens the parent's student ID as a viewport modal with a visible close control", async () => {
@@ -349,27 +349,20 @@ describe("implemented application routes", () => {
     expect(screen.queryByText("No open attendance follow-ups")).not.toBeInTheDocument();
   });
 
-  it("opens the full attendance standings from each top student and the student's own row", async () => {
+  it("opens class standings from its explicit attendance option and restores focus on close", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);
-    for (const rank of [1, 2, 3]) {
-      await interact.click(await screen.findByRole("button", { name: `View all class attendance, starting at rank ${rank}` }));
-      const dialog = screen.getByRole("dialog", { name: "Class 7A standings" });
-      expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
-      expect(within(dialog).getByRole("listitem", { name: /You, Aarav Sharma/ })).toHaveClass("attendance-ranking__row--current");
-      await interact.click(within(dialog).getByRole("button", { name: "Close attendance standings" }));
-    }
-    const ownStanding = screen.getByRole("button", { name: "View all class attendance, starting at your standing" });
-    await interact.click(ownStanding);
-    expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
+    const trigger=await screen.findByRole("button",{name:"Class attendance"});
+    await interact.click(trigger);
+    const dialog=screen.getByRole("dialog",{name:"Class 7A standings"});
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
+    expect(within(dialog).getByRole("listitem",{name:/You, Aarav Sharma/})).toHaveClass("attendance-ranking__row--current");
     await interact.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Class 7A standings" })).not.toBeInTheDocument();
-    expect(ownStanding).toHaveFocus();
-    await interact.click(screen.getByRole("button", { name: /Top Attendees - Class 7A/ }));
+    expect(trigger).toHaveFocus();
+    await interact.click(trigger);
     expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
     await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
-    await interact.click(screen.getByRole("button", { name: "View all class attendance from your percentage" }));
-    expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
   }, 30000);
 
   it.each(["/parent/home", "/parent/attendance"])("opens the same highlighted class standings from %s", async (path) => {
@@ -505,21 +498,26 @@ describe("implemented application routes", () => {
     fireEvent.click(chooseChild);
     expect(screen.getByRole("dialog", { name: "Select child profile" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "View Ananya Sharma's parent dashboard" }));
-    expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ }, { timeout: 5000 })).toBeVisible();
+    // Wait on the cheap, observable busy state before a role/visibility query.
+    // A whole-page findByRole repeatedly traverses both cards during the
+    // transition and can starve its timer on slower shared CI runners.
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
+    const activeCard = () => within(document.querySelector<HTMLElement>(".parent-id-stack__active")!);
+    expect(activeCard().getByRole("button", { name: /Open digital student ID for Ananya Sharma/ })).toBeVisible();
     fireEvent.click(chooseChild);
     fireEvent.click(screen.getByRole("button", { name: "View Rohan Sharma's parent dashboard" }));
-    expect(await screen.findByRole("button", { name: /Open digital student ID for Rohan Sharma/ }, { timeout: 5000 })).toBeVisible();
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    const rohanCard = screen.getByRole("button", { name: /Open digital student ID for Rohan Sharma/ });
+    const rohanCard = activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ });
+    expect(rohanCard).toBeVisible();
     fireEvent.touchStart(rohanCard, { touches: [{ clientX: 80 }] });
     fireEvent.touchEnd(rohanCard, { changedTouches: [{ clientX: 220 }] });
-    expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ }, { timeout: 5000 })).toBeVisible();
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    const ananyaCard = screen.getByRole("button", { name: /Open digital student ID for Ananya Sharma/ });
+    const ananyaCard = activeCard().getByRole("button", { name: /Open digital student ID for Ananya Sharma/ });
+    expect(ananyaCard).toBeVisible();
     fireEvent.touchStart(ananyaCard, { touches: [{ clientX: 220 }] });
     fireEvent.touchEnd(ananyaCard, { changedTouches: [{ clientX: 80 }] });
-    await interact.click(await screen.findByRole("button", { name: /Open digital student ID for Rohan Sharma/ }, { timeout: 5000 }));
+    await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
+    await interact.click(activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ }));
     expect(screen.getByRole("dialog", { name: "Rohan Sharma" })).toHaveTextContent("CIS-003");
   }, 45000);
 
@@ -566,7 +564,7 @@ describe("implemented application routes", () => {
     });
 
     render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Today's attendance" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Attendance calendar" })).toBeVisible();
     expect(document.querySelector(".child-switcher")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Aarav Sharma - Class/ })).not.toBeInTheDocument();
     const chooseChild = await screen.findByRole("button", { name: "Choose child profile" });
@@ -748,25 +746,43 @@ describe("implemented application routes", () => {
   }, 90000);
 
   it("renders the timetable with the shared day view switcher", async () => {
-    render(<MemoryRouter initialEntries={["/student/timetable"]}><App /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/student/timetable?date=2026-10-07"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Period schedule" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Timetable" })).toHaveAttribute("href", "/student/timetable");
-    expect(screen.getByRole("tab", { name: "Day" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Week" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Month" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Year" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("day");
+    expect(screen.queryByRole("option", { name: "Week" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Month" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Year" })).toBeInTheDocument();
+  });
+
+  it.each(["student", "parent"])("keeps %s timetable dates in Month and hides daily content in Year", async (portal) => {
+    render(<MemoryRouter initialEntries={[`/${portal}/timetable?date=2026-10-07&view=month`]}><App /></MemoryRouter>);
+    const picker = await screen.findByRole("combobox", { name: "Timetable view" });
+    expect(picker).toHaveValue("month");
+    fireEvent.click(screen.getByRole("button", { name: /^Thursday, 8 October.*$/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Thursday, 8 October.*$/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("month");
+    fireEvent.change(screen.getByRole("combobox", { name: "Timetable view" }), { target: { value: "year" } });
+    await waitFor(() => expect(document.querySelector(".timetable-year")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Period schedule" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No timetable published")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save bell reminder preference" })).not.toBeInTheDocument();
+    expect(document.querySelector(".timetable-kit-card")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^November,.*open month view$/ }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("month"));
+    expect(screen.getByRole("button", { name: /^Sunday, 1 November.*$/ })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
 describe("authentication and route authorization", () => {
-  it("sends an anonymous visitor to sign in and preserves the intended route", async () => {
+  it.each(["/parent/attendance","/principal/insights"])("sends an anonymous visitor at %s to sign in", async (path) => {
     apiFetchMock.mockImplementation((path: string) => {
       if (path === "/api/v1/auth/session/") {
         return Promise.resolve({ authenticated: false, user: null, csrf_token: "csrf", demo_mode: true });
       }
       return Promise.reject(new Error("Unexpected request"));
     });
-    render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Sign in to your school" })).toBeVisible();
     expect(screen.getByRole("button", { name: /Parent view/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /Student view/i })).toBeVisible();
@@ -779,6 +795,12 @@ describe("authentication and route authorization", () => {
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
     expect(screen.getByText("Today's presence")).toBeVisible();
+  });
+  it("redirects students away from principal insights without fetching school aggregates", async () => {
+    mockSession(["student"]);
+    render(<MemoryRouter initialEntries={["/principal/insights"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
+    expect(apiFetchMock.mock.calls.some(([path])=>String(path).includes("principal-insights"))).toBe(false);
   });
 
   it("holds a newly registered account outside tenant data until membership exists", async () => {

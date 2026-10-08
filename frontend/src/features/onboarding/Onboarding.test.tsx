@@ -29,6 +29,17 @@ beforeEach(()=>{
   vi.mocked(createCoachingWorkspace).mockResolvedValue({id:'coaching',name:'Lotus Tutorials',code:'lotus-tutorials'});
 });
 describe('company and school onboarding',()=>{
+  it('starts with invitation history and opens a separate, cancellable form',async()=>{
+    const user=userEvent.setup();mount(<InvitationsPage/>,'/principal/invitations');
+    expect(await screen.findByText('No invitations yet.')).toBeVisible();
+    expect(screen.queryByLabelText('Recipient email')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button',{name:'Invite member'}));
+    expect(screen.getByLabelText('Recipient email')).toBeVisible();
+    expect(screen.queryByLabelText('Invitation status')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button',{name:'Cancel'}));
+    expect(screen.getByLabelText('Invitation status')).toBeVisible();
+    expect(inviteMember).not.toHaveBeenCalled();
+  });
   it.each(['staff','guardian'])('preselects the contextual %s invitation without creating one',async role=>{
     mount(<InvitationsPage/>,`/principal/invitations?role=${role}&from=${role==='staff'?'staff':'students'}`);
     expect(await screen.findByLabelText('Account type')).toHaveValue(role);
@@ -64,7 +75,7 @@ describe('company and school onboarding',()=>{
     expect(await screen.findByRole('alert')).toHaveTextContent('already in use');expect(screen.getByLabelText('Institution name')).toHaveValue('Lotus');
   });
   it('hides administrator and role assignment from a delegated inviter and links a student',async()=>{
-    auth.hasPortal.mockReturnValue(false);const user=userEvent.setup();mount(<InvitationsPage/>);await screen.findByRole('heading',{name:'Create invitation'});
+    auth.hasPortal.mockReturnValue(false);const user=userEvent.setup();mount(<InvitationsPage/>);await user.click(await screen.findByRole('button',{name:'Invite member'}));await screen.findByRole('heading',{name:'Create invitation'});
     expect(screen.queryByRole('option',{name:'Administrator'})).not.toBeInTheDocument();expect(screen.queryByLabelText('Role on joining')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Account type'),'student');await user.selectOptions(screen.getByLabelText('Student record'),'student');await user.type(screen.getByLabelText('Recipient email'),'learner@example.test');await user.click(screen.getByRole('button',{name:'Create invitation'}));
     expect(inviteMember).toHaveBeenCalledWith('school',{email:'learner@example.test',role:'student',student_id:'student'});expect(await screen.findByRole('heading',{name:'Invitation ready'})).toBeInTheDocument();

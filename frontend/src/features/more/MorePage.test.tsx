@@ -16,6 +16,10 @@ function show(portal: Portal, path = `/${portal}/more`) {
 }
 
 describe("settings-style More", () => {
+  it("keeps the originating portal and selected child on account-security navigation", () => {
+    show("parent", "/parent/more?student_id=child-2");
+    expect(screen.getByRole("link", { name: "Open Account security" })).toHaveAttribute("href", "/account/security?from=%2Fparent%2Fmore%3Fstudent_id%3Dchild-2");
+  });
   it.each(["principal", "teacher", "parent", "student"] as const)("defaults %s to grouped lists and retains the grid choice", portal => {
     const view = show(portal);
     expect(screen.getByRole("button", { name: "List view" })).toHaveAttribute("aria-pressed", "true");

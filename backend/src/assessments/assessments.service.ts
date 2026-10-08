@@ -81,6 +81,23 @@ export class AssessmentsService {
     return { mode: "admin", cycles: cycles.rows, assessments: assessments.rows, references: { terms: terms.rows, classes: classes.rows, subjects: subjects.rows, staff: staff.rows } };
   }
 
+  async calendar(user:AuthUser,schoolId:string,from:string,to:string,studentId?:string) {
+    uuid.parse(schoolId);date.parse(from);date.parse(to);
+    if(from>to||Date.parse(to)-Date.parse(from)>92*86400000)throw new BadRequestException('Choose a calendar range of up to 93 days.');
+    let admin=false;
+    if(studentId) { uuid.parse(studentId);await this.familyResults(user,schoolId,studentId); }
+    else { const access=await schoolPermission(this.db,user,schoolId,'assessments.view');admin=access.role==='admin'; }
+    // Calendar projection intentionally excludes results, marks, private notes,
+    // drafts and cancelled assessments. It does not cancel normal teaching.
+    const items=await sql<{id:string;title:string;scheduled_at:string;date:string;venue:string;subject_name:string;class_name:string}>`
+      SELECT a.id,a.title,a.scheduled_at,(a.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,a.venue,s.name AS subject_name,'Class '||c.grade||c.section AS class_name
+      FROM assessments a JOIN schools school ON school.id=a.school_id JOIN subjects s ON s.id=a.subject_id JOIN class_sections c ON c.id=a.class_section_id JOIN assessment_cycles cycle ON cycle.id=a.cycle_id
+      WHERE a.school_id=${schoolId}::uuid AND a.status NOT IN ('draft','cancelled') AND (a.scheduled_at AT TIME ZONE school.timezone)::date BETWEEN ${from}::date AND ${to}::date
+      AND (${admin} OR (${studentId??null}::uuid IS NOT NULL AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=${studentId??null}::uuid AND e.class_section_id=a.class_section_id AND e.term_id=cycle.term_id AND e.is_active AND e.enrolled_on<=(a.scheduled_at AT TIME ZONE school.timezone)::date)) OR (${studentId??null}::uuid IS NULL AND staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',a.id)))
+      ORDER BY a.scheduled_at,a.title`.execute(this.db);
+    return {items:items.rows};
+  }
+
   async detail(user: AuthUser, schoolId: string, assessmentId: string) {
     await schoolPermission(this.db,user,schoolId,"assessments.view");
     const access = await this.assigned(user,schoolId,assessmentId);

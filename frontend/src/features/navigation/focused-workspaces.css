@@ -1,0 +1,232 @@
+/* Content-first workspaces. The scope deliberately excludes every portal home. */
+.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar,.care-toolbar,.activation-summary) {
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  gap:12px; color:var(--edura-ink-secondary); font-size:14px;
+}
+.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar) p { margin:0; }
+.portal-secondary-screen .import-history--rows li { display:block; padding:0; }
+.portal-secondary-screen .import-history-link { display:flex; align-items:center; gap:12px; width:100%; padding:16px 0; border:0; background:none; text-align:left; color:var(--edura-ink); font:inherit; cursor:pointer; }
+.portal-secondary-screen .import-history-link > span:first-child { flex:1; min-width:0; }
+.portal-secondary-screen .import-history-link strong,.portal-secondary-screen .import-history-link small { display:block; overflow-wrap:anywhere; }
+.portal-secondary-screen .import-history-link small { color:var(--edura-ink-secondary); font-size:12px; margin-top:4px; }
+.portal-secondary-screen .import-history-link > svg { flex-shrink:0; color:var(--edura-brand); }
+.portal-secondary-screen .invitation-toolbar .office-field { min-width:120px; flex:1; }
+.portal-secondary-screen .invitation-list { padding:0 16px; }
+.portal-secondary-screen .invitation-list li { gap:12px; }
+.portal-secondary-screen .invitation-list li > div { min-width:0; overflow-wrap:anywhere; }
+.portal-secondary-screen .invitation-list li > button { min-height:44px; color:var(--edura-brand); }
+.portal-secondary-screen .activation-summary { padding:8px 0; }
+.portal-secondary-screen .activation-summary strong { color:var(--edura-ink); font-size:16px; }
+.portal-secondary-screen .activation-card { box-shadow:none; padding:16px; }
+.portal-secondary-screen .activation-checklist > header { padding:0; }
+.portal-secondary-screen .activation-checklist h2 { font-size:16px; }
+.portal-secondary-screen .activation-checklist ol { margin-top:8px; }
+.portal-secondary-screen .activation-checklist li > a { min-height:44px; font-size:13px; }
+.portal-secondary-screen .activation-completed > summary { min-height:44px; padding-block:12px; cursor:pointer; font-size:14px; }
+.portal-secondary-screen .activation-completed > summary > span { float:right; }
+.portal-secondary-screen .activation-completed { padding:0 16px; }
+.portal-secondary-screen .activation-checklist li { grid-template-columns:28px minmax(0,1fr) auto; align-items:center; }
+.portal-secondary-screen .activation-checklist li > a { grid-column:auto; width:auto; }
+.portal-secondary-screen .office-invoice-link { display:flex; align-items:center; gap:12px; color:var(--edura-ink); text-decoration:none; min-height:64px; width:100%; }
+.portal-secondary-screen .office-invoice-link > span:first-child { flex:1; min-width:0; }
+.portal-secondary-screen .office-invoice-link small { display:block; color:var(--edura-ink-secondary); font-size:13px; line-height:1.5; margin-top:4px; }
+.portal-secondary-screen .office-invoice-link > svg { flex-shrink:0; color:var(--edura-brand); }
+.portal-secondary-screen .office-family-invoice .office-fee-detail { padding:0; border:0; background:none; }
+.portal-secondary-screen .office-family-invoice > .office-panel { border:0; padding:16px 0 0; }
+.portal-secondary-screen .care-toolbar .care-primary { padding-inline:12px; }
+.portal-secondary-screen .care-route-status { flex-wrap:wrap; overflow:visible; }
+.portal-secondary-screen .care-route-status span { min-height:32px; padding:4px 8px; border-radius:8px; font-size:12px; }
+.portal-secondary-screen .care-tabs { overflow:visible; flex-wrap:wrap; }
+.portal-secondary-screen .care-tabs button { min-width:0; min-height:44px; padding:8px; }
+.portal-secondary-screen .care-sheet--page { display:block; width:100%; max-height:none; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); box-shadow:none; overflow:visible; }
+.portal-secondary-screen .care-sheet--page .care-sheet__body { overflow:visible; padding:16px; }
+.portal-secondary-screen .care-sheet--page > footer { display:flex; flex-wrap:wrap; padding:16px; border-radius:0 0 var(--edura-radius-card) var(--edura-radius-card); }
+.portal-secondary-screen .care-sheet--page > footer button { width:auto; flex:1 1 120px; }
+.portal-secondary-screen .care-page :is(.care-team,.care-queue) { box-shadow:none; }
+.portal-secondary-screen .care-team > p { padding:16px; font-size:13px; }
+.portal-secondary-screen .care-team-add > summary { padding:12px 16px; min-height:44px; color:var(--edura-brand); font-size:14px; cursor:pointer; }
+.portal-secondary-screen .care-team-form { background:var(--edura-surface); }
+.portal-secondary-screen .care-page :is(.care-form-warning,.care-assessment,.care-receipt) { padding:12px; }
+.portal-secondary-screen .care-sheet :is(label,legend),.portal-secondary-screen .care-team-form label { font-size:13px; }
+.portal-secondary-screen .care-sheet :is(select,textarea) { font-size:16px; }
+.portal-secondary-screen .care-safety a { min-height:44px; }
+.portal-secondary-screen .governance-decision-map .governance-policy-list > button { grid-template-columns:minmax(0,1fr) auto auto; }
+.portal-secondary-screen .governance-tabs { grid-template-columns:repeat(4,minmax(0,1fr)); padding:4px; border-radius:var(--edura-radius-control); }
+.portal-secondary-screen .governance-tabs button { min-width:0; padding-inline:4px; min-height:44px; font-size:12px; flex-wrap:wrap; }
+.portal-secondary-screen .governance-tabs svg { display:none; }
+.portal-secondary-screen .governance-authority-ready { padding:0; background:none; font-size:13px; }
+.portal-secondary-screen .governance-decision-map .governance-policy-list > button > svg { display:block; }
+.portal-secondary-screen .governance-rule-detail { padding:16px; }
+.portal-secondary-screen .governance-rule-detail dl { margin:0; }
+.portal-secondary-screen .governance-rule-detail dl > div { display:grid; gap:4px; padding:12px 0; border-bottom:1px solid var(--edura-border); }
+.portal-secondary-screen .governance-rule-detail dt { color:var(--edura-ink-secondary); font-size:13px; }
+.portal-secondary-screen .governance-rule-detail dd { margin:0; font-size:15px; line-height:1.5; }
+.portal-secondary-screen .governance-editor-page :is(input,select,textarea) { font-size:16px; }
+.portal-secondary-screen .governance-editor-page label { font-size:13px; }
+.portal-secondary-screen .governance-review-content { padding:0 16px 16px; border-bottom:1px solid var(--edura-border); font-size:14px; line-height:1.6; }
+.portal-secondary-screen .governance-review-content h2 { font-size:16px; }
+.portal-secondary-screen .governance-review-content dl { display:grid; gap:8px; }
+.portal-secondary-screen .governance-review-content dl > div { display:grid; grid-template-columns:110px minmax(0,1fr); gap:8px; }
+.portal-secondary-screen .governance-review-content dd { margin:0; }
+.portal-secondary-screen .governance-review-content dt { color:var(--edura-ink-secondary); }
+.portal-secondary-screen .governance-review-content .policy-library__text { font-size:14px; }
+.portal-secondary-screen .event-description summary { min-height:44px; padding-block:12px; color:var(--edura-brand); cursor:pointer; font-size:14px; }
+.portal-secondary-screen .event-description p { color:var(--edura-ink-secondary); font-size:14px; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-detail-hero { position:relative; padding:0 48px 0 0; border:0; border-radius:0; background:none; }
+.portal-secondary-screen .campus-event-detail-hero__copy dl { display:grid; grid-template-columns:1fr; gap:8px; margin:12px 0 0; }
+.portal-secondary-screen .campus-event-detail-hero__copy dl > div { display:flex; flex-wrap:wrap; gap:4px 8px; padding:0; }
+.portal-secondary-screen .campus-event-detail-hero__copy dt { font-size:12px; }
+.portal-secondary-screen .campus-event-detail-hero__copy dd { font-size:13px; }
+.portal-secondary-screen .event-actions-menu { position:absolute; top:0; right:0; z-index:5; }
+.portal-secondary-screen .event-actions-menu > summary { display:grid; place-items:center; width:44px; height:44px; list-style:none; border-radius:var(--edura-radius-control); color:var(--edura-brand); cursor:pointer; }
+.portal-secondary-screen .event-actions-menu > summary::-webkit-details-marker { display:none; }
+.portal-secondary-screen .event-actions-menu .campus-event-detail-actions { position:absolute; right:0; top:48px; display:grid; width:min(260px,80vw); padding:8px; gap:4px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); background:var(--edura-surface); box-shadow:var(--edura-shadow-card); }
+.portal-secondary-screen .event-actions-menu :is(button,a) { min-height:44px; justify-content:flex-start; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-detail-panel { padding:0; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-detail-panel > header { display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; padding:16px; gap:8px; margin:0; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-detail-panel > header h2 { font-size:16px; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-detail-panel > header > span { font-size:12px; }
+.portal-secondary-screen .campus-event-session-list { display:block; padding:0 16px; }
+.portal-secondary-screen .campus-event-session-list > article { border:0; border-radius:0; padding:16px 0; background:none; box-shadow:none; }
+.portal-secondary-screen .campus-event-session-list > article + article { border-top:1px solid var(--edura-border); }
+.portal-secondary-screen .campus-event-detail-panel > .campus-event-policy-note { margin:0; padding:16px; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-finance-operations { padding:16px; }
+.portal-secondary-screen .campus-event-detail-page .campus-event-finance-operations > header { padding:0; margin-bottom:12px; }
+.portal-secondary-screen .staff-page--teacher .staff-my-requests .staff-request-list { padding:0; gap:0; }
+.portal-secondary-screen .staff-page--teacher .staff-my-requests .staff-request { border:0; border-radius:0; padding:16px; }
+.portal-secondary-screen .staff-page--teacher .staff-my-requests .staff-request + .staff-request { border-top:1px solid var(--edura-border); }
+.portal-secondary-screen .staff-page--teacher .staff-apply .staff-form { padding:16px; }
+.portal-secondary-screen .staff-page--teacher .staff-apply label { font-size:13px; }
+.portal-secondary-screen .staff-page--teacher .staff-apply :is(input,select,textarea) { font-size:16px; }
+.portal-secondary-screen .staff-page--teacher .staff-apply input { resize:none; }
+.portal-secondary-screen .staff-form-actions { display:flex; flex-wrap:wrap; gap:12px; }
+.portal-secondary-screen :is(.staff-apply,.institution-invitations,.care-sheet--page,.care-team-form,.governance-editor-page,.import-toolbar) select {
+  appearance:none; min-height:44px; height:44px; padding:8px 32px 8px 12px; font:inherit;
+}
+.portal-secondary-screen :is(.staff-apply,.institution-invitations,.care-sheet--page,.care-team-form,.governance-editor-page) label:has(>select) { position:relative; }
+.portal-secondary-screen :is(.staff-apply,.institution-invitations,.care-sheet--page,.care-team-form,.governance-editor-page) label:has(>select)::after {
+  content:''; position:absolute; right:16px; bottom:18px; width:6px; height:6px;
+  border-right:2px solid var(--edura-ink-secondary); border-bottom:2px solid var(--edura-ink-secondary);
+  transform:rotate(45deg); pointer-events:none;
+}
+.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar,.care-page,.office-invoice-link,.activation-completed) :focus-visible {
+  outline:2px solid var(--edura-brand); outline-offset:3px;
+}
+
+/* Directory controls replace summary banners; counts are filters, not decoration. */
+.portal-secondary-screen .assessment-workflow-actions:empty { display:none; }
+.portal-secondary-screen .assessment-register { margin:0; border:0; border-radius:0; overflow:visible; box-shadow:none; }
+.portal-secondary-screen .assessment-register > header { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; padding:16px 20px; background:none; }
+.portal-secondary-screen .assessment-register > header > div { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; }
+.portal-secondary-screen .assessment-register > header h3 { margin:0; font-size:16px; }
+.portal-secondary-screen .assessment-register > header :is(span,small) { color:var(--edura-ink-secondary); font-size:12px; font-weight:400; letter-spacing:0; }
+.portal-secondary-screen .assessment-register > div > article { padding:16px 20px; border:0; border-top:1px solid var(--edura-border); border-radius:0; background:none; box-shadow:none; }
+.portal-secondary-screen .assessment-learner > b { flex:0 0 24px; width:24px; height:auto; border-radius:0; background:none; color:var(--edura-ink-secondary); font-size:13px; }
+.portal-secondary-screen .assessment-learner > span { min-width:0; }
+.portal-secondary-screen .assessment-learner strong { font-size:15px; overflow-wrap:anywhere; }
+.portal-secondary-screen .assessment-learner small { font-size:12px; }
+.portal-secondary-screen .assessment-read-result { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:baseline; padding:8px 0 0 34px; font-size:14px; }
+.portal-secondary-screen .assessment-read-result > p { flex:0 0 100%; margin:0; color:var(--edura-ink-secondary); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.portal-secondary-screen .assessment-register .assessment-mark-row { margin-left:34px; }
+@media(max-width:760px) {
+  .portal-secondary-screen .assessment-register > header,.portal-secondary-screen .assessment-register > div > article { padding:16px; }
+  .portal-secondary-screen .assessment-register .assessment-mark-row { margin-left:0; }
+}
+.portal-secondary-screen .workspace-list-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.portal-secondary-screen .workspace-list-toolbar > select { flex:1; min-width:0; min-height:44px; height:44px; padding:8px 28px 8px 12px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); background:var(--edura-surface); color:var(--edura-ink); font:inherit; font-size:14px; }
+.portal-secondary-screen :is(.workspace-add-link,.workspace-add-menu > summary) { display:flex; align-items:center; justify-content:center; flex-shrink:0; gap:4px; min-width:44px; min-height:44px; padding:8px; border:0; background:none; color:var(--edura-brand); font:inherit; font-size:14px; font-weight:700; text-decoration:none; cursor:pointer; }
+.portal-secondary-screen .workspace-add-menu { position:relative; z-index:5; }
+.portal-secondary-screen .workspace-add-menu > summary { list-style:none; }
+.portal-secondary-screen .workspace-add-menu > summary::-webkit-details-marker { display:none; }
+.portal-secondary-screen .workspace-add-menu > div { position:absolute; top:48px; right:0; display:grid; width:220px; padding:8px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); background:var(--edura-surface); box-shadow:var(--edura-shadow-card); }
+.portal-secondary-screen .workspace-add-menu button { min-height:44px; border:0; background:none; color:var(--edura-brand); text-align:left; font:inherit; font-size:14px; padding:8px; cursor:pointer; }
+.portal-secondary-screen .workspace-add-menu button:disabled { opacity:.5; cursor:not-allowed; }
+.portal-secondary-screen .workspace-add-menu small { padding:8px; color:var(--edura-ink-secondary); }
+.portal-secondary-screen :is(.assessment-list--compact,.report-library) { box-shadow:none; }
+.portal-secondary-screen .assessment-list--compact > div > button { display:grid; grid-template-columns:4px minmax(0,1fr) 20px; align-items:center; gap:12px; padding:16px; }
+.portal-secondary-screen .assessment-list--compact .assessment-subject-dot { width:4px; height:32px; border-radius:4px; }
+.portal-secondary-screen .assessment-list--compact button > svg { display:block; color:var(--edura-ink-secondary); }
+.portal-secondary-screen .assessment-list--compact button strong { font-size:16px; line-height:1.4; }
+.portal-secondary-screen .assessment-list--compact button :is(small,em) { font-size:13px; line-height:1.5; }
+.portal-secondary-screen .assessment-list--compact .assessment-status { justify-self:start; grid-column:auto; margin-top:4px; padding:2px 8px; font-size:11px; }
+.portal-secondary-screen .report-workspace-toolbar .report-library-tabs { flex:1; padding:4px; }
+.portal-secondary-screen .report-workspace-toolbar .report-library-tabs button { min-height:44px; gap:6px; font-size:13px; }
+.portal-secondary-screen .report-list { max-height:none; }
+.portal-secondary-screen .report-list > button { padding:16px; gap:8px; }
+.portal-secondary-screen .report-list strong { white-space:normal; font-size:15px; line-height:1.4; }
+.portal-secondary-screen .report-list small { font-size:13px; }
+.portal-secondary-screen .report-list .report-status { font-size:11px; padding:4px 8px; }
+.portal-secondary-screen .campus-events-directory .campus-event-collection { padding:0; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); box-shadow:none; overflow:hidden; }
+.portal-secondary-screen .event-directory-rows > a { display:flex; align-items:center; gap:12px; padding:16px; color:var(--edura-ink); text-decoration:none; }
+.portal-secondary-screen .event-directory-rows > a + a { border-top:1px solid var(--edura-border); }
+.portal-secondary-screen .event-directory-date { display:grid; justify-items:center; align-content:center; flex-shrink:0; width:44px; height:56px; border-radius:var(--edura-radius-control); color:var(--edura-brand); background:var(--edura-surface-soft); }
+.portal-secondary-screen .event-directory-date b { font-size:20px; }
+.portal-secondary-screen .event-directory-date small { font-size:11px; text-transform:uppercase; }
+.portal-secondary-screen .event-directory-copy { flex:1; min-width:0; display:grid; gap:4px; }
+.portal-secondary-screen .event-directory-copy strong { font-size:16px; line-height:1.4; }
+.portal-secondary-screen .event-directory-copy small { font-size:13px; line-height:1.4; color:var(--edura-ink-secondary); }
+.portal-secondary-screen .event-directory-copy > span { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:4px; }
+.portal-secondary-screen .event-directory-copy :is(.campus-event-status,em) { font-size:11px; padding:2px 6px; font-style:normal; }
+.portal-secondary-screen .event-directory-copy em { color:var(--edura-ink-secondary); }
+.portal-secondary-screen .event-directory-rows > a > svg { flex-shrink:0; color:var(--edura-ink-secondary); }
+
+/* One named action and secondary options replace the legacy stacked icons. */
+.portal-secondary-screen .chat-conversations > header { justify-content:flex-end; padding:4px 12px; background:none; backdrop-filter:none; }
+.portal-secondary-screen .chat-directory-actions { display:flex; align-items:center; gap:8px; }
+.portal-secondary-screen .chat-directory-actions button { display:flex; align-items:center; gap:8px; width:auto; min-height:44px; height:auto; padding:8px; border:0; background:none; color:var(--edura-brand); font:inherit; font-size:14px; }
+.portal-secondary-screen .chat-conversations > .chat-search { min-height:44px; margin:0 12px 12px; box-shadow:none; }
+.portal-secondary-screen .chat-search input { font-size:16px; }
+.portal-secondary-screen .chat-conversation-list { margin:0 12px; padding:0; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); background:var(--edura-surface); flex:0 1 auto!important; }
+.portal-secondary-screen .chat-conversation-list > button { margin:0; padding:12px; border:0!important; border-radius:0; box-shadow:none; background:transparent; min-height:72px; }
+.portal-secondary-screen .chat-conversation-list > button + button { border-top:1px solid var(--edura-border)!important; }
+.portal-secondary-screen .chat-conversation-list > button:is(:hover,.is-active) { background:var(--edura-surface-soft); box-shadow:none; }
+.portal-secondary-screen .chat-conversation-copy strong { font-size:15px; }
+.portal-secondary-screen .chat-conversation-copy > small { font-size:13px; }
+
+.portal-secondary-screen .chat-moderation--focused.chat-moderation--standalone { display:block; height:auto; max-height:none; min-height:0; overflow:visible; border:0; border-radius:0; background:none; box-shadow:none; }
+.portal-secondary-screen .chat-moderation-page { min-height:0; }
+.portal-secondary-screen .operations-app .operations-main:has(.chat-moderation-page) { padding:16px 16px 96px; }
+.portal-secondary-screen .chat-moderation--focused .chat-moderation__body { display:block; border:0; }
+.portal-secondary-screen .chat-moderation--focused .chat-moderation__list { display:block; height:auto; min-height:0; padding:0; overflow:visible; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); background:var(--edura-surface); }
+.portal-secondary-screen .chat-moderation--focused .chat-moderation__detail { padding:0; overflow:visible; background:none; }
+.portal-secondary-screen .chat-moderation--focused .workspace-list-toolbar { margin-bottom:12px; }
+.portal-secondary-screen .message-report-privacy { display:flex; align-items:center; gap:6px; margin:0 0 12px; color:var(--edura-ink-secondary); font-size:12px; }
+.portal-secondary-screen .message-report-row { display:flex; align-items:center; gap:12px; width:100%; padding:16px; border:0; background:none; color:var(--edura-ink); text-align:left; cursor:pointer; }
+.portal-secondary-screen .message-report-row + .message-report-row { border-top:1px solid var(--edura-border); }
+.portal-secondary-screen .message-report-row__copy { display:grid; flex:1; min-width:0; gap:4px; font-size:14px; }
+.portal-secondary-screen .message-report-row strong { font-size:16px; }
+.portal-secondary-screen .message-report-row small { color:var(--edura-ink-secondary); font-size:12px; }
+.portal-secondary-screen .message-report-row .chat-report-status { justify-self:start; margin-top:4px; }
+.portal-secondary-screen .message-report-row > svg { flex-shrink:0; }
+.portal-secondary-screen .chat-moderation--focused :is(.chat-incident-dossier,.chat-review-context,.chat-review-controls,.chat-review-outcome) { padding:16px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); box-shadow:none; }
+.portal-secondary-screen .chat-incident-dossier h2 { margin:0; font-size:18px; }
+.portal-secondary-screen .chat-moderation--focused :is(select,textarea) { min-height:44px; font-size:16px; }
+.portal-secondary-screen .chat-moderation--focused button { min-height:44px; }
+.portal-secondary-screen .chat-moderation--focused:not(.chat-moderation--standalone) { display:flex; flex-direction:column; }
+.portal-secondary-screen .chat-moderation--focused:not(.chat-moderation--standalone) > .chat-moderation__body { min-height:0; overflow:auto; padding:16px; }
+.portal-secondary-screen .chat-moderation--focused:not(.chat-moderation--standalone) > :is(.message-report-privacy,.workspace-list-toolbar) { margin:12px 16px 0; flex-shrink:0; }
+.portal-secondary-screen .chat-moderation--focused .chat-incident-dossier__meta { gap:12px; padding:12px 0; background:none; }
+.portal-secondary-screen .chat-moderation--focused .chat-incident-dossier__meta small { font-size:11px; text-transform:none; }
+.portal-secondary-screen .chat-moderation--focused .chat-incident-dossier__meta b { font-size:13px; line-height:1.5; white-space:normal; overflow:visible; overflow-wrap:anywhere; }
+.portal-secondary-screen .chat-moderation--focused .chat-incident-dossier__meta b svg { flex-shrink:0; }
+.portal-secondary-screen .chat-moderation--focused .chat-incident-dossier > header p { font-size:12px; }
+.portal-secondary-screen .chat-moderation--focused .chat-flagged-message { padding:12px; margin:0; }
+.portal-secondary-screen .chat-moderation--focused .chat-flagged-message > span { font-size:12px; text-transform:none; }
+.portal-secondary-screen .chat-moderation--focused .chat-flagged-message p { padding:12px 0 0; font-size:15px; background:none; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-context > header { margin-bottom:12px; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-context > header strong { font-size:14px; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-context :is(small,time) { font-size:11px; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-context article b { font-size:12px; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-context article p { font-size:14px; line-height:1.5; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-fields label > span { font-size:12px; text-transform:none; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-fields textarea { font-size:16px; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-actions button { font-size:13px; }
+.portal-secondary-screen .chat-moderation--focused .chat-review-disclaimer { font-size:12px; line-height:1.5; padding:12px 0 0; background:none; }
+.portal-secondary-screen .care-tabs button:nth-child(3) { flex:1.5; }
+.portal-secondary-screen :is(.workspace-list-toolbar,.event-directory-rows,.chat-layout,.chat-moderation--focused) :focus-visible { outline:2px solid var(--edura-brand); outline-offset:2px; }
+@media (max-width:360px) {
+  .portal-secondary-screen .report-list > button { grid-template-columns:minmax(0,1fr) auto; }
+  .portal-secondary-screen .report-list .report-status { grid-column:1; justify-self:start; }
+  .portal-secondary-screen .report-list > button > svg { grid-column:2; grid-row:1/3; }
+  .portal-secondary-screen .event-directory-rows > a { padding:12px; gap:8px; }
+}

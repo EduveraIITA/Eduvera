@@ -47,6 +47,17 @@ function renderPage() {
 }
 
 describe("institution activation", () => {
+  it('collapses completed setup while keeping new required gaps visible for active institutions',async()=>{
+    api.getActivation.mockResolvedValue({...workspace,institution:{...workspace.institution,status:'active'}});
+    const user=userEvent.setup();renderPage();
+    expect(await screen.findByText('Institution active')).toBeVisible();
+    expect(screen.getByRole('heading',{name:'Needs attention'})).toBeVisible();
+    expect(screen.getByRole('link',{name:'Open Enrol a learner'})).toBeVisible();
+    expect(screen.getByText('Administrator email verified')).not.toBeVisible();
+    await user.click(screen.getByText(/Completed checks/));
+    expect(screen.getByText('Administrator email verified')).toBeVisible();
+    expect(screen.queryByRole('button',{name:/Activate institution/})).not.toBeInTheDocument();
+  });
   it("shows computed readiness, optional requirements and activates the reviewed revision", async () => {
     api.getActivation.mockResolvedValue(workspace);
     api.activateInstitution.mockResolvedValue({ ...workspace, institution: { ...workspace.institution, status: "active" } });
@@ -54,7 +65,7 @@ describe("institution activation", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Readiness checklist" })).toBeVisible();
-    expect(screen.getByText("50%")).toBeVisible();
+    expect(screen.getByText("50% complete")).toBeVisible();
     expect(screen.getByText("0 learners")).toBeVisible();
     expect(screen.getByText("Optional")).toBeVisible();
     expect(screen.queryByText("Create a real learner.")).not.toBeInTheDocument();

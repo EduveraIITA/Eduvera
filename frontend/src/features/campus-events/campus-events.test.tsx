@@ -99,7 +99,8 @@ describe("campus event family workflows", () => {
   it("does not treat mandatory no-RSVP events as pending family actions", () => {
     render(<MemoryRouter><FamilyEventListPage audience="student" events={[eventFixture()]} /></MemoryRouter>);
 
-    expect(screen.getByText("need action").previousElementSibling).toHaveTextContent("0");
+    expect(screen.queryByText(/events? needs? your response/)).not.toBeInTheDocument();
+    expect(document.querySelector(".family-events-hero")).toBeNull();
     expect(screen.getByText("Mandatory")).toBeVisible();
     expect(screen.queryByText("Response due")).not.toBeInTheDocument();
   });
@@ -322,16 +323,28 @@ describe("campus event family workflows", () => {
 });
 
 describe("campus event planning", () => {
-  it("keeps operations events under Overview and preserves the selected tab while loading another page", async () => {
+  it("preserves the selected event filter while loading another page", async () => {
     const onLoadMore = vi.fn();
     const onViewChange = vi.fn();
     render(<MemoryRouter><OperationsEventListPage portal="principal" events={[eventFixture()]} view="draft" hasMore onLoadMore={onLoadMore} onViewChange={onViewChange} /></MemoryRouter>);
 
     expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-active", "events");
-    expect(screen.getByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("combobox", { name: "Filter events" })).toHaveValue("draft");
     await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
     expect(onLoadMore).toHaveBeenCalledOnce();
     expect(onViewChange).not.toHaveBeenCalled();
+    await userEvent.setup().selectOptions(screen.getByRole("combobox", { name: "Filter events" }), "upcoming");
+    expect(onViewChange).toHaveBeenCalledWith("upcoming");
+  });
+
+  it("opens the entire compact event row and shows its outstanding registers", () => {
+    render(<MemoryRouter><OperationsEventListPage portal="teacher" events={[eventFixture()]} view="upcoming" onViewChange={vi.fn()}/></MemoryRouter>);
+    const row=screen.getByRole("link",{name:"Open Science museum visit"});
+    expect(row).toHaveAttribute("href","/teacher/events/event-1");
+    expect(within(row).getByText("City Science Museum")).toBeVisible();
+    expect(within(row).getByText("1 open register")).toBeVisible();
+    expect(screen.queryByText("View details")).not.toBeInTheDocument();
+    expect(screen.getByRole("link",{name:"Schedule class test"})).toHaveAttribute("href","/teacher/events/new");
   });
 
   it("keeps session subsets scoped and searchable without rendering an always-open student wall", async () => {
@@ -369,6 +382,7 @@ describe("campus event planning", () => {
     const user = userEvent.setup();
     render(<MemoryRouter><OperationsEventDetailPage portal="principal" schoolId="school-1" event={event} onCancel={onCancel} /></MemoryRouter>);
 
+    await user.click(screen.getByLabelText('Event actions'));
     await user.click(screen.getByRole("button", { name: "Cancel event" }));
     const dialog = screen.getByRole("dialog", { name: "Cancel this event?" });
     await user.type(within(dialog).getByLabelText("Internal cancellation reason"), "Transport vendor breach");
@@ -377,7 +391,7 @@ describe("campus event planning", () => {
     expect(onCancel).toHaveBeenCalledWith("Transport vendor breach", "The visit is cancelled because transport is unavailable.");
   });
 
-  it("does not expose fee amounts to ordinary assigned staff", () => {
+  it("does not expose fee amounts to ordinary assigned staff", async () => {
     const base = eventFixture();
     const event = eventFixture({
       payment_required: true,
@@ -386,11 +400,15 @@ describe("campus event planning", () => {
       viewer_participants: [{ ...base.viewer_participants[0]!, payment_status: "pending", payment_amount_paise: 125_000, payment_paid_paise: 25_000, fee_invoice_id: "invoice-1", fee_invoice_status: "pending" }],
       permissions: { ...base.permissions, can_view_finance_details: false },
     });
-    render(<MemoryRouter><OperationsEventDetailPage portal="teacher" schoolId="school-1" event={event} /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={['/teacher/events/event-1?view=participants']}><OperationsEventDetailPage portal="teacher" schoolId="school-1" event={event} /></MemoryRouter>);
 
     expect(screen.getByText("Payment pending")).toBeVisible();
     expect(screen.queryByText("Not invoiced")).not.toBeInTheDocument();
     expect(screen.queryByText(/₹/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/Fees/})).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('link',{name:/Sessions/}));
+    expect(screen.queryByText('Payment pending')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading',{name:'Sessions & attendance'})).toBeVisible();
   });
 
   it("shows ordinary assigned staff only coarse reconciliation state", () => {
@@ -457,7 +475,7 @@ describe("campus event planning", () => {
       counts: { reconciliation_required: 0, withdrawn: 1 },
       permissions: { can_view_finance_details: true, can_record_refund: true },
     };
-    render(<MemoryRouter><OperationsEventDetailPage portal="principal" schoolId="school-1" event={event} finance={finance} /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={['/principal/events/event-1?view=participants']}><OperationsEventDetailPage portal="principal" schoolId="school-1" event={event} finance={finance} /></MemoryRouter>);
 
     expect(screen.getByText("Invoice credited")).toBeVisible();
     expect(screen.queryByText("Payment pending")).not.toBeInTheDocument();
@@ -499,6 +517,7 @@ describe("campus event planning", () => {
     const user = userEvent.setup();
     render(<MemoryRouter><OperationsEventDetailPage portal="principal" schoolId="school-1" event={event} finance={finance} onRecordRefund={onRecordRefund} /></MemoryRouter>);
 
+    await user.click(screen.getByRole('link',{name:/Fees/}));
     await user.click(screen.getByRole("button", { name: "Record refund" }));
     const dialog = screen.getByRole("dialog", { name: "Record manual refund" });
     await user.clear(within(dialog).getByLabelText("Amount (INR)"));

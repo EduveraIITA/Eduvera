@@ -44,6 +44,10 @@ function firstErrorMessage(value: unknown, depth = 0): string | undefined {
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const method = (init.method ?? "GET").toUpperCase();
+  headers.set("Accept", "application/json");
+  if (typeof window !== "undefined" && /\.(ngrok-free\.dev|ngrok-free\.app|ngrok\.app|ngrok\.io)$/.test(window.location.hostname)) {
+    headers.set("ngrok-skip-browser-warning", "true");
+  }
 
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -61,9 +65,17 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   });
 
   const contentType = response.headers.get("content-type") ?? "";
-  const body: unknown = contentType.includes("application/json")
-    ? await response.json()
-    : await response.text();
+  const raw = await response.text();
+  // Proxies can return HTML even with status 200. Never treat that as a saved
+  // command, nor display a proxy's entire document inside an error dialog.
+  if (contentType.includes("text/html") || /^\s*(?:<!doctype\s+html|<html\b)/i.test(raw)) {
+    throw new ApiError("The server connection was interrupted. Please try again. We could not confirm whether the action completed.", response.status);
+  }
+  let body: unknown = raw;
+  if (contentType.includes("application/json") && raw) {
+    try { body = JSON.parse(raw); }
+    catch { throw new ApiError("The server returned an unreadable response. Please try again.", response.status); }
+  }
 
   if (!response.ok) {
     if (response.status === 401 && typeof window !== "undefined") {

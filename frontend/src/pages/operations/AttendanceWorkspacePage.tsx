@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ClipboardCheck, Clock3, LockKeyhole, Search, UsersRound } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ClipboardCheck, Clock3, LockKeyhole, Search, UsersRound, Inbox, X } from "lucide-react";
 import type { AttendanceContinuityWorkspace, TeacherClassSummary } from "../../features/operations/api";
 import { OperationsShell } from "./OperationsShell";
 import { AttendanceContinuityPanel } from "./AttendanceContinuityPanel";
+import { AttendanceDateControl } from '../../features/attendance/AttendanceDateControl';
 import "./attendance-workspace.css";
 
 type Queue = "all" | "pending" | "submitted" | "locked";
@@ -28,13 +29,16 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, c
 }) {
   const [filter, setFilter] = useState<Queue>("all");
   const [search, setSearch] = useState("");
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [deskOpen,setDeskOpen]=useState(false);
+  const searchButton=useRef<HTMLButtonElement>(null);
   const principal = portal === "principal";
+  const reviewCount = !continuityLoading && !continuityError && continuity ? Math.max(continuity.summary.quarantined, continuity.cases.length) : 0;
   const counts = classes.reduce((result, item) => {
     const queue = registerQueue(item);
     if (queue !== "not_required") result[queue]++;
     return result;
   }, { pending: 0, submitted: 0, locked: 0 });
-  const dueCount = counts.pending + counts.submitted + counts.locked;
   const visible = classes.filter((item) => (filter === "all" || registerQueue(item) === filter)
     && `${item.class_name} ${item.grade}${item.section} ${(item.assigned_teachers ?? []).join(" ")} ${(item.subjects ?? []).join(" ")}`.toLowerCase().includes(search.trim().toLowerCase()));
   const filters = [
@@ -45,29 +49,24 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, c
   ] as const;
   return <OperationsShell portal={portal} active="attendance" title="Attendance" subtitle={principal ? "School-wide registers" : "Your assigned classes"} contentHasHeading>
     <div className="attendance-workspace">
-      <section className="attendance-workspace__hero">
-        <div className="attendance-workspace__heading">
-          <h1>{principal ? "School attendance" : "Class registers"}</h1>
-          <label><CalendarDays size={17} /><span className="sr-only">Register date</span><input type="date" value={date} onChange={(event) => { if (event.target.value) onDateChange(event.target.value); }} /></label>
+      <AttendanceDateControl date={date} onChange={onDateChange}/>
+      <section className="attendance-workspace__queue" aria-labelledby="attendance-class-list">
+        <h2 id="attendance-class-list" className="sr-only">Registers</h2>
+        <div className="attendance-queue-toolbar">
+          <label><span className="sr-only">Filter registers</span><select value={filter} onChange={e=>setFilter(e.target.value as Queue)}>{filters.map(([key,label,count])=><option key={key} value={key}>{label} · {count}</option>)}</select></label>
+          <button ref={searchButton} type="button" aria-label="Search classes" aria-expanded={searchOpen} aria-controls="attendance-class-search" onClick={()=>{if(searchOpen)setSearch('');setSearchOpen(!searchOpen);}}><Search size={20}/></button>
+          {principal && onContinuityDecision?<button type="button" title="Paper & offline entries" aria-label={`Paper & offline entries${reviewCount?`, ${reviewCount} to review`:''}`} aria-expanded={deskOpen} aria-controls="attendance-desk" onClick={()=>setDeskOpen(!deskOpen)}><Inbox size={20}/>{reviewCount?<span className="attendance-desk-count">{reviewCount}</span>:null}</button>:null}
         </div>
-        <div className="attendance-workspace__totals" aria-label="Register overview">
-          <div><strong>{dueCount}</strong><span>Registers</span></div>
-          <div><strong>{counts.pending}</strong><span>To submit</span></div>
-          <div><strong>{counts.submitted + counts.locked}</strong><span>Submitted</span></div>
-        </div>
-      </section>
-      {principal && onContinuityDecision ? <AttendanceContinuityPanel
+        {searchOpen?<div id="attendance-class-search" className="attendance-workspace__search"><Search size={18}/><label className="sr-only" htmlFor="attendance-search-input">Search classes</label><input id="attendance-search-input" autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder={principal?'Class or teacher':'Class or subject'} onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);searchButton.current?.focus();}}}/><button type="button" aria-label="Clear and close search" onClick={()=>{setSearch('');setSearchOpen(false);searchButton.current?.focus();}}><X size={18}/></button></div>:null}
+        {principal && onContinuityDecision && !deskOpen && (continuityError || reviewCount)?<button className="attendance-desk-notice" type="button" onClick={()=>setDeskOpen(true)}>{continuityError?'Attendance review unavailable':`${reviewCount} ${reviewCount === 1 ? 'entry needs' : 'entries need'} review`}<ArrowRight size={16}/></button>:null}
+        {deskOpen && principal && onContinuityDecision ? <div id="attendance-desk"><AttendanceContinuityPanel
         data={continuity}
         classes={classes}
         date={date}
         loading={continuityLoading}
         error={continuityError}
         onDecision={onContinuityDecision}
-      /> : null}
-      <section className="attendance-workspace__queue" aria-labelledby="attendance-class-list">
-        <div className="attendance-workspace__list-heading"><h2 id="attendance-class-list">Registers</h2></div>
-        <label className="attendance-workspace__search"><Search size={18} /><span className="sr-only">Search classes</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={principal ? "Search class or teacher" : "Search class or subject"} /></label>
-        <div className="attendance-workspace__filters" role="group" aria-label="Filter registers">{filters.map(([key, label, count]) => <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}<span>{count}</span></button>)}</div>
+      /></div> : null}
         <div className="attendance-workspace__cards">{visible.map((item) => {
           const queue = registerQueue(item);
           const submitted = queue === "submitted" || queue === "locked";

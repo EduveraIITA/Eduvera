@@ -22,6 +22,26 @@ beforeEach(()=>{client=new QueryClient({defaultOptions:{queries:{retry:false}}})
 afterEach(()=>{cleanup();client.clear();vi.clearAllMocks();});
 function mount(){return render(<QueryClientProvider client={client}><MemoryRouter><PrincipalInsightsDashboard date="2026-10-07"/></MemoryRouter></QueryClientProvider>);}
 describe("principal insights",()=>{
+  it("keeps Overview compact with summary cards and a dated link to full insights",async()=>{
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/principal?date=2026-10-07&insight_class=old-class&insight_days=56"]}><PrincipalInsightsDashboard date="2026-10-07" summaryOnly/></MemoryRouter></QueryClientProvider>);
+    await screen.findByText("90.0%",{selector:"strong"});
+    expect(getPrincipalInsights).toHaveBeenCalledWith("school-1","2026-10-07",28,"",50);
+    expect(screen.queryByLabelText("Review window")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading",{name:"Attendance over time"})).not.toBeInTheDocument();
+    expect(screen.queryByText("Fee collection overview")).not.toBeInTheDocument();
+    expect(screen.getByRole("link",{name:/View all insights/})).toHaveAttribute("href","/principal/insights?date=2026-10-07");
+    expect(screen.getByRole("link",{name:/class-day has three/})).toHaveAttribute("href","/principal/insights?date=2026-10-07#principal-deadlines");
+    expect(screen.getByRole("link",{name:/period needs teacher coverage/})).toHaveAttribute("href","/principal/timetable");
+    await userEvent.click(screen.getByRole("button",{name:/Students to check in with/}));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Anaya Test");
+  });
+  it("groups full insights and preserves filters when opening deadline pressure",async()=>{
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/principal/insights?date=2026-10-07&insight_days=14"]}><PrincipalInsightsDashboard date="2026-10-07"/></MemoryRouter></QueryClientProvider>);
+    await screen.findByRole("heading",{name:"Attendance & learning"});
+    expect(screen.getByRole("heading",{name:"Operations"})).toBeInTheDocument();
+    expect(screen.getByRole("heading",{name:"Finance"})).toBeInTheDocument();
+    expect(screen.getByRole("link",{name:/class-day has three/})).toHaveAttribute("href","/principal/insights?date=2026-10-07&insight_days=14#principal-deadlines");
+  });
   it("loads in the active institution and changes filters without discarding the selected date",async()=>{
     mount();await screen.findByText("90.0%",{selector:"strong"});expect(getPrincipalInsights).toHaveBeenCalledWith("school-1","2026-10-07",28,"",50);
     await userEvent.selectOptions(screen.getByLabelText("Review window"),"14");await waitFor(()=>expect(getPrincipalInsights).toHaveBeenCalledWith("school-1","2026-10-07",14,"",50));

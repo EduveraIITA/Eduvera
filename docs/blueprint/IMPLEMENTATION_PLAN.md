@@ -2372,3 +2372,883 @@ repository migrations applied); 18 focused frontend tests. Browser checks at 320
 dismissal and runtime errors using clearly synthetic API fixtures. This is not
 PostgreSQL 17 CI or live-data validation. Integrated Stage CI, deployed school-data
 checks and user UI review remain open. No merge or deployment is included.
+## Timetable and calendar simplification — 7 October 2026
+
+User decision: simplify the planning screens using a calm, content-first hierarchy.
+This supersedes the earlier large blue date board and stacked planning/view tabs,
+while retaining the established school header, bottom navigation, typeface and
+per-child accent. Blueprint sections 6–7 remain the basis: daily expectations and
+scoped work are primary, with a stable navigation model. The UI approach follows
+[Apple's toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars)
+and [layout hierarchy guidance](https://developer.apple.com/design/human-interface-guidelines/layout),
+adapted to the existing web components rather than a native Apple implementation.
+
+- Admin planning has two browsing destinations, **Timetable** and **Calendar**.
+  **Edit timetable** opens the existing weekly management workspace; it is no longer
+  a competing browsing tab plus a duplicate management button. Links retain the
+  selected school, date and class. Existing route URLs remain compatible.
+- All four timetable readers use one compact view picker and neutral date surface.
+  Day view shows a complete Monday–Sunday rail, selected-date text, a separate Today
+  marker and previous/next-week controls. Month and Year keep their drill-downs;
+  period navigation handles month ends and leap years without overflowing dates.
+- Admin daily change/revision and printing controls are in **Schedule actions**.
+  The published schedule appears earlier on mobile. Drafting, publication, coverage,
+  history and server authorization are unchanged; no new mutation is introduced.
+- Parent/student Day views use a vertical agenda with full subject names, times,
+  teacher, room, cancellation and supplied materials. Existing lesson details remain
+  accessible by tapping a row. Week view retains the comparative weekly grid.
+- The shared calendar uses a compact Month/Day picker, lighter date grid, explicit
+  today/selection semantics and an expandable **Calendar key**. Its role-specific
+  events, leave, attendance and school closure details remain unchanged.
+
+Verified locally: the 76-test timetable/calendar/navigation/day-plan/route run passed;
+the subsequent 17-test calendar/navigation/timetable/weekly-builder run passed.
+The new family agenda regression and five affected route tests passed after the
+agenda change. Frontend lint, typecheck and production build pass. Browser smoke
+covered admin, teacher, parent and student timetable/calendar at 320, 390, 768,
+1024 and 1440 CSS pixels with no horizontal page overflow or runtime exceptions.
+Month-to-Day selection, Today, calendar Day navigation, keyboard dismissal of
+schedule actions, family lesson details and return to the weekly grid were exercised.
+Local and ngrok readiness both report database and events OK. No database changes
+or reseeding are required. This slice has not been pushed or deployed to Stage. Physical-phone/user
+acceptance remains open; please review the live preview before further UI expansion.
+
+### Timetable navigation follow-up — 7 October 2026
+
+Latest user decisions supersede the Week browsing behavior above:
+
+- Retain the **Day / Month / Year** dropdown. Remove Week from the shared
+  timetable reader; Day already includes the seven-day rail. Existing `view=week`
+  links safely open Day. The separate admin weekly timetable editor is unchanged.
+- Day and Month are the compact and expanded forms of the same date selector.
+  The bottom toggle is **arrow-only**, with an accessible name, expanded state,
+  keyboard activation and a 44-pixel-high target. The month heading also toggles it.
+  No visible Expand/Collapse wording and **no swipe gesture**: ordinary touch
+  scrolling remains with the browser. This supersedes the initial gesture idea.
+- Selecting dates or another month preserves expanded Month and updates
+  the daily schedule beneath it. **Today selects today and collapses to Day**,
+  including when invoked from Year. URL state retains the view through reload/back.
+  Dates remain selectable while totals load or fail; unloaded totals are not
+  presented as free days.
+- Year shows only its overview in admin, teacher, parent and student timetables:
+  no daily periods, empty-day messages, notices or materials list. Opening a month
+  returns to the expanded Month selector. School/class/child context is retained.
+- During date fetches, keep the date selector and same-person/class context stable,
+  show a loading state instead of the previous day's work, and never reuse a
+  different child's placeholder data. Teachers can still change school in Year.
+- Selected dates share the same solid-accent circle and white number in compact
+  Day and expanded Month; Today uses the same accent outline in both. Shared theme
+  tokens retain each child's colour instead of a separate pale Month selection.
+
+Verified locally: 30 focused timetable/calendar/navigation/day-plan tests and seven
+affected route tests passed. Browser checks passed for all four roles: the three
+dropdown choices, expansion/collapse controls, no gesture-triggered mode change,
+Month persistence after selection and reload, Year hiding of daily content, and
+Year-to-Month drill-down. Day/Month/Year had no horizontal page overflow at 320,
+390, 768, 1024 and 1440 CSS pixels, and no runtime exceptions were observed.
+The final arrow-only control and delayed parent-date fetch were also checked in a
+mobile browser: the calendar stayed expanded and the old day's agenda was hidden
+during loading. Frontend lint, typecheck and production build pass. Local and ngrok
+readiness report database and events OK. These navigation changes alone need no database changes. Physical-phone
+user review remains open; this follow-up is not pushed or deployed.
+
+### Timetable editing repair — 7 October 2026
+
+- **Prepare changes:** reproduced a mobile Safari/WebKit event-order bug. Tapping
+  the menu action blurred the native disclosure with a null focus target, closing
+  it before its click could fire. The shared ScheduleActions wrapper now dismisses
+  on outside pointer interaction, actual keyboard focus departure or Escape, not
+  a null-target blur from a tap inside. Existing draft authorization and command
+  behavior remain unchanged.
+- **Edit timetable:** the route opened, but its API failed because the runtime
+  database role could not read `curriculum_subject_targets`. That table had retained
+  a different migration-account owner. Migration **053** aligns table and scope
+  validator ownership with `students`, following the existing direct-database
+  application boundary. RLS stays enabled; PUBLIC, anon and authenticated do not
+  gain table access. No timetable data is rewritten. The editor also now retains
+  the selected date/week from the daily view, with invalid/out-of-term fallback.
+- Applied only the reviewed 053 SQL transactionally to the local preview database
+  and a dedicated test clone. **No remote database or Stage changes were made.**
+  The ordinary migration runner is blocked locally by a pre-existing checksum
+  mismatch for migration **047**. Its source/history were not rewritten or bypassed
+  in the migration ledger; reconcile that drift before using the normal deployment
+  migration path. Do not treat this local repair as a clean deployment gate.
+
+Verified: all **44** focused frontend tests across timetable/navigation/calendar,
+day-plan API/editor and schedule-menu suites pass; lint, typecheck and production
+build pass. **21** backend day-plan integration and migration checks pass against
+the isolated database using the runtime role. Real mobile WebKit created a draft
+and displayed the editor against that clone; no draft was created in the user's
+review data. Chromium and WebKit opened the live weekly/period editor; WebKit also
+verified retained date context and Today collapsing from Year. The broad existing
+API test was attempted but stopped before timetable assertions on an unrelated
+fixed demo-count expectation (200 students versus the clone's 203); it is not
+claimed passing. Physical-phone acceptance and deployment remain open.
+
+### Separate timetable settings page — 8 October 2026
+
+User decision: the repeating-timetable editor is a settings destination, inspired
+by iPhone Settings, not another Timetable/Calendar browsing tab. This follows
+blueprint sections 3 and 6–7 while retaining the existing shared header, theme,
+navigation and authorization. Frontend UI engineering guidance informed the grouped
+rows, full-row tap targets, keyboard focus handling and progressive disclosure.
+
+- **Edit timetable** now opens a standalone page at the existing `/weekly` route.
+  Browsing tabs are absent during loading, errors and normal editing. Back retains
+  the selected class, school, date and browsing view.
+- Class and term use compact grouped settings rows. A weekday selector leads
+  directly to tappable period rows. Removed decorative totals, duplicate date/week
+  navigation, the class-card carousel and the always-visible success banner.
+- Existing add/edit/remove/copy operations remain intact. Real allocation conflicts
+  appear in the class picker, affected weekday and period; they are not hidden by
+  the simplified layout. Breaks no longer show meaningless unassigned-teacher text.
+- School dates and coverage targets are grouped settings entries. Coverage opens
+  as a focused subpage with its own title/back action; query-only page changes
+  reset scroll so the scope controls do not disappear behind the header.
+- Existing sheets now trap keyboard focus, support Escape (unless saving), and
+  restore focus on dismissal. Loading and retry states keep the editor's header
+  and back navigation instead of dropping the user onto an unframed error.
+
+**Scheduling scope, not a new temporal model:** the user pointed out that the
+screen appears limited to the current week. Inspection of the slot commands confirms
+that a slot is keyed by term and weekday, not by calendar week. The editor now
+explicitly says **Every week in this term** and shows its start/end dates. The
+existing daily-planning link remains available for date-specific changes. Changing
+the selected weekday does not create a future-effective timetable version.
+The follow-up choice is still open: a different pattern for one selected future
+week, a new repeating pattern effective from a future date, or both. Do not claim
+these future-scheduling semantics are implemented or simulate them with a date picker.
+
+Verification: 49 focused editor/navigation/calendar/day-plan tests and four affected
+route tests pass. After adding explicit term scope, the 22-test editor/navigation
+rerun also passes. Lint, typecheck and production build pass. Chromium and WebKit
+UI checks covered 320, 390, 768, 1024 and 1440 px: no horizontal overflow; period
+dialog opening, focus trapping/restoration, coverage navigation and scroll reset
+passed. WebKit also retained Month/class/date on return to the timetable; its
+navigation run emitted existing aborted auth-session/event-stream diagnostics, so
+this is not a claim of a clean browser-console audit. A separate Chromium check
+passed the delayed loading, failed API and successful retry sequence. Local and
+ngrok readiness report database and events OK. No new backend/schema/seed changes
+were made in this UI slice. Not pushed or deployed; the earlier migration-047 drift
+gate and physical-phone review remain open.
+
+## 8 October 2026 — Annual schedule preparation and dated publication
+
+Supersedes the preceding open future-scheduling choice: the user approved both
+future repeating arrangements and bounded temporary arrangements. Contract and
+research references: `ANNUAL_SCHEDULE_PLANNING.md`. Blueprint sections 3 and 6–8
+remain the primary domain reference; shared navigation/theme are preserved.
+
+Implemented standalone Schedule settings, next-year terms/class reuse into
+unpublished drafts, school-day timing generation, period editing/day copy,
+teaching allocation and existing closure/coverage controls. Publication uses
+explicit dates, revision checks, idempotency, active staff checks, class/teacher/
+room conflict checks, audit, transactional outbox and deduplicated notifications.
+Migration 054 adds immutable dated recurring versions and freezes legacy baseline
+identities at first publication. Closures and published daily changes retain
+precedence; temporary expiry restores the preceding pattern. Legacy weekly writes
+are blocked once a dated version exists. Teaching-access fallback uses effective
+dates. Calendar working-day indicators use actual effective schedules; assessment
+dates are projected without marks and scoped to permitted staff or learners.
+
+Verified: 29 backend integration tests (10 annual planning, 19 existing daily-plan)
+pass against an isolated full-schema database. Frontend full suite: 320 tests in
+50 files pass. Backend/frontend lint, typecheck and production builds passed.
+Chromium and WebKit settings checks passed at 320/390/768/1024/1440 px without
+horizontal overflow; real-database draft creation and discard passed in both.
+Local migration 054 applied transactionally; local and ngrok `/readyz` both report
+database/events OK. Demo schedules/enrollments were not replaced by test data.
+
+Boundaries: no automatic timetable solver, student rollover, published-version
+cancellation, or remote deployment is claimed. Starts must be after today; same-day
+changes remain Daily Plan. Existing migration-ledger drift at 047 still blocks a
+normal release until deliberately reconciled; historical checksums were not
+rewritten. Physical-phone acceptance remains requested. No push/deploy this turn.
+
+### Daily Plan entry correction — 8 October 2026
+
+The settings link previously returned to the timetable reader, leaving its edit
+action inside the overflow menu. It now opens explicit Daily Plan editing mode,
+retains class/date, sets Day view, and shows Prepare changes/Create revision as a
+primary action. Existing drafts still open in the editor; navigation alone never
+creates a draft. Past dates remain read-only. Back returns to Schedule settings.
+Five focused navigation/action tests passed, including context preservation,
+no write on entry, explicit preparation and historical-date protection. Production
+build passed. Chromium/WebKit mobile checks confirmed the actual link destination,
+visible preparation action and no horizontal overflow. Local readiness is healthy.
+No database change, push or remote deployment for this correction.
+
+### Discard proxy-error handling — 8 October 2026
+
+The reported discard dialog displayed an ngrok HTML document. Current local and
+public readiness checks pass; the original transient failure is not conclusively
+identified. Shared API handling now rejects HTML proxy responses (including HTTP
+200), displays a concise uncertainty/retry message, and preserves JSON domain
+errors. Ngrok-hosted API requests send the browser-warning bypass header. An HTML
+response cannot be mistaken for a successful command. Six regression tests,
+frontend build/typecheck and lint passed. A WebKit mobile check against an isolated
+database injected an HTML 502 on discard, verified the readable error, then retried
+against the actual backend: discard succeeded with the identical idempotency key.
+The user's live draft was not altered. No migration or remote deployment.
+
+### Simplified day editing — 8 October 2026
+
+User decision supersedes the separate Daily Plan entry mode above: remove the
+large Change this day panel. The ordinary Day schedule overflow menu now offers
+Edit day schedule (or Resume editing for an existing draft). The editor opens
+only after that action; opening the timetable does not create or open a draft.
+Schedule settings retains a plainly labelled View day schedule navigation link,
+not a required editing gateway. Date/class context and past-date safeguards remain.
+Five focused tests, production build/typecheck and lint pass. WebKit mobile testing
+against the isolated database verified menu → editor, reload → read-only schedule,
+Resume editing → discard. No live user draft was modified, no schema change or
+deployment. Uses the existing accessible overflow-menu pattern and shared theme.
+
+Menu polish: Edit day schedule/Resume editing now has a decorative 19px pencil
+icon matching Print. Both actions use equal horizontal padding and nonshrinking
+icons. Three focused tests and typecheck pass; local readiness remains healthy.
+
+## 8 October 2026 — Attendance presentation simplification
+
+Applied the user's timetable-style simplification to staff/admin workspaces and
+registers, plus parent/student attendance. Blueprint sections 6, 8, 10 and 12
+invariants retained: unsubmitted is not absence, gate observations remain separate,
+offline/reconciliation states remain explicit, correction/locking rules unchanged.
+
+- Shared compact attendance date control: native date entry, Previous/Next day,
+  Today and arrow-only month disclosure. Picking a date keeps the month expanded;
+  Today collapses it. Register date changes still use the unsaved-edit confirmation.
+- Removed the staff workspace gradient hero; kept compact factual totals, search
+  and status filters. Class cards form a flatter grouped list. Attendance desk
+  starts collapsed unless review cases/errors require attention; paper entry and
+  reconciliation remain available within it.
+- Register header is flatter with the shared date control. Removed redundant
+  principal-review prose; retained the explicit edit/correction action, attribution,
+  revision history, source handling, offline warnings and submission safeguards.
+- Parent calendar and subject records precede optional breakdown/arrival details.
+  Student subject attendance precedes optional class standings/absence simulation.
+  These secondary sections use disclosures, not deleted features. Family summaries
+  use existing surfaces and child accents with corrected text contrast. Source
+  order follows visual order for keyboard users. No data/permission/schema changes.
+
+Evidence: full frontend suite 331/331 passed; post-reordering focused tests 17/17
+passed. Build/typecheck and lint passed. WebKit checks covered principal, teacher,
+parent and student at 320/390/768/1024/1440 px with no horizontal overflow; expanded
+calendar and real register navigation checked. Local/ngrok readiness both healthy.
+Physical-phone review requested. No push or remote deployment this turn.
+
+### Attendance-first correction — 8 October 2026
+
+The user rejected copying timetable controls into attendance. This decision
+supersedes the expandable attendance calendar and workspace totals above.
+Staff/admin attendance is a daily register queue: one inline native date picker
+with adjacent-day navigation (Today only when viewing another day), followed by
+one status select with counts and optional search/attendance-desk tools. Removed
+the separate calendar card/expander, repeated totals, Registers heading and four
+filter chips. Registers now follow the controls directly. Existing filter logic,
+record states and marking/correction rules are unchanged.
+
+Desk cases retain a badge plus visible review notice; load failures retain an
+explicit notice, never an implied zero queue. Paper/reconciliation tools open
+from the desk button. Search opens with focus and closes/clears with Escape or
+its close button, returning focus to its trigger. The native date picker also
+simplifies individual registers while retaining unsaved-edit protection.
+
+Verified: 23 focused date/workspace/register tests, build/typecheck and lint pass.
+WebKit shows no horizontal overflow at 320/390/768/1024/1440 px. Real preview
+principal and teacher search/filter entry and principal desk opening verified;
+mobile screenshot confirms class records visible immediately below two control
+rows. Local and ngrok readiness healthy. No data/schema edits, push or deployment.
+Request phone validation of this revised hierarchy rather than claiming acceptance.
+
+### Shared date navigation — 8 October 2026
+
+Latest user decisions supersede the previous per-module picker treatments:
+
+- One shared date-navigation component, date grid and view selector now serve
+  timetable and Calendar across all four portals, plus admin/teacher attendance
+  workspaces and individual registers. Module-specific data and actions remain
+  separate; this does not add new attendance aggregates or permissions.
+- Tapping the top-left date/month/year uses the same native date input in each
+  module. It does **not** expand/collapse the inline calendar. Only the separate
+  arrow (or Day/Month selector) changes inline presentation. Timetable retains
+  its Year overview without a daily agenda. No swipe gestures were added.
+- Attendance remains one compact date row, with adjacent-day arrows and **no
+  inline expansion**. Timetable/Calendar use Monday-first seven-day strips and
+  week arrows; expanded month and year arrows move the displayed period. All
+  arrows have explicit accessible period labels.
+- Today is shown only when the selected school date differs from today. Returning
+  to today also collapses the timetable/calendar month view. Calendar updates
+  date and view atomically while retaining other URL context. Picking another
+  date does not collapse an already expanded month.
+- The same accent-filled circle marks selection; an outline marks unselected
+  today. Event/status dots and timetable totals remain domain-specific; indicator
+  space is reserved across a row to keep date numbers aligned. Month/year changes
+  clamp to valid dates; date arithmetic uses UTC calendar days, not device offsets.
+- Removed the repeated visible selected-date/Today line next to the expansion
+  arrow and tightened bottom spacing. A screen-reader announcement remains.
+  Touch targets, keyboard month-boundary navigation and visible focus are retained.
+- Schedule settings is an unboxed text link with its chevron and keyboard focus
+  outline. The actual destination and class/date context are unchanged.
+- Register date changes still go through the unsaved-work confirmation. Rejected
+  changes do not update the controlled date. No attendance commands, access rules,
+  schema changes, live-data edits or remote deployment are part of this change.
+
+Evidence: full frontend suite passed 339/339 before final minor styling/metadata
+polish. Focused shared-control checks cover native input changes vs expansion,
+Today visibility/collapse, guard rejection, leap years, month-end clamping,
+keyboard focus and calendar indicators. WebKit exercised date selection, month
+selection persistence and Today across principal/teacher/parent/student timetable
+and Calendar plus both staff attendance queues; no horizontal overflow at
+320/390/768/1024/1440 px. Local and ngrok readiness passed. Physical-phone native
+picker and visual acceptance remain requested; browser emulation is not that sign-off.
+
+Final polish verification: 19 focused date/navigation tests, production build,
+typecheck and lint passed. WebKit confirmed the Schedule settings link has zero
+border, transparent background and a retained 44px hit area on both routes;
+320/390px rechecks and local readiness passed after the final changes.
+
+### Timetable compact counts and monthly year overview — 8 October 2026
+
+User clarification: Year is an overview of monthly scheduled classes, **not** a
+grid of miniature calendars. The interim mini-calendar design was rejected and
+removed. Year now displays twelve tappable month totals with a restrained selected
+month accent, no date cells, bar chart, or daily agenda. Tapping a month retains
+the established Month-view destination. Counts retain the existing "periods"
+unit: these are scheduled lesson periods, not distinct class sections.
+
+The compact seven-day strip now shows the same per-date count as the expanded
+month (dash for a known free day). Missing or failed data is never presented as
+zero/free. The shared implementation serves all timetable portals and preserves
+child accent colours. Month totals without summary data read "Not loaded".
+
+Verified: 12 date/timetable component tests passed after the correction, including
+compact counts, missing data and the explicit absence of calendar dates in Year.
+Seven route-level timetable checks passed during this slice. WebKit verified the
+final monthly-total layout and month drill-down at 320/390/768/1024/1440 px with no
+horizontal overflow; all four portal count/navigation flows were also exercised.
+Phone visual acceptance remains open. No data, permission or schema changes.
+
+### Attendance paper/offline review clarity — 8 October 2026
+
+User feedback: the "Operational continuity / Evidence and reconciliation" panel
+did not explain its purpose and repeated headings, zero summaries and nested boxes.
+The panel is now named **Paper & offline entries**, with one short explanation,
+flat class/date review rows, and a collapsed **Enter a paper register** action.
+The empty state is a single "Nothing to review" line. Processing details no longer
+dominate the view: pending entries appear only when nonzero; applied/rejected
+totals are disclosed under their actual attendance date. Missing, loading and
+failed responses never imply a zero/clear queue.
+
+Scope was checked against the existing backend: open cases and pending/review
+counts span all dates, while processed totals are date-specific. Every case shows
+its own date; the toolbar uses the full review count rather than the loaded list
+(the server caps that list at 50). Review details retain the original server
+reason, recorder, observation time, source reference and current revision. Required
+notes, locked-register protection, revision checks and accept/reject command
+semantics remain intact. Busy actions cannot be duplicated or switched mid-save.
+
+Verification: 347 frontend tests passed before the final additional toolbar-count
+regression; the final focused panel/workspace set passes 16 tests. Production
+build/typecheck and lint passed. WebKit inspected the real empty/paper-entry flow
+and read-only mocked review/locked/error states; no overflow at
+320/390/768/1024/1440px, with 44px controls and keyboard focus verified. A navigation
+abort of the existing events stream produced an access-control console error;
+this is not represented as a clean console or a resolved event-stream issue.
+Local preview readiness is healthy. No attendance records, permissions or schema
+were changed; no push or deployment. Physical-phone visual validation is pending.
+
+### Public institution directory population — 8 October 2026
+
+Prepared a checksum-pinned, Stage-only import of the publicly licensed India Data
+Portal UDISE snapshot and an AISHE-derived public snapshot. Rows retain provenance,
+remain unverified, and cannot overwrite existing official identities or tenant
+links. Normalization rejects invalid identifiers and quarantines conflicting
+AISHE codes. Source files remain outside Git. The dedicated workflow verifies the
+loader against isolated PostgreSQL before using the existing Stage credentials;
+its summary artifact records actual accepted/rejected counts. Live counts and
+search verification must be taken from a successful run, not inferred from source
+row totals. See `docs/INSTITUTION_DIRECTORY.md` for attribution and snapshot dates.
+
+Stage import attempt `37671492107` failed with PostgreSQL `53100` (no space left
+on device) after validating all 1,440,856 rows. Its atomic transaction rolled back;
+these are prepared counts, not live directory coverage. The loader now respects
+per-statement limits with 5,000-row windows, verified by a late-window rollback
+test. Automatic imports are disabled: full import requires a manual workflow run
+after database storage is increased. Ordinary VACUUM is available for reclaiming
+dead tuples without removing live records; no tenant records are deleted.
+
+### Scheduling/attendance Stage integration — 8 October 2026
+
+Pulled Stage through `196e93a` and preserved its institution-directory work alongside
+the scheduling and attendance changes. The only merge conflict was the appended
+implementation record; both histories are retained. The three unrelated local
+duplicate files named with ` 2` remain untracked and are excluded from the release.
+
+Historical migration sources, including 047, are unchanged relative to the latest
+successfully deployed Stage revision. The earlier 047 checksum warning concerns
+the local preview ledger; it was not bypassed or rewritten. The two independently
+named 053 migrations are distinct immutable entries in the existing filename-keyed
+runner. New curriculum ownership and annual schedule migrations remain subject to
+fresh PostgreSQL 17 integration tests and normal Stage checksum enforcement.
+
+Merged backend typecheck/lint/build, mobile typecheck/lint/build and desktop
+typecheck/build passed locally. Deployment is pending the push-triggered Stage
+verification, migration and exact-release health gates; this entry does not claim
+that the new revision is already live. No full demo reset or national-directory
+import was requested or started.
+
+Release verified: [Stage run 37687825563](https://github.com/EduveraIITA/Eduvera/actions/runs/37687825563)
+passed all gates and deployed application revision
+`f77127bd1f7b83018be506a17b7183022646e391`. CI passed **317 backend tests in 45
+files** and **358 frontend tests in 55 files**, plus secret scanning, all builds,
+and fresh PostgreSQL 17 migration/seed verification. Stage then applied
+`053_timetable_curriculum_ownership.sql` and `054_annual_schedule_planning.sql`
+through the normal checksum-validating runner. Full reseeding was skipped.
+
+Independent public checks returned that exact SHA and `environment: stage`, with
+database/events ready. Authenticated WebKit mobile checks opened the new
+paper/offline attendance panel and paper-entry selector, navigated from timetable
+to Schedule settings, and loaded all eight class arrangements without alerts or
+horizontal overflow. The local preview also remained ready. This records a Stage
+release, not production approval or physical-device acceptance. The documentation-
+only evidence commit does not require redeploying the unchanged application.
+
+### 8 October 2026 — teacher class directory and individual class pages (local)
+
+User decision: keep the shared visual system but replace the large class hero
+and inline expansions with a settings-style directory and separate class pages.
+The follow-up explicitly requires lesson times and class activity on the list.
+
+- Directory rows show subjects, students, room, dated lesson times (including
+  cancellation), attendance state and a separate activity link. No false zero
+  counts or empty-state messages are used when loading fails.
+- `/teacher/classes/:classId` preserves date and section through reload/back.
+  Overview contains class facts, register/timetable links and lesson materials;
+  Students contains a searchable roster; Updates contains published notes,
+  private replies addressed to this teacher and recorded class notifications.
+- The new read-only class-updates endpoint uses the existing date-scoped
+  attendance workspace and `attendance.view` permission. It does not infer a
+  class from an arbitrary student's current enrolment. Replies are additionally
+  limited to diary items authored by the requesting teacher; another teacher's
+  private replies are excluded. Published notes are term-scoped.
+- Activity is explicitly **recent, last 14 days**, not an invented unread count.
+  Only actual notification rows use unread state and an explicit Mark as read
+  action. Opening a class does not mark anything read. Both daily-plan and
+  repeating-timetable notifications can map to a class. Unscoped notifications
+  are not guessed into a class. The latest 50 items per class are returned with
+  an explicit truncation message; these badges are not lifetime totals. Updates
+  refresh every minute and on focus. Notes/comments do not yet have individual
+  server-side read receipts; school-wide changes without class metadata remain
+  in the main notification centre.
+- Verified locally: frontend/backend typechecking and lint; production builds;
+  isolated PostgreSQL class-feed test covering assigned class, term, unpublished
+  notes, private recipient, read/unread state and empty scope. Real-data WebKit
+  directory/detail/roster/update screens loaded without alerts, preserved a
+  direct roster URL through reload, and had no horizontal overflow at widths
+  320/390/768/1024/1440. All **371 frontend tests in 56 files** passed.
+  Local `/readyz` returned database/events ready.
+
+This is local implementation, not a Stage deployment or physical-device signoff.
+User phone validation remains requested. The existing blueprint and shared
+header/navigation/theme are unchanged; no school data reset or migration is needed.
+
+Follow-up: Students now offers labelled gallery/list icon controls with pressed
+states and 44px targets. List remains the initial default; the chosen layout is
+remembered in this browser, with a safe fallback when storage is disabled.
+Gallery uses larger photos/initials and retains name, roll/admission number and
+attendance state. Search persists while switching layouts. Typecheck, lint and
+15 focused class tests passed; WebKit verified persistence after reload and no
+horizontal overflow at 320/768/1024/1440px. Preview remained ready. Local only.
+
+Gallery refinement requested immediately afterwards: restored the earlier compact
+portrait treatment rather than two large cards per row. Mobile shows four
+60px portraits per row, roll-number badges, names and text attendance labels with
+status rings; no individual card boxes or admission-number repetition. Admission
+numbers remain searchable and visible in list mode. List/toggle persistence is
+unchanged. Typecheck and all 15 focused tests passed; WebKit checked four columns
+at 320/390px and no overflow through 1440px. Local preview remains healthy; user
+visual approval and deployment are still pending.
+
+### Non-home navigation and compact-workspace pass — 8 October 2026 (local)
+
+User direction: retain the shared identity header and every portal home page;
+simplify non-home work, not merely recolour oversized banners. Before adding a
+screen, check that it has one page title, puts its main list/action immediately
+below essential controls, and has no introductory card repeating the page title.
+Counts belong beside the relevant list/tab; nonzero action counts must lead to
+the work. Use grouped rows and separate record pages. Preserve status meanings,
+permissions, confirmations and evidence; never hide operational exceptions to
+make a screen look cleaner.
+
+Implemented in this pass:
+- Route-scoped shared styling excludes principal, teacher, parent and student
+  home routes. Existing branding, marksheets and safety/map status treatments
+  remain intact. Default Back moves to the module's parent, preserving relevant
+  child/date context; explicit workflow back/cancel handlers retain precedence.
+- Assessments, grading schemes/report releases and published policies have
+  URL-addressable list/detail navigation rather than auto-opening a record
+  underneath its directory. Transport has request, roster, journey, pickup and
+  settings sections; forms return to their originating section.
+- Staff now begins with tabs and its searchable directory: no Staff Setup hero,
+  duplicate People/Staff directory headings or standalone invitation card.
+  Active count and Invite/Add share a compact toolbar. Leave badge includes
+  outstanding review and cover-gap counts with accessible detail. My Work and
+  My Leave summaries are compact rows, not hero cards.
+- Removed the duplicate family-fees child selector, kept the shared selector,
+  corrected teacher invitation guidance to avoid an inaccessible admin link,
+  simplified student leave labels and aligned Schedule settings naming.
+
+Verification: typecheck, lint and production build passed; the full frontend
+suite passed 388 tests in 58 files before the final Staff header refinement.
+Real-data WebKit checked revised screens in all four portals at 390px with no
+horizontal overflow or visible alerts; each home was outside the redesign scope.
+Assessment/report detail links survived reload and Back restored their lists;
+transport form Back restored settings. Staff, transport and report indices also
+had no horizontal overflow at 320/768/1440px.
+After the Staff refinement, all 32 focused staff/navigation tests and the
+production build passed. The mobile Staff screen has one heading and displays
+five complete staff rows within the 390×844 viewport. Local readiness reports
+database and events healthy.
+
+This is a substantial first pass, not a claim that every module, mutation,
+permission combination or physical-device interaction is signed off. Remaining
+acceptance includes user phone review of the simplified hierarchy and individual
+legacy-screen cleanup where needed. No Stage deployment or database migration
+was performed for this UX pass.
+
+### Remaining non-home screen review — 8 October 2026 (local)
+
+Continued after the user explicitly requested the remaining pages. Reviewed 59
+non-home routes in real-data mobile WebKit: principal (19), teacher (14), parent
+(12), student (14). These checks covered the index/form routes for attendance,
+timetable/calendar, students/import, administration, activation, fees, staff,
+messages, concerns, events/create, policies/governance, assessments, reports,
+transport, invitations, classes, leave, responsibilities, diary, eligibility,
+results and More. Existing compact screens were retained rather than redesigned
+without a need. Homes remain excluded from the secondary-screen styling.
+
+Additional implemented changes:
+- Event lists have filters and real pending-action context instead of summary
+  banners; event details/registers use compact metadata, a single page heading,
+  readable statuses and smaller readiness summaries. Consent and register
+  restrictions remain unchanged.
+- Student diary has one context line and entries instead of two summary cards.
+  Parent diary puts notes first in the default empty-packing case; day plan and
+  packing are a disclosure, automatically open when there are packing items.
+  No-action acknowledgement is a line, and an unavailable note form is omitted.
+- Student attendance removes duplicate name/title, decorative ring and repeated
+  buffer panel. Eligibility leads with the actual attendance result, with a
+  compact next-class/timetable action instead of an empty next-class card.
+- Removed the governance metric banner, retaining authority review counts and
+  the boundary between app access and institutional authority. Fee balances and
+  actions are compact; empty review queues/history no longer occupy large cards.
+- Removed duplicate timetable headings, parent leave sign-off banner, and the
+  redundant Apply Leave tab/context row. Student secondary routes share the
+  same bottom navigation; leave uses More, without changing the student home.
+- Account security links retain their originating More route and child context;
+  the return target is restricted to the four known More paths. Browser-tested
+  account return and diary disclosure opening/closing.
+
+Verification: all 389 frontend tests in 58 files passed; typecheck, lint and
+production build passed after the final component refinements. The 59-route
+mobile smoke audit had no horizontal overflow or visible error alerts. Eleven
+changed layouts were additionally checked at 320/768/1024/1440px, without
+horizontal overflow. Visual inspection caught and corrected light-on-light
+eligibility/transport text after removing their dark banners. Preview readiness
+reports database/events healthy.
+
+Correction after user review: the preceding 59-route pass was a smoke audit and
+selected visual cleanup, not completion of the requested all-screen overhaul.
+Many route entries were retained or only lightly changed. It did not establish
+that every record, modal, permission combination, assistive technology
+or physical-device interaction has been exercised. Business commands, financial
+verification, safeguarding warnings and authorisation were not relaxed for visual
+simplicity. Phone review remains requested; these changes are local, not deployed.
+
+### Structural gaps found after user review — 8 October 2026 (local)
+
+The user correctly identified untouched layouts. Do not use the count of routes
+loaded as a count of redesigned screens. The earlier user-facing coverage list
+combined substantial changes with minor heading/style changes and was too broad.
+
+This batch changes actual navigation/content structure:
+- Students & guardians: a searchable directory without a duplicate directory
+  heading; secondary actions under an overflow menu. Student, enrollment and
+  guardian-permission screens are mutually exclusive URL-addressable views.
+  Profile reload uses the authorized school/admission lookup and checks exact
+  student identity; it never substitutes another returned student. Back returns
+  permissions → student → directory.
+- Fees: records are the default. Reviews and payment settings have separate
+  views. Posting an invoice or recording payment opens a focused form, not a
+  panel elsewhere in the ledger. Student filter and selected invoice are in the
+  URL. Balance detail is optional while outstanding/refund totals remain visible.
+  Flattened invoices and removed repeated record headings; verification and
+  idempotency behavior remain in place.
+- Academic setup: removed the repeated page heading. Class promotion opens its
+  form immediately instead of requiring another disclosure click.
+
+These are local changes. The previous rollout has not been deployed, so a
+deployed app will still show the older screens. User has been asked which pages
+and environment they are looking at; no answer is required to apply these fixes.
+
+Verified for this batch: 396 frontend tests in 60 files passed, including new
+profile/enrollment/guardian-navigation and fee-form/review/settings tests.
+Typecheck, lint and production build passed. Real-data WebKit verified student
+and payment-form direct-link reloads, hierarchical Back, and the student actions
+menu. Six affected screens had no overflow or visible alerts at 320/768/1024/1440.
+The fee navigation preserves institution/student context. Local readiness is
+healthy; no deployment or database change was performed.
+
+### Focused remaining-workspace overhaul — 8 October 2026 (local)
+
+Continued at the user's request after the coverage correction above. The
+frontend UI skill informed content-first layouts, accessible controls and
+URL-backed navigation. This batch changes eight specific workflow groups;
+it does not use a route-smoke count as evidence of a universal redesign.
+
+- **Invitations (admin/delegated staff):** history and status filter first;
+  creating an invitation is a separate URL view. Contextual Invite staff/student
+  links still preselect the account type. Cancel returns to history; invitation
+  codes are not placed in the URL and the delivery/acceptance distinction remains.
+- **Student imports (admin/delegated staff):** compact history rows open a
+  review/receipt view. New import is separate from history and survives reload.
+  School selection resolves only against authorized memberships. Upload guidance,
+  explicit review/commit, account/permission boundaries and audit receipts remain.
+- **Setup status:** completed checks are collapsed. Active institutions still
+  see any current incomplete required check; active is not treated as proof that
+  every readiness check continues to pass. Removed the duplicate progress/success
+  banners without changing review/activation commands.
+- **Family fees (parent/student):** separate invoices, receipts and reviews;
+  opening an invoice replaces the directory. Direct links retain student context;
+  switching children clears the selected invoice. Students remain read-only.
+  Payment reporting retains amount bounds, idempotency, required confirmation and
+  explicit pending-verification language. Print is labelled for the current view.
+- **Restricted care (admin/staff):** case and intake pages replace scrolling
+  overlays, with URL state and Back to cases even after a load error. Team settings
+  are separate, with an optional add-member form. Open/reporting counts are inline,
+  both recipient-route states remain visible, and emergency/reporting warnings,
+  forced alternate routing and explicit per-case access are preserved.
+- **Event detail (admin/staff):** sessions, participants and fee reconciliation
+  are separate views. Metadata is compact; secondary event commands use an
+  accessible overflow menu. Session rows are flat. Existing consent distinctions,
+  coarse-only staff finance visibility, cancellation confirmation and manual
+  refund evidence remain. Empty reconciliation and unavailable finance states are
+  explicit; the read-only fee view does not invent a refund action.
+- **Policies/governance:** compact four-section navigation and decision-route
+  rows. A rule opens its full initiation/review/decision/implementation conditions
+  separately. Policy editors have URLs and return to the register. Publication
+  review now displays the exact draft text, audiences, dates and source note above
+  the existing review/override controls; editing rules and authority boundaries
+  are unchanged.
+- **Teacher leave:** requests and balances have separate views; Apply opens a
+  focused form with no balance/history stack behind it. Cancel/Back retains the
+  originating section. Request cards are flat; approval and withdrawal commands
+  are unchanged.
+
+Verification: all **408 frontend tests in 62 files passed**. New tests cover
+family fee navigation/read-only access/child switching, import navigation and
+school resolution, completed setup disclosure, invitation navigation, care error
+return, and decision-route navigation. Updated tests exercise the actual section
+selection before asserting existing consent, financial and leave safeguards.
+Typecheck, lint and production build passed. Real-data WebKit rendered 24 affected
+routes/views across four portals at 320/768/1024/1440px with no horizontal overflow,
+visible error alerts or page exceptions. Two additional teacher care URLs were
+correctly redirected by the demo account's permission gate; they are not counted
+as rendered care screens. Care layout was checked through the admin portal and
+its teacher variant through component tests, without expanding demo permissions.
+Student/parent invoice reload and Back,
+policy and decision-route reload, and event participant reload were also checked.
+All four home routes were confirmed outside the secondary-screen styling.
+
+No database reset, migration, permission expansion, push or deployment was done.
+The preview remains local; phone review of these workflows is still requested.
+These checks do not certify every modal, dataset, assistive technology or device.
+
+### Screenshot-led correction: remaining banners and directories — 8 October 2026 (local)
+
+The user's seven screenshots identified omissions in the preceding passes:
+assessment and report-card summaries, the separate message-report queue,
+the Messages toolbar, and the events **index** (the prior pass changed event
+details). Prior route smoke checks did not establish these screens were redesigned.
+This correction covers those five workflows and their shared portal variants;
+it is not a claim that every screen in the product is complete.
+
+- **Assessments, admin and teacher:** removed the blue metrics banner. A compact
+  status filter carries counts and persists in the URL; opening and returning
+  from an assessment preserves it. Each row retains subject, class, date and
+  explicit status. Admin creation uses a small New menu with both assessment and
+  cycle creation; an assessment still requires a cycle. No teacher creation
+  permission or result-publication rule was added.
+- **Report cards, admin and teacher:** removed the blue summary. Admins retain
+  Releases/Schemes navigation, with New scheme in the Schemes view. Teachers no
+  longer get a single-option Releases tab. Release status counts are filters,
+  and the selected filter survives detail navigation. Published reports, review
+  requirements and correction commands are unchanged.
+- **Messages, all four portals:** removed the repeated Conversations heading,
+  fixed the vertically stacked toolbar, and replaced ambiguous icons with one
+  named New message action plus an options menu for group creation/privacy.
+  Removed the duplicate floating compose button obscured by the bottom nav.
+  Conversations are one grouped list with unread counts and timestamps retained.
+- **Events index, admin and teacher:** replaced large individual event cards
+  and separate action/intro blocks with a filter, compact creation link and
+  full-row event links. Rows retain event time, venue and status and show their
+  own open-register count. Server pagination retains the selected filter.
+  Family event consent/participation screens are not changed by this index pass.
+- **Message reports:** replaced the horizontal incident strip and automatically
+  selected detail underneath it with an exclusive list/detail flow. A `report`
+  URL restores the requested record; missing or inaccessible records never
+  silently fall back to another report. The shell provides the detail title and
+  Back to the same report queue/status. Report content, reviewer restrictions,
+  required resolution notes and command payloads remain. Removed redundant
+  internal headings, hard-coded school branding, the unconfigured four-hour
+  target and canned note chips. Emergency guidance, confidential access and the
+  distinction between recorded closure and statutory compliance remain explicit.
+
+The frontend UI engineering skill guided content-first structure, semantic
+controls, readable rows and URL-backed navigation. Shared non-home styling also
+uses the actual border token so grouped rows have consistent separators.
+
+Verification: **420 frontend tests in 64 files passed**. New regression tests
+cover assessment filters and creation prerequisites, teacher report controls,
+event row links/pagination, and message-report list/detail, direct links, errors,
+staff assignment restrictions, required notes, modal variant and shell Back.
+Typecheck, lint and production build passed. Real-data WebKit checked the affected
+directories and shared Messages views at 320/768/1024/1440px; no horizontal
+overflow was observed. Phone renders were visually reviewed, not just loaded.
+The final Messages toolbar is 44px high at all four widths in all four portals;
+its options open by keyboard and privacy opens in each portal. Report detail
+also passed the four-width check. Assessment/release filter persistence and
+message-report reload/Back were verified in the browser. All four home routes
+remain outside secondary-screen styling. Both local and phone-preview readiness
+endpoints were healthy. No live report action, message send, database reset,
+permission expansion, push or deployment was performed. Phone review remains
+requested; these checks do not certify all devices or assistive technologies.
+
+### Flat assessment result register — 8 October 2026 (local)
+
+At the user's screenshot-specific request, removed the inset register frame,
+rounded inner corners and shaded summary header in admin and teacher assessment
+details. Results now use full-width dividers within the existing detail surface,
+plain roll numbers, a compact recorded count, and feedback below the score.
+An empty workflow-action container no longer adds a blank strip above results.
+The evidence-policy label is readable (for example, "Evidence not collected")
+instead of "none evidence". This focused use of the frontend UI skill changes no
+scoring, authorization, moderation or publication commands.
+
+Verification: all 10 assessment tests passed, including new admin/teacher
+read-only and editable-register regressions for unrecorded outcomes, marks and
+revision-checked saves. Typecheck, production build and lint passed. Real-data
+WebKit checked both portals at 320/768/1024/1440px: the register has no border or
+rounded frame, the header has no filled background, and no horizontal overflow
+was observed. The mobile render was visually reviewed. Local readiness remains
+healthy. No live marks were changed and nothing was pushed or deployed; phone
+validation of the updated register is requested.
+
+### Student attendance: scan-first summary and meaningful emphasis — 8 October 2026 (local)
+
+The user clarified that simplicity must not mean muting everything: highlight
+facts that help a person understand their position or decide what to do, not
+decorative banners. They confirmed the requested header is the **Attendance
+summary**, not the shared school header or the Timetable controls. This focused
+pass follows the blueprint's distinction between recorded facts, missing data
+and projections; it changes no attendance policy or authorization.
+
+- The summary leads with the overall percentage, an explicit above/near/below
+  minimum label and the required percentage. Term and attended-day count remain
+  visible; detailed totals are under Breakdown. An overall percentage no longer
+  asserts eligibility across all subjects.
+- Subject rows show name, attended/held classes, percentage and any threshold
+  warning. Removed repeated icons, progress bars and safe-buffer pills from the
+  collapsed list. One URL-backed subject filter replaces horizontal chips.
+- Opening a subject reveals a flat metric row with a prominent safe-buffer class
+  count and minimum percentage, followed by teacher, room and next class. The
+  adapter exposes the existing buffer calculation as a number, without parsing
+  display copy or changing its formula. Positive, zero and below-minimum states
+  retain explicit text as well as semantic colour; estimates are not leave
+  approval. Missing attendance never becomes a zero-percent or zero-buffer claim.
+- Leave, help, class standings and absence planning remain named options. The
+  planner requires recorded attendance. Class standings no longer opens from an
+  ambiguous percentage/leaderboard preview; closing it restores focus, including
+  Safari pointer activation. Home, shared school header and navigation are unchanged.
+
+The frontend UI engineering skill guided the content-first hierarchy, native
+disclosures, token-based colours, keyboard access and scoped responsive styles.
+Verification: **433 frontend tests across 64 files passed**; the final Safari
+focus adjustment also passed all 10 student attendance component tests. Regression
+coverage includes threshold states, missing records, numeric buffer values,
+subject filtering, expanded details, leave/standings and the planning stepper.
+Typecheck, production build and lint passed. Real-data WebKit checked the page at
+320/768/1024/1440px without horizontal overflow, and phone screenshots were
+visually reviewed. Subject expansion works by keyboard; filter reload, Breakdown,
+planning and modal return focus were checked in the browser. The attendance API
+returned 200 and in-app navigation produced no page errors. Both local and phone
+preview readiness were healthy. No live attendance was changed, and nothing was
+pushed or deployed. Phone review of the revised summary and expanded subject is
+still requested; these checks do not certify every device or assistive technology.
+
+### Screen simplification release preparation — 8 October 2026
+
+At the user's request to pull, push and deploy, pulled `origin/Stage`; it was
+already current at `eab627f`. The release includes the accumulated teacher class
+workspace, secondary-screen hierarchy/simplifications, flat assessment register
+and focused student attendance changes recorded above. The three unrelated
+untracked duplicate files named with ` 2` are excluded and left untouched.
+
+Backend typecheck, lint and build and desktop typecheck/build passed again.
+Mobile verification remains 433 passing tests, typecheck, lint and build as
+recorded above; CI will re-run verification from the committed source. No schema,
+migration, dependency lockfile or deployment-workflow change is included.
+The existing Stage pipeline must pass fresh isolated PostgreSQL integration
+tests before deploying, then verify the exact application revision and public
+readiness. Full demo reseeding and national-directory imports are not requested.
+Deployment confirmation will be recorded only after those gates succeed.
+
+The first Stage attempt, run `37780395749` for `2016c40`, correctly stopped before
+deployment: all 318 backend tests passed, but the frontend suite passed 432/433.
+The parent multi-child-card test timed out while switching was still busy. Its
+whole-page role lookup repeatedly evaluated both transition cards before the
+timer completed on CI. The test now waits for the observable switching control
+to become enabled, then scopes its unchanged identity assertions to the active
+card. All three child identities, both swipe directions and the final ID dialog
+remain checked; no home/runtime code or timeout limit is changed. The focused
+regression passed locally; the next Stage run must re-run the full suite.
+
+Release verified: [Stage run 37781716971](https://github.com/EduveraIITA/Eduvera/actions/runs/37781716971)
+passed and deployed application revision `616f3bee8da81b5b0c449eb8031ae4f170070031`.
+CI passed **318 backend tests in 46 files** and **433 frontend tests in 64 files**,
+secret scanning, typecheck/lint and mobile/backend/desktop builds. Normal Stage
+migration validation and exact-release public health checks passed. Full demo
+reseeding was skipped. No database reset or directory import was performed.
+
+Independent checks confirmed that exact SHA with `environment: stage` and
+database/events ready. Authenticated WebKit checks on the deployed application
+verified the eight-subject student attendance list, keyboard expansion, numeric
+safe-buffer display, filter persistence after reload and restored standings
+focus; the teacher's four-class directory, successful class-updates API, separate
+class route, gallery/list roster switching and Back; and the admin's published
+assessment register without a nested border/frame. These screens passed
+320/768/1024/1440px overflow checks and the phone renders were visually reviewed.
+In-app navigation produced no page errors. Local and phone-preview readiness
+also remained healthy. These checks do not claim every device or workflow is
+certified; user phone validation remains requested. The documentation-only
+evidence commit does not require another application deployment.
+
+### Principal Insights navigation — 8 October 2026
+
+User-approved placement supersedes the initial all-on-Overview layout above.
+Overview now retains four summary cards, the action brief and a dated View all
+insights link. The principal-only `/principal/insights` route groups the full
+dashboard into Attendance & learning, Operations and Finance, with date, window,
+class and academic-review filters. Principal mobile tabs are Overview, Attendance,
+Insights and More. Timetable remains in More, the desktop sidebar and coverage
+links; teacher navigation is unchanged. The newest Stage planning/navigation
+changes were reconciled without removing either backend module or delivery record.
+
+Local verification: backend and frontend typecheck, lint and production builds
+passed. Browser checks using synthetic API fixtures passed at 320, 768, 1024 and
+1440 pixels: compact Overview, navigation to Insights, date/window persistence,
+deadline deep links, dialog Escape dismissal, active mobile tab and Timetable in
+More, with no horizontal overflow or page errors. Test and release status will be
+confirmed by the PR/Stage workflow; no national dataset import or reseed is part
+of this change. Please review the resulting UI on a physical phone after release.

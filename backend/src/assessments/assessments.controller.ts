@@ -23,6 +23,11 @@ async function uploadBody(request: AuthenticatedRequest): Promise<{ body: Record
 export class AssessmentsController {
   constructor(private readonly assessments: AssessmentsService) {}
 
+  @Get('calendar/')
+  calendar(@Req() req:AuthenticatedRequest,@Param('schoolId') schoolId:string,@Query('from') from:string,@Query('to') to:string,@Query('student_id') student?:string) {
+    return this.assessments.calendar(req.authUser,schoolId,from,to,student);
+  }
+
   @Get("workspace/")
   @RequirePermission("assessments.view")
   workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {

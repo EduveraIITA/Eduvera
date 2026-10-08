@@ -1,0 +1,44 @@
+.schedule-settings { display:grid; gap:1rem; width:100%; max-width:56rem; margin:0 auto; color:var(--edura-ink); }
+.schedule-settings h2 { font-size:1.1rem; margin:.5rem 0 0; }
+.schedule-settings h3 { font-size:1rem; margin:0; }
+.schedule-settings__group,.schedule-settings__pattern { background:var(--edura-surface); border:1px solid var(--edura-border); border-radius:1rem; overflow:hidden; }
+.schedule-settings__row { width:100%; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem; background:transparent; border:0; border-bottom:1px solid var(--edura-border); text-align:left; color:inherit; min-height:64px; }
+.schedule-settings__row:last-child { border-bottom:0; }
+.schedule-settings__row span { min-width:0; display:grid; gap:.35rem; }
+.schedule-settings small,.schedule-settings__hint,.schedule-settings__form p,.schedule-settings__publish p { color:var(--edura-ink-secondary); font-size:.85rem; line-height:1.5; }
+.schedule-settings__row svg { flex-shrink:0; }
+.schedule-settings__hint { padding:1rem; margin:0; }
+.schedule-settings__select { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem; padding:1rem; font-weight:600; }
+.schedule-settings select,.schedule-settings input { min-height:44px; max-width:100%; min-width:0; background:var(--edura-surface); color:inherit; border:1px solid var(--edura-border); border-radius:.5rem; padding:.65rem; font:inherit; }
+.schedule-settings__select select { max-width:75%; }
+.schedule-settings select { appearance:none; -webkit-appearance:none; padding-right:2rem; background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%); background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%; background-size:5px 5px; background-repeat:no-repeat; font-size:16px; }
+.schedule-settings__form { padding:1rem; display:grid; gap:1rem; }
+.schedule-settings__form label { display:grid; gap:.5rem; min-width:0; font-size:.9rem; font-weight:600; }
+.schedule-settings__form p { margin:0; font-weight:400; }
+.schedule-settings__form fieldset { border:1px solid var(--edura-border); border-radius:.75rem; padding:1rem; min-width:0; display:grid; gap:1rem; }
+.schedule-settings__dates { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:.75rem; }
+.schedule-settings button:not(.schedule-settings__row),.schedule-settings__daily { min-height:44px; }
+.schedule-settings__form>button,.schedule-settings__publish>button:not(.schedule-settings__text-button),.schedule-settings__actions>button,.schedule-settings__copy>button { background:var(--edura-brand); color:white; padding:.75rem 1rem; border:0; border-radius:.75rem; font:inherit; font-weight:600; }
+.schedule-settings button.is-secondary { background:transparent; color:var(--edura-brand); border:1px solid var(--edura-border); }
+.schedule-settings button:disabled { opacity:.5; cursor:not-allowed; }
+.schedule-settings button:focus-visible,.schedule-settings input:focus-visible,.schedule-settings select:focus-visible,.schedule-settings summary:focus-visible { outline:2px solid var(--edura-brand); outline-offset:2px; }
+.schedule-settings__actions { display:flex; align-items:center; justify-content:space-between; padding:1rem; gap:.75rem; }
+.schedule-settings__actions h2 { margin:0; }
+.schedule-settings__actions button { display:flex; align-items:center; gap:.5rem; }
+.schedule-settings__pattern .timetable-builder__days { padding:.5rem; grid-template-columns:repeat(7,minmax(0,1fr)); }
+.schedule-settings__pattern .timetable-builder__days button { padding:.25rem; }
+.schedule-settings__pattern .timetable-builder__periods small { display:block; margin-top:.3rem; }
+.schedule-settings__text-button { background:none; color:var(--edura-brand); border:0; padding:.75rem 1rem; font:inherit; }
+.schedule-settings__copy { padding:1rem; border-top:1px solid var(--edura-border); }
+.schedule-settings__copy>div { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+.schedule-settings__copy label { display:flex; align-items:center; gap:.3rem; min-height:44px; }
+.schedule-settings__copy input { min-height:20px; }
+.schedule-settings__allocations { padding:1rem; border-top:1px solid var(--edura-border); }
+.schedule-settings__allocations summary { min-height:44px; cursor:pointer; font-weight:600; }
+.schedule-settings__allocations>div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem 0; font-size:.85rem; }
+.schedule-settings__publish { padding:1rem; display:grid; gap:.75rem; }
+.schedule-settings__publish p { margin:0; }
+.schedule-settings__error { color:var(--edura-danger); }
+.schedule-settings__daily { display:flex; align-items:center; gap:.5rem; color:var(--edura-brand); font-size:.9rem; }
+.schedule-settings__form label.schedule-settings__check { display:flex; align-items:center; gap:.5rem; }
+.schedule-settings__check input { min-height:20px; }

@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppProviders } from "./app/AppProviders";
+import { PortalScreenFrame } from "./features/navigation/PortalScreenFrame";
 import {
   AuthenticatedOnly,
   CompanyOnly,
@@ -82,6 +83,7 @@ const TeacherHomeRoute = lazy(async () => ({ default: (await import("./features/
 const TeacherAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherAttendanceRoute }));
 const TeacherTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherTimetableRoute }));
 const PrincipalHomeRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalHomeRoute }));
+const PrincipalInsightsPage = lazy(async () => ({ default: (await import("./features/principal-insights/PrincipalInsightsPage")).PrincipalInsightsPage }));
 const PrincipalAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalAttendanceRoute }));
 const PrincipalTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalTimetableRoute }));
 const PrincipalDayPlanPage = lazy(() => import('./features/day-plans/PrincipalDayPlanPage'));
@@ -116,6 +118,7 @@ const StudentCalendarRoute = lazy(async () => ({ default: (await import("./featu
 const TeacherCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).TeacherCalendarRoute }));
 const PrincipalCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).PrincipalCalendarRoute }));
 const TeacherClassesPage = lazy(() => import("./features/classes/TeacherClassesPage"));
+const TeacherClassPage = lazy(() => import("./features/classes/TeacherClassPage"));
 const AdministrationPage = lazy(() => import("./features/office/AdministrationPage"));
 const FeeLedgerPage = lazy(() => import("./features/office/FeeLedgerPage"));
 const FamilyFeesPage = lazy(async () => ({ default: (await import("./features/office/FamilyFeesPage")).FamilyFeesPage }));
@@ -183,7 +186,7 @@ export function App() {
   return (
     <AppProviders>
       <AppErrorBoundary>
-        <div className="app-viewport">
+        <PortalScreenFrame>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<RoleLanding />} />
@@ -255,6 +258,7 @@ export function App() {
               <Route path="/teacher/more" element={<PortalOnly portal="teacher"><TeacherMoreRoute /></PortalOnly>} />
               <Route path="/teacher/calendar" element={<PortalOnly portal="teacher"><TeacherCalendarRoute /></PortalOnly>} />
               <Route path="/teacher/classes" element={<PortalOnly portal="teacher"><TeacherClassesPage /></PortalOnly>} />
+              <Route path="/teacher/classes/:classId" element={<PortalOnly portal="teacher"><TeacherClassPage /></PortalOnly>} />
               <Route path="/teacher/leave" element={<PortalOnly portal="teacher"><TeacherLeaveRoute /></PortalOnly>} />
               <Route path="/teacher/responsibilities" element={<PortalOnly portal="teacher"><TeacherResponsibilitiesRoute /></PortalOnly>} />
               <Route path="/teacher/policies" element={<PortalOnly portal="teacher"><TeacherPoliciesRoute /></PortalOnly>} />
@@ -262,6 +266,7 @@ export function App() {
               <Route path="/teacher/report-cards" element={<PortalOnly portal="teacher"><TeacherAcademicReportsRoute /></PortalOnly>} />
               <Route path="/teacher/transport" element={<PortalOnly portal="teacher"><CollectorJourneyPage /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
+              <Route path="/principal/insights" element={<PortalOnly portal="principal"><PrincipalInsightsPage /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
               <Route path="/principal/timetable/day" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
@@ -291,7 +296,7 @@ export function App() {
               <Route path="*" element={<RoleLanding />} />
             </Routes>
           </Suspense>
-        </div>
+        </PortalScreenFrame>
       </AppErrorBoundary>
     </AppProviders>
   );

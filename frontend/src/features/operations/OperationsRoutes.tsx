@@ -6,6 +6,7 @@ import {
   PrincipalHomePage,
 } from "../../pages/operations/PrincipalPages";
 import { PrincipalTimetablePage } from "../../pages/operations/TimetableBuilderPage";
+import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
   TeacherAttendancePage,
   TeacherHomePage,
@@ -332,7 +333,9 @@ export function PrincipalAttendanceRoute() {
   />;
 }
 
-export function PrincipalTimetableRoute() {
+export { ScheduleSettingsRoute as PrincipalTimetableRoute } from "../schedule-planning/ScheduleSettingsRoute";
+
+export function LegacyPrincipalTimetableRoute() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const termId = params.get("term") || undefined;
@@ -348,8 +351,14 @@ export function PrincipalTimetableRoute() {
   const target = useMutation({ mutationFn: (input: CurriculumTargetInput) => saveCurriculumTarget(input) });
   const closure = useMutation({ mutationFn: (input: SchoolClosureInput) => createSchoolClosure(input) });
   const removeClosure = useMutation({ mutationFn: ({ date, revision, reason }: { date: string; revision: number; reason: string }) => deleteSchoolClosure(date, revision, reason) });
-  if (query.isPending) return <Loading />;
-  if (query.error) return <Failure error={query.error} />;
+  if (query.isPending || query.error) {
+    const backParams = new URLSearchParams();
+    for (const key of ["school", "date", "class", "view"]) if (params.has(key)) backParams.set(key, params.get(key)!);
+    return <OperationsShell portal="principal" active="timetable" title="Edit timetable" backTo={`/principal/timetable${backParams.size ? `?${backParams}` : ""}`}>
+      {query.isPending ? <div className="timetable-builder__loading" role="status" aria-label="Loading timetable"><span /><span /><span /></div>
+        : <section className="timetable-builder__empty-page"><h2>Timetable could not be loaded</h2><p role="alert">{query.error?.message}</p><button className="timetable-builder__retry" type="button" onClick={() => void query.refetch()}>Try again</button></section>}
+    </OperationsShell>;
+  }
   return (
     <PrincipalTimetablePage
       data={query.data}

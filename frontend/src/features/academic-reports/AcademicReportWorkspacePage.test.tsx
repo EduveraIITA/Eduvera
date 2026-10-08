@@ -36,6 +36,16 @@ describe("published report cards", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("gives teachers a release filter without a banner, single tab or scheme controls", () => {
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+    const {container}=render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/teacher/report-cards?status=draft']}><AcademicReportWorkspacePage portal="teacher" schoolId="school-1" data={{mode:'staff',schemes:[],batches:[]}} refresh={vi.fn()}/></MemoryRouter></QueryClientProvider>);
+    expect(container.querySelector('.report-summary')).toBeNull();
+    expect(screen.queryByRole('group',{name:'Report card workspace'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'New scheme'})).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox',{name:'Filter report releases'})).toHaveValue('draft');
+    expect(screen.getByText('No report releases')).toBeVisible();
+  });
+
   it("keeps the release library and learner details compact until requested", async () => {
     vi.mocked(getReportBatch).mockResolvedValue({
       batch: { id: "batch-1", scheme_id: "scheme-1", scheme_name: "Term 1 report", class_name: "Class 7A", term_name: "Term 1", academic_year: "2026-27", review_mode: "independent", sequence: 1, status: "published", revision: 1, correction_reason: "", generated_at: "2026-10-05T03:30:00.000Z", published_at: "2026-10-05T04:30:00.000Z", learner_count: 1, incomplete_count: 0, class_section_id: "class-1", review_note: "Reviewed", publication_note: "Published" },
@@ -53,7 +63,14 @@ describe("published report cards", () => {
     const view = render(<QueryClientProvider client={client}><MemoryRouter><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
     const page = within(view.container);
 
-    expect(page.getByRole("tab", { name: /Releases 1/ })).toHaveAttribute("aria-selected", "true");
+    expect(page.getByRole("button", { name: /Releases 1/ })).toHaveAttribute("aria-pressed", "true");
+    expect(view.container.querySelector('.report-summary')).toBeNull();
+    fireEvent.change(page.getByRole('combobox',{name:'Filter report releases'}),{target:{value:'draft'}});
+    expect(page.getByText('No releases with this status')).toBeVisible();
+    fireEvent.change(page.getByRole('combobox',{name:'Filter report releases'}),{target:{value:'all'}});
+    expect(page.queryByText("Ananya Iyer")).not.toBeInTheDocument();
+    expect(getReportBatch).not.toHaveBeenCalled();
+    fireEvent.click(page.getByRole("button", { name: /Term 1 report.*Release 1/ }));
     expect(await page.findByText("Ananya Iyer")).toBeInTheDocument();
     expect(page.queryByText("English")).not.toBeInTheDocument();
     fireEvent.click(page.getByRole("button", { name: /Ananya Iyer/ }));
@@ -64,7 +81,8 @@ describe("published report cards", () => {
     vi.mocked(getReportBatch).mockClear();
     vi.mocked(getGradingScheme).mockImplementation(() => new Promise(() => {}));
     const grading = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/principal/report-cards?view=schemes"]}><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)}/></MemoryRouter></QueryClientProvider>);
-    expect(within(grading.container).getByRole("tab", { name: /Schemes 1/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(grading.container).getByRole("button", { name: /Schemes 1/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(grading.container).getByRole("button", { name: /Term 1 report.*Class 7A/ }));
     expect(within(grading.container).getByText("Opening scheme…")).toBeVisible();
     expect(getGradingScheme).toHaveBeenCalledWith("school-1", "scheme-1");
     expect(getReportBatch).not.toHaveBeenCalled();

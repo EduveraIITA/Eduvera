@@ -1,0 +1,111 @@
+name: Import public institution directory
+on:
+  push:
+    branches: [Stage]
+    paths:
+      - '.github/workflows/institution-directory-import.yml'
+      - 'backend/scripts/*institution_directory*'
+      - 'backend/scripts/institution-directory-sources.json'
+      - 'backend/src/institutions/import-public-snapshot.ts'
+  workflow_dispatch:
+concurrency:
+  group: institution-directory-import-stage
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: directory_test
+          POSTGRES_USER: directory_test
+          POSTGRES_PASSWORD: directory-test-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U directory_test -d directory_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://directory_test:directory-test-only-password@127.0.0.1:5432/directory_test
+      MIGRATION_DATABASE_URL: postgresql://directory_test:directory-test-only-password@127.0.0.1:5432/directory_test
+      TEST_DATABASE_ISOLATED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate import tooling against isolated PostgreSQL
+        working-directory: backend
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm run db:migrate
+          npx vitest run test/directory-import.test.ts test/public-directory-import.test.ts
+          python3 -m unittest discover -s scripts -p 'test_prepare_institution_directory.py'
+  import:
+    needs: validate
+    # Full snapshots require an explicit run after storage capacity is confirmed.
+    if: github.ref == 'refs/heads/Stage' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID || 'e502f870-10b0-4e13-b42e-124e6373a277' }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'omnischool' }}
+      RAILWAY_ENVIRONMENT: stage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download, checksum and normalize public directory snapshots
+        run: python3 backend/scripts/prepare_institution_directory.py --directory "$RUNNER_TEMP/directory-sources" --output "$RUNNER_TEMP/directory.csv"
+      - name: Install existing import dependencies and Railway CLI
+        run: |
+          npm ci --ignore-scripts --prefix backend
+          npm install -g @railway/cli@5.54.0
+      - name: Import unverified records into Stage without changing existing tenants
+        working-directory: backend
+        run: |
+          set -eu
+          test -n "$RAILWAY_TOKEN"
+          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
+            node --import tsx src/institutions/import-public-snapshot.ts "$RUNNER_TEMP/directory.csv"
+      - name: Retain import provenance and validation counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: institution-directory-import-summary
+          path: ${{ runner.temp }}/directory.summary.json
+          retention-days: 90
+  reclaim:
+    needs: validate
+    if: github.ref == 'refs/heads/Stage' && github.event_name == 'push' && contains(github.event.head_commit.message, '[directory-maintenance]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID || 'e502f870-10b0-4e13-b42e-124e6373a277' }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'omnischool' }}
+      RAILWAY_ENVIRONMENT: stage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reclaim failed directory import tuples and report committed counts
+        working-directory: backend
+        run: |
+          npm ci --ignore-scripts
+          npm install -g @railway/cli@5.54.0
+          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
+            node --import tsx src/institutions/import-public-snapshot.ts --reclaim

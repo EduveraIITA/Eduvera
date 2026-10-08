@@ -1,8 +1,10 @@
 /* eslint-disable */
 // @ts-nocheck
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowLeft,
   Ban,
   CheckCircle2,
   ChevronRight,
@@ -88,21 +90,32 @@ export function ModerationDialog({
   standalone?: boolean;
   staffView?: boolean;
 }) {
-  const [filter, setFilter] = useState<ReportFilter>("active");
-  const [selectedId, setSelectedId] = useState("");
+  const [params, setParams] = useSearchParams();
+  const [localFilter, setLocalFilter] = useState<ReportFilter>("active");
+  const [localId, setLocalId] = useState("");
+  const filter: ReportFilter = standalone ? (["resolved", "dismissed"].includes(params.get("report_status") ?? "") ? params.get("report_status") as ReportFilter : "active") : localFilter;
+  const selectedId = standalone ? params.get("report") ?? "" : localId;
+  const setSelectedId = (id: string) => {
+    if (!standalone) { setLocalId(id); return; }
+    setParams(current => { current.set("section", "message_reports"); if (id) current.set("report", id); else current.delete("report"); return current; });
+  };
+  const setFilter = (value: ReportFilter) => {
+    if (!standalone) { setLocalFilter(value); setLocalId(""); return; }
+    setParams(current => { current.set("report_status", value); current.delete("report"); return current; });
+  };
   const [assignee, setAssignee] = useState("");
   const [note, setNote] = useState("");
   const [restrictionDays, setRestrictionDays] = useState(7);
+  const detailRef = useRef<HTMLElement>(null);
+  useEffect(() => { if (selectedId) detailRef.current?.focus({ preventScroll: true }); }, [selectedId]);
   const reports = useMemo(() => {
     const all = queue?.results ?? [];
     if (filter === "active") return all.filter((item) => item.status === "open" || item.status === "under_review");
     return all.filter((item) => item.status === filter);
   }, [filter, queue?.results]);
-  const selected = reports.find((item) => item.id === selectedId) ?? reports[0];
-
-  useEffect(() => {
-    if (!reports.some((item) => item.id === selectedId)) setSelectedId(reports[0]?.id ?? "");
-  }, [reports, selectedId]);
+  // A selected report remains open after its status changes. Never silently open
+  // a different case when the requested report is missing or no longer visible.
+  const selected = queue?.results.find((item) => item.id === selectedId);
   useEffect(() => {
     setAssignee(selected?.assigned_to ?? "");
     setNote("");
@@ -121,48 +134,19 @@ export function ModerationDialog({
     <div className={standalone ? "chat-moderation-page" : "chat-picker-backdrop chat-moderation-backdrop"} role={standalone ? undefined : "presentation"} onMouseDown={(event) => {
       if (!standalone && event.target === event.currentTarget) onClose?.();
     }}>
-      <section className={standalone ? "chat-moderation chat-moderation--standalone" : "chat-moderation"} role={standalone ? "region" : "dialog"} aria-modal={standalone ? undefined : "true"} aria-labelledby="moderation-title">
-        <header className="chat-moderation__header">
-          <span className="chat-moderation__brand">E</span>
-          <span>
-            <small>Cambridge Intl School</small>
-            <strong id="moderation-title">Reports &amp; Safeguarding</strong>
-          </span>
-          {standalone ? <span className="chat-moderation__scope">{staffView ? "Assigned to me" : "School-wide"}</span> : <button type="button" onClick={onClose} aria-label="Close safeguarding queue"><X size={20} /></button>}
-        </header>
-
-        <section className="chat-moderation__intro">
-          <div className="chat-moderation__confidential">
-            <LockKeyhole size={13} />
-            <span>Confidential · Authorised pastoral access</span>
-          </div>
-          <div className="chat-moderation__heading">
-            <span>
-              <h2>{staffView ? <>My Assigned<br />Incidents</> : <>Message Reports &amp;<br />Safeguarding</>}</h2>
-              <p>{staffView ? "Review only the incidents assigned to you and record a compliant outcome." : "Review incidents, assign ownership and record a compliant outcome."}</p>
-            </span>
-            <span className="chat-moderation__sla"><Clock3 size={14} /> Target &lt; 4h</span>
-          </div>
-        </section>
-
-        <nav className="chat-moderation__tabs" aria-label="Report status">
-          <button type="button" className={filter === "active" ? "is-active" : ""} onClick={() => setFilter("active")}>
-            Active <b>{activeCount}</b>
-          </button>
-          <button type="button" className={filter === "resolved" ? "is-active" : ""} onClick={() => setFilter("resolved")}>
-            Resolved <b>{queue?.summary.resolved ?? 0}</b>
-          </button>
-          <button type="button" className={filter === "dismissed" ? "is-active" : ""} onClick={() => setFilter("dismissed")}>
-            Dismissed <b>{queue?.summary.dismissed ?? 0}</b>
-          </button>
-        </nav>
+      <section className={`${standalone ? "chat-moderation chat-moderation--standalone" : "chat-moderation"} chat-moderation--focused`} role={standalone ? "region" : "dialog"} aria-modal={standalone ? undefined : "true"} aria-labelledby="moderation-title">
+        {standalone ? <h2 className="sr-only" id="moderation-title">{selectedId ? "Message report" : "Message reports"}</h2> : <header className="chat-moderation__header">
+          {selectedId ? <button type="button" onClick={()=>setSelectedId("")} aria-label="Back to reports"><ArrowLeft size={20}/></button> : null}
+          <strong id="moderation-title">{selectedId ? "Message report" : "Message reports"}</strong>
+          <button type="button" onClick={onClose} aria-label="Close safeguarding queue"><X size={20}/></button>
+        </header>}
+        <p className="message-report-privacy"><LockKeyhole size={14}/>{staffView ? "Confidential · Assigned to you" : "Confidential · Authorised reviewers only"}</p>
+        {!selectedId ? <div className="workspace-list-toolbar"><select aria-label="Report status" value={filter} onChange={event=>setFilter(event.target.value as ReportFilter)}>
+          <option value="active">Active · {activeCount}</option><option value="resolved">Resolved · {queue?.summary.resolved ?? 0}</option><option value="dismissed">Dismissed · {queue?.summary.dismissed ?? 0}</option>
+        </select></div> : null}
 
         <div className="chat-moderation__body">
-          <aside className="chat-moderation__list" aria-label="Safeguarding incidents">
-            <div className="chat-moderation__list-title">
-              <span><ShieldAlert size={15} /> {staffView ? "My assigned queue" : "Incident queue"}</span>
-              <small>{reports.length} case{reports.length === 1 ? "" : "s"}</small>
-            </div>
+          {!selectedId ? <section className="chat-moderation__list" aria-label="Safeguarding incidents">
             {loading ? (
               <div className="chat-state"><LoaderCircle className="chat-spin" size={20} /><span>Loading reports…</span></div>
             ) : loadError ? (
@@ -183,31 +167,18 @@ export function ModerationDialog({
               <button
                 type="button"
                 key={report.id}
-                className={report.id === selected?.id ? "chat-report-card is-selected" : "chat-report-card"}
+                className="message-report-row"
                 onClick={() => setSelectedId(report.id)}
               >
-                <span className="chat-report-card__top">
-                  <span className={"chat-report-status is-" + report.status}>{statusLabels[report.status]}</span>
-                  <b>#{caseCode(report)}</b>
-                  <ChevronRight size={16} />
-                </span>
-                <span className="chat-report-card__person">
-                  <i>{personInitials(report.sender_name)}</i>
-                  <span><strong>{report.sender_name || "Unknown sender"}</strong><small>Reported by {report.reporter_name}</small></span>
-                </span>
-                <span className="chat-report-card__reason"><Flag size={13} /> {report.reason}</span>
-                <blockquote>{report.message_body || "Attachment or empty message"}</blockquote>
-                <span className="chat-report-card__bottom"><b>{reportTitle(report)}</b><time>{fullTime(report.created_at)}</time></span>
+                <span className="message-report-row__copy"><strong>{report.sender_name || "Unknown sender"}</strong><span>{report.reason}</span><small>{reportTitle(report)} · {fullTime(report.created_at)}</small><span className={"chat-report-status is-" + report.status}>{statusLabels[report.status]}</span></span><ChevronRight size={18}/>
               </button>
             ))}
-          </aside>
-
-          <main className="chat-moderation__detail">
+          </section> : <section ref={detailRef} tabIndex={-1} className="chat-moderation__detail" aria-label="Report details">
             {!selected ? (
               <div className="chat-moderation__placeholder">
-                <Flag size={28} />
-                <strong>Select an incident</strong>
-                <span>The report dossier and resolution controls will appear here.</span>
+                <strong>{loading ? "Loading report…" : loadError ? "Report could not be loaded" : "Report unavailable"}</strong>
+                <span>{loadError || (!loading ? "It may no longer be assigned to you. Return to the report list or refresh." : "")}</span>
+                {!loading ? <button type="button" onClick={onRefresh}>Refresh</button> : null}
               </div>
             ) : (
               <>
@@ -215,7 +186,7 @@ export function ModerationDialog({
                   <header>
                     <span className="chat-incident-dossier__avatar">{personInitials(selected.sender_name)}</span>
                     <span>
-                      <h3>{selected.sender_name}</h3>
+                      <h2>{selected.sender_name}</h2>
                       <p>{reportTitle(selected)} · #{caseCode(selected)}</p>
                     </span>
                     <span className={"chat-report-status is-" + selected.status}>{statusLabels[selected.status]}</span>
@@ -227,9 +198,8 @@ export function ModerationDialog({
                     <span><small>Channel</small><b>{selected.conversation_kind === "direct" ? "Direct message" : "Group message"}</b></span>
                   </div>
                   <blockquote className="chat-flagged-message">
-                    <span><Flag size={14} fill="currentColor" /> Verbatim reported message</span>
+                    <span><Flag size={14} /> Reported message</span>
                     <p>“{selected.message_body || "Attachment or empty message"}”</p>
-                    <b>Flagged target</b>
                   </blockquote>
                 </section>
 
@@ -253,7 +223,7 @@ export function ModerationDialog({
                   <section className="chat-review-outcome">
                     <CheckCircle2 size={21} />
                     <span>
-                      <small>Compliance completed</small>
+                      <small>Review outcome</small>
                       <strong>{actionLabels[selected.action_taken] ?? "Review completed"}</strong>
                       <p>{selected.resolution_note || "No review note was recorded."}</p>
                       <em>{selected.assignee_name ? "Handled by " + selected.assignee_name + " · " : ""}{selected.resolved_at ? fullTime(selected.resolved_at) : ""}</em>
@@ -262,7 +232,7 @@ export function ModerationDialog({
                 ) : (
                   <section className="chat-review-controls">
                     <header>
-                      <span><strong>Resolution station</strong><small>Institutional safeguarding ledger</small></span>
+                      <strong>Review &amp; action</strong>
                       <ShieldAlert size={18} />
                     </header>
                     <div className="chat-review-fields">
@@ -276,7 +246,7 @@ export function ModerationDialog({
                         ) : <strong className="chat-review-assignee"><UserCheck size={16} /> {selected.assignee_name || "Assigned to you"}</strong>}
                       </label>
                       <label className="chat-review-note">
-                        <span>Pastoral observation &amp; action notes <b>Required</b></span>
+                        <span>Review notes <b>Required</b></span>
                         <textarea
                           value={note}
                           onChange={(event) => setNote(event.target.value)}
@@ -287,21 +257,15 @@ export function ModerationDialog({
                       </label>
                     </div>
 
-                    <div className="chat-review-suggestions" aria-label="Suggested note prompts">
-                      <button type="button" onClick={() => setNote((value) => value ? value + " · Playful tone reviewed" : "Playful tone reviewed")}>+ Tone reviewed</button>
-                      <button type="button" onClick={() => setNote((value) => value ? value + " · Parent briefed" : "Parent briefed")}>+ Parent briefed</button>
-                      <button type="button" onClick={() => setNote((value) => value ? value + " · Restorative conversation scheduled" : "Restorative conversation scheduled")}>+ Restorative chat</button>
-                    </div>
-
                     {selected.status === "open" ? (
                       <button type="button" className="chat-review-start" disabled={pending} onClick={() => update({ status: "under_review", note: note.trim() })}>
                         {pending ? <LoaderCircle className="chat-spin" size={17} /> : <UserCheck size={17} />}
-                        Assign &amp; start pastoral review
+                        Assign &amp; start review
                       </button>
                     ) : null}
 
                     <button type="button" className="chat-review-resolve" disabled={!canAct} onClick={() => update({ status: "resolved", action: "no_action", note: note.trim() })}>
-                      <CheckCircle2 size={18} /> Resolve incident &amp; close ticket
+                      <CheckCircle2 size={18} /> Resolve report
                     </button>
 
                     <div className="chat-review-actions">
@@ -323,13 +287,13 @@ export function ModerationDialog({
                         <X size={16} /><span>Dismiss</span>
                       </button>
                     </div>
-                    {error ? <p className="chat-review-error">{error}</p> : null}
+                    {error ? <p className="chat-review-error" role="alert">{error}</p> : null}
                     <p className="chat-review-disclaimer"><LockKeyhole size={13} /> Every action is recorded in the institutional pastoral ledger. Private staff notes are never shared with the reporter.</p>
                   </section>
                 )}
               </>
             )}
-          </main>
+          </section>}
         </div>
       </section>
     </div>

@@ -34,10 +34,10 @@ export default function CollectorJourneyPage(){
 
   if(query.isPending)return <ScreenLoading/>;if(query.error||!data)return <LiveRouteError error={query.error??new Error("Assigned journeys are unavailable.")} onRetry={query.refetch}/>;
   const location=trip?.latest_location?{lat:Number(trip.latest_location.latitude),lng:Number(trip.latest_location.longitude),accuracy:Number(trip.latest_location.accuracy_metres)}:null;
-  return <OperationsShell portal="teacher" active="more" title="Transport journey" schoolName={trip?.school_name??auth.memberships.find(item=>item.role==="staff")?.school_name} backTo="/teacher/more"><main className="departure-page departure-page--collector">
-    {!trip?<section className="departure-panel departure-empty"><Bus size={28}/><h1>No assigned journey</h1><p>An administrator must assign you as collector on a dated trip.</p></section>:<>
+  return <OperationsShell portal="teacher" active="more" title="Transport journey" schoolName={trip?.school_name??auth.memberships.find(item=>item.role==="staff")?.school_name} backTo="/teacher/more"><div className="departure-page departure-page--collector">
+    {!trip?<section className="departure-panel departure-empty"><Bus size={28}/><h2>No assigned journey</h2><p>An administrator must assign you as collector on a dated trip.</p></section>:<>
       {data.trips.length>1?<label className="departure-trip-picker">Journey<select value={trip.id} onChange={event=>setSelected(event.target.value)}>{data.trips.map(item=><option value={item.id} key={item.id}>{item.service_date} · {item.route_name}</option>)}</select></label>:null}
-      <section className="departure-status"><div><span>{trip.service_date} · {trip.route_code}</span><h1>{trip.route_name}</h1><p>{trip.vehicle_label||trip.provider_name||trip.direction.replaceAll("_"," ")}</p></div><span className={`departure-state departure-state--${trip.state}`}><Bus/>{trip.state.replaceAll("_"," ")}</span></section>
+      <section className="departure-status"><div><span>{trip.service_date} · {trip.route_code}</span><h2>{trip.route_name}</h2><p>{trip.vehicle_label||trip.provider_name||trip.direction.replaceAll("_"," ")}</p></div><span className={`departure-state departure-state--${trip.state}`}><Bus/>{trip.state.replaceAll("_"," ")}</span></section>
 
       {trip.collector_assignment_status!=="accepted"?<section className="departure-panel departure-assignment-response"><header><div><span>Duty assignment</span><h2>{trip.collector_assignment_status==="pending"?"Confirm this journey":"Assignment declined"}</h2></div><span className={`departure-state departure-state--${trip.collector_assignment_status}`}>{trip.collector_assignment_status}</span></header>{trip.collector_assignment_status==="pending"?<div><p>Review the date, route and roster before accepting responsibility.</p><button type="button" disabled={mutation.isPending} onClick={()=>mutation.mutate(()=>tripAction(trip.id,"decline",trip.revision,"Unable to cover this journey"))}>Decline</button><button type="button" className="departure-primary" disabled={mutation.isPending} onClick={()=>mutation.mutate(()=>tripAction(trip.id,"accept",trip.revision,"Duty reviewed and accepted"))}><Check/>Accept duty</button></div>:<p className="departure-warning">School operations must assign another collector before this trip can start.</p>}</section>:null}
 
@@ -64,5 +64,5 @@ export default function CollectorJourneyPage(){
           {rider.state==="exception"?<button className="departure-primary" onClick={()=>mutation.mutate(()=>updateRider(trip.id,rider.student_id,{state:"dropped",expected_revision:rider.revision,note:"Exception resolved and drop-off completed"}))}>Resolve & drop</button>:null}
         </div></article>)}</div></section>
     </>}
-  </main></OperationsShell>;
+  </div></OperationsShell>;
 }

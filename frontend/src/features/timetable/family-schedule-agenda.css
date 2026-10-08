@@ -1,0 +1,17 @@
+.family-schedule-agenda { list-style: none; margin: 0; padding: 0; }
+.family-schedule-agenda li + li { border-top: 1px solid var(--edura-border); }
+.family-schedule-agenda button { display: grid; grid-template-columns: 72px minmax(0, 1fr) 16px; width: 100%; align-items: center; gap: 12px; min-height: 88px; padding: 14px 0; border: 0; background: transparent; color: var(--edura-ink); font: inherit; text-align: left; cursor: pointer; }
+.family-schedule-agenda__time, .family-schedule-agenda__lesson { display: grid; min-width: 0; gap: 3px; }
+.family-schedule-agenda__time { align-self: start; padding-top: 2px; }
+.family-schedule-agenda__time strong { font-size: 12px; }
+.family-schedule-agenda__lesson strong { font-size: 14px; overflow-wrap: anywhere; }
+.family-schedule-agenda small { color: var(--edura-ink-secondary); font-size: 11px; }
+.family-schedule-agenda svg { color: var(--edura-ink-muted); }
+.family-schedule-agenda em { color: var(--edura-brand); font-size: 11px; font-style: normal; font-weight: 700; }
+.family-schedule-agenda .is-cancelled .family-schedule-agenda__lesson > strong { text-decoration: line-through; color: var(--edura-ink-muted); }
+.family-schedule-agenda .is-cancelled em { color: var(--edura-danger); }
+.family-schedule-agenda button:hover { background: var(--edura-surface-soft); }
+.family-schedule-agenda button:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: 2px; }
+.timetable-page .timetable-intro h1 { font-size: 18px; }
+.timetable-page .timetable-intro header > div > p { margin-top: 4px; }
+@media (max-width: 359px) { .family-schedule-agenda button { grid-template-columns: 64px minmax(0, 1fr) 16px; gap: 8px; } }

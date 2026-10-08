@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarRange, CheckCircle2, ChevronRight, Palette, Plus, Search, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Palette, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { saveCatalog, type Administration, type CatalogKind, type ClassSection, type Subject, type Term } from "./api";
 
@@ -181,7 +181,7 @@ export function CatalogManager({ schoolId, data, refresh }: { schoolId: string; 
   }, [kind, rows, search]);
   const descriptor = catalogs.find((item) => item.id === kind)!;
 
-  return <section className="office-panel office-catalog"><div className="office-panel-heading"><span className="office-panel-icon"><CalendarRange size={19} /></span><div><h2>Academic setup</h2><p>Persistent terms, classes and teaching subjects.</p></div></div>
+  return <section className="office-panel office-catalog" aria-label="Academic setup">
     <div className="office-tabs office-tabs--compact" role="tablist" aria-label="Academic catalogue">{catalogs.map((item) => <button type="button" role="tab" aria-selected={kind === item.id} key={item.id} className={kind === item.id ? "is-active" : ""} onClick={() => { setKind(item.id); setSearch(""); setSaved(""); }}>{item.label}<span>{data[item.id].length}</span></button>)}</div>
     {rows.length > 5 ? <label className="office-field office-catalog-search"><span><Search size={16} /> Find {descriptor.label.toLowerCase()}</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${descriptor.label.toLowerCase()}`} /></label> : null}
     {saved ? <p className="office-success" role="status"><CheckCircle2 size={17} />{saved}</p> : null}

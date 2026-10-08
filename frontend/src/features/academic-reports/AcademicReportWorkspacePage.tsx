@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ChevronDown, ChevronRight, ChevronUp, FileCheck2, Plus, Printer, Settings2, ShieldCheck, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { MarksheetDocumentHeader } from "./MarksheetDocumentHeader";
@@ -24,56 +24,56 @@ const nice = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (let
 const date = (value: string | null) => value ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) : "Not published";
 
 export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data, refresh }: { portal: "principal" | "teacher"; schoolId: string; schoolName?: string; data: AcademicReportWorkspace; refresh: () => Promise<void> }) {
-  const [params] = useSearchParams();
-  const startsWithReleases = params.get("view") !== "schemes" && Boolean(data.batches.length);
-  const [activeList, setActiveList] = useState<"schemes" | "releases">(startsWithReleases ? "releases" : "schemes");
-  const [selectedScheme, setSelectedScheme] = useState<string | null>(startsWithReleases ? null : data.schemes[0]?.id ?? null);
-  const [selectedBatch, setSelectedBatch] = useState<string | null>(startsWithReleases ? data.batches[0]?.id ?? null : null);
+  const [params,setParams] = useSearchParams();
+  const activeList = data.mode!=="admin" || params.get("view") !== "schemes" ? "releases" : "schemes";
+  const selectedBatch = params.get("batch");
+  const selectedScheme = data.mode === "admin" && !selectedBatch ? params.get("scheme") : null;
+  const isDetail = Boolean(selectedBatch || selectedScheme);
+  const openRecord=(kind:"scheme"|"batch",id:string)=>{const next=new URLSearchParams(params);next.delete("scheme");next.delete("batch");next.set(kind,id);next.set("view",kind==="scheme"?"schemes":"releases");setParams(next);};
+  const listParams=new URLSearchParams(params);listParams.delete("scheme");listParams.delete("batch");
+  const listPath=`/${portal}/report-cards${listParams.size?`?${listParams}`:""}`;
   const [dialog, setDialog] = useState<"scheme" | "subject" | null>(null);
   const scheme = useQuery({ queryKey: ["grading-scheme", schoolId, selectedScheme], queryFn: () => getGradingScheme(schoolId, selectedScheme!), enabled: data.mode === "admin" && Boolean(selectedScheme) });
   const batch = useQuery({ queryKey: ["report-batch", schoolId, selectedBatch], queryFn: () => getReportBatch(schoolId, selectedBatch!), enabled: Boolean(selectedBatch) });
-  const counts = useMemo(() => ({ schemes: data.schemes.filter((item) => item.status === "active").length, review: data.batches.filter((item) => item.status === "draft").length, published: data.batches.filter((item) => item.status === "published").length }), [data]);
+  const statuses = ["all", "draft", "reviewed", "published", "cancelled"] as const;
+  const status = statuses.find(value => value === params.get("status")) ?? "all";
+  const batches = data.batches.filter(item => status === "all" || item.status === status);
 
   async function refreshAll() {
-    await Promise.all([refresh(), scheme.refetch(), batch.refetch()]);
+    await Promise.all([refresh(), ...(selectedScheme?[scheme.refetch()]:[]), ...(selectedBatch?[batch.refetch()]:[])]);
   }
 
   function showSchemes() {
-    setActiveList("schemes");
-    setSelectedBatch(null);
-    setSelectedScheme((current) => current ?? data.schemes[0]?.id ?? null);
+    const next=new URLSearchParams(listParams);next.set("view","schemes");setParams(next);
   }
 
   function showReleases() {
-    setActiveList("releases");
-    setSelectedScheme(null);
-    setSelectedBatch((current) => current ?? data.batches[0]?.id ?? null);
+    const next=new URLSearchParams(listParams);next.set("view","releases");setParams(next);
   }
 
-  return <OperationsShell portal={portal} active="more" title="Report cards" schoolName={schoolName} backTo={`/${portal}/more`}>
+  return <OperationsShell portal={portal} active="more" title={selectedScheme?"Grading scheme":selectedBatch?"Report release":"Report cards"} schoolName={schoolName} backTo={isDetail?listPath:`/${portal}/more`}>
     <div className="report-page">
-      <section className="report-summary" aria-label="Report card status"><span><b>{counts.schemes}</b> active schemes</span><span><b>{counts.review}</b> to review</span><span><b>{counts.published}</b> published</span></section>
+      {!isDetail && data.mode === "admin" ? <div className="workspace-list-toolbar report-workspace-toolbar">
+        <div className="report-library-tabs" role="group" aria-label="Report card workspace">
+          <button aria-pressed={activeList === "releases"} className={activeList === "releases" ? "is-active" : ""} onClick={showReleases}><FileCheck2 size={16}/><span>Releases</span><b>{data.batches.length}</b></button>
+          <button aria-pressed={activeList === "schemes"} className={activeList === "schemes" ? "is-active" : ""} onClick={showSchemes}><Settings2 size={16}/><span>Schemes</span><b>{data.schemes.length}</b></button>
+        </div>
+        {activeList === "schemes" ? <button className="workspace-add-link" aria-label="New scheme" onClick={() => setDialog("scheme")}><Plus size={20}/></button> : null}
+      </div> : null}
+      {!isDetail && activeList === "releases" ? <div className="workspace-list-toolbar"><select aria-label="Filter report releases" value={status} onChange={event=>setParams(current=>{current.set("status",event.target.value);return current;})}>{statuses.map(value=><option key={value} value={value}>{value==="all"?"All releases":value==="draft"?"To review":value==="reviewed"?"Ready to publish":nice(value)} · {data.batches.filter(item=>value==="all"||item.status===value).length}</option>)}</select></div> : null}
       <section className="report-workspace">
-        <article className="report-panel report-library">
-          <header>
-            <div className="report-library-tabs" role="tablist" aria-label="Report card workspace">
-              <button role="tab" aria-selected={activeList === "schemes"} className={activeList === "schemes" ? "is-active" : ""} onClick={showSchemes}><Settings2 size={16} /><span>Schemes</span><b>{data.schemes.length}</b></button>
-              <button role="tab" aria-selected={activeList === "releases"} className={activeList === "releases" ? "is-active" : ""} onClick={showReleases}><FileCheck2 size={16} /><span>Releases</span><b>{data.batches.length}</b></button>
-            </div>
-            {data.mode === "admin" ? <button className="report-new-scheme" onClick={() => setDialog("scheme")}><Plus size={17} /><span>New scheme</span></button> : null}
-          </header>
-          <div className="report-list" role="tabpanel">
-            {activeList === "schemes" ? data.schemes.length ? data.schemes.map((item) => <button key={item.id} className={selectedScheme === item.id ? "is-selected" : ""} onClick={() => { setSelectedScheme(item.id); setSelectedBatch(null); }}><span><strong>{item.name}</strong><small>{item.class_name} · {item.term_name}</small></span><i className={`report-status report-status--${item.status}`}>{nice(item.status)}</i><ChevronRight size={17} /></button>) : <p className="report-empty">No grading schemes</p>
-              : data.batches.length ? data.batches.map((item) => <button key={item.id} className={selectedBatch === item.id ? "is-selected" : ""} onClick={() => { setSelectedBatch(item.id); setSelectedScheme(null); }}><span><strong>{item.scheme_name}</strong><small>{item.class_name} · Release {item.sequence}</small></span><i className={`report-status report-status--${item.status}`}>{nice(item.status)}</i><ChevronRight size={17} /></button>) : <p className="report-empty">No report releases</p>}
+        {!isDetail?<article className="report-panel report-library">
+          <div className="report-list">
+            {activeList === "schemes" ? data.schemes.length ? data.schemes.map((item) => <button key={item.id} onClick={() => openRecord("scheme",item.id)}><span><strong>{item.name}</strong><small>{item.class_name} · {item.term_name}</small></span><i className={`report-status report-status--${item.status}`}>{nice(item.status)}</i><ChevronRight size={17} /></button>) : <p className="report-empty">No grading schemes</p>
+              : batches.length ? batches.map((item) => <button key={item.id} onClick={() => openRecord("batch",item.id)}><span><strong>{item.scheme_name}</strong><small>{item.class_name} · Release {item.sequence}</small></span><i className={`report-status report-status--${item.status}`}>{nice(item.status)}</i><ChevronRight size={17} /></button>) : <p className="report-empty" role="status">{data.batches.length?"No releases with this status":"No report releases"}</p>}
           </div>
-        </article>
-        <article className="report-panel report-detail">
+        </article>:<article className="report-panel report-detail">
           {selectedBatch ? batch.isPending ? <p className="report-empty">Opening reports…</p> : batch.error ? <p className="report-error">{batch.error.message}</p> : batch.data ? <BatchPanel portal={portal} schoolId={schoolId} detail={batch.data} refresh={refreshAll} /> : null
             : selectedScheme && data.mode === "admin" ? scheme.isPending ? <p className="report-empty">Opening scheme…</p> : scheme.error ? <p className="report-error">{scheme.error.message}</p> : scheme.data ? <SchemePanel schoolId={schoolId} detail={scheme.data} reportCount={data.schemes.find((item) => item.id === selectedScheme)?.report_count ?? 0} onAddSubject={() => setDialog("subject")} refresh={refreshAll} /> : null
               : <p className="report-empty">Choose a grading scheme or report release.</p>}
-        </article>
+        </article>}
       </section>
-      {dialog === "scheme" && data.mode === "admin" ? <SchemeDialog schoolId={schoolId} data={data} close={() => setDialog(null)} saved={async (id) => { setDialog(null); setActiveList("schemes"); setSelectedScheme(id); setSelectedBatch(null); await refresh(); }} /> : null}
+      {dialog === "scheme" && data.mode === "admin" ? <SchemeDialog schoolId={schoolId} data={data} close={() => setDialog(null)} saved={async (id) => { setDialog(null); openRecord("scheme",id); await refresh(); }} /> : null}
       {dialog === "subject" && data.mode === "admin" && scheme.data ? <SubjectDialog schoolId={schoolId} data={data} scheme={scheme.data} close={() => setDialog(null)} saved={async () => { setDialog(null); await refreshAll(); }} /> : null}
     </div>
   </OperationsShell>;

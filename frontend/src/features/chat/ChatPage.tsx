@@ -469,12 +469,18 @@ function ChatExperience({ portal }: { portal: Portal }) {
       <section className={selectedId ? "chat-layout has-selection" : "chat-layout"} aria-label="School messages">
         <aside className="chat-conversations">
           <header>
-            <span className="chat-hub-title"><span><small>Private school communication</small><strong>Messages</strong></span></span>
-            <span className="chat-header-actions">{portal === "teacher" || portal === "principal" ? <button type="button" onClick={() => setGroupOpen(true)} aria-label="Create group"><UsersRound size={18}/></button> : null}<button type="button" onClick={() => setPrivacyOpen(true)} aria-label="Messaging privacy"><ShieldCheck size={18}/></button><button type="button" onClick={() => setPickerOpen(true)} aria-label="Start a new message"><UserRoundPlus size={19} /></button></span>
+            <span className="sr-only">Conversation actions</span>
+            <div className="chat-directory-actions">
+              <button type="button" onClick={()=>setPickerOpen(true)} aria-label="Start a new message"><Pencil size={18}/><span>New message</span></button>
+              <details className="workspace-add-menu"><summary aria-label="Conversation options"><MoreHorizontal size={20}/></summary><div>
+                {portal === "teacher" || portal === "principal" ? <button type="button" onClick={event=>{event.currentTarget.closest('details')?.removeAttribute('open');setGroupOpen(true);}}><UsersRound size={18}/>Create group</button> : null}
+                <button type="button" onClick={event=>{event.currentTarget.closest('details')?.removeAttribute('open');setPrivacyOpen(true);}}><ShieldCheck size={18}/>Messaging privacy</button>
+              </div></details>
+            </div>
           </header>
           <label className="chat-search">
             <Search size={16} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />
+            <input aria-label="Search conversations" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />
           </label>
           <div className="chat-conversation-list">
             {conversationsQuery.isPending ? (
@@ -505,7 +511,6 @@ function ChatExperience({ portal }: { portal: Portal }) {
               </div>
             )}
           </div>
-          <button type="button" className="chat-new-floating" onClick={() => setPickerOpen(true)}><UserRoundPlus size={17} /> New message</button>
         </aside>
 
         <section className="chat-thread">

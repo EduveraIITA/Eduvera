@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, FileLock2, PhoneCall, Plus, ShieldAlert, ShieldCheck, UserRoundCog, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, FileLock2, PhoneCall, Plus, ShieldAlert, ShieldCheck, UserRoundCog } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import { actOnCareCase, assignCareRole, getCareCase, getCareWorkspace, openCareCase, revokeCareRole, type CareCaseSummary, type CareWorkspace } from "./api";
@@ -45,14 +46,14 @@ function CaseCard({ item, onOpen }: { item: CareCaseSummary; onOpen: () => void 
   </button>;
 }
 
-function IntakeDialog({ schoolId, data, onClose, onCreated }: { schoolId: string; data: CareWorkspace; onClose: () => void; onCreated: (caseId: string) => void }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
+function IntakePage({ schoolId, data, onClose, onCreated }: { schoolId: string; data: CareWorkspace; onClose: () => void; onCreated: (caseId: string) => void }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [form, setForm] = useState({ student_id: "", intake_route: "primary", source_kind: "staff_observation", urgency: "priority", concern_category: "emotional_wellbeing", safety_state: "unknown", ordinary_handler_involved: false, details: "" });
   const mutation = useMutation({ mutationFn: () => openCareCase(schoolId, { ...form, student_id: form.student_id || null, observed_at: null }), onSuccess: (result) => onCreated(result.id) });
-  useEffect(() => { closeRef.current?.focus(); }, []);
+  useEffect(() => { headingRef.current?.focus(); }, []);
   const set = (key: keyof typeof form, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }));
-  return <div className="care-modal" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="care-intake-title" className="care-sheet">
-    <header><div><small>Protected intake</small><h2 id="care-intake-title">Record a concern</h2></div><button ref={closeRef} type="button" aria-label="Close concern form" onClick={onClose}><X /></button></header>
+  return <section aria-labelledby="care-intake-title" className="care-sheet care-sheet--page">
+    <h2 id="care-intake-title" ref={headingRef} tabIndex={-1} className="sr-only">Record a concern</h2>
     <div className="care-sheet__body">
       <aside className="care-form-warning"><ShieldAlert /><p>Record what was seen, heard or disclosed. Do not investigate, confront an alleged person, promise secrecy or delay urgent external help.</p></aside>
       <label>Child or student (optional)<select value={form.student_id} onChange={(event) => set("student_id", event.target.value)}><option value="">Not selected / not in my assigned list</option>{data.eligible_students.map((student) => <option key={student.id} value={student.id}>{student.name} · {student.admission_number}</option>)}</select></label>
@@ -71,19 +72,17 @@ function IntakeDialog({ schoolId, data, onClose, onCreated }: { schoolId: string
       {mutation.error && <p className="care-error" role="alert">{mutation.error.message}</p>}
     </div>
     <footer><button type="button" className="care-secondary" onClick={onClose}>Cancel</button><button type="button" className="care-primary" disabled={mutation.isPending || form.details.trim().length < 20} onClick={() => mutation.mutate()}>{mutation.isPending ? "Recording…" : "Record in protected workspace"}</button></footer>
-  </section></div>;
+  </section>;
 }
 
-function CaseDialog({ schoolId, caseId, onClose, onChanged }: { schoolId: string; caseId: string; onClose: () => void; onChanged: () => Promise<void> }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
+function CasePage({ schoolId, caseId, onChanged }: { schoolId: string; caseId: string; onChanged: () => Promise<void> }) {
   const [actionKind, setActionKind] = useState("case_note");
   const [note, setNote] = useState("");
   const [authority, setAuthority] = useState("local_police");
   const query = useQuery({ queryKey: ["restricted-care", "case", schoolId, caseId], queryFn: () => getCareCase(schoolId, caseId) });
   const mutation = useMutation({ mutationFn: (input: Record<string, unknown>) => actOnCareCase(schoolId, caseId, input), onSuccess: async () => { setNote(""); await query.refetch(); await onChanged(); } });
-  useEffect(() => { closeRef.current?.focus(); }, []);
-  if (query.isPending) return <div className="care-modal"><section className="care-sheet care-sheet--detail"><ScreenLoading /></section></div>;
-  if (query.error || !query.data) return <div className="care-modal"><section className="care-sheet care-sheet--detail"><LiveRouteError error={query.error ?? new Error("Case unavailable") } onRetry={query.refetch} /></section></div>;
+  if (query.isPending) return <ScreenLoading />;
+  if (query.error || !query.data) return <LiveRouteError error={query.error ?? new Error("Case unavailable") } onRetry={query.refetch} />;
   const detail = query.data; const item = detail.case; const full = detail.access.access_level === "full";
   const submit = () => {
     const common = { expected_revision: item.revision };
@@ -92,8 +91,8 @@ function CaseDialog({ schoolId, caseId, onClose, onChanged }: { schoolId: string
     else if (["triage","active","closed"].includes(actionKind)) mutation.mutate({ action: "transition", status: actionKind, note, ...common });
     else mutation.mutate({ action: "add_entry", entry_type: actionKind, note, ...common });
   };
-  return <div className="care-modal"><section role="dialog" aria-modal="true" aria-labelledby="care-case-title" className="care-sheet care-sheet--detail">
-    <header><div><small>Restricted case · {title(item.status)}</small><h2 id="care-case-title">{item.subject_name}</h2></div><button ref={closeRef} type="button" aria-label="Close case" onClick={onClose}><X /></button></header>
+  return <section aria-labelledby="care-case-title" className="care-sheet care-sheet--page">
+    <header><div><small>Restricted case · {title(item.status)}</small><h2 id="care-case-title">{item.subject_name}</h2></div></header>
     <div className="care-sheet__body">
       <div className="care-detail-summary"><span><b>{title(item.urgency)}</b><small>{title(item.concern_category)}</small></span><span><b>{title(item.reporting_state)}</b><small>Owner: {item.owner_name}</small></span></div>
       {item.reporting_state === "assessment_required" && <aside className="care-assessment"><AlertTriangle /><p><strong>Reporting assessment is still open.</strong> The software cannot decide the legal duty. For suspected POCSO offences, authorised staff must follow the immediate statutory reporting process.</p></aside>}
@@ -102,7 +101,7 @@ function CaseDialog({ schoolId, caseId, onClose, onChanged }: { schoolId: string
       {full && detail.external_reports.length > 0 && <section className="care-reports"><h3>External reporting evidence</h3>{detail.external_reports.map((report) => <p key={report.id}><b>{title(report.authority_type)}</b><span>{formatDateTime(report.reported_at)} · {report.reference}</span></p>)}</section>}
       {full && <section className="care-action-panel"><h3>Record next action</h3><div className="care-form-grid"><label>Action<select value={actionKind} onChange={(event) => setActionKind(event.target.value)}><option value="safety_action">Safety action</option><option value="contact">Contact record</option><option value="case_note">Case note</option><option value="reporting_required">Reporting required</option><option value="not_applicable">Reporting assessed as not applicable</option><option value="external_report">Record external report</option><option value="triage">Move to triage</option><option value="active">Mark active</option><option value="closed">Close with outcome</option></select></label>{actionKind === "external_report" && <label>Authority<select value={authority} onChange={(event) => setAuthority(event.target.value)}><option value="sjpu">SJPU</option><option value="local_police">Local police</option><option value="child_welfare_committee">Child Welfare Committee</option><option value="child_helpline">Child Helpline</option><option value="other">Other authority</option></select></label>}</div><label>{actionKind === "external_report" ? "Report reference" : "Factual note / rationale"}<textarea rows={4} value={note} onChange={(event) => setNote(event.target.value)} /></label>{mutation.error && <p className="care-error" role="alert">{mutation.error.message}</p>}<button type="button" className="care-primary" disabled={mutation.isPending || note.trim().length < (actionKind === "external_report" ? 3 : 10)} onClick={submit}>{mutation.isPending ? "Saving…" : "Save protected action"}</button></section>}
     </div>
-  </section></div>;
+  </section>;
 }
 
 function TeamPanel({ schoolId, data, refresh }: { schoolId: string; data: CareWorkspace; refresh: () => Promise<void> }) {
@@ -110,30 +109,41 @@ function TeamPanel({ schoolId, data, refresh }: { schoolId: string; data: CareWo
   const [revokeId, setRevokeId] = useState<string | null>(null); const [reason, setReason] = useState("");
   const assign = useMutation({ mutationFn: () => assignCareRole(schoolId, { user_id: member, role_kind: role, route_kind: route, valid_from: new Date().toISOString().slice(0, 10), valid_until: null }), onSuccess: refresh });
   const revoke = useMutation({ mutationFn: (assignment: { id: string; revision: number }) => revokeCareRole(schoolId, assignment.id, assignment.revision, reason), onSuccess: async () => { setRevokeId(null); setReason(""); await refresh(); } });
-  return <section className="care-team"><header><div><small>Purpose-specific access</small><h2>Restricted care team</h2></div><ShieldCheck /></header><p>Job title alone does not open case records. These dated assignments configure who receives primary and alternate intakes; each case still grants explicit access.</p>
-    <div className="care-team-form"><label>Staff member<select value={member} onChange={(event) => setMember(event.target.value)}>{data.candidates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.role}</option>)}</select></label><label>Care role<select value={role} onChange={(event) => setRole(event.target.value)}>{["designated_lead","deputy_lead","institution_head","counsellor","external_liaison"].map((value) => <option key={value} value={value}>{title(value)}</option>)}</select></label><label>Intake route<select value={route} onChange={(event) => setRoute(event.target.value)}><option value="primary">Primary route</option><option value="alternate">Alternate route</option></select></label><button type="button" className="care-primary" disabled={!member || assign.isPending} onClick={() => assign.mutate()}><Plus size={18} /> Add assignment</button></div>
+  return <section className="care-team"><h2 className="sr-only">Restricted care team</h2><p>Job title alone does not open case records. Team assignments set intake recipients; each case still requires explicit access.</p>
+    <details className="care-team-add"><summary>Add care-team member</summary><div className="care-team-form"><label>Staff member<select value={member} onChange={(event) => setMember(event.target.value)}>{data.candidates.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.role}</option>)}</select></label><label>Care role<select value={role} onChange={(event) => setRole(event.target.value)}>{["designated_lead","deputy_lead","institution_head","counsellor","external_liaison"].map((value) => <option key={value} value={value}>{title(value)}</option>)}</select></label><label>Intake route<select value={route} onChange={(event) => setRoute(event.target.value)}><option value="primary">Primary route</option><option value="alternate">Alternate route</option></select></label><button type="button" className="care-primary" disabled={!member || assign.isPending} onClick={() => assign.mutate()}><Plus size={18} /> Add assignment</button></div></details>
     {(assign.error || revoke.error) && <p className="care-error" role="alert">{(assign.error ?? revoke.error)?.message}</p>}
     <div className="care-team-list">{data.team.map((item) => <article key={item.id} className={item.status === "revoked" ? "is-revoked" : ""}><span className="care-team-list__avatar"><UserRoundCog /></span><div><strong>{item.member_name}</strong><small>{title(item.role_kind)} · {title(item.route_kind)}</small><small>From {new Date(`${item.valid_from}T00:00:00`).toLocaleDateString("en-IN")}{item.valid_until ? ` to ${new Date(`${item.valid_until}T00:00:00`).toLocaleDateString("en-IN")}` : ""}</small></div><em>{item.status}</em>{item.status === "active" && (revokeId === item.id ? <span className="care-revoke"><input aria-label={`Reason to revoke ${item.member_name}`} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason for revocation" /><button type="button" disabled={reason.trim().length < 12} onClick={() => revoke.mutate(item)}>Confirm</button></span> : <button type="button" className="care-link" onClick={() => setRevokeId(item.id)}>Revoke</button>)}</article>)}</div>
   </section>;
 }
 
 export function RestrictedCarePage({ portal, schoolId, schoolName, messageReports }: { portal: Portal; schoolId: string; schoolName?: string; messageReports?: ReactNode }) {
-  const queryClient = useQueryClient(); const [tab, setTab] = useState<Tab>("cases"); const [intake, setIntake] = useState(false); const [caseId, setCaseId] = useState<string | null>(null);
+  const queryClient = useQueryClient(); const [params,setParams]=useSearchParams();
+  const tab:Tab=params.get('section')==='team'?'team':params.get('section')==='message_reports'?'message_reports':'cases';
+  const intake=params.get('create')==='concern'; const caseId=params.get('case');
+  const reportId=tab==='message_reports'?params.get('report'):null;
+  const navigate=(section:Tab,caseToOpen?:string,create=false)=>setParams(current=>{current.set('section',section);current.delete('case');current.delete('create');current.delete('report');if(caseToOpen)current.set('case',caseToOpen);if(create)current.set('create','concern');return current;});
+  const listParams=new URLSearchParams(params);listParams.delete('case');listParams.delete('create');listParams.set('section','cases');
+  const baseTitle=portal==='principal'?'Student concerns':'Restricted care';
+  const reportListParams=new URLSearchParams(params);reportListParams.delete('report');
+  const pageTitle=intake?'Record a concern':caseId?'Concern details':reportId?'Message report':baseTitle;
+  const backTo=intake||caseId?`/${portal}/safeguarding?${listParams}`:reportId?`/${portal}/safeguarding?${reportListParams}`:`/${portal}/more`;
   const query = useQuery({ queryKey: ["restricted-care", "workspace", schoolId], queryFn: () => getCareWorkspace(schoolId) });
   const refresh = async () => { await query.refetch(); await queryClient.invalidateQueries({ queryKey: ["notifications"] }); };
   const metrics = useMemo(() => ({ open: query.data?.cases.filter((item) => item.status !== "closed").length ?? 0, reporting: query.data?.cases.filter((item) => ["assessment_required","reporting_required"].includes(item.reporting_state)).length ?? 0 }), [query.data]);
   if (query.isPending) return <OperationsShell portal={portal} active="safeguarding" title={portal === "principal" ? "Student concerns" : "Restricted care"} subtitle={schoolName}><ScreenLoading /></OperationsShell>;
   if (query.error || !query.data) return <OperationsShell portal={portal} active="safeguarding" title={portal === "principal" ? "Student concerns" : "Restricted care"} subtitle={schoolName}><LiveRouteError error={query.error ?? new Error("Protected workspace unavailable") } onRetry={query.refetch} /></OperationsShell>;
   const data = query.data;
-  return <OperationsShell portal={portal} active="safeguarding" title={portal === "principal" ? "Student concerns" : "Restricted care"} subtitle={schoolName}>
-    <main className="care-page"><SafetyBanner /><section className="care-overview"><div><small>Your assigned cases</small><strong>{metrics.open}</strong><span>open cases</span></div><div><small>Needs reporting decision</small><strong>{metrics.reporting}</strong><span>assigned to you</span></div><button type="button" onClick={() => setIntake(true)}><Plus /> Record a concern</button></section>
-    <nav className="care-tabs" aria-label="Restricted care sections"><button type="button" className={tab === "cases" ? "is-active" : ""} onClick={() => setTab("cases")}>Cases</button>{data.can_manage_team && <button type="button" className={tab === "team" ? "is-active" : ""} onClick={() => setTab("team")}>Care team</button>}{messageReports && <button type="button" className={tab === "message_reports" ? "is-active" : ""} onClick={() => setTab("message_reports")}>Message reports</button>}</nav>
-    {tab === "cases" && <><section className="care-route-status"><span className={data.routes.primary ? "is-ready" : "is-missing"}>{data.routes.primary ? <CheckCircle2 /> : <AlertTriangle />} Primary route · {data.routes.primary} available</span><span className={data.routes.alternate ? "is-ready" : "is-missing"}>{data.routes.alternate ? <CheckCircle2 /> : <AlertTriangle />} Alternate route · {data.routes.alternate} available</span></section><section className="care-queue"><header><div><small>Restricted to explicit assignments</small><h2>My protected cases</h2></div><FileLock2 /></header>{data.cases.length ? data.cases.map((item) => <CaseCard key={item.id} item={item} onOpen={() => setCaseId(item.id)} />) : <div className="care-empty"><ShieldCheck /><strong>No assigned cases</strong><p>This does not mean the institution has no concerns. You only see cases explicitly assigned to you.</p></div>}</section></>}
+  return <OperationsShell portal={portal} active="safeguarding" title={pageTitle} subtitle={schoolName} backTo={backTo}>
+    <main className="care-page"><SafetyBanner />
+    {intake?<IntakePage key={schoolId} schoolId={schoolId} data={data} onClose={()=>navigate('cases')} onCreated={id=>{navigate('cases',id);void refresh();}}/>:caseId?<CasePage key={`${schoolId}:${caseId}`} schoolId={schoolId} caseId={caseId} onChanged={refresh}/>:reportId?messageReports:<>
+    <nav className="care-tabs" aria-label="Restricted care sections"><button type="button" aria-current={tab==='cases'?'page':undefined} className={tab === "cases" ? "is-active" : ""} onClick={() => navigate("cases")}>Cases</button>{data.can_manage_team && <button type="button" aria-current={tab==='team'?'page':undefined} className={tab === "team" ? "is-active" : ""} onClick={() => navigate("team")}>Care team</button>}{messageReports && <button type="button" aria-current={tab==='message_reports'?'page':undefined} className={tab === "message_reports" ? "is-active" : ""} onClick={() => navigate("message_reports")}>Message reports</button>}</nav>
+    {tab === "cases" && <><div className="care-toolbar"><span>{metrics.open} open{metrics.reporting>0?` · ${metrics.reporting} need reporting decisions`:''}</span><button className="care-primary" type="button" onClick={()=>navigate('cases',undefined,true)}><Plus size={18}/>Record a concern</button></div><section className="care-route-status"><span className={data.routes.primary ? "is-ready" : "is-missing"}>{data.routes.primary ? <CheckCircle2 /> : <AlertTriangle />} Primary route · {data.routes.primary} available</span><span className={data.routes.alternate ? "is-ready" : "is-missing"}>{data.routes.alternate ? <CheckCircle2 /> : <AlertTriangle />} Alternate route · {data.routes.alternate} available</span></section><section className="care-queue" aria-label="Assigned cases">{data.cases.length ? data.cases.map((item) => <CaseCard key={item.id} item={item} onOpen={() => navigate('cases',item.id)} />) : <div className="care-empty"><ShieldCheck /><strong>No assigned cases</strong><p>This does not mean the institution has no concerns. You only see cases explicitly assigned to you.</p></div>}</section></>}
     {tab === "team" && data.can_manage_team && <TeamPanel schoolId={schoolId} data={data} refresh={refresh} />}
     {tab === "message_reports" && messageReports}
+    {tab==='team'&&!data.can_manage_team?<p className="care-error" role="alert">You do not have access to care-team settings.</p>:null}
+    {tab==='message_reports'&&!messageReports?<p className="care-error" role="alert">Message reports are not available in this view.</p>:null}
+    </>}
     <footer className="care-legal"><Clock3 /><p>{data.legal_notice} Case closure does not delete evidence or prove statutory compliance.</p></footer>
-    {intake && <IntakeDialog schoolId={schoolId} data={data} onClose={() => setIntake(false)} onCreated={(id) => { setIntake(false); setCaseId(id); void refresh(); }} />}
-    {caseId && <CaseDialog schoolId={schoolId} caseId={caseId} onClose={() => setCaseId(null)} onChanged={refresh} />}
     </main>
   </OperationsShell>;
 }
