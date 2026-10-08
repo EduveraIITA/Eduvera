@@ -1,59 +1,65 @@
-name: Student Pulse source apply
+name: Student Pulse checks
 on:
   push:
     branches: [feature/student-pulse-screens]
+  pull_request:
+    branches: [Stage]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - '.github/workflows/student-pulse.yml'
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: student-pulse-source-apply-${{ github.ref }}
+  group: student-pulse-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  apply:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/student-pulse-screens'
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: student_pulse_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/student_pulse_ci
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/student_pulse_ci
+      TEST_DATABASE_ISOLATED: 'true'
     steps:
       - uses: actions/checkout@v4
-      - name: Apply checksum-verified feature source to this branch only
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import base64, hashlib, json, lzma, pathlib, subprocess
-          root = pathlib.Path.cwd()
-          folder = root / '.student-pulse-transfer'
-          assert {p.name for p in folder.iterdir()} == {str(i) for i in range(5)}
-          data = base64.b64decode(''.join((folder / str(i)).read_text().strip() for i in range(5)), validate=True)
-          assert hashlib.sha256(data).hexdigest() == '1e527b25d32805323cd686cd7759bb2c3299a88aee6984b6402bccc9189d1f03', 'Source transfer checksum mismatch'
-          manifest = json.loads(lzma.decompress(data))
-          assert len(manifest['files']) == 19
-          for name, change in manifest['files'].items():
-              path = pathlib.PurePosixPath(name)
-              assert not path.is_absolute() and '..' not in path.parts
-              assert name.startswith(('backend/', 'frontend/', 'docs/blueprint/'))
-              target = root / name
-              assert not target.is_symlink()
-              previous = change['before_sha256']
-              if previous is None:
-                  assert not target.exists(), 'New file already exists: ' + name
-              else:
-                  assert hashlib.sha256(target.read_bytes()).hexdigest() == previous, 'Preimage changed: ' + name
-                  subprocess.run(['git', 'apply', '--check', '-'], input=change['patch'].encode(), check=True)
-          for name, change in manifest['files'].items():
-              target = root / name
-              if 'patch' in change:
-                  subprocess.run(['git', 'apply', '-'], input=change['patch'].encode(), check=True)
-              else:
-                  target.parent.mkdir(parents=True, exist_ok=True)
-                  target.write_text(change['content'])
-          for i in range(5):
-              (folder / str(i)).unlink()
-          folder.rmdir()
-          subprocess.run(['git', 'diff', '--check'], check=True)
-          subprocess.run(['git', 'add', '--', *manifest['files'].keys(), '.student-pulse-transfer'], check=True)
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: add scoped Student Pulse screens and follow-up workflow'
-          git push origin HEAD:refs/heads/feature/student-pulse-screens
-          git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm run build
+        working-directory: backend
+      - run: npm run db:migrate
+        working-directory: backend
+      - name: Student Pulse database and rule tests
+        run: npx vitest run test/student-pulse-rules.test.ts test/student-pulse.integration.test.ts
+        working-directory: backend
+      - run: npx eslint src/student-pulse test/student-pulse*.test.ts --max-warnings=0
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm test -- --run
+        working-directory: frontend
