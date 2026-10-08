@@ -3616,3 +3616,40 @@ Verified locally after the final UI adjustment:
   local checks do not establish a new Stage or production release.
 
 The current interaction and metric contract is [Principal insights](PRINCIPAL_INSIGHTS.md).
+
+### Unified Insights Stage release verified — 8 October 2026
+
+At the user's request, pulled `origin/Stage` (already current at `bcdf8bb`),
+committed the unified Insights and attendance-review work, and pushed application
+revision `36ddd7933ebaa5a9b4c8a6fee3c78ad9b6098efc` to Stage.
+[Stage run 37805815618](https://github.com/EduveraIITA/Eduvera/actions/runs/37805815618)
+completed successfully, including Railway deployment and public release verification.
+
+- Fresh PostgreSQL 17 CI passed **341 backend tests in 50 files** and **495 frontend
+  tests in 68 files**. The repository secret scan, backend/frontend typecheck,
+  lint/build and desktop typecheck/build passed. Local backend checks and desktop
+  build were also repeated before the push.
+- Independent public requests confirmed the exact application revision above from
+  `/releasez`, environment `stage`, and `/readyz` with database/events healthy at
+  `https://omnischool-stage.up.railway.app`. The existing release pipeline also
+  verified both applications, install icons, API schema, demo access and protected
+  metrics. Its optional full demo reseed was skipped; no new migration, database
+  reset or national-directory import was introduced.
+- Deployed WebKit checks passed in principal, teacher, parent and student portals:
+  one Insights destination, trend period persistence, old Analytics bookmark
+  redirects, result drill-downs and Back links. Principal attendance review,
+  student comparison, the actual dated class register, missing-records detail,
+  follow-ups, coverage, fees and learning-review navigation were exercised without
+  changing attendance, sending messages or creating follow-ups.
+  A separate live check selected an already-owned attendance review and opened
+  that student's authorized existing follow-up inbox successfully.
+- All four portal overview/results layouts and principal topic/review details
+  passed overflow checks at **320/768/1024/1440px**. Chart-caption gaps remain
+  **16px**. Keyboard review-rule disclosure and hidden/revealed period controls
+  worked. Deployed attendance queue/student-detail phone screenshots were visually
+  inspected; no page errors occurred in the final four-portal browser run.
+- Local and ngrok previews remained ready with database/events healthy. The three
+  unrelated untracked files named with ` 2` remain untouched and uncommitted.
+
+This records a verified Stage release, not a production rollout or physical-phone
+acceptance. The user should refresh Stage and review the new Attendance review flow.
