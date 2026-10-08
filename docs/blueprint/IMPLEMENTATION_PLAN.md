@@ -3195,3 +3195,23 @@ to become enabled, then scopes its unchanged identity assertions to the active
 card. All three child identities, both swipe directions and the final ID dialog
 remain checked; no home/runtime code or timeout limit is changed. The focused
 regression passed locally; the next Stage run must re-run the full suite.
+
+Release verified: [Stage run 37781716971](https://github.com/EduveraIITA/Eduvera/actions/runs/37781716971)
+passed and deployed application revision `616f3bee8da81b5b0c449eb8031ae4f170070031`.
+CI passed **318 backend tests in 46 files** and **433 frontend tests in 64 files**,
+secret scanning, typecheck/lint and mobile/backend/desktop builds. Normal Stage
+migration validation and exact-release public health checks passed. Full demo
+reseeding was skipped. No database reset or directory import was performed.
+
+Independent checks confirmed that exact SHA with `environment: stage` and
+database/events ready. Authenticated WebKit checks on the deployed application
+verified the eight-subject student attendance list, keyboard expansion, numeric
+safe-buffer display, filter persistence after reload and restored standings
+focus; the teacher's four-class directory, successful class-updates API, separate
+class route, gallery/list roster switching and Back; and the admin's published
+assessment register without a nested border/frame. These screens passed
+320/768/1024/1440px overflow checks and the phone renders were visually reviewed.
+In-app navigation produced no page errors. Local and phone-preview readiness
+also remained healthy. These checks do not claim every device or workflow is
+certified; user phone validation remains requested. The documentation-only
+evidence commit does not require another application deployment.
