@@ -19,8 +19,8 @@ export default function PrincipalFeedbackPage() {
       {error?<p role="alert">{error}</p>:null}
       {!query.data.campaigns.length?<section className="teacher-feedback__card"><h2>No feedback requests yet</h2><p>Start with a few focused parameters. Students or parents can respond in under a minute.</p></section>:query.data.campaigns.map(c=><section className="teacher-feedback__card" key={c.id}>
         <div className="teacher-feedback__result-heading"><div><h2>{c.title}</h2><p>{c.teacher_name} · Class {c.class_name} · {c.audience}</p></div><span className="teacher-feedback__status">{c.is_closed?'Closed':'Open'}</span></div>
-        <p>{c.response_count} responses · Closes {new Date(c.closes_at).toLocaleString()}</p>
-        <div className="teacher-feedback__actions"><button aria-expanded={selected===c.id} onClick={()=>setSelected(selected===c.id?'':c.id)}>{selected===c.id?'Hide results':'View results'}</button>{!c.is_closed?<button onClick={()=>setClosing(c.id)}>Close request</button>:null}</div>
+        <p>{c.response_count} {c.response_count===1?'response':'responses'} · Closes {new Date(c.closes_at).toLocaleString()}</p>
+        <div className="teacher-feedback__actions"><button aria-expanded={selected===c.id} aria-controls={`feedback-results-${c.id}`} onClick={()=>setSelected(selected===c.id?'':c.id)}>{selected===c.id?'Hide results':'View results'}</button>{!c.is_closed?<button onClick={()=>setClosing(c.id)}>Close request</button>:null}</div>
         {closing===c.id?<div className="teacher-feedback__confirm"><p>Close this request now? New responses will stop and it cannot be reopened.</p><button disabled={busy} onClick={()=>void close(c.id)}>{busy?'Closing…':'Yes, close request'}</button><button disabled={busy} onClick={()=>setClosing('')}>Keep open</button></div>:null}
         {selected===c.id?<FeedbackResults school={school} id={c.id}/>:null}
       </section>)}
