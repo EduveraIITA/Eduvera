@@ -3252,3 +3252,10 @@ deadline deep links, dialog Escape dismissal, active mobile tab and Timetable in
 More, with no horizontal overflow or page errors. Test and release status will be
 confirmed by the PR/Stage workflow; no national dataset import or reseed is part
 of this change. Please review the resulting UI on a physical phone after release.
+
+### Principal Insights reading note — 8 October 2026
+
+Removed the “How to read these insights” disclosure and its unused styles at
+the user’s request. Metric definitions remain in PRINCIPAL_INSIGHTS.md.
+Dashboard graphs, filters and source-record dialogs are unchanged.
+Frontend typecheck and diff whitespace checks passed.
