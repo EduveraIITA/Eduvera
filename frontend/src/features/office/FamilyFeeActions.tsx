@@ -1,8 +1,8 @@
 import { useRef, useState, type FormEvent } from "react";
 import { parseRupees, rupees, submitFeeReview, type FeePaymentSettings, type FeeReview, type Invoice } from "./api";
 
-export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved }: { schoolId: string; invoice: Invoice; settings?: FeePaymentSettings; reviews: FeeReview[]; onSaved: () => Promise<unknown> }) {
-  const [mode, setMode] = useState<"closed" | "review" | "pay" | "charge">("closed");
+export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved, expanded = false }: { schoolId: string; invoice: Invoice; settings?: FeePaymentSettings; reviews: FeeReview[]; onSaved: () => Promise<unknown>; expanded?: boolean }) {
+  const [mode, setMode] = useState<"closed" | "review" | "pay" | "charge">(expanded ? "review" : "closed");
   const [amount, setAmount] = useState((invoice.balance_paise / 100).toFixed(2));
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [success, setSuccess] = useState("");
   const command = useRef({ key: crypto.randomUUID(), payload: "" });
@@ -36,7 +36,7 @@ export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved
       <div className="office-actions">
         {invoice.balance_paise > 0 && !pendingPayment ? <button className="office-primary" type="button" disabled={busy} onClick={() => open("pay")}>Pay / report payment</button> : null}
         <button className="office-secondary" type="button" disabled={pendingQuestion || busy} onClick={() => open("charge")}>{pendingQuestion ? "Fee review pending" : "Question this fee"}</button>
-        <button className="office-secondary" type="button" disabled={busy} onClick={() => open("closed")}>Close</button>
+        {!expanded || mode !== "review" ? <button className="office-secondary" type="button" disabled={busy} onClick={() => open(expanded ? "review" : "closed")}>{expanded ? "Cancel" : "Close"}</button> : null}
       </div>
       {mode === "pay" && !pendingPayment && invoice.balance_paise > 0 ? <form className="office-form" onSubmit={event => void submit(event)}>
         <h3>Pay the school</h3><p className="office-hint">Review the payee and amount before paying. Opening a UPI app does not confirm payment. Report a payment already made below.</p>

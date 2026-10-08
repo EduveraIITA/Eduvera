@@ -11,7 +11,6 @@ import {
   History,
   LoaderCircle,
   PenLine,
-  ShieldCheck,
   Stethoscope,
   Trash2,
   Upload,
@@ -197,11 +196,7 @@ export function ParentLeavePage({
 
         {tab === "pending" && request ? (
           <>
-            <section className="guardian-banner" aria-label="Guardian sign-off status">
-              <span><ShieldCheck size={18} /></span>
-              <div><small>Guardian Sign-Off</small><strong>{data.guardian.name} ({data.guardian.relationship})</strong></div>
-              <em>{data.canAuthorize ? "Action Needed" : "View only"}</em>
-            </section>
+            <p className="workspace-context">{data.canAuthorize ? "Your sign-off is needed" : "View only"} · {data.guardian.name} ({data.guardian.relationship})</p>
 
             <article className="surface-card leave-request-card">
               <div className="leave-request-card__intro">

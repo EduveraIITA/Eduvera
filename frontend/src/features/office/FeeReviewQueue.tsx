@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { decideFeeReview, personName, rupees, type FeeReview, type Invoice } from "./api";
 export function FeeReviewQueue({ schoolId, reviews, invoices, onSaved }: { schoolId: string; reviews: FeeReview[]; invoices: Invoice[]; onSaved: () => Promise<unknown> }) {
   const pending = reviews.filter(item => item.status === "pending");
+  if (!pending.length) return <p className="workspace-context">No payments or fee questions awaiting review.</p>;
   return <section className="office-panel"><h2>Review queue <span>{pending.length}</span></h2><p className="office-hint">Verify against the school’s bank statement or counter records. A parent submission is not proof of funds.</p>{pending.length ? pending.map(review => <ReviewItem key={review.id} schoolId={schoolId} review={review} invoice={invoices.find(item => item.id === review.invoice_id)} onSaved={onSaved} />) : <p className="office-empty">No payments or fee questions awaiting review.</p>}</section>;
 }
 function ReviewItem({ schoolId, review, invoice, onSaved }: { schoolId: string; review: FeeReview; invoice?: Invoice; onSaved: () => Promise<unknown> }) {

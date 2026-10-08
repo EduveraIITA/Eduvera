@@ -162,7 +162,7 @@ export function EventRegisterPage({
     <OperationsShell portal={portal} active="events" title={`${register.event.title} attendance`} subtitle="Event register" backTo={`${prefix}/events/${register.event.id}`} contentHasHeading>
       <div className="campus-event-register-page">
         <section className="campus-event-register-hero">
-          <div><span>Event session register</span><h1>{register.session.title}</h1><p>{formatEventDate(register.session.starts_at)} · {register.session.attendance_mode === "check_in_out" ? "Check-in and check-out" : "Check-in register"}</p></div>
+          <div><h2>{register.session.title}</h2><p>{formatEventDate(register.session.starts_at)} · {register.session.attendance_mode === "check_in_out" ? "Check-in and check-out" : "Check-in register"}</p></div>
           <span className={`campus-event-register-state is-${register.session.state}`}>{register.session.state === "locked" ? <LockKeyhole size={15} /> : <Clock3 size={15} />}{register.session.state}</span>
         </section>
 

@@ -18,6 +18,7 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { SchoolEventService } from "./school-event.service.js";
+import { classUpdates } from "./class-updates.js";
 import {lockSchedule,protectPublishedPlans} from '../day-plans/schedule.js';
 import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendance-workspace.js';
 
@@ -1902,6 +1903,13 @@ export class SchoolService {
     await this.requireRole(user, student, "student");
     const leaves = await this.leaveList(user, student.id, undefined, request);
     return { student: await this.studentDto(student), active: leaves.filter((item) => ["pending_guardian", "authorized"].includes(item.status)), history: leaves.filter((item) => !["pending_guardian", "authorized"].includes(item.status)) };
+  }
+
+  async teacherClassUpdates(user: AuthUser, selectedDateValue?: string) {
+    const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
+    const date = z.iso.date().parse(selectedDateValue ?? await this.schoolLocalDate(membership.school_id));
+    const classes = await attendanceWorkspace(this.db, membership.school_id, user.id, membership.role, date);
+    return classUpdates(this.db, classes.map(item => item.class_section_id), user.id, date);
   }
 
   async teacherHomeScreen(user: AuthUser, selectedDateValue?: string) {

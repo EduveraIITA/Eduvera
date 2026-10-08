@@ -143,6 +143,8 @@ export function ParentDiaryPage({
           </div>
         </section>
 
+        <details className="workspace-disclosure" open={data.packingItems.length > 0 || undefined}>
+        <summary>Day plan & packing{data.packingItems.length > 0 ? ` · ${data.packingItems.length - packedCount} to pack` : ""}</summary>
         <section className="surface-card diary-overview-card" aria-labelledby="current-diary-period">
           {data.currentPeriod ? <>
             <div className="diary-overview-card__live"><span><i className="presence-dot" />{data.currentPeriod.stateLabel}</span><strong>{data.currentPeriod.dayRangeLabel}</strong></div>
@@ -194,10 +196,10 @@ export function ParentDiaryPage({
           )}
         </section>
 
+        </details>
         <section className="teacher-notes" aria-labelledby="teacher-notes-heading">
           <div className="diary-section-heading diary-section-heading--notes">
-            <div><h2 id="teacher-notes-heading">Teacher Daily Notes</h2><span>{data.diaryEntries.length} {data.diaryEntries.length === 1 ? "entry" : "entries"} recorded for {childFirstName} on this date</span></div>
-            <em>{classLabel} Diary</em>
+            <div><h2 id="teacher-notes-heading">Notes</h2><span>{data.diaryEntries.length} {data.diaryEntries.length === 1 ? "entry" : "entries"} for {childFirstName}</span></div>
           </div>
           <div className="teacher-note-list">
             {data.diaryEntries.length === 0 ? <div className="surface-card parent-empty-state"><BookOpenCheck size={21} /><div><strong>No diary entries</strong><span>Teachers have not published notes for this date.</span></div></div> : data.diaryEntries.map((entry) => (
@@ -211,8 +213,8 @@ export function ParentDiaryPage({
           </div>
         </section>
 
-        <section className="surface-card diary-signoff" aria-labelledby="diary-signoff-heading">
-          <div className="diary-signoff__heading"><span><PenLine size={20} /></span><div><h2 id="diary-signoff-heading">Daily Parent Sign-off</h2><p>Acknowledgment for {classLabel} diary</p></div></div>
+        {!data.requiresAcknowledgement && signatureState !== "success" ? <p className="workspace-context">No sign-off required for this date.</p> : <section className="surface-card diary-signoff" aria-labelledby="diary-signoff-heading">
+          <div className="diary-signoff__heading"><span><PenLine size={20} /></span><div><h2 id="diary-signoff-heading">Acknowledgement</h2><p>{classLabel} diary</p></div></div>
           {signatureState === "success" ? (
             <div className="signed-box" role="status">
               <CheckCircle2 size={23} />
@@ -231,12 +233,12 @@ export function ParentDiaryPage({
               {signatureState === "error" ? <p className="form-error" role="alert">The diary could not be signed. Please try again.</p> : null}
             </div>
           )}
-        </section>
+        </section>}
 
-        <section className="surface-card parent-note-card" aria-labelledby="parent-note-heading">
-          <div className="parent-note-card__heading"><PenLine size={19} /><h2 id="parent-note-heading">Parent Note on Daily Diary</h2><span>Visible to<br />Teachers</span></div>
+        {onSendNote ? <section className="surface-card parent-note-card" aria-labelledby="parent-note-heading">
+          <div className="parent-note-card__heading"><PenLine size={19} /><h2 id="parent-note-heading">Note to teacher</h2><span>Visible to<br />Teachers</span></div>
           <label className="sr-only" htmlFor="parent-diary-note">Parent note to homeroom</label>
-          <textarea id="parent-diary-note" rows={3} maxLength={500} value={note} disabled={!onSendNote} onChange={(event) => setNote(event.target.value)} placeholder={onSendNote ? "Write a short response or question about this daily diary..." : "A diary item is required before a parent note can be added."} />
+          <textarea id="parent-diary-note" rows={3} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Write a response or question about this diary..." />
           <div className="parent-note-card__actions">
             <span><LockKeyhole size={12} />Private to {classLabel} Staff</span>
             <button className="button button--soft button--small" type="button" disabled={!onSendNote || !note.trim() || noteState === "pending" || noteState === "success"} onClick={() => void sendNote()}>
@@ -246,7 +248,7 @@ export function ParentDiaryPage({
           </div>
           {noteState === "success" ? <p className="note-success" role="status"><CheckCircle2 size={14} />Note shared with the {classLabel} homeroom team.</p> : null}
           {noteState === "error" ? <p className="form-error" role="alert">The note could not be sent. Please try again.</p> : null}
-        </section>
+        </section> : null}
       </div>
     </ParentShell>
   );

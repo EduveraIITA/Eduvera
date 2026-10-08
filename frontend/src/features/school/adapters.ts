@@ -649,6 +649,7 @@ export function adaptStudentAttendance(response: StudentAttendanceResponse): Stu
         held: item.classes_held,
         status: percent >= threshold + 10 ? "Well Above Minimum" : percent >= threshold ? "Eligible" : "Below Minimum",
         note: safeBufferNote(safe, threshold),
+        safeBuffer: item.classes_held > 0 && threshold > 0 ? safe : undefined,
         group: subjectGroup(item.subject.code),
         teacher: item.teacher?.name,
         location: item.room ? roomLabel(item.room) : undefined,

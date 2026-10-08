@@ -1,0 +1,56 @@
+/* Student attendance: one overview, scan-friendly rows, details on request. */
+.student-attendance-page { gap:16px; }
+.student-attendance-overview,
+.student-attendance-subject-list,
+.student-attendance-tools { border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); background:var(--edura-surface); overflow:hidden; }
+.student-attendance-overview { padding:16px 16px 0; }
+.student-attendance-overview > h2 { margin:0; color:var(--edura-ink-secondary); font-size:13px; font-weight:500; line-height:1.5; }
+.student-attendance-overview__main { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:8px; }
+.student-attendance-overview__main > strong { flex-shrink:0; font-size:32px; line-height:1.25; font-variant-numeric:tabular-nums; color:var(--edura-ink); }
+.student-attendance-overview__status { display:grid; gap:4px; text-align:right; font-size:13px; font-weight:600; color:var(--edura-ink-secondary); }
+.student-attendance-overview__status small { color:var(--edura-ink-secondary); font-size:12px; font-weight:400; }
+.student-attendance-overview__status.is-above { color:var(--edura-positive); }
+.student-attendance-overview__status.is-near { color:var(--edura-warning); }
+.student-attendance-overview__status.is-below { color:var(--edura-danger); }
+.student-attendance-page .student-attendance-overview__context { margin:4px 0 12px; color:var(--edura-ink-secondary); font-size:13px; line-height:1.5; }
+.student-attendance-overview__context strong { color:var(--edura-ink); font-weight:600; font-variant-numeric:tabular-nums; }
+.student-attendance-breakdown { border-top:1px solid var(--edura-border); }
+.student-attendance-breakdown > summary { display:flex; align-items:center; justify-content:space-between; min-height:44px; gap:12px; color:var(--edura-brand); font-size:13px; cursor:pointer; list-style:none; }
+.student-attendance-page summary::-webkit-details-marker { display:none; }
+.student-attendance-page summary > svg { flex-shrink:0; color:var(--edura-ink-muted); }
+.student-attendance-page details[open] > summary > svg { transform:rotate(180deg); }
+.student-attendance-page dl { display:grid; gap:12px; margin:0; padding:0 0 16px; font-size:13px; line-height:1.5; }
+.student-attendance-page dl > div { display:grid; grid-template-columns:minmax(90px,1fr) minmax(0,2fr); gap:12px; }
+.student-attendance-page dt { color:var(--edura-ink-secondary); }
+.student-attendance-page dd { margin:0; color:var(--edura-ink); overflow-wrap:anywhere; }
+.student-attendance-subject + .student-attendance-subject { border-top:1px solid var(--edura-border); }
+.student-attendance-subject > summary { display:flex; align-items:center; gap:12px; padding:16px; min-height:76px; list-style:none; cursor:pointer; }
+.student-attendance-subject__name { display:grid; flex:1; min-width:0; gap:4px; }
+.student-attendance-subject__name strong { color:var(--edura-ink); font-size:15px; line-height:1.4; overflow-wrap:anywhere; }
+.student-attendance-subject__name small { color:var(--edura-ink-secondary); font-size:12px; line-height:1.5; }
+.student-attendance-subject__name em { font-size:12px; font-style:normal; line-height:1.5; }
+.student-attendance-subject__name .is-below { color:var(--edura-danger); }
+.student-attendance-subject__name .is-near { color:var(--edura-warning); }
+.student-attendance-subject__percent { color:var(--edura-ink); font-size:16px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.student-attendance-subject__details { padding:0 16px 16px; }
+.student-attendance-page .student-attendance-subject__metrics { display:flex; flex-wrap:wrap; gap:16px 32px; border-top:1px solid var(--edura-border); padding:16px 0 0; }
+.student-attendance-page .student-attendance-subject__metrics > div { display:flex; flex-direction:column-reverse; gap:4px; }
+.student-attendance-subject__metrics dd { display:flex; align-items:baseline; gap:4px; }
+.student-attendance-subject__metrics strong { font-size:24px; line-height:1.25; font-variant-numeric:tabular-nums; }
+.student-attendance-subject__metrics .is-safe dd { color:var(--edura-positive); }
+.student-attendance-subject__metrics .is-near dd { color:var(--edura-warning); }
+.student-attendance-subject__metrics .is-below dd { color:var(--edura-danger); }
+.student-attendance-page .student-attendance-subject__context { padding:16px 0 0; }
+.student-attendance-page .student-attendance-planning-note { margin:12px 0 0; font-size:13px; color:var(--edura-ink-secondary); }
+.student-attendance-planning-note small { display:block; margin-top:4px; font-size:12px; line-height:1.5; }
+.student-attendance-empty { margin:0; padding:24px 16px; font-size:14px; line-height:1.5; color:var(--edura-ink-secondary); }
+.student-attendance-tools > button { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:48px; padding:12px 16px; border:0; background:none; color:var(--edura-brand); font:inherit; font-size:14px; text-align:left; cursor:pointer; }
+.student-attendance-tools > button + button { border-top:1px solid var(--edura-border); }
+.student-attendance-tools .attendance-simple-disclosure { border:0; border-top:1px solid var(--edura-border); border-radius:0; }
+.student-attendance-tools .attendance-simple-disclosure > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:48px; padding:12px 16px; color:var(--edura-brand); font-size:14px; font-weight:400; list-style:none; }
+.student-attendance-tools .attendance-simple-disclosure > section { padding:16px; }
+.student-attendance-page :is(button,summary,select):focus-visible { outline:2px solid var(--edura-brand); outline-offset:-3px; }
+@media(max-width:360px) {
+  .student-attendance-subject > summary { gap:8px; padding:12px; }
+  .student-attendance-subject__details { padding-inline:12px; }
+}

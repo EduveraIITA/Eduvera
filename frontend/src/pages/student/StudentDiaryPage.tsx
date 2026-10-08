@@ -5,7 +5,6 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
-  ClipboardList,
   Clock3,
   MessageSquareText,
   NotebookPen,
@@ -136,30 +135,7 @@ export function StudentDiaryPage({ data, onAcknowledge, onAddNote }: StudentDiar
   return (
     <StudentShell activeNav="diary" section="Diary" className={data.className}>
       <div className="student-page-stack student-diary-page">
-        <section className="student-diary-hero" aria-label="Diary summary">
-          <div className="student-diary-hero__top">
-            <div>
-              <p>{data.rangeLabel} - {data.termLabel}</p>
-            </div>
-          </div>
-          <div className="student-diary-stats" aria-label="Diary summary">
-            <span><strong>{stats.homework}</strong><small>Homework</small></span>
-            <span><strong>{stats.pending}</strong><small>Pending</small></span>
-            <span><strong>{stats.notices}</strong><small>Notices</small></span>
-            <span><strong>{stats.catchup}</strong><small>Catch-up</small></span>
-          </div>
-        </section>
-
-        <section className="student-card student-diary-summary" aria-labelledby="student-diary-summary-heading">
-          <span><ClipboardList size={21} /></span>
-          <div>
-            <h2 id="student-diary-summary-heading">
-              {stats.pending > 0 ? `${stats.pending} action${stats.pending === 1 ? "" : "s"} waiting` : "All caught up"}
-            </h2>
-            <p>{stats.pending > 0 ? "Finish the required homework or acknowledgements first." : "No required diary action is pending right now."}</p>
-          </div>
-          <strong>{stats.total} items</strong>
-        </section>
+        <p className="workspace-context">{data.rangeLabel} · {stats.pending > 0 ? `${stats.pending} action${stats.pending === 1 ? "" : "s"} waiting` : "All caught up"}</p>
 
         <div className="student-diary-filter" role="tablist" aria-label="Diary filter">
           {filters.map((item) => (

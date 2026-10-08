@@ -93,11 +93,11 @@ export function OperationsEventFinancePanel({
   onRecordRefund,
 }: {
   finance: EventFinanceResponse;
-  onRecordRefund: (studentId: string, input: { amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; reason: string; idempotency_key: string }) => Promise<void>;
+  onRecordRefund?: (studentId: string, input: { amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; reason: string; idempotency_key: string }) => Promise<void>;
 }) {
   const relevant = finance.items.filter((item) => !["not_required", "not_invoiced", "collectible", "paid"].includes(item.finance_state));
   const [selected, setSelected] = useState<EventFinanceParticipant | null>(null);
-  if (!relevant.length) return null;
+  if (!relevant.length) return <p className="campus-event-inline-empty">No credits or refunds to reconcile. Current payment status is shown under Participants.</p>;
   return (
     <section className="campus-event-detail-panel campus-event-finance-operations">
       <header><div><span>Finance reconciliation</span><h2>Credits and manual refunds</h2></div><b>{finance.counts.reconciliation_required} need action</b></header>
@@ -109,12 +109,12 @@ export function OperationsEventFinancePanel({
             <div><strong>{item.student_name}</strong><small>{item.admission_number} · {item.participation_state}</small></div>
             <span className={`campus-event-finance-state is-${item.finance_state}`}>{financeLabels[item.finance_state]}</span>
             {finance.permissions.can_view_finance_details ? <div className="campus-event-finance-values"><span>Credited <b>{money(item.credited_paise)}</b></span><span>Refund due <b>{money(item.refund_due_paise)}</b></span></div> : <p className="campus-event-finance-coarse">{item.finance_state === "refunded" || item.finance_state === "credited" ? "Reconciled" : "Finance follow-up pending"}</p>}
-            {finance.permissions.can_record_refund && item.refund_due_paise > 0 ? <button className="campus-event-primary" type="button" onClick={() => setSelected(item)}><Banknote size={16} />Record refund</button> : null}
+            {finance.permissions.can_record_refund && onRecordRefund && item.refund_due_paise > 0 ? <button className="campus-event-primary" type="button" onClick={() => setSelected(item)}><Banknote size={16} />Record refund</button> : null}
           </article>
         ))}
       </div>
       <p className="campus-event-policy-note"><AlertTriangle size={15} />Recording a refund documents a manual transaction. It does not send money through a payment gateway.</p>
-      {selected ? <RecordRefundDialog participant={selected} onClose={() => setSelected(null)} onSubmit={async (input) => { await onRecordRefund(selected.student_id, input); setSelected(null); }} /> : null}
+      {selected && onRecordRefund ? <RecordRefundDialog participant={selected} onClose={() => setSelected(null)} onSubmit={async (input) => { await onRecordRefund(selected.student_id, input); setSelected(null); }} /> : null}
     </section>
   );
 }

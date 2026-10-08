@@ -54,7 +54,7 @@ const adminShortcuts: Shortcut[] = [
   { owner: "staff", name: "Assign staff work", path: "/principal/staff?section=directory", keywords: "duties responsibilities assignments people" },
   { owner: "staff", name: "Staff leave", path: "/principal/staff?section=leave", keywords: "absence balance applications" },
   { owner: "staff", name: "Staff settings", path: "/principal/staff?section=policies", keywords: "leave policy" },
-  { owner: "weekly", name: "Weekly timetable", path: "/principal/timetable/weekly", keywords: "manage periods schedule subjects targets" },
+  { owner: "weekly", name: "Schedule settings", path: "/principal/timetable/weekly", keywords: "weekly timetable manage periods schedule subjects targets" },
   { owner: "weekly", name: "Calendar", path: "/principal/calendar", keywords: "month school dates holidays" },
   { owner: "report-cards", name: "Grading schemes", path: "/principal/report-cards?view=schemes", keywords: "grades bands" },
   { owner: "administration", name: "Academic setup", path: "/principal/administration?section=setup", keywords: "terms classes subjects" },

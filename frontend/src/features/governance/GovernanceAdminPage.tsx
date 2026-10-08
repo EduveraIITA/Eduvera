@@ -1,5 +1,5 @@
-import { AlertTriangle, BookOpenCheck, Building2, CheckCircle2, ChevronRight, ClipboardCheck, FileClock, History, Landmark, Route, Scale, ShieldCheck, UserRoundCheck, X } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertTriangle, BookOpenCheck, Building2, CheckCircle2, ChevronRight, ClipboardCheck, FileClock, History, Landmark, Route, ShieldCheck, UserRoundCheck } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { prepareAuthorityDraft, reviewPolicy, savePolicyDraft, submitPolicy, updateRegulatoryProfile, type AuthorityWorkspace, type GovernanceWorkspace, type PolicyFamily } from "./api";
@@ -7,34 +7,35 @@ import "./governance.css";
 
 type Tab = "authority" | "register" | "profile" | "history";
 const label = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const formatDate = (value: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`)) : "Not recorded";
 
 export function GovernanceAdminPage({ schoolId, schoolName, data, refresh }: { schoolId: string; schoolName?: string; data: GovernanceWorkspace; refresh: () => Promise<void> }) {
   const [params, setParams] = useSearchParams();
   const requested = params.get("section");
   const tab: Tab = requested === "register" || requested === "profile" || requested === "history" ? requested : "authority";
-  const setTab = (next: Tab) => setParams(current => { current.set("section", next); return current; });
-  const [selected, setSelected] = useState<PolicyFamily | null>(null);
-  return <OperationsShell portal="principal" active="more" title="Policies & governance" schoolName={schoolName} backTo="/principal/more">
+  const setTab = (next: Tab) => setParams(current => { current.set("section", next); current.delete('policy');current.delete('rule');return current; });
+  const policyId=params.get('policy'); const ruleId=params.get('rule');
+  const selected=data.families.find(family=>family.id===policyId);
+  const selectedRule=data.authority.rules.find(rule=>rule.id===ruleId);
+  const parentParams=new URLSearchParams(params);parentParams.delete('policy');parentParams.delete('rule');parentParams.set('section',policyId?'register':'authority');
+  const closeDetail=()=>setParams(parentParams);
+  const detailed=Boolean(policyId||ruleId);
+  return <OperationsShell portal="principal" active="more" title={policyId?selected?.title??'Policy':ruleId?selectedRule?.title??'Decision route':'Policies & governance'} schoolName={schoolName} backTo={detailed?`/principal/governance?${parentParams}`:"/principal/more"}>
     <div className="governance-page">
-      <section className="governance-summary" aria-label="Governance readiness summary">
-        <div><span className="governance-summary__icon"><Scale size={24} /></span><div><small>{label(data.profile.institution_kind)} governance</small><h1>Authority & policies</h1><p>Decision powers, officeholders and adopted rules.</p></div></div>
-        <dl><div><dt>Sources</dt><dd>{data.authority.metrics.sources}</dd></div><div><dt>Officeholders</dt><dd>{data.authority.metrics.active_appointments}</dd></div><div><dt>Decision routes</dt><dd>{data.authority.metrics.confirmed_rules}</dd></div><div className={data.authority.metrics.needs_review ? "is-alert" : ""}><dt>Needs review</dt><dd>{data.authority.metrics.needs_review}</dd></div></dl>
-      </section>
-      <p className="governance-boundary"><ShieldCheck size={18} /><span><strong>Institution review required.</strong> App access does not create decision authority.</span></p>
-      <nav className="governance-tabs" aria-label="Governance sections">
-        <button className={tab === "authority" ? "is-active" : ""} onClick={() => setTab("authority")}><Landmark size={17} />Authority</button>
-        <button className={tab === "register" ? "is-active" : ""} onClick={() => setTab("register")}><BookOpenCheck size={17} />Policy register</button>
-        <button className={tab === "profile" ? "is-active" : ""} onClick={() => setTab("profile")}><Building2 size={17} />Institution profile</button>
+      {!detailed?<><nav className="governance-tabs" aria-label="Governance sections">
+        <button className={tab === "authority" ? "is-active" : ""} onClick={() => setTab("authority")}><Landmark size={17} />Authority{data.authority.metrics.needs_review > 0 ? <b aria-label={`${data.authority.metrics.needs_review} need review`}>{data.authority.metrics.needs_review}</b> : null}</button>
+        <button aria-label="Policy register" className={tab === "register" ? "is-active" : ""} onClick={() => setTab("register")}><BookOpenCheck size={17} />Policies</button>
+        <button aria-label="Institution profile" className={tab === "profile" ? "is-active" : ""} onClick={() => setTab("profile")}><Building2 size={17} />Profile</button>
         <button className={tab === "history" ? "is-active" : ""} onClick={() => setTab("history")}><History size={17} />History</button>
       </nav>
-      {tab === "authority" ? <AuthorityMap schoolId={schoolId} institutionKind={data.profile.institution_kind} data={data.authority} refresh={refresh} /> : tab === "register" ? <PolicyRegister families={data.families} onSelect={setSelected} /> : tab === "profile" ? <ProfileForm schoolId={schoolId} data={data} refresh={refresh} /> : <AuditHistory items={data.audits} />}
-      {selected ? <PolicyEditor key={`${selected.id}:${selected.work_revision ?? 0}`} schoolId={schoolId} family={selected} onClose={() => setSelected(null)} onChanged={async () => { await refresh(); setSelected(null); }} /> : null}
+      {tab === "authority" ? <AuthorityMap schoolId={schoolId} institutionKind={data.profile.institution_kind} data={data.authority} refresh={refresh} onSelect={id=>setParams(current=>{current.set('rule',id);return current;})} /> : tab === "register" ? <PolicyRegister families={data.families} onSelect={family=>setParams(current=>{current.set('policy',family.id);return current;})} /> : tab === "profile" ? <ProfileForm schoolId={schoolId} data={data} refresh={refresh} /> : <AuditHistory items={data.audits} />}<p className="workspace-context">App access does not create institutional decision authority.</p></>:null}
+      {policyId?selected ? <PolicyEditor key={`${selected.id}:${selected.work_revision ?? 0}`} schoolId={schoolId} family={selected} onClose={closeDetail} onChanged={async () => { await refresh(); closeDetail(); }} /> : <p className="governance-error" role="alert">This policy is unavailable.</p>:null}
+      {!policyId&&ruleId?selectedRule?<section className="governance-panel governance-rule-detail" aria-label="Decision route"><p className="workspace-context">{label(selectedRule.category)} · {label(selectedRule.status)}</p><dl>{[['Initiate',selectedRule.initiation_summary],['Review',selectedRule.review_summary],['Decide',selectedRule.decision_summary],['Authority',selectedRule.decision_body_title??selectedRule.decision_office_title??selectedRule.mandate_title??label(selectedRule.decision_mode)],['Implement',selectedRule.execution_summary],['Conditions',selectedRule.conditions_summary||'No additional conditions recorded.'],['Effective',`${formatDate(selectedRule.effective_from)}${selectedRule.effective_until?` to ${formatDate(selectedRule.effective_until)}`:''}`]].map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value||'Not recorded'}</dd></div>)}</dl><p className="workspace-context">App access does not create institutional decision authority.</p></section>:<p className="governance-error" role="alert">This decision route is unavailable.</p>:null}
     </div>
   </OperationsShell>;
 }
 
-function AuthorityMap({ schoolId, institutionKind, data, refresh }: { schoolId: string; institutionKind: string; data: AuthorityWorkspace; refresh: () => Promise<void> }) {
+function AuthorityMap({ schoolId, institutionKind, data, refresh, onSelect }: { schoolId: string; institutionKind: string; data: AuthorityWorkspace; refresh: () => Promise<void>; onSelect:(id:string)=>void }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   async function prepare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); const values = new FormData(event.currentTarget);
@@ -72,11 +73,7 @@ function AuthorityMap({ schoolId, institutionKind, data, refresh }: { schoolId: 
       {data.issues.map((issue) => <div key={issue.code}><span>{issue.count}</span><p>{issue.label}</p></div>)}
     </section> : <p className="governance-authority-ready"><ShieldCheck size={18} /> Current authority map is confirmed.</p>}
     <section className="governance-panel governance-decision-map"><header><div><span className="governance-panel__icon"><Route size={20} /></span><div><h2>Who can decide what?</h2><p>{data.rules.length} recorded routes</p></div></div></header>
-      <div className="governance-decision-list">{data.rules.map((rule) => <article key={rule.id}>
-        <div><span className={`governance-rule-state governance-rule-state--${rule.status}`}>{rule.status === "confirmed" ? "Confirmed" : "Review"}</span><small>{label(rule.category)}</small></div>
-        <h3>{rule.title}</h3><p>{rule.decision_summary}</p>
-        <dl><div><dt>Route</dt><dd>{rule.decision_body_title ?? rule.decision_office_title ?? rule.mandate_title ?? label(rule.decision_mode)}</dd></div><div><dt>Then</dt><dd>{rule.execution_summary}</dd></div></dl>
-      </article>)}</div>
+      <div className="governance-policy-list">{data.rules.map(rule=><button key={rule.id} onClick={()=>onSelect(rule.id)}><span><strong>{rule.title}</strong><small>{rule.decision_body_title??rule.decision_office_title??rule.mandate_title??label(rule.decision_mode)}</small></span><span className={`governance-rule-state governance-rule-state--${rule.status}`}>{rule.status==='confirmed'?'Confirmed':'Review'}</span><ChevronRight size={18}/></button>)}</div>
     </section>
     <section className="governance-authority-columns">
       <div className="governance-panel"><header><div><span className="governance-panel__icon"><UserRoundCheck size={20} /></span><div><h2>Offices</h2><p>Current officeholders</p></div></div><b>{data.offices.length}</b></header><ul className="governance-compact-list">{data.offices.map((office) => <li key={office.id}><span><strong>{office.title}</strong><small>{[office.first_name, office.last_name].filter(Boolean).join(" ") || "Vacant"}</small></span><b className={`governance-state governance-state--${office.appointment_status ?? "missing"}`}>{office.appointment_status ?? "Vacant"}</b></li>)}</ul></div>
@@ -136,9 +133,7 @@ function ProfileForm({ schoolId, data, refresh }: { schoolId: string; data: Gove
 }
 
 function PolicyEditor({ schoolId, family, onClose, onChanged }: { schoolId: string; family: PolicyFamily; onClose: () => void; onChanged: () => Promise<void> }) {
-  const dialog = useRef<HTMLElement>(null); const heading = useRef<HTMLHeadingElement>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [reviewNote, setReviewNote] = useState(""); const [override, setOverride] = useState("");
-  useEffect(() => { const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; heading.current?.focus(); const key = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onClose(); }; window.addEventListener("keydown", key); return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", key); }; }, [busy, onClose]);
   const isReview = family.work_status === "in_review";
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); const values = new FormData(event.currentTarget); const audiences = ["admin", "staff", "guardian", "student"].filter((role) => values.has(`audience_${role}`));
@@ -147,11 +142,12 @@ function PolicyEditor({ schoolId, family, onClose, onChanged }: { schoolId: stri
   }
   async function command(kind: "submit" | "publish" | "reject") { if (!family.work_version_id || !family.work_revision) return; setBusy(true); setError(""); try { if (kind === "submit") await submitPolicy(schoolId, family.work_version_id, family.work_revision); else await reviewPolicy(schoolId, family.work_version_id, { decision: kind, expected_revision: family.work_revision, note: reviewNote, override_reason: override }); await onChanged(); } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); } }
   const audiences = family.work_audience_roles ?? family.default_audiences;
-  return <div className="governance-modal" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}><section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="policy-editor-title">
-    <header><div><span>{family.risk_level === "high" ? "HIGH-RISK POLICY" : "POLICY WORKSPACE"}</span><h2 id="policy-editor-title" ref={heading} tabIndex={-1}>{family.title}</h2><p>{family.guidance}</p></div><button type="button" aria-label="Close policy editor" onClick={onClose} disabled={busy}><X size={21} /></button></header>
+  return <section className="governance-panel governance-editor-page" aria-label="Policy editor">
+    <header><div><p>{family.risk_level==='high'?<strong>High-risk policy. </strong>:null}{family.guidance}</p></div></header>
+    {isReview?<section className="governance-review-content" aria-label="Policy version to review"><h2>{family.work_title??family.title}</h2><p>{family.work_summary}</p><dl><div><dt>Audience</dt><dd>{audiences.map(label).join(', ')}</dd></div><div><dt>Effective</dt><dd>{formatDate(family.work_effective_on)}</dd></div><div><dt>Review due</dt><dd>{formatDate(family.work_review_due_on)}</dd></div><div><dt>Acknowledgement</dt><dd>{family.work_requires_acknowledgement?'Required':'Not required'}</dd></div></dl><div className="policy-library__text">{family.work_body_markdown}</div><p><strong>Source and review note:</strong> {family.work_source_note||'Not recorded'}</p></section>:null}
     {isReview ? <div className="governance-review"><p><FileClock size={18} /><span><strong>Version {family.work_version} is ready for review.</strong> Confirm scope, dates, audiences and source note before publishing.</span></p><label>Review note<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={3} placeholder="Record what was checked and any limitations." /></label><label>Independent review override <small>Leave blank when another administrator is reviewing. If you submitted this version and no independent reviewer is available, explain why.</small><textarea value={override} onChange={(event) => setOverride(event.target.value)} rows={2} placeholder="Required only for same-administrator publication." /></label><footer><button className="governance-secondary governance-danger" disabled={busy || reviewNote.trim().length < 5} onClick={() => void command("reject")}>Return to draft</button><button className="governance-primary" disabled={busy || reviewNote.trim().length < 5} onClick={() => void command("publish")}>Publish reviewed version</button></footer></div> : <form className="governance-form" onSubmit={(event) => void save(event)}><label>Title<input name="title" required minLength={3} defaultValue={family.work_title ?? family.title} /></label><label>Plain-language summary<textarea name="summary" required minLength={12} maxLength={600} rows={3} defaultValue={family.work_summary ?? family.current_summary ?? ""} /></label><label>Policy text<textarea name="body_markdown" required minLength={40} rows={12} defaultValue={family.work_body_markdown ?? ""} placeholder="Write the institution-approved policy, responsibilities, channels, escalation and review process." /></label><fieldset className="governance-checks"><legend>Published to</legend>{["admin", "staff", "guardian", "student"].map((role) => <label key={role}><input type="checkbox" name={`audience_${role}`} defaultChecked={audiences.includes(role)} /> {label(role)}</label>)}</fieldset><div className="governance-form-grid"><label>Effective on<input name="effective_on" type="date" defaultValue={family.work_effective_on ?? family.current_effective_on ?? new Date().toISOString().slice(0, 10)} /></label><label>Review due<input name="review_due_on" type="date" defaultValue={family.work_review_due_on ?? ""} /></label></div><label>Source and review note<textarea name="source_note" rows={3} defaultValue={family.work_source_note ?? ""} placeholder="Local circulars, board rules, legal review or school committee decision." /></label><label className="governance-checkbox"><input type="checkbox" name="requires_acknowledgement" defaultChecked={family.work_requires_acknowledgement ?? family.default_requires_acknowledgement} /> Require each audience member to acknowledge this exact version</label>{family.source_references?.length ? <div className="governance-sources"><strong>Official-source prompts</strong>{family.source_references.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.label}</a>)}</div> : null}<footer><button className="governance-secondary" type="button" onClick={onClose}>Cancel</button><button className="governance-primary" disabled={busy}>{busy ? "Saving…" : "Save draft"}</button></footer></form>}
     {family.work_status === "draft" ? <div className="governance-submit"><span>Draft v{family.work_version} · revision {family.work_revision}</span><button className="governance-primary" disabled={busy} onClick={() => void command("submit")}>Submit for review</button></div> : null}{error ? <p className="governance-error" role="alert">{error}</p> : null}
-  </section></div>;
+  </section>;
 }
 
 function AuditHistory({ items }: { items: GovernanceWorkspace["audits"] }) {

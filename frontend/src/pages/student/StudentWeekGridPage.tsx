@@ -179,7 +179,7 @@ export function StudentWeekGridPage({
     <StudentShell activeNav="classes" variant="edura" routes={routes} className={className}>
       <div className="student-page-stack week-grid-page">
         <section className="week-grid-title">
-          <header><div><h1>My Timetable</h1><p>Term schedule - {currentWeekLabel}</p></div><button className="square-soft-button" type="button" aria-label={onSyncCalendar ? "Sync calendar" : "Calendar sync unavailable"} disabled={!onSyncCalendar} onClick={syncCalendar}><RefreshCw size={20} /></button></header>
+          <header><p className="workspace-context">{className} · {currentWeekLabel}</p><button className="square-soft-button" type="button" aria-label={onSyncCalendar ? "Sync calendar" : "Calendar sync unavailable"} disabled={!onSyncCalendar} onClick={syncCalendar}><RefreshCw size={20} /></button></header>
           <div className="segmented-control" role="tablist" aria-label="Timetable view">
             <button type="button" role="tab" aria-selected="false" onClick={onOpenDayView ?? (() => navigate("/student/timetable"))}>Day View</button>
             <button className="is-active" type="button" role="tab" aria-selected="true">Week Grid</button>

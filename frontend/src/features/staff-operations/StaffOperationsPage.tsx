@@ -140,6 +140,7 @@ function PrincipalStaffPage({
   const pending = data.requests.filter(
     (request) => request.status === "submitted",
   );
+  const coverGaps = data.coverage_tasks.filter(task => ["open", "declined"].includes(task.status)).length;
   return (
     <OperationsShell
       portal="principal"
@@ -149,36 +150,6 @@ function PrincipalStaffPage({
       backTo="/principal/more"
     >
       <div className="staff-page">
-        <section className="staff-hero">
-          <div>
-            <span>STAFF SETUP</span>
-            <h1>
-              {
-                data.profiles.filter((profile) => profile.status === "active")
-                  .length
-              }{" "}
-              active staff
-            </h1>
-            <p>
-              {data.academic_year || "Current year"}
-            </p>
-          </div>
-          <div className="staff-hero__metrics">
-            <span>
-              <strong>
-                {
-                  data.coverage_tasks.filter((task) =>
-                    ["open", "declined"].includes(task.status),
-                  ).length
-                }
-              </strong>{" "}
-              cover gaps
-            </span>
-            <span>
-              <strong>{pending.length}</strong> leave reviews
-            </span>
-          </div>
-        </section>
         <nav className="staff-tabs" aria-label="Staff management sections">
           {(
             [
@@ -197,14 +168,14 @@ function PrincipalStaffPage({
             >
               <Icon size={17} />
               {label}
-              {id === "leave" && pending.length ? (
-                <b>{pending.length}</b>
+              {id === "leave" && pending.length + coverGaps > 0 ? (
+                <b aria-label={`${pending.length} leave reviews, ${coverGaps} cover gaps`}>{pending.length + coverGaps}</b>
               ) : null}
             </button>
           ))}
         </nav>
         {section === "directory" ? (
-          <><Link className="staff-secondary" to={`/principal/invitations?from=staff&role=staff&school=${schoolId}`}>Invite staff</Link><StaffDirectory schoolId={schoolId} data={data} refresh={refresh} /></>
+          <StaffDirectory schoolId={schoolId} data={data} refresh={refresh} />
         ) : section === "roles" ? (
           <AccessRolesPanel schoolId={schoolId} data={data} refresh={refresh} />
         ) : section === "leave" ? (
@@ -242,9 +213,10 @@ function StaffDirectory({
       <section className="staff-panel staff-directory">
         <header>
           <div>
-            <span>PEOPLE</span>
-            <h2>Staff directory</h2>
+            <span>{data.profiles.filter(profile => profile.status === "active").length} active staff</span>
           </div>
+          <div className="staff-directory-actions">
+          <Link to={`/principal/invitations?from=staff&role=staff&school=${schoolId}`}>Invite staff</Link>
           <button
             type="button"
             className="staff-primary staff-compact"
@@ -253,6 +225,7 @@ function StaffDirectory({
             <UserPlus size={17} />
             Add staff
           </button>
+          </div>
         </header>
         <label className="staff-search">
           <span className="sr-only">Find staff</span>
@@ -357,7 +330,7 @@ function PrincipalStaffDetailPage({
           />
         ) : (
           <section className="staff-panel staff-profile-missing" role="status">
-            <h1>Staff profile not found</h1>
+            <h2>Staff profile not found</h2>
             <p>This record may have been removed or is no longer available.</p>
             <Link className="staff-secondary" to="/principal/staff?section=directory">
               Back to people
@@ -1432,35 +1405,18 @@ function TeacherResponsibilitiesPage({
       backTo="/teacher/more"
     >
       <div className="staff-page staff-page--teacher">
-        <section className="staff-hero staff-duty-hero">
-          <div>
-            <span>{data.academic_year || "CURRENT YEAR"}</span>
-            <h1>
+        <div className="staff-inline-summary">
+            <span>
               {activeWorkCount +
                 cover.filter((item) => item.status === "accepted").length}{" "}
               current assignments
-            </h1>
-            <p>
+            </span>
+            {needsReply ? <span>
               {needsReply
                 ? `${needsReply} ${needsReply === 1 ? "offer needs" : "offers need"} your response`
                 : "Nothing is waiting for your response"}
-            </p>
-          </div>
-          <div className="staff-hero__metrics">
-            <span>
-              <strong>
-                {activeWorkCount}
-              </strong>{" "}
-              work assignments
-            </span>
-            <span>
-              <strong>
-                {cover.filter((item) => item.status === "accepted").length}
-              </strong>{" "}
-              cover assignments
-            </span>
-          </div>
-        </section>
+            </span> : null}
+        </div>
         {error ? (
           <p className="staff-error" role="alert">
             {error}
@@ -1512,7 +1468,7 @@ function TeacherResponsibilitiesPage({
           <header>
             <div>
               <span>CURRENT</span>
-              <h2>My work</h2>
+              <h2>Assignments</h2>
             </div>
             <BadgeCheck size={21} />
           </header>
@@ -1671,7 +1627,13 @@ function TeacherLeavePage({
   data: TeacherStaffWorkspace;
   refresh: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [params,setParams]=useSearchParams();
+  const open=params.get('create')==='leave';
+  const view=params.get('view')==='balances'?'balances':'requests';
+  const setOpen=(next:boolean)=>setParams(current=>{if(next)current.set('create','leave');else current.delete('create');return current;});
+  const listParams=new URLSearchParams(params);listParams.delete('create');
+  const listPath=`/teacher/leave?${listParams}`;
+  const sectionPath=(next:string)=>{const query=new URLSearchParams(listParams);query.set('view',next);return `/teacher/leave?${query}`;};
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const available = useMemo(
@@ -1724,37 +1686,20 @@ function TeacherLeavePage({
     <OperationsShell
       portal="teacher"
       active="more"
-      title="My leave"
+      title={open?'Apply for leave':'My leave'}
       schoolName={schoolName}
-      backTo="/teacher/more"
+      backTo={open?listPath:'/teacher/more'}
     >
       <div className="staff-page staff-page--teacher">
-        <section className="staff-hero staff-hero--teacher">
-          <div>
-            <span>{data.academic_year || "CURRENT YEAR"}</span>
-            <h1>{days(available)} days available</h1>
-            <p>{data.profile.designation} · balances set by your school</p>
-          </div>
-          <button type="button" onClick={() => setOpen(!open)}>
+        {!open?<><div className="staff-inline-summary">
+          <span>{days(available)} days available · {data.academic_year || "Current year"}</span>
+          <button className="staff-primary staff-compact" type="button" onClick={() => setOpen(!open)}>
             <Plus size={18} />
             Apply for leave
           </button>
-        </section>
+        </div><nav className="workspace-sections" aria-label="Leave sections"><Link to={sectionPath('requests')} aria-current={view==='requests'?'page':undefined}>Requests</Link><Link to={sectionPath('balances')} aria-current={view==='balances'?'page':undefined}>Balances</Link></nav></>:null}
         {open ? (
           <section className="staff-panel staff-apply">
-            <header>
-              <div>
-                <span>NEW REQUEST</span>
-                <h2>Apply for leave</h2>
-              </div>
-              <button
-                type="button"
-                aria-label="Close form"
-                onClick={() => setOpen(false)}
-              >
-                <X size={19} />
-              </button>
-            </header>
             <form
               className="staff-form"
               onSubmit={(event) => void submit(event)}
@@ -1814,9 +1759,9 @@ function TeacherLeavePage({
                   />
                 </label>
               </div>
-              <button className="staff-primary" disabled={busy === "new"}>
+              <div className="staff-form-actions"><button type="button" className="staff-secondary" disabled={busy==='new'} onClick={()=>setOpen(false)}>Cancel</button><button className="staff-primary" disabled={busy === "new"}>
                 {busy === "new" ? "Submitting…" : "Submit request"}
-              </button>
+              </button></div>
             </form>
           </section>
         ) : null}
@@ -1825,7 +1770,7 @@ function TeacherLeavePage({
             {error}
           </p>
         ) : null}
-        <section className="staff-balance-grid">
+        {!open&&view==='balances'?<section className="staff-balance-grid">
           {data.balances.map((balance) => {
             const allowance =
               number(balance.annual_allowance) + number(balance.adjustments);
@@ -1862,15 +1807,8 @@ function TeacherLeavePage({
               </article>
             );
           })}
-        </section>
-        <section className="staff-panel staff-my-requests">
-          <header>
-            <div>
-              <span>REQUESTS</span>
-              <h2>Leave history</h2>
-            </div>
-            <ClipboardCheck size={21} />
-          </header>
+        </section>:null}
+        {!open&&view==='requests'?<section className="staff-panel staff-my-requests" aria-label="Leave requests">
           {data.requests.length ? (
             <div className="staff-request-list">
               {data.requests.map((request) => (
@@ -1934,7 +1872,7 @@ function TeacherLeavePage({
           ) : (
             <p className="staff-empty">No leave requests yet.</p>
           )}
-        </section>
+        </section>:null}
       </div>
     </OperationsShell>
   );

@@ -6,14 +6,13 @@ import {
   Edit3,
   LockKeyhole,
   MapPin,
+  MoreHorizontal,
   Send,
   ShieldCheck,
-  UserCheck,
-  UsersRound,
   XCircle,
 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ConsentAuthorityDialog } from "./ConsentAuthorityDialog";
 import { OperationsEventFinancePanel } from "./EventFinancePanels";
@@ -44,6 +43,10 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
   const [cancelAudienceNotice, setCancelAudienceNotice] = useState("");
   const [authorityStudent, setAuthorityStudent] = useState<EventViewerParticipant | null>(null);
   const prefix = portal === "principal" ? "/principal" : "/teacher";
+  const [params] = useSearchParams();
+  const canSeeFinance = event.permissions.can_view_finance_details && event.payment_required;
+  const view = params.get('view') === 'participants' ? 'participants' : params.get('view') === 'finance' && canSeeFinance ? 'finance' : 'sessions';
+  const sectionPath = (nextView: string) => { const next=new URLSearchParams(params);next.set('view',nextView);return `${prefix}/events/${event.id}?${next}`; };
   const tracked = event.sessions.filter((session) => session.attendance_mode !== "none");
   const locked = tracked.filter((session) => session.state === "locked").length;
 
@@ -86,35 +89,29 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
         <section className={`campus-event-detail-hero campus-event-detail-hero--${event.event_type}`}>
           <div className="campus-event-detail-hero__copy">
             <div><span>{eventTypeLabels[event.event_type]}</span><EventStatusBadge status={event.status} /></div>
-            <p>{event.description}</p>
             <dl>
               <div><dt><Clock3 size={15} />When</dt><dd>{formatEventDate(event.starts_at)} to {formatEventDate(event.ends_at)}</dd></div>
               <div><dt><MapPin size={15} />Where</dt><dd>{event.venue}</dd></div>
-              <div><dt><UsersRound size={15} />Audience</dt><dd>{eventAudienceLabel(event)}</dd></div>
             </dl>
+            <details className="event-description"><summary>Event details</summary><p>{event.description}</p><p><strong>Audience:</strong> {eventAudienceLabel(event)}</p></details>
           </div>
           {event.permissions.can_edit || event.permissions.can_publish || event.permissions.can_complete || event.permissions.can_cancel ? (
-            <div className="campus-event-detail-actions">
+            <details className="event-actions-menu"><summary aria-label="Event actions"><MoreHorizontal size={20}/></summary><div className="campus-event-detail-actions">
               {event.permissions.can_edit ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/edit`}><Edit3 size={16} />Edit draft</Link> : null}
               {event.permissions.can_publish ? <button className="campus-event-primary" type="button" disabled={pending !== null} onClick={() => void act("publish")}><Send size={16} />{pending === "publish" ? "Publishing..." : "Publish event"}</button> : null}
               {event.permissions.can_complete ? <button className="campus-event-primary" type="button" disabled={pending !== null} onClick={() => void act("complete")}><CheckCircle2 size={16} />{pending === "complete" ? "Completing..." : "Complete event"}</button> : null}
               {event.permissions.can_cancel ? <button className="campus-event-danger-link" type="button" onClick={() => setCancelOpen(true)}><XCircle size={16} />Cancel event</button> : null}
               {event.status === "draft" && event.permissions.can_edit ? <button className="campus-event-danger-link" type="button" disabled={pending !== null} onClick={() => void act("discard")}><XCircle size={16} />Discard draft</button> : null}
-            </div>
+            </div></details>
           ) : null}
         </section>
         {message ? <p className={`campus-event-action-message${messageTone === "error" ? " is-error" : ""}`} role={messageTone === "error" ? "alert" : "status"}>{message}</p> : null}
         {event.status === "cancelled" ? <section className="campus-event-cancelled"><AlertTriangle size={19} /><div><strong>This event was cancelled</strong><p><b>Family notice:</b> {event.cancellation_reason || "No family notice was recorded."}</p>{event.cancellation_internal_reason ? <p><b>Internal reason:</b> {event.cancellation_internal_reason}</p> : null}{event.permissions.can_view_finance_details && (finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) > 0 ? <p><b>{finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required} fee {(finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) === 1 ? "record requires" : "records require"} a manual refund.</b> Invoice credits are already retained in the authoritative finance ledger.</p> : null}</div></section> : null}
 
-        <section className="campus-event-metrics" aria-label="Event readiness">
-          <article><span><UsersRound size={18} /></span><small>Participants</small><strong>{event.counts.participants}</strong><em>{event.counts.mandatory} mandatory</em></article>
-          <article><span><UserCheck size={18} /></span><small>RSVP accepted</small><strong>{event.counts.rsvp_accepted}</strong><em>{event.requires_rsvp ? "Response tracking on" : "No RSVP required"}</em></article>
-          <article><span><ShieldCheck size={18} /></span><small>Consent granted</small><strong>{event.counts.consent_granted}</strong><em>{event.requires_guardian_consent ? "Guardian decision required" : "Consent not required"}</em></article>
-          <article><span><LockKeyhole size={18} /></span><small>Registers locked</small><strong>{locked}/{tracked.length}</strong><em>{tracked.length ? "Attendance sessions" : "No event attendance"}</em></article>
-        </section>
+        <nav className="workspace-sections" aria-label="Event sections"><Link to={sectionPath('sessions')} aria-current={view==='sessions'?'page':undefined}>Sessions <b>{event.sessions.length}</b></Link><Link to={sectionPath('participants')} aria-current={view==='participants'?'page':undefined}>Participants <b>{event.counts.participants}</b></Link>{canSeeFinance?<Link to={sectionPath('finance')} aria-current={view==='finance'?'page':undefined}>Fees{(finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required)>0?<b>{finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required}</b>:null}</Link>:null}</nav>
 
-        <section className="campus-event-detail-panel">
-          <header><div><span>Event programme</span><h2>Sessions & attendance</h2></div><b>{event.sessions.length} {event.sessions.length === 1 ? "session" : "sessions"}</b></header>
+        {view==='sessions'?<section className="campus-event-detail-panel">
+          <header><h2>Sessions & attendance</h2><span>{tracked.length?`${locked}/${tracked.length} registers locked`:'No attendance tracking'}</span></header>
           {event.sessions.length ? (
             <div className="campus-event-session-list">
               {event.sessions.map((session) => (
@@ -127,18 +124,20 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
             </div>
           ) : <p className="campus-event-inline-empty">No programme sessions are scheduled for this event.</p>}
           {event.status === "published" && !event.permissions.can_complete && tracked.some((session) => session.state !== "locked") ? <p className="campus-event-policy-note"><LockKeyhole size={15} />Complete becomes available after every attendance-tracked session is locked.</p> : null}
-        </section>
+        </section>:null}
 
-        {event.viewer_participants.length ? (
+        {view==='participants'?<><p className="workspace-context">{event.counts.mandatory} mandatory{event.requires_rsvp?` · ${event.counts.rsvp_accepted} RSVP accepted`:''}{event.requires_guardian_consent?` · ${event.counts.consent_granted} consent granted`:''}</p>{event.viewer_participants.length ? (
           <ParticipantReadiness
             event={event}
             finance={finance}
             portal={portal}
             onReviewAuthority={portal === "principal" ? setAuthorityStudent : undefined}
           />
-        ) : null}
+        ) : <p className="campus-event-inline-empty">No participants are visible in your assigned scope.</p>}</>:null}
         {financeError && event.payment_required ? <p className="campus-event-form-error" role="alert">Finance reconciliation could not be loaded. Do not record an offline refund until the live ledger is available.</p> : null}
-        {finance && onRecordRefund ? <OperationsEventFinancePanel finance={finance} onRecordRefund={onRecordRefund} /> : null}
+        {!canSeeFinance&&(finance?.counts.reconciliation_required??0)>0?<p className="campus-event-policy-note">Finance follow-up pending</p>:null}
+        {view==='finance'&&finance ? <OperationsEventFinancePanel finance={finance} onRecordRefund={onRecordRefund} /> : null}
+        {view==='finance'&&!finance&&!financeError?<p role="status">Loading fee records…</p>:null}
         <p className="campus-event-policy-note"><ShieldCheck size={15} />Event participation and session attendance are separate records. This event has no direct impact on the academic attendance aggregate.</p>
       </div>
 
@@ -152,7 +151,7 @@ function ParticipantReadiness({ event, finance, portal, onReviewAuthority }: { e
   const financeByStudent = new Map(finance?.items.map((item) => [item.student_id, item]));
   return (
     <section className="campus-event-detail-panel">
-      <header><div><span>Readiness</span><h2>{portal === "principal" ? "Participant status" : "Assigned participants"}</h2></div><b>{event.viewer_participants.length} shown</b></header>
+      <header><h2>{portal === "principal" ? "Participant status" : "Assigned participants"}</h2><b>{event.viewer_participants.length} shown</b></header>
       <div className="campus-event-participant-table">
         <div className="campus-event-participant-table__head"><span>Student</span><span>RSVP</span><span>Consent</span><span>Payment</span><span>Checklist</span></div>
         {event.viewer_participants.map((participant) => (

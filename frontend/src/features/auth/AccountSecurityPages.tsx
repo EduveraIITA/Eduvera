@@ -78,7 +78,9 @@ export function AccountSecurityPage() {
 
   const verified = auth.user?.email_verified === true;
   const mfaActive = mfa.data?.status === "active";
-  const next = auth.setupRequired ? "/principal/activation" : "/";
+  const origin = params.get("from") ?? "";
+  const safeOrigin = /^\/(?:principal\/more|teacher\/more|parent\/more|student\/apps)(?:\?[^#]*)?$/.test(origin) ? origin : "/";
+  const next = auth.setupRequired ? "/principal/activation" : safeOrigin;
   return <main className="security-page">
     <header className="security-header"><Link to={next} aria-label="Back">←</Link><div><h1>Account security</h1><p>{auth.user?.email}</p></div></header>
     <section className="security-summary" aria-label="Security progress"><div><ShieldCheck/><span><strong>{verified && mfaActive ? "Protected" : "Action needed"}</strong><small>{Number(verified)+Number(mfaActive)} of 2 checks</small></span></div></section>

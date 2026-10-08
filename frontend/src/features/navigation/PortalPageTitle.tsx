@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./portal-page-title.css";
+import { portalParent } from "./portalHierarchy";
 
 export interface PortalPageTitleProps {
   title: string;
@@ -33,12 +34,7 @@ export function PortalPageTitle({
       void navigate(backTo);
       return;
     }
-    const historyState = window.history.state as { idx?: number } | null;
-    if (location.key !== "default" && typeof historyState?.idx === "number" && historyState.idx > 0) {
-      void navigate(-1);
-      return;
-    }
-    void navigate(rootPath);
+    void navigate(portalParent(location.pathname, location.search, rootPath));
   };
 
   return (

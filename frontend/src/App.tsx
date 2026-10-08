@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppProviders } from "./app/AppProviders";
+import { PortalScreenFrame } from "./features/navigation/PortalScreenFrame";
 import {
   AuthenticatedOnly,
   CompanyOnly,
@@ -116,6 +117,7 @@ const StudentCalendarRoute = lazy(async () => ({ default: (await import("./featu
 const TeacherCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).TeacherCalendarRoute }));
 const PrincipalCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).PrincipalCalendarRoute }));
 const TeacherClassesPage = lazy(() => import("./features/classes/TeacherClassesPage"));
+const TeacherClassPage = lazy(() => import("./features/classes/TeacherClassPage"));
 const AdministrationPage = lazy(() => import("./features/office/AdministrationPage"));
 const FeeLedgerPage = lazy(() => import("./features/office/FeeLedgerPage"));
 const FamilyFeesPage = lazy(async () => ({ default: (await import("./features/office/FamilyFeesPage")).FamilyFeesPage }));
@@ -183,7 +185,7 @@ export function App() {
   return (
     <AppProviders>
       <AppErrorBoundary>
-        <div className="app-viewport">
+        <PortalScreenFrame>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<RoleLanding />} />
@@ -255,6 +257,7 @@ export function App() {
               <Route path="/teacher/more" element={<PortalOnly portal="teacher"><TeacherMoreRoute /></PortalOnly>} />
               <Route path="/teacher/calendar" element={<PortalOnly portal="teacher"><TeacherCalendarRoute /></PortalOnly>} />
               <Route path="/teacher/classes" element={<PortalOnly portal="teacher"><TeacherClassesPage /></PortalOnly>} />
+              <Route path="/teacher/classes/:classId" element={<PortalOnly portal="teacher"><TeacherClassPage /></PortalOnly>} />
               <Route path="/teacher/leave" element={<PortalOnly portal="teacher"><TeacherLeaveRoute /></PortalOnly>} />
               <Route path="/teacher/responsibilities" element={<PortalOnly portal="teacher"><TeacherResponsibilitiesRoute /></PortalOnly>} />
               <Route path="/teacher/policies" element={<PortalOnly portal="teacher"><TeacherPoliciesRoute /></PortalOnly>} />
@@ -291,7 +294,7 @@ export function App() {
               <Route path="*" element={<RoleLanding />} />
             </Routes>
           </Suspense>
-        </div>
+        </PortalScreenFrame>
       </AppErrorBoundary>
     </AppProviders>
   );

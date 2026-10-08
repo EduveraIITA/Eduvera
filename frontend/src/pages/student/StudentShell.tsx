@@ -112,7 +112,7 @@ export function StudentShell({
   const location = useLocation();
   const auth = useOptionalAuth();
   const routeMap = { ...defaultStudentRoutes, ...routes };
-  const navItems = variant === "school" ? schoolNav : eduraNav;
+  const navItems = variant === "school" && location.pathname.replace(/\/$/, "") === "/student" ? schoolNav : eduraNav;
   const mobileActive = navItems.some((item) => item.key === activeNav) ? activeNav : "launcher";
   const studentSchools = auth?.memberships.filter((membership) => membership.role === "student") ?? [];
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;

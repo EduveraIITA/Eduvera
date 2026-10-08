@@ -6,7 +6,6 @@ import {
   Check,
   ChevronRight,
   CloudUpload,
-  Code2,
   FileText,
   Flame,
   ShieldCheck,
@@ -177,26 +176,6 @@ export function StudentEligibilityPage({
           </div>
         </section>
 
-        <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
-          <span><Sparkles size={18} /></span>
-          <span><small>AI Academic Copilot</small><strong>"{attendanceQuestion}"</strong></span>
-          <ChevronRight size={20} />
-        </button>
-
-        <section className="student-card next-class-card" aria-labelledby="next-class-heading">
-          {data.nextClass && <div className="next-class-card__top">
-            <span className="live-pill"><i />Next Up - {data.nextClass.startsIn}</span>
-            <strong>{data.nextClass.time}</strong>
-          </div>}
-          <div className="next-class-card__body">
-            <span className="next-class-card__icon">{data.nextClass ? <Code2 size={27} /> : <CalendarDays size={27} />}</span>
-            {data.nextClass
-              ? <span><h2 id="next-class-heading">{data.nextClass.name}</h2><p><strong>{data.nextClass.room}</strong> - {data.nextClass.block} - {data.nextClass.teacher}</p></span>
-              : <span><h2 id="next-class-heading">Next class details</h2><p>Open the timetable to see the school's published schedule.</p></span>}
-          </div>
-          <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />View timetable</button>
-        </section>
-
         <section className="eligibility-hero" aria-labelledby="semester-health-heading">
           <div className="eligibility-hero__headline">
             <div><p className="eyebrow" id="semester-health-heading">{data.subjectName} Attendance</p><strong>{data.aggregate.toFixed(1)}%</strong>{data.trend !== undefined && <span><ArrowUp size={15} />{data.trend >= 0 ? "+" : ""}{data.trend.toFixed(1)}%</span>}</div>
@@ -213,10 +192,17 @@ export function StudentEligibilityPage({
           </div>
         </section>
 
+        <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />{data.nextClass ? `Next: ${data.nextClass.name} · ${data.nextClass.time}` : "View timetable"}</button>
+        {data.nextClass ? <p className="workspace-context">{data.nextClass.room} · {data.nextClass.block} · {data.nextClass.teacher} · {data.nextClass.startsIn}</p> : null}
+        <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
+          <span><Sparkles size={18} /></span>
+          <span><small>Ask about attendance</small><strong>{attendanceQuestion}</strong></span>
+          <ChevronRight size={20} />
+        </button>
         <section className="medical-document-card">
           <div className="medical-document-card__copy">
             <span><FileText size={23} /></span>
-            <div><h2>Need to submit a medical certificate or leave form?</h2><p>{data.policyText || `${data.policyName} applies to submitted absence documents.`}</p></div>
+            <div><h2>Absence documents</h2><p>{data.policyText || `${data.policyName} applies to submitted absence documents.`}</p></div>
           </div>
           <div className="medical-document-card__actions">
             <button className="primary-action primary-action--container" type="button" onClick={() => setSheetOpen(true)}><CloudUpload size={18} />Submit Document</button>

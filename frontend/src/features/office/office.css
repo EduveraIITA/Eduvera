@@ -1655,3 +1655,14 @@
 .office-page--fees .office-panel > h2 > span { margin-left: auto; }
 .office-family-fee-actions .office-primary { color: #fff; background: var(--edura-brand); border-color: var(--edura-brand); }
 .office-family-fee-actions .office-primary:disabled { opacity: .6; cursor: not-allowed; }
+.office-fee-tools {display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.office-fee-tools > button {min-height:44px;}
+.office-fee-summary > summary {font-weight:600;}
+.office-fee-summary .office-finance-overview {border:0;box-shadow:none;}
+.office-fee-summary .office-notice {margin:8px 0;}
+.office-page--fees .office-ledger-panel {padding:0;overflow:hidden;}
+.office-page--fees .office-invoices {gap:0;}
+.office-page--fees .office-invoices > li {padding:16px;border:0;border-radius:0;background:var(--edura-surface);}
+.office-page--fees .office-invoices > li + li {border-top:1px solid var(--edura-border);}
+.office-page--fees .office-invoice-amounts {display:flex;flex-wrap:wrap;gap:12px 24px;}
+.office-page--fees .office-invoice-amounts > div {background:transparent;padding:0;}

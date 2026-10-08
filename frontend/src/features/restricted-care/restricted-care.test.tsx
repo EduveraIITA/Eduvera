@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { RestrictedCarePage } from "./RestrictedCarePage";
 import type { CareCaseDetail, CareWorkspace } from "./api";
 import * as api from "./api";
+vi.mock('../auth/AuthContext',async original=>({...await original<typeof import('../auth/AuthContext')>(),useAuth:()=>({refresh:vi.fn().mockResolvedValue(undefined)})}));
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -31,15 +32,32 @@ const detail: CareCaseDetail = {
   external_reports: [], audits: [],
 };
 
-function renderPage(portal: "principal" | "teacher" = "principal") {
+function renderPage(portal: "principal" | "teacher" = "principal",search='') {
   vi.mocked(api.getCareWorkspace).mockResolvedValue(workspace);
   vi.mocked(api.getCareCase).mockResolvedValue(detail);
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><MemoryRouter><RestrictedCarePage portal={portal} schoolId="school-1" schoolName="Cambridge International School" /></MemoryRouter></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><MemoryRouter initialEntries={[`/${portal}/safeguarding${search}`]}><RestrictedCarePage portal={portal} schoolId="school-1" schoolName="Cambridge International School" /></MemoryRouter></QueryClientProvider>);
 }
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("RestrictedCarePage", () => {
+  it('gives a message report its own title and returns to the report queue',async()=>{
+    vi.mocked(api.getCareWorkspace).mockResolvedValue(workspace);
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={['/principal/safeguarding?section=message_reports&report_status=resolved&report=report-1']}><RestrictedCarePage portal="principal" schoolId="school-1" messageReports={<div>Message report workspace</div>}/></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByRole('heading',{name:'Message report',level:1})).toBeVisible();
+    expect(screen.queryByRole('navigation',{name:'Restricted care sections'})).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button',{name:'Go back'}));
+    expect(screen.getByRole('button',{name:'Message reports'})).toHaveAttribute('aria-current','page');
+    expect(screen.getByText('Message report workspace')).toBeVisible();
+  });
+  it('restores a direct case link and preserves a return path when the case fails to load',async()=>{
+    renderPage('teacher','?case=case-1');
+    vi.mocked(api.getCareCase).mockRejectedValue(new Error('Case unavailable'));
+    expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't sync this view.");
+    expect(screen.queryByRole('navigation',{name:'Restricted care sections'})).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button',{name:'Go back'}));
+    expect(await screen.findByRole('navigation',{name:'Restricted care sections'})).toBeVisible();
+  });
   it("keeps emergency action and assigned-case limits explicit", async () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "Student concerns", level: 1 })).toBeVisible();
@@ -53,7 +71,8 @@ describe("RestrictedCarePage", () => {
   it("forces the alternate route when the ordinary handler may be involved", async () => {
     renderPage("teacher");
     await userEvent.setup().click(await screen.findByRole("button", { name: /Record a concern/ }));
-    const dialog = screen.getByRole("dialog", { name: "Record a concern" });
+    const dialog = screen.getByRole("region", { name: "Record a concern" });
+    expect(screen.queryByRole('navigation',{name:'Restricted care sections'})).not.toBeInTheDocument();
     await userEvent.setup().click(within(dialog).getByRole("checkbox", { name: /ordinary handler/i }));
     expect(within(dialog).getByLabelText("Recipient route")).toHaveValue("alternate");
     expect(within(dialog).getByLabelText("Recipient route")).toBeDisabled();
@@ -63,11 +82,11 @@ describe("RestrictedCarePage", () => {
   it("separates care-team configuration from protected case detail and reporting evidence", async () => {
     renderPage();
     await userEvent.setup().click(await screen.findByRole("button", { name: /Aarav Sharma/ }));
-    const caseDialog = await screen.findByRole("dialog", { name: "Aarav Sharma" });
+    const caseDialog = await screen.findByRole("region", { name: "Aarav Sharma" });
     expect(within(caseDialog).getByText("Reporting assessment is still open.")).toBeVisible();
     expect(within(caseDialog).getByText(/exact words/)).toBeVisible();
     expect(within(caseDialog).getByLabelText("Action")).toBeVisible();
-    await userEvent.setup().click(within(caseDialog).getByRole("button", { name: "Close case" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Go back" }));
     await userEvent.setup().click(screen.getByRole("button", { name: "Care team" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Restricted care team" })).toBeVisible());
     expect(screen.getByText(/Job title alone does not open case records/)).toBeVisible();

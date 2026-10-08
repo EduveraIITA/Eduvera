@@ -198,16 +198,9 @@ export function StudentLeaveNewPage({
   }
 
   return (
-    <StudentShell activeNav="attendance" variant="edura" routes={routes} pageTitle="Apply leave" onBack={onBack}>
+    <StudentShell activeNav="launcher" variant="edura" routes={routes} pageTitle="Apply leave" onBack={onBack}>
       <form className="student-page-stack leave-new-page" onSubmit={submit}>
-        <div className="page-context-row page-context-row--end">
-          <span className="term-indicator"><i />{context?.termLabel ?? "Term 1"}</span>
-        </div>
-
-        <div className="segmented-control" role="tablist" aria-label="Leave application views">
-          <button className="is-active" type="button" role="tab" aria-selected="true"><CheckCircle2 size={16} />+ Apply Leave</button>
-          <button type="button" role="tab" aria-selected="false" onClick={onOpenStatus ?? (() => navigate("/student/leave"))}><History size={16} />Status &amp; Log</button>
-        </div>
+        <button className="workspace-text-action" type="button" onClick={onOpenStatus ?? (() => navigate("/student/leave"))}><History size={16} />View requests</button>
 
         <section className="form-section" aria-labelledby="leave-category-heading">
           <header className="form-section__heading"><h2 id="leave-category-heading">Category</h2><span>Select primary reason</span></header>

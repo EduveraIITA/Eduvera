@@ -37,17 +37,31 @@ function shell(children: React.ReactNode) { return render(<QueryClientProvider c
 afterEach(cleanup);
 
 describe("governance policy centre", () => {
+  it('opens the complete decision route without the authority directory',async()=>{
+    const user=userEvent.setup();shell(<GovernanceAdminPage schoolId="school-1" data={workspace} refresh={vi.fn().mockResolvedValue(undefined)}/>);
+    await user.click(screen.getByRole('button',{name:/Annual budget/}));
+    expect(screen.getByRole('heading',{name:'Annual budget'})).toBeVisible();
+    expect(screen.getByText('SMC reviews it.')).toBeVisible();
+    expect(screen.getByText('Finance implements the adopted budget.')).toBeVisible();
+    expect(screen.queryByRole('heading',{name:'Offices'})).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button',{name:'Go back'}));
+    expect(screen.getByRole('button',{name:/Annual budget/})).toBeVisible();
+  });
   it("shows applicability, lifecycle state and a complete mobile policy editor", async () => {
     shell(<GovernanceAdminPage schoolId="school-1" schoolName="Cambridge International School" data={workspace} refresh={vi.fn().mockResolvedValue(undefined)} />);
-    expect(screen.getByRole("heading", { name: "Authority & policies" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Policies & governance" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Who can decide what?" })).toBeVisible();
     await userEvent.setup().click(screen.getByRole("button", { name: /Policy register/ }));
     expect(screen.getByText("Draft v1")).toBeVisible();
     await userEvent.setup().click(screen.getByRole("button", { name: /Child protection and mandatory reporting/ }));
-    const dialog = screen.getByRole("dialog", { name: "Child protection and mandatory reporting" });
+    const dialog = screen.getByRole("region", { name: "Policy editor" });
+    expect(screen.queryByRole('navigation',{name:'Governance sections'})).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText<HTMLTextAreaElement>("Policy text").value).toContain("protected reporting channel");
     expect(within(dialog).getByRole("checkbox", { name: "Staff" })).toBeChecked();
     expect(within(dialog).getByRole("button", { name: "Submit for review" })).toBeVisible();
+    await userEvent.setup().click(screen.getByRole('button',{name:'Go back'}));
+    expect(screen.getByRole('navigation',{name:'Governance sections'})).toBeVisible();
+    expect(screen.getByText('Draft v1')).toBeVisible();
   });
 
   it("keeps institution applicability separate from the policy register", async () => {
@@ -61,7 +75,7 @@ describe("governance policy centre", () => {
   it("presents version-specific acknowledgement without calling it consent", async () => {
     const published: PublishedPolicy = { id: "version-1", code: family.code, category: family.category, title: family.title, summary: "How our institution protects children.", body_markdown: family.work_body_markdown!, audience_roles: ["staff"], requires_acknowledgement: true, version: 1, effective_on: "2026-10-04", review_due_on: "2027-10-04", source_note: "Reviewed against the safety plan.", source_references: family.source_references, acknowledgement_id: null, acknowledged_at: null, guidance: family.guidance };
     shell(<PolicyLibraryPage portal="teacher" schoolId="school-1" data={{ policies: [published], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />);
-    expect(screen.getByText(/Acknowledgement records the exact version shown/)).toBeVisible();
+    expect(screen.getByText(/Acknowledgement records the version you have read/)).toBeVisible();
     expect(screen.getByText("Action needed")).toBeVisible();
     await userEvent.setup().click(screen.getByText(family.title));
     expect(screen.getByRole("button", { name: "Acknowledge this version" })).toBeVisible();

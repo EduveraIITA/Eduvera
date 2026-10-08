@@ -84,14 +84,7 @@ export function FamilyEventListPage({
   return (
     <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild}>
       <div className="family-events-page">
-        <section className="family-events-hero">
-          <div>
-            <strong>{events.filter((event) => event.status === "published" && new Date(event.ends_at).getTime() >= now).length}</strong>
-            <span>upcoming</span>
-            <strong>{actionCount}</strong>
-            <span>need action</span>
-          </div>
-        </section>
+        {actionCount > 0 ? <p className="workspace-context">{actionCount} {actionCount === 1 ? "event needs" : "events need"} your response</p> : null}
         <div className="family-event-tabs" role="tablist" aria-label="Filter events">
           <button type="button" role="tab" aria-selected={view === "upcoming"} className={view === "upcoming" ? "is-active" : ""} onClick={() => setView("upcoming")}>Upcoming</button>
           <button type="button" role="tab" aria-selected={view === "past"} className={view === "past" ? "is-active" : ""} onClick={() => setView("past")}>Past</button>

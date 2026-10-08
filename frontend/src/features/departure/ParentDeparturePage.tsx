@@ -21,9 +21,9 @@ export default function ParentDeparturePage(){
   const data=query.data; const plan=data.plan; const trip=data.trip; const child={id:data.student.id,name:`${data.student.first_name} ${data.student.last_name}`.trim(),grade:data.student.grade??"",section:data.student.section??"",board:"",rollNumber:"",avatarUrl:data.student.avatar_url};
   const location=trip?.latitude&&trip.longitude?{lat:Number(trip.latitude),lng:Number(trip.longitude),accuracy:Number(trip.accuracy_metres??0)}:null;
   return <ParentShell active="more" pageLabel="Departure" backTo="/parent/more" child={child} selectedChildId={data.student.id} childOptions={data.children.map(item=>({id:item.id,name:`${item.first_name} ${item.last_name}`.trim(),grade:item.grade??"",section:item.section??"",avatarUrl:item.avatar_url}))} onSelectChild={(id)=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}>
-    <main className="departure-page">
+    <div className="departure-page">
       <section className="departure-status" aria-labelledby="departure-status-title">
-        <div><span>Today</span><h1 id="departure-status-title">{plan?labels[plan.mode]:"No departure plan"}</h1><p>{plan?plan.state.replaceAll("_"," "):"Contact the school office before dismissal."}</p></div>
+        <div><span>Today</span><h2 id="departure-status-title">{plan?labels[plan.mode]:"No departure plan"}</h2>{!plan?<p>Contact the school office before dismissal.</p>:null}</div>
         <span className={`departure-state departure-state--${plan?.state??"missing"}`}>{plan?.state==="completed"?<CheckCircle2/>:plan?.mode==="school_transport"?<Bus/>:<ShieldCheck/>}{plan?.state??"Not set"}</span>
       </section>
 
@@ -49,6 +49,6 @@ export default function ParentDeparturePage(){
         <label>Reason<textarea name="reason" minLength={3} maxLength={500} rows={3} required/></label>
         {error?<p className="departure-error" role="alert">{error}</p>:null}<div className="departure-form-actions"><button type="button" onClick={()=>setOpen(false)}>Cancel</button><button className="departure-primary" disabled={mutation.isPending}>{mutation.isPending?"Submitting…":"Submit for review"}</button></div>
       </form></section>:null}
-    </main>
+    </div>
   </ParentShell>;
 }

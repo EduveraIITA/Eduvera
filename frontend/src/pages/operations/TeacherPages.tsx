@@ -774,7 +774,7 @@ export function TeacherAttendancePage({
           <div className="roll-call-summary__top">
             <div className="roll-call-class-heading">
             <div>
-              <h1>{data.class.name}</h1>
+              <h2>{data.class.name}</h2>
               <p><span>Attendance · {data.roster.length} students</span>{data.class.room ? <span>{/^room\b/i.test(data.class.room) ? data.class.room : `Room ${data.class.room}`}</span> : null}</p>
             </div>
             </div>
@@ -1219,12 +1219,7 @@ export function TeacherTimetablePage({ data }: { data: TeacherHomeResponse }) {
       subtitle={`${data.teacher.name} - Published schedule`}
     >
       <div className="operations-stack">
-        <section className="operations-hero">
-          <div>
-            <span>Weekly teaching plan</span>
-            <h2>{data.weekly_timetable.length} periods this week</h2>
-          </div>
-        </section>
+        <p className="workspace-context">{data.weekly_timetable.length} periods this week</p>
         <section className="teacher-week-grid">
           {days.map(([day, slots]) => (
             <article className="operations-panel" key={day}>

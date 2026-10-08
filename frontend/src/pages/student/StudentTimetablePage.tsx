@@ -227,9 +227,6 @@ export function StudentTimetablePage({
       <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
         <div className="student-page-stack timetable-page">
           {navigator}
-          <section className="timetable-intro">
-            <h1>{className} Timetable</h1>
-          </section>
           <DayPlanNotice plan={dayPlan}/>
           <section className="student-card student-empty-state timetable-empty-state">
             <BookOpen size={24} />
@@ -246,7 +243,7 @@ export function StudentTimetablePage({
         {navigator}
         <section className="timetable-intro">
           <header>
-            <div><h1>{className} Timetable</h1><p>{termLabel}</p></div>
+            <p className="workspace-context">{className} · {termLabel}</p>
             <button className={bellAlerts ? "square-soft-button is-active" : "square-soft-button"} type="button" aria-pressed={bellAlerts} aria-label="Save bell reminder preference" onClick={toggleBellAlerts}><Clock3 size={23} /></button>
           </header>
           {bellPeriod && (!selectedDate || selectedDate === currentSchoolClock.date) ? (

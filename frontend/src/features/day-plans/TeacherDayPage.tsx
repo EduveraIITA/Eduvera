@@ -44,12 +44,11 @@ export default function TeacherDayPage() {
     <OperationsShell
       portal="teacher"
       active="timetable"
-      title="Your teaching day"
+      title="My timetable"
       subtitle="Timetable"
       contentHasHeading
     >
       <div className="day-workspace">
-        <h1 className="sr-only">My timetable</h1>
         <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} onNavigate={setSelection} />
       </div>
     </OperationsShell>

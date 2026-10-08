@@ -143,7 +143,7 @@ export function StudentLeaveStatusPage({
   }
 
   return (
-    <StudentShell activeNav="attendance" variant="edura" routes={routes} pageTitle="Leave Tracker" onBack={onBack}>
+    <StudentShell activeNav="launcher" variant="edura" routes={routes} pageTitle="Leave" onBack={onBack}>
       <div className="student-page-stack leave-status-page">
         <div className="page-context-row">
           <span className="title-with-badge"><b>{data.activeCount} Active</b></span>
@@ -151,20 +151,20 @@ export function StudentLeaveStatusPage({
         </div>
 
         <div className="segmented-control" role="tablist" aria-label="Leave tracker views">
-          <button type="button" role="tab" aria-selected="false" onClick={onApplyLeave ?? (() => navigate("/student/leave/new"))}><Send size={16} />Apply Leave</button>
-          <button className="is-active" type="button" role="tab" aria-selected="true"><History size={16} />Status &amp; Log {data.activeCount > 0 ? <i /> : null}</button>
+          <button type="button" role="tab" aria-selected="false" onClick={onApplyLeave ?? (() => navigate("/student/leave/new"))}><Send size={16} />Apply for leave</button>
+          <button className="is-active" type="button" role="tab" aria-selected="true"><History size={16} />Requests {data.activeCount > 0 ? <i /> : null}</button>
         </div>
 
         {data.requestId ? (
           <section className="active-request" aria-labelledby="active-request-heading">
-            <header><h2 id="active-request-heading">{data.activeCount > 1 ? "Latest Active Request" : "Active Request in Progress"}</h2><span>{data.requestId}</span></header>
+            <header><h2 id="active-request-heading">{data.activeCount > 1 ? "Latest request" : "Current request"}</h2><span>{data.requestId}</span></header>
             <div className="student-card active-request__card">
               <div className="request-summary">
                 <span><Pill size={22} /></span>
                 <div><span><h3>{data.title}</h3><b>{data.duration}</b></span><p>{data.dates}</p></div>
               </div>
               <div className="verification-pipeline">
-                <header><span>Verification Pipeline</span><strong>Stage {currentPipelineStage} of {data.stages.length}</strong></header>
+                <header><span>Request progress</span><strong>Stage {currentPipelineStage} of {data.stages.length}</strong></header>
                 <ol>
                   {data.stages.map((stage) => (
                     <li className={`pipeline-step pipeline-step--${stage.state}`} key={stage.id}>
@@ -197,7 +197,7 @@ export function StudentLeaveStatusPage({
         )}
 
         <section className="leave-history" aria-labelledby="leave-history-heading">
-          <header><span><History size={19} /><h2 id="leave-history-heading">Past Excusal Ledger</h2></span><strong>{data.history.length} Records in Term 1</strong></header>
+          <header><span><History size={19} /><h2 id="leave-history-heading">Request history</h2></span><strong>{data.history.length} requests</strong></header>
           <div className="student-card leave-history__list">
             {data.history.length === 0 ? (
               <div className="student-empty-state"><History size={20} /><div><strong>No past requests</strong><p>Your completed leave requests will appear here.</p></div></div>

@@ -36,18 +36,29 @@ describe("StaffOperationsPage", () => {
   it("gives the teacher balances, request history and an application form", async () => {
     const data: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [] };
     renderPage(data, "teacher");
-    expect(screen.getByRole("heading", { name: "10 days available" })).toBeVisible();
-    expect(screen.getByText("2 used · 1 pending · 12 total")).toBeVisible();
+    expect(screen.getByText("10 days available · 2026-27")).toBeVisible();
+    expect(document.querySelector(".staff-hero")).toBeNull();
     expect(screen.getByText("Family medical appointment")).toBeVisible();
+    await userEvent.setup().click(screen.getByRole('link',{name:'Balances'}));
+    expect(screen.getByText("2 used · 1 pending · 12 total")).toBeVisible();
+    expect(screen.queryByText('Family medical appointment')).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "Apply for leave" }));
     expect(screen.getByRole("heading", { name: "Apply for leave" })).toBeVisible();
     expect(screen.getByLabelText("Handover note")).toBeVisible();
+    expect(screen.queryByRole('navigation',{name:'Leave sections'})).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button',{name:'Cancel'}));
+    expect(screen.getByRole('link',{name:'Balances'})).toHaveAttribute('aria-current','page');
+    await userEvent.setup().click(screen.getByRole('link',{name:'Requests'}));
+    expect(screen.getByText('Family medical appointment')).toBeVisible();
   });
 
   it("opens people from the directory in a separate staff profile route", async () => {
     const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [{ id: "item-1", staff_profile_id: profile.id, item_key: "identity", label: "Identity verified", required: true, completed_at: "2026-04-01T00:00:00Z", note: "" }], policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
     renderPage(data, "principal");
-    expect(screen.getByRole("heading", { name: "1 active staff" })).toBeVisible();
+    expect(screen.getByText("1 active staff")).toBeVisible();
+    expect(screen.queryByText("STAFF SETUP")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Staff directory" })).not.toBeInTheDocument();
+    expect(document.querySelector(".staff-hero")).toBeNull();
     expect(screen.queryByText("Identity verified")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Kavita Mehta staff profile" })).toHaveAttribute("href", "/principal/staff/profile-1");
     await userEvent.setup().click(screen.getByRole("button", { name: /Leave/ }));

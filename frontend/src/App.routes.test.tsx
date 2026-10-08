@@ -96,12 +96,12 @@ const implementedScreenRoutes: RouteSmokeCase[] = [
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
   { path: "/student", heading: "Aarav Sharma" },
-  { path: "/student/attendance", heading: /Aarav Sharma/ },
+  { path: "/student/attendance", heading: "Attendance" },
   { path: "/student/attendance/eligibility", heading: "Attendance eligibility" },
   { path: "/student/leave/new", heading: "Apply leave" },
-  { path: "/student/leave", heading: "Leave Tracker" },
-  { path: "/student/timetable", heading: "Class 7A Timetable" },
-  { path: "/student/timetable/week", heading: "My Timetable" },
+  { path: "/student/leave", heading: "Leave" },
+  { path: "/student/timetable", heading: "Timetable" },
+  { path: "/student/timetable/week", heading: "Weekly timetable" },
 ];
 
 describe("implemented application routes", () => {
@@ -153,7 +153,7 @@ describe("implemented application routes", () => {
 
   it("renders the parent timetable alias", async () => {
     render(<MemoryRouter initialEntries={["/parent/timetable"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Class 7A Timetable" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Timetable", exact: true })).toBeVisible();
   });
 
   it("uses the same school crest and name in parent, student, and teacher headers", async () => {
@@ -272,10 +272,10 @@ describe("implemented application routes", () => {
     });
     render(<MemoryRouter initialEntries={["/teacher/events?view=draft"]}><App /></MemoryRouter>);
 
-    expect(await screen.findByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("combobox", { name: "Filter events" })).toHaveValue("draft");
     await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
     await waitFor(() => expect(apiFetchMock.mock.calls.some(([endpoint]) => String(endpoint).includes("cursor=event-cursor-1"))).toBe(true));
-    expect(screen.getByRole("tab", { name: "Drafts 0" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("combobox", { name: "Filter events" })).toHaveValue("draft");
   });
 
   it("keeps student home distinct and routes Attendance from its navigation", async () => {
@@ -287,7 +287,7 @@ describe("implemented application routes", () => {
     expect(screen.getByRole("dialog", { name: "Aarav Sharma" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Close digital student ID" }));
     await user.click(screen.getByRole("link", { name: "Attendance" }));
-    expect(await screen.findByText("Overall Aggregate")).toBeVisible();
+    expect(await screen.findByRole("region",{name:/Overall attendance/})).toBeVisible();
   }, 12000);
 
   it("opens the parent's student ID as a viewport modal with a visible close control", async () => {
@@ -349,28 +349,20 @@ describe("implemented application routes", () => {
     expect(screen.queryByText("No open attendance follow-ups")).not.toBeInTheDocument();
   });
 
-  it("opens the full attendance standings from each top student and the student's own row", async () => {
+  it("opens class standings from its explicit attendance option and restores focus on close", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);
-    await interact.click(await screen.findByText('Class attendance',{selector:'summary'}));
-    for (const rank of [1, 2, 3]) {
-      await interact.click(await screen.findByRole("button", { name: `View all class attendance, starting at rank ${rank}` }));
-      const dialog = screen.getByRole("dialog", { name: "Class 7A standings" });
-      expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
-      expect(within(dialog).getByRole("listitem", { name: /You, Aarav Sharma/ })).toHaveClass("attendance-ranking__row--current");
-      await interact.click(within(dialog).getByRole("button", { name: "Close attendance standings" }));
-    }
-    const ownStanding = screen.getByRole("button", { name: "View all class attendance, starting at your standing" });
-    await interact.click(ownStanding);
-    expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
+    const trigger=await screen.findByRole("button",{name:"Class attendance"});
+    await interact.click(trigger);
+    const dialog=screen.getByRole("dialog",{name:"Class 7A standings"});
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
+    expect(within(dialog).getByRole("listitem",{name:/You, Aarav Sharma/})).toHaveClass("attendance-ranking__row--current");
     await interact.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Class 7A standings" })).not.toBeInTheDocument();
-    expect(ownStanding).toHaveFocus();
-    await interact.click(screen.getByRole("button", { name: /Top Attendees - Class 7A/ }));
+    expect(trigger).toHaveFocus();
+    await interact.click(trigger);
     expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
     await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
-    await interact.click(screen.getByRole("button", { name: "View all class attendance from your percentage" }));
-    expect(screen.getByRole("dialog", { name: "Class 7A standings" })).toBeVisible();
   }, 30000);
 
   it.each(["/parent/home", "/parent/attendance"])("opens the same highlighted class standings from %s", async (path) => {
