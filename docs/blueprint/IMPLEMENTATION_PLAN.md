@@ -3529,6 +3529,36 @@ the user’s request. Metric definitions remain in PRINCIPAL_INSIGHTS.md.
 Dashboard graphs, filters and source-record dialogs are unchanged.
 Frontend typecheck and diff whitespace checks passed.
 
+### Analytics Stage release verified — 8 October 2026
+
+Merged the newer Stage Principal Insights work with the role-specific Analytics
+release and pushed application commit `98aa6b897ab7d5a10cb8bcec0e4b3fa924565c89`.
+[Stage run 37798178025](https://github.com/EduveraIITA/Eduvera/actions/runs/37798178025)
+completed successfully, including deployment and public-release verification.
+
+- Fresh PostgreSQL 17 CI passed **341 backend tests in 50 files** and **475
+  frontend tests in 67 files**. Backend/frontend typecheck, lint and builds,
+  desktop typecheck/build and the repository secret scan passed.
+- Independent public checks confirmed the exact application SHA above from
+  `/releasez`, environment `stage`, and `/readyz` with database/events healthy at
+  `https://omnischool-stage.up.railway.app`. The workflow also verified the mobile
+  and desktop applications, demo access and protected metrics.
+- Deployed WebKit checks passed for student, parent, teacher and principal:
+  Analytics API responses, overview/topic separation, period and class filters,
+  parent learner context, source links, shell Back navigation and keyboard chart
+  disclosures. The institution and register detail pages, class-scope isolation
+  and opening the dated Class 6A attendance register were verified separately.
+- All four deployed portals measured **16px chart-to-caption spacing**, with
+  supporting-copy margins of 8px above / 12px below. Overview and detail layouts
+  passed overflow checks at 320/768/1024/1440px; representative phone screenshots
+  were visually inspected. No page errors in the final browser runs. These are
+  functional checks, not a performance/load-test claim.
+- Local and ngrok preview readiness remained healthy. No new migration, reset or
+  full demo reseed was introduced; the existing workflow's normal additive demo
+  examples ran. The three unrelated untracked duplicate files remain untouched.
+
+This verifies the Stage release, not a production rollout or physical-device
+acceptance. Please refresh and review the Analytics spacing on a phone.
 
 ### Teacher quick feedback — 8 October 2026
 
@@ -3546,9 +3576,14 @@ Private aggregate distributions unlock only on closed requests with at least fiv
 parameter independently requires five non-abstaining ratings. Signals suggest a supportive review
 (40% Low) or strength (70% High), not a staff performance verdict. No public teacher leaderboard.
 
-Verification: backend and frontend type checks/builds pass; focused rating-rule tests (4) and UI/
-navigation tests (20) pass. Five isolated PostgreSQL integration tests cover roles, tenant isolation,
-current relationships, concurrent duplicate submission, closure, abstention suppression and revoked
-access; local PostgreSQL is unavailable, so execution remains a CI release gate. Browser checks pass at 320/768/1024/1440 pixels for creation, private results and student submission;
-the parent route also passes with no browser errors. These browser checks use synthetic API fixtures.
-User visual acceptance and CI database verification remain open; this record does not claim deployment.
+Verification: GitHub Actions run 37799328175 passed backend typecheck/lint/build,
+fresh isolated PostgreSQL migration and all backend tests, mobile typecheck/lint/build/tests,
+and desktop typecheck/build. All five feedback integration tests and four rating-rule tests
+passed. The scheduling integration test now creates its own subject rather than assuming
+an arbitrary school's fixtures. A separate local full frontend run had one navigation timeout
+(478/479 passed); the authoritative CI full run passed.
+
+Browser checks with synthetic API fixtures pass at 320/768/1024/1440 pixels for creation,
+private results and student submission; the parent route passes without browser errors.
+This documentation-only reconciliation retains the newer Analytics Stage release record.
+User visual acceptance and merging/deployment remain pending; no deployment is claimed.
