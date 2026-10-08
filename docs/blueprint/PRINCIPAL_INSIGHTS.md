@@ -53,3 +53,11 @@ records, half-days, latest assessment publications, fees, owner/deadline joins a
 cross-school/role denial. Frontend tests cover filters, accessible details, empty
 results, retry states and event invalidation. Responsive browser validation uses
 synthetic fixtures; actual institution-data verification remains a Stage gate.
+
+The initial navigation PR check passed all 326 PostgreSQL-backed backend tests
+and 444/445 frontend tests. Its sole failure was the existing four-child parent
+card-cycle test: whole-page role polling during transitions could delay the
+switch timer. The test now waits on the captured enabled chooser and checks the
+active card's exact accessible identity after each swipe. All eight directions/
+wraparound steps and timeout limits are preserved; parent runtime code is unchanged.
+The complete CI suite must pass again before merge.

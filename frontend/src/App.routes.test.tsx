@@ -716,17 +716,20 @@ describe("implemented application routes", () => {
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
 
     const swipe = async (from: string, to: string, direction: "left" | "right") => {
-      const card = await screen.findByRole("button", { name: new RegExp(`^Open digital student ID for ${from} Sharma`) });
+      const activeCard = () => within(document.querySelector<HTMLElement>(".parent-id-stack__active")!);
+      const card = activeCard().getByRole("button", { name: new RegExp(`^Open digital student ID for ${from} Sharma`) });
       await waitFor(() => expect(card).toBeEnabled());
       const startX = direction === "right" ? 80 : 220;
       const endX = direction === "right" ? 220 : 80;
       fireEvent.touchStart(card, { touches: [{ clientX: startX, clientY: 100 }] });
       fireEvent.touchEnd(card, { changedTouches: [{ clientX: endX, clientY: 100 }] });
-      await screen.findByRole("button", { name: new RegExp(`^Open digital student ID for ${to} Sharma`) }, { timeout: 5000 });
-      await waitFor(() => expect(document.querySelector(".parent-id-stack.is-animating")).not.toBeInTheDocument(), { timeout: 5000 });
       // The card can show the prepared child before the route's cached query has
       // committed. A second swipe is valid only once that switch has settled.
-      await waitFor(() => expect(screen.getByRole("button", { name: "Choose child profile" })).toBeEnabled(), { timeout: 10_000 });
+      // Poll the captured control, not a whole-page role query that repeatedly
+      // computes styles for both transition cards and can starve the timer.
+      await waitFor(() => expect(chooser).toBeEnabled(), { timeout: 10_000 });
+      expect(document.querySelector(".parent-id-stack.is-animating")).not.toBeInTheDocument();
+      expect(activeCard().getByRole("button", { name: new RegExp(`^Open digital student ID for ${to} Sharma`) })).toBeVisible();
     };
 
     expect(await screen.findByRole("button", { name: /^Open digital student ID for Aarav Sharma/ })).toBeVisible();
