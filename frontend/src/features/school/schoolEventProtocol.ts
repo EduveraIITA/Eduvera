@@ -131,6 +131,7 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["teacher-home"] },
   { queryKey: ["teacher-attendance"] },
   { queryKey: ["principal-home"] },
+  { queryKey: ["principal-insights"] },
   { queryKey: ["principal-register"] },
   { queryKey: ["principal-register-history"] },
   { queryKey: ["principal-timetable"] },
@@ -229,7 +230,7 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "parent.timetable": return parentInvalidations("timetable", payload.student_id);
     case "teacher.home": return [scopedOperationsInvalidation("teacher-home", payload)];
     case "teacher.attendance": return [scopedOperationsInvalidation("teacher-attendance", payload)];
-    case "principal.home": return [scopedOperationsInvalidation("principal-home", payload)];
+    case "principal.home": return [scopedOperationsInvalidation("principal-home", payload), { queryKey: ["principal-insights"] }];
     case "principal.attendance": return [scopedOperationsInvalidation("principal-register", payload)];
     case "principal.attendance-history": return [scopedOperationsInvalidation("principal-register-history", payload)];
     case "principal.timetable": return [{ queryKey: ["principal-timetable"] }];

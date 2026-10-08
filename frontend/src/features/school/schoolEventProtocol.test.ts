@@ -211,6 +211,7 @@ describe("school event protocol", () => {
       { queryKey: ["school", "parent", "home", "default"] },
       { queryKey: ["teacher-home"] },
       { queryKey: ["principal-home"] },
+      { queryKey: ["principal-insights"] },
       { queryKey: ["notifications", "guardian-1"] },
     ]);
   });

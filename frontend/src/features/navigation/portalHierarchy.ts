@@ -15,7 +15,7 @@ export function portalParent(pathname: string, search: string, fallback: string)
   if (module === "more" || module === "apps") target = home;
   else if (module === "events" && parts.length > 3) target = `${base}/events/${parts[2]}`;
   else if (parts.length > 2) target = `${base}/${module}`;
-  else if (["attendance", "timetable"].includes(module ?? "") || (portal === "parent" && module === "diary")) target = home;
+  else if (["attendance", "timetable", "insights"].includes(module ?? "") || (portal === "parent" && module === "diary")) target = home;
   else target = `${base}/${portal === "student" ? "apps" : "more"}`;
   const source = new URLSearchParams(search), context = new URLSearchParams();
   for (const key of ["student_id", "school"]) if (source.has(key)) context.set(key, source.get(key)!);

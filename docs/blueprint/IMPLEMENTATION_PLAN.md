@@ -2354,6 +2354,24 @@ reported the exact commit above and `environment: stage`. The local review previ
 also remained ready. Physical-phone/user review is still open, and this evidence
 does not assert a production release.
 
+
+### Principal intelligence dashboard — 7 October 2026
+
+Implemented on the principal home route using the existing blue/mint theme and
+shared navigation. The read-only, school-scoped insights endpoint aggregates
+attendance trends and completeness, engagement changes, latest published assessment
+results, follow-up ownership, upcoming teaching coverage, deadline clusters and
+fee ageing. Review windows, class filters, academic thresholds and source-record
+drill-downs are available. Existing daily operational workflows remain in place.
+See [metric definitions](PRINCIPAL_INSIGHTS.md). No migration or reseed is required.
+
+Verified locally: backend lint, typecheck and build; frontend lint, typecheck and
+production build; 8 focused backend tests (including integration on PGlite with all
+repository migrations applied); 18 focused frontend tests. Browser checks at 320,
+768, 1024 and 1440 px passed for overflow, filter requests, dialog fit, Escape
+dismissal and runtime errors using clearly synthetic API fixtures. This is not
+PostgreSQL 17 CI or live-data validation. Integrated Stage CI, deployed school-data
+checks and user UI review remain open. No merge or deployment is included.
 ## Timetable and calendar simplification — 7 October 2026
 
 User decision: simplify the planning screens using a calm, content-first hierarchy.
@@ -3475,3 +3493,38 @@ reseed or national-directory import is requested. The normal Stage workflow must
 verify the integrated commit against fresh PostgreSQL 17, build all clients,
 deploy and confirm the exact release revision. Integration and deployment results
 will be recorded after verification; this preparation entry is not a success claim.
+
+Integration verification passed locally: **475 frontend tests in 67 files**, all
+frontend/backend typecheck, lint and builds, and desktop typecheck/build.
+**25 focused backend tests** passed on the isolated database, including both
+Analytics and Principal Insights. Browser checks retained principal/teacher
+Analytics navigation, scoped data, period/class filters and Back with no page
+errors. The merge retains both backend modules and both sets of event-cache
+invalidation rules. The existing Stage pipeline will re-run the full backend
+suite against a newly migrated/seeded isolated PostgreSQL 17 database.
+
+### Principal Insights navigation — 8 October 2026
+
+User-approved placement supersedes the initial all-on-Overview layout above.
+Overview now retains four summary cards, the action brief and a dated View all
+insights link. The principal-only `/principal/insights` route groups the full
+dashboard into Attendance & learning, Operations and Finance, with date, window,
+class and academic-review filters. Principal mobile tabs are Overview, Attendance,
+Insights and More. Timetable remains in More, the desktop sidebar and coverage
+links; teacher navigation is unchanged. The newest Stage planning/navigation
+changes were reconciled without removing either backend module or delivery record.
+
+Local verification: backend and frontend typecheck, lint and production builds
+passed. Browser checks using synthetic API fixtures passed at 320, 768, 1024 and
+1440 pixels: compact Overview, navigation to Insights, date/window persistence,
+deadline deep links, dialog Escape dismissal, active mobile tab and Timetable in
+More, with no horizontal overflow or page errors. Test and release status will be
+confirmed by the PR/Stage workflow; no national dataset import or reseed is part
+of this change. Please review the resulting UI on a physical phone after release.
+
+### Principal Insights reading note — 8 October 2026
+
+Removed the “How to read these insights” disclosure and its unused styles at
+the user’s request. Metric definitions remain in PRINCIPAL_INSIGHTS.md.
+Dashboard graphs, filters and source-record dialogs are unchanged.
+Frontend typecheck and diff whitespace checks passed.
