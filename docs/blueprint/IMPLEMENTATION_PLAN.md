@@ -3696,3 +3696,8 @@ User refined the visual request with a segmented attendance-control reference. R
 ### Compact feedback home prompt — 8 October 2026
 
 Confirmed the sliding selector release passed deployment and public revision verification in Actions run 37817363937. User requested a cleaner home prompt: replace the large blue multi-line appeal with one white linked row, small feedback icon, Teacher feedback title, pending request count and chevron. The shared student/parent prompt retains eligibility filtering. Typecheck passes; fixture-backed student home browser checks verify no link overflow and successful navigation at 320/768/1024/1440px. Mobile row visually inspected. This follow-up's deployment and user visual acceptance are pending.
+
+
+### Drag to change feedback rating — 8 October 2026
+
+The shared native-radio selector now supports horizontal pointer dragging, updates the selected rating across segments, clamps at either end, and preserves tap/keyboard behavior. Vertical touch scrolling remains available; pointer cancellation restores the original answer. Capture transfer from touch targets does not terminate the drag. Typecheck, focused lint and four existing feedback tests pass. Browser tests using Chromium mouse dragging left and CDP touch dragging right pass at 320/768/1024/1440px alongside submission and overflow checks. Physical iOS acceptance and deployment remain pending.
