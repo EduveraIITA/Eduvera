@@ -3681,3 +3681,8 @@ Browser checks with synthetic API fixtures pass at 320/768/1024/1440 pixels for 
 private results and student submission; the parent route passes without browser errors.
 This documentation-only reconciliation retains the newer Analytics Stage release record.
 User visual acceptance and merging/deployment remain pending; no deployment is claimed.
+
+
+### Teacher feedback rating redesign — 8 October 2026
+
+User-requested visual refinement keeps all four rating options in one row, including 320px phones. Amber/blue/green/slate surfaces and labelled expression icons distinguish Low, Okay, High and Not sure. Selected choices use a solid surface; native radios retain keyboard operation and visible focus. Existing submission and confidentiality rules are unchanged. Frontend typecheck and all four feedback tests pass. Synthetic-fixture browser checks pass at 320/768/1024/1440px for principal creation/results and student submission, plus the parent route, with no overflow or page errors. Visual acceptance and deployment of this refinement are pending.
