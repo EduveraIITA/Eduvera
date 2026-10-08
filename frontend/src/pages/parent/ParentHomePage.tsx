@@ -1,3 +1,4 @@
+import { FeedbackNudge } from "../../features/teacher-feedback/FeedbackNudge";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -204,6 +205,7 @@ export function ParentHomePage({
           {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
         </div>
         {switchError ? <p className="parent-id-stack__error" role="alert">{switchError}</p> : null}
+        <FeedbackNudge portal="parent"/>
         <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student_id=${data.child.id}`}/>
 
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />

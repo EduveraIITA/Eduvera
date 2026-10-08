@@ -3653,3 +3653,31 @@ completed successfully, including Railway deployment and public release verifica
 
 This records a verified Stage release, not a production rollout or physical-phone
 acceptance. The user should refresh Stage and review the new Attendance review flow.
+
+### Teacher quick feedback — 8 October 2026
+
+User-requested extension: principal administrators can publish a teacher/class feedback request
+for students or parents, choose 1–10 preset/custom parameters and a closing deadline, and close early.
+Migration `055_teacher_feedback.sql` stores campaigns, unique account responses and lifecycle audits.
+The separate Nest module validates current institution membership, current-term enrollment and guardian
+relationships, exact rating keys, deadlines and duplicate submissions. Submission and closure share
+a campaign row lock. Responses are confidential, not truly anonymous; identities remain stored to
+prevent duplicates, with no individual-response API or teacher results access.
+
+The React flow preserves existing shells/theme and adds More entries, a principal Insights link and
+pending home prompts. Low / Okay / High / Not sure ratings are collected with native radio controls.
+Private aggregate distributions unlock only on closed requests with at least five responses; each
+parameter independently requires five non-abstaining ratings. Signals suggest a supportive review
+(40% Low) or strength (70% High), not a staff performance verdict. No public teacher leaderboard.
+
+Verification: GitHub Actions run 37799328175 passed backend typecheck/lint/build,
+fresh isolated PostgreSQL migration and all backend tests, mobile typecheck/lint/build/tests,
+and desktop typecheck/build. All five feedback integration tests and four rating-rule tests
+passed. The scheduling integration test now creates its own subject rather than assuming
+an arbitrary school's fixtures. A separate local full frontend run had one navigation timeout
+(478/479 passed); the authoritative CI full run passed.
+
+Browser checks with synthetic API fixtures pass at 320/768/1024/1440 pixels for creation,
+private results and student submission; the parent route passes without browser errors.
+This documentation-only reconciliation retains the newer Analytics Stage release record.
+User visual acceptance and merging/deployment remain pending; no deployment is claimed.

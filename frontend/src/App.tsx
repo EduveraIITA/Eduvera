@@ -17,6 +17,9 @@ const SelfServiceOnboardingPage=lazy(()=>import('./features/onboarding/SelfServi
 const JoinPage=lazy(()=>import('./features/onboarding/JoinPage'));
 const InvitationsPage=lazy(()=>import('./features/onboarding/InvitationsPage'));
 
+const PrincipalFeedbackPage = lazy(() => import('./features/teacher-feedback/PrincipalFeedbackPage'));
+const FamilyFeedbackPage = lazy(() => import('./features/teacher-feedback/FamilyFeedbackPage'));
+
 const LoginPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).LoginPage,
 }));
@@ -202,6 +205,7 @@ export function App() {
               <Route path="/company" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
               <Route path="/company/institutions/:id" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />
               <Route path="/join" element={<JoinPage />} />
+              <Route path="/principal/teacher-feedback" element={<PortalOnly portal="principal"><PrincipalFeedbackPage /></PortalOnly>} />
               <Route path="/principal/invitations" element={<PortalOnly portal="principal"><InvitationsPage /></PortalOnly>} />
               <Route path="/teacher/invitations" element={<PortalOnly portal="teacher"><InvitationsPage /></PortalOnly>} />
               <Route path="/teacher/students" element={<PortalOnly portal="teacher"><PeoplePage /></PortalOnly>} />
@@ -213,6 +217,7 @@ export function App() {
               {(["institution", "registers"] as const).map(topic => <Route key={`insights-principal-${topic}`} path={`/principal/insights/${topic}`} element={<PortalOnly portal="principal"><AnalyticsPage portal="principal" topic={topic} /></PortalOnly>} />)}
 
               <Route path="/parent" element={<Navigate to="/parent/home" replace />} />
+              <Route path="/parent/teacher-feedback" element={<PortalOnly portal="parent"><FamilyFeedbackPage portal="parent" /></PortalOnly>} />
               <Route path="/parent/home" element={<PortalOnly portal="parent"><ParentHomeRoute /></PortalOnly>} />
               <Route path="/parent/attendance" element={<PortalOnly portal="parent"><ParentAttendanceRoute /></PortalOnly>} />
               <Route path="/parent/leave" element={<PortalOnly portal="parent"><ParentLeaveRoute /></PortalOnly>} />
@@ -229,6 +234,7 @@ export function App() {
               <Route path="/parent/departure" element={<PortalOnly portal="parent"><ParentDeparturePage /></PortalOnly>} />
 
               <Route path="/student" element={<PortalOnly portal="student"><StudentHomeRoute /></PortalOnly>} />
+              <Route path="/student/teacher-feedback" element={<PortalOnly portal="student"><FamilyFeedbackPage portal="student" /></PortalOnly>} />
               <Route path="/student/attendance" element={<PortalOnly portal="student"><StudentAttendanceRoute /></PortalOnly>} />
               <Route path="/student/attendance/eligibility" element={<PortalOnly portal="student"><StudentEligibilityRoute /></PortalOnly>} />
               <Route path="/student/classes" element={<Navigate to="/student/timetable" replace />} />
