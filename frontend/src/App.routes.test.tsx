@@ -498,21 +498,26 @@ describe("implemented application routes", () => {
     fireEvent.click(chooseChild);
     expect(screen.getByRole("dialog", { name: "Select child profile" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "View Ananya Sharma's parent dashboard" }));
-    expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ }, { timeout: 5000 })).toBeVisible();
+    // Wait on the cheap, observable busy state before a role/visibility query.
+    // A whole-page findByRole repeatedly traverses both cards during the
+    // transition and can starve its timer on slower shared CI runners.
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
+    const activeCard = () => within(document.querySelector<HTMLElement>(".parent-id-stack__active")!);
+    expect(activeCard().getByRole("button", { name: /Open digital student ID for Ananya Sharma/ })).toBeVisible();
     fireEvent.click(chooseChild);
     fireEvent.click(screen.getByRole("button", { name: "View Rohan Sharma's parent dashboard" }));
-    expect(await screen.findByRole("button", { name: /Open digital student ID for Rohan Sharma/ }, { timeout: 5000 })).toBeVisible();
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    const rohanCard = screen.getByRole("button", { name: /Open digital student ID for Rohan Sharma/ });
+    const rohanCard = activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ });
+    expect(rohanCard).toBeVisible();
     fireEvent.touchStart(rohanCard, { touches: [{ clientX: 80 }] });
     fireEvent.touchEnd(rohanCard, { changedTouches: [{ clientX: 220 }] });
-    expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ }, { timeout: 5000 })).toBeVisible();
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    const ananyaCard = screen.getByRole("button", { name: /Open digital student ID for Ananya Sharma/ });
+    const ananyaCard = activeCard().getByRole("button", { name: /Open digital student ID for Ananya Sharma/ });
+    expect(ananyaCard).toBeVisible();
     fireEvent.touchStart(ananyaCard, { touches: [{ clientX: 220 }] });
     fireEvent.touchEnd(ananyaCard, { changedTouches: [{ clientX: 80 }] });
-    await interact.click(await screen.findByRole("button", { name: /Open digital student ID for Rohan Sharma/ }, { timeout: 5000 }));
+    await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
+    await interact.click(activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ }));
     expect(screen.getByRole("dialog", { name: "Rohan Sharma" })).toHaveTextContent("CIS-003");
   }, 45000);
 

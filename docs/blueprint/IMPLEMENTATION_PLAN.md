@@ -3185,3 +3185,13 @@ The existing Stage pipeline must pass fresh isolated PostgreSQL integration
 tests before deploying, then verify the exact application revision and public
 readiness. Full demo reseeding and national-directory imports are not requested.
 Deployment confirmation will be recorded only after those gates succeed.
+
+The first Stage attempt, run `37780395749` for `2016c40`, correctly stopped before
+deployment: all 318 backend tests passed, but the frontend suite passed 432/433.
+The parent multi-child-card test timed out while switching was still busy. Its
+whole-page role lookup repeatedly evaluated both transition cards before the
+timer completed on CI. The test now waits for the observable switching control
+to become enabled, then scopes its unchanged identity assertions to the active
+card. All three child identities, both swipe directions and the final ID dialog
+remain checked; no home/runtime code or timeout limit is changed. The focused
+regression passed locally; the next Stage run must re-run the full suite.
