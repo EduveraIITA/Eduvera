@@ -5,7 +5,7 @@ import { ClipboardCheck } from "lucide-react";
 type Group = { name: string; ids: string[] };
 const groups: Record<Portal, Group[]> = {
   principal: [
-    { name: "Insights", ids: ["analytics"] },
+    { name: "School overview", ids: ["analytics"] },
     { name: "People", ids: ["people", "staff", "teacher-feedback"] },
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
     { name: "Operations", ids: ["departure", "events", "messages", "fees", "safeguarding"] },
@@ -66,7 +66,7 @@ const adminShortcuts: Shortcut[] = [
   { owner: "governance", name: "Policy register", path: "/principal/governance?section=register", keywords: "compliance policies" },
 ];
 const aliases: Record<string, string> = {
-  analytics: "charts graphs insights overview trends progress statistics attendance scores",
+  analytics: "analytics charts graphs insights overview trends progress statistics attendance scores",
   results: "marks marksheet exam report card grades", assessments: "tests exam marks marking moderation results",
   "report-cards": "marksheet grades grading term reports remarks", departure: "bus pickup drop collector route transport",
   transport: "bus pickup drop collector route roster", fees: "payment invoice receipt balance dues",

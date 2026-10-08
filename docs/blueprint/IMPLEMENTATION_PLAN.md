@@ -3560,6 +3560,100 @@ completed successfully, including deployment and public-release verification.
 This verifies the Stage release, not a production rollout or physical-device
 acceptance. Please refresh and review the Analytics spacing on a phone.
 
+### Unified Insights and focused attendance review — 8 October 2026 (local)
+
+User direction supersedes the separate Analytics/Insights destinations above:
+keep the charts and useful operational signals in one calm, progressively disclosed
+experience. After reviewing the first local Attendance checks page, the user also
+requested a meaningful review workflow instead of prominent filters, large counts
+and explanatory copy before the students.
+
+- All four portals now use **Insights** at `/<portal>/insights`. Old Analytics
+  bookmarks redirect with query/hash context intact. More search still recognizes
+  “analytics”; existing permission/tool identifiers are unchanged. Home screens,
+  school headers, existing mobile tabs and domain permissions are unchanged.
+- Principal Insights combines a compact attention brief, current institution
+  snapshot, recorded trends/results and current operational summaries. Attendance,
+  results, assessment progress, institution, register submission, learning review,
+  follow-ups, coverage/deadlines and fees have focused topic pages. Analytics and
+  Principal Insights remain separate authorized read models, with independent
+  loading/error handling and shared cached requests for the operational summaries.
+- Reporting definitions are preserved: term/30/90-day trends are not silently
+  combined with 14/28/56-day review comparisons. Publication-dated learning review
+  stays distinct from assessment-dated result averages; current fees, follow-ups
+  and next-seven-day coverage retain their operational as-of context.
+- **Attendance review** now starts with students without an open follow-up. Flat
+  linked rows show class, current attendance and the decline; already-owned work
+  remains available. Class selection is visible; review-window/date controls are
+  behind one accessible control. Each student opens a separate page with the two
+  periods, relevant evidence and an existing-register or existing-follow-up action.
+  No automatic diagnosis, family contact or case creation was introduced. The
+  existing workflow still requires a saved eligible attendance record to create a
+  follow-up. Recording completeness is a separate page; missing records are never
+  treated as absences. Back links preserve class/window and the parent topic.
+- This follows the frontend UI engineering guidance through scoped semantic
+  colors, readable supporting-copy spacing, keyboard disclosures, text alternatives
+  for charts and existing shell/theme components. No new library, backend/API,
+  schema, authorization or home-page change is included.
+
+Verified locally after the final UI adjustment:
+
+- Frontend typecheck, lint and production build passed; **495 tests in 68 files
+  passed**, including **20 unified Insights tests** for role isolation, legacy
+  navigation, independent failures/retry, filters, student review, existing follow-up
+  routing, missing records, out-of-scope student IDs and context-preserving Back.
+- Live WebKit navigation passed in principal, teacher, parent and student portals.
+  Overview/results and principal operational/review detail pages passed horizontal
+  overflow checks at **320/768/1024/1440px**. Review filters and keyboard disclosure
+  were exercised; student and recording drill-downs returned to the review list.
+  Chart-caption gaps remain **16px** in all four portals; no page errors occurred.
+- Mobile screenshots of principal, teacher and parent overviews plus the new
+  attendance queue and student detail were visually inspected. The queue shows
+  multiple students in the first viewport without a large summary card.
+- Local preview and ngrok `/readyz` both returned ready with database/events OK.
+  No deployment, database reset or reseed was performed. Unrelated ` 2` duplicate
+  files remain untouched. Physical-phone UI acceptance is still requested; these
+  local checks do not establish a new Stage or production release.
+
+The current interaction and metric contract is [Principal insights](PRINCIPAL_INSIGHTS.md).
+
+### Unified Insights Stage release verified — 8 October 2026
+
+At the user's request, pulled `origin/Stage` (already current at `bcdf8bb`),
+committed the unified Insights and attendance-review work, and pushed application
+revision `36ddd7933ebaa5a9b4c8a6fee3c78ad9b6098efc` to Stage.
+[Stage run 37805815618](https://github.com/EduveraIITA/Eduvera/actions/runs/37805815618)
+completed successfully, including Railway deployment and public release verification.
+
+- Fresh PostgreSQL 17 CI passed **341 backend tests in 50 files** and **495 frontend
+  tests in 68 files**. The repository secret scan, backend/frontend typecheck,
+  lint/build and desktop typecheck/build passed. Local backend checks and desktop
+  build were also repeated before the push.
+- Independent public requests confirmed the exact application revision above from
+  `/releasez`, environment `stage`, and `/readyz` with database/events healthy at
+  `https://omnischool-stage.up.railway.app`. The existing release pipeline also
+  verified both applications, install icons, API schema, demo access and protected
+  metrics. Its optional full demo reseed was skipped; no new migration, database
+  reset or national-directory import was introduced.
+- Deployed WebKit checks passed in principal, teacher, parent and student portals:
+  one Insights destination, trend period persistence, old Analytics bookmark
+  redirects, result drill-downs and Back links. Principal attendance review,
+  student comparison, the actual dated class register, missing-records detail,
+  follow-ups, coverage, fees and learning-review navigation were exercised without
+  changing attendance, sending messages or creating follow-ups.
+  A separate live check selected an already-owned attendance review and opened
+  that student's authorized existing follow-up inbox successfully.
+- All four portal overview/results layouts and principal topic/review details
+  passed overflow checks at **320/768/1024/1440px**. Chart-caption gaps remain
+  **16px**. Keyboard review-rule disclosure and hidden/revealed period controls
+  worked. Deployed attendance queue/student-detail phone screenshots were visually
+  inspected; no page errors occurred in the final four-portal browser run.
+- Local and ngrok previews remained ready with database/events healthy. The three
+  unrelated untracked files named with ` 2` remain untouched and uncommitted.
+
+This records a verified Stage release, not a production rollout or physical-phone
+acceptance. The user should refresh Stage and review the new Attendance review flow.
+
 ### Teacher quick feedback — 8 October 2026
 
 User-requested extension: principal administrators can publish a teacher/class feedback request

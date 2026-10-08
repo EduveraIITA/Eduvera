@@ -18,9 +18,9 @@ function show(portal: Portal, path = `/${portal}/more`) {
 describe("settings-style More", () => {
   it.each(["principal", "teacher", "parent", "student"] as const)("makes Analytics discoverable from %s More", portal => {
     show(portal);
-    expect(screen.getByRole("link", { name: "Open Analytics" })).toHaveAttribute("href", `/${portal}/analytics`);
+    expect(screen.getByRole("link", { name: "Open Insights" })).toHaveAttribute("href", `/${portal}/insights`);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "charts" } });
-    expect(screen.getByRole("link", { name: "Open Analytics" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Insights" })).toBeVisible();
   });
   it("keeps the originating portal and selected child on account-security navigation", () => {
     show("parent", "/parent/more?student_id=child-2");

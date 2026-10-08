@@ -101,13 +101,13 @@ export function AssessmentProgress({ pipeline, compact = false }: { pipeline: No
   }))} />;
 }
 
-export function ComparisonBars({ rows, label, unit = "percent", reference }: {
+export function ComparisonBars({ rows, label, unit = "percent", reference, formatValue }: {
   rows: Array<{ id: string; name: string; value: number | null; detail: string; tone?: "warning" | "positive" | "muted" }>;
-  label: string; unit?: "percent" | "count"; reference?: number | null;
+  label: string; unit?: "percent" | "count"; reference?: number | null; formatValue?: (value: number) => string;
 }) {
   const max = unit === "percent" ? 100 : Math.max(1, ...rows.map(row => row.value ?? 0));
   return <ul className="analytics-bars" aria-label={label}>{rows.map(row => <li key={row.id}>
-    <div className="analytics-bars__label"><span>{row.name}</span><strong>{unit === "percent" ? percentageLabel(row.value) : row.value === null ? "—" : numberLabel(row.value)}</strong></div>
+    <div className="analytics-bars__label"><span>{row.name}</span><strong>{row.value !== null && formatValue ? formatValue(row.value) : unit === "percent" ? percentageLabel(row.value) : row.value === null ? "—" : numberLabel(row.value)}</strong></div>
     <div className={`analytics-bars__track${row.tone ? ` analytics-bars__track--${row.tone}` : ""}`} aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, (row.value ?? 0) / max * 100))}%` }} />{reference !== null && reference !== undefined ? <i className="analytics-bars__reference" style={{ left: `${Math.max(0,Math.min(100,reference))}%` }} /> : null}</div>
     <small>{row.detail}</small>
   </li>)}</ul>;

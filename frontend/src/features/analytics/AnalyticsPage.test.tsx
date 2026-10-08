@@ -9,10 +9,11 @@ import { AssessmentProgress, AttendanceBreakdown, AttendanceTrend, ComparisonBar
 import { getAnalytics, type AnalyticsOverview } from "./api";
 
 vi.mock("./api", () => ({ getAnalytics: vi.fn() }));
+vi.mock("../principal-insights/InsightHighlights", () => ({ InsightHighlights: () => null, OperationalSummaries: () => null }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: "user", active_school_id: "school" }, memberships: ["admin", "staff", "student", "guardian"].map(role => ({ role, school_id: "school", school_name: "Our school" })) }) }));
-vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ children, title, backTo }: { children: ReactNode; title: string; backTo?: string }) => <><h1>{title}</h1>{backTo ? <Link to={backTo}>Back to Analytics</Link> : null}{children}</> }));
-vi.mock("../../pages/student/StudentShell", () => ({ StudentShell: ({ children, pageTitle, backTo }: { children: ReactNode; pageTitle: string; backTo?: string }) => <><h1>{pageTitle}</h1>{backTo ? <Link to={backTo}>Back to Analytics</Link> : null}{children}</> }));
-vi.mock("../../pages/parent/ParentShell", () => ({ ParentShell: ({ children, pageLabel, backTo, onSelectChild }: { children: ReactNode; pageLabel: string; backTo?: string; onSelectChild: (id: string) => void }) => <><h1>{pageLabel}</h1>{backTo ? <Link to={backTo}>Back to Analytics</Link> : null}<button onClick={() => onSelectChild("child-b")}>Switch child</button>{children}</> }));
+vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ children, title, backTo }: { children: ReactNode; title: string; backTo?: string }) => <><h1>{title}</h1>{backTo ? <Link to={backTo}>Back to Insights</Link> : null}{children}</> }));
+vi.mock("../../pages/student/StudentShell", () => ({ StudentShell: ({ children, pageTitle, backTo }: { children: ReactNode; pageTitle: string; backTo?: string }) => <><h1>{pageTitle}</h1>{backTo ? <Link to={backTo}>Back to Insights</Link> : null}{children}</> }));
+vi.mock("../../pages/parent/ParentShell", () => ({ ParentShell: ({ children, pageLabel, backTo, onSelectChild }: { children: ReactNode; pageLabel: string; backTo?: string; onSelectChild: (id: string) => void }) => <><h1>{pageLabel}</h1>{backTo ? <Link to={backTo}>Back to Insights</Link> : null}<button onClick={() => onSelectChild("child-b")}>Switch child</button>{children}</> }));
 
 const counts = { present: 3, absent: 1, late: 1, half_day: 1, excused: 1, recorded: 7, denominator: 6, attended: 4.5, percentage: 75 };
 const data: AnalyticsOverview = {
@@ -32,9 +33,9 @@ beforeEach(() => { vi.mocked(getAnalytics).mockResolvedValue(data); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function show(portal: Portal, search = "") {
-  return render(<TestQueryProvider><MemoryRouter initialEntries={[`/${portal}/analytics${search}`]}><Routes>
-    <Route path={`/${portal}/analytics`} element={<AnalyticsPage portal={portal} />} />
-    {(["attendance", "results", "progress", "institution", "registers"] as const).map(topic => <Route key={topic} path={`/${portal}/analytics/${topic}`} element={<AnalyticsPage portal={portal} topic={topic} />} />)}
+  return render(<TestQueryProvider><MemoryRouter initialEntries={[`/${portal}/insights${search}`]}><Routes>
+    <Route path={`/${portal}/insights`} element={<AnalyticsPage portal={portal} />} />
+    {(["attendance", "results", "progress", "institution", "registers"] as const).map(topic => <Route key={topic} path={`/${portal}/insights/${topic}`} element={<AnalyticsPage portal={portal} topic={topic} />} />)}
   </Routes><Location /></MemoryRouter></TestQueryProvider>);
 }
 
@@ -46,13 +47,13 @@ describe("role-specific Analytics", () => {
     expect(snapshot).toHaveTextContent("Average class size25.5");
     fireEvent.click(snapshot);
     expect(await screen.findByRole("heading", { name: "Students & classes" })).toBeVisible();
-    expect(screen.queryByRole("combobox", { name: "Analytics period" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Trend period" })).not.toBeInTheDocument();
     expect(screen.getByRole("list", { name: "Enrolment by class" })).toHaveTextContent("No active enrolments");
     expect(screen.getByRole("figure", { name: /Active staff mix/ })).toHaveAccessibleName(/Teaching: 5; Non-teaching: 2/);
     expect(screen.getByText("10.2")).toBeVisible();
     expect(screen.getByRole("link", { name: "View staff" })).toHaveAttribute("href", "/principal/staff");
-    fireEvent.click(screen.getByRole("link", { name: "Back to Analytics" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/analytics?period=90");
+    fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights?period=90");
   });
   it.each(["teacher", "parent", "student"] as const)("does not display institution data in %s even if supplied", async portal => {
     show(portal);
@@ -65,7 +66,7 @@ describe("role-specific Analytics", () => {
     show("principal", "?class=class-a");
     await screen.findByRole("link", { name: "Explore results" });
     expect(screen.queryByRole("link", { name: "Explore institution snapshot" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Explore register submission" })).toHaveAttribute("href", "/principal/analytics/registers?class=class-a");
+    expect(screen.getByRole("link", { name: "Explore register submission" })).toHaveAttribute("href", "/principal/insights/registers?class=class-a");
   });
   it("drills from register submission into a dated class register, retaining the period", async () => {
     show("principal", "?period=30");
@@ -73,7 +74,7 @@ describe("role-specific Analytics", () => {
     expect(await screen.findByRole("heading", { name: "Scheduled registers" })).toBeVisible();
     expect(screen.getByRole("figure", { name: /Scheduled register states/ })).toHaveAccessibleName(/Submitted: 20; Locked: 10; Not submitted: 10/);
     expect(screen.getByRole("link", { name: "Review 7 Oct · 10 not submitted" })).toHaveAttribute("href", "/principal/attendance?date=2026-10-07&class_section_id=class-a");
-    expect(screen.getByRole("link", { name: "Back to Analytics" })).toHaveAttribute("href", "/principal/analytics?period=30");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/principal/insights?period=30");
     expect(screen.getByText(/does not mean overdue/)).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Published results" })).not.toBeInTheDocument();
   });
@@ -89,7 +90,7 @@ describe("role-specific Analytics", () => {
   it.each(["principal", "teacher", "parent", "student"] as const)("opens %s analytics without an extra page heading", async portal => {
     show(portal);
     expect(await screen.findByRole("link", { name: "Explore results" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Explore attendance" })).toHaveAttribute("href", `/${portal}/analytics/attendance`);
+    expect(screen.getByRole("link", { name: "Explore attendance" })).toHaveAttribute("href", `/${portal}/insights/attendance`);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(getAnalytics).toHaveBeenCalledWith("school", portal, "term", undefined, undefined);
     if (portal === "parent" || portal === "student") {
@@ -103,7 +104,7 @@ describe("role-specific Analytics", () => {
     show("teacher", "?class=class-b&period=90");
     await screen.findByRole("link", { name: "Explore results" });
     expect(getAnalytics).toHaveBeenLastCalledWith("school", "teacher", "90", undefined, "class-b");
-    fireEvent.change(screen.getByRole("combobox", { name: "Analytics period" }), { target: { value: "30" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Trend period" }), { target: { value: "30" } });
     await waitFor(() => expect(getAnalytics).toHaveBeenLastCalledWith("school", "teacher", "30", undefined, "class-b"));
     expect(screen.getByTestId("location")).toHaveTextContent("class=class-b&period=30");
     fireEvent.change(screen.getByRole("combobox", { name: "Class", exact: true }), { target: { value: "" } });
@@ -115,7 +116,7 @@ describe("role-specific Analytics", () => {
     fireEvent.click(screen.getByRole("button", { name: "Switch child" }));
     await waitFor(() => expect(getAnalytics).toHaveBeenLastCalledWith("school", "parent", "30", "child-b", undefined));
     expect(screen.getByTestId("location")).toHaveTextContent("student_id=child-b&period=30");
-    expect(screen.getByRole("link", { name: "Back to Analytics" })).toHaveAttribute("href", "/parent/analytics?student_id=child-b&period=30");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/parent/insights?student_id=child-b&period=30");
   });
   it("hides a denied domain instead of manufacturing totals", async () => {
     vi.mocked(getAnalytics).mockResolvedValue({ ...data, attendance: null });
@@ -162,20 +163,20 @@ describe("role-specific Analytics", () => {
     show("principal", "?period=90&class=class-a");
     const label = topic === "progress" ? "assessment progress" : topic;
     fireEvent.click(await screen.findByRole("link", { name: `Explore ${label}` }));
-    expect(screen.getByTestId("location")).toHaveTextContent(`/principal/analytics/${topic}?period=90&class=class-a`);
+    expect(screen.getByTestId("location")).toHaveTextContent(`/principal/insights/${topic}?period=90&class=class-a`);
     expect(screen.queryByRole("link", { name: "Explore results" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Published results" })).toBe(topic === "results" ? screen.getByRole("heading", { name: "Published results" }) : null);
     expect(screen.queryByRole("heading", { name: "Recorded attendance" })).toBe(topic === "attendance" ? screen.getByRole("heading", { name: "Recorded attendance" }) : null);
-    fireEvent.click(screen.getByRole("link", { name: "Back to Analytics" }));
+    fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
     expect(await screen.findByRole("link", { name: "Explore results" })).toBeVisible();
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/analytics?period=90&class=class-a");
+    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights?period=90&class=class-a");
   });
   it("does not fall back to another topic when a bookmarked topic is denied", async () => {
     vi.mocked(getAnalytics).mockResolvedValue({ ...data, attendance: null });
     show("teacher", "/attendance?period=30");
     expect(await screen.findByText("This topic is not available with your current access.")).toBeVisible();
     expect(screen.queryByRole("figure")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Analytics" })).toHaveAttribute("href", "/teacher/analytics?period=30");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/teacher/insights?period=30");
   });
   it("keeps doughnut counts distinct from weighted attendance and shows no pie for missing data", () => {
     const view = render(<AttendanceBreakdown attendance={counts} family />);
