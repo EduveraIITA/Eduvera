@@ -3528,3 +3528,34 @@ Removed the “How to read these insights” disclosure and its unused styles at
 the user’s request. Metric definitions remain in PRINCIPAL_INSIGHTS.md.
 Dashboard graphs, filters and source-record dialogs are unchanged.
 Frontend typecheck and diff whitespace checks passed.
+
+### Analytics Stage release verified — 8 October 2026
+
+Merged the newer Stage Principal Insights work with the role-specific Analytics
+release and pushed application commit `98aa6b897ab7d5a10cb8bcec0e4b3fa924565c89`.
+[Stage run 37798178025](https://github.com/EduveraIITA/Eduvera/actions/runs/37798178025)
+completed successfully, including deployment and public-release verification.
+
+- Fresh PostgreSQL 17 CI passed **341 backend tests in 50 files** and **475
+  frontend tests in 67 files**. Backend/frontend typecheck, lint and builds,
+  desktop typecheck/build and the repository secret scan passed.
+- Independent public checks confirmed the exact application SHA above from
+  `/releasez`, environment `stage`, and `/readyz` with database/events healthy at
+  `https://omnischool-stage.up.railway.app`. The workflow also verified the mobile
+  and desktop applications, demo access and protected metrics.
+- Deployed WebKit checks passed for student, parent, teacher and principal:
+  Analytics API responses, overview/topic separation, period and class filters,
+  parent learner context, source links, shell Back navigation and keyboard chart
+  disclosures. The institution and register detail pages, class-scope isolation
+  and opening the dated Class 6A attendance register were verified separately.
+- All four deployed portals measured **16px chart-to-caption spacing**, with
+  supporting-copy margins of 8px above / 12px below. Overview and detail layouts
+  passed overflow checks at 320/768/1024/1440px; representative phone screenshots
+  were visually inspected. No page errors in the final browser runs. These are
+  functional checks, not a performance/load-test claim.
+- Local and ngrok preview readiness remained healthy. No new migration, reset or
+  full demo reseed was introduced; the existing workflow's normal additive demo
+  examples ran. The three unrelated untracked duplicate files remain untouched.
+
+This verifies the Stage release, not a production rollout or physical-device
+acceptance. Please refresh and review the Analytics spacing on a phone.
