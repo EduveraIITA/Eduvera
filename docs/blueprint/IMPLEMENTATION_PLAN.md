@@ -3727,3 +3727,14 @@ were visually inspected. The automatic approval review blocked publishing the br
 not explicitly authorize source publication. The local commit is retained; PostgreSQL
 integration verification in PR CI, Stage deployment and physical-phone acceptance
 remain pending. No shared database was accessed for tests.
+
+### Teacher feedback Stage release follow-up — 9 October 2026
+
+PR #12 passed its complete verification and was merged into Stage as `85004c9`.
+The release run 37826658055 passed all 353 backend tests but stopped on two existing
+CalendarView tests after the school-local date became 9 October: their unanchored
+date selector matched both the day cell and the Today shortcut. The test-only fix
+anchors the day query and freezes Date on that same collision day, leaving timers
+real. All five calendar tests and focused lint pass locally. No application code,
+assertion, test gate or shared data is removed; the corrected release must still
+pass the full pipeline before deployment can be claimed.
