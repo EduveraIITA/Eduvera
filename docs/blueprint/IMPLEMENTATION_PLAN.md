@@ -2354,6 +2354,24 @@ reported the exact commit above and `environment: stage`. The local review previ
 also remained ready. Physical-phone/user review is still open, and this evidence
 does not assert a production release.
 
+
+### Principal intelligence dashboard — 7 October 2026
+
+Implemented on the principal home route using the existing blue/mint theme and
+shared navigation. The read-only, school-scoped insights endpoint aggregates
+attendance trends and completeness, engagement changes, latest published assessment
+results, follow-up ownership, upcoming teaching coverage, deadline clusters and
+fee ageing. Review windows, class filters, academic thresholds and source-record
+drill-downs are available. Existing daily operational workflows remain in place.
+See [metric definitions](PRINCIPAL_INSIGHTS.md). No migration or reseed is required.
+
+Verified locally: backend lint, typecheck and build; frontend lint, typecheck and
+production build; 8 focused backend tests (including integration on PGlite with all
+repository migrations applied); 18 focused frontend tests. Browser checks at 320,
+768, 1024 and 1440 px passed for overflow, filter requests, dialog fit, Escape
+dismissal and runtime errors using clearly synthetic API fixtures. This is not
+PostgreSQL 17 CI or live-data validation. Integrated Stage CI, deployed school-data
+checks and user UI review remain open. No merge or deployment is included.
 ## Timetable and calendar simplification — 7 October 2026
 
 User decision: simplify the planning screens using a calm, content-first hierarchy.
@@ -3215,3 +3233,22 @@ In-app navigation produced no page errors. Local and phone-preview readiness
 also remained healthy. These checks do not claim every device or workflow is
 certified; user phone validation remains requested. The documentation-only
 evidence commit does not require another application deployment.
+
+### Principal Insights navigation — 8 October 2026
+
+User-approved placement supersedes the initial all-on-Overview layout above.
+Overview now retains four summary cards, the action brief and a dated View all
+insights link. The principal-only `/principal/insights` route groups the full
+dashboard into Attendance & learning, Operations and Finance, with date, window,
+class and academic-review filters. Principal mobile tabs are Overview, Attendance,
+Insights and More. Timetable remains in More, the desktop sidebar and coverage
+links; teacher navigation is unchanged. The newest Stage planning/navigation
+changes were reconciled without removing either backend module or delivery record.
+
+Local verification: backend and frontend typecheck, lint and production builds
+passed. Browser checks using synthetic API fixtures passed at 320, 768, 1024 and
+1440 pixels: compact Overview, navigation to Insights, date/window persistence,
+deadline deep links, dialog Escape dismissal, active mobile tab and Timetable in
+More, with no horizontal overflow or page errors. Test and release status will be
+confirmed by the PR/Stage workflow; no national dataset import or reseed is part
+of this change. Please review the resulting UI on a physical phone after release.

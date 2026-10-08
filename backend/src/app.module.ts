@@ -1,4 +1,5 @@
 import { CompanyModule } from "./company/company.module.js";
+import { PrincipalInsightsModule } from "./principal-insights/principal-insights.module.js";
 import { SchedulePlanningModule } from "./schedule-planning/schedule-planning.module.js";
 import { RolesModule } from "./roles/roles.module.js";
 import { PermissionGuard } from "./roles/permission.guard.js";
@@ -32,6 +33,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
   imports: [
     SchedulePlanningModule,
     CompanyModule,
+    PrincipalInsightsModule,
     RolesModule,
     DatabaseModule,
     AuthModule,

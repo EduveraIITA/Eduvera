@@ -83,6 +83,7 @@ const TeacherHomeRoute = lazy(async () => ({ default: (await import("./features/
 const TeacherAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherAttendanceRoute }));
 const TeacherTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherTimetableRoute }));
 const PrincipalHomeRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalHomeRoute }));
+const PrincipalInsightsPage = lazy(async () => ({ default: (await import("./features/principal-insights/PrincipalInsightsPage")).PrincipalInsightsPage }));
 const PrincipalAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalAttendanceRoute }));
 const PrincipalTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalTimetableRoute }));
 const PrincipalDayPlanPage = lazy(() => import('./features/day-plans/PrincipalDayPlanPage'));
@@ -265,6 +266,7 @@ export function App() {
               <Route path="/teacher/report-cards" element={<PortalOnly portal="teacher"><TeacherAcademicReportsRoute /></PortalOnly>} />
               <Route path="/teacher/transport" element={<PortalOnly portal="teacher"><CollectorJourneyPage /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
+              <Route path="/principal/insights" element={<PortalOnly portal="principal"><PrincipalInsightsPage /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
               <Route path="/principal/timetable/day" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />

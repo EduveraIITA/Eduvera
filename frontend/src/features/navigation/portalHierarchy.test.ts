@@ -9,6 +9,7 @@ describe("portal navigation hierarchy", () => {
   it.each([
     ["/teacher/classes/class-1", "?date=2026-10-08&section=students", "/teacher/classes?date=2026-10-08"],
     ["/principal/staff/staff-1", "", "/principal/staff"],
+    ["/principal/insights", "?date=2026-10-08", "/principal"],
     ["/principal/events/event-1/edit", "", "/principal/events/event-1"],
     ["/parent/fees", "?student_id=child-2", "/parent/more?student_id=child-2"],
     ["/parent/attendance", "?student_id=child-2&date=2026-10-08", "/parent/home?student_id=child-2"],
