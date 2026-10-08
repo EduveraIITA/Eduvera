@@ -12,6 +12,7 @@ import {
 
 const CompanyPage=lazy(()=>import('./features/onboarding/CompanyPage'));
 const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage'));
+const LegacyAnalyticsRedirect = lazy(async () => ({ default: (await import('./features/analytics/InsightNavigation')).LegacyAnalyticsRedirect }));
 const SelfServiceOnboardingPage=lazy(()=>import('./features/onboarding/SelfServiceOnboardingPage'));
 const JoinPage=lazy(()=>import('./features/onboarding/JoinPage'));
 const InvitationsPage=lazy(()=>import('./features/onboarding/InvitationsPage'));
@@ -206,9 +207,10 @@ export function App() {
               <Route path="/teacher/students" element={<PortalOnly portal="teacher"><PeoplePage /></PortalOnly>} />
               <Route path="/teacher/students/import" element={<PortalOnly portal="teacher"><PeopleImportPage /></PortalOnly>} />
               <Route path="/workspace" element={<AuthenticatedOnly><WorkspaceUnavailablePage /></AuthenticatedOnly>} />
-              {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`analytics-${portal}`} path={`/${portal}/analytics`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} /></PortalOnly>} />)}
-              {(["principal", "teacher", "parent", "student"] as const).flatMap(portal => (["attendance", "results", "progress"] as const).filter(topic => topic !== "progress" || portal === "principal" || portal === "teacher").map(topic => <Route key={`analytics-${portal}-${topic}`} path={`/${portal}/analytics/${topic}`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} topic={topic} /></PortalOnly>} />))}
-              {(["institution", "registers"] as const).map(topic => <Route key={`analytics-principal-${topic}`} path={`/principal/analytics/${topic}`} element={<PortalOnly portal="principal"><AnalyticsPage portal="principal" topic={topic} /></PortalOnly>} />)}
+              {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`analytics-redirect-${portal}`} path={`/${portal}/analytics/*`} element={<PortalOnly portal={portal}><LegacyAnalyticsRedirect /></PortalOnly>} />)}
+              {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`insights-${portal}`} path={`/${portal}/insights`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} /></PortalOnly>} />)}
+              {(["principal", "teacher", "parent", "student"] as const).flatMap(portal => (["attendance", "results", "progress"] as const).filter(topic => topic !== "progress" || portal === "principal" || portal === "teacher").map(topic => <Route key={`insights-${portal}-${topic}`} path={`/${portal}/insights/${topic}`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} topic={topic} /></PortalOnly>} />))}
+              {(["institution", "registers"] as const).map(topic => <Route key={`insights-principal-${topic}`} path={`/principal/insights/${topic}`} element={<PortalOnly portal="principal"><AnalyticsPage portal="principal" topic={topic} /></PortalOnly>} />)}
 
               <Route path="/parent" element={<Navigate to="/parent/home" replace />} />
               <Route path="/parent/home" element={<PortalOnly portal="parent"><ParentHomeRoute /></PortalOnly>} />
@@ -270,7 +272,8 @@ export function App() {
               <Route path="/teacher/report-cards" element={<PortalOnly portal="teacher"><TeacherAcademicReportsRoute /></PortalOnly>} />
               <Route path="/teacher/transport" element={<PortalOnly portal="teacher"><CollectorJourneyPage /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
-              <Route path="/principal/insights" element={<PortalOnly portal="principal"><PrincipalInsightsPage /></PortalOnly>} />
+              {(["review", "recording", "followups", "learning-review", "operations", "finance"] as const).map(topic => <Route key={`insight-review-${topic}`} path={`/principal/insights/${topic}`} element={<PortalOnly portal="principal"><PrincipalInsightsPage topic={topic} /></PortalOnly>} />)}
+              <Route path="/principal/insights/review/:studentId" element={<PortalOnly portal="principal"><PrincipalInsightsPage topic="review" /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
               <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
               <Route path="/principal/timetable/day" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />

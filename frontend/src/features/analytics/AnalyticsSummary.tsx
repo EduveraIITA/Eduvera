@@ -3,16 +3,16 @@ import { Link } from "react-router-dom";
 import type { Portal } from "../auth/AuthContext";
 import type { AnalyticsOverview } from "./api";
 import { AssessmentProgress, AttendanceTrend, ComparisonBars, numberLabel, percentageLabel } from "./AnalyticsCharts";
-import { InstitutionSummary, RegisterSummary } from "./InstitutionAnalytics";
+import { RegisterSummary } from "./InstitutionAnalytics";
+import { insightPath } from "./InsightNavigation";
 
 export function AnalyticsSummary({ data, portal, search }: { data: AnalyticsOverview; portal: Portal; search: string }) {
   const family = portal === "parent" || portal === "student";
   const attendance = data.attendance, results = data.assessments;
   const scored = results?.subjects.reduce((sum, subject) => sum + subject.scored, 0) ?? 0;
   const pending = results?.pipeline.filter(stage => stage.status === "submitted" || stage.status === "moderated").reduce((sum, stage) => sum + stage.count, 0) ?? 0;
-  const path = (topic: string) => `/${portal}/analytics/${topic}${search}`;
+  const path = (topic: string) => insightPath(portal, topic, search);
   return <div className="analytics-summary">
-    {portal === "principal" && data.institution && !data.selected_class_id ? <InstitutionSummary data={data.institution} to={path("institution")} /> : null}
     {attendance ? <Link to={path("attendance")} className="analytics-panel analytics-summary-card analytics-summary-card--attendance" aria-label="Explore attendance">
       <header><h2>Attendance</h2><ChevronRight size={18} aria-hidden="true" /></header>
       <div className="analytics-stat"><strong>{percentageLabel(attendance.percentage)}</strong><span className="analytics-unit">recorded attendance</span></div>

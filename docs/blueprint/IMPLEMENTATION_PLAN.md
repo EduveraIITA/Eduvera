@@ -3559,3 +3559,60 @@ completed successfully, including deployment and public-release verification.
 
 This verifies the Stage release, not a production rollout or physical-device
 acceptance. Please refresh and review the Analytics spacing on a phone.
+
+### Unified Insights and focused attendance review — 8 October 2026 (local)
+
+User direction supersedes the separate Analytics/Insights destinations above:
+keep the charts and useful operational signals in one calm, progressively disclosed
+experience. After reviewing the first local Attendance checks page, the user also
+requested a meaningful review workflow instead of prominent filters, large counts
+and explanatory copy before the students.
+
+- All four portals now use **Insights** at `/<portal>/insights`. Old Analytics
+  bookmarks redirect with query/hash context intact. More search still recognizes
+  “analytics”; existing permission/tool identifiers are unchanged. Home screens,
+  school headers, existing mobile tabs and domain permissions are unchanged.
+- Principal Insights combines a compact attention brief, current institution
+  snapshot, recorded trends/results and current operational summaries. Attendance,
+  results, assessment progress, institution, register submission, learning review,
+  follow-ups, coverage/deadlines and fees have focused topic pages. Analytics and
+  Principal Insights remain separate authorized read models, with independent
+  loading/error handling and shared cached requests for the operational summaries.
+- Reporting definitions are preserved: term/30/90-day trends are not silently
+  combined with 14/28/56-day review comparisons. Publication-dated learning review
+  stays distinct from assessment-dated result averages; current fees, follow-ups
+  and next-seven-day coverage retain their operational as-of context.
+- **Attendance review** now starts with students without an open follow-up. Flat
+  linked rows show class, current attendance and the decline; already-owned work
+  remains available. Class selection is visible; review-window/date controls are
+  behind one accessible control. Each student opens a separate page with the two
+  periods, relevant evidence and an existing-register or existing-follow-up action.
+  No automatic diagnosis, family contact or case creation was introduced. The
+  existing workflow still requires a saved eligible attendance record to create a
+  follow-up. Recording completeness is a separate page; missing records are never
+  treated as absences. Back links preserve class/window and the parent topic.
+- This follows the frontend UI engineering guidance through scoped semantic
+  colors, readable supporting-copy spacing, keyboard disclosures, text alternatives
+  for charts and existing shell/theme components. No new library, backend/API,
+  schema, authorization or home-page change is included.
+
+Verified locally after the final UI adjustment:
+
+- Frontend typecheck, lint and production build passed; **495 tests in 68 files
+  passed**, including **20 unified Insights tests** for role isolation, legacy
+  navigation, independent failures/retry, filters, student review, existing follow-up
+  routing, missing records, out-of-scope student IDs and context-preserving Back.
+- Live WebKit navigation passed in principal, teacher, parent and student portals.
+  Overview/results and principal operational/review detail pages passed horizontal
+  overflow checks at **320/768/1024/1440px**. Review filters and keyboard disclosure
+  were exercised; student and recording drill-downs returned to the review list.
+  Chart-caption gaps remain **16px** in all four portals; no page errors occurred.
+- Mobile screenshots of principal, teacher and parent overviews plus the new
+  attendance queue and student detail were visually inspected. The queue shows
+  multiple students in the first viewport without a large summary card.
+- Local preview and ngrok `/readyz` both returned ready with database/events OK.
+  No deployment, database reset or reseed was performed. Unrelated ` 2` duplicate
+  files remain untouched. Physical-phone UI acceptance is still requested; these
+  local checks do not establish a new Stage or production release.
+
+The current interaction and metric contract is [Principal insights](PRINCIPAL_INSIGHTS.md).

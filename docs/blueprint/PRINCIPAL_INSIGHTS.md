@@ -2,15 +2,52 @@
 
 The principal Overview keeps four summary cards and a compact action brief beside
 daily operations. Its dated **View all insights** link opens `/principal/insights`.
-The dedicated page groups graphs into Attendance & learning, Operations and Finance,
-with an ending-date picker plus review-window, class and threshold filters.
+The dedicated destination now merges Analytics and Insights at `/<portal>/insights`.
+The principal overview leads with a compact attention brief, followed by the current
+institution snapshot, recorded trends/results and school operations. Teachers and
+families retain only their existing authorized analytics. Legacy `/analytics/*`
+bookmarks redirect with class, learner and period context intact.
 Principal mobile navigation is Overview / Attendance / Insights / More; Timetable
 remains in More and the desktop sidebar. Teacher navigation is unchanged.
 
 Overview always uses a whole-school 28-day review window and 50% academic threshold,
 ignoring full-dashboard query filters to avoid a silently narrowed daily summary.
-Both views retain source-record dialogs; the deadline brief opens the full page at
-the deadline section. Filters survive in-page deadline links and ending-date changes.
+Overview's existing source-record dialogs are unchanged. The dedicated Insights
+experience uses separate topic pages, not more dialogs or competing dashboards.
+The deadline brief opens Coverage & deadlines. Back navigation retains filters and
+returns related reviews to their parent topic.
+
+## Focused attendance review
+
+`/principal/insights/review` is a review queue, not an aggregate scorecard. It starts
+with students who meet the decline criteria and have no open follow-up. Each row
+shows the student, class, current percentage and change from the previous window.
+Already-owned work is available through All when relevant. The class selector stays
+visible; the Review period icon reveals date/window controls. Review rules are
+secondary disclosure content, not introductory instructions.
+
+Opening a student navigates to `/principal/insights/review/:studentId`: two comparable
+attendance periods, relevant missing-homework evidence, and a next step. Existing
+follow-ups reuse the authorized coordination inbox. Otherwise the action opens the
+class register to review the evidence with the teacher. Creating a follow-up still
+requires an existing eligible attendance record in the established workflow; this
+page never creates a case or contacts a family automatically. Unknown students or
+students outside the returned authorized review list do not receive invented detail.
+
+Recording completeness lives separately at `/principal/insights/recording`, so a
+missing record is not presented as an attendance decline. Capped student lists show
+the shown/total difference and suggest narrowing by class. No decline meeting the
+rules is not an institution-wide all-clear.
+
+## Reporting scope
+
+Recorded trend graphs retain their term / 30-day / 90-day range. Attendance and
+learning reviews retain the original 14 / 28 / 56-day comparison window and learning
+threshold. Those controls belong to their topic pages, not the Insights overview.
+Current follow-ups, fee balances and next-seven-day coverage remain explicitly
+dated operational views. These different denominators and date definitions are not
+silently combined into a new metric. In particular, learning review uses publication
+dates while the published-results average uses assessment dates.
 
 `GET /api/v1/schools/:schoolId/principal-insights/` requires an active administrator
 membership and account; an active school context cannot access another school.
@@ -38,8 +75,10 @@ not read. No schema change is required.
 
 Filters persist in the URL and retain the existing page date. The dashboard refreshes
 on school events and every minute. Loading, incomplete data, empty results and
-recoverable errors have explicit states. Charts have text/table alternatives; detail
-dialogs support keyboard dismissal and restore focus. Student details are capped
+recoverable errors have explicit states. The two read models fail independently:
+available trend graphs remain usable if operational highlights cannot load, and
+vice versa. Charts have text/table alternatives; Overview's existing detail dialogs
+support keyboard dismissal and restore focus. Student details are capped
 at 50 with that limit disclosed. Aggregate totals remain uncapped.
 
 Historical attendance uses current enrolments and the effective calendar, rather
