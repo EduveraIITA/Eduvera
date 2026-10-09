@@ -24,7 +24,7 @@ function show(portal:'parent'|'student'='parent',search='') {render(<QueryClient
 
 describe('family fee navigation',()=>{
   it('opens one invoice without the list and preserves payment confirmation',async()=>{
-    const user=userEvent.setup();show();await user.click(await screen.findByRole('link',{name:/TERM-1/}));
+    const user=userEvent.setup();show();await user.click(await screen.findByRole('link',{name:/Term tuition/}));
     expect(await screen.findByRole('region',{name:'Invoice details'})).toBeVisible();
     expect(screen.queryByRole('navigation',{name:'Fee records'})).not.toBeInTheDocument();
     await user.click(screen.getByRole('button',{name:'Pay / report payment'}));
@@ -43,7 +43,7 @@ describe('family fee navigation',()=>{
   it('separates receipts and reviews from invoices',async()=>{
     const user=userEvent.setup();show();await user.click(await screen.findByRole('link',{name:'Receipts'}));
     expect(screen.getByText('No receipts recorded.')).toBeVisible();
-    expect(screen.queryByRole('link',{name:/TERM-1/})).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/Term tuition/})).not.toBeInTheDocument();
     await user.click(screen.getByRole('link',{name:'Reviews'}));
     expect(screen.getByText('No fee reviews submitted.')).toBeVisible();
   });
@@ -96,5 +96,30 @@ describe('fee printing and receipts', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('receipt is unavailable');
     expect(screen.queryByRole('button',{name:'Print receipt'})).not.toBeInTheDocument();
     expect(document.querySelector('.family-fee-print-document')).toBeNull();
+  });
+});
+
+
+describe('reference finance overview',()=>{
+  it('filters unpaid invoices from Pay balance even after a different filter',async()=>{
+    const user=userEvent.setup();show('parent','?filter=settled');
+    await user.click(await screen.findByRole('link',{name:/Pay balance/}));
+    expect(await screen.findByRole('link',{name:/Term tuition/})).toBeVisible();
+    expect(screen.getByRole('combobox',{name:'Filter invoices'})).toHaveValue('unpaid');
+    await user.selectOptions(screen.getByRole('combobox',{name:'Filter invoices'}),'settled');
+    expect(screen.getByText('No invoices match this filter.')).toBeVisible();
+  });
+  it('opens the fee enquiry form for a selected invoice',async()=>{
+    const user=userEvent.setup();show();
+    await user.click(await screen.findByRole('link',{name:'Enquire'}));
+    await user.click(screen.getByRole('link',{name:/Term tuition/}));
+    expect(await screen.findByRole('textbox',{name:'Your question'})).toBeVisible();
+    expect(submitFeeReview).not.toHaveBeenCalled();
+  });
+  it('refreshes the statement without submitting a payment',async()=>{
+    const user=userEvent.setup();show('parent','?invoice=invoice-1');
+    await user.click(await screen.findByRole('button',{name:'Sync'}));
+    expect(await screen.findByRole('status')).toHaveTextContent('Statement is up to date');
+    expect(getFeeLedger).toHaveBeenCalledTimes(2); expect(submitFeeReview).not.toHaveBeenCalled();
   });
 });
