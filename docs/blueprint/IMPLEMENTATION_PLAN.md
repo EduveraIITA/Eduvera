@@ -4711,3 +4711,39 @@ The established Eduera logo is embedded as an inline PNG attachment with a CID
 reference in SMTP and HTTPS provider emails; it no longer needs a remote image
 request. Focused checks cover MIME metadata, code scoping and legacy digests;
 database CI covers guess limits. Live deployment/email verification follows CI.
+
+### Compact invitation confirmation — 9 October 2026
+
+User correction replaces the separate "Invitation ready" receipt with a compact
+confirmation on the invitation list. Successful provider acceptance shows an
+animated mint checkmark, "Invitation sent", and the recipient email. The shared
+company receipt uses the same presentation. Tokens, join URLs, expiry text and
+copy actions are no longer rendered. Failed or unavailable email delivery shows
+an explicit alert and points to settings/resend; it never uses the success
+animation. Sending still uses the existing API and does not claim inbox delivery.
+The confirmation can be dismissed with the keyboard, uses a live status region,
+and disables animation for reduced-motion preferences.
+
+Local verification: 15 onboarding tests passed, including success, failed resend,
+unavailable email, hidden tokens, return to the list and dismissal; frontend
+TypeScript/production build and lint passed. A component preview was prepared,
+but its local server did not remain reachable. Browser visual verification is
+pending because the local Chromium download is unavailable. CI, deployment and user visual acceptance
+must be verified separately; no live email was sent by this UI change.
+
+### Reference-led invitation email — 9 October 2026
+
+The supplied email reference now guides the invitation template: white rounded
+card, original embedded Eduera logo, navy heading, neutral code panel with
+single-use label, readable UTC expiry including time, violet full-width join
+button, fallback join link and quiet privacy footer. Responsive overrides reduce
+padding on small screens; presentation tables and inline styles retain email
+client fallbacks. The code remains contiguous and selectable so copying preserves
+leading zeros. No non-functional clipboard button or invented Help/Privacy links
+are added. The existing logo attachment, plain-text alternative, escaped values
+and code-free links are unchanged. No invitation TTL or acceptance behavior changes.
+
+Verification: 11 focused email tests and backend production build pass locally.
+These tests use mocked transports; no live email was sent. Real inbox/client
+visual verification and deployment remain pending. This change and the compact
+confirmation above remain local until the user authorizes publishing to GitHub.

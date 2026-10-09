@@ -21,9 +21,9 @@ afterEach(cleanup);
 beforeEach(()=>{
   vi.clearAllMocks();auth.companyOperator=true;auth.hasPortal.mockReturnValue(true);
   vi.mocked(getCompany).mockResolvedValue({schools:[],invitations:[],applications:[]});
-  vi.mocked(createInstitution).mockResolvedValue({school:{id:'new',name:'Lotus',code:'lotus',institution_kind:'college',admin_count:0,pending_admins:1},invitation:{token:'x'.repeat(43),email:'admin@example.test',expires_at:'2099-10-04'}});
+  vi.mocked(createInstitution).mockResolvedValue({school:{id:'new',name:'Lotus',code:'lotus',institution_kind:'college',admin_count:0,pending_admins:1},invitation:{token:'012345',email:'admin@example.test',expires_at:'2099-10-04'}});
   vi.mocked(getInvitations).mockResolvedValue({can_invite_admin:false,invitations:[],students:[{id:'student',name:'Learner',admission_number:'A001',email:null}],guardians:[],roles:[]});
-  vi.mocked(inviteMember).mockResolvedValue({token:'x'.repeat(43),email:'learner@example.test',expires_at:'2099-10-04'});
+  vi.mocked(inviteMember).mockResolvedValue({token:'012345',email:'learner@example.test',expires_at:'2099-10-04',delivery:'email_accepted'});
   vi.mocked(getOnboardingWorkspace).mockResolvedValue({applications:[],coaching_workspaces:[]});
   vi.mocked(submitInstitutionApplication).mockResolvedValue({id:'application',institution_name:'Lotus School',requested_code:'lotus-school',institution_kind:'school',timezone:'Asia/Kolkata',state_code:'KA',district:'Bengaluru Urban',website:'',applicant_role_title:'Founder',regulator_type:'udise',regulator_reference:'12345',status:'submitted',review_note:'',revision:1,submitted_at:'2026-10-04',updated_at:'2026-10-04',provisioned_school_id:null});
   vi.mocked(createCoachingWorkspace).mockResolvedValue({id:'coaching',name:'Lotus Tutorials',code:'lotus-tutorials'});
@@ -51,8 +51,8 @@ describe('company and school onboarding',()=>{
     const user=userEvent.setup();mount(<InvitationsPage/>,'/principal/invitations');
     await user.click(await screen.findByRole('button',{name:'Resend invitation email'}));
     expect(resendMemberInvitation).toHaveBeenCalledWith('school','invite');
-    expect(await screen.findByText(/accepted by the mail server/)).toBeVisible();
-    expect(screen.getByText('replacement-code')).toBeVisible();
+    expect(await screen.findByRole('status')).toHaveTextContent('Invitation sent');
+    expect(screen.queryByText('replacement-code')).not.toBeInTheDocument();
   });
   it('shows resend errors without a false success receipt',async()=>{
     vi.mocked(getInvitations).mockResolvedValue({can_invite_admin:true,invitations:[{id:'invite',email:'learner@example.test',role:'staff',expires_at:'2099-10-04',accepted_at:null,revoked_at:null}],students:[],guardians:[],roles:[]});
@@ -64,20 +64,25 @@ describe('company and school onboarding',()=>{
   });
   it('reports mail-server acceptance without claiming inbox delivery',()=>{
     mount(<InvitationReceipt invite={{token:'private-code',email:'recipient@example.test',expires_at:'2099-10-04',delivery:'email_accepted'}} onClose={()=>{}}/>);
-    expect(screen.getByText(/accepted by the mail server/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Invitation sent');
+    expect(screen.getByRole('status')).toHaveTextContent('recipient@example.test');
+    expect(screen.queryByText('private-code')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'Copy invitation'})).not.toBeInTheDocument();
     expect(screen.queryByText(/No email has been sent/)).not.toBeInTheDocument();
   });
-  it('offers private-code fallback when email cannot be confirmed',()=>{
+  it('shows a failure without a success animation or private code',()=>{
     mount(<InvitationReceipt invite={{token:'private-code',email:'recipient@example.test',expires_at:'2099-10-04',delivery:'failed'}} onClose={()=>{}}/>);
-    expect(screen.getByText(/Email delivery could not be confirmed/)).toBeInTheDocument();
-    expect(screen.getByText('private-code')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Invitation not sent');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(document.querySelector('.invitation-confirmation--sent')).toBeNull();
+    expect(screen.queryByText('private-code')).not.toBeInTheDocument();
   });
 
-  it('creates a college with first admin and explains manual invitation delivery',async()=>{
+  it('creates a college with first admin and reports unavailable email sending',async()=>{
     const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));await user.click(screen.getByRole('button',{name:/Add institution manually/}));
     await user.type(screen.getByLabelText('Institution name'),'Lotus College');await user.selectOptions(screen.getByLabelText('Institution type'),'college');await user.type(screen.getByLabelText('First administrator email'),'admin@example.test');await user.type(screen.getByLabelText('State'),'Delhi');await user.type(screen.getByLabelText('City'),'Delhi');await user.type(screen.getByLabelText('Address'),'Campus Road');await user.click(screen.getByRole('button',{name:'Create & invite admin'}));
     expect(createInstitution).toHaveBeenCalledWith(expect.objectContaining({name:'Lotus College',code:'lotus-college',institution_kind:'college',timezone:'Asia/Kolkata',admin_email:'admin@example.test'}));
-    expect(await screen.findByRole('heading',{name:'Invitation ready'})).toBeInTheDocument();expect(screen.getByText(/No email has been sent/)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invitation not sent');expect(screen.getByText(/Email sending is unavailable/)).toBeInTheDocument();
   });
   it('normalizes a manually edited institution code instead of silently blocking submission',async()=>{
     const user=userEvent.setup();mount(<CompanyPage/>);await user.click(screen.getByRole('button',{name:'Create institution'}));await user.click(screen.getByRole('button',{name:/Add institution manually/}));
@@ -95,7 +100,13 @@ describe('company and school onboarding',()=>{
     auth.hasPortal.mockReturnValue(false);const user=userEvent.setup();mount(<InvitationsPage/>);await user.click(await screen.findByRole('button',{name:'Invite member'}));await screen.findByRole('heading',{name:'Create invitation'});
     expect(screen.queryByRole('option',{name:'Administrator'})).not.toBeInTheDocument();expect(screen.queryByLabelText('Role on joining')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Account type'),'student');await user.selectOptions(screen.getByLabelText('Student record'),'student');await user.type(screen.getByLabelText('Recipient email'),'learner@example.test');await user.click(screen.getByRole('button',{name:'Send invitation email'}));
-    expect(inviteMember).toHaveBeenCalledWith('school',{email:'learner@example.test',role:'student',student_id:'student'});expect(await screen.findByRole('heading',{name:'Invitation ready'})).toBeInTheDocument();
+    expect(inviteMember).toHaveBeenCalledWith('school',{email:'learner@example.test',role:'student',student_id:'student'});expect(await screen.findByRole('status')).toHaveTextContent('Invitation sent');
+    expect(screen.getByLabelText('Invitation status')).toBeVisible();
+    expect(screen.queryByLabelText('Recipient email')).not.toBeInTheDocument();
+    expect(screen.queryByText('012345')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button',{name:'Dismiss invitation notification'}));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Invitation status')).toBeVisible();
   });
   it('accepts a code with CSRF and shows account activation success',async()=>{
     vi.mocked(apiFetch).mockResolvedValue({school_id:'new',role:'admin'});const user=userEvent.setup();mount(<JoinPage/>);
