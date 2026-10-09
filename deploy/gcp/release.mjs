@@ -25,10 +25,12 @@ export function assertRuntime(service, job) {
   }
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
   if (env.DEPLOYMENT_ENVIRONMENT !== 'stage' || env.COOKIE_SECURE !== 'true' || env.RATE_LIMIT_STORE !== 'postgres') throw new Error('Unsafe runtime environment');
+  if (env.PUBLIC_URL !== 'https://eduvera-stage-367469594690.asia-south1.run.app' || !env.ALLOWED_ORIGINS?.split(',').includes(env.PUBLIC_URL)) throw new Error('The canonical app origin must be allowed');
   if (!app.volumeMounts?.some(mount => mount.mountPath === env.UPLOAD_DIR && template.spec.volumes?.some(volume => volume.name === mount.name && volume.csi?.driver === 'gcsfuse.run.googleapis.com' && volume.csi.volumeAttributes?.bucketName === 'eduera-511111-stage-files'))) throw new Error('Uploads must use the private persistent Stage bucket');
   const task = job.spec?.template?.spec?.template?.spec;
   if (job.spec?.template?.spec?.taskCount !== 1 || task?.maxRetries !== 0 || task?.serviceAccountName !== 'stage-migrator@eduera-511111.iam.gserviceaccount.com') throw new Error('Unsafe migration job');
   const migrate = task.containers?.[0];
+  if (!['1', '1000m'].includes(migrate?.resources?.limits?.cpu) || migrate?.resources?.limits?.memory !== '512Mi' || Object.keys(migrate.resources.limits).some(key => !['cpu', 'memory'].includes(key)) || Number(task.timeoutSeconds) > 300 || !Number.isFinite(Number(task.timeoutSeconds))) throw new Error('Migration resources exceed the trial configuration');
   if (task.containers?.length !== 1 || JSON.stringify(migrate?.command) !== '["node"]' || JSON.stringify(migrate?.args) !== '["dist/database/migrate.js"]') throw new Error('Migration job must only run the schema migrator');
   if (!migrate.env?.find(item => item.name === 'MIGRATION_DATABASE_URL')?.valueFrom?.secretKeyRef) throw new Error('Migration connection must use Secret Manager');
   const active = service.status?.traffic?.filter(item => item.percent > 0) ?? [];
@@ -61,6 +63,7 @@ async function deploy(env) {
   const describe = (kind, name) => JSON.parse(gcloud(['run', kind, 'describe', name, ...flags, '--format=json']));
   const service = describe('services', env.GCP_SERVICE);
   const previous = assertRuntime(service, describe('jobs', env.GCP_MIGRATION_JOB));
+  const publicUrl = service.spec.template.spec.containers[0].env.find(item => item.name === 'PUBLIC_URL').value;
   const imageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));
   const image = imageInfo[0]?.RepoDigests?.find(digest => digest.startsWith(`${env.GCP_IMAGE}@sha256:`));
   if (!image) throw new Error('Cannot find the pushed immutable image digest');
@@ -78,9 +81,9 @@ async function deploy(env) {
     // is still attempted. Schema migrations are never automatically reversed.
     promoted = true;
     gcloud(['run', 'services', 'update-traffic', env.GCP_SERVICE, ...flags, `--to-revisions=${candidate.revisionName}=100`]);
-    await verify(service.status.url, env.GITHUB_SHA);
-    if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `### Google Cloud Stage deployed\n\nRelease: ${env.GITHUB_SHA}\n\n${service.status.url}\n\nMigrations, candidate health, both apps and public revision verified.\n`);
-    console.log(`Verified Stage ${env.GITHUB_SHA} at ${service.status.url}`);
+    await verify(publicUrl, env.GITHUB_SHA);
+    if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `### Google Cloud Stage deployed\n\nRelease: ${env.GITHUB_SHA}\n\n${publicUrl}\n\nMigrations, candidate health, both apps and public revision verified.\n`);
+    console.log(`Verified Stage ${env.GITHUB_SHA} at ${publicUrl}`);
   } catch (error) {
     if (promoted) {
       gcloud(['run', 'services', 'update-traffic', env.GCP_SERVICE, ...flags, `--to-revisions=${previous}=100`]);

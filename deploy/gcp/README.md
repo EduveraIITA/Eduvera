@@ -37,9 +37,11 @@ account, GPUs or Marketplace products. `GCP_TRIAL_DEPLOY_UNTIL` is a reviewed
 deployment-window deadline (initially 8 November 2026), **not** proof of the
 account's trial expiry and **not** an automatic shutdown or spending cap.
 Renew it only after reviewing remaining credit. Budget alerts are not hard caps.
-The authenticated account currently cannot view the linked billing account;
-the first budget-create request failed. No budget or verified credit balance is
-claimed. Runtime, storage and network costs continue independently of CI.
+The authenticated account cannot view the linked account's remaining trial credit.
+The user confirmed the credit and authorised provisioning. A project-only monthly
+**INR 250 early-usage alert** now exists, excluding credits, at 50/80/100 percent.
+This deliberately small alert is not a USD 250 budget or a spending limit.
+Runtime, storage and network costs continue independently of CI.
 
 ## One-time migration
 
@@ -58,10 +60,26 @@ an initial copy is not proof that two live databases remain synchronized.
 
 ## Current state
 
-Workflow and contract tests are prepared locally. Runtime deployment, source
-copy, GitHub federation execution and public smoke checks still require evidence.
-The duplicate `eduvera-stage` database created during concurrent team setup is
-being removed at the user's explicit request; preserve `eduera-db`.
+- App: https://eduvera-stage-367469594690.asia-south1.run.app (Stage/demo).
+- The team's `eduera-db` now contains an initial, verified point-in-time copy of
+  all 183 public application tables, 200 students and 64 migration records. All
+  table row counts matched the exported consistent snapshot. No stored attachment
+  rows existed. The source was not modified or continuously replicated.
+- The initial database backup completed successfully (`1791548387012`). Database
+  deletion protection and encrypted-only connections are enabled. Connections
+  use the Cloud SQL connector, not a public IP allowlist.
+- Private GCS upload storage passed create/exclusive-write/rename/read checks.
+  The temporary probe files were removed, and its one-off job was deleted.
+- Principal, teacher, parent and student WebKit checks passed login, navigation,
+  320/390/1024px overflow checks and no page/server errors. The local Ollama model
+  is not reachable from Google Cloud; cloud AI remains visibly unavailable as it
+  was on Railway. No paid model endpoint or GPU was provisioned.
+- `GCP_STAGE_DEPLOY_ENABLED=true` and `STAGE_DEPLOY_TARGET=google-cloud` are set.
+  Railway is retained as the old snapshot/rollback service, not a second deployment
+  target. The next automatic release is being verified separately from the initial
+  CLI deployment. Normal pushes do not copy data or run demo seeds.
+- The empty duplicate Cloud SQL instance `eduvera-stage` was **deleted**, with
+  operation completion verified, at the user's request. `eduera-db` is preserved.
 
 References: [Google GitHub authentication](https://github.com/google-github-actions/auth),
 [Cloud Run runtime contract](https://docs.cloud.google.com/run/docs/container-contract),

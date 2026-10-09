@@ -4383,3 +4383,45 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
   `git diff --check`. Existing Railway shellcheck warnings remain unchanged.
   GitHub execution, database/file copying, cloud runtime and public verification
   remain pending; see [Google Cloud Stage](../../deploy/gcp/README.md).
+
+### Google Cloud initial deployment and migration verified — 9 October 2026
+
+- User confirmed the $300 trial allowance, selected the deployed Stage database
+  as the source, then explicitly directed reuse of the team's **`eduera-db`** and
+  removal of our duplicate. Deleted the empty **`eduvera-stage` Cloud SQL instance**;
+  delete operation `f0cd4643-5a83-413a-b714-beb70000002f` completed. No team database
+  was deleted. The similarly named Cloud Run service is intentional and separate.
+- The Stage workflow is published in commit **ada5a011f1de6a716f24206001b8b5de4036e4fa**.
+  [Explicit bootstrap run 37928341516](https://github.com/EduveraIITA/Eduvera/actions/runs/37928341516)
+  verified GitHub OIDC and copied source configuration without exposing values.
+  Temporary per-secret write permissions were revoked after the successful copy.
+- Copied a consistent Supabase PostgreSQL 17.6 **public application schema** snapshot
+  to the new `omnischool` database inside **`eduera-db`**. Source Supabase-managed
+  schemas were not copied; public functions were checked for dependencies on them.
+  All **183 table row counts** matched, including **200 students and 64 migrations**.
+  Chat, leave and assessment attachment tables were empty. Kept the source encryption
+  key so copied restricted records remain decryptable. The original Stage database
+  was not altered or continuously replicated. Later source writes do not synchronize.
+- Cloud SQL backup **1791548387012** succeeded. Daily backups remain enabled;
+  deletion protection and encrypted-only connections were enabled. A private
+  local dump is retained under ignored `.runtime/gcp-migration/`, not in GitHub.
+- Deployed the tested amd64 image by the initial release SHA to
+  **https://eduvera-stage-367469594690.asia-south1.run.app**. Cloud Run uses one CPU,
+  1 GiB, one-instance service scaling, continuous CPU for the existing worker,
+  private mounted file storage and versioned Secret Manager references. The
+  migration job ran successfully using its separate Google service identity.
+  The existing database-owner runtime approach remains a documented production
+  security gate; separate Google identities do not imply non-owner database RLS.
+- The private file mount passed exclusive-write rejection, create/rename/read,
+  and cleanup checks in a temporary Cloud Run job. Public readiness, exact release,
+  both SPAs, icons, OpenAPI, demo mode and anonymous metrics rejection passed.
+  Authenticated WebKit checks passed all four portals at 320/390/1024px with no
+  page/server errors. **Cloud inference remains unavailable** (local Ollama);
+  no GPU, paid model or billing upgrade was introduced.
+- Created a project-only **INR 250 monthly early-usage alert**, before credits,
+  with 50/80/100 percent thresholds. Its currency is INR, not USD; it is not a hard
+  cap. Actual trial credit/expiry is still not independently visible to this login.
+- Enabled the Google Cloud deployment flag and selected Google Cloud as the Stage
+  release target. Railway remains available but future releases skip its deploy
+  job. Six local release-guard tests and the live runtime guard pass. The next
+  automatic candidate/migrate/promote cycle still requires final CI evidence.
