@@ -1,3 +1,4 @@
+import { invitationCodeHash } from '../src/common/invitation-code.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
@@ -56,7 +57,7 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     const payload={name:'Lotus Test College',code:'college-'+suffix.slice(0,10),institution_kind:'college',admin_email:firstEmail};
     expect((await request('company','company/institutions/',payload,'POST',false)).status).toBe(403);
     const result=await request('company','company/institutions/',payload);expect(result.status).toBe(201);createdSchool=result.data.school.id;firstCode=result.data.invitation.token;
-    expect(result.data.school.institution_kind).toBe('college');expect(firstCode.length).toBeGreaterThan(40);
+    expect(result.data.school.institution_kind).toBe('college');expect(firstCode).toMatch(/^\d{6}$/);
     expect((await pool.query('SELECT institution_kind,capability_packs FROM institution_regulatory_profiles WHERE school_id=$1',[createdSchool])).rows[0]).toEqual({institution_kind:'college',capability_packs:['india_college_core']});
     expect((await pool.query('SELECT 1 FROM school_memberships WHERE school_id=$1',[createdSchool])).rowCount).toBe(0);
     expect((await pool.query('SELECT token_hash FROM school_invitations WHERE school_id=$1',[createdSchool])).rows[0].token_hash).not.toBe(firstCode);
@@ -115,7 +116,7 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     expect(replacement.data.email).toBe(email);
     expect(replacement.data.token).not.toBe(original.data.token);
     const stored=(await pool.query('SELECT token_hash,role FROM school_invitations WHERE id=$1',[id])).rows[0];
-    expect(stored.token_hash).toBe(createHash('sha256').update(replacement.data.token).digest('hex'));
+    expect(stored.token_hash).toBe(invitationCodeHash(email,replacement.data.token));
     expect(stored.role).toBe('staff');
     expect((await request('public','invitations/accept/',join(original.data.token,email))).status).toBe(400);
     await request('admin',path(`invitations/${id}/revoke`),{});
@@ -135,6 +136,14 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     expect((await request('public','invitations/accept/',join(original.data.token,email))).status).toBe(400);
     await request('company',`${root}${id}/revoke/`,{});
     expect((await request('company',`${root}${id}/resend/`,{})).status).toBe(404);
+  });
+  it('limits invitation guesses per recipient across requests',async()=>{
+    const email='guesslimit.'+suffix+'@example.test';
+    const payload=join('012345',email);
+    for(let attempt=0;attempt<5;attempt++) expect((await request('public','invitations/accept/',payload)).status).toBe(400);
+    expect((await request('public','invitations/accept/',payload)).status).toBe(429);
+    const bucket=createHash('sha256').update('invitation-email:'+email).digest('hex');
+    expect((await pool.query('SELECT hits FROM api_rate_limit_buckets WHERE bucket_key=$1',[bucket])).rows[0].hits).toBe(6);
   });
   it('activates a staff account without granting work access through the invitation',async()=>{
     const email='staffinvite.'+suffix+'@example.test';const result=await request('admin',path('invitations'),{email,role:'staff'});expect(result.status).toBe(201);

@@ -31,6 +31,8 @@ describe('invitation SMTP delivery', () => {
     expect(body.text).toContain(invitation.token);
     expect(body.html).toContain('Accept invitation');
     expect(body.html).toContain(invitation.token);
+    expect(body.attachments[0]).toMatchObject({filename:'eduera-logo.png',content_type:'image/png',content_id:'eduera-logo'});
+    expect(Buffer.from(body.attachments[0].content,'base64').subarray(1,4).toString()).toBe('PNG');
   });
   it('reports API authentication failures without exposing the response body', async () => {
     mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
@@ -50,6 +52,7 @@ describe('invitation SMTP delivery', () => {
     expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({to: invitation.email, text: expect.stringContaining('https://school.example.test/join')}));
     expect(mocks.sendMail.mock.calls[0]![0].text).toContain(invitation.token);
     expect(mocks.sendMail.mock.calls[0]![0].html).toContain('Accept invitation');
+    expect(mocks.sendMail.mock.calls[0]![0].attachments[0]).toMatchObject({cid:'eduera-logo',contentDisposition:'inline',encoding:'base64',contentType:'image/png'});
     expect(mocks.close).toHaveBeenCalledOnce();
   });
   it('does not contact SMTP in manual mode', async () => {
@@ -77,7 +80,7 @@ describe('invitation SMTP delivery', () => {
     expect(message.html).toContain('&quot;quoted&quot;@example.test');
     expect(message.html.match(/href="[^"]+"/g)).toEqual(['href="https://school.example.test/join"', 'href="https://school.example.test/join"']);
     expect(message.html).not.toMatch(/<script|<form/i);
-    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/assets/edura-leaf-mark.png"']);
+    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="cid:eduera-logo"']);
     expect(message.html).toContain('alt="Eduera logo" width="48" height="48"');
     expect(message.text).toContain('<script>private&code</script>');
     expect(message.html).toContain('2099-10-04T00:00:00.000Z');

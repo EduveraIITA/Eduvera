@@ -41,13 +41,13 @@ export function InvitationPage() {
           <>
             <div>
               <h1 className="t-hxl">Join your school</h1>
-              <p className="t-bmd ink2" style={{ marginTop: 6 }}>Use the private invitation code your school administrator shared with you. It works once and expires after 72 hours.</p>
+              <p className="t-bmd ink2" style={{ marginTop: 6 }}>Use the private invitation code your school administrator shared with you. It works once and expires after 30 minutes.</p>
             </div>
             <label className="field">
               <span className="lbl">Invitation code</span>
               <div style={{ position: "relative" }}>
                 <KeyRound size={16} color="var(--muted)" style={{ position: "absolute", left: 12, top: 12 }} />
-                <input className="input mono" style={{ paddingLeft: 36 }} value={form.token} onChange={set("token")} autoComplete="off" spellCheck={false} required autoFocus />
+                <input className="input mono" style={{ paddingLeft: 36 }} value={form.token} onChange={set("token")} inputMode="numeric" placeholder="6-digit code" pattern="(?:[0-9]{6}|[A-Za-z0-9_-]{40,100})" autoComplete="one-time-code" spellCheck={false} required autoFocus />
               </div>
             </label>
             <label className="field"><span className="lbl">Invited email</span><input className="input" type="email" value={form.email} onChange={set("email")} autoComplete="email" required /><span className="t-bsm faint">Must be the address the school entered.</span></label>

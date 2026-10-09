@@ -1,3 +1,4 @@
+import { invitationLogo } from './invitation-logo.js';
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]!));
 }
@@ -5,7 +6,7 @@ function escapeHtml(value: string) {
 /** Codes stay in the message body, never in links or remote image requests. */
 export function invitationTemplate(input: {email: string; token: string; expires_at: Date | string; publicUrl: string}) {
   const joinUrl = new URL('/join', input.publicUrl).href;
-  const logoUrl = new URL('/assets/edura-leaf-mark.png', input.publicUrl).href;
+  const logoUrl = `cid:${invitationLogo.cid}`;
   const expiry = new Date(input.expires_at).toISOString();
   const text = `You have been invited to join your institution on Eduera.\n\nOpen: ${joinUrl}\nEmail: ${input.email}\nInvitation code: ${input.token}\nExpires: ${expiry}\n\nUse the same email and enter this single-use code. For an existing account, use your current password. Do not forward this code. If you were not expecting this invitation, you can ignore this email.`;
   const html = `<!doctype html>
@@ -19,7 +20,7 @@ export function invitationTemplate(input: {email: string; token: string; expires
 <p style="font-size:16px;line-height:1.6;margin:0 0 24px">Your institution has invited you to Eduera. Use the code below to accept your invitation.</p>
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#edf9f5;border:1px solid #c9eade;border-radius:12px"><tr><td style="padding:20px;text-align:center">
 <p style="margin:0 0 10px;font-size:12px;font-weight:bold;color:#365c50;text-transform:uppercase;letter-spacing:1px">Your invitation code</p>
-<p style="margin:0;font-family:Consolas,monospace;font-size:22px;font-weight:bold;line-height:1.5;overflow-wrap:anywhere;word-break:break-all">${escapeHtml(input.token)}</p>
+<p style="margin:0;font-family:Consolas,monospace;font-size:32px;font-weight:bold;line-height:1.5;letter-spacing:6px;overflow-wrap:anywhere;word-break:break-all">${escapeHtml(input.token)}</p>
 </td></tr></table>
 <p style="font-size:14px;line-height:1.7;overflow-wrap:anywhere">Invited email: <strong>${escapeHtml(input.email)}</strong><br>Expires: ${escapeHtml(expiry)} (UTC)</p>
 <p style="margin:24px 0"><a href="${escapeHtml(joinUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:14px 24px;border-radius:8px;font-size:16px;font-weight:bold">Accept invitation</a></p>
@@ -27,5 +28,5 @@ export function invitationTemplate(input: {email: string; token: string; expires
 <p style="font-size:12px;line-height:1.7;color:#52647a;overflow-wrap:anywhere">Button not working? Open <a href="${escapeHtml(joinUrl)}" style="color:#2563eb">${escapeHtml(joinUrl)}</a></p>
 </td></tr><tr><td style="padding:20px 28px;border-top:1px solid #e1e8f0;font-size:12px;line-height:1.7;color:#52647a">This code is single-use. Keep it private and do not forward this email. If you weren't expecting this invitation, you can ignore it.</td></tr>
 </table></td></tr></table></body></html>`;
-  return {subject: 'Your invitation to Eduera', text, html};
+  return {subject: 'Your invitation to Eduera', text, html, inlineImages:[invitationLogo]};
 }
