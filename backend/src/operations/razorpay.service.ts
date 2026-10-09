@@ -109,12 +109,16 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     // Authorization is not capture. Dashboard automatic capture or a later webhook/poll must confirm capture.
     if (payment.status !== "captured" || payment.captured !== true) {
       const state=payment.status==='failed'?'failed':'pending';
-      await this.db.transaction().execute(async db=>{
+      return this.db.transaction().execute(async db=>{
         await this.lock(db,order.school_id);
         const changed=await sql`UPDATE fee_gateway_orders SET last_payment_status=${state},last_attempt_id=${payment.id},checked_at=now() WHERE id=${order.id}::uuid AND state='created' RETURNING id`.execute(db);
         if(changed.rows.length)await enqueuePaymentEmail(db,order.id,payment.id,state);
+        else {
+          const saved=(await sql<{state:string;payment_id:string|null}>`SELECT state,payment_id FROM fee_gateway_orders WHERE id=${order.id}::uuid`.execute(db)).rows[0];
+          if(saved)return saved;
+        }
+        return {state,payment_id:null};
       });
-      return { state, payment_id: null };
     }
     return this.db.transaction().execute(async db => {
       await this.lock(db, order.school_id);

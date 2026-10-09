@@ -73,6 +73,7 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
     const captured = providerPayment(order);
     const [one, two] = await Promise.all([confirm(id, order, captured), confirm(id, order, captured)]);
     expect(one).toEqual(two); expect(one.state).toBe("captured");
+    expect(await confirm(id,order,{...captured,status:'authorized',captured:false})).toEqual(one);
     expect((await pool.query("SELECT count(*)::int AS count FROM fee_payments WHERE invoice_id=$1", [id])).rows[0].count).toBe(1);
     expect((await pool.query("SELECT count(*)::int AS count FROM fee_payment_emails WHERE order_id=$1 AND payment_state='captured'",[order.id])).rows[0].count).toBe(1);
     expect((await payments.receipt(parent,school,id,one.payment_id!)).subarray(0,5).toString()).toBe('%PDF-');

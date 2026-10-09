@@ -49,3 +49,12 @@ it('shows failed attempts without presenting a receipt',async()=>{
  expect(await screen.findByText('Attempt failed')).toBeVisible();
  expect(screen.queryByRole('link',{name:'Download PDF receipt'})).not.toBeInTheDocument();
 });
+it('does not let a late status response erase a verified payment',async()=>{
+ let resolveInitial!:(value:unknown[])=>void;
+ vi.mocked(apiFetch).mockReturnValueOnce(new Promise(resolve=>{resolveInitial=resolve;})).mockResolvedValueOnce({key_id:'rzp_test_fixture',order_id:'order_one',amount:2500,currency:'INR'}).mockResolvedValueOnce({state:'captured',payment_id:'receipt'});
+ render(<RazorpayPayment schoolId="school" invoiceId="invoice" amount={2500} onSaved={vi.fn()}/>);
+ await userEvent.click(screen.getByRole('button',{name:/Pay with Razorpay/}));
+ await act(async()=>options.handler({razorpay_order_id:'order_one',razorpay_payment_id:'pay_one',razorpay_signature:'signature'}));
+ await act(async()=>resolveInitial([]));
+ expect(screen.getByText('Payment confirmed')).toBeVisible();
+});

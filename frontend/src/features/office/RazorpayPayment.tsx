@@ -14,21 +14,23 @@ export function RazorpayPayment({ schoolId, invoiceId, amount, onSaved }: { scho
   const lastConfirmed=useRef('');
   useEffect(()=>{savedRef.current=onSaved;},[onSaved]);
   const inFlight = useRef(false);
+  const statusVersion=useRef(0);
   const path = `/api/v1/schools/${encodeURIComponent(schoolId)}/fees/invoices/${encodeURIComponent(invoiceId)}/razorpay`;
   const describe = (state: string) => state === "captured" ? "Sandbox payment verified. Your test receipt is available under Fees & receipts → Receipts." : state === "review_required" ? "Payment captured, but the balance changed. The school must reconcile it. Do not pay again." : state === 'failed' ? 'The last payment attempt failed. No receipt was issued. Check status before retrying.' : "Payment is not yet confirmed. Check status before paying again.";
   useEffect(()=>{
     let active=true;
     const refresh=async()=>{
       if(inFlight.current || document.visibilityState==='hidden')return;
+      const version=++statusVersion.current;
       try {
         const rows=await apiFetch<Status[]>(`${path}/status/`);
-        if(active){
+        if(active && version===statusVersion.current){
           setStatuses(rows);
           const confirmed=rows.filter(row=>row.state==='captured').map(row=>row.payment_id).join(',');
           if(confirmed && confirmed!==lastConfirmed.current){lastConfirmed.current=confirmed;await savedRef.current();}
         }
       }
-      catch {if(active)setError('Payment status could not refresh. Use Check payment status before paying again.');}
+      catch {if(active && version===statusVersion.current)setError('Payment status could not refresh. Use Check payment status before paying again.');}
     };
     void refresh();const timer=window.setInterval(()=>void refresh(),30000);
     return ()=>{active=false;window.clearInterval(timer);};
@@ -36,6 +38,7 @@ export function RazorpayPayment({ schoolId, invoiceId, amount, onSaved }: { scho
   function done() { inFlight.current = false; setBusy(false); }
   async function check() {
     if (inFlight.current) return;
+    statusVersion.current++;
     inFlight.current = true; setBusy(true); setError("");
     try {
       const statuses = await apiFetch<Status[]>(`${path}/status/`);
@@ -46,6 +49,7 @@ export function RazorpayPayment({ schoolId, invoiceId, amount, onSaved }: { scho
     finally { done(); }
   }
   async function verify(result: RazorpayResult) {
+    statusVersion.current++;
     try {
       const status = await apiFetch<Status>(`${path}/verify/`, { method: "POST", body: JSON.stringify(result) });
       setMessage(describe(status.state));setStatuses([status]); await onSaved();
@@ -54,6 +58,7 @@ export function RazorpayPayment({ schoolId, invoiceId, amount, onSaved }: { scho
   }
   async function pay() {
     if (inFlight.current) return;
+    statusVersion.current++;
     inFlight.current = true; setBusy(true); setError(""); setMessage("");
     try {
       if (!Number.isSafeInteger(amount) || amount < 100) throw new Error("Enter at least ₹1 for Razorpay.");
