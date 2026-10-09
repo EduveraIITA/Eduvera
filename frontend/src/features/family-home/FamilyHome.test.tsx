@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudentHomePage, type StudentHomeData } from "../../pages/student/StudentHomePage";
 
@@ -14,7 +15,7 @@ const data: StudentHomeData = {
   diary: [{ id: "diary", title: "Read chapter 3", detail: "Bring your reader tomorrow.", label: "English" }], homeActions: [],
 };
 function Location() { const location = useLocation(); return <output aria-label="Location">{location.pathname}</output>; }
-function mount(value = data) { return render(<MemoryRouter><StudentHomePage data={value} /><Location /></MemoryRouter>); }
+function mount(value = data) { return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><StudentHomePage data={value} /><Location /></MemoryRouter></QueryClientProvider>); }
 afterEach(() => { cleanup(); window.localStorage.clear(); });
 
 describe("family home touch-up", () => {

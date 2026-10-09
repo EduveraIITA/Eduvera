@@ -82,6 +82,11 @@ afterAll(async()=>{api?.kill('SIGTERM');await new Promise<void>(resolve=>{if(!mo
 describe('agent end-to-end guarded execution',()=>{
   it('reproduces lookup then pronoun attendance without asking for an internal ID',async()=>{
     const admin=new Session();await admin.login('admin');
+    const target=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
+    // Fresh CI seeds include today's observations; the reported regression starts
+    // with an unmarked learner. Restore any fixture observation even on failure.
+    const saved=await pool.query('DELETE FROM attendance_records WHERE student_id=$1 AND date=$2 RETURNING to_jsonb(attendance_records) AS record',[target.selected.student.id,target.date]);
+    try {
     const first=await run(admin,'Check about aarav sharma','principal');
     expect(first.run.status).toBe('completed');expect(first.run.evidence[0].capability).toBe('find_students');
     modelRequests=[];
@@ -94,6 +99,9 @@ describe('agent end-to-end guarded execution',()=>{
     await admin.request(`/api/v1/agent/threads/${first.thread}/actions/${second.run.action.id}`,{decision:'reject'});
     const check=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
     expect(check.selected.student.status).toBeNull();
+    } finally {
+      for(const row of saved.rows)await pool.query('INSERT INTO attendance_records SELECT * FROM jsonb_populate_record(NULL::attendance_records,$1::jsonb)',[JSON.stringify(row.record)]);
+    }
   });
   it('records just one learner, preserves every other row and leaves a draft register open',async()=>{
     const admin=new Session();await admin.login('admin');

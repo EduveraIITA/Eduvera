@@ -4256,3 +4256,46 @@ anchors the day query and freezes Date on that same collision day, leaving timer
 real. All five calendar tests and focused lint pass locally. No application code,
 assertion, test gate or shared data is removed; the corrected release must still
 pass the full pipeline before deployment can be claimed.
+
+### Agent, transport and home Stage release preparation — 9 October 2026
+
+- User requested pull, push and deployment. Fetched Stage at `abb16eb` and merged
+  its teacher-feedback flow, analytics and midnight-stable calendar tests with the
+  accumulated home, transport and reviewed-agent implementation. Preserved both
+  student Departure and Teacher feedback navigation. The three unrelated ` 2`
+  duplicate files remain excluded; no reset, force push or full Stage reseed.
+- The custom migration runner keys history by full filename, not numeric prefix;
+  `055_school_agent.sql` and `055_teacher_feedback.sql` therefore coexist without
+  renaming an already-applied migration. Added `056_school_agent_access.sql` to
+  enable RLS, revoke PUBLIC/anon/authenticated table access and assign the four
+  private agent tables to the established application owner. This follows the
+  existing guarded-backend model, not per-user database-role enforcement. The
+  Supabase CLI is not installed; the repository's established runner is retained.
+  Checked current [Supabase RLS guidance](https://supabase.com/docs/guides/database/postgres/row-level-security).
+- A fresh PostgreSQL 14 check stopped at existing migration 033's newer SQL syntax.
+  Restarted the existing container runtime and created a separate PostgreSQL 17
+  test instance, matching CI. All migrations, including both 055 files and 056,
+  applied successfully there. No existing 033 checksum was rewritten. Locally,
+  only verified additive feedback/access migrations were applied under the normal
+  advisory lock with checksums; existing app data was not reseeded.
+- Merge checks caught missing QueryClient context in the home test and an agent
+  regression fixture that incorrectly assumed today's attendance was empty. The
+  home test now supplies the real provider; the isolated agent fixture temporarily
+  removes/restores the one seeded observation, preserving SQL dates as JSON dates.
+  A repeated mutated test database produced unrelated roster-count failures, so
+  the complete release suite is rerun on a newly migrated/seeded disposable DB.
+- Mobile frontend **629 tests / 84 files** passed after those corrections. Backend,
+  frontend and desktop typechecks/builds and backend/frontend lint passed before
+  the final test-only corrections; final release checks are recorded below when
+  complete. Secret scanning found no leaks in the implementation commit range.
+- Railway Stage cannot reach the Mac's localhost Ollama service. This release does
+  not expose Ollama publicly, invent a cloud key, or silently switch providers.
+  Verify and report deployed model availability separately from app readiness.
+  The Cloudflare preview continues to use the local model. Deployment is not yet
+  claimed at this preparation step.
+
+Final local pre-push verification passed: **444 backend tests / 58 files** on a
+fresh PostgreSQL 17 schema with every isolated-integration flag enabled, and
+**629 frontend tests / 84 files**. All three builds/typechecks, backend/frontend
+lint and `git diff --check` passed; final fixture edits passed targeted lint and
+frontend typecheck again. Remote CI/deployment verification remains separate.

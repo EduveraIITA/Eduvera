@@ -208,6 +208,18 @@ Agent integration tests must target an explicitly isolated database accepted by
 their fixture resets at the development or production database. The local clone
 used here is `omnischool_agent_test_20261009`.
 
+Stage release preparation adds **056_school_agent_access.sql**, leaving applied
+055 unchanged. It enables RLS, revokes browser/PUBLIC table privileges and adopts
+the established application-table owner for agent storage. A dedicated integration
+test checks all four tables' ownership, RLS and grants. Fresh PostgreSQL 17
+migrations passed locally, including the independently merged teacher-feedback
+055. Per-user/non-owner runtime RLS remains a separate architectural release gate.
+Use the repository migration runner: its keys are full filenames, not prefixes.
+
+Railway does not inherit the Mac's local Ollama endpoint. App deployment alone
+does not make inference available there: configure an approved reachable provider
+separately. Never expose the unauthenticated local Ollama service as a workaround.
+
 ```sh
 # From backend, with DATABASE_URL already set to the isolated test database:
 npm test -- --run test/agent.integration.test.ts test/agent-contracts.test.ts test/agent-providers.test.ts
