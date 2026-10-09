@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, SlidersHorizontal } from "lucide-react";
-import { useLocation, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { canonicalInsightSearch, insightPath } from "../analytics/InsightNavigation";
@@ -30,6 +30,7 @@ export function PrincipalInsightsPage({ topic = "review" }: { topic?: PrincipalI
   useEffect(() => { if (query.isSuccess && location.hash === "#principal-deadlines") document.getElementById("principal-deadlines")?.scrollIntoView?.({ block: "start" }); }, [query.isSuccess, location.hash]);
   return <OperationsShell portal="principal" active="insights" title={titles[topic]} backTo={insightPath("principal", parentTopic, backParams.toString())}>
     <div className="analytics-page">
+      {topic === "operations" ? <Link className="analytics-refresh" to="/principal/teacher-feedback">Teacher feedback →</Link> : null}
       {!studentId ? <div className={`analytics-toolbar${compactFilters ? " insight-review-toolbar" : ""}`}>
         <label className="analytics-class-filter"><span className="analytics-sr-only">Class</span><select value={query.classId} onChange={event => change("class", event.target.value)}><option value="">All classes</option>{query.data?.classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label>
         {compactFilters ? <button className="analytics-refresh" type="button" aria-label="Review period" aria-expanded={filtersOpen} aria-controls="insight-review-filters" onClick={() => setFiltersOpen(open => !open)}><SlidersHorizontal size={18} aria-hidden="true" /></button> : null}

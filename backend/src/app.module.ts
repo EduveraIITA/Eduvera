@@ -1,3 +1,4 @@
+import { TeacherFeedbackModule } from "./teacher-feedback/teacher-feedback.module.js";
 import { CompanyModule } from "./company/company.module.js";
 import { AnalyticsModule } from "./analytics/analytics.module.js";
 import { PrincipalInsightsModule } from "./principal-insights/principal-insights.module.js";
@@ -33,6 +34,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
 
 @Module({
   imports: [
+    TeacherFeedbackModule,
     AnalyticsModule,
     SchedulePlanningModule,
     CompanyModule,

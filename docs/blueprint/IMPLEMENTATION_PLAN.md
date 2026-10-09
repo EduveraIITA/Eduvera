@@ -4171,3 +4171,88 @@ not establish universal model reliability or release readiness.
   database/events OK. Ollama's installed local model is available. Keep the Mac,
   preview and Ollama running. This is still an accountless temporary Quick Tunnel
   with polling (no SSE), not a permanent address or new reboot-persistent install.
+
+### Teacher quick feedback — 8 October 2026
+
+User-requested extension: principal administrators can publish a teacher/class feedback request
+for students or parents, choose 1–10 preset/custom parameters and a closing deadline, and close early.
+Migration `055_teacher_feedback.sql` stores campaigns, unique account responses and lifecycle audits.
+The separate Nest module validates current institution membership, current-term enrollment and guardian
+relationships, exact rating keys, deadlines and duplicate submissions. Submission and closure share
+a campaign row lock. Responses are confidential, not truly anonymous; identities remain stored to
+prevent duplicates, with no individual-response API or teacher results access.
+
+The React flow preserves existing shells/theme and adds More entries, a principal Insights link and
+pending home prompts. Low / Okay / High / Not sure ratings are collected with native radio controls.
+Private aggregate distributions unlock only on closed requests with at least five responses; each
+parameter independently requires five non-abstaining ratings. Signals suggest a supportive review
+(40% Low) or strength (70% High), not a staff performance verdict. No public teacher leaderboard.
+
+Verification: GitHub Actions run 37799328175 passed backend typecheck/lint/build,
+fresh isolated PostgreSQL migration and all backend tests, mobile typecheck/lint/build/tests,
+and desktop typecheck/build. All five feedback integration tests and four rating-rule tests
+passed. The scheduling integration test now creates its own subject rather than assuming
+an arbitrary school's fixtures. A separate local full frontend run had one navigation timeout
+(478/479 passed); the authoritative CI full run passed.
+
+Browser checks with synthetic API fixtures pass at 320/768/1024/1440 pixels for creation,
+private results and student submission; the parent route passes without browser errors.
+This documentation-only reconciliation retains the newer Analytics Stage release record.
+User visual acceptance and merging/deployment remain pending; no deployment is claimed.
+
+
+### Teacher feedback rating redesign — 8 October 2026
+
+User-requested visual refinement keeps all four rating options in one row, including 320px phones. Amber/blue/green/slate surfaces and labelled expression icons distinguish Low, Okay, High and Not sure. Selected choices use a solid surface; native radios retain keyboard operation and visible focus. Existing submission and confidentiality rules are unchanged. Frontend typecheck and all four feedback tests pass. Synthetic-fixture browser checks pass at 320/768/1024/1440px for principal creation/results and student submission, plus the parent route, with no overflow or page errors. Visual acceptance and deployment of this refinement are pending.
+
+
+### Teacher feedback segmented selector — 8 October 2026
+
+User refined the visual request with a segmented attendance-control reference. Ratings now share one compact rounded track with a colored active pill translating horizontally between Low, Okay, High and Not sure. Native radio tap and arrow-key behavior is retained, unanswered parameters remain unselected, and reduced-motion preferences disable transitions. Typecheck and all four existing feedback tests pass. Synthetic browser checks cover 320/768/1024/1440px, no overflow, submissions, and keyboard-driven pill movement left/right. Deployment and user acceptance of this refinement remain pending.
+
+
+### Compact feedback home prompt — 8 October 2026
+
+Confirmed the sliding selector release passed deployment and public revision verification in Actions run 37817363937. User requested a cleaner home prompt: replace the large blue multi-line appeal with one white linked row, small feedback icon, Teacher feedback title, pending request count and chevron. The shared student/parent prompt retains eligibility filtering. Typecheck passes; fixture-backed student home browser checks verify no link overflow and successful navigation at 320/768/1024/1440px. Mobile row visually inspected. This follow-up's deployment and user visual acceptance are pending.
+
+
+### Drag to change feedback rating — 8 October 2026
+
+The shared native-radio selector now supports horizontal pointer dragging, updates the selected rating across segments, clamps at either end, and preserves tap/keyboard behavior. Vertical touch scrolling remains available; pointer cancellation restores the original answer. Capture transfer from touch targets does not terminate the drag. Typecheck, focused lint and four existing feedback tests pass. Browser tests using Chromium mouse dragging left and CDP touch dragging right pass at 320/768/1024/1440px alongside submission and overflow checks. Physical iOS acceptance and deployment remain pending.
+
+### Teacher feedback results analytics — 8 October 2026
+
+Built the requested animated View results dashboard on Stage revision `633cb05` in
+an isolated branch. The [results contract](TEACHER_FEEDBACK_RESULTS.md) records the
+principal questions, denominators, comparable-history rules and UX boundaries.
+The existing theme, shell, feedback slider and confidentiality gates are preserved.
+
+Results now include a rating-mix donut, sortable expandable parameter distributions,
+strength/support summaries with practical suggestions, cumulative response activity
+and comparable closed-round history. Hidden parameters cannot contribute to summary
+ratings or trends. Historical comparisons require the same institution, teacher,
+class, audience and question set with five actual ratings on every parameter; no
+respondent identity is returned. Regular open requests expose collection activity only. Per the user’s follow-up,
+seeded Cambridge demo administrators can preview graphs after one response while
+open, with a visible demo label; other accounts retain five-response gates.
+No migration, new package or demonstration data write is required.
+
+Local frontend/backend typechecks and scoped lint passed. Five backend policy/rating
+unit tests and eleven frontend feedback tests passed. Chromium fixture checks passed
+at 320/768/1024/1440 pixels, including sort, native keyboard disclosure, historical
+table, locked state, reduced motion and no browser errors. Phone/tablet screenshots
+were visually inspected. The automatic approval review blocked publishing the branch because this turn did
+not explicitly authorize source publication. The local commit is retained; PostgreSQL
+integration verification in PR CI, Stage deployment and physical-phone acceptance
+remain pending. No shared database was accessed for tests.
+
+### Teacher feedback Stage release follow-up — 9 October 2026
+
+PR #12 passed its complete verification and was merged into Stage as `85004c9`.
+The release run 37826658055 passed all 353 backend tests but stopped on two existing
+CalendarView tests after the school-local date became 9 October: their unanchored
+date selector matched both the day cell and the Today shortcut. The test-only fix
+anchors the day query and freezes Date on that same collision day, leaving timers
+real. All five calendar tests and focused lint pass locally. No application code,
+assertion, test gate or shared data is removed; the corrected release must still
+pass the full pipeline before deployment can be claimed.

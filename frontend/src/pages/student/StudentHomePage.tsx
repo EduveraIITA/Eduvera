@@ -1,3 +1,4 @@
+import { FeedbackNudge } from "../../features/teacher-feedback/FeedbackNudge";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {DayPlanNotice,type PublishedDayNotice} from '../../features/day-plans/DayPlanNotice';
 import { useNavigate } from "react-router-dom";
@@ -186,6 +187,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
           <StudentIdentityCard identity={data} eyebrow={greeting()} />
           {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
         </div>
+        <FeedbackNudge portal="student"/>
         <DayPlanNotice plan={data.dayPlan} href="/student/timetable"/>
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
 

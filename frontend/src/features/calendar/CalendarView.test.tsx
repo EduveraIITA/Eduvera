@@ -1,12 +1,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CalendarView, type CalendarViewProps } from "./CalendarView";
 
-// Fixed fixture dates must not collide with the real day's separate Today button.
-vi.mock("../../lib/schoolTime", () => ({ schoolDateToday: () => "2026-10-08" }));
-
-afterEach(cleanup);
+beforeEach(() => {
+  // Make the selected fixture day also Today, so date queries must distinguish
+  // the calendar cell from the separate Go to today control. Leave timers real.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-09T06:00:00Z"));
+});
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 function props(overrides: Partial<CalendarViewProps> = {}): CalendarViewProps {
   return {
@@ -31,7 +34,7 @@ describe("CalendarView", () => {
     render(<CalendarView {...input} />);
     const day = screen.getByRole("button", { name: /Saturday, 10 October, Event, Test/i });
     expect(day).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByRole("button", { name: /Friday, 9 October/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^Friday, 9 October/i }));
     expect(input.onSelect).toHaveBeenCalledWith("2026-10-09");
   });
 
@@ -49,7 +52,7 @@ describe("CalendarView", () => {
   it('keeps month selection open and delegates Today to the atomic route update', async () => {
     const input = props();
     render(<CalendarView {...input} />);
-    await userEvent.click(screen.getByRole('button', {name: /Friday, 9 October/}));
+    await userEvent.click(screen.getByRole('button', {name: /^Friday, 9 October/}));
     expect(input.onModeChange).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', {name: /Go to today/}));
     expect(input.onToday).toHaveBeenCalledOnce();
