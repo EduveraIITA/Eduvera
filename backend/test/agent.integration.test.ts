@@ -71,7 +71,7 @@ beforeAll(async()=>{
     if(question.includes('slow'))setTimeout(reply,1000);else reply();
   });});
   await new Promise<void>(resolve=>model.listen(0,'127.0.0.1',resolve));modelPort=(model.address() as {port:number}).port;
-  api=spawn(process.execPath,['dist/main.js'],{cwd:process.cwd(),env:{...process.env,DATABASE_URL:databaseUrl,EVENT_DATABASE_URL:databaseUrl,NODE_ENV:'test',PORT:'8138',HOST:'127.0.0.1',COOKIE_SECRET:'agent-test-secret-at-least-thirty-two-characters',DEMO_MODE:'true',AGENT_PROVIDER:'ollama',AGENT_MODEL:'test-tools',AGENT_BASE_URL:`http://127.0.0.1:${modelPort}`,LOG_LEVEL:'silent',SPA_DIST_DIR:'no-spa'},stdio:['ignore','pipe','pipe']});
+  api=spawn(process.execPath,['dist/main.js'],{cwd:process.cwd(),env:{...process.env,DATABASE_URL:databaseUrl,EVENT_DATABASE_URL:databaseUrl,NODE_ENV:'test',PORT:'8138',HOST:'127.0.0.1',COOKIE_SECRET:'agent-test-secret-at-least-thirty-two-characters',DEMO_MODE:'true',AGENT_USER_HOURLY_LIMIT:'60',AGENT_USER_DAILY_LIMIT:'100',AGENT_PROVIDER:'ollama',AGENT_MODEL:'test-tools',AGENT_BASE_URL:`http://127.0.0.1:${modelPort}`,LOG_LEVEL:'silent',SPA_DIST_DIR:'no-spa'},stdio:['ignore','pipe','pipe']});
   let errors='';api.stderr?.on('data',(chunk:Buffer)=>{errors+=chunk.toString();});
   for(let i=0;i<100;i++){try{if((await fetch(base+'/readyz')).ok)return;}catch{/*starting*/}await pause(100);}
   throw new Error('Test API failed to start: '+errors.slice(-1000));

@@ -4356,3 +4356,202 @@ server-side and restricted to Stage plus DEMO_MODE. Environment settings take
 precedence, including an explicit disable switch. This removes the new Railway
 variable requirement for the existing Stage demo deployment. No live credentials
 or production activation are enabled. Actual deployment/checkout remains unverified.
+### Google Cloud trial connection — 9 October 2026
+
+- User selected **Eduera (`eduera-511111`)** and authorised setup limited to the
+  **$300 trial**. No paid-account upgrade, GPU/Marketplace deployment or spending
+  beyond available trial credit is authorised. Keep the current deployment intact
+  until a separate Google Cloud deployment is verified.
+- Google Cloud CLI 588.0.0 is installed and user authentication is verified. The
+  local CLI now selects the user-specified project. Project billing reports enabled;
+  read-only inventories returned no Cloud Run services, Cloud SQL instances,
+  Artifact Registry repositories, storage buckets or Secret Manager secrets.
+- The linked billing account is not accessible to the authenticated user:
+  `gcloud billing accounts describe` returns permission denied. Trial status,
+  remaining credit and expiry have therefore **not** been verified. Request billing
+  viewer access or user-provided Billing overview evidence before provisioning
+  billable resources. Budget alerts alone are not a hard spending cap.
+- No cloud resources, IAM grants, secrets, databases or deployment pipelines were
+  created or changed by this setup. Uploads currently use local disk and background
+  event processing needs continuous execution; account for both in a hosting design.
+  This is connection/preflight evidence, not a deployed or production-ready service.
+
+### Google Cloud Stage automation in progress — 9 October 2026
+
+- The user subsequently authorised creating the required infrastructure against
+  their stated $300 trial credit and selected the deployed Stage data as the source.
+  The account still cannot independently verify billing credits; budget creation
+  failed validation. No successful budget setup or hard spending cap is claimed.
+- Concurrent team work was discovered after provisioning began. The team owns the
+  existing **`eduera-db`** PostgreSQL 17 micro instance and **`eduera/web`** image
+  repository in Mumbai. User explicitly chose those resources and requested
+  deletion of our duplicate **`eduvera-stage`** database. Its create operation is
+  still running; removing deletion protection returned 409 until creation finishes.
+  No team data has been modified.
+- Created branch/repository/workflow-restricted GitHub OIDC federation, a deploy
+  service account, separate runtime/migration identities, private upload bucket,
+  empty migration-secret containers and the `gcp-stage` GitHub environment.
+  The extra empty `eduvera-stage` image repository also exists; it is not the chosen
+  image destination. No Cloud Run application is deployed by this work yet.
+- Added the Google Cloud job to the Stage workflow without removing Railway.
+  Source-secret copying is an explicit separate dispatch, never an automatic
+  reseed. Release images are built on GitHub; deployment uses a migration job,
+  candidate checks and application traffic rollback. Secret values are excluded
+  from logs, artifacts and container contexts. Deployment is initially disabled.
+- Locally verified five deployment-contract tests, both workflows with actionlint
+  structural validation, full shell validation of the new reusable workflow, and
+  `git diff --check`. Existing Railway shellcheck warnings remain unchanged.
+  GitHub execution, database/file copying, cloud runtime and public verification
+  remain pending; see [Google Cloud Stage](../../deploy/gcp/README.md).
+
+### Google Cloud initial deployment and migration verified — 9 October 2026
+
+- User confirmed the $300 trial allowance, selected the deployed Stage database
+  as the source, then explicitly directed reuse of the team's **`eduera-db`** and
+  removal of our duplicate. Deleted the empty **`eduvera-stage` Cloud SQL instance**;
+  delete operation `f0cd4643-5a83-413a-b714-beb70000002f` completed. No team database
+  was deleted. The similarly named Cloud Run service is intentional and separate.
+- The Stage workflow is published in commit **ada5a011f1de6a716f24206001b8b5de4036e4fa**.
+  [Explicit bootstrap run 37928341516](https://github.com/EduveraIITA/Eduvera/actions/runs/37928341516)
+  verified GitHub OIDC and copied source configuration without exposing values.
+  Temporary per-secret write permissions were revoked after the successful copy.
+- Copied a consistent Supabase PostgreSQL 17.6 **public application schema** snapshot
+  to the new `omnischool` database inside **`eduera-db`**. Source Supabase-managed
+  schemas were not copied; public functions were checked for dependencies on them.
+  All **183 table row counts** matched, including **200 students and 64 migrations**.
+  Chat, leave and assessment attachment tables were empty. Kept the source encryption
+  key so copied restricted records remain decryptable. The original Stage database
+  was not altered or continuously replicated. Later source writes do not synchronize.
+- Cloud SQL backup **1791548387012** succeeded. Daily backups remain enabled;
+  deletion protection and encrypted-only connections were enabled. A private
+  local dump is retained under ignored `.runtime/gcp-migration/`, not in GitHub.
+- Deployed the tested amd64 image by the initial release SHA to
+  **https://eduvera-stage-367469594690.asia-south1.run.app**. Cloud Run uses one CPU,
+  1 GiB, one-instance service scaling, continuous CPU for the existing worker,
+  private mounted file storage and versioned Secret Manager references. The
+  migration job ran successfully using its separate Google service identity.
+  The existing database-owner runtime approach remains a documented production
+  security gate; separate Google identities do not imply non-owner database RLS.
+- The private file mount passed exclusive-write rejection, create/rename/read,
+  and cleanup checks in a temporary Cloud Run job. Public readiness, exact release,
+  both SPAs, icons, OpenAPI, demo mode and anonymous metrics rejection passed.
+  Authenticated WebKit checks passed all four portals at 320/390/1024px with no
+  page/server errors. **Cloud inference remains unavailable** (local Ollama);
+  no GPU, paid model or billing upgrade was introduced.
+- Created a project-only **INR 250 monthly early-usage alert**, before credits,
+  with 50/80/100 percent thresholds. Its currency is INR, not USD; it is not a hard
+  cap. Actual trial credit/expiry is still not independently visible to this login.
+- Enabled the Google Cloud deployment flag and selected Google Cloud as the Stage
+  release target. Railway remains available but future releases skip its deploy
+  job. Six local release-guard tests and the live runtime guard pass. The next
+  automatic candidate/migrate/promote cycle still requires final CI evidence.
+
+### Google Cloud automatic Stage deployment verified — 9 October 2026
+
+- [Stage push run 37930186905](https://github.com/EduveraIITA/Eduvera/actions/runs/37930186905)
+  completed **successfully** for release
+  **41c9aa537701a39fcd4ba635c0387b9468760578**. Secret scanning, deployment guards,
+  backend integration tests, mobile tests, lint/typechecks and both frontend builds
+  passed. The Google Cloud job used keyless GitHub authentication, pushed the image,
+  ran migration execution **eduvera-stage-migrate-rmpqw**, checked the candidate,
+  promoted it and removed its temporary verification tag. Railway was skipped.
+- Cloud Run revision **eduvera-stage-00002-wik** now serves 100% of traffic at
+  **https://eduvera-stage-367469594690.asia-south1.run.app**. Independently verified
+  its exact release SHA and readiness, then re-ran principal, teacher, parent and
+  student WebKit login/navigation checks at 320/390/1024px with no overflow,
+  JavaScript errors or HTTP 500s. These checks do not certify every domain workflow.
+- Confirmed **eduera-db is the only Cloud SQL instance** and the runtime connector
+  references it. Removed the unused empty `eduvera-stage` image repository; the
+  team's `eduera/web` remains. Disabled temporary source-connection secret versions,
+  revoked migration-bootstrap secret-write grants, deleted the completed one-off
+  file-check job, and stopped the local migration proxy. Private migration dump and
+  original source credentials remain recoverable. Railway and native local preview
+  readiness remain healthy; neither is continuously replicated with Google Cloud.
+- No paid model or GPU was added. Cloud Ollama inference remains unavailable and
+  visibly disabled. Trial budget alerts/deployment expiry are not spending caps;
+  production security and operational gates documented above remain open.
+- This evidence is recorded in a documentation-only `[skip ci]` follow-up; the
+  verified deployed application release remains the SHA above.
+
+### Private Stage accounts and bounded cloud AI — 9 October 2026 (in progress)
+
+- User decision: preserve four existing review personas, remove public shortcuts
+  and shared credentials, enable a low-cost Google model using trial credit with
+  abuse controls. No authorization to upgrade billing or use GPUs.
+- Verified on Cloud Run revision `eduvera-stage-00003-6kd`: `DEMO_MODE=false`,
+  private passwords for all four accounts login successfully; 413 other published
+  fixture-password hashes disabled, 15 old/probe sessions revoked. Profiles and
+  school records remain. Credentials are delivered only in a Git-ignored 0600
+  local file. Password rotation is independent of the pending code release.
+- Removed public persona shortcuts from mobile and desktop login, prohibited the
+  published password outside local demo mode, added durable per-identifier login
+  throttling, and restored unambiguous school membership for password sessions.
+- Added keyless Vertex adapter, approved Flash-Lite model restriction, per-account
+  request limits, durable pre-generation cost reservations (migration 057), input,
+  output and concurrency bounds, kill switch and review expiry. Existing domain
+  authorization, confirmation, stale-preview and audit protections remain.
+- Minimal Google runtime invocation role and Vertex API are provisioned; a small
+  synthetic model probe passed. App deployment/real portal evaluation are pending.
+  Pricing, trial limits and processing-region boundary are documented in
+  `deploy/gcp/README.md`. This is not a claim of zero abuse or production readiness.
+- An embedded SMTP fallback credential was removed; delivery is off. Provider-side
+  revocation of the historical app password remains an owner action. Separate old
+  Railway/local snapshots are not secured or synchronized by this database change.
+
+### Verified private accounts, Vertex AI and Railway retirement — 9 October 2026
+
+- Release `26dc964d192def75494e8fcbefba51fd6fb16853` passed Stage run
+  **37935688102**: 457 backend + 630 frontend tests, lint/typechecks/builds, secret
+  scan, additive migration and public/candidate checks. Two obsolete demo-button
+  assertions were updated; a pre-existing two-child route test now has a 30s
+  overall timeout for its unchanged bounded waits/assertions. No failing gate was
+  skipped. Final workflow-only cleanup is linted, not represented as a new app build.
+- Vertex model `gemini-3.1-flash-lite` is enabled through keyless runtime identity,
+  expiry **8 November 2026**, 10 requests/hour and 30/day per account, shared
+  conservative reservations of $0.50/day and $5/month. All runtime resource/model
+  guards were checked after configuration. Actual remaining trial credit is still
+  unavailable; these are application limits, not total cloud billing caps.
+- Live private sign-in, five-tab navigation, full-chat nav hiding and responsive
+  320/390/1024px checks passed for all four personas, with no page/server errors.
+  All four completed real authorized reads with verified sources. Principal
+  Aarav lookup → pronoun attendance preview was correct and explicitly rejected;
+  no attendance was changed. The model ledger recorded 9 calls and 109117 reserved
+  micro-USD. Teacher received only an audited, assigned-resources `ai.use` exception
+  through the same review window; no wider operational access was added.
+- User explicitly requested **keep Cloudflare for personal testing, remove
+  Railway**. Railway removal run **37936914773** deleted only the old Stage
+  application; public URL verified 404. Read-only run **37937246349** confirmed no
+  remaining service and retained volume metadata. External source database and
+  private migration snapshot are preserved. Removed Railway deployment/bootstrap
+  jobs, the GitHub Railway token and obsolete service/URL variables; Stage now
+  verifies then deploys only to Google Cloud.
+- Cloudflare and native preview remain healthy and retain their separate local
+  demo mode by the user's decision. The new private passwords apply to Google
+  Cloud, not those separate snapshots. Historical SMTP app-password revocation,
+  production security/retention/load gates and global model-region review remain
+  open; this release is not a claim of zero abuse or production certification.
+
+### Branded invitation email — 9 October 2026
+
+Razorpay merge compatibility: sandbox payments now use the non-production/test-key
+guard independently of demo login access. Google Cloud Stage retains `DEMO_MODE=false`
+and private authentication. Temporary owner-requested Stage test credentials remain
+overridable, and production activation is rejected. Focused configuration, provider,
+invitation-email and connection-policy tests passed (32 tests), as did focused ESLint.
+Deployment and real browser checkout remain separate verification steps.
+
+- Added an inline-styled blue/mint HTML invitation with a selectable single-use
+  code, invited email, UTC expiry, join button and existing-account instructions.
+  Plain text remains available. Both SMTP and Resend receive the HTML variant;
+  account-action messages retain their existing plain-text behavior.
+- Dynamic HTML values are escaped. Codes remain out of links; no remote images,
+  tracking pixels or scripts are included. The existing post-commit send, expiry,
+  authority checks and honest provider-acceptance/failure states are preserved.
+- Removed obsolete Railway-specific advice from transport connection errors.
+- GCP delivery still requires the runtime to reference the owner's new
+  `eduera-smtp-password` secret as `SMTP_PASSWORD`, and SMTP delivery enabled.
+  Creating the secret alone does not activate sending. No live inbox delivery
+  is claimed by this code change.
+- Local verification: backend typecheck, focused ESLint and all 10 invitation
+  tests passed, including SMTP/API HTML delivery, HTML escaping, secret-free links,
+  disabled sending and provider failure handling. `git diff --check` passed.

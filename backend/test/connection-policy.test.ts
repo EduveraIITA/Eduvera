@@ -86,15 +86,16 @@ describe("managed deployment configuration", () => {
     });
   }
 
-  it("uses SMTP defaults only in Stage demo and honors runtime overrides", () => {
+  it("never supplies embedded SMTP credentials and honors explicit runtime settings", () => {
     setProductionEnvironment();
     process.env.DEPLOYMENT_ENVIRONMENT = "stage";
-    process.env.DEMO_MODE = "true";
+    process.env.DEMO_MODE = "false";
     delete process.env.INVITATION_EMAIL_ENABLED;
     delete process.env.SMTP_USER;
     delete process.env.SMTP_PASSWORD;
-    expect(loadConfig()).toMatchObject({INVITATION_EMAIL_ENABLED: true, SMTP_USER: "projectpathyakram@gmail.com"});
-    expect(Boolean(loadConfig().SMTP_PASSWORD)).toBe(true);
+    expect(loadConfig()).toMatchObject({INVITATION_EMAIL_ENABLED: false});
+    expect(loadConfig().SMTP_PASSWORD).toBeUndefined();
+    expect(loadConfig().SMTP_USER).toBeUndefined();
     process.env.SMTP_USER = "override@example.test";
     process.env.SMTP_PASSWORD = "unit-test-smtp-override";
     expect(loadConfig()).toMatchObject({SMTP_USER: "override@example.test", SMTP_PASSWORD: "unit-test-smtp-override"});
@@ -172,14 +173,11 @@ describe("managed deployment configuration", () => {
     expect(() => loadConfig()).toThrow();
   });
 
-  it("allows explicit demo access in the managed Stage test environment", () => {
+  it("rejects public demo access in Stage as well as production", () => {
     setProductionEnvironment();
     process.env.DEPLOYMENT_ENVIRONMENT = "stage";
     process.env.DEMO_MODE = "true";
-    expect(loadConfig()).toMatchObject({
-      DEPLOYMENT_ENVIRONMENT: "stage",
-      DEMO_MODE: true,
-    });
+    expect(() => loadConfig()).toThrow(/DEMO_MODE/);
   });
 
   it("rejects ambiguous or reused managed secrets", () => {

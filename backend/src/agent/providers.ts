@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { vertexAccessToken, vertexSettings } from './vertex-auth.js';
+import { assertAgentEnabled } from './limits.js';
+
+export type ModelBudget = (inputTokens: number, maxOutputTokens: number) => Promise<void>;
 
 export interface ToolDefinition { name: string; description: string; parameters: Record<string, unknown> }
 export interface ToolCall { id: string; name: string; arguments: Record<string, unknown> }
@@ -11,7 +15,7 @@ export interface AgentModel {
 }
 
 const settings = z.object({
-  provider: z.enum(['ollama', 'openai', 'openai-compatible', 'anthropic', 'gemini']).default('ollama'),
+  provider: z.enum(['ollama', 'openai', 'openai-compatible', 'anthropic', 'gemini', 'vertex']).default('ollama'),
   model: z.string().max(160).default(''),
   base: z.string().url().refine(value => {
     const url=new URL(value);
@@ -21,6 +25,7 @@ const settings = z.object({
 });
 export function agentSettings() {
   const provider = process.env.AGENT_PROVIDER ?? 'ollama';
+  if (provider === 'vertex') return { provider: 'vertex' as const, ...vertexSettings(), key: undefined };
   return settings.parse({ provider, model: process.env.AGENT_MODEL ?? (provider === 'ollama' ? 'qwen3:8b' : undefined),
     base: process.env.AGENT_BASE_URL ?? (provider === 'ollama' ? 'http://127.0.0.1:11434' : provider === 'anthropic' ? 'https://api.anthropic.com/v1' : provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.openai.com/v1'),
     key: process.env.AGENT_API_KEY });
@@ -143,11 +148,12 @@ export class AnthropicAgentModel implements AgentModel {
 }
 /** Preserve complete model parts, including Gemini's opaque thought signatures. */
 export class GeminiAgentModel implements AgentModel {
-  readonly provider='gemini';
   private history:Array<{role:string;parts:any[]}> = [];
   private consumed=0;
   private nativeIds=new Map<string,string|undefined>();
-  constructor(readonly model:string,private readonly base:string,private readonly key:string) {}
+  constructor(readonly model:string,private readonly base:string,private readonly key:string,
+    readonly provider:'gemini'|'vertex'='gemini',private readonly budget?:ModelBudget,
+    private readonly accessToken=vertexAccessToken) {}
   async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal):Promise<ModelReply> {
     for(const message of messages.slice(this.consumed)) {
       if(message.role==='system'||(message.role==='assistant'&&message.calls?.length))continue;
@@ -160,12 +166,26 @@ export class GeminiAgentModel implements AgentModel {
       } else this.history.push({role:message.role==='assistant'?'model':'user',parts:[{text:message.content}]});
     }
     this.consumed=messages.length;
-    const response=await post(`${this.base.replace(/\/$/,'')}/models/${encodeURIComponent(this.model)}:generateContent`,{
+    const body={
       systemInstruction:{parts:[{text:messages.filter(message=>message.role==='system').map(message=>message.content).join('\n')}]},
-      contents:this.history,generationConfig:{maxOutputTokens:2500},
+      contents:this.history,generationConfig:{maxOutputTokens:this.provider==='vertex'?2048:2500,
+        ...(this.provider==='vertex'?{candidateCount:1,thinkingConfig:{thinkingLevel:'LOW'}}:{})},
       tools:[{functionDeclarations:tools.map(tool=>({name:tool.name,description:tool.description,parametersJsonSchema:tool.parameters}))}],
       toolConfig:{functionCallingConfig:{mode:'AUTO'}},
-    },signal,undefined,{'x-goog-api-key':this.key});
+    };
+    const endpoint=`${this.base.replace(/\/$/,'')}/models/${encodeURIComponent(this.model)}`;
+    let token:string|undefined;
+    if(this.provider==='vertex') {
+      assertAgentEnabled();
+      if(!this.budget)throw new Error('A durable cloud AI budget is required.');
+      if(Buffer.byteLength(JSON.stringify(body),'utf8')>180000)throw new Error('Model context exceeded the safety limit.');
+      token=await this.accessToken(signal);
+      const count=await post(`${endpoint}:countTokens`,{contents:body.contents,systemInstruction:body.systemInstruction,tools:body.tools},signal,token);
+      const inputTokens=z.number().int().nonnegative().parse(count.totalTokens);
+      await this.budget(inputTokens,2048);
+      signal.throwIfAborted();
+    }
+    const response=await post(`${endpoint}:generateContent`,body,signal,token,this.provider==='vertex'?{}:{'x-goog-api-key':this.key});
     const candidate=response.candidates?.[0];
     if(candidate?.finishReason!=='STOP'||!candidate.content?.parts)throw new Error('Incomplete model response.');
     this.history.push(candidate.content);
@@ -178,8 +198,12 @@ export class GeminiAgentModel implements AgentModel {
     return {text:parts.filter(part=>typeof part.text==='string'&&!part.thought).map(part=>part.text).join('\n').slice(0,12000),calls};
   }
 }
-export function createAgentModel(): AgentModel {
+export function createAgentModel(budget?:ModelBudget): AgentModel {
   const setting = agentSettings();
+  if(setting.provider==='vertex') {
+    if(!budget)throw new Error('A durable cloud AI budget is required.');
+    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget);
+  }
   if(setting.provider!=='ollama'&&setting.provider!=='openai-compatible'&&!setting.key)throw new Error('The configured cloud model has no API key.');
   if(!setting.model)throw new Error('Choose an explicit AGENT_MODEL for the configured provider.');
   if (setting.provider === 'ollama') return new OllamaAgentModel(setting.model, setting.base);
@@ -197,6 +221,11 @@ export function createAgentModel(): AgentModel {
 
 export async function modelAvailability() {
   const setting = agentSettings();
+  try { assertAgentEnabled(); } catch { return {provider:setting.provider,model:setting.model,ready:false,local:setting.provider==='ollama'}; }
+  if(setting.provider==='vertex') {
+    try { await vertexAccessToken(AbortSignal.timeout(3000)); return {provider:'vertex',model:setting.model,ready:true,local:false}; }
+    catch { return {provider:'vertex',model:setting.model,ready:false,local:false}; }
+  }
   if (setting.provider !== 'ollama') return { provider: setting.provider, model: setting.model, ready: Boolean(setting.model) && (Boolean(setting.key) || setting.provider === 'openai-compatible'), local: false };
   try {
     const response = await fetch(`${setting.base.replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(3000), redirect: 'error' });

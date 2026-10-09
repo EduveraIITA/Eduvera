@@ -117,3 +117,20 @@ retry ambiguous failures; a connection timeout can occur after acceptance.
 
 Sources: https://docs.railway.com/networking/outbound-networking and
 https://resend.com/docs/api-reference/emails/send-email
+
+### GCP invitation template — 9 October 2026
+
+The current Stage host is Cloud Run service `eduvera-stage` in `asia-south1`,
+project `eduera-511111`. The earlier demo SMTP fallback was removed; there is
+no embedded credential. Configure `INVITATION_EMAIL_ENABLED=true`,
+`INVITATION_EMAIL_PROVIDER=smtp`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`,
+`SMTP_USER=projectpathyakram@gmail.com`, and
+`PUBLIC_URL=https://eduvera-stage-367469594690.asia-south1.run.app`.
+Reference a numbered version of Secret Manager secret `eduera-smtp-password`
+as `SMTP_PASSWORD`. Grant the Cloud Run runtime identity Secret Accessor on
+that secret only. Preserve all unrelated existing service variables.
+
+All existing invitation paths now send a branded HTML template plus plain text.
+The join button does not redeem the invitation or embed the private code;
+recipients enter the code in the existing join form. Provider acceptance still
+must not be presented as verified inbox delivery.

@@ -1,4 +1,4 @@
--- Sandbox transactions are deliberately labelled and enabled only in demo mode.
+-- Sandbox transactions are deliberately labelled and enabled only outside production.
 ALTER TABLE fee_payments DROP CONSTRAINT fee_payments_method_check;
 ALTER TABLE fee_payments ADD CONSTRAINT fee_payments_method_check CHECK(method IN ('cash','bank_transfer','cheque','razorpay_test'));
 CREATE TABLE fee_gateway_orders (

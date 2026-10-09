@@ -11,6 +11,7 @@ import { AgentGateway, assertKnownIds, assertLocalScreen, collectIds, stableHash
 import { agentSettings, createAgentModel, modelAvailability, type ModelMessage, type ToolDefinition } from './providers.js';
 import { recordReferences, resolveReferences, schoolDate, reportsUnverifiedWrite, type RecordReference } from './references.js';
 import { attendanceArguments } from './attendance-intent.js';
+import { AgentLimitError, assertAgentEnabled, reserveModelCall } from './limits.js';
 
 const portalSchema = z.enum(['principal','teacher','parent','student']);
 const threadInput = z.object({ portal: portalSchema, student_id: z.string().uuid().optional() }).strict();
@@ -52,6 +53,7 @@ function displayLabels(value: unknown, labels: Record<string,string> = {}): Reco
   return labels;
 }
 function safeFailure(error: unknown) {
+  if (error instanceof AgentLimitError) return error.message;
   if (error instanceof BadRequestException || error instanceof ForbiddenException || error instanceof ConflictException) return error.message.slice(0,600);
   if (error instanceof z.ZodError) return `The action needs valid ${[...new Set(error.issues.slice(0,6).map(issue => issue.path.join('.').replace(/_/g,' ')))].join(', ')}. Look up missing records in the app; do not ask the user for internal IDs.`;
   return 'The request could not be completed. No automatic retry was made. Please try again or open the source screen.';
@@ -168,6 +170,7 @@ export class AgentService implements OnModuleDestroy {
     if (thread.archived) throw new ConflictException('Start a new conversation.');
     await this.recoverExpired(id);
     const settings = agentSettings();
+    const limits = assertAgentEnabled();
     const created = await this.db.transaction().execute(async tx => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('school_agent_capacity'))`.execute(tx);
       const previous = (await sql<Run>`SELECT * FROM agent_runs WHERE thread_id=${id}::uuid AND client_id=${input.client_id}::uuid`.execute(tx)).rows[0];
@@ -175,9 +178,9 @@ export class AgentService implements OnModuleDestroy {
       const counts = (await sql<{ total:number; own:number }>`SELECT count(*)::int AS total,count(*) FILTER(WHERE thread.owner_id=${scope.userId}::uuid)::int AS own
         FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id WHERE run.status='running' AND run.lease_expires_at>now()`.execute(tx)).rows[0]!;
       if (counts.own >= 1 || counts.total >= 2) throw new ConflictException('The assistant is finishing another request. Wait or cancel it first.');
-      const recent=(await sql<{count:number}>`SELECT count(*)::int AS count FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
-        WHERE thread.owner_id=${scope.userId}::uuid AND run.created_at>now()-interval '1 hour'`.execute(tx)).rows[0]!.count;
-      if (recent>=60) throw new ConflictException('The hourly assistant limit has been reached. Please use the app directly for now.');
+      const recent=(await sql<{hour:number;day:number}>`SELECT count(*) FILTER(WHERE run.created_at>now()-interval '1 hour')::int AS hour,count(*)::int AS day FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
+        WHERE thread.owner_id=${scope.userId}::uuid AND run.created_at>now()-interval '24 hours'`.execute(tx)).rows[0]!;
+      if (recent.hour>=limits.hourly || recent.day>=limits.daily) throw new AgentLimitError('Your AI message allowance has been reached. Please use the app directly for now.');
       const pending = (await sql`SELECT action.id FROM agent_actions action JOIN agent_runs run ON run.id=action.run_id WHERE run.thread_id=${id}::uuid AND action.status IN ('pending','executing') LIMIT 1`.execute(tx)).rows;
       if (pending.length) throw new ConflictException('Confirm or dismiss the pending action before sending another message.');
       const run = (await sql<{ id:string }>`INSERT INTO agent_runs(thread_id,client_id,question,status,provider,model) VALUES
@@ -216,7 +219,7 @@ export class AgentService implements OnModuleDestroy {
     const evidence:Evidence[] = [];
     const known = new Set([scope.schoolId,...(scope.studentId ? [scope.studentId] : [])]);
     try {
-      const model = createAgentModel();
+      const model = createAgentModel((input,output)=>reserveModelCall(this.db,id,input,output));
       const available = availableCapabilities(scope);
       const history = (await sql<Run>`SELECT * FROM agent_runs WHERE thread_id=${thread.id}::uuid AND id<>${id}::uuid AND status IN ('completed','confirmation') ORDER BY created_at DESC LIMIT 4`.execute(this.db)).rows.reverse();
       const historySteps=(await sql<Step>`SELECT step.* FROM agent_tool_steps step WHERE step.kind='read' AND step.run_id IN

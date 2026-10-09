@@ -6,25 +6,17 @@ on:
   pull_request:
     branches: [Stage]
   workflow_dispatch:
-    inputs:
-      seed:
-        description: Re-seed the Stage demo data after migrations
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   # PR verification must not cancel an in-flight Stage deployment.
   group: stage-${{ github.event_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  # Verification never connects to the staging database. Each job gets a new
-  # PostgreSQL service, migrations and deterministic demo fixtures. Integration
-  # tests may mutate it without touching shared Stage data.
+  # Tests use disposable PostgreSQL, never the live Stage database.
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -53,12 +45,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Repository secret scan
         uses: docker://ghcr.io/gitleaks/gitleaks:v8.27.2
         with:
           args: git --redact --verbose .
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -67,7 +57,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
+      - name: Google Cloud deployment contract tests
+        run: node --test deploy/gcp/*.test.mjs
       - name: Backend · install, typecheck, lint, build
         working-directory: backend
         run: |
@@ -75,7 +66,6 @@ jobs:
           npm run typecheck
           npm run lint
           npm run build
-
       - name: Backend · prepare isolated test database
         working-directory: backend
         run: |
@@ -87,11 +77,9 @@ jobs:
           node --import tsx src/database/seed-departure.ts
           node --import tsx src/database/seed-governance-authority.ts
           node --import tsx src/database/seed-access-roles.ts
-
       - name: Backend · integration tests
         working-directory: backend
         run: npm test
-
       - name: Mobile app · install, typecheck, lint, build, test
         working-directory: frontend
         run: |
@@ -100,7 +88,6 @@ jobs:
           npm run lint
           npm run build
           npm test
-
       - name: Desktop dashboard · install, typecheck, build
         working-directory: frontend-desktop
         run: |
@@ -108,243 +95,11 @@ jobs:
           npm run typecheck
           npm run build
 
-  # Ships one container to Railway (Singapore) that serves all three:
-  # the mobile app at /, the desktop dashboard at /staff/, the API at /api.
-  # Railway builds backend/Dockerfile with the repo root as context (railway.json).
-  deploy:
-    name: Deploy to Railway
+  google-cloud:
+    name: Google Cloud Stage
     needs: verify
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID || 'e502f870-10b0-4e13-b42e-124e6373a277' }}
-      RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'omnischool' }}
-      RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT || 'stage' }}
-      STAGE_URL: ${{ vars.STAGE_URL || 'https://omnischool-stage.up.railway.app' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Check deployment credentials
-        run: |
-          set -eu
-          if [ -z "$RAILWAY_TOKEN" ]; then
-            echo "::error::RAILWAY_TOKEN secret is not set. Run deploy/railway-bootstrap.py once with a Railway account token to create the project and store this secret."
-            exit 1
-          fi
-          [ -n "$RAILWAY_PROJECT_ID" ] || { echo "::error::RAILWAY_PROJECT_ID repository variable is not set. Re-run deploy/railway-bootstrap.py."; exit 1; }
-          [ -n "$RAILWAY_SERVICE" ] || { echo "::error::RAILWAY_SERVICE repository variable is not set. Re-run deploy/railway-bootstrap.py."; exit 1; }
-          [ "$RAILWAY_ENVIRONMENT" = "stage" ] || { echo "::error::RAILWAY_ENVIRONMENT must be exactly 'stage'. Re-run deploy/railway-bootstrap.py."; exit 1; }
-          [ -n "$STAGE_URL" ] || { echo "::error::STAGE_URL repository variable is not set. Re-run deploy/railway-bootstrap.py."; exit 1; }
-          case "$STAGE_URL" in
-            https://*) ;;
-            *) echo "::error::STAGE_URL must be an HTTPS origin"; exit 1 ;;
-          esac
-          case "$STAGE_URL" in
-            */) echo "::error::STAGE_URL must not have a trailing slash"; exit 1 ;;
-          esac
-
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli@5.54.0
-
-      - name: Repair and validate Stage runtime configuration
-        run: |
-          set -eu
-          umask 077
-
-          db_file="$RUNNER_TEMP/stage-database-url"
-          cookie_file="$RUNNER_TEMP/stage-cookie-secret"
-          metrics_file="$RUNNER_TEMP/stage-metrics-token"
-          restricted_case_file="$RUNNER_TEMP/stage-restricted-case-encryption-key"
-          session_file="$RUNNER_TEMP/stage-session-database-url"
-
-          # Pull the existing service values into ephemeral runner files without
-          # printing any credential to the Actions log.
-          railway run --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" -- \
-            sh -c 'printf "%s" "${DATABASE_URL:-}" > "$1"; printf "%s" "${COOKIE_SECRET:-}" > "$2"; printf "%s" "${METRICS_TOKEN:-}" > "$3"; printf "%s" "${RESTRICTED_CASE_ENCRYPTION_KEY:-}" > "$4"' \
-            sh "$db_file" "$cookie_file" "$metrics_file" "$restricted_case_file"
-
-          [ -s "$db_file" ] || { echo "::error::DATABASE_URL is not configured on the Railway service"; exit 1; }
-
-          # DATABASE_URL may be Supabase transaction pooling (:6543). Events and
-          # migrations require a persistent session. Supabase's same pooler host
-          # provides session mode on :5432. Refuse to rewrite any unknown pooler.
-          node - "$db_file" "$session_file" <<'NODE'
-          const fs = require("node:fs");
-          const source = fs.readFileSync(process.argv[2], "utf8").trim();
-          let url;
-          try {
-            url = new URL(source);
-          } catch {
-            throw new Error("Railway DATABASE_URL is not a valid PostgreSQL URL");
-          }
-          if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
-            throw new Error("Railway DATABASE_URL is not a valid PostgreSQL URL");
-          }
-          const pgbouncer = url.searchParams.get("pgbouncer")?.toLowerCase() === "true";
-          const transactionPooling = url.port === "6543" || pgbouncer;
-          if (transactionPooling) {
-            if (!url.hostname.toLowerCase().endsWith(".pooler.supabase.com")) {
-              throw new Error("DATABASE_URL uses transaction pooling on an unknown provider; refusing to guess a session URL");
-            }
-            url.port = "5432";
-            url.searchParams.delete("pgbouncer");
-          }
-          if (!url.searchParams.get("sslmode")) url.searchParams.set("sslmode", "require");
-          fs.writeFileSync(process.argv[3], url.toString(), { mode: 0o600 });
-          NODE
-
-          cookie_secret="$(cat "$cookie_file")"
-          case "$cookie_secret" in
-            *[[:space:]]*|*development-only*|*change-me*|*replace-with*|*generate-a*|*compose-demo*|*omnidemo*) cookie_secret="" ;;
-          esac
-          if [ "${#cookie_secret}" -lt 32 ]; then
-            cookie_secret="$(openssl rand -hex 32)"
-          fi
-
-          metrics_token="$(cat "$metrics_file")"
-          case "$metrics_token" in
-            *[[:space:]]*|*development-only*|*change-me*|*replace-with*|*generate-a*|*compose-demo*|*omnidemo*) metrics_token="" ;;
-          esac
-          if [ "${#metrics_token}" -lt 32 ] || [ "$metrics_token" = "$cookie_secret" ]; then
-            metrics_token="$(openssl rand -hex 32)"
-          fi
-
-          restricted_case_key="$(cat "$restricted_case_file")"
-          case "$restricted_case_key" in
-            *[[:space:]]*|*development-only*|*change-me*|*replace-with*|*generate-a*|*compose-demo*|*omnidemo*) restricted_case_key="" ;;
-          esac
-          if [ "${#restricted_case_key}" -lt 32 ] || [ "$restricted_case_key" = "$cookie_secret" ] || [ "$restricted_case_key" = "$metrics_token" ]; then
-            restricted_case_key="$(openssl rand -hex 32)"
-          fi
-
-          session_url="$(cat "$session_file")"
-          railway variable set \
-            "EVENT_DATABASE_URL=$session_url" \
-            "COOKIE_SECRET=$cookie_secret" \
-            "METRICS_TOKEN=$metrics_token" \
-            "RESTRICTED_CASE_ENCRYPTION_KEY=$restricted_case_key" \
-            "COOKIE_SECURE=true" \
-            "TRUST_PROXY=true" \
-            "HOST=0.0.0.0" \
-            "ALLOWED_ORIGINS=$STAGE_URL" \
-            "PUBLIC_URL=$STAGE_URL" \
-            "DEPLOYMENT_ENVIRONMENT=stage" \
-            "DEMO_MODE=true" \
-            "RATE_LIMIT_STORE=postgres" \
-            "AI_PROVIDER=mock" \
-            "PORT=8000" \
-            --service "$RAILWAY_SERVICE" \
-            --environment "$RAILWAY_ENVIRONMENT" \
-            --skip-deploys
-
-          printf "%s" "$cookie_secret" > "$cookie_file"
-          printf "%s" "$metrics_token" > "$metrics_file"
-          printf "%s" "$restricted_case_key" > "$restricted_case_file"
-          echo "Stage runtime configuration repaired without exposing secret values."
-
-      - name: Backend · install migration tooling
-        working-directory: backend
-        run: npm ci --ignore-scripts
-
-      - name: Backend · apply pending Stage migrations
-        working-directory: backend
-        run: |
-          set -eu
-          export MIGRATION_DATABASE_URL="$(cat "$RUNNER_TEMP/stage-session-database-url")"
-          export NODE_ENV=production
-          export DEPLOYMENT_ENVIRONMENT=stage
-          npm run db:migrate
-
-      - name: Add Stage demo role, transport and governance examples
-        working-directory: backend
-        run: |
-          set -eu
-          export DATABASE_URL="$(cat "$RUNNER_TEMP/stage-session-database-url")"
-          export NODE_ENV=production
-          export DEPLOYMENT_ENVIRONMENT=stage
-          DEMO_MODE=true node --import tsx src/database/seed-roles.ts
-          DEMO_MODE=true node --import tsx src/database/seed-departure.ts
-          DEMO_MODE=true node --import tsx src/database/seed-governance-authority.ts
-          DEMO_MODE=true node --import tsx src/database/seed-access-roles.ts
-
-      - uses: actions/setup-python@v5
-        if: github.event_name == 'workflow_dispatch' && inputs.seed
-        with:
-          python-version: "3.12"
-
-      - name: Backend · re-seed stage demo data (only when requested)
-        if: github.event_name == 'workflow_dispatch' && inputs.seed
-        working-directory: backend
-        run: |
-          set -eu
-          export NODE_ENV=production
-          export DEPLOYMENT_ENVIRONMENT=stage
-          export DATABASE_URL="$(cat "$RUNNER_TEMP/stage-session-database-url")"
-          python3 scripts/generate_school_data.py
-          node --import tsx src/database/seed.ts
-          DEMO_MODE=true node --import tsx src/database/seed-operations.ts
-          DEMO_MODE=true node --import tsx src/database/seed-departure.ts
-          DEMO_MODE=true node --import tsx src/database/seed-roles.ts
-          DEMO_MODE=true node --import tsx src/database/seed-governance-authority.ts
-          DEMO_MODE=true node --import tsx src/database/seed-access-roles.ts
-
-      - name: Bind deployment to this commit and preserve Stage demo access
-        run: railway variable set "RELEASE_SHA=$GITHUB_SHA" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --skip-deploys
-
-      - name: Deploy
-        run: railway up --project "$RAILWAY_PROJECT_ID" --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --ci --message "GitHub $GITHUB_SHA"
-
-      - name: Verify deployed revision and public application
-        run: |
-          set -eu
-          STAGE_METRICS_TOKEN="$(cat "$RUNNER_TEMP/stage-metrics-token")"
-          echo "Waiting for revision $GITHUB_SHA at $STAGE_URL"
-          for i in $(seq 1 48); do
-            body=$(curl -fsS "$STAGE_URL/readyz" 2>/dev/null || true)
-            release=$(curl -fsS "$STAGE_URL/releasez" 2>/dev/null || true)
-            readiness=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).status || "")); } catch {}' "$body")
-            release_sha=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).release_sha || "")); } catch {}' "$release")
-            release_environment=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).environment || "")); } catch {}' "$release")
-            if [ "$readiness" = "ready" ] && [ "$release_sha" = "$GITHUB_SHA" ] && [ "$release_environment" = "stage" ]; then
-              mobile=$(curl -fsS "$STAGE_URL/")
-              staff=$(curl -fsS "$STAGE_URL/staff/")
-              schema=$(curl -fsS "$STAGE_URL/api/schema")
-              curl -fsS -o /dev/null "$STAGE_URL/favicon.png"
-              curl -fsS -o /dev/null "$STAGE_URL/apple-touch-icon.png"
-              curl -fsS -o /dev/null "$STAGE_URL/icons/eduvera-192.png"
-              curl -fsS -o /dev/null "$STAGE_URL/icons/eduvera-512.png"
-              anonymous_session=$(curl -fsS "$STAGE_URL/api/v1/auth/session/")
-              demo_login=$(curl -fsS -H 'Content-Type: application/json' --data '{"role":"student"}' "$STAGE_URL/api/v1/auth/demo-session/")
-              unauthenticated_metrics_status=$(curl -sS -o /dev/null -w '%{http_code}' "$STAGE_URL/metrics")
-              demo_mode=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).demo_mode)); } catch {}' "$anonymous_session")
-              demo_role=$(node -e 'try { process.stdout.write(String(JSON.parse(process.argv[1]).user?.role || "")); } catch {}' "$demo_login")
-              echo "$mobile" | grep -Fq '<title>Edura OS · OmniSchool</title>' || { echo "::error::Mobile SPA content check failed"; exit 1; }
-              echo "$staff" | grep -Fq '<title>OmniSchool · Staff</title>' || { echo "::error::Staff SPA content check failed"; exit 1; }
-              echo "$schema" | grep -Fq '"openapi"' || { echo "::error::OpenAPI content check failed"; exit 1; }
-              [ "$demo_mode" = "true" ] || { echo "::error::Stage demo access is disabled; test logins would disappear"; exit 1; }
-              [ "$demo_role" = "student" ] || { echo "::error::Stage student demo login failed"; exit 1; }
-              [ "$unauthenticated_metrics_status" = "401" ] || { echo "::error::Metrics endpoint is not rejecting unauthenticated requests"; exit 1; }
-              metrics=$(curl -fsS -H "Authorization: Bearer $STAGE_METRICS_TOKEN" "$STAGE_URL/metrics")
-              echo "$metrics" | grep -Fq 'omnischool_event_broker_ready' || { echo "::error::Protected metrics content check failed"; exit 1; }
-              echo "Verified API readiness, both SPAs, install icons, OpenAPI, Stage demo login, protected metrics, and stage release $release_sha"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "::error::$STAGE_URL did not serve ready revision $GITHUB_SHA in time"
-          exit 1
-
-      - name: Remove temporary deployment secrets
-        if: always()
-        run: |
-          rm -f \
-            "$RUNNER_TEMP/stage-database-url" \
-            "$RUNNER_TEMP/stage-session-database-url" \
-            "$RUNNER_TEMP/stage-cookie-secret" \
-            "$RUNNER_TEMP/stage-metrics-token" \
-            "$RUNNER_TEMP/stage-restricted-case-encryption-key"
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/Stage'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/google-cloud-stage.yml

@@ -4,6 +4,35 @@ const tool={name:'read_attendance',description:'Read attendance',parameters:{typ
 const signal=new AbortController().signal;
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('provider-independent tool protocols',()=>{
+  it('uses Vertex OAuth, counts tokens and reserves allowance before generation',async()=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
+    const events:string[]=[];
+    const fetcher=vi.fn().mockImplementation((url:string)=>{
+      events.push(url.endsWith(':countTokens')?'count':'generate');
+      return Promise.resolve(new Response(JSON.stringify(url.endsWith(':countTokens')?{totalTokens:123}:{candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Checked'}]}}]})));
+    });vi.stubGlobal('fetch',fetcher);
+    const budget=vi.fn(()=>{events.push('reserve');return Promise.resolve();});
+    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',budget,()=>Promise.resolve('short-lived-token'));
+    expect((await provider.complete([{role:'user',content:'Check attendance'}],[tool],signal)).text).toBe('Checked');
+    expect(events).toEqual(['count','reserve','generate']);expect(budget).toHaveBeenCalledWith(123,2048);
+    const request=fetcher.mock.calls[1]![1];expect(request.headers.Authorization).toBe('Bearer short-lived-token');
+    expect(request.headers['x-goog-api-key']).toBeUndefined();
+    expect(JSON.parse(request.body).generationConfig).toMatchObject({candidateCount:1,maxOutputTokens:2048});
+  });
+  it('never generates when budget is exhausted or cloud access has expired',async()=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
+    const fetcher=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({totalTokens:100}))));
+    vi.stubGlobal('fetch',fetcher);
+    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',()=>Promise.reject(new Error('Budget exhausted')),()=>Promise.resolve('token'));
+    await expect(provider.complete([],[],signal)).rejects.toThrow(/Budget/);expect(fetcher).toHaveBeenCalledTimes(1);
+    vi.stubEnv('AGENT_ENABLED_UNTIL','2020-01-01');
+    await expect(provider.complete([],[],signal)).rejects.toThrow(/paused/);expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('locks Vertex to the reviewed cheap model and refuses unbudgeted generation',()=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_GOOGLE_PROJECT','eduera-511111');vi.stubEnv('AGENT_MODEL','gemini-3.1-flash-lite');
+    expect(()=>createAgentModel()).toThrow(/budget/);
+    vi.stubEnv('AGENT_MODEL','expensive-model');expect(()=>agentSettings()).toThrow(/approved/);
+  });
   it('uses native Ollama tools without thinking or streaming',async()=>{
     const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({done:true,message:{content:'',tool_calls:[{function:{name:tool.name,arguments:{}}}]}})));
     vi.stubGlobal('fetch',fetcher);

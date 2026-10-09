@@ -134,7 +134,7 @@ export class AuthController {
   @Post("demo-session/")
   @HttpCode(200)
   async demo(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    if (!config().DEMO_MODE) throw new (await import("@nestjs/common")).NotFoundException();
+    if (!config().DEMO_MODE || !['development', 'test'].includes(config().DEPLOYMENT_ENVIRONMENT)) throw new (await import("@nestjs/common")).NotFoundException();
     const role = (request.body as any)?.role ?? "student";
     if (!["student", "parent", "staff", "admin", "school_admin", "company"].includes(role)) throw new (await import("@nestjs/common")).BadRequestException("Unknown demo persona.");
     const user = await this.auth.demoUser(role);

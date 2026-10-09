@@ -6,23 +6,23 @@ capture/evidence requirements of School Operations Blueprint section 17.
 
 ## Runtime setup
 
-User override, 9 October 2026: the supplied test credentials are temporary server-side defaults when `DEPLOYMENT_ENVIRONMENT=stage` and `DEMO_MODE=true`. Sandbox checkout defaults to enabled in that scope. Environment variables override the defaults; set `RAZORPAY_ENABLED=false` to disable it.
+User override, 9 October 2026: the supplied test credentials are temporary server-side defaults when `DEPLOYMENT_ENVIRONMENT=stage`. Sandbox checkout defaults to enabled in that scope. Environment variables override the defaults; set `RAZORPAY_ENABLED=false` to disable it. Payment sandbox access is independent of demo login access; managed deployments keep `DEMO_MODE=false`.
 
 Optional **server environment overrides** on the existing Eduera Stage service:
 
 - `RAZORPAY_ENABLED=true`
 - `RAZORPAY_KEY_ID`: the account's `rzp_test_...` key
 - `RAZORPAY_KEY_SECRET`: the paired private test secret
-- `DEMO_MODE=true` (already used for Stage)
+- `DEMO_MODE=false` (required for managed deployments)
 - Optional `RAZORPAY_WEBHOOK_SECRET`: an independent randomly generated secret
   shared with the Razorpay dashboard webhook configuration.
 
 The temporary test credentials are in backend configuration only, as explicitly requested. They are not in frontend variables or the example file.
-Live keys and the production deployment environment are rejected. Disabled remains the default outside the Stage demo. Apply migration `057_razorpay_sandbox.sql` before starting the updated app.
+Live keys and the production deployment environment are rejected. Disabled remains the default outside Stage. Apply migration `057_razorpay_sandbox.sql` before starting the updated app.
 
 In Razorpay **Test mode**, enable automatic capture. Configure a webhook for
 `payment.captured` and `order.paid` at:
-`https://omnischool-stage.up.railway.app/api/v1/payments/razorpay/webhook/`.
+`<Google Cloud Stage service origin>/api/v1/payments/razorpay/webhook/`.
 Use the independent webhook secret, not the API secret. Webhooks are optional for
 sandbox operation: a bounded background poll runs every minute and the family has
 an explicit **Check payment status** recovery button.
@@ -45,7 +45,7 @@ an explicit **Check payment status** recovery button.
 - Raw webhook bytes are signature verified. Event IDs and payload hashes deduplicate
   delivery; unknown account orders are ignored. Background checks retain failed orders
   for retry without logging provider responses or credentials.
-- Receipts explicitly use `razorpay_test`; they affect only the configured demo ledger.
+- Receipts explicitly use `razorpay_test`; they affect the configured non-production ledger.
   Sandbox screens explicitly say no real money is collected.
 - If cash/credit/another adjustment changes the balance during checkout, preserve
   the captured payment as `review_required` without over-allocating it. It is visible
@@ -65,7 +65,7 @@ webhook replay, and recovery after missed callbacks. Database tests require the
 repository's isolated PostgreSQL test environment and run in the Stage PR workflow.
 
 Actual browser checkout against Razorpay and Stage runtime activation remain release
-checks after merge/deployment. Stage demo activation no longer requires new Railway variables. Webhook configuration still requires dashboard access; polling provides recovery without it.
+checks after merge/deployment. Stage sandbox activation does not require new Google Cloud variables. Webhook configuration still requires dashboard access; polling provides recovery without it.
 No live payments, settlement or production-readiness claims are made.
 
 Reference: https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/integration-steps/

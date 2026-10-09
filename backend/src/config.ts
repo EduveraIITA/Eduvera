@@ -67,22 +67,19 @@ const schema = z.object({
 export type AppConfig = ReturnType<typeof loadConfig>;
 
 export function loadConfig() {
-  // Temporary Stage-demo credentials, explicitly requested by the account owner.
+  // Temporary Razorpay Stage sandbox credentials, explicitly requested by the account owner.
   // Remove after rotation; environment variables always take precedence.
-  const stageDemo = process.env.DEPLOYMENT_ENVIRONMENT === "stage"
-    && ["1", "true", "yes", "on"].includes((process.env.DEMO_MODE ?? "").toLowerCase());
-  const value = schema.parse(stageDemo ? {
+  // Payment sandbox mode never grants demo login access.
+  const stageSandbox = process.env.DEPLOYMENT_ENVIRONMENT === "stage";
+  const value = schema.parse(stageSandbox ? {
     ...process.env,
-    // Temporary Razorpay test defaults requested for the Stage demo only.
+    // Temporary Razorpay test defaults requested for Stage sandbox payments only.
     RAZORPAY_ENABLED: process.env.RAZORPAY_ENABLED ?? "true",
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? "rzp_test_TlmHlao5mqz2zj",
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ?? "SdEBCytWR6MESwdilWCISzBb",
-    INVITATION_EMAIL_ENABLED: process.env.INVITATION_EMAIL_ENABLED ?? "true",
-    SMTP_USER: process.env.SMTP_USER ?? "projectpathyakram@gmail.com",
-    SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "fakdej-cixxir-3jEcti",
   } : process.env);
-  if (value.RAZORPAY_ENABLED && (value.DEPLOYMENT_ENVIRONMENT === "production" || !value.DEMO_MODE || !value.RAZORPAY_KEY_ID.startsWith("rzp_test_") || !value.RAZORPAY_KEY_SECRET)) {
-    throw new Error("Razorpay sandbox requires DEMO_MODE, a test key ID and a server-side key secret.");
+  if (value.RAZORPAY_ENABLED && ((value.DEPLOYMENT_ENVIRONMENT ?? value.NODE_ENV) === "production" || !value.RAZORPAY_KEY_ID.startsWith("rzp_test_") || !value.RAZORPAY_KEY_SECRET)) {
+    throw new Error("Razorpay sandbox requires a non-production environment, a test key ID and a server-side key secret.");
   }
   if (value.INVITATION_EMAIL_ENABLED) {
     if (!value.PUBLIC_URL) throw new Error("PUBLIC_URL is required for invitation email");
@@ -152,8 +149,8 @@ export function loadConfig() {
     if (publicUrl.protocol !== "https:" || publicUrl.origin !== value.PUBLIC_URL || !allowedOrigins.includes(publicUrl.origin)) {
       throw new Error("PUBLIC_URL must be an exact HTTPS origin included in ALLOWED_ORIGINS");
     }
-    if (deploymentEnvironment === "production" && value.DEMO_MODE) {
-      throw new Error("DEMO_MODE must be false in production deployments");
+    if (value.DEMO_MODE) {
+      throw new Error("DEMO_MODE must be false in managed deployments");
     }
   }
   if (value.PHOTO_ATTENDANCE_ENABLED && value.PHOTO_ATTENDANCE_API_TOKEN.length < 24) {

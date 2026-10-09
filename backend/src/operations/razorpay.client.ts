@@ -11,7 +11,7 @@ export interface RazorpayPayment { id: string; order_id: string; amount: number;
 export interface RazorpayOrder { id: string; amount: number; currency: string; receipt: string }
 @Injectable()
 export class RazorpayClient {
-  enabled() { const c = config(); return c.RAZORPAY_ENABLED && c.DEMO_MODE && c.RAZORPAY_KEY_ID.startsWith("rzp_test_") && Boolean(c.RAZORPAY_KEY_SECRET); }
+  enabled() { const c = config(); return c.RAZORPAY_ENABLED && c.DEPLOYMENT_ENVIRONMENT !== "production" && c.RAZORPAY_KEY_ID.startsWith("rzp_test_") && Boolean(c.RAZORPAY_KEY_SECRET); }
   keyId() { return config().RAZORPAY_KEY_ID; }
   verify(orderId: string, paymentId: string, signature: string) { verifyRazorpaySignature(`${orderId}|${paymentId}`, signature, config().RAZORPAY_KEY_SECRET); }
   verifyWebhook(body: Buffer, signature: string) { verifyRazorpaySignature(body, signature, config().RAZORPAY_WEBHOOK_SECRET); }
