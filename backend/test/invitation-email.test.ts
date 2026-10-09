@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({sendMail: vi.fn(), close: vi.fn(), createTransp
 vi.mock('../src/config.js', () => ({config: () => mocks.settings}));
 vi.mock('nodemailer', () => ({default: {createTransport: mocks.createTransport}}));
 import { deliverInvitation, invitationEmailFailure } from '../src/common/invitation-email.js';
+import { invitationLogo } from '../src/common/invitation-logo.js';
 import { invitationTemplate } from '../src/common/invitation-template.js';
+import { sendTransactionalEmail } from '../src/common/email-transport.js';
 const invitation = {email: 'recipient@example.test', token: 'private-code', expires_at: '2099-10-04T00:00:00Z'};
 beforeEach(() => {
   vi.unstubAllGlobals(); vi.clearAllMocks(); mocks.settings.INVITATION_EMAIL_PROVIDER = 'smtp'; mocks.settings.INVITATION_EMAIL_ENABLED = true; mocks.settings.SMTP_PORT = 465;
@@ -14,6 +16,14 @@ beforeEach(() => {
   mocks.sendMail.mockResolvedValue({accepted: [invitation.email], rejected: []});
 });
 describe('invitation SMTP delivery', () => {
+  it('sends PDF attachments with both providers',async()=>{
+    const input={to:invitation.email,subject:'Payment confirmed',text:'Test receipt',senderName:'Eduera',attachments:[{filename:'receipt.pdf',contentType:'application/pdf',content:Buffer.from('%PDF-test').toString('base64')}]};
+    await sendTransactionalEmail(input);
+    expect(mocks.sendMail.mock.calls[0]![0].attachments[0]).toMatchObject({filename:'receipt.pdf',contentType:'application/pdf',encoding:'base64',contentDisposition:'attachment'});
+    mocks.settings.INVITATION_EMAIL_PROVIDER='resend';
+    const fetchMock=vi.fn().mockResolvedValue({ok:true,json:()=>Promise.resolve({id:'mail-id'})});vi.stubGlobal('fetch',fetchMock);
+    await sendTransactionalEmail(input);expect(JSON.parse(fetchMock.mock.calls[0]![1].body).attachments[0]).toMatchObject({filename:'receipt.pdf',content_type:'application/pdf'});
+  });
   it('returns only safe categories for SMTP authentication and network failures', () => {
     expect(invitationEmailFailure({code:'EAUTH',message:'secret-password'}).code).toBe('authentication');
     expect(invitationEmailFailure({code:'ETIMEDOUT',message:'private-recipient'}).code).toBe('connection');
@@ -29,8 +39,10 @@ describe('invitation SMTP delivery', () => {
     const body=JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body.to).toEqual([invitation.email]);
     expect(body.text).toContain(invitation.token);
-    expect(body.html).toContain('Accept invitation');
+    expect(body.html).toContain('Accept Invitation');
     expect(body.html).toContain(invitation.token);
+    expect(body.attachments).toBeUndefined();
+    expect(body.html).toContain('https://school.example.test/email-assets/eduera-logo-v1.png');
   });
   it('reports API authentication failures without exposing the response body', async () => {
     mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
@@ -49,7 +61,8 @@ describe('invitation SMTP delivery', () => {
     expect(mocks.createTransport).toHaveBeenCalledWith(expect.objectContaining({secure: true, tls: {minVersion: 'TLSv1.2', rejectUnauthorized: true}, debug: false}));
     expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({to: invitation.email, text: expect.stringContaining('https://school.example.test/join')}));
     expect(mocks.sendMail.mock.calls[0]![0].text).toContain(invitation.token);
-    expect(mocks.sendMail.mock.calls[0]![0].html).toContain('Accept invitation');
+    expect(mocks.sendMail.mock.calls[0]![0].html).toContain('Accept Invitation');
+    expect(mocks.sendMail.mock.calls[0]![0].attachments).toEqual([]);
     expect(mocks.close).toHaveBeenCalledOnce();
   });
   it('does not contact SMTP in manual mode', async () => {
@@ -70,16 +83,40 @@ describe('invitation SMTP delivery', () => {
     mocks.sendMail.mockResolvedValue({accepted: [], rejected: [invitation.email]});
     expect((await deliverInvitation(invitation)).delivery).toBe('failed');
   });
-  it('escapes message values and keeps codes out of links and remote resources', () => {
+  it('escapes message values and confines prefill to link fragments', () => {
     const message = invitationTemplate({...invitation, token: '<script>private&code</script>', email: '"quoted"@example.test', publicUrl: 'https://school.example.test'});
     expect(message.html).not.toContain('<script>');
     expect(message.html).toContain('&lt;script&gt;private&amp;code&lt;/script&gt;');
-    expect(message.html).toContain('&quot;quoted&quot;@example.test');
-    expect(message.html.match(/href="[^"]+"/g)).toEqual(['href="https://school.example.test/join"', 'href="https://school.example.test/join"']);
+    const links=[...message.html.matchAll(/href="([^"]+)"/g)].map(match=>new URL(match[1]!.replaceAll('&amp;','&')));
+    expect(links).toHaveLength(2);
+    for(const link of links){
+      expect(link.origin+link.pathname).toBe('https://school.example.test/join');
+      expect(link.search).toBe('');
+      const params=new URLSearchParams(link.hash.slice(1));
+      expect(params.get('token')).toBe('<script>private&code</script>');
+      expect(params.get('email')).toBe('"quoted"@example.test');
+    }
     expect(message.html).not.toMatch(/<script|<form/i);
-    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/assets/edura-leaf-mark.png"']);
+    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/email-assets/eduera-logo-v1.png"']);
     expect(message.html).toContain('alt="Eduera logo" width="48" height="48"');
     expect(message.text).toContain('<script>private&code</script>');
-    expect(message.html).toContain('2099-10-04T00:00:00.000Z');
+    expect(message.html).toContain('Oct 4, 2099, 12:00 AM UTC');
+    expect(message.text).toContain('2099-10-04T00:00:00.000Z');
+  });
+  it('uses the reference layout with the unchanged logo and a selectable six-digit code', () => {
+    const message = invitationTemplate({...invitation, token: '012345', publicUrl: 'https://school.example.test'});
+    expect(message.html).toContain('INVITATION CODE');
+    expect(message.html).toContain('SINGLE-USE');
+    expect(message.html).toContain('>012345</p>');
+    expect(message.html).toContain('Your email and code are filled in automatically when you accept.');
+    expect(message.html).toContain('Open direct join portal');
+    expect(message.html).toContain('max-width:480px');
+    expect(message.html).not.toMatch(/<button|onclick|navigator.clipboard|Help Center|Eduera Inc/i);
+    expect(message).not.toHaveProperty('inlineImages');
+    expect(message.text).toContain('Invitation code: 012345');
+    const link=new URL(message.text.match(/Open: (.+)/)![1]!);
+    expect(new URLSearchParams(link.hash.slice(1)).get('token')).toBe('012345');
+    // PNG IHDR color type 6 carries alpha; the old app icon was opaque RGB.
+    expect(Buffer.from(invitationLogo.content,'base64')[25]).toBe(6);
   });
 });

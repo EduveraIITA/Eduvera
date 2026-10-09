@@ -2,13 +2,13 @@ import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 
 /** No retries here: a timeout may occur after provider acceptance. Never log raw errors. */
-export async function sendTransactionalEmail(input: {to: string; subject: string; text: string; html?: string; senderName: string}) {
+export async function sendTransactionalEmail(input: {to: string; subject: string; text: string; html?: string; senderName: string; inlineImages?: Array<{filename:string;contentType:string;cid:string;content:string}>; attachments?: Array<{filename:string;contentType:string;content:string}>}) {
   const settings = config();
   if (settings.INVITATION_EMAIL_PROVIDER === 'resend') {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
       headers: {Authorization: `Bearer ${settings.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'User-Agent': 'Eduera/1.0'},
-      body: JSON.stringify({from: `${input.senderName} <${settings.INVITATION_EMAIL_FROM}>`, to: [input.to], subject: input.subject, text: input.text, html: input.html}),
+      body: JSON.stringify({from: `${input.senderName} <${settings.INVITATION_EMAIL_FROM}>`, to: [input.to], subject: input.subject, text: input.text, html: input.html, ...((input.inlineImages?.length || input.attachments?.length)?{attachments:[...(input.inlineImages??[]).map(image=>({filename:image.filename,content:image.content,content_type:image.contentType,content_id:image.cid})),...(input.attachments??[]).map(file=>({filename:file.filename,content:file.content,content_type:file.contentType}))]}:{})}),
     });
     if (!response.ok) throw Object.assign(new Error('Email API rejected request'), {code: [401,403].includes(response.status) ? 'EAPI_AUTH' : 'EAPI'});
     const result = await response.json() as {id?: unknown};
@@ -24,7 +24,7 @@ export async function sendTransactionalEmail(input: {to: string; subject: string
     disableFileAccess: true, disableUrlAccess: true, logger: false, debug: false,
   });
   try {
-    const result = await transport.sendMail({from: {name: input.senderName, address: settings.SMTP_USER!}, to: input.to, subject: input.subject, text: input.text, html: input.html});
+    const result = await transport.sendMail({from: {name: input.senderName, address: settings.SMTP_USER!}, to: input.to, subject: input.subject, text: input.text, html: input.html, attachments:[...(input.inlineImages??[]).map(image=>({filename:image.filename,content:image.content,encoding:"base64",contentType:image.contentType,cid:image.cid,contentDisposition:"inline" as const})),...(input.attachments??[]).map(file=>({filename:file.filename,content:file.content,encoding:"base64",contentType:file.contentType,contentDisposition:"attachment" as const}))]});
     if (!result.accepted?.length || result.rejected?.length) throw Object.assign(new Error('Recipient rejected'), {code: 'EENVELOPE'});
   } finally {transport.close();}
 }

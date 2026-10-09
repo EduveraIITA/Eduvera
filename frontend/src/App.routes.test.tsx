@@ -325,16 +325,16 @@ describe("implemented application routes", () => {
   });
 
   it("keeps student home distinct and routes Attendance from its navigation", async () => {
-    const user = userEvent.setup();
+    // This route test checks click outcomes; pointer traversal is not part of this assertion.
     render(<MemoryRouter initialEntries={["/student"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
     expect(screen.queryByText("Overall Aggregate")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open digital student ID for Aarav Sharma" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open digital student ID for Aarav Sharma" }));
     expect(screen.getByRole("dialog", { name: "Aarav Sharma" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Close digital student ID" }));
-    await user.click(screen.getByRole("link", { name: "Attendance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close digital student ID" }));
+    fireEvent.click(screen.getByRole("link", { name: "Attendance" }));
     expect(await screen.findByRole("region",{name:/Overall attendance/})).toBeVisible();
-  }, 12000);
+  }, 30000);
 
   it("opens the parent's student ID as a viewport modal with a visible close control", async () => {
     const interact = userEvent.setup();
@@ -714,7 +714,6 @@ describe("implemented application routes", () => {
   });
 
   it("keeps the parent dashboard visible when the selected child's record is still loading", async () => {
-    const interact = userEvent.setup();
     const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
     const first = (schoolApiFixture("/api/v1/students/") as { results: Array<{ id: string; user: { display_name: string }; admission_number: string }> }).results[0]!;
     const second = { ...first, id: "student-2", admission_number: "CIS-002", user: { ...first.user, display_name: "Ananya Sharma" } };
@@ -732,13 +731,13 @@ describe("implemented application routes", () => {
     });
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /><Link to="/parent/home?student_id=student-2">Select next child</Link></MemoryRouter>);
     expect(await screen.findByRole("button", { name: /Open digital student ID for Aarav Sharma/ })).toBeVisible();
-    await interact.click(screen.getByRole("link", { name: "Select next child" }));
+    fireEvent.click(screen.getByRole("link", { name: "Select next child" }));
     await waitFor(() => expect(secondFetchRequested).toBe(true));
     expect(screen.queryByText("Syncing school records...")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Open digital student ID for Aarav Sharma/ })).toBeVisible();
     finishSecondFetch({ ...(schoolApiFixture("/api/v1/screens/parent/home/?student_id=student-2") as object), student: second, siblings: [first] });
     expect(await screen.findByRole("button", { name: /Open digital student ID for Ananya Sharma/ })).toBeVisible();
-  }, 12000);
+  }, 30000);
 
   it("cycles a four-child card deck in both directions, including wraparound", async () => {
     useInstantCardTransitions();

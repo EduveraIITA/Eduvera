@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, MemoryRouter } from 'react-router-dom';
@@ -24,7 +24,7 @@ function show(portal:'parent'|'student'='parent',search='') {render(<QueryClient
 
 describe('family fee navigation',()=>{
   it('opens one invoice without the list and preserves payment confirmation',async()=>{
-    const user=userEvent.setup();show();await user.click(await screen.findByRole('link',{name:/TERM-1/}));
+    const user=userEvent.setup();show();await user.click(await screen.findByRole('link',{name:/Term tuition/}));
     expect(await screen.findByRole('region',{name:'Invoice details'})).toBeVisible();
     expect(screen.queryByRole('navigation',{name:'Fee records'})).not.toBeInTheDocument();
     await user.click(screen.getByRole('button',{name:'Pay / report payment'}));
@@ -43,7 +43,7 @@ describe('family fee navigation',()=>{
   it('separates receipts and reviews from invoices',async()=>{
     const user=userEvent.setup();show();await user.click(await screen.findByRole('link',{name:'Receipts'}));
     expect(screen.getByText('No receipts recorded.')).toBeVisible();
-    expect(screen.queryByRole('link',{name:/TERM-1/})).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/Term tuition/})).not.toBeInTheDocument();
     await user.click(screen.getByRole('link',{name:'Reviews'}));
     expect(screen.getByText('No fee reviews submitted.')).toBeVisible();
   });
@@ -58,5 +58,68 @@ describe('family fee navigation',()=>{
     expect(await screen.findByText(/No invoices have been issued/)).toBeVisible();
     expect(screen.queryByRole('region',{name:'Invoice details'})).not.toBeInTheDocument();
     expect(getFeeLedger).toHaveBeenLastCalledWith('school-1','student-2');
+  });
+});
+
+
+describe('fee printing and receipts', () => {
+  it('opens a verified receipt and prints only its record, with sandbox labeling', async () => {
+    const user = userEvent.setup(); const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+    vi.mocked(getFeeLedger).mockResolvedValue({currency:'INR',invoices:[invoice],can_submit:true,online_payments_enabled:true,payments:[
+      {id:'payment-1',invoice_id:invoice.id,amount_paise:5000,method:'razorpay_test',reference:'pay_test_1',created_at:'2026-10-09T10:00:00Z'},
+      {id:'payment-2',invoice_id:invoice.id,amount_paise:2000,method:'cash',reference:'cash_2',created_at:'2026-10-08T10:00:00Z'},
+    ]});
+    show('parent','?student_id=student-1&view=receipts');
+    await user.click(await screen.findByRole('link',{name:/pay_test_1/}));
+    const detail = await screen.findByRole('region',{name:'Receipt details'});
+    expect(within(detail).getByText('Test payment receipt')).toBeVisible();
+    await user.click(within(detail).getByRole('button',{name:'Print receipt'}));
+    expect(print).toHaveBeenCalledOnce();
+    const document = window.document.querySelector('.family-fee-print-document')!;
+    expect(document).toHaveTextContent('Mira Sen'); expect(document).toHaveTextContent('pay_test_1');
+    expect(document).toHaveTextContent('TEST RECEIPT'); expect(document).not.toHaveTextContent('cash_2');
+    await user.click(screen.getByRole('link',{name:'Go back'}));
+    expect(await screen.findByRole('navigation',{name:'Fee records'})).toBeVisible();
+    print.mockRestore();
+  });
+  it('prints invoice balances without payment controls', async () => {
+    const user = userEvent.setup(); const print = vi.spyOn(window,'print').mockImplementation(()=>{});
+    show('parent','?student_id=student-1&invoice=invoice-1');
+    await user.click(await screen.findByRole('button',{name:'Print invoice'}));
+    expect(print).toHaveBeenCalledOnce();
+    const document = window.document.querySelector('.family-fee-print-document')!;
+    expect(document).toHaveTextContent('Term tuition'); expect(document).toHaveTextContent('Total outstanding: ₹100.00');
+    expect(document.querySelector('button')).toBeNull(); print.mockRestore();
+  });
+  it('does not print or expose an unavailable receipt', async () => {
+    show('parent','?student_id=student-1&view=receipts&receipt=another-child-payment');
+    expect(await screen.findByRole('alert')).toHaveTextContent('receipt is unavailable');
+    expect(screen.queryByRole('button',{name:'Print receipt'})).not.toBeInTheDocument();
+    expect(document.querySelector('.family-fee-print-document')).toBeNull();
+  });
+});
+
+
+describe('reference finance overview',()=>{
+  it('filters unpaid invoices from Pay balance even after a different filter',async()=>{
+    const user=userEvent.setup();show('parent','?filter=settled');
+    await user.click(await screen.findByRole('link',{name:/Pay balance/}));
+    expect(await screen.findByRole('link',{name:/Term tuition/})).toBeVisible();
+    expect(screen.getByRole('combobox',{name:'Filter invoices'})).toHaveValue('unpaid');
+    await user.selectOptions(screen.getByRole('combobox',{name:'Filter invoices'}),'settled');
+    expect(screen.getByText('No invoices match this filter.')).toBeVisible();
+  });
+  it('opens the fee enquiry form for a selected invoice',async()=>{
+    const user=userEvent.setup();show();
+    await user.click(await screen.findByRole('link',{name:'Enquire'}));
+    await user.click(screen.getByRole('link',{name:/Term tuition/}));
+    expect(await screen.findByRole('textbox',{name:'Your question'})).toBeVisible();
+    expect(submitFeeReview).not.toHaveBeenCalled();
+  });
+  it('refreshes the statement without submitting a payment',async()=>{
+    const user=userEvent.setup();show('parent','?invoice=invoice-1');
+    await user.click(await screen.findByRole('button',{name:'Sync'}));
+    expect(await screen.findByRole('status')).toHaveTextContent('Statement is up to date');
+    expect(getFeeLedger).toHaveBeenCalledTimes(2); expect(submitFeeReview).not.toHaveBeenCalled();
   });
 });

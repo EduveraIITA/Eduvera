@@ -28,7 +28,8 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { bufferLogs: true, rawBody: true });
   const server = app.getHttpAdapter().getInstance();
   await app.register(cookie, { secret: settings.COOKIE_SECRET, hook: "onRequest" });
-  await app.register(helmet, settings.NODE_ENV === "production" ? (settings.RAZORPAY_ENABLED ? { contentSecurityPolicy: { directives: {
+  await app.register(helmet, settings.NODE_ENV === "production" ? (settings.RAZORPAY_ENABLED ? { crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, contentSecurityPolicy: { directives: {
+    formAction: ["'self'", "https://api.razorpay.com"],
     scriptSrc: ["'self'", "https://checkout.razorpay.com", "https://cdn.razorpay.com", "https://checkout-static-next.razorpay.com"],
     frameSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
     connectSrc: ["'self'", "https://api.razorpay.com", "https://api-dark.razorpay.com", "https://checkout.razorpay.com", "https://express.razorpay.com", "https://lumberjack.razorpay.com", "https://lumberjack-cx.razorpay.com", "https://lumberjack-metrics.razorpay.com"],

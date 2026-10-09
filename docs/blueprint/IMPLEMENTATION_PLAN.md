@@ -4951,3 +4951,208 @@ Deployment and real browser checkout remain separate verification steps.
   isolated real-database agent integration tests, including a natural “You can” continuation
   after a dismissed proposal. Stage deployment and live-device acceptance remain pending
   until the release pipeline completes.
+
+### Family fees clarity and receipt printing — 9 October 2026
+
+User-requested cleanup preserves the shared parent/student shell and blue semantic
+palette. Fee descriptions now lead compact rows, balances align on the right,
+and status labels and readable due dates replace reference-first scanning.
+References remain available in rows, details and printouts. Verified receipts
+open a student-scoped detail route with an individual print action. Statement,
+invoice, receipt register and review print actions use a dedicated print document
+with school/student identity and full references; payment controls and navigation
+are excluded. Razorpay test receipts retain explicit sandbox labeling. No payment
+or verification rules change, and student views remain read-only.
+
+Validation: 18 focused frontend tests pass, covering receipt navigation, selected
+receipt-only print content, unavailable receipt isolation, invoice printing,
+child switching, review confirmation and existing mocked gateway flows. Browser
+print dialog/device printing and live gateway completion are separate acceptance
+checks; no real payment was made. Build/lint and Stage verification are recorded
+in the associated PR; user visual acceptance remains pending.
+
+
+### Invitation email actions — 9 October 2026
+
+School invitation creation now explicitly says **Send invitation email**. Pending
+and expired school/company invitations offer **Resend invitation email**. Resend
+retains recipient, role, target records and source; rotates the stored token hash;
+renews the 72-hour expiry; records an audit action; and sends after commit.
+School locks serialize resend with acceptance/revocation. Accepted or revoked
+invitations cannot be resent; delegated inviters cannot resend company or admin
+invitations. A one-minute cooldown limits accidental repeats. Receipts distinguish
+provider acceptance, failure and manual delivery. UI/transport and TypeScript
+checks pass locally; database integration cases are included for CI. Live inbox
+delivery remains unverified.
+
+
+### Numeric invitation codes and embedded email logo — 9 October 2026
+
+User-requested correction: new school, staff-profile and company invitations use
+cryptographically generated six-digit codes (including leading zeros), expire in
+30 minutes, and retain existing single-use, recipient and authority checks.
+Numeric hashes use an email-bound HMAC with the stable cookie secret; previously
+issued long-code hashes remain compatible until their original expiry. Five
+acceptance attempts per recipient per 15 minutes are committed separately from
+acceptance so failed guesses cannot roll back the limit. Resend replaces the code.
+The established Eduera logo is embedded as an inline PNG attachment with a CID
+reference in SMTP and HTTPS provider emails; it no longer needs a remote image
+request. Focused checks cover MIME metadata, code scoping and legacy digests;
+database CI covers guess limits. Live deployment/email verification follows CI.
+
+### Razorpay wallet recovery, payment status and emailed PDFs — 9 October 2026
+
+The observed Stage headers enforce same-origin opener isolation and self-only
+form posting. Enabled Razorpay now uses popup-compatible opener isolation and
+allows form posts only to self and the exact Razorpay API origin. This addresses
+a likely wallet popup failure; user-device completion is not yet verified.
+Invoice status persists across visits and refreshes while visible. Verified failed
+and pending attempts are distinct from captured and school-review payments.
+Parents can download an authorized PDF from invoice status or receipt detail.
+
+Migration 059 adds a transactional, deduplicated email queue. A post-commit worker
+uses Eduera's existing configured sender, verifies the initiating guardian still
+has access and a verified email, and attaches a branded PDF only for allocated
+capture. Other states get accurate status templates. Provider acceptance is not
+claimed as inbox delivery. Ambiguous sending is recorded without automatic resend;
+payment remains committed even when email fails. Old receipts are not backfilled.
+The embedded receipt font and its license are packaged in the runtime image.
+
+Local verification: backend typecheck/build, focused lint, 18 provider/template/PDF
+tests and 30 fee frontend tests passed. The sample PDF was rendered and visually
+checked. Additional isolated-database tests cover duplicate enqueue, recipient
+eligibility, PDF authorization and ambiguous sends; CI remains required. Live
+wallet completion and actual email inbox receipt are separate acceptance checks.
+### Compact invitation confirmation — 9 October 2026
+
+User correction replaces the separate "Invitation ready" receipt with a compact
+confirmation on the invitation list. Successful provider acceptance shows an
+animated mint checkmark, "Invitation sent", and the recipient email. The shared
+company receipt uses the same presentation. Tokens, join URLs, expiry text and
+copy actions are no longer rendered. Failed or unavailable email delivery shows
+an explicit alert and points to settings/resend; it never uses the success
+animation. Sending still uses the existing API and does not claim inbox delivery.
+The confirmation can be dismissed with the keyboard, uses a live status region,
+and disables animation for reduced-motion preferences.
+
+Local verification: 15 onboarding tests passed, including success, failed resend,
+unavailable email, hidden tokens, return to the list and dismissal; frontend
+TypeScript/production build and lint passed. A component preview was prepared,
+but its local server did not remain reachable. Browser visual verification is
+pending because the local Chromium download is unavailable. CI, deployment and user visual acceptance
+must be verified separately; no live email was sent by this UI change.
+
+### Reference-led invitation email — 9 October 2026
+
+The supplied email reference now guides the invitation template: white rounded
+card, original embedded Eduera logo, navy heading, neutral code panel with
+single-use label, readable UTC expiry including time, violet full-width join
+button, fallback join link and quiet privacy footer. Responsive overrides reduce
+padding on small screens; presentation tables and inline styles retain email
+client fallbacks. The code remains contiguous and selectable so copying preserves
+leading zeros. No non-functional clipboard button or invented Help/Privacy links
+are added. The existing logo attachment, plain-text alternative, escaped values
+and code-free links are unchanged. No invitation TTL or acceptance behavior changes.
+
+Verification: 11 focused email tests and backend production build pass locally.
+These tests use mocked transports; no live email was sent. Real inbox/client
+visual verification and deployment remain pending. This change and the compact
+confirmation above remain local until the user authorizes publishing to GitHub.
+
+### Invitation link prefill and transparent logo — 9 October 2026
+
+User correction: Accept Invitation now centers its label without an offset arrow.
+Both email links and the plain-text alternative carry the invited email and code
+in the URL fragment. The join form reads valid details, preserves leading zeros,
+and removes the fragment with history replacement. Opening a link never consumes
+an invitation: acceptance still requires the existing explicit form submission,
+CSRF, password/account checks, expiry and single-use validation. Invalid or older
+bare links retain manual entry. Email copy now describes the code as a backup.
+This explicitly supersedes the earlier code-free-link decision at the user's
+request; fragments are not included in HTTP requests/referrer headers.
+
+The embedded logo now reuses the existing transparent RGBA brand PNG verbatim,
+instead of the opaque RGB app icon, preserving the original artwork for dark
+email backgrounds. Local verification: 11 email tests and 20 onboarding tests,
+both production builds and targeted lint pass. Tests cover fragment encoding,
+leading zeros, plus-address email, no acceptance on open, history cleanup,
+invalid-link fallback, expired-invitation errors and logo alpha metadata.
+Real email-client rendering and Stage deployment are separate verification gates.
+
+
+### Invitation email copy cleanup — 9 October 2026
+
+User correction centers the numeric invitation code with inline text alignment
+and an HTML alignment fallback. Removes the invited-email/current-password
+paragraph from HTML and the corresponding lines from the plain-text alternative.
+A 24px gap separates expiry and the accept button. Link prefill, original
+transparent logo, expiry and acceptance rules remain intact. The existing email
+transport/escaping tests are used for verification; release status follows CI.
+
+### Reference-led family finance screens — 9 October 2026
+
+User supplied a two-screen reference for fee overview and invoice statement.
+Implemented a total/paid/overdue summary, invoice status filter, segmented tabs,
+compact icon rows and an enquiry entry point using existing school ledger data.
+Pay balance opens unpaid invoice selection: the existing checkout is scoped to
+one invoice, not an unsupported multi-invoice charge. Invoice statements show
+original charge, actual credits, linked verified receipts, outstanding/refund
+balance, copy reference, print and refresh controls. No office hours, verification
+claims or sample monetary values from the image are introduced as live data.
+Shared portal navigation, receipt printing and payment authorization remain intact.
+
+Validation: 21 focused fee/review/gateway tests pass including filter replacement,
+enquiry navigation and statement refresh without payment submission; focused lint
+passes. Production build and Stage release follow CI. Visual acceptance against
+the user's reference and physical iPad printing remain user acceptance checks.
+
+
+### Invitation sent popup — 9 October 2026
+
+User correction moves successful invitation confirmation from an inline list card
+to a centered native modal dialog above the app. The existing mint checkmark
+animates within a compact card with recipient email and a close control. It closes
+after four seconds or immediately via close/Escape. Native dialog behavior supplies
+the modal backdrop and focus containment; opening locks page scroll, cleanup restores
+scroll/focus and cancels the timer, and reduced-motion preferences disable animations.
+Failed/manual delivery remains a persistent inline alert; the popup is shown only
+for provider-accepted email. Invitation records and delivery APIs are unchanged.
+
+Local verification: 22 focused onboarding/popup tests pass, including timer cleanup,
+callback refresh without restarting the deadline, manual dismissal, focus restoration,
+hidden codes and persistent failure states. Frontend production build and targeted
+TypeScript-aware lint pass. Real-device visual review and deployment remain separate
+gates; no live invitation email was sent for these tests.
+
+### Background invitation delivery and translucent confirmation — 10 October 2026
+
+User correction removes the dark backdrop and changes the invitation popup to a
+translucent, blurred theme surface (opaque fallback for reduced transparency).
+Pending mail shows a dismissible sending state; only provider acceptance starts
+the success animation and four-second dismissal. Workspace polling exposes queued,
+sending, accepted, failed, unconfirmed and cancelled delivery without exposing codes.
+Delivery job IDs prevent a stale pre-resend success from confirming the new attempt.
+
+Migration 060 adds a durable PostgreSQL invitation queue. School/company create and
+resend transactions enqueue atomically and return without waiting for SMTP/HTTPS.
+The existing always-allocated Stage CPU runs a one-second worker; atomic SKIP LOCKED
+claims prevent duplicate concurrent processing. Codes are AES-GCM encrypted with a
+domain-separated key derived from the configured application secret, bound to the
+invitation ID, and erased on completion/cancellation. Revoked, expired, accepted or
+rotated invitations are skipped. Interrupted/ambiguous sends are marked unconfirmed
+without automatic resending; the authorized sender can check and resend manually.
+Pending jobs survive process restarts. No new infrastructure or credentials required.
+
+Invitation/payment HTML now references a public, versioned PNG endpoint serving the
+same original transparent logo, rather than attaching it as a CID MIME part. Real
+payment PDF attachments remain unchanged. The logo URL contains no user identifiers.
+Remote-image blocking may hide the image in some clients; the text brand remains.
+Already-sent messages and their Gmail attachment chips cannot be changed retroactively.
+
+Local evidence: 30 focused frontend tests and 17 backend email/asset/crypto/PDF tests
+pass; frontend production build and backend build/typecheck pass. Ten new disposable
+PostgreSQL integration cases cover transaction rollback, concurrent workers, slow
+providers, invalidated invitations, interrupted attempts and sanitized failures.
+They require the isolated CI database (no local PostgreSQL available). Full CI,
+Stage deployment, and real-device/email-client visual review remain separate gates.
+No live invitation or payment emails were sent while testing.

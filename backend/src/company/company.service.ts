@@ -1,8 +1,8 @@
+import { issueInvitationCode } from '../common/invitation-code.js';
 import { InstitutionsService } from '../institutions/institutions.service.js';
 import { manualSchema } from '../institutions/schemas.js';
-import { deliverInvitation } from '../common/invitation-email.js';
+import { enqueueInvitation } from '../common/invitation-queue.js';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { AuthUser } from '../common/request.js';
@@ -28,7 +28,9 @@ export class CompanyService {
       (SELECT count(*)::int FROM school_memberships m JOIN users u ON u.id=m.user_id AND u.is_active WHERE m.school_id=s.id AND m.role='admin' AND m.is_active) AS admin_count,
       (SELECT count(*)::int FROM school_invitations i WHERE i.school_id=s.id AND i.source='company' AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>now()) AS pending_admins
       FROM schools s LEFT JOIN institution_onboarding o ON o.school_id=s.id ORDER BY s.name`.execute(this.db);
-    const invitations = await sql`SELECT i.id,i.school_id,s.name AS school_name,i.email,i.expires_at,i.accepted_at,i.revoked_at
+    const invitations = await sql`SELECT i.id,i.school_id,s.name AS school_name,i.email,i.expires_at,i.accepted_at,i.revoked_at,
+      (SELECT id FROM invitation_email_jobs j WHERE j.invitation_id=i.id AND j.token_hash=i.token_hash) AS delivery_job_id,
+      (SELECT delivery_state FROM invitation_email_jobs j WHERE j.invitation_id=i.id AND j.token_hash=i.token_hash) AS delivery
       FROM school_invitations i JOIN schools s ON s.id=i.school_id WHERE i.source='company' ORDER BY i.created_at DESC LIMIT 100`.execute(this.db);
     const applications = await sql`SELECT a.id,a.institution_name,a.requested_code,a.institution_kind,a.timezone,a.state_code,a.district,
       a.website,a.applicant_role_title,a.regulator_type,a.regulator_reference,a.status,a.review_note,a.revision,a.submitted_at,a.updated_at,
@@ -39,15 +41,15 @@ export class CompanyService {
     return { schools: schools.rows, invitations: invitations.rows, applications: applications.rows };
   }
   private async invitation(db: Db, user: AuthUser, school: string, recipient: string) {
-    const token = randomBytes(32).toString('base64url');
+    const {token,tokenHash}=await issueInvitationCode(db,recipient);
     const pending = await sql`SELECT 1 FROM users u WHERE lower(u.email)=${recipient} AND u.onboarding_pending
       AND NOT EXISTS(SELECT 1 FROM school_memberships m WHERE m.user_id=u.id AND m.school_id=${school}::uuid AND m.is_active)`.execute(db);
     if (pending.rows.length) throw new ConflictException('This account must complete its original school onboarding first.');
     await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${school}::uuid AND email=${recipient} AND accepted_at IS NULL AND revoked_at IS NULL`.execute(db);
     const row = (await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,source)
-      VALUES(${school}::uuid,${recipient},'admin',${createHash('sha256').update(token).digest('hex')},${user.id}::uuid,now()+interval '72 hours','company') RETURNING id,expires_at`.execute(db)).rows[0]!;
+      VALUES(${school}::uuid,${recipient},'admin',${tokenHash},${user.id}::uuid,now()+interval '30 minutes','company') RETURNING id,expires_at`.execute(db)).rows[0]!;
     await this.audit(db,user,school,'company.admin_invited',{invitation_id:row.id,email:recipient});
-    return {...row,email:recipient,token};
+    return enqueueInvitation(db, {...row,email:recipient,token});
   }
   async create(user: AuthUser, body: unknown) {
     await this.authorize(user);
@@ -68,7 +70,7 @@ export class CompanyService {
         const invitation=await this.invitation(db,user,school.id,data.admin_email);
         return {school,invitation};
       });
-      return {...result, invitation: await deliverInvitation(result.invitation)};
+      return result;
     } catch(error) {if((error as {code?:string}).code==='23505') throw new ConflictException('Institution code is already in use.');throw error;}
   }
   async inviteAdmin(user: AuthUser, school: string, body: unknown) {
@@ -78,8 +80,28 @@ export class CompanyService {
       if (!(await db.selectFrom('schools').select('id').where('id','=',school).executeTakeFirst())) throw new NotFoundException('Institution not found.');
       return this.invitation(db,user,school,data.email);
     });
-    return deliverInvitation(invitation);
+    return invitation;
   }
+  async resend(user: AuthUser, school: string, id: string) {
+    z.uuid().parse(school); z.uuid().parse(id);
+    const invitation = await this.db.transaction().execute(async db => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${school},0))`.execute(db);
+      await this.authorize(user,db);
+      const found = (await sql<{email:string;created_at:Date}>`SELECT email,created_at FROM school_invitations
+        WHERE school_id=${school}::uuid AND id=${id}::uuid AND source='company'
+          AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`.execute(db)).rows[0];
+      if (!found) throw new NotFoundException('This invitation was accepted or revoked. Refresh the invitation list.');
+      if (Date.now()-new Date(found.created_at).getTime()<60_000) throw new ConflictException('Please wait one minute before sending this invitation again.');
+      const {token,tokenHash}=await issueInvitationCode(db,found.email);
+      const row=(await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
+        SET token_hash=${tokenHash},expires_at=now()+interval '30 minutes',created_at=now()
+        WHERE id=${id}::uuid AND school_id=${school}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
+      await this.audit(db,user,school,'company.admin_invitation_email_resent',{invitation_id:id});
+      return enqueueInvitation(db, {...row,email:found.email,token});
+    });
+    return invitation;
+  }
+
   async revoke(user: AuthUser, school: string, id: string) {
     z.uuid().parse(school);z.uuid().parse(id);
     return this.db.transaction().execute(async db=>{
