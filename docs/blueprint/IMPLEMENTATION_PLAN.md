@@ -4425,3 +4425,30 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
   release target. Railway remains available but future releases skip its deploy
   job. Six local release-guard tests and the live runtime guard pass. The next
   automatic candidate/migrate/promote cycle still requires final CI evidence.
+
+### Google Cloud automatic Stage deployment verified — 9 October 2026
+
+- [Stage push run 37930186905](https://github.com/EduveraIITA/Eduvera/actions/runs/37930186905)
+  completed **successfully** for release
+  **41c9aa537701a39fcd4ba635c0387b9468760578**. Secret scanning, deployment guards,
+  backend integration tests, mobile tests, lint/typechecks and both frontend builds
+  passed. The Google Cloud job used keyless GitHub authentication, pushed the image,
+  ran migration execution **eduvera-stage-migrate-rmpqw**, checked the candidate,
+  promoted it and removed its temporary verification tag. Railway was skipped.
+- Cloud Run revision **eduvera-stage-00002-wik** now serves 100% of traffic at
+  **https://eduvera-stage-367469594690.asia-south1.run.app**. Independently verified
+  its exact release SHA and readiness, then re-ran principal, teacher, parent and
+  student WebKit login/navigation checks at 320/390/1024px with no overflow,
+  JavaScript errors or HTTP 500s. These checks do not certify every domain workflow.
+- Confirmed **eduera-db is the only Cloud SQL instance** and the runtime connector
+  references it. Removed the unused empty `eduvera-stage` image repository; the
+  team's `eduera/web` remains. Disabled temporary source-connection secret versions,
+  revoked migration-bootstrap secret-write grants, deleted the completed one-off
+  file-check job, and stopped the local migration proxy. Private migration dump and
+  original source credentials remain recoverable. Railway and native local preview
+  readiness remain healthy; neither is continuously replicated with Google Cloud.
+- No paid model or GPU was added. Cloud Ollama inference remains unavailable and
+  visibly disabled. Trial budget alerts/deployment expiry are not spending caps;
+  production security and operational gates documented above remain open.
+- This evidence is recorded in a documentation-only `[skip ci]` follow-up; the
+  verified deployed application release remains the SHA above.

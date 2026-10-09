@@ -2,8 +2,9 @@
 
 Target: `eduera-511111`, Mumbai (`asia-south1`). Reuse the team's Cloud SQL
 instance **`eduera-db`** and Artifact Registry **`eduera/web`**. Do not create a
-second database. The existing Railway service remains the source/rollback until
-Google Cloud verification and cutover are recorded.
+second database. Google Cloud is the verified Stage deployment target. The
+existing Railway service remains an older snapshot/rollback option; its database
+does not synchronize with Google Cloud.
 
 ## Delivery
 
@@ -76,10 +77,18 @@ an initial copy is not proof that two live databases remain synchronized.
   was on Railway. No paid model endpoint or GPU was provisioned.
 - `GCP_STAGE_DEPLOY_ENABLED=true` and `STAGE_DEPLOY_TARGET=google-cloud` are set.
   Railway is retained as the old snapshot/rollback service, not a second deployment
-  target. The next automatic release is being verified separately from the initial
-  CLI deployment. Normal pushes do not copy data or run demo seeds.
+  target. [Push-triggered run 37930186905](https://github.com/EduveraIITA/Eduvera/actions/runs/37930186905)
+  passed all checks, migrated, verified a candidate and promoted release
+  `41c9aa537701a39fcd4ba635c0387b9468760578` to revision `eduvera-stage-00002-wik`.
+  Independent public-release/readiness and four-portal WebKit checks passed on that
+  release. Railway deployment was skipped. Normal pushes do not copy data or run
+  demo seeds. A later documentation-only `[skip ci]` commit is not a new app release.
 - The empty duplicate Cloud SQL instance `eduvera-stage` was **deleted**, with
   operation completion verified, at the user's request. `eduera-db` is preserved.
+- The unused empty `eduvera-stage` image repository was also removed; images use
+  the team's `eduera/web` repository. Temporary source-connection secret versions
+  are disabled and the local migration proxy is stopped. The original source
+  credentials and private migration snapshot remain recoverable for rollback.
 
 References: [Google GitHub authentication](https://github.com/google-github-actions/auth),
 [Cloud Run runtime contract](https://docs.cloud.google.com/run/docs/container-contract),
