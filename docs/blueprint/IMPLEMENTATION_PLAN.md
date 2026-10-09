@@ -4794,3 +4794,21 @@ Validation: 21 focused fee/review/gateway tests pass including filter replacemen
 enquiry navigation and statement refresh without payment submission; focused lint
 passes. Production build and Stage release follow CI. Visual acceptance against
 the user's reference and physical iPad printing remain user acceptance checks.
+
+
+### Invitation sent popup — 9 October 2026
+
+User correction moves successful invitation confirmation from an inline list card
+to a centered native modal dialog above the app. The existing mint checkmark
+animates within a compact card with recipient email and a close control. It closes
+after four seconds or immediately via close/Escape. Native dialog behavior supplies
+the modal backdrop and focus containment; opening locks page scroll, cleanup restores
+scroll/focus and cancels the timer, and reduced-motion preferences disable animations.
+Failed/manual delivery remains a persistent inline alert; the popup is shown only
+for provider-accepted email. Invitation records and delivery APIs are unchanged.
+
+Local verification: 22 focused onboarding/popup tests pass, including timer cleanup,
+callback refresh without restarting the deadline, manual dismissal, focus restoration,
+hidden codes and persistent failure states. Frontend production build and targeted
+TypeScript-aware lint pass. Real-device visual review and deployment remain separate
+gates; no live invitation email was sent for these tests.

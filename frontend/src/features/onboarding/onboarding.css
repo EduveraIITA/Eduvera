@@ -57,3 +57,39 @@
 @media (prefers-reduced-motion: reduce) {
   .invitation-confirmation--sent circle, .invitation-confirmation--sent path { animation: none; }
 }
+
+.invitation-confirmation--popup {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - 2rem);
+  max-width: 22rem;
+  max-height: calc(100dvh - 2rem);
+  box-sizing: border-box;
+  overflow: auto;
+  margin: auto;
+  padding: 2.5rem 1.5rem 2rem;
+  gap: 1rem;
+  text-align: center;
+  box-shadow: var(--edura-shadow-raised);
+  animation: invitation-popup-enter 240ms ease-out both;
+}
+.invitation-confirmation--popup::backdrop {
+  background: rgb(11 28 48 / 24%);
+  backdrop-filter: blur(2px);
+}
+.invitation-confirmation--popup .invitation-confirmation__icon { flex-basis: 4.5rem; height: 4.5rem; }
+.invitation-confirmation--popup .invitation-confirmation__icon svg { width: 4.5rem; height: 4.5rem; }
+.invitation-confirmation--popup .invitation-confirmation__message { flex: none; width: 100%; }
+.invitation-confirmation--popup .invitation-confirmation__message h2 { margin-bottom: .5rem; font-size: 1.25rem; }
+.invitation-confirmation--popup .invitation-confirmation__message p { font-size: .875rem; }
+.invitation-confirmation--popup .invitation-confirmation__close { position: absolute; top: .5rem; right: .5rem; width: 2.75rem; }
+@keyframes invitation-popup-enter {
+  from { opacity: 0; transform: translateY(.5rem) scale(.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invitation-confirmation--popup { animation: none; }
+}
+.invitation-confirmation--popup:not([open]) { display: none; }
