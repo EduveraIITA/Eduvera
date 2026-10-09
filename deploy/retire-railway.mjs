@@ -14,10 +14,11 @@ const invoke=args=>execFileSync('railway',args,{encoding:'utf8',stdio:['ignore',
 const inventory=JSON.parse(invoke(['service','list','--project',project,'--environment','stage','--json']));
 console.log(JSON.stringify({project,environment:'stage',inventory}));
 if(process.env.RETIRE_MODE==='remove') {
-  // Requires a separately inspected exact service ID, committed below after review.
-  const service=process.env.RETIRED_SERVICE_ID;
-  assert(service && /^[a-f0-9-]{36}$/.test(service),'Inspect the old app and pin its service ID before removal');
-  const serialized=JSON.stringify(inventory);
-  assert(serialized.includes(service)&&serialized.includes('omnischool'));
+  // Pinned from read-only run 37936798220. Never select a database or another app.
+  const service='bfce4d21-5994-4612-8c7b-8cd28681f7e5';
+  assert(Array.isArray(inventory));
+  const target=inventory.find(item=>item.id===service);
+  assert.equal(target?.name,'omnischool');
+  assert.equal(target?.url,'https://omnischool-stage.up.railway.app');
   console.log(invoke(['service','delete','--project',project,'--environment','stage','--service',service,'--yes','--json']));
 }
