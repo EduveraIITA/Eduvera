@@ -4477,3 +4477,36 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
 - An embedded SMTP fallback credential was removed; delivery is off. Provider-side
   revocation of the historical app password remains an owner action. Separate old
   Railway/local snapshots are not secured or synchronized by this database change.
+
+### Verified private accounts, Vertex AI and Railway retirement — 9 October 2026
+
+- Release `26dc964d192def75494e8fcbefba51fd6fb16853` passed Stage run
+  **37935688102**: 457 backend + 630 frontend tests, lint/typechecks/builds, secret
+  scan, additive migration and public/candidate checks. Two obsolete demo-button
+  assertions were updated; a pre-existing two-child route test now has a 30s
+  overall timeout for its unchanged bounded waits/assertions. No failing gate was
+  skipped. Final workflow-only cleanup is linted, not represented as a new app build.
+- Vertex model `gemini-3.1-flash-lite` is enabled through keyless runtime identity,
+  expiry **8 November 2026**, 10 requests/hour and 30/day per account, shared
+  conservative reservations of $0.50/day and $5/month. All runtime resource/model
+  guards were checked after configuration. Actual remaining trial credit is still
+  unavailable; these are application limits, not total cloud billing caps.
+- Live private sign-in, five-tab navigation, full-chat nav hiding and responsive
+  320/390/1024px checks passed for all four personas, with no page/server errors.
+  All four completed real authorized reads with verified sources. Principal
+  Aarav lookup → pronoun attendance preview was correct and explicitly rejected;
+  no attendance was changed. The model ledger recorded 9 calls and 109117 reserved
+  micro-USD. Teacher received only an audited, assigned-resources `ai.use` exception
+  through the same review window; no wider operational access was added.
+- User explicitly requested **keep Cloudflare for personal testing, remove
+  Railway**. Railway removal run **37936914773** deleted only the old Stage
+  application; public URL verified 404. Read-only run **37937246349** confirmed no
+  remaining service and retained volume metadata. External source database and
+  private migration snapshot are preserved. Removed Railway deployment/bootstrap
+  jobs, the GitHub Railway token and obsolete service/URL variables; Stage now
+  verifies then deploys only to Google Cloud.
+- Cloudflare and native preview remain healthy and retain their separate local
+  demo mode by the user's decision. The new private passwords apply to Google
+  Cloud, not those separate snapshots. Historical SMTP app-password revocation,
+  production security/retention/load gates and global model-region review remain
+  open; this release is not a claim of zero abuse or production certification.

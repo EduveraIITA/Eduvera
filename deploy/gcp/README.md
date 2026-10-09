@@ -3,8 +3,10 @@
 Target: `eduera-511111`, Mumbai (`asia-south1`). Reuse the team's Cloud SQL
 instance **`eduera-db`** and Artifact Registry **`eduera/web`**. Do not create a
 second database. Google Cloud is the verified Stage deployment target. The
-existing Railway service remains an older snapshot/rollback option; its database
-does not synchronize with Google Cloud.
+old Railway application was retired at the user's request on 9 October. Its
+external database, detached upload volume and private migration snapshot were
+preserved for recovery; they do not synchronize with Google Cloud. Cloudflare is
+retained separately for personal testing, including its local demo access.
 
 ## Delivery
 
@@ -44,14 +46,15 @@ The user confirmed the credit and authorised provisioning. A project-only monthl
 This deliberately small alert is not a USD 250 budget or a spending limit.
 Runtime, storage and network costs continue independently of CI.
 
-## One-time migration
+## Completed one-time migration (historical)
 
-An explicit Stage workflow dispatch with `bootstrap_google_cloud=true` copies
-the current Railway connection URLs, cookie/metrics secrets and encryption key
-into pre-created private Google secrets. Values are never written to Actions logs
-or uploaded as artifacts. Temporary `secretVersionAdder` access is scoped to
-those individual secrets and must be revoked after the copy. This dispatch does
-not run the normal release or reseed anything.
+The one-time migration copied Railway connection URLs, cookie/metrics secrets and
+the encryption key into pre-created Google secrets without logging values. Its
+temporary secret-write grants are revoked. The bootstrap and Railway deployment
+jobs have now been removed from Stage CI; its Railway token and obsolete service
+and URL variables are deleted. The remaining pipeline verifies and deploys only
+to Google Cloud. Scripts retained in `deploy/` describe historical recovery work,
+not an enabled deployment path.
 
 Database copying, attachment inventory/copy, and consistency verification are
 separate from the recurring release. Retain the existing encryption key when
@@ -71,13 +74,13 @@ an initial copy is not proof that two live databases remain synchronized.
   use the Cloud SQL connector, not a public IP allowlist.
 - Private GCS upload storage passed create/exclusive-write/rename/read checks.
   The temporary probe files were removed, and its one-off job was deleted.
-- Principal, teacher, parent and student WebKit checks passed login, navigation,
-  320/390/1024px overflow checks and no page/server errors. The local Ollama model
-  is not reachable from Google Cloud; cloud AI remains visibly unavailable as it
-  was on Railway. No paid model endpoint or GPU was provisioned.
+- Principal, teacher, parent and student WebKit checks passed private login,
+  navigation, 320/390/1024px overflow checks and no page/server errors. Vertex
+  Gemini is now enabled and verified across all four portals under the controls
+  below. No GPU or paid billing upgrade was provisioned.
 - `GCP_STAGE_DEPLOY_ENABLED=true` and `STAGE_DEPLOY_TARGET=google-cloud` are set.
-  Railway is retained as the old snapshot/rollback service, not a second deployment
-  target. [Push-triggered run 37930186905](https://github.com/EduveraIITA/Eduvera/actions/runs/37930186905)
+  Railway is retired, not a second deployment target. The initial
+  [push-triggered run 37930186905](https://github.com/EduveraIITA/Eduvera/actions/runs/37930186905)
   passed all checks, migrated, verified a candidate and promoted release
   `41c9aa537701a39fcd4ba635c0387b9468760578` to revision `eduvera-stage-00002-wik`.
   Independent public-release/readiness and four-portal WebKit checks passed on that
@@ -105,10 +108,10 @@ Both web login pages remove demo shortcuts. SMTP delivery is disabled: the forme
 embedded mail credential was removed from configuration, but its owner must revoke
 that old app password at the mail provider; removing source is not revocation.
 
-The new Vertex adapter uses the runtime's short-lived Google service identity, no
+The Vertex adapter uses the runtime's short-lived Google service identity, no
 exported key, and only `gemini-3.1-flash-lite`. The API and minimal invocation role
-are provisioned; a synthetic connectivity probe passed. Application deployment and
-four-portal evaluation are pending until recorded below.
+are provisioned; synthetic connectivity and native tool round-trip probes passed.
+The application release and all four portal evaluations are verified below.
 
 Reviewed standard pricing: $0.25 / million input tokens and $1.50 / million output
 tokens. The model's global endpoint is outside a guaranteed India-only processing
@@ -141,3 +144,31 @@ Sources: [trial eligibility](https://docs.cloud.google.com/free/docs/free-cloud-
 [Gemini API billing exclusion](https://ai.google.dev/gemini-api/docs/billing),
 [Flash-Lite model](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite),
 [standard pricing](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing).
+
+## Verified release and retirement
+
+- [Release run 37935688102](https://github.com/EduveraIITA/Eduvera/actions/runs/37935688102)
+  passed 457 backend tests, 630 frontend tests, typechecks, lint, both builds,
+  secret scan, migration and candidate/public checks. App release is
+  `26dc964d192def75494e8fcbefba51fd6fb16853`; subsequent retirement/docs changes
+  are not new application releases. Live Vertex configuration is revision
+  `eduvera-stage-00005-2b6`, with 100% traffic and runtime cost guards verified.
+- Real authenticated reads completed with source links in principal, teacher,
+  parent and student views. Principal lookup → pronoun attendance preview produced
+  the correct learner and verification screen; explicitly rejected, never saved.
+  Nine model calls reserved **109117 micro-USD ($0.109117)** in the durable ledger;
+  this conservative reservation is not an invoice. Model writes still require
+  human confirmation and fresh domain authorization.
+- Teacher review access is an audited `ai.use` exception through 8 November,
+  scoped to existing assigned resources. Other permissions are unchanged.
+- [Railway removal 37936914773](https://github.com/EduveraIITA/Eduvera/actions/runs/37936914773)
+  deleted only `omnischool` service `bfce4d21-5994-4612-8c7b-8cd28681f7e5` in
+  Stage environment `a7f0178b-a47d-4782-b26a-236046512c00`, project
+  `e502f870-10b0-4e13-b42e-124e6373a277`. Its old public URL now returns 404.
+  [Read-only follow-up 37937246349](https://github.com/EduveraIITA/Eduvera/actions/runs/37937246349)
+  confirmed an empty service inventory and retained volume metadata. No database,
+  volume or recovery snapshot was deleted. The application deployment itself cannot
+  be undeleted; recovery requires recreating the service from preserved configuration.
+- Cloudflare personal preview and native backend readiness both remain healthy.
+  Their data/passwords remain separate from the four private Google Cloud accounts.
+  Historical SMTP credential revocation at its provider is still an owner action.
