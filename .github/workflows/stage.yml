@@ -9,7 +9,7 @@ on:
 
 concurrency:
   # PR verification must not cancel an in-flight Stage deployment.
-  group: stage-${{ github.event_name }}
+  group: stage-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

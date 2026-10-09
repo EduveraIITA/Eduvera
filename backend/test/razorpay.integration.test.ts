@@ -8,6 +8,9 @@ import type { AuthUser } from "../src/common/request.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 import { RazorpayClient, type RazorpayPayment } from "../src/operations/razorpay.client.js";
 import { RazorpayService } from "../src/operations/razorpay.service.js";
+import { PaymentEmailService } from '../src/operations/payment-email.service.js';
+import * as transport from '../src/common/email-transport.js';
+import * as configuration from '../src/config.js';
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const url = isolated ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : "postgresql://invalid.invalid/unused";
 describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
@@ -70,7 +73,12 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
     const captured = providerPayment(order);
     const [one, two] = await Promise.all([confirm(id, order, captured), confirm(id, order, captured)]);
     expect(one).toEqual(two); expect(one.state).toBe("captured");
+    expect(await confirm(id,order,{...captured,status:'authorized',captured:false})).toEqual(one);
     expect((await pool.query("SELECT count(*)::int AS count FROM fee_payments WHERE invoice_id=$1", [id])).rows[0].count).toBe(1);
+    expect((await pool.query("SELECT count(*)::int AS count FROM fee_payment_emails WHERE order_id=$1 AND payment_state='captured'",[order.id])).rows[0].count).toBe(1);
+    expect((await payments.receipt(parent,school,id,one.payment_id!)).subarray(0,5).toString()).toBe('%PDF-');
+    await expect(payments.receipt(outsider,school,id,one.payment_id!)).rejects.toThrow(/guardian/);
+    await expect(payments.receipt(parent,school,await invoice(),one.payment_id!)).rejects.toThrow(/not found/);
     const event = (await pool.query("SELECT audience_user_ids,payload FROM event_outbox WHERE aggregate_id=$1", [order.id])).rows[0];
     expect(event.audience_user_ids).toContain(parent.id); expect(event.audience_user_ids).not.toContain(outsider.id);
     expect(event.payload).not.toHaveProperty("provider_payment_id");
@@ -94,6 +102,36 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
     expect(await payments.webhook(raw, "test-signature", eventId)).toEqual({ received: true });
     await expect(payments.webhook(Buffer.from(raw.toString() + " "), "test-signature", eventId)).rejects.toThrow(/reused/);
     expect((await pool.query("SELECT count(*)::int AS count FROM fee_payments WHERE invoice_id=$1", [id])).rows[0].count).toBe(1);
+  });
+  it('sends one captured PDF email, skips unverified accounts, and never silently retries an ambiguous send',async()=>{
+    await pool.query("UPDATE fee_payment_emails SET delivery_state='skipped' WHERE order_id IN (SELECT id FROM fee_gateway_orders WHERE school_id=$1)",[school]);
+    const configSpy=vi.spyOn(configuration,'config').mockReturnValue({...configuration.config(),INVITATION_EMAIL_ENABLED:true,PUBLIC_URL:'https://school.example.test'});
+    const sender=vi.spyOn(transport,'sendTransactionalEmail').mockResolvedValue(undefined);
+    const worker=new PaymentEmailService(db);
+    async function paid(){
+      vi.spyOn(gateway,'request').mockImplementation((_path,body)=>Promise.resolve(Object.assign({},body,{id:`order_${randomUUID().replaceAll('-','')}`})));
+      const id=await invoice();const order=await payments.create(parent,school,id,{amount_paise:1000});await confirm(id,order);return order;
+    }
+    try {
+      await paid();await worker.deliverPending();expect(sender).not.toHaveBeenCalled();
+      await pool.query('UPDATE users SET email_verified_at=now() WHERE id=$1',[parent.id]);
+      const order=await paid();await worker.deliverPending();await worker.deliverPending();
+      expect(sender).toHaveBeenCalledTimes(1);
+      expect(sender.mock.calls[0]![0]).toMatchObject({to:parent.email,senderName:'Eduera · Pathyakram',attachments:[{contentType:'application/pdf'}]});
+      expect(Buffer.from(sender.mock.calls[0]![0].attachments![0]!.content,'base64').subarray(0,5).toString()).toBe('%PDF-');
+      expect((await pool.query('SELECT delivery_state FROM fee_payment_emails WHERE order_id=$1',[order.id])).rows[0].delivery_state).toBe('accepted');
+      sender.mockRejectedValue(new Error('timeout after possible acceptance'));
+      const uncertain=await paid();await worker.deliverPending();await worker.deliverPending();expect(sender).toHaveBeenCalledTimes(2);
+      expect((await pool.query('SELECT delivery_state FROM fee_payment_emails WHERE order_id=$1',[uncertain.id])).rows[0].delivery_state).toBe('unknown');
+      expect((await pool.query('SELECT state FROM fee_gateway_orders WHERE id=$1',[uncertain.id])).rows[0].state).toBe('captured');
+    } finally {sender.mockRestore();configSpy.mockRestore();}
+  });
+  it('persists provider-verified failed attempts without recording a receipt',async()=>{
+    vi.spyOn(gateway,'request').mockImplementation((_path,body)=>Promise.resolve(Object.assign({},body,{id:`order_${randomUUID().replaceAll('-','')}`})));
+    const id=await invoice();const order=await payments.create(parent,school,id,{amount_paise:1000});
+    vi.spyOn(gateway,'request').mockResolvedValue({items:[providerPayment(order,{status:'failed',captured:false})]});
+    expect((await payments.status(parent,school,id))[0]).toMatchObject({state:'failed',payment_id:null});
+    expect((await pool.query("SELECT count(*)::int AS count FROM fee_payment_emails WHERE order_id=$1 AND payment_state='failed'",[order.id])).rows[0].count).toBe(1);
   });
   it("recovers missed callbacks through the status endpoint and rejects revoked guardians", async () => {
     vi.spyOn(gateway, "request").mockImplementation((_path, body) => Promise.resolve(Object.assign({}, body, { id: `order_${randomUUID().replaceAll("-", "")}` })));

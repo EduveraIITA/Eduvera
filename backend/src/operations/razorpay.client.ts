@@ -7,7 +7,7 @@ export function verifyRazorpaySignature(body: string | Buffer, signature: string
   const expected = createHmac("sha256", secret).update(body).digest();
   if (!timingSafeEqual(expected, Buffer.from(signature, "hex"))) throw new UnauthorizedException("Invalid payment signature.");
 }
-export interface RazorpayPayment { id: string; order_id: string; amount: number; currency: string; status: string; captured: boolean }
+export interface RazorpayPayment { id: string; order_id: string; amount: number; currency: string; status: string; captured: boolean; created_at?:number }
 export interface RazorpayOrder { id: string; amount: number; currency: string; receipt: string }
 @Injectable()
 export class RazorpayClient {

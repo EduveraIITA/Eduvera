@@ -56,7 +56,33 @@ an explicit **Check payment status** recovery button.
 - Credential rotation with pending orders requires operator reconciliation using the
   previous key; the app does not silently switch an existing order to another account.
 
-## Validation
+## Payment status and email receipts (9 October 2026)
+
+Invoice details restore saved payment history and refresh every 30 seconds while
+visible. Captured payments link to a guardian-authorized PDF download; the parent
+receipt detail also exposes that download. Failed/pending attempts never issue a
+receipt. The wallet popup compatibility change uses `same-origin-allow-popups`
+when Razorpay is enabled and permits form posts to the exact Razorpay API origin.
+The previously deployed headers used `same-origin` and `form-action 'self'`.
+This is a compatibility fix; live wallet completion still requires verification.
+
+Apply migration `059_payment_email.sql`. Confirmed capture, review-required,
+provider-verified failure and pending confirmation enqueue deduplicated messages
+inside their database transaction. A worker checks committed jobs every 15 seconds,
+using the existing configured invitation email provider/sender. Sending is enabled
+by `INVITATION_EMAIL_ENABLED`; it requires a verified email and an active linked
+guardian account for the checkout creator. Old payments are not automatically emailed.
+Only allocated captures attach an actual PDF test receipt. The font and license
+are packaged with the runtime. All templates and PDFs label test mode explicitly.
+
+Provider acceptance is shown separately from payment status and does not prove
+inbox delivery. Ambiguous sends become `unknown`, never silently retried; stale
+pending/failed notices are skipped after capture. Receipt downloads remain
+available independently of email delivery. Subscribe optional webhooks to
+`payment.authorized` and `payment.failed` as well as captured events; polling also
+recovers these states. No new SMTP credentials are needed.
+
+### Verification
 
 Focused tests cover exact-byte signature tampering, provider failures, checkout
 verification UI, family/tenant authorization, amount validation, reusable orders,

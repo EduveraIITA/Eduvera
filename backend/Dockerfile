@@ -50,6 +50,7 @@ COPY --from=frontend-build --chown=omnischool:omnischool /build/frontend/dist ./
 COPY --from=desktop-build --chown=omnischool:omnischool /build/frontend-desktop/dist ./staff-dist
 COPY --from=seed-build --chown=omnischool:omnischool /build/backend/generated ./seed-data
 COPY --chown=omnischool:omnischool backend/migrations ./migrations
+COPY --chown=omnischool:omnischool backend/assets ./assets
 COPY --chown=omnischool:omnischool backend/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod 0755 ./docker-entrypoint.sh
 USER omnischool

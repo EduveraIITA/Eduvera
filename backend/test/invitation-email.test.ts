@@ -7,6 +7,7 @@ vi.mock('../src/config.js', () => ({config: () => mocks.settings}));
 vi.mock('nodemailer', () => ({default: {createTransport: mocks.createTransport}}));
 import { deliverInvitation, invitationEmailFailure } from '../src/common/invitation-email.js';
 import { invitationTemplate } from '../src/common/invitation-template.js';
+import { sendTransactionalEmail } from '../src/common/email-transport.js';
 const invitation = {email: 'recipient@example.test', token: 'private-code', expires_at: '2099-10-04T00:00:00Z'};
 beforeEach(() => {
   vi.unstubAllGlobals(); vi.clearAllMocks(); mocks.settings.INVITATION_EMAIL_PROVIDER = 'smtp'; mocks.settings.INVITATION_EMAIL_ENABLED = true; mocks.settings.SMTP_PORT = 465;
@@ -14,6 +15,14 @@ beforeEach(() => {
   mocks.sendMail.mockResolvedValue({accepted: [invitation.email], rejected: []});
 });
 describe('invitation SMTP delivery', () => {
+  it('sends PDF attachments with both providers',async()=>{
+    const input={to:invitation.email,subject:'Payment confirmed',text:'Test receipt',senderName:'Eduera',attachments:[{filename:'receipt.pdf',contentType:'application/pdf',content:Buffer.from('%PDF-test').toString('base64')}]};
+    await sendTransactionalEmail(input);
+    expect(mocks.sendMail.mock.calls[0]![0].attachments[0]).toMatchObject({filename:'receipt.pdf',contentType:'application/pdf',encoding:'base64',contentDisposition:'attachment'});
+    mocks.settings.INVITATION_EMAIL_PROVIDER='resend';
+    const fetchMock=vi.fn().mockResolvedValue({ok:true,json:()=>Promise.resolve({id:'mail-id'})});vi.stubGlobal('fetch',fetchMock);
+    await sendTransactionalEmail(input);expect(JSON.parse(fetchMock.mock.calls[0]![1].body).attachments[0]).toMatchObject({filename:'receipt.pdf',content_type:'application/pdf'});
+  });
   it('returns only safe categories for SMTP authentication and network failures', () => {
     expect(invitationEmailFailure({code:'EAUTH',message:'secret-password'}).code).toBe('authentication');
     expect(invitationEmailFailure({code:'ETIMEDOUT',message:'private-recipient'}).code).toBe('connection');
