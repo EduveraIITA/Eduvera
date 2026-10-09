@@ -8,6 +8,7 @@ import { App } from "./App";
 import { OperationsShell } from "./pages/operations/OperationsShell";
 import { ParentShell, type ParentRoute } from "./pages/parent/ParentShell";
 import { StudentShell } from "./pages/student/StudentShell";
+import { proFeaturesKey } from "./features/auth/useProFeatures";
 import { demoParentChild } from "./pages/parent/parentDemoData";
 import { schoolApiFixture } from "./test/schoolApiFixtures";
 
@@ -111,7 +112,9 @@ describe("implemented application routes", () => {
     const shell = portal === "parent" ? <ParentShell active="chat" pageLabel="Chat">{content}</ParentShell>
       : portal === "student" ? <StudentShell activeNav="chat" pageTitle="Chat">{content}</StudentShell>
       : <OperationsShell portal={portal} active="chat" title="Chat">{content}</OperationsShell>;
-    const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[`/${portal}/assistant`]}>{shell}</MemoryRouter></QueryClientProvider>);
+    const client=new QueryClient();
+    client.setQueryData(proFeaturesKey(),{enabled:true,preview:true});
+    const { container } = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${portal}/assistant`]}>{shell}</MemoryRouter></QueryClientProvider>);
     expect(container.querySelector(".student-bottom-nav, .parent-bottom-nav, .operations-mobile-nav")).toBeNull();
     expect(screen.getByRole("heading", { name: "Chat" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
@@ -128,7 +131,7 @@ describe("implemented application routes", () => {
     expect(screen.getByRole("link", { name: /My work/ })).toBeVisible();
     expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
     expect(container.querySelectorAll(".operations-mobile-nav a")).toHaveLength(2);
-    expect(container.querySelector(".operations-mobile-nav")?.textContent).toBe("TodayChatMore");
+    expect(container.querySelector(".operations-mobile-nav")?.textContent).toBe("TodayMore");
   });
 
   it("hides and guards modules that current work assignments did not grant", async () => {
@@ -190,26 +193,43 @@ describe("implemented application routes", () => {
     expect(container.querySelectorAll(".school-brand__eduvera img")).toHaveLength(2);
   });
 
-  it("keeps four destinations plus centre Chat and no duplicate header More shortcut", () => {
+  it("removes every assistant surface when Pro features are off", () => {
     const wrap = (content: ReactNode) => render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>{content}</MemoryRouter></QueryClientProvider>);
     wrap(<StudentShell activeNav="home"><span /></StudentShell>);
     expect(document.querySelectorAll(".student-bottom-nav a")).toHaveLength(4);
-    expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Chat", "Timetable", "More"]);
+    expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Timetable", "More"]);
+    expect(screen.queryByRole("button",{name:"Chat"})).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
     cleanup();
     wrap(<ParentShell active="home" pageLabel="Home"><span /></ParentShell>);
     expect(document.querySelectorAll(".parent-bottom-nav a")).toHaveLength(4);
-    expect([...document.querySelector(".parent-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Chat", "Diary", "More"]);
+    expect([...document.querySelector(".parent-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Diary", "More"]);
+    expect(screen.queryByRole("button",{name:"Chat"})).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
     cleanup();
     for (const portal of ["teacher", "principal"] as const) {
       wrap(<OperationsShell portal={portal} active="home" title="Today" subtitle="School"><span /></OperationsShell>);
       expect(document.querySelectorAll(".operations-mobile-nav a")).toHaveLength(4);
-      expect(document.querySelectorAll(".operations-mobile-nav > *")).toHaveLength(5);
-      expect(document.querySelector(".operations-mobile-nav > :nth-child(3)")).toHaveTextContent("Chat");
+      expect(document.querySelectorAll(".operations-mobile-nav > *")).toHaveLength(4);
+      expect(screen.queryByRole("button",{name:"Chat"})).not.toBeInTheDocument();
       expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
       cleanup();
     }
+  });
+
+  it("restores the centre assistant destination when Pro features are on", () => {
+    const client=new QueryClient();
+    client.setQueryData(proFeaturesKey(),{enabled:true,preview:true});
+    render(<QueryClientProvider client={client}><MemoryRouter><StudentShell activeNav="home"><span /></StudentShell></MemoryRouter></QueryClientProvider>);
+    expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Chat", "Timetable", "More"]);
+    expect(screen.getByRole("button",{name:"Chat"})).toBeVisible();
+  });
+
+  it("redirects direct assistant URLs without loading agent data when Pro features are off", async () => {
+    render(<MemoryRouter initialEntries={["/student/assistant"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading",{name:"Aarav Sharma"})).toBeVisible();
+    expect(screen.queryByRole("heading",{name:"Chat"})).not.toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some(([path])=>String(path).startsWith("/api/v1/agent/"))).toBe(false);
   });
 
   it("keeps a consistent page title and only shows Back beyond each portal home", () => {

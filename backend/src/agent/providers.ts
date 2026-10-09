@@ -11,10 +11,11 @@ export interface ToolDefinition { name: string; description: string; parameters:
 export interface ToolCall { id: string; name: string; arguments: Record<string, unknown> }
 export interface ModelMessage { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; calls?: ToolCall[]; callId?: string; name?: string }
 export interface ModelReply { text: string; calls: ToolCall[] }
+export interface ToolChoice { required: string[] }
 export interface AgentModel {
   readonly provider: string;
   readonly model: string;
-  complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal): Promise<ModelReply>;
+  complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal, choice?:ToolChoice): Promise<ModelReply>;
 }
 
 const settings = z.object({
@@ -32,6 +33,17 @@ export function agentSettings() {
   return settings.parse({ provider, model: process.env.AGENT_MODEL ?? (provider === 'ollama' ? 'qwen3:8b' : undefined),
     base: process.env.AGENT_BASE_URL ?? (provider === 'ollama' ? 'http://127.0.0.1:11434' : provider === 'anthropic' ? 'https://api.anthropic.com/v1' : provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.openai.com/v1'),
     key: process.env.AGENT_API_KEY });
+}
+
+export function agentContextWindowTokens() {
+  const override=process.env.AGENT_CONTEXT_WINDOW_TOKENS;
+  if(override!==undefined)return z.coerce.number().int().min(4096).max(4_000_000).parse(override);
+  const provider=agentSettings().provider;
+  if(provider==='ollama')return 16_384;
+  if(provider==='anthropic')return 200_000;
+  if(provider==='gemini'||provider==='vertex')return 1_048_576;
+  if(provider==='openai')return 128_000;
+  return 32_768;
 }
 
 function argumentsObject(value: unknown): Record<string, unknown> {
@@ -66,11 +78,15 @@ function functions(tools: ToolDefinition[]) {
 export class OllamaAgentModel implements AgentModel {
   readonly provider = 'ollama';
   constructor(readonly model: string, private readonly base: string) {}
-  async complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal): Promise<ModelReply> {
+  async complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal, choice?:ToolChoice): Promise<ModelReply> {
+    // Ollama's native chat API has no tool_choice field. When orchestration has
+    // already resolved one action, expose only that tool so the same concise
+    // action contract works locally without provider-specific prompt tricks.
+    const offered=choice?.required.length?tools.filter(tool=>choice.required.includes(tool.name)):tools;
     const response = await post(`${this.base.replace(/\/$/, '')}/api/chat`, {
       model: this.model, stream: false, think: false, keep_alive: '10m',
       options: { temperature: 0, num_ctx: 16384, num_predict: 1400 },
-      tools: functions(tools), messages: messages.map(message => ({ role: message.role, content: message.content,
+      tools: functions(offered), messages: messages.map(message => ({ role: message.role, content: message.content,
         ...(message.name ? { tool_name: message.name } : {}),
         ...(message.calls?.length ? { tool_calls: message.calls.map(call => ({ function: { name: call.name, arguments: call.arguments } })) } : {}),
       })),
@@ -84,10 +100,10 @@ export class OllamaAgentModel implements AgentModel {
 export class CompatibleAgentModel implements AgentModel {
   readonly provider = 'openai-compatible';
   constructor(readonly model: string, private readonly base: string, private readonly key?: string) {}
-  async complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal): Promise<ModelReply> {
+  async complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal, toolChoice?:ToolChoice): Promise<ModelReply> {
     const response = await post(`${this.base.replace(/\/$/, '')}/chat/completions`, {
       model: this.model, stream: false, temperature: 0, max_tokens: 1400, parallel_tool_calls: false,
-      tools: functions(tools), messages: messages.map(message => ({ role: message.role, content: message.content,
+      tools: functions(tools), ...(toolChoice?.required.length?{tool_choice:toolChoice.required.length===1?{type:'function',function:{name:toolChoice.required[0]}}:'required'}:{}), messages: messages.map(message => ({ role: message.role, content: message.content,
         ...(message.callId ? { tool_call_id: message.callId } : {}),
         ...(message.calls?.length ? { tool_calls: message.calls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) } : {}),
       })),
@@ -106,7 +122,7 @@ export class OpenAIResponsesModel implements AgentModel {
   private input: unknown[] = [];
   private consumed = 0;
   constructor(readonly model: string, private readonly base: string, private readonly key: string) {}
-  async complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal): Promise<ModelReply> {
+  async complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal, choice?:ToolChoice): Promise<ModelReply> {
     for (const message of messages.slice(this.consumed)) {
       if (message.role === 'assistant' && message.calls?.length) continue; // already retained as native output
       if (message.role === 'tool') this.input.push({ type: 'function_call_output', call_id: message.callId, output: message.content });
@@ -116,6 +132,7 @@ export class OpenAIResponsesModel implements AgentModel {
     const response = await post(`${this.base.replace(/\/$/, '')}/responses`, {
       model: this.model, input: this.input, store: false, parallel_tool_calls: false, max_output_tokens: 2500,
       tools: tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.parameters, strict: false })),
+      ...(choice?.required.length?{tool_choice:choice.required.length===1?{type:'function',name:choice.required[0]}:'required'}:{}),
     }, signal, this.key);
     if (response.status !== 'completed') throw new Error('Incomplete model response.');
     const output: any[] = response.output ?? [];
@@ -132,7 +149,7 @@ export class AnthropicAgentModel implements AgentModel {
   private history:Array<{role:string;content:any[]}> = [];
   private consumed=0;
   constructor(readonly model:string,private readonly base:string,private readonly key:string) {}
-  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal):Promise<ModelReply> {
+  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice):Promise<ModelReply> {
     for (const message of messages.slice(this.consumed)) {
       if (message.role==='system'||(message.role==='assistant'&&message.calls?.length)) continue;
       if (message.role==='tool') {
@@ -145,7 +162,7 @@ export class AnthropicAgentModel implements AgentModel {
     this.consumed=messages.length;
     const response=await post(`${this.base.replace(/\/$/,'')}/messages`,{
       model:this.model,max_tokens:2000,system:messages.filter(message=>message.role==='system').map(message=>message.content).join('\n'),messages:this.history,
-      tools:tools.map(tool=>({name:tool.name,description:tool.description,input_schema:tool.parameters})),tool_choice:{type:'auto',disable_parallel_tool_use:true},
+      tools:tools.map(tool=>({name:tool.name,description:tool.description,input_schema:tool.parameters})),tool_choice:choice?.required.length===1?{type:'tool',name:choice.required[0],disable_parallel_tool_use:true}:{type:choice?.required.length?'any':'auto',disable_parallel_tool_use:true},
     },signal,undefined,{'x-api-key':this.key,'anthropic-version':'2023-06-01'});
     if (!['end_turn','tool_use','stop_sequence'].includes(response.stop_reason)) throw new Error('Incomplete model response.');
     const content:any[]=response.content??[];
@@ -170,7 +187,7 @@ export class GeminiAgentModel implements AgentModel {
       ? new GoogleGenAI({vertexai:true,project:vertexSettings().project,location:vertexSettings().location,apiVersion:'v1',httpOptions})
       : new GoogleGenAI({apiKey:key,httpOptions:{...httpOptions,baseUrl:new URL(base).origin},apiVersion:new URL(base).pathname.replace(/^\//,'')}));
   }
-  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal):Promise<ModelReply> {
+  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice):Promise<ModelReply> {
     for(const message of messages.slice(this.consumed)) {
       if(message.role==='system'||(message.role==='assistant'&&message.calls?.length))continue;
       if(message.role==='tool') {
@@ -189,7 +206,9 @@ export class GeminiAgentModel implements AgentModel {
       automaticFunctionCalling:{disable:true},
       ...(this.provider==='vertex'?{candidateCount:1,thinkingConfig:{thinkingLevel:ThinkingLevel.LOW}}:{}),
       ...(tools.length?{tools:[{functionDeclarations:tools.map(tool=>({name:tool.name,description:tool.description,parametersJsonSchema:tool.parameters}))}],
-        toolConfig:{functionCallingConfig:{mode:FunctionCallingConfigMode.VALIDATED}}}:{}),
+        toolConfig:{functionCallingConfig:choice?.required.length
+          ? {mode:FunctionCallingConfigMode.ANY,allowedFunctionNames:choice.required}
+          : {mode:FunctionCallingConfigMode.VALIDATED}}}:{}),
     };
     // Only model generation is retried. No application tool is dispatched here.
     // Reserve every billable attempt, including failed/uncertain generations.

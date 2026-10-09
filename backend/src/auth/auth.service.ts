@@ -12,6 +12,13 @@ import { DatabaseService } from "../database/database.service.js";
 import { hashPassword, isPublishedDemoPassword, validatePassword, verifyPassword } from "./password.js";
 import { proFeaturesEnabled } from "./pro-features.js";
 import {
+  demoProfileSwitcherEnabled,
+  demoSwitchRoles,
+  demoSwitchUsernames,
+  isDemoSwitchUsername,
+  type DemoSwitchRole,
+} from "./demo-profile-switcher.js";
+import {
   createMfaSecret,
   createRecoveryCodes,
   decryptMfaSecret,
@@ -385,6 +392,29 @@ export class AuthService {
     return { ...user, active_school_id: membership.school_id };
   }
 
+  canUseDemoProfileSwitcher(user: AuthUser): boolean {
+    return demoProfileSwitcherEnabled() && isDemoSwitchUsername(user.username);
+  }
+
+  async demoProfiles(current: AuthUser) {
+    if (!this.canUseDemoProfileSwitcher(current)) return null;
+    const profiles = await Promise.all(demoSwitchRoles.map(async (role) => {
+      const user = await this.demoUser(role);
+      return {
+        role,
+        username: demoSwitchUsernames[role],
+        display_name: `${user.first_name} ${user.last_name}`.trim() || user.username,
+        avatar_url: user.avatar_url || null,
+        current: user.username === current.username,
+      };
+    }));
+    return { enabled: true, profiles };
+  }
+
+  async demoProfile(role: DemoSwitchRole): Promise<AuthUser> {
+    return this.demoUser(role);
+  }
+
   async logout(tokenHash: string): Promise<void> {
     await this.db.deleteFrom("auth_sessions").where("token_hash", "=", tokenHash).execute();
   }
@@ -446,14 +476,38 @@ export class AuthService {
     const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(body);
     const previous = await proFeaturesEnabled(this.db, user.id);
     if (previous !== enabled) {
-      await sql`UPDATE users SET pro_features_enabled=${enabled},updated_at=now() WHERE id=${user.id}::uuid AND is_active`.execute(this.db);
+      await this.db.transaction().execute(async tx => {
+        await sql`UPDATE users SET pro_features_enabled=${enabled},updated_at=now() WHERE id=${user.id}::uuid AND is_active`.execute(tx);
+        if (!enabled) {
+          await sql`UPDATE agent_actions action SET status='rejected',finished_at=now()
+            WHERE action.status='pending' AND action.run_id IN (
+              SELECT run.id FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
+              WHERE thread.owner_id=${user.id}::uuid
+            )`.execute(tx);
+          await sql`UPDATE agent_runs run SET status='completed',progress='Dismissed',
+              answer='This pending action was dismissed when Pro features were turned off.',finished_at=now()
+            WHERE run.status='confirmation' AND run.thread_id IN (
+              SELECT id FROM agent_threads WHERE owner_id=${user.id}::uuid
+            )`.execute(tx);
+          await sql`UPDATE agent_runs run SET status='cancelled',progress='Cancelled',
+              answer='This request stopped when Pro features were turned off. No pending action was executed.',finished_at=now()
+            WHERE run.status='running' AND run.thread_id IN (
+              SELECT id FROM agent_threads WHERE owner_id=${user.id}::uuid
+            )`.execute(tx);
+        }
+      });
       await this.audit.record({ action: 'auth.pro_features.changed', request, actorId: user.id, targetType: 'user', targetId: user.id, metadata: { enabled } });
     }
     return { enabled, preview: true };
   }
 
   response(user: AuthUser, csrfToken: string) {
-    return { user: publicUser(user), csrf_token: csrfToken, demo_mode: config().DEMO_MODE };
+    return {
+      user: publicUser(user),
+      csrf_token: csrfToken,
+      demo_mode: config().DEMO_MODE,
+      demo_profile_switcher: this.canUseDemoProfileSwitcher(user),
+    };
   }
 }
 

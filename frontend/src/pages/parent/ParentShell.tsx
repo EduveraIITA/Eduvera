@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
+import { useProFeatures } from "../../features/auth/useProFeatures";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { getAccessibleStudents } from "../../features/school/api";
@@ -152,6 +153,10 @@ export function ParentShell({
   ];
   const displayedChild=selectableChildren.find((option)=>option.id===currentChildId)??child;
   const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:parent:${currentChildId}`);
+  const proFeatures = useProFeatures();
+  const assistantEnabled = proFeatures.enabled;
+  const assistantActive = assistantEnabled && chat.active;
+  const assistantOpen = assistantEnabled && chat.open;
   const stackedTheme=(position:number)=>{
     const option=orderedChildren[position];
     const optionIndex=option?selectableChildren.findIndex((candidate)=>candidate.id===option.id):-1;
@@ -226,20 +231,20 @@ export function ParentShell({
         </div>
       </header>
 
-      <main className="parent-main" inert={chat.open}>{children}</main>
-      <AssistantPanel chat={chat} context={{ portal: "parent", pageTitle: pageLabel, studentId: currentChildId }} />
+      <main className="parent-main" inert={assistantOpen}>{children}</main>
+      {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal: "parent", pageTitle: pageLabel, studentId: currentChildId }} /> : null}
 
-      {!chat.fullPage ? <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
+      {!(assistantEnabled && chat.fullPage) ? <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
         {parentRoutes.filter((item) => ["home", "attendance", "diary", "more"].includes(item.id)).map((item, index) => {
           const Icon = item.icon;
-          const isActive = !chat.active && mobileActive === item.id;
+          const isActive = !assistantActive && mobileActive === item.id;
           return (
             <Fragment key={item.id}>
-            {index === 2 ? <AssistantTab chat={chat} className="parent-nav-item" /> : null}
+            {assistantEnabled && index === 2 ? <AssistantTab chat={chat} className="parent-nav-item" /> : null}
             <NavLink
               className={isActive ? "parent-nav-item is-active" : "parent-nav-item"}
               to={selectedStudentId ? `${item.path}?student_id=${encodeURIComponent(selectedStudentId)}` : item.path}
-              aria-current={chat.active ? false : isActive ? "page" : undefined}
+              aria-current={assistantActive ? false : isActive ? "page" : undefined}
             >
               <Icon size={21} strokeWidth={isActive ? 2.25 : 1.8} />
               <span>{item.label}</span>

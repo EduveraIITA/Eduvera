@@ -10,7 +10,7 @@ describe('verified agent charts',()=>{
     render(<AgentChart chart={chartFixture}/>);
     expect(screen.getByRole('heading',{name:chartFixture.title})).toBeVisible();
     expect(screen.getByText(/Aarav Sharma/)).toBeVisible();
-    fireEvent.click(screen.getByText('Chart data'));
+    fireEvent.click(screen.getByText('Data and method'));
     expect(screen.getByRole('table')).toHaveTextContent('91.25%');
     expect(screen.getByRole('table')).toHaveTextContent('Not recorded');
     expect(screen.getByRole('table')).toHaveTextContent('73 of 80 projected lessons');
@@ -18,8 +18,8 @@ describe('verified agent charts',()=>{
   });
   it('keeps the compact view non-interactive and labels truncated comparisons',()=>{
     render(<AgentChart compact chart={{...chartFixture,total:12}}/>);
-    expect(screen.queryByText('Chart data')).not.toBeInTheDocument();
-    expect(screen.getByText(/Showing 2 of 12/)).toBeVisible();
+    expect(screen.queryByText('Data and method')).not.toBeInTheDocument();
+    expect(screen.getByText('10 more in full chat')).toBeVisible();
     expect(document.querySelector('button,a,input,summary')).toBeNull();
   });
   it('renders a complete record donut and a trend with a missing-period gap',()=>{

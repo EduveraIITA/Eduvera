@@ -17,13 +17,22 @@ import { schoolDate } from './references.js';
 import { recordRevision } from './revisions.js';
 import { principalReportInput, principalReviewInput } from '../analytics/agent-report-contracts.js';
 import { chartChoice } from './charts.js';
+import { capabilityManifest, humanOnly, modelToolDescription, monitored, observed, reviewed, type CapabilityContract } from './capability-contract.js';
 
 export type Portal = 'principal' | 'teacher' | 'parent' | 'student';
-export interface AgentScope { userId: string; schoolId: string; portal: Portal; studentId: string | null; permissions: string[]; timezone: string; proFeaturesEnabled?: boolean }
+export interface AgentScope {
+  userId:string; schoolId:string; portal:Portal; studentId:string|null; permissions:string[]; timezone:string;
+  proFeaturesEnabled?:boolean;
+  userDisplayName?:string;
+  accountRole?:string;
+  schoolName?:string;
+  studentDisplayName?:string|null;
+}
 export interface ApiCommand { method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'; path: string; query?: Record<string, unknown>; body?: unknown }
 export interface Capability {
   name: string; title: string; domain: string; description: string; portals: Portal[];
   permission?: string; kind: 'read' | 'write' | 'handoff'; schema: z.ZodObject;
+  contract: CapabilityContract;
   toolSchema?: z.ZodObject;
   parseArguments?: (value: unknown) => Record<string, unknown>;
   modelProjection?: (value: any, input?: Record<string,unknown>) => unknown;
@@ -53,12 +62,12 @@ export function screenPath(scope: AgentScope, page: string, query: Record<string
 }
 const catalogue: Capability[] = [];
 function read(name: string, title: string, domain: string, portals: Portal[], schema: z.ZodObject, path: string | ((i: any, s: AgentScope) => string), page: string | ((i: any, s: AgentScope) => string), query: (i: any, s: AgentScope) => Record<string, unknown> = i => i, permission?: string) {
-  catalogue.push({ name, title, domain, description: title, portals, kind: 'read', schema, ...(permission ? { permission } : {}),
+  catalogue.push({ name, title, domain, description: title, portals, kind: 'read', schema, contract:observed(`Reads ${title.toLowerCase()} without changing school records.`), ...(permission ? { permission } : {}),
     request: (i, s) => ({ method: 'GET', path: typeof path === 'function' ? path(i, s) : path, query: query(i, s) }),
     screen: (i, s) => typeof page === 'function' ? page(i, s) : screenPath(s, page, i.date ? { date: i.date } : {}),
   });
 }
-function write(name: string, title: string, domain: string, portals: Portal[], bodySchema: z.ZodType, path: string | ((i: any, s: AgentScope) => string), page: string | ((i: any, s: AgentScope) => string), options: { method?: ApiCommand['method']; id?: boolean; scoped?: boolean; student?: boolean; permission?: string } = {}) {
+function write(name: string, title: string, domain: string, portals: Portal[], bodySchema: z.ZodType, path: string | ((i: any, s: AgentScope) => string), page: string | ((i: any, s: AgentScope) => string), options: { method?: ApiCommand['method']; id?: boolean; scoped?: boolean; student?: boolean; permission?: string; contract?:CapabilityContract } = {}) {
   // Hide session scope and server-generated idempotency from model-written fields.
   const json = z.toJSONSchema(bodySchema, { io: 'input', unrepresentable: 'any' }) as any;
   const shape = bodySchema instanceof z.ZodObject ? bodySchema.shape : {};
@@ -70,7 +79,7 @@ function write(name: string, title: string, domain: string, portals: Portal[], b
   if(serverRevision)delete toolShape.expected_revision;
   const schema = z.object({ ...(options.id ? { id: uuid } : {}), body, basis_id: uuid }).strict();
   const toolSchema = z.object({ ...(options.id ? { record_id: uuid.describe('The target record id from an authorized read.') } : {}), ...toolShape }).strict();
-  catalogue.push({ name, title, domain, portals, kind: 'write', schema, toolSchema,
+  catalogue.push({ name, title, domain, portals, kind: 'write', schema, toolSchema, contract:options.contract??reviewed(`Changes school data by performing: ${title.toLowerCase()}.`),
     ...(serverRevision?{bindInput:(input:any,basis:unknown)=>({...input,body:{...input.body,expected_revision:recordRevision(basis,input.id)}})}:{}),
     parseArguments: value => {
       const parsed = toolSchema.parse(value);
@@ -129,7 +138,8 @@ singleAttendance.prepare = {
 };
 read('class_updates', 'Recent notes, comments and changes for assigned classes', 'attendance', staff, dateInput, '/screens/teacher/class-updates', 'classes', i => i, 'attendance.view');
 read('register_history', 'Attendance register change history', 'attendance', staff, z.object({ id: uuid, date }).strict(), i => `/attendance-registers/${i.id}/history`, 'attendance', i => ({ date: i.date }), 'attendance.view');
-write('record_attendance', 'Submit the whole class register using explicitly supplied observations; never invent missing statuses', 'attendance', staff, z.object({ class_section_id: uuid, date, expected_revision: z.number().int().min(0), reason: z.string().min(3).max(500).optional(), records: z.array(z.object({ student_id: uuid, status: z.enum(['present','absent','late','excused','half_day']), remarks: z.string().max(500).optional() }).strict()).min(1).max(100) }), '/teacher/attendance/bulk', 'attendance', { permission: 'attendance.record' });
+write('record_attendance', 'Submit class attendance', 'attendance', staff, z.object({ class_section_id: uuid, date, expected_revision: z.number().int().min(0), reason: z.string().min(3).max(500).optional(), records: z.array(z.object({ student_id: uuid, status: z.enum(['present','absent','late','excused','half_day']), remarks: z.string().max(500).optional() }).strict()).min(1).max(100) }), '/teacher/attendance/bulk', 'attendance', { permission: 'attendance.record' });
+catalogue.find(cap=>cap.name==='record_attendance')!.description='Prepare a whole-class attendance register only when the current user message explicitly supplies the class-wide observation and every status. Never reuse prior rejected requests or invent missing statuses. Creates a preview, not a completed action.';
 read('my_timetable', 'Published timetable for a date', 'timetable', family, dateInput, (_, s) => `/screens/${s.portal}/timetable/day`, 'timetable', (i, s) => ({ ...i, ...familyQuery(s) }));
 read('teacher_day_plan', 'My teaching schedule and cover assignments for a date', 'timetable', staff, z.object({date}).strict(), '/day-plans/teacher', 'timetable', (i, s) => ({ ...i, school_id: s.schoolId }), 'timetable.view');
 read('day_plan_options', 'Classes, subjects, staff and day plans for a date', 'timetable', ['principal'], z.object({ date }).strict(), '/day-plans/options', 'timetable', (i,s) => ({ ...i, school_id: s.schoolId }));
@@ -145,8 +155,8 @@ write('save_repeating_timetable', 'Save repeating timetable draft', 'timetable',
 for (const action of ['publish','discard'] as const) write(`${action}_repeating_timetable`, `${action} repeating timetable draft`, 'timetable', ['principal'], schedule.action, i => `/schedule-planning/${i.id}/${action}`, 'timetable', { id: true });
 
 read('diary', 'Homework, diary notes and acknowledgements', 'diary', family, z.object({ date_from: date.optional(), date_to: date.optional() }).strict(), '/diary', 'diary', (i,s) => ({ ...i, ...familyQuery(s) }));
-write('complete_homework', 'Mark this homework complete', 'diary', family, empty, i => `/homework/${i.id}/complete`, 'diary', { id: true, student: true });
-write('reopen_homework', 'Mark this homework not yet complete', 'diary', family, empty, i => `/homework/${i.id}/complete`, 'diary', { id: true, student: true, method: 'DELETE' });
+write('complete_homework', 'Mark this homework complete', 'diary', family, empty, i => `/homework/${i.id}/complete`, 'diary', { id: true, student: true, contract:monitored('Changes only this homework completion flag and records a receipt.','reopen_homework') });
+write('reopen_homework', 'Mark this homework not yet complete', 'diary', family, empty, i => `/homework/${i.id}/complete`, 'diary', { id: true, student: true, method: 'DELETE', contract:monitored('Changes only this homework completion flag and records a receipt.','complete_homework') });
 write('acknowledge_diary', 'Acknowledge this diary item', 'diary', family, empty, i => `/diary/${i.id}/acknowledge`, 'diary', { id: true, student: true });
 write('add_diary_note', 'Send a note about this diary item', 'diary', family, z.object({ body: z.string().trim().min(2).max(2000) }), i => `/diary/${i.id}/notes`, 'diary', { id: true, student: true });
 read('leave_requests', 'Leave requests and current decisions', 'leave', family, z.object({ status: z.string().max(30).optional() }).strict(), '/leave-requests', 'leave', (i,s) => ({ ...i, ...familyQuery(s) }));
@@ -199,10 +209,10 @@ write('report_comment', 'Save a report-card remark', 'reports', staff, z.object(
 for(const action of ['submit','approve','return','publish'] as const) write(`${action}_report_cards`,`${action} report-card release`,'reports',['principal'],revisionInput,(i,s)=>schoolPath(s,`academic-reports/batches/${i.id}/actions/${action}`),(i,s)=>screenPath(s,'report-cards',{batch:i.id}),{id:true});
 
 read('insights', 'Attendance, results and school analytics with denominators', 'insights', all, z.object({ period:z.enum(['term','30','90']).optional(),class_id:uuid.optional() }).strict(), (_,s) => schoolPath(s,`analytics/${s.portal}`), (i,s)=>screenPath(s,'insights',i), (i,s) => ({ ...i, ...familyQuery(s) }), 'attendance.view');
-read('principal_analytics','Analyze a student by name/admission number, class or whole institution: recorded attendance, subject percentages and published marks. Use the same period in separate calls to compare learner, class and school; never substitute school data for a learner. Ambiguous names return choices. Pagination never changes aggregate totals.','insights',['principal'],principalReportInput,(_,s)=>schoolPath(s,'analytics/principal/report'),'insights');
-catalogue.find(cap=>cap.name==='principal_analytics')!.title='Attendance and results analysis';
-read('principal_review','Principal decision review: attendance declines and recording gaps, published learning results, open follow-ups, next-week cover/deadline conflicts or aggregate fee ageing. Read-only evidence, not automatic decisions or communication.','insights',['principal'],principalReviewInput,(_,s)=>schoolPath(s,'principal-insights/review'),(i,s)=>screenPath(s,`insights/${({attendance:'review',learning:'learning-review',followups:'followups',coverage:'operations',fees:'finance'} as Record<string,string>)[i.topic]}`,{date:i.date,insight_days:i.days,class:i.class_section_id,insight_threshold:i.threshold}));
-catalogue.find(cap=>cap.name==='principal_review')!.title='Principal operational review';
+read('principal_analytics','Attendance and results analysis','insights',['principal'],principalReportInput,(_,s)=>schoolPath(s,'analytics/principal/report'),'insights');
+catalogue.find(cap=>cap.name==='principal_analytics')!.description='Analyze a student by name/admission number, class or whole institution: recorded attendance, subject percentages and published marks. Use the same period in separate calls to compare learner, class and school; never substitute school data for a learner. Ambiguous names return choices. Pagination never changes aggregate totals.';
+read('principal_review','Principal operational review','insights',['principal'],principalReviewInput,(_,s)=>schoolPath(s,'principal-insights/review'),(i,s)=>screenPath(s,`insights/${({attendance:'review',learning:'learning-review',followups:'followups',coverage:'operations',fees:'finance'} as Record<string,string>)[i.topic]}`,{date:i.date,insight_days:i.days,class:i.class_section_id,insight_threshold:i.threshold}));
+catalogue.find(cap=>cap.name==='principal_review')!.description='Principal decision review: attendance declines and recording gaps, published learning results, open follow-ups, next-week cover/deadline conflicts or aggregate fee ageing. Read-only evidence, not automatic decisions or communication.';
 for(const name of ['insights','principal_analytics']) {
   const capability=catalogue.find(cap=>cap.name===name)!;
   capability.schema=capability.schema.extend({chart:chartChoice.optional().describe('Chart preset: attendance_comparison = BAR percentages by subject/class; attendance_breakdown = DONUT present/absent/late records (NOT subject bars); attendance_trend = LINE over time; results_comparison = BAR published subject/class averages; results_distribution = DONUT scored-result bands; none = no chart. Match the requested chart. Values come only from the API.')});
@@ -263,7 +273,7 @@ for (const [name,title,domain,page,portals] of [
   ['policy_changes','Policy drafting, publication and authority rules use the reviewed Governance workflow.','policies','governance',['principal']],
   ['attachments_and_print','Upload documents or print records from the corresponding app screen; chat cannot attach or print files.','files','more',all],
 ] as const) {
-  catalogue.push({ name, title, description: title, domain, portals: [...portals], schema: empty, kind:'handoff', screen: (_,s) => name === 'account_security' ? '/account/security' : screenPath(s,name === 'transport_controls' && s.portal === 'teacher' ? 'transport' : name === 'staff_changes' && s.portal === 'teacher' ? 'responsibilities' : page) });
+  catalogue.push({ name, title, description: title, domain, portals: [...portals], schema: empty, kind:'handoff', contract:humanOnly(title), screen: (_,s) => name === 'account_security' ? '/account/security' : screenPath(s,name === 'transport_controls' && s.portal === 'teacher' ? 'transport' : name === 'staff_changes' && s.portal === 'teacher' ? 'responsibilities' : page) });
 }
 
 export const CAPABILITIES: readonly Capability[] = catalogue;
@@ -313,8 +323,9 @@ export function isBasicAssistantCapability(name: string) {
   return name === 'my_attendance' || name.endsWith('_overview');
 }
 export function capabilityTool(capability: Capability): ToolDefinition {
-  return { name: capability.name, description: capability.description, parameters: z.toJSONSchema(capability.toolSchema ?? capability.schema, { io: 'input', unrepresentable: 'any' }) };
+  return { name: capability.name, description: modelToolDescription(capability), parameters: z.toJSONSchema(capability.toolSchema ?? capability.schema, { io: 'input', unrepresentable: 'any' }) };
 }
+export { capabilityManifest };
 export function findCapabilities(query: string, available: readonly Capability[], contextDomains: string[] = []) {
   const words = routingWords(query);
   const explicit = intentDomains(query);

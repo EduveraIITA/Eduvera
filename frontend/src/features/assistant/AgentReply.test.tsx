@@ -10,6 +10,8 @@ describe('reviewed agent actions',()=>{
     const decide=vi.fn();
     render(<MemoryRouter><ActionReview action={{...action,capability:'record_student_attendance',title:'Record one student’s attendance',input:{body:{student_id:'private-internal-id',expected_revision:17},basis_id:'e1'},preview:{student:'Aarav Sharma',class_name:'Class 7A',date:'2026-10-09',previous_status:'Not marked',status:'present',register_note:'Only this student will be recorded. The class register stays open.'}}} busy={false} onDecide={decide}/></MemoryRouter>);
     expect(screen.getByText('Aarav Sharma · Class 7A')).toBeVisible();expect(screen.getByText('Present')).toBeVisible();
+    expect(screen.getByText('Review required')).toBeVisible();expect(screen.getByText('Nothing has changed.')).toBeVisible();
+    expect(screen.getByRole('group',{name:/Attendance changes from Not marked to Present/})).toBeVisible();
     expect(screen.getByText(/class register stays open/)).toBeVisible();
     expect(screen.queryByText('private-internal-id')).not.toBeInTheDocument();expect(screen.queryByText('Expected revision')).not.toBeInTheDocument();
     expect(decide).not.toHaveBeenCalled();
@@ -18,6 +20,11 @@ describe('reviewed agent actions',()=>{
     const decide=vi.fn();render(<MemoryRouter><ActionReview action={action} busy={false} onDecide={decide}/></MemoryRouter>);
     expect(screen.getByText('Class 6A parents')).toBeVisible();expect(screen.getByText('Please bring the workbook.')).toBeVisible();expect(decide).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button',{name:'Confirm'}));expect(decide).toHaveBeenCalledWith('a1','confirm');
+  });
+  it('does not expose an unlabeled internal target in the approval heading',()=>{
+    render(<MemoryRouter><ActionReview action={{...action,input:{...action.input,id:'private-internal-id'},labels:{}}} busy={false} onDecide={vi.fn()}/></MemoryRouter>);
+    expect(screen.getByText('Affected record')).toBeVisible();
+    expect(screen.queryByText('private-internal-id')).not.toBeInTheDocument();
   });
   it('prevents repeated confirmation while checking the result',()=>{
     render(<MemoryRouter><ActionReview action={action} busy onDecide={vi.fn()}/></MemoryRouter>);

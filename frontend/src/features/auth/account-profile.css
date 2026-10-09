@@ -12,7 +12,47 @@
 .account-profile-switch:disabled{opacity:.55;cursor:wait}
 .account-profile-explainer{margin:0;padding:0 16px 16px}
 .account-profile-status{max-width:720px;margin:0 auto 12px;color:var(--edura-ink-muted);font-size:12px}
+.account-memory__heading{padding-bottom:10px}
+.account-memory__state{margin:0;padding:0 16px 16px;color:var(--edura-ink-muted);font-size:12px;line-height:1.5}
+.account-memory__state.security-alert{margin:0 16px 16px;padding:10px 12px}
+.account-memory__list{margin:0;padding:0;list-style:none;border-top:1px solid var(--edura-line)}
+.account-memory__list li{display:flex;min-height:62px;padding:12px 16px;align-items:center;gap:12px;border-bottom:1px solid var(--edura-line)}
+.account-memory__list li>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}
+.account-memory__list small,.account-memory__footer small{color:var(--edura-ink-muted);font-size:11px;line-height:1.4}
+.account-memory__list strong{font-size:13px;line-height:1.4;font-weight:650}
+.account-memory__list button{display:grid;width:36px;height:36px;flex:0 0 auto;place-items:center;border:0;border-radius:50%;color:var(--edura-ink-muted);background:transparent;cursor:pointer}
+.account-memory__list button:hover{color:var(--edura-danger);background:var(--edura-danger-soft)}
+.account-memory__footer{display:flex;min-height:54px;padding:10px 16px;align-items:center;justify-content:space-between;gap:12px}
+.account-memory__footer>button,.account-memory__confirm button{border:0;color:var(--edura-brand);background:transparent;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.account-memory__confirm{display:flex;align-items:center;gap:10px}
+.account-memory__confirm button:last-child{color:var(--edura-danger)}
+.account-memory button:focus-visible{outline:3px solid var(--edura-brand);outline-offset:2px}
+.account-memory button:disabled{opacity:.5;cursor:wait}
 .account-profile-security{display:flex;max-width:720px;min-height:55px;margin:0 auto;padding:0 16px;align-items:center;gap:11px;border:1px solid var(--edura-line);border-radius:var(--edura-radius-card);color:var(--edura-ink);background:#fff;font-size:14px;font-weight:700}
 .account-profile-security svg{color:var(--edura-brand)}
 .account-profile-security span{margin-left:auto;color:var(--edura-ink-muted);font-size:23px}
+.demo-profile-switcher{max-width:720px;margin:0 auto 12px;border:1px solid var(--edura-line);border-radius:var(--edura-radius-card);background:#fff;overflow:hidden}
+.demo-profile-switcher__heading{display:flex;min-height:69px;padding:14px 16px;align-items:center;justify-content:space-between;gap:12px}
+.demo-profile-switcher__heading>div{display:flex;min-width:0;flex-direction:column;gap:3px}
+.demo-profile-switcher__heading h2{margin:0;font-size:15px}
+.demo-profile-switcher__heading small{color:var(--edura-ink-muted);font-size:11px;line-height:1.4}
+.demo-profile-switcher__heading>span{padding:5px 8px;border-radius:999px;color:#895d00;background:#fff2ca;font-size:10px;font-weight:750;letter-spacing:.02em}
+.demo-profile-switcher__list{margin:0;padding:0;list-style:none;border-top:1px solid var(--edura-line)}
+.demo-profile-switcher__list li{display:flex;min-height:68px;padding:10px 16px;align-items:center;gap:12px;border-bottom:1px solid var(--edura-line)}
+.demo-profile-switcher__list li:last-child{border-bottom:0}
+.demo-profile-switcher__avatar{display:grid;width:42px;height:42px;flex:0 0 auto;place-items:center;border-radius:14px;color:#1248aa;background:#e7efff;font-size:13px;font-weight:800;overflow:hidden}
+.demo-profile-switcher__avatar--parent{color:#7132a8;background:#f2e8ff}
+.demo-profile-switcher__avatar--staff{color:#086f63;background:#def7f1}
+.demo-profile-switcher__avatar--admin{color:#8a4e08;background:#fff0d6}
+.demo-profile-switcher__avatar img{width:100%;height:100%;object-fit:cover}
+.demo-profile-switcher__identity{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}
+.demo-profile-switcher__identity strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}
+.demo-profile-switcher__identity small{color:var(--edura-ink-muted);font-size:11px}
+.demo-profile-switcher__list button{min-width:68px;min-height:36px;padding:0 13px;border:0;border-radius:18px;color:var(--edura-brand);background:var(--edura-surface-strong);font:inherit;font-size:12px;font-weight:750;cursor:pointer}
+.demo-profile-switcher__list button:hover{background:#dce8ff}
+.demo-profile-switcher__list button:focus-visible{outline:3px solid var(--edura-brand);outline-offset:2px}
+.demo-profile-switcher__list button:disabled{opacity:.55;cursor:wait}
+.demo-profile-switcher__current{display:flex;align-items:center;gap:4px;color:#08776b;font-size:11px;font-weight:750}
+.demo-profile-switcher__error{margin:0 12px 12px}
 @media(prefers-reduced-motion:reduce){.account-profile-switch,.account-profile-switch>span{transition:none}}
+@media(max-width:420px){.account-memory__footer{align-items:flex-start;flex-direction:column}.account-memory__confirm{align-self:flex-end}}

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
+import { useProFeatures } from "../../features/auth/useProFeatures";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
@@ -119,6 +120,10 @@ export function StudentShell({
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;
   const resolvedSchoolName = schoolName ?? membershipSchoolName;
   const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:student:${studentSchools[0]?.school_id ?? ""}`);
+  const proFeatures = useProFeatures();
+  const assistantEnabled = proFeatures.enabled;
+  const assistantActive = assistantEnabled && chat.active;
+  const assistantOpen = assistantEnabled && chat.open;
 
   return (
     <div className={`student-app student-app--${variant}`}>
@@ -140,21 +145,21 @@ export function StudentShell({
         </div>
       </header>
 
-      <main className="student-main" inert={chat.open}>{children}</main>
-      <AssistantPanel chat={chat} context={{ portal: "student", pageTitle: pageTitle ?? pageTitleFor(location.pathname, activeNav, section) }} />
+      <main className="student-main" inert={assistantOpen}>{children}</main>
+      {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal: "student", pageTitle: pageTitle ?? pageTitleFor(location.pathname, activeNav, section) }} /> : null}
 
-      {!chat.fullPage ? <nav className="student-bottom-nav" aria-label="Student navigation">
+      {!(assistantEnabled && chat.fullPage) ? <nav className="student-bottom-nav" aria-label="Student navigation">
         {navItems.map(({ key, label, icon: Icon }, index) => (
           <Fragment key={key}>
-          {index === 2 ? <AssistantTab chat={chat} className="student-bottom-nav__item" /> : null}
+          {assistantEnabled && index === 2 ? <AssistantTab chat={chat} className="student-bottom-nav__item" /> : null}
           <NavLink
             to={routeMap[key]}
             end={key === "home"}
-            aria-current={chat.active ? false : mobileActive === key ? "page" : undefined}
-            className={({ isActive }) => `student-bottom-nav__item ${!chat.active && (mobileActive === key || isActive) ? "is-active" : ""}`}
+            aria-current={assistantActive ? false : mobileActive === key ? "page" : undefined}
+            className={({ isActive }) => `student-bottom-nav__item ${!assistantActive && (mobileActive === key || isActive) ? "is-active" : ""}`}
           >
             {({ isActive }) => {
-              const selected = !chat.active && (mobileActive === key || isActive);
+              const selected = !assistantActive && (mobileActive === key || isActive);
               return (
                 <>
                   <Icon size={22} strokeWidth={selected ? 2.35 : 1.9} />

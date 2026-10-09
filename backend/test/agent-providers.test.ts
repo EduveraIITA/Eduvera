@@ -1,5 +1,5 @@
 import { afterEach,describe,expect,it,vi } from 'vitest';
-import { AnthropicAgentModel,CompatibleAgentModel,GeminiAgentModel,OllamaAgentModel,OpenAIResponsesModel,createAgentModel,agentSettings } from '../src/agent/providers.js';
+import { AnthropicAgentModel,CompatibleAgentModel,GeminiAgentModel,OllamaAgentModel,OpenAIResponsesModel,createAgentModel,agentContextWindowTokens,agentSettings } from '../src/agent/providers.js';
 import { ApiError, type GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import { ModelFailure } from '../src/agent/model-errors.js';
 const sdkClient=(generate:ReturnType<typeof vi.fn>,count=vi.fn().mockResolvedValue({totalTokens:123}))=>({models:{generateContent:generate,countTokens:count}} as unknown as Pick<GoogleGenAI,'models'>);
@@ -18,6 +18,13 @@ describe('provider-independent tool protocols',()=>{
     expect(events).toEqual(['count','reserve','generate']);expect(budget).toHaveBeenCalledWith(123,2048);
     expect(generate.mock.calls[0]![0].config).toMatchObject({candidateCount:1,maxOutputTokens:2048,automaticFunctionCalling:{disable:true},toolConfig:{functionCallingConfig:{mode:'VALIDATED'}}});
   });
+  it('requires the single matched action tool at the provider boundary',async()=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
+    const generate=vi.fn().mockResolvedValue({candidates:[{finishReason:'STOP',content:{role:'model',parts:[{functionCall:{name:tool.name,args:{}}}]}}]});
+    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',vi.fn().mockResolvedValue(undefined),sdkClient(generate));
+    expect((await provider.complete([{role:'user',content:'Do it'}],[tool],signal,{required:[tool.name]})).calls[0]?.name).toBe(tool.name);
+    expect(generate.mock.calls[0]![0].config.toolConfig.functionCallingConfig).toMatchObject({mode:'ANY',allowedFunctionNames:[tool.name]});
+  });
   it('never generates when budget is exhausted or cloud access has expired',async()=>{
     vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
     const generate=vi.fn(),count=vi.fn().mockResolvedValue({totalTokens:100});
@@ -31,6 +38,13 @@ describe('provider-independent tool protocols',()=>{
     expect(()=>createAgentModel()).toThrow(/budget/);
     vi.stubEnv('AGENT_MODEL','expensive-model');expect(()=>agentSettings()).toThrow(/approved/);
   });
+  it('uses provider-aware context limits and validates an explicit compaction window',()=>{
+    vi.stubEnv('AGENT_PROVIDER','ollama');vi.stubEnv('AGENT_CONTEXT_WINDOW_TOKENS','');
+    expect(()=>agentContextWindowTokens()).toThrow();
+    vi.stubEnv('AGENT_CONTEXT_WINDOW_TOKENS','4096');expect(agentContextWindowTokens()).toBe(4096);
+    vi.stubEnv('AGENT_CONTEXT_WINDOW_TOKENS','4000001');expect(()=>agentContextWindowTokens()).toThrow();
+    vi.stubEnv('AGENT_CONTEXT_WINDOW_TOKENS','1048576');expect(agentContextWindowTokens()).toBe(1048576);
+  });
   it('uses native Ollama tools without thinking or streaming',async()=>{
     const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({done:true,message:{content:'',tool_calls:[{function:{name:tool.name,arguments:{}}}]}})));
     vi.stubGlobal('fetch',fetcher);
@@ -38,11 +52,19 @@ describe('provider-independent tool protocols',()=>{
     expect(result.calls[0]).toMatchObject({name:tool.name,arguments:{}});
     expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({model:'qwen3:8b',think:false,stream:false});
   });
+  it('narrows local Ollama to the resolved action tool',async()=>{
+    const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({done:true,message:{content:'',tool_calls:[{function:{name:tool.name,arguments:{}}}]}})));
+    vi.stubGlobal('fetch',fetcher);
+    const unrelated={name:'send_message',description:'Send a message',parameters:{type:'object',properties:{},additionalProperties:false}};
+    await new OllamaAgentModel('qwen3:8b','http://localhost:11434').complete([{role:'user',content:'Do it'}],[unrelated,tool],signal,{required:[tool.name]});
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body).tools).toEqual([{type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters}}]);
+  });
   it('serializes compatible assistant calls and tool-call IDs',async()=>{
     const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'Checked'}}]})));
     vi.stubGlobal('fetch',fetcher);
-    await new CompatibleAgentModel('local-custom','https://model.example/v1','key').complete([{role:'assistant',content:'',calls:[{id:'c1',name:tool.name,arguments:{}}]},{role:'tool',content:'{}',callId:'c1'}],[tool],signal);
+    await new CompatibleAgentModel('local-custom','https://model.example/v1','key').complete([{role:'assistant',content:'',calls:[{id:'c1',name:tool.name,arguments:{}}]},{role:'tool',content:'{}',callId:'c1'}],[tool],signal,{required:[tool.name]});
     const body=JSON.parse(fetcher.mock.calls[0]![1].body);expect(body.messages[0].tool_calls[0].function.arguments).toBe('{}');expect(body.messages[1].tool_call_id).toBe('c1');expect(body.parallel_tool_calls).toBe(false);
+    expect(body.tool_choice).toEqual({type:'function',function:{name:tool.name}});
   });
   it('retains native OpenAI reasoning and tool outputs without storing server-side',async()=>{
     const output=[{type:'reasoning',id:'r1',summary:[]},{type:'function_call',id:'f1',call_id:'c1',name:tool.name,arguments:'{}'}];

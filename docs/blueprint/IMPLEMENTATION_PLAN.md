@@ -4635,11 +4635,15 @@ Deployment and real browser checkout remain separate verification steps.
 
 - Added Profile → Pro features across all four views. The switch is an opt-in
   **preview preference**, initially off; it is not a paid entitlement or a
-  subscription claim. Basic evidence-linked overview/personal-attendance chat
-  remains available. When off, advanced agent tools, reviewed action proposals,
-  chart generation and specialist attendance AI are absent from the UI/tool
-  catalogue; server checks reject direct specialist API calls and confirmation
-  of a pending AI action. Normal school workflows stay available.
+  subscription claim. The earlier split between basic and advanced assistant
+  behavior was superseded by the user's explicit decision on 9 October: when
+  off, the assistant is entirely absent. Chat tabs, compact overlays and the full
+  assistant page are not rendered; direct assistant URLs return to the portal
+  home before requesting agent data. The server rejects every agent endpoint,
+  specialist attendance AI and pending-action decisions. Disabling the preference
+  atomically cancels running requests and rejects pending confirmations; a later
+  re-enable cannot revive an old proposal. Normal school workflows and
+  person-to-person Messages remain available.
 - Additive migration `058_user_pro_features.sql` stores the preference per user.
   Existing `ai.use`, photo attendance and role/record permissions remain
   mandatory when Pro is on. Historical agent answers based on now-hidden tools
@@ -4663,3 +4667,287 @@ Deployment and real browser checkout remain separate verification steps.
   `eduvera-stage-00024-jer`; release/readiness/root checks returned HTTP 200 and
   the service reports 100% traffic on that revision. User/device visual acceptance
   is not yet claimed; ask for UI validation before release.
+- The full-off revision passed **27/27 agent integration tests** on the isolated
+  `omnischool_agent_test_20261009` database and **63/63 focused frontend route,
+  navigation and profile tests**. Focused frontend/backend lint, backend build and backend
+  typecheck passed. The dirty shared workspace's frontend typecheck was obstructed
+  by pre-existing untracked duplicate `* 2.tsx` test files; a clean detached
+  worktree containing this exact patch passed full frontend typecheck, production
+  build and lint. No deployment or physical-device UI acceptance is claimed yet.
+
+### Concise, accessible assistant results — 9 October 2026
+
+- Re-read blueprint §18 and applied the user's explicit content-first direction
+  without changing shared navigation or the established portal theme. The result
+  treatment follows Apple HIG chart/layout guidance: answer first, direct labels,
+  restrained semantic color, short scanning paths and progressive disclosure for
+  supporting detail. Visible `Assistant`/provider labels and generic footer copy
+  were removed; screen-reader response labels remain.
+- Added semantic Markdown rendering through pinned `react-markdown` 10.1.0 with
+  raw HTML, model-authored links, images and tables disabled. Headings, lists,
+  emphasis, quotes and code now use a consistent hierarchy; list markers and key
+  values use the existing portal accent. Pre-render normalization removes stray
+  punctuation and chart boilerplate. If prose merely repeats verified chart rows,
+  the UI replaces it with a short deterministic finding from the authorized chart
+  data; meaningful model analysis is preserved.
+- Reworked bar results into a flat, compact chart with direct subject/value labels
+  and thin comparison lines. Full chat shows up to eight rows; the mini result
+  shows four and an explicit remaining count. Scope and period stay visible, while
+  the data table, method and projection caveats move under `Data and method`.
+  Evidence links and freshness remain available once, without duplicating the
+  chart source in a second source block. Null values remain `Not recorded`.
+- Tightened the provider instruction to lead with the requested answer, omit
+  greetings/request restatement/chart narration/closing offers, limit chart prose
+  to two findings and avoid Markdown tables, links and hash headings. Chart values
+  continue to be server-produced from authorized APIs; the model cannot invent
+  visual data or arbitrary destinations.
+- Verification: focused assistant UI **19/19 tests**, chart unit **3/3 tests** and
+  agent integration **27/27 tests** passed. A clean detached worktree containing
+  the exact patch passed frontend typecheck, production build, lint and the full
+  **645/645 test** suite; backend typecheck, build and lint passed. Production
+  dependency audit reported zero vulnerabilities. Browser QA at 390×844 verified
+  full and mini density, composer clearance, progressive detail and screen-reader
+  labels. Local, Cloudflare and backend readiness were rechecked separately.
+  No Stage deployment or physical-device visual acceptance is claimed in this task.
+
+### Focused assistant action approval — 9 October 2026
+
+- Re-read blueprint §18 before changing the approval surface. The existing
+  immutable preview, expiry, permission revalidation, deterministic execution and
+  receipt behavior are unchanged. Mini chat still cannot confirm a write. It only
+  opens the complete review, preserving an explicit human decision before the
+  server is asked to execute anything.
+- Replaced the neutral full-chat action block with one focused approval surface.
+  Pending actions use the established warning tokens, state `Review required`,
+  name the affected person or record, show the exact effect and state plainly that
+  nothing has changed. Individual attendance now presents current and proposed
+  values as a direct before/after comparison. Supporting facts stay flat and
+  scannable; success, uncertainty and failure use their existing semantic colors.
+- When a proposal is pending, mini chat replaces the ordinary answer/source stack
+  with a compact amber approval banner directly above the composer. It shows the
+  action, affected target and expiry, while keeping Confirm unavailable. The entire
+  review link retains the smooth full-chat transition and return state. Close,
+  keyboard focus, screen-reader labels and reduced-motion behavior remain intact.
+- Verification: focused assistant **20/20 tests** passed. A clean detached
+  worktree containing the exact patch passed frontend typecheck, production build,
+  lint and the full **646/646 test** suite; production dependency audit reported
+  zero vulnerabilities. Real principal proposals verified the full review at
+  320/390/768/1024/1440px and the mini approval at 320/390px, with no horizontal
+  overflow or JavaScript errors. Both QA proposals were dismissed after review;
+  no attendance record was changed. Local and Cloudflare health were rechecked.
+  Stage deployment and physical-device visual acceptance remain open.
+
+### Local AI test allowance — 9 October 2026
+
+- Increased only the personal local/Cloudflare preview's durable Vertex allowance
+  from **$0.25/day to $1/day** so the current demo can be tested more extensively.
+  The separate **$1/month** reservation ceiling, 10 requests/hour and 30 requests/day
+  per-account limits, trial expiry, approved Flash-Lite model, Pro-feature gate and
+  all authorization/confirmation controls remain unchanged. This application
+  allowance is conservative pre-call reservation accounting, not a Google Cloud
+  invoice or hard billing cap.
+- Before the change, the local ledger contained 18 reservations totaling 245,423
+  micro-USD for the current UTC day/month. Existing reservations were preserved;
+  no usage was reset or deleted. The parsed runtime policy now reports 1,000,000
+  daily micro-USD, 1,000,000 monthly micro-USD, 10 requests/hour and 30/day. The
+  managed preview was restarted; local and Cloudflare `/readyz` both returned
+  HTTP 200 with database and event storage healthy.
+
+### Contract-driven agent autonomy, prompt and memory hardening — 9 October 2026
+
+- Re-read blueprint §18 and recorded the user's explicit refinement: the platform
+  should govern effects according to risk, not make the model ask permission for
+  every useful operation. The blueprint's same-API authorization, tenant scope,
+  auditability, deterministic validation and human-only physical/safety boundaries
+  remain intact. Autonomous reasoning/reads are unrestricted within the user's
+  granted catalogue. Only the reciprocal homework complete/reopen flags are now
+  classified as monitored low-impact effects; all 75 other record-changing tools
+  remain reviewed until their domain invariants and reversal semantics earn a
+  narrower classification.
+- Added one versioned machine-readable capability contract shared by tool
+  descriptions, `find_tools`, the status API, execution policy, persisted action
+  state, receipts and UI presentation. It declares domain, inputs, required prior
+  read, effect class, control, outcome, presentation and reversal. Concise labels
+  are separate from detailed model guidance; this prevents instructions such as
+  “never invent missing statuses” from appearing as an approval title.
+- Split the growing system prompt into stable role/authorization rules, current
+  time/scope, intent policy, dynamically selected domain skills and a concise
+  response contract. The model receives at most the relevant tool subset, can
+  discover more via the permission-filtered manifest, and treats every retrieved
+  record as untrusted data. The app continues to own tenant/child scope, IDs,
+  revisions, idempotency, chart values, links, execution and receipts.
+- Removed special retry-command behavior. Natural user turns remain ordered context;
+  app-owned outcome messages explicitly distinguish proposed, dismissed, expired,
+  stale, failed, uncertain and succeeded effects. Rejected model tool arguments are
+  not reintroduced. Deterministic attendance validation uses the newest explicit
+  user-authored learner/status and cannot widen a learner correction into a class
+  register.
+- Added provider-aware context sizing and durable LLM compaction at **30%**. Oldest
+  turns become a bounded goals/preferences/corrections/outcomes summary; recent
+  turns remain verbatim. The summary excludes identifiers, tool arguments and
+  school-record facts and is always labelled non-evidence/non-authority, so a fresh
+  authorized API read remains mandatory. Summary cursor, prompt/contract versions
+  and success/failure are auditable. Additive migration
+  `059_agent_effect_contract.sql` persists these policy and memory fields without
+  reclassifying historical actions.
+- Research used official Vertex function-calling/thought-signature and Agent Engine
+  evaluation guidance, Google ADK trace/golden-set evaluation, LangGraph durable
+  execution/selective tool review, MCP's current consent/audit direction and
+  pgvector's filtered similarity model. Decision: retain the official Google SDK,
+  Zod/JSON Schema contracts and PostgreSQL state now. Evaluate ADK/LangGraph on the
+  same golden multi-turn traces before adopting either; do not add pgvector until
+  there is an approved unstructured corpus, and do not use MCP to bypass internal
+  APIs or authorization.
+- Verified so far: backend typecheck/build and full backend lint; **29/29
+  capability/prompt/memory contract tests**; **22/22 mocked provider-protocol
+  tests**; **31/31 isolated real-database agent integration tests**; and **17/17
+  focused assistant UI tests** with focused frontend lint.
+  The latter cover natural continuation after a dismissed proposal, absence of
+  rejected tool arguments, learner-versus-class containment, stale/uncertain
+  effects, preservation of all natural turns below the 30% threshold, compaction
+  above it with non-authoritative memory, and one monitored homework
+  completion with a fresh-source check and audit receipt. The shared workspace's
+  full frontend typecheck is still obstructed by pre-existing untracked duplicate
+  `* 2.tsx` tests with missing matcher augmentation; those files were preserved.
+  Live Vertex, preview/browser and deployment checks remain separate and are not
+  yet claimed by this increment.
+- A subsequent real-Vertex, read-only local smoke test passed three principal
+  turns: today's attendance-recording gaps, the natural follow-up “Which class
+  should I check first?”, and an independent two-bullet check after prompt version
+  `2026-10-09.layered-v3` moved compacted memory out of system-role authority.
+  Each turn refreshed the authorized `class_registers` source, returned concise
+  evidence-linked output and created no action. The test threads were archived; no
+  attendance or other school record changed. Local and Cloudflare readiness returned
+  HTTP 200; the public agent status reports configured model ready and capability
+  contract `2026-10-09.2`. This is a two-turn observation, not a model-wide SLO or
+  adversarial certification. Review URL:
+  `https://verde-too-independent-bargains.trycloudflare.com`.
+
+### Bounded long-term user memory — 10 October 2026
+
+- Re-read blueprint §18 and separated two different kinds of memory. Existing
+  thread compaction preserves short-term task continuity after 30% of the model
+  context; new long-term memory stores only an explicitly stated durable
+  communication preference, recurring app workflow preference or self-described
+  app familiarity. It does not store transcript excerpts or school-record facts.
+- Selected structured PostgreSQL over pgvector/managed Memory Bank for this release.
+  The active set is intentionally small enough to send in full after exact
+  owner/school/portal filtering, so relational storage gives deterministic
+  upsert/delete, user inspection, auditability, local-Ollama portability and no
+  embedding spend or approximate filtered-recall failure. Introduce vectors only
+  for a separately approved larger corpus with tenant-filter recall and poisoning
+  evaluations; never use vectors as the source of attendance, marks, fees or action
+  state.
+- Added migration `060_agent_user_memory.sql`, the versioned
+  `manage_user_memory` contract and authenticated list/delete/clear APIs. The
+  default limits are 1,200 estimated tokens total, 32 items, 96 estimated tokens
+  per item and 365-day expiry. Same-topic corrections revise the row; deterministic
+  priority/recency eviction and a periodic expiry sweep enforce bounded storage.
+  The Profile surface explains the boundary, reports budget use, forgets one item
+  and uses a two-step clear-all action. Inspection/deletion remains available when
+  Pro AI is off.
+- Long-term writes require an exact evidence quote from the current user message.
+  Schema and server validation reject model/assistant/tool-derived text, one-off
+  inference, credentials, contacts, identifiers, URLs, exact locations, sensitive
+  traits, health/safeguarding data, school records, permission text and prompt/tool
+  injection. Audit events retain only operation counts/categories and contract
+  version, not memory content. Memory is labelled untrusted personalization data
+  in every prompt and cannot supply identity proof, authorization, action intent,
+  tool arguments or record evidence.
+- The model now receives minimal live account context: display name, effective
+  account role, portal, institution and selected learner. Contact fields are
+  excluded. This context can make conversation natural but never broadens the
+  capability catalogue or replaces fresh authorization and record reads.
+- Verified against the reset isolated `omnischool_agent_test_20261009` database:
+  **32/32 integration**, **30/30 contract**, **22/22 provider**, and **1/1 storage**
+  tests passed (**85/85 total**). The database scenario covers model-mediated
+  remember, cross-thread reuse, exact owner retrieval, account context without
+  email, user deletion and audit evidence. Profile UI **2/2** passed; focused
+  frontend/backend lint and backend typecheck/build pass. The local PostgreSQL 14
+  instance cannot replay historical migration 033's newer syntax from a blank
+  database, so this disposable test was rebuilt from the already-migrated local
+  schema and data; no working database records were changed. The full frontend
+  build remains blocked by preserved pre-existing untracked duplicate `* 2.tsx`
+  test files with missing matcher augmentation. No deployment, browser/device
+  acceptance or live-provider memory certification is claimed.
+
+### Role-aware assistant conversation — 10 October 2026
+
+- Re-read blueprint sections 6 and 18 and corrected a contradictory response rule
+  that prohibited greetings. Identity and effective role now shape the conversation
+  without being announced. The assistant uses the signed-in person's preferred
+  first name for one concise opening greeting, never says “you are currently logged
+  in as…”, and does not repeat a greeting in later turns. Direct identity questions
+  use the live app context rather than a school-record lookup.
+- Added portal-specific response priorities without changing authorization or tool
+  availability: principal answers lead with decisions, exceptions, institution
+  impact and next steps; staff answers lead with assigned work, class/learner
+  context, timing and the next practical step. Parent/student language stays scoped
+  and plain. Simple answers use one or two sentences and ordinary answers target
+  fewer than 80 words unless detail is requested.
+- Versioned the layered prompt as `2026-10-10.layered-v5` and added contract
+  assertions for opening/continuing turns, preferred-name context, role focus and
+  prohibited bureaucratic phrasing. Backend typecheck/build and focused lint pass;
+  focused verification passes **30/30 prompt/capability contracts**, **22/22 provider
+  protocol tests**, **32/32 isolated agent integration tests** and **1/1 storage test**.
+- A paid read-only Vertex run on a separately cloned synthetic test database passed
+  five connected principal turns and one separately authorized staff opening. The
+  verified responses included **“Hello, Meera. What can I help with?”**, **“Your
+  name is Meera Kapoor.”**, and **“Hello, Kavita. What can I help with?”**. Later
+  principal responses did not re-greet and retained app-owned sources. Nine model
+  calls reserved 127,041 micro-USD under the isolated test allowance; this is not
+  an invoice or general model-quality certification. The temporary staff test grant
+  and database were deleted. No Stage deployment or physical-device acceptance is
+  claimed.
+
+### Authenticated four-profile development switcher — 10 October 2026
+
+- Added a temporary account Profile surface for the four Cambridge review identities:
+  student, parent, teacher and principal. A valid password sign-in remains mandatory;
+  public `demo-session` authentication remains disabled on managed Stage. After one of
+  those four identities signs in, the login flow opens Profile and shows the four
+  already-seeded identities with the active identity clearly marked.
+- Switching is a CSRF-protected authenticated command, not a client-side role override.
+  The server accepts only the four fixed roles, confirms the current and target accounts
+  are the seeded review identities, creates a new server session, revokes the previous
+  session, changes to the target's Cambridge membership and records
+  `auth.demo_profile.switched` without credentials in audit metadata. Other users receive
+  a concealed 404 and cannot enumerate or use the switcher.
+- `DEMO_PROFILE_SWITCHER_ENABLED` defaults off and is hard-disabled when
+  `DEPLOYMENT_ENVIRONMENT=production`. The Google Cloud Stage release command explicitly
+  enables the switcher on its no-traffic candidate revision; this does not weaken the
+  existing `DEMO_MODE=false` release assertion. Removing that one Stage flag disables the
+  temporary surface without changing accounts or data.
+- Verified locally with backend typecheck/build, focused frontend lint and **3/3** Profile
+  UI tests, **1/1** real PostgreSQL auth/session integration test, and **7/7** Google Cloud
+  release-contract tests. The database test proves anonymous denial, four-profile listing,
+  CSRF rejection, session rotation, target identity restoration, audit evidence and
+  exclusion of the company persona. Stage deployment and physical-device acceptance are
+  recorded separately after the push-triggered release completes.
+
+### Generic action-following agent contract — 10 October 2026
+
+- Replaced the layered instruction stack with one concise operating prompt plus only the
+  relevant domain skill and audience response guidance. The prompt now describes the
+  general contract: use an available app tool for the requested job, read current records,
+  ask only for a genuinely missing real-world detail, and let the application enforce
+  authorization, scope, validation, confirmation and receipts. It contains no learner-,
+  phrase- or screenshot-specific workaround.
+- Clear action requests now use the catalogue's highest-ranked authorized write tool as a
+  provider-level required tool on the first model turn. Vertex/Gemini, OpenAI Responses,
+  OpenAI-compatible chat and Anthropic each receive their native constrained tool-choice
+  form. Only one write can be required; schemas and server-side preparation still reject
+  missing or invented values, and consequential effects still stop at the existing review
+  screen. Ordinary questions retain normal model choice.
+- Short explicit continuations such as “you can”, “go ahead” and “proceed” inherit only the
+  latest user-authored goal containing an app domain or action. Model text, tool arguments,
+  dismissed proposals and record payloads never create action authority. This fixes the
+  general multi-turn failure where the model forgot the actionable goal and responded with
+  a refusal, without hard-coding a retry phrase or a particular attendance scenario.
+- The design follows provider guidance to keep role/goals/style in a compact system
+  instruction and expose clear, predictable function schemas; deterministic application
+  code remains responsible for effects. Verified with backend typecheck/build, **31/31**
+  capability/prompt contracts, **23/23** multi-provider protocol tests and **32/32**
+  isolated real-database agent integration tests, including a natural “You can” continuation
+  after a dismissed proposal. Stage deployment and live-device acceptance remain pending
+  until the release pipeline completes.

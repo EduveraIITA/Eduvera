@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useOptionalAuth } from '../auth/AuthContext';
+import { useProFeatures } from '../auth/useProFeatures';
 import { currentStaffMembership } from '../auth/staffAccess';
 import { OperationsShell } from '../../pages/operations/OperationsShell';
 import { ParentShell } from '../../pages/parent/ParentShell';
@@ -13,6 +14,14 @@ import type { AssistantContext, AssistantPortal } from './context';
 import './assistant.css';
 
 export default function AssistantPage({portal}:{portal:AssistantPortal}) {
+  const proFeatures=useProFeatures();
+  const fallback=portal==='parent'?'/parent/home':'/'+portal;
+  if(proFeatures.isPending)return <main className="route-loader" aria-busy="true"><p role="status">Loading…</p></main>;
+  if(!proFeatures.enabled)return <Navigate to={fallback} replace/>;
+  return <AssistantPageContent portal={portal}/>;
+}
+
+function AssistantPageContent({portal}:{portal:AssistantPortal}) {
   const location=useLocation();
   const auth=useOptionalAuth();
   const navigate=useAssistantNavigation();
@@ -52,7 +61,6 @@ export default function AssistantPage({portal}:{portal:AssistantPortal}) {
   const onBack=()=>navigate.go(returnTo,{replace:true,state:{assistantReopen:true}},()=>window.scrollTo({top:typeof state?.assistantScrollY==='number'?state.assistantScrollY:0,behavior:'instant'}));
   const content=<div className="assistant-page" ref={page}>
     <div className="assistant-page__notice">
-      <span>{conversation.status?.local?'Local model':conversation.status?.provider??'Assistant'}{conversation.status?.model?' · '+conversation.status.model:''}</span>
       <button type="button" onClick={()=>void conversation.newChat()} disabled={conversation.busy||conversation.pending||conversation.awaiting||conversation.accessDenied}>New chat</button>
     </div>
     {conversation.threads.length>1?<details className="agent-history"><summary>Conversations</summary><ul>{conversation.threads.map(thread=><li key={thread.id}><button type="button" aria-current={thread.id===conversation.threadId?'true':undefined} disabled={conversation.busy} onClick={()=>conversation.select(thread.id)}>{thread.title}</button></li>)}</ul></details>:null}
@@ -62,14 +70,14 @@ export default function AssistantPage({portal}:{portal:AssistantPortal}) {
     {conversation.loading?<p role="status">Loading your conversation…</p>:conversation.runs.length?<ol className="assistant-conversation" aria-label="Conversation">
       {conversation.runs.map(run=><li key={run.id} data-agent-run={run.id}>
         <div className="assistant-question"><span className="sr-only">You: </span>{run.question}</div>
-        <div className="assistant-full-reply assistant-response__content"><span className="assistant-full-reply__label">Assistant</span>
+        <div className="assistant-full-reply assistant-response__content"><span className="sr-only">Assistant response: </span>
           <AgentReply run={run} busy={conversation.busy} onDecide={(id,decision)=>void conversation.decide(id,decision)}/>
         </div>
       </li>)}
     </ol>:<div className="assistant-page__empty"><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
     <div ref={end} className="assistant-page__end"/>
     <div className="assistant-page__composer" ref={footer}>
-      <p role="status">{conversation.pending?latest?.progress+'…':conversation.awaiting?'Review the pending action above.':conversation.status?.pro_features_enabled?'Answers use your access. Changes need confirmation.':'Answers use your school access.'}</p>
+      {conversation.pending||conversation.awaiting?<p role="status">{conversation.pending?latest?.progress+'…':'Review the pending action above.'}</p>:null}
       <AssistantComposer key={portal+':'+(studentId??'self')+':'+conversation.threadId} onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </div>
   </div>;

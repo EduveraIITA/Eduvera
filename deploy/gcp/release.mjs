@@ -83,7 +83,7 @@ async function deploy(env) {
   const tag = `check-${env.GITHUB_SHA.slice(0, 12)}`;
   let promoted = false;
   try {
-    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA}`, '--no-traffic', `--tag=${tag}`]);
+    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},DEMO_PROFILE_SWITCHER_ENABLED=true`, '--no-traffic', `--tag=${tag}`]);
     const updated = describe('services', env.GCP_SERVICE);
     const candidate = updated.status?.traffic?.find(item => item.tag === tag);
     if (!candidate?.url || !candidate.revisionName) throw new Error('Candidate URL/revision is missing');

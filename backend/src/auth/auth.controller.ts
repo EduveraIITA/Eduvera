@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Req, Res } from "@nestjs/common";
+import { BadRequestException, Controller, Get, HttpCode, NotFoundException, Post, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import { randomBytes } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -8,6 +8,7 @@ import type { AuthenticatedRequest } from "../common/request.js";
 import { AuditService } from "../common/audit.service.js";
 import { AuthService } from "./auth.service.js";
 import { signedCookie } from "./guards.js";
+import { demoSwitchRoles, type DemoSwitchRole } from "./demo-profile-switcher.js";
 
 @ApiTags("authentication")
 @Controller("api/v1/auth")
@@ -43,6 +44,7 @@ export class AuthController {
       user: identity ? this.auth.response(identity.user, csrfToken).user : null,
       csrf_token: csrfToken,
       demo_mode: config().DEMO_MODE,
+      demo_profile_switcher: identity ? this.auth.canUseDemoProfileSwitcher(identity.user) : false,
     };
   }
 
@@ -142,6 +144,43 @@ export class AuthController {
     this.setSession(reply, session.rawToken, session.csrfToken);
     await this.audit.record({ action: "auth.demo_session.started", request, actorId: user.id, metadata: { persona: role } });
     return this.auth.response(user, session.csrfToken);
+  }
+
+  @ApiCookieAuth()
+  @Get("demo-profiles/")
+  async demoProfiles(@Req() request: AuthenticatedRequest) {
+    const result = await this.auth.demoProfiles(request.authUser);
+    if (!result) throw new NotFoundException();
+    return result;
+  }
+
+  @ApiCookieAuth()
+  @Post("demo-profile-switch/")
+  @HttpCode(200)
+  async switchDemoProfile(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) reply: FastifyReply) {
+    if (!this.auth.canUseDemoProfileSwitcher(request.authUser)) throw new NotFoundException();
+    const role = (request.body as { role?: string } | undefined)?.role;
+    if (!role || !demoSwitchRoles.includes(role as DemoSwitchRole)) throw new BadRequestException("Choose one of the available demo profiles.");
+    const target = await this.auth.demoProfile(role as DemoSwitchRole);
+    if (target.username === request.authUser.username) {
+      return { ...this.auth.response(target, request.csrfToken), redirect_to: this.demoHome(role as DemoSwitchRole) };
+    }
+    const session = await this.auth.createSession(target, request);
+    await this.auth.logout(request.sessionHash);
+    this.setSession(reply, session.rawToken, session.csrfToken);
+    await this.audit.record({
+      action: "auth.demo_profile.switched",
+      request,
+      actorId: request.authUser.id,
+      targetType: "user",
+      targetId: target.id,
+      metadata: { from_role: request.authUser.role, to_role: role },
+    });
+    return { ...this.auth.response(target, session.csrfToken), redirect_to: this.demoHome(role as DemoSwitchRole) };
+  }
+
+  private demoHome(role: DemoSwitchRole): string {
+    return { student: "/student", parent: "/parent/home", staff: "/teacher", admin: "/principal" }[role];
   }
 
   @Public()

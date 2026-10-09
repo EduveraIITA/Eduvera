@@ -42,6 +42,7 @@ interface SessionResponse {
   user: AuthUser | null;
   csrf_token: string;
   demo_mode: boolean;
+  demo_profile_switcher?: boolean;
 }
 
 interface MeResponse {
@@ -58,6 +59,7 @@ interface AuthResponse {
   user: AuthUser;
   csrf_token: string;
   demo_mode: boolean;
+  demo_profile_switcher?: boolean;
   onboarding?: {
     status: "pending_school_membership";
     has_school_access: boolean;
@@ -97,7 +99,7 @@ interface AuthState {
 export interface AuthContextValue extends AuthState {
   portals: Portal[];
   hasPortal: (portal: Portal) => boolean;
-  login: (input: LoginInput) => Promise<{ challengeToken: string | null }>;
+  login: (input: LoginInput) => Promise<{ challengeToken: string | null; demoProfileSwitcher?: boolean }>;
   completeMfa: (challengeToken: string, code: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   enterDemo: (persona: DemoPersona) => Promise<void>;
@@ -269,7 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
       await loadProfile(response);
       await queryClient.invalidateQueries();
-      return { challengeToken: null };
+      return { challengeToken: null, demoProfileSwitcher: response.demo_profile_switcher === true };
     },
     [loadProfile, queryClient],
   );

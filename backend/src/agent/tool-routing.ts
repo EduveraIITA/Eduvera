@@ -25,6 +25,21 @@ export function intentDomains(query: string): string[] {
   if (!result.length && /\b(check|about|find|who|lookup|look up)\b/i.test(query)) result.push('records');
   return result;
 }
+
+const continuation = /^(?:yes|okay|ok|sure|please\s+do|do\s+it|go\s+ahead|continue|proceed|you\s+can|please\s+proceed)\b/i;
+const action = /\b(?:add|approve|assign|cancel|change|complete|correct|create|decline|delete|dismiss|invite|mark|open|pay|publish|record|remove|reply|respond|reopen|report|request|resolve|save|schedule|send|set|submit|update|withdraw)\b/i;
+
+/** Resolve only an explicit conversational continuation to the latest user goal.
+ * This never imports model arguments or tool output into action intent. */
+export function conversationRoutingQuery(question:string,previousUserQuestions:readonly string[]):string {
+  if(!continuation.test(question.trim()))return question;
+  const prior=[...previousUserQuestions].reverse().find(item=>intentDomains(item).length>0||action.test(item));
+  return prior?`${prior}\n${question}`:question;
+}
+
+export function requestsAction(query:string):boolean {
+  return action.test(query)&&(!/^\s*(?:can|could|may)\s+(?:i|we)\b/i.test(query)||/\b(?:can|could|would)\s+you\b/i.test(query));
+}
 export const domainStarters: Record<string,string[]> = {
   insights:['principal_analytics','principal_review','insights','school_insights','find_students'],
   attendance: ['student_attendance','record_student_attendance','my_attendance','subject_attendance','class_registers','attendance_register','record_attendance'],

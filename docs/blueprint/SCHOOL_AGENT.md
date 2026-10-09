@@ -10,9 +10,13 @@ prohibitions on automated collection authorization, physical handover, safeguard
 decisions, biometrics or unexplained attendance reconciliation.
 
 Keep the existing compact reply, full conversation transition, theme and navigation.
-Routine reads need no confirmation. Every record-changing command needs a concrete,
-immutable preview and an explicit Confirm in the UI. Asking in chat is not approval
-of model-invented recipients, dates, amounts or marks. Missing facts must be asked for.
+The effect contract, rather than a blanket restriction, owns intervention: reads are
+autonomous; explicitly classified reversible, low-impact effects execute once after
+fresh validation and return a monitored receipt; consequential effects use a concrete,
+immutable review and explicit Confirm; physical, safety, authority and security
+decisions stay human-only. Asking in chat is never permission to invent recipients,
+dates, amounts, observations or marks. Natural conversation supplies the goal—there
+are no special retry phrases or UI copy masquerading as agent instructions.
 
 ## Architecture
 
@@ -29,11 +33,13 @@ of model-invented recipients, dates, amounts or marks. Missing facts must be ask
 4. Execute catalogue reads through the existing authenticated application API,
    including its session, role, relationship and domain guards. School/child scope
    comes from the session and validated thread, never from the model.
-5. Writes become expiring proposals, grounded in a preceding read. On confirmation,
-   reload authorization and the read snapshot, reject stale proposals, claim the
-   command once, and dispatch through the same guarded API. Existing revision and
-   business validation still apply. A crash at an ambiguous write boundary requires
-   human verification, not blind retry.
+5. Every effect is classified in one machine-readable contract used by model tool
+   descriptions, server execution, stored policy evidence, receipts and UI. A
+   monitored low-impact effect is grounded in a preceding read, refreshes access and
+   the source, executes at most once and returns a receipt. A consequential effect
+   becomes an expiring review; confirmation repeats those checks before dispatch.
+   Existing revision and business validation still apply. A crash at an ambiguous
+   write boundary requires human verification, not blind retry.
 6. Evidence and action receipts are server-generated: operation, time, result and
    allowlisted screen. Model-written links or claims are not execution receipts.
 7. Keep sensitive physical/safety/security workflows in their normal human UI.
@@ -48,6 +54,17 @@ of model-invented recipients, dates, amounts or marks. Missing facts must be ask
    context, so attendance "presence" and academic "marks" stay distinct. The
    school timezone owns "today". Routine record revisions are also app-owned:
    34 ID-based commands bind their revision to the exact freshly read target.
+10. Compose prompts in independently testable layers: stable operating policy,
+    current authorization/time scope, relevant domain skill, concise response style,
+    permission-scoped tool schemas and untrusted tool data. Human-facing titles and
+    outcome summaries are separate fields, so safety instructions cannot leak into
+    an approval heading.
+11. Treat the PostgreSQL thread as durable state. Preserve recent natural user turns
+    verbatim. Once estimated conversation use exceeds 30% of the configured model
+    context, the configured LLM summarizes the oldest chunk into goals, preferences,
+    corrections, open questions and receipt-level outcomes. The summary excludes
+    record facts, identifiers and tool arguments and can never authorize an action;
+    current facts are re-read through the normal APIs.
 
 ### Single-student attendance
 
@@ -77,30 +94,31 @@ English-language grounding is not multilingual or arbitrary-language certificati
 ## Implemented coverage
 
 `backend/src/agent/catalogue.ts` is authoritative. As verified on 9 October, it
-contains **137 capabilities: 50 reads, 77 reviewed writes, 10 human handoffs**.
+contains **137 capabilities: 50 autonomous reads, 2 monitored low-impact effects,
+75 reviewed consequential effects and 10 human handoffs**.
 These counts describe the catalogue, not 135 individually certified end-to-end
 workflows. Portal visibility, staff grants and the underlying API narrow the tools
 offered to each account. A tool is not an independent authorization grant.
 
-| Domain | Reads | Reviewed writes | Human handoffs |
-| --- | ---: | ---: | ---: |
-| Home overview | 4 | 0 | 0 |
-| Attendance | 7 | 3 | 1 |
-| Timetable and academic-year planning | 5 | 12 | 0 |
-| Diary and homework | 1 | 4 | 0 |
-| Learner leave | 2 | 2 | 1 |
-| Follow-up conversations | 2 | 1 | 0 |
-| Messages and notifications | 4 | 6 | 0 |
-| Events | 3 | 7 | 1 |
-| Assessments and result registers | 3 | 10 | 0 |
-| Report-card schemes and releases | 4 | 9 | 0 |
-| Insights | 4 | 0 | 0 |
-| Staff leave, cover and responsibilities | 1 | 8 | 1 |
-| School and student records | 3 | 5 | 1 |
-| Fees and payment reviews | 2 | 5 | 0 |
-| Published policies | 1 | 0 | 1 |
-| Transport planning and duty requests | 4 | 5 | 1 |
-| Safety, account security and files | 0 | 0 | 3 |
+| Domain | Autonomous reads | Monitored effects | Reviewed effects | Human handoffs |
+| --- | ---: | ---: | ---: | ---: |
+| Home overview | 4 | 0 | 0 | 0 |
+| Attendance | 7 | 0 | 3 | 1 |
+| Timetable and academic-year planning | 5 | 0 | 12 | 0 |
+| Diary and homework | 1 | 2 | 2 | 0 |
+| Learner leave | 2 | 0 | 2 | 1 |
+| Follow-up conversations | 2 | 0 | 1 | 0 |
+| Messages and notifications | 4 | 0 | 6 | 0 |
+| Events | 3 | 0 | 7 | 1 |
+| Assessments and result registers | 3 | 0 | 10 | 0 |
+| Report-card schemes and releases | 4 | 0 | 9 | 0 |
+| Insights | 4 | 0 | 0 | 0 |
+| Staff leave, cover and responsibilities | 1 | 0 | 8 | 1 |
+| School and student records | 3 | 0 | 5 | 1 |
+| Fees and payment reviews | 2 | 0 | 5 | 0 |
+| Published policies | 1 | 0 | 0 | 1 |
+| Transport planning and duty requests | 4 | 0 | 5 | 1 |
+| Safety, account security and files | 0 | 0 | 0 | 3 |
 
 Examples include explicit attendance observations, homework completion, diary
 notes, class conversations, dated timetable drafts, assessment marks, report-card
@@ -108,7 +126,8 @@ comments, fee queries and recurring transport schedules. The agent can record a
 payment reported as already received; it cannot transfer money. Planning a ride
 does not start it or attest that a child boarded it.
 
-One run can prepare **one** action. Confirm or dismiss it before continuing. Voice,
+One run can cause at most **one** effect. A reviewed effect must be confirmed or
+dismissed before continuing; a monitored effect finishes with a receipt. Voice,
 file upload/printing, bulk imports, account/guardian authority, policy publication,
 physical transport observations and safety decisions remain app handoffs. Some
 other app operations still need dedicated catalogue entries. This is not literal
@@ -158,10 +177,11 @@ attendance copilot and photo-attendance configuration. No provider fallback occu
 - Threads are scoped by owner, active school, portal and selected child. Persistent
   history returns the latest 20 threads and 50 turns per selected thread. Older
   rows are retained, but older-history pagination and deletion UI are not shipped.
-- Every write uses an immutable 10-minute preview, fresh authorization and source
-  hash, the original domain validator and API, and a server-generated idempotency
-  key. Existing domain revision/audit/event behavior remains authoritative.
-  Changed sources fail closed; a user asks for a new preview.
+- Every effect uses fresh authorization and a source hash, the original domain
+  validator and API, and a server-generated idempotency key. Consequential effects
+  add an immutable 10-minute review. The currently monitored effects are only the
+  reciprocal homework complete/reopen flags. Existing domain revision/audit/event
+  behavior remains authoritative. Changed sources fail closed.
 - A confirmed command is claimed atomically. Duplicate confirmation does not
   dispatch again. A crash/network failure with an ambiguous outcome becomes
   **uncertain** and links to the app; it is never blindly replayed. Existing API
@@ -175,6 +195,12 @@ attendance copilot and photo-attendance configuration. No provider fallback occu
   and sensitive medical/biometric keys are excluded. Authorized snapshots and
   action history are persisted; retention, backup/erasure policy and storage-level
   access hardening must be completed before production.
+- Model context size is provider-aware and can be explicitly configured with
+  `AGENT_CONTEXT_WINDOW_TOKENS`. At 30%, older turns are compacted by the same
+  configured provider under the same usage reservation and audit trail. Recent
+  turns remain natural conversation; rejected model arguments are never recycled
+  as user intent. Compaction failure leaves the unsummarized turns in place and
+  cannot silently promote a proposal into a fact.
 - The app owns source links, labels, timestamps and receipts. Model content is
   rendered as text with limited emphasis, never executable HTML or clickable
   model-supplied URLs. Receipts link to created/changed records where a supported
@@ -215,6 +241,11 @@ test checks all four tables' ownership, RLS and grants. Fresh PostgreSQL 17
 migrations passed locally, including the independently merged teacher-feedback
 055. Per-user/non-owner runtime RLS remains a separate architectural release gate.
 Use the repository migration runner: its keys are full filenames, not prefixes.
+
+Additive migration `059_agent_effect_contract.sql` stores the contract version,
+effect class and control mode on each action, plus the compacted-memory text,
+cursor and timestamp on each thread. Historical actions default to the earlier
+review policy; no old record is reclassified as an automatically executed effect.
 
 Railway does not inherit the Mac's local Ollama endpoint. App deployment alone
 does not make inference available there: configure an approved reachable provider
@@ -258,6 +289,24 @@ npm run build
 - [Anthropic tool handling](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
   and [Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling):
   preserve native call/result structures and opaque provider state between steps.
+- [Vertex AI function calling](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling):
+  use detailed typed declarations, expose a small relevant tool set, include current
+  time when it affects behavior and keep business execution in application code.
+- [Vertex AI agent evaluation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/evaluate)
+  and [Google ADK evaluation](https://google.github.io/agents-cli/guide/evaluation/):
+  evaluate final answers, tool trajectories, groundedness, safety and traces against
+  golden multi-turn cases; prompt edits without regression data are not hardening.
+- [LangGraph durable execution](https://langchain-ai.github.io/langgraph/concepts/durable_execution/)
+  and [tool-call review](https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/review-tool-calls/):
+  distinguish short-term checkpoints from durable memory and interrupt only the
+  effects that actually require human review.
+- [pgvector](https://github.com/pgvector/pgvector) is appropriate for filtered
+  semantic retrieval over an approved unstructured corpus, not as the source of
+  transactional attendance, marks, money or current action state. No vector layer
+  is added until such a corpus and permission-filter recall evaluation exist.
+- [MCP release guidance](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
+  informs a later external-system boundary with the same consent/audit path. It is
+  not an internal authorization bypass and is unnecessary for existing app APIs.
 
 ## Verification gates
 
@@ -417,7 +466,7 @@ use established provider tooling and show data charts above the compact composer
 Local ADC authentication is complete with quota project `eduera-511111`. The
 ignored local environment now uses the same approved Vertex model as Stage,
 without an API key, paid-account upgrade or GPU. Its separate local ledger allows
-$0.25/day and $1/month in conservative reservations, 10 requests/hour and 30/day,
+$1/day and $1/month in conservative reservations, 10 requests/hour and 30/day,
 expiring 8 November 2026. Local and Stage allowances are **not** one project-wide
 billing cap. Trial credit eligibility depends on the billing account's remaining
 credit; its balance is still unverified. Existing local migration drift was not
@@ -452,14 +501,14 @@ References: [official SDK](https://googleapis.github.io/js-genai/release_docs/cl
 #### Pro preview preference (9 October 2026)
 
 Profile now has a per-user Pro features preview toggle (off by default). This is
-not billing or an entitlement. Off means the assistant is limited to scoped
-overview/personal-attendance reads, with no agent actions or verified charts;
-student attendance Copilot and the optional photo local-AI cross-check are
-hidden and denied on direct API access. Existing role, record and school
-permissions are still checked when enabled. Disabling Pro masks historical
-tool-derived answers and blocks confirming pending actions; rejection remains
-available. Future paid plans need a separate server entitlement gate combined
-with this preference. Additive migration: `058_user_pro_features.sql`. The
+not billing or an entitlement. The later explicit product decision supersedes the
+original basic-chat fallback: when off, Chat navigation, compact chat and the full
+assistant page are absent, and every direct agent/specialist AI endpoint is denied.
+Student attendance Copilot and the optional photo local-AI cross-check are also
+hidden and denied. Existing role, record and school permissions are still checked
+when enabled. Disabling Pro cancels an active run and invalidates pending effects;
+re-enabling cannot revive one. Future paid plans need a separate server entitlement
+gate combined with this preference. Additive migration: `058_user_pro_features.sql`. The
 implementation has clean-database backend tests (337 passed, 153
 intentional skips) and a 640-test frontend suite. Both production builds and
 linters pass. Stage workflow `37948358227` deployed commit `5d1f452` after the
@@ -467,3 +516,156 @@ existing SMTP Secret Manager binding was corrected from a whitespace-prefixed
 environment name. Migration 058 completed, revision `eduvera-stage-00024-jer`
 has 100% traffic, and release/readiness/root checks returned HTTP 200. User/device
 visual acceptance remains required.
+
+## Contract, prompt and memory hardening — 9 October 2026
+
+The reported failure was not treated as a request for a larger prompt. Inspection
+of the exact persisted conversation found three coupled defects: a rejected model
+proposal was eligible for later context, a long safety description was also used
+as the human approval title, and continuation depended too heavily on the latest
+surface wording. This increment fixes the state and contracts that the model sees:
+
+- Rejected, expired, stale, failed and uncertain proposals enter subsequent turns
+  only as truthful app-owned outcomes such as “nothing changed”; their model tool
+  arguments never become memory or authority. Natural user messages remain in
+  order, so “continue with that correction” is interpreted from conversation
+  context without an application branch for a magic phrase. The newest explicit
+  user-supplied learner/status wins over stale or invented model arguments.
+- `capability-contract.ts` is the common source for effect class, execution control,
+  presentation type, concise user outcome, reversal and required read. `find_tools`
+  returns that permission-filtered manifest instead of a loose list. Detailed model
+  instructions and concise UI labels are now separate values.
+- The system prompt is decomposed into a stable operating policy, current scope,
+  intent policy, relevant domain skill and response contract. Retrieved records are
+  explicitly untrusted data. Tool scope is selected dynamically and the app—not the
+  model—owns IDs, tenant/child scope, authorization, revisions, idempotency, source
+  links, charts, effect policy and receipts.
+- The first monitored effects are homework complete and reopen because they are
+  narrow, reversible and idempotent. Attendance, marks, messages, fees, transport
+  planning and the other consequential writes remain reviewed. Physical handover,
+  location/biometric claims, safeguarding, guardian authority and account security
+  remain human-only. This is progressive autonomy, not a claim that every existing
+  write has already earned automatic execution.
+- Thread compaction starts only after a conservative token estimate exceeds 30% of
+  the configured context window. The LLM summary preserves user goals and verified
+  outcome state, excludes school-record facts and tool arguments, and is labelled
+  non-evidence in every future prompt. Every record answer/effect still re-reads the
+  authorized API. The summary cursor and audit event make the transition traceable.
+
+The current implementation deliberately keeps the official `@google/genai` adapter,
+Zod/JSON Schema capability definitions and PostgreSQL state instead of adopting a
+framework solely for appearance. Google ADK and LangGraph are candidates for a
+measured orchestration spike, but a migration is accepted only if the same golden
+multi-turn traces improve tool selection, groundedness, interrupted-action recovery
+or operability without weakening model portability. A framework cannot repair an
+incorrect business contract. pgvector and MCP are therefore deferred to the
+specific retrieval/external-integration needs described above.
+
+Verified locally against the isolated `omnischool_agent_test_20261009` database:
+**31/31 agent integration scenarios** and **29/29 capability/prompt/memory contract
+tests** pass, alongside **22/22 mocked provider-protocol tests** and **17/17 focused
+assistant UI tests**. Coverage now includes rejected-proposal isolation, free-form natural
+continuation, one-student versus whole-register protection, 30% LLM compaction,
+preservation of all unsummarized turns below that threshold, compacted-memory
+non-authority, and an autonomously monitored homework completion
+with fresh validation and an audit receipt. Full backend lint plus backend
+typecheck/build pass. The shared workspace's frontend typecheck remains obstructed by
+pre-existing untracked duplicate `* 2.tsx` tests with missing matcher augmentation;
+those user files were not modified. Live Vertex evaluation, browser UI and deployment
+remain separate gates; these local tests are not production certification.
+
+A bounded real-Vertex smoke check then used the principal's existing local demo
+scope for three read-only turns. “Give me a concise overview of attendance recording
+gaps today” read `class_registers`, returned the eight-class status breakdown and
+created no action. The natural follow-up “Which class should I check first?” refreshed
+the same source and identified the sole in-progress register. A final independent
+two-bullet check passed after prompt version `2026-10-09.layered-v3` moved compacted
+memory out of system-role authority. The test threads were archived; no school
+record was changed. Local and
+Cloudflare readiness returned HTTP 200 and the public status reported capability
+contract `2026-10-09.2` with the configured model ready. This two-turn observation
+is not a broad accuracy, latency or adversarial certification. Current review URL:
+**https://verde-too-independent-bargains.trycloudflare.com**.
+
+## Bounded long-term personalization — 10 October 2026
+
+The agent now has a separate, user-controlled long-term personalization layer.
+It is intentionally not a transcript archive and not a semantic cache of school
+records. Only an explicit durable statement in the **current** user message can
+create or revise one of three memory types: communication preference, recurring
+app workflow preference, or self-described app familiarity. A matching exact
+quote is required. One-off requests, model inferences, assistant text, retrieved
+records, attendance, marks, fees, safeguarding/health data, contacts, credentials,
+identifiers and precise locations are ineligible.
+
+The first implementation uses ordinary PostgreSQL rather than pgvector or a
+provider-owned memory service. At the deliberately small cap, exact
+owner/school/portal/category/topic retrieval is complete, deterministic, cheap,
+inspectable and portable across Vertex and local Ollama. Similarity search would
+add embedding cost, filtered-recall behavior and a new poisoning surface without
+improving this bounded set. A vector index remains an upgrade seam only if an
+approved unstructured corpus grows beyond the prompt cap and permission-filtered
+retrieval is proven with evaluation data.
+
+Migration `060_agent_user_memory.sql` adds private, row-level-security-enabled
+`agent_user_memories`. The default active budget is **1,200 estimated tokens**, at
+most **32 items**, at most **96 estimated tokens per item**, with **365-day expiry**.
+Updating the same topic increments its revision; deterministic priority/recency
+eviction enforces the cap, and an expiry worker removes stale rows. The owner can
+list, delete one, or clear all memories through authenticated APIs and the Profile
+screen even while Pro AI is disabled. Mutation audits contain category/count and
+contract metadata, never the private memory text.
+
+Every model turn also receives minimal live account context—display name, account
+role, current portal, institution and selected learner when applicable. Email,
+phone and other contact data are excluded. Identity and memory are passed as
+explicitly untrusted user-role data: they can improve wording, terminology,
+explanation depth and workflow suggestions, but cannot establish identity,
+permissions, record facts, action intent or tool arguments. The newest explicit
+request wins, and every school fact/action still uses a fresh authorized app read.
+
+Verified locally on 10 October against isolated
+`omnischool_agent_test_20261009`: **32/32 agent integration**, **30/30
+capability/prompt/memory contract**, **22/22 provider-protocol** and **1/1 storage
+tests** passed (**85/85 total**). The Profile memory UI passed **2/2 focused tests**;
+changed frontend files and all changed backend files pass focused lint, and backend
+typecheck/build pass. Full frontend build remains blocked only by preserved,
+pre-existing untracked duplicate `* 2.tsx` test files whose jest-dom matchers are
+not augmented; they were not altered or deleted. Browser/device acceptance, live
+Vertex memory behavior and deployment remain open gates.
+
+## Role-aware human conversation — 10 October 2026
+
+The assistant response layer now treats live identity and role as silent
+conversation context rather than text to announce. This follows blueprint sections
+6 and 18: keep the daily human experience simple while retaining permission-scoped,
+tool-mediated AI. A new thread opens with one short, named greeting. A greeting-only
+message uses the form **“Hello, Meera. What can I help with?”**; it does not recite
+the account role, institution, portal, date or product domain. Later turns do not
+greet or reintroduce the assistant again. Direct questions about the signed-in
+person's name or role are answered from app-provided identity context.
+
+The versioned response contract now describes the assistant as a trusted, discreet
+school colleague: warm, calm, precise and official without helpdesk language.
+Principal responses prioritize the decision, exception, school-wide impact or next
+step. Staff responses prioritize assigned work, class/learner context, timing and
+the next practical step. Parent and student responses retain their own scoped,
+plain-language focus. Simple answers use one or two sentences; ordinary answers
+target fewer than 80 words unless the user explicitly asks for detail. Account
+context remains untrusted data for authorization purposes and never expands tools
+or access.
+
+Prompt contract `2026-10-10.layered-v5` is covered by the focused contract suite,
+including opening versus continuing turns, principal/staff focus, preferred-name
+context and prohibited account-narration phrases. Backend typecheck/build, focused
+lint, **30/30 contract**, **22/22 provider**, **32/32 isolated integration** and
+**1/1 storage** tests pass. A paid, read-only Vertex evaluation against a temporary
+synthetic database passed five connected principal turns plus one separately
+authorized staff opening. The principal greeting was exactly **“Hello, Meera. What
+can I help with?”**, the name follow-up returned **“Your name is Meera Kapoor.”**,
+and the staff greeting was **“Hello, Kavita. What can I help with?”**. Subsequent
+analytics and review turns did not re-greet and kept verified app sources. The run
+made nine model calls and conservatively reserved 127,041 micro-USD in the isolated
+ledger; this is not a Google invoice or broad tone/accuracy certification. The
+temporary access grant and database were removed afterward. Physical-device review
+and deployment remain open gates.

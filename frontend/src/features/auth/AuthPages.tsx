@@ -120,7 +120,7 @@ export function LoginPage() {
         setPassword("");
         return;
       }
-      void navigate(safeNextPath(location.search) ?? "/", { replace: true });
+      void navigate(safeNextPath(location.search) ?? (result.demoProfileSwitcher ? "/account/profile?demo_profiles=1" : "/"), { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Sign in could not be completed.");
     } finally {

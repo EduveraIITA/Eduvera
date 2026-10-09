@@ -872,9 +872,13 @@ export class SchoolService {
   async diaryItems(studentId: string, enrollment: EnrollmentContext, dateFrom?: string, dateTo?: string) {
     const result = await sql<any>`
       SELECT di.*, s.id AS subject_join_id, s.name AS subject_name, s.short_name,
+        completion.completed_at,
         au.first_name AS author_first_name, au.last_name AS author_last_name,
         EXISTS(SELECT 1 FROM diary_acknowledgements da WHERE da.item_id=di.id AND da.student_id=${studentId}::uuid) AS acknowledged
-      FROM diary_items di LEFT JOIN subjects s ON s.id=di.subject_id JOIN users au ON au.id=di.author_id
+      FROM diary_items di
+      LEFT JOIN subjects s ON s.id=di.subject_id
+      LEFT JOIN homework_completions completion ON completion.item_id=di.id AND completion.student_id=${studentId}::uuid
+      JOIN users au ON au.id=di.author_id
       WHERE di.class_section_id=${enrollment.class_section_id}::uuid AND di.term_id=${enrollment.term_id}::uuid
         AND di.published_at <= now()
         AND (${dateFrom ?? null}::date IS NULL OR di.date >= ${dateFrom ?? null}::date)
@@ -896,6 +900,8 @@ export class SchoolService {
         author_name: `${row.author_first_name} ${row.author_last_name}`.trim(), due_at: row.due_at,
         requires_acknowledgement: row.requires_acknowledgement, acknowledged: row.acknowledged,
         published_at: row.published_at,
+        completed: row.item_type === 'homework' ? Boolean(row.completed_at) : null,
+        completed_at: row.item_type === 'homework' ? row.completed_at ?? null : null,
         notes: notes.rows.map((note) => ({ id: note.id, author_name: `${note.first_name} ${note.last_name}`.trim(), body: note.body, created_at: note.created_at })),
       });
     }

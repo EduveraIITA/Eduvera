@@ -145,6 +145,7 @@ beforeAll(async () => {
       COOKIE_SECRET: "integration-test-cookie-secret-at-least-32",
       METRICS_TOKEN: metricsToken,
       DEMO_MODE: "true",
+      DEMO_PROFILE_SWITCHER_ENABLED: "true",
       AI_PROVIDER: "mock",
       SPA_DIST_DIR: join(process.cwd(), "no-spa"),
       LOG_LEVEL: "silent",
@@ -925,6 +926,30 @@ describe("OmniSchool API", () => {
 
     expect((await browser.login("meera.principal")).status).toBe(200);
     expect((await browser.request("/api/v1/auth/me/")).status).toBe(200);
+  });
+
+  it("lists and switches only the four authenticated review profiles with CSRF and audit evidence", async () => {
+    const browser = new BrowserSession();
+    expect((await browser.request('/api/v1/auth/demo-profiles/')).status).toBe(401);
+    expect((await browser.request('/api/v1/auth/demo-session/', { method:'POST', body:JSON.stringify({role:'student'}) })).status).toBe(200);
+    const profileResponse = await browser.request('/api/v1/auth/demo-profiles/');
+    const profiles = await json(profileResponse);
+    expect(profileResponse.status, JSON.stringify(profiles)).toBe(200);
+    expect(profiles.profiles).toHaveLength(4);
+    expect(profiles.profiles.map((profile:any)=>profile.role)).toEqual(['student','parent','staff','admin']);
+    expect(profiles.profiles.find((profile:any)=>profile.role==='student').current).toBe(true);
+
+    const rejected = await browser.request('/api/v1/auth/demo-profile-switch/', { method:'POST', body:JSON.stringify({role:'admin'}) });
+    expect(rejected.status).toBe(403);
+    const switched = await browser.request('/api/v1/auth/demo-profile-switch/', { method:'POST', body:JSON.stringify({role:'admin'}) }, true);
+    expect(switched.status).toBe(200);
+    expect(await json(switched)).toMatchObject({user:{username:'meera.principal',role:'admin'},redirect_to:'/principal'});
+    expect(await json(await browser.request('/api/v1/auth/session/'))).toMatchObject({authenticated:true,user:{username:'meera.principal'}});
+    expect((await pool.query("SELECT count(*)::int n FROM audit_events WHERE action='auth.demo_profile.switched' AND target_id=(SELECT id FROM users WHERE username='meera.principal')")).rows[0].n).toBeGreaterThan(0);
+
+    const company = new BrowserSession();
+    expect((await company.request('/api/v1/auth/demo-session/', {method:'POST',body:JSON.stringify({role:'company'})})).status).toBe(200);
+    expect((await company.request('/api/v1/auth/demo-profiles/')).status).toBe(404);
   });
 
   it("pins every school demo profile to Cambridge while keeping the company demo institution-free", async () => {

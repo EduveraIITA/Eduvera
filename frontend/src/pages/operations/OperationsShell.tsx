@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert, TrendingUp } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
+import { useProFeatures } from "../../features/auth/useProFeatures";
 import { currentStaffMembership, hasStaffPermission } from "../../features/auth/staffAccess";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
@@ -45,6 +46,10 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
   const planningTabs = portal === "principal" && (pathname === "/principal/timetable" || pathname === "/principal/calendar");
   const member=currentStaffMembership(auth?.memberships ?? []);
   const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:${portal}:${member?.school_id ?? ""}`);
+  const proFeatures = useProFeatures();
+  const assistantEnabled = proFeatures.enabled;
+  const assistantActive = assistantEnabled && chat.active;
+  const assistantOpen = assistantEnabled && chat.open;
   const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
   const navigation=nav[portal].filter(item=>{
     if(portal!=='teacher') return true;
@@ -62,8 +67,8 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
         <nav aria-label={`${portal} portal navigation`}>
           {navigation.map(({ id, label, path, icon: Icon }, index) => (
             <Fragment key={id}>
-              {index === Math.min(2, navigation.length - 1) ? <AssistantTab chat={chat} sidebar /> : null}
-              <NavLink to={path} end={id === "home"} aria-current={chat.active ? false : navigationActive === id ? "page" : undefined} className={!chat.active && navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{portal === "principal" && id === "safeguarding" ? "Student concerns" : label}</span></NavLink>
+              {assistantEnabled && index === Math.min(2, navigation.length - 1) ? <AssistantTab chat={chat} sidebar /> : null}
+              <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : navigationActive === id ? "page" : undefined} className={!assistantActive && navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{portal === "principal" && id === "safeguarding" ? "Student concerns" : label}</span></NavLink>
             </Fragment>
           ))}
         </nav>
@@ -75,12 +80,12 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
-        <main className="operations-main" inert={chat.open}>{planningTabs ? <PlanningNavigation/> : null}{children}</main>
-        <AssistantPanel chat={chat} context={{ portal, pageTitle: title, permissions: member?.permissions }} />
-        {!chat.fullPage ? <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
+        <main className="operations-main" inert={assistantOpen}>{planningTabs ? <PlanningNavigation/> : null}{children}</main>
+        {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal, pageTitle: title, permissions: member?.permissions }} /> : null}
+        {!(assistantEnabled && chat.fullPage) ? <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
           {mobileNavigation.map(({ id, label, path, icon: Icon }, index) => <Fragment key={id}>
-            {index === Math.min(2, mobileNavigation.length - 1) ? <AssistantTab chat={chat} /> : null}
-            <NavLink to={path} end={id === "home"} aria-current={chat.active ? false : mobileActive === id ? "page" : undefined} className={!chat.active && mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>
+            {assistantEnabled && index === Math.min(2, mobileNavigation.length - 1) ? <AssistantTab chat={chat} /> : null}
+            <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : mobileActive === id ? "page" : undefined} className={!assistantActive && mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>
           </Fragment>)}
         </nav> : null}
       </div>

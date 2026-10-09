@@ -30,6 +30,7 @@ const schema = z.object({
   TRUST_PROXY: booleanString("true"),
   ALLOWED_ORIGINS: z.string().default("http://127.0.0.1:8000,http://localhost:8000"),
   DEMO_MODE: booleanString("false"),
+  DEMO_PROFILE_SWITCHER_ENABLED: booleanString("false"),
   SPA_DIST_DIR: z.string().default("../frontend/dist"),
   STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),

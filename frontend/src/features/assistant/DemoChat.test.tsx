@@ -21,7 +21,9 @@ describe('connected compact assistant',()=>{
     const view=render(<MemoryRouter><Harness/></MemoryRouter>);open();
     const chartNode=screen.getByRole('region',{name:'Subject attendance'}),composer=screen.getByRole('textbox');
     expect(chartNode.compareDocumentPosition(composer)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole('link',{name:'Attendance'})).toHaveAttribute('href','/teacher/insights/attendance');
+    expect(screen.queryByText('Assistant')).not.toBeInTheDocument();
+    expect(screen.queryByText('Local')).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'View attendance'})).toHaveAttribute('href','/teacher/insights/attendance');
     expect(screen.getByRole('link',{name:'Open full chat'})).toBeVisible();
     state.runs=[run('Next reply without a chart')];view.rerender(<MemoryRouter><Harness/></MemoryRouter>);
     expect(screen.queryByRole('region',{name:'Subject attendance'})).not.toBeInTheDocument();
@@ -45,7 +47,10 @@ describe('connected compact assistant',()=>{
   it('requires a full review for a pending write, not a one-tap hidden approval',()=>{
     state.awaiting=true;state.runs=[{...run('Review this action'),action:{id:'a',title:'Send message',status:'pending',input:{basis_id:'e',body:{body:'Hello'}},labels:{},href:'/teacher/messages',expires_at:new Date().toISOString(),receipt:null}}];
     render(<MemoryRouter><Harness/></MemoryRouter>);open();
-    expect(screen.getByRole('link',{name:'Review action'})).toHaveAttribute('href','/teacher/assistant');
+    expect(screen.getByText('Review needed')).toBeVisible();
+    expect(screen.getByRole('link',{name:/Send message/})).toHaveAttribute('href','/teacher/assistant');
+    expect(screen.getByText(/Nothing has changed/)).toBeVisible();
+    expect(screen.queryByText('Review this action')).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'Confirm'})).not.toBeInTheDocument();
     expect(screen.getByRole('textbox')).toBeDisabled();
   });
