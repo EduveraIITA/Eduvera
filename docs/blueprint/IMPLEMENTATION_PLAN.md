@@ -4336,6 +4336,26 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
   and the upcoming ubuntu-latest image migration. Those did not fail this release;
   no workflow-version change was mixed into this deployment.
 
+### Razorpay sandbox fee checkout — 9 October 2026
+
+Added a sandbox-only adapter to the existing family fee workflow; see
+[setup, behavior and release checks](RAZORPAY_SANDBOX.md). Durable provider orders,
+server signature and capture verification, raw-body webhook deduplication, bounded
+recovery polling, audit/outbox events and explicitly labelled test receipts extend
+the existing ledger. Balance changes preserve captured funds for school review.
+Live credentials and production-environment activation are rejected. Existing
+manual-payment review and student read-only access remain unchanged.
+
+Local backend/frontend typechecks and focused signature/UI tests are the first
+verification gate; isolated database integration runs in PR CI. Stage credentials
+and real sandbox browser checkout remain pending until the hosting service is
+accessible. No deployment or full gateway release gate is claimed by this entry.
+
+User override, 9 October 2026: temporary Razorpay test credential defaults are now
+server-side and restricted to Stage plus DEMO_MODE. Environment settings take
+precedence, including an explicit disable switch. This removes the new Railway
+variable requirement for the existing Stage demo deployment. No live credentials
+or production activation are enabled. Actual deployment/checkout remains unverified.
 ### Google Cloud trial connection — 9 October 2026
 
 - User selected **Eduera (`eduera-511111`)** and authorised setup limited to the
@@ -4512,6 +4532,13 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
   open; this release is not a claim of zero abuse or production certification.
 
 ### Branded invitation email — 9 October 2026
+
+Razorpay merge compatibility: sandbox payments now use the non-production/test-key
+guard independently of demo login access. Google Cloud Stage retains `DEMO_MODE=false`
+and private authentication. Temporary owner-requested Stage test credentials remain
+overridable, and production activation is rejected. Focused configuration, provider,
+invitation-email and connection-policy tests passed (32 tests), as did focused ESLint.
+Deployment and real browser checkout remain separate verification steps.
 
 - Added an inline-styled blue/mint HTML invitation with a selectable single-use
   code, invited email, UTC expiry, join button and existing-account instructions.

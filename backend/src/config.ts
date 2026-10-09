@@ -51,6 +51,10 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().default(""),
   OPENAI_MODEL: z.string().default("gpt-5-mini"),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
+  RAZORPAY_ENABLED: booleanString("false"),
+  RAZORPAY_KEY_ID: z.string().default(""),
+  RAZORPAY_KEY_SECRET: z.string().default(""),
+  RAZORPAY_WEBHOOK_SECRET: z.string().default(""),
   PHOTO_ATTENDANCE_ENABLED: booleanString("false"),
   PHOTO_ATTENDANCE_BASE_URL: z.string().url().default("http://127.0.0.1:8100/api"),
   PHOTO_ATTENDANCE_API_TOKEN: z.string().default(""),
@@ -63,7 +67,20 @@ const schema = z.object({
 export type AppConfig = ReturnType<typeof loadConfig>;
 
 export function loadConfig() {
-  const value = schema.parse(process.env);
+  // Temporary Razorpay Stage sandbox credentials, explicitly requested by the account owner.
+  // Remove after rotation; environment variables always take precedence.
+  // Payment sandbox mode never grants demo login access.
+  const stageSandbox = process.env.DEPLOYMENT_ENVIRONMENT === "stage";
+  const value = schema.parse(stageSandbox ? {
+    ...process.env,
+    // Temporary Razorpay test defaults requested for Stage sandbox payments only.
+    RAZORPAY_ENABLED: process.env.RAZORPAY_ENABLED ?? "true",
+    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? "rzp_test_TlmHlao5mqz2zj",
+    RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ?? "SdEBCytWR6MESwdilWCISzBb",
+  } : process.env);
+  if (value.RAZORPAY_ENABLED && ((value.DEPLOYMENT_ENVIRONMENT ?? value.NODE_ENV) === "production" || !value.RAZORPAY_KEY_ID.startsWith("rzp_test_") || !value.RAZORPAY_KEY_SECRET)) {
+    throw new Error("Razorpay sandbox requires a non-production environment, a test key ID and a server-side key secret.");
+  }
   if (value.INVITATION_EMAIL_ENABLED) {
     if (!value.PUBLIC_URL) throw new Error("PUBLIC_URL is required for invitation email");
     if (value.INVITATION_EMAIL_PROVIDER === "resend") {

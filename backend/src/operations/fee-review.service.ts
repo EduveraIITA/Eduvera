@@ -1,3 +1,4 @@
+import { config } from "../config.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql, type Transaction } from "kysely";
@@ -32,7 +33,7 @@ export class FeeReviewService {
 
   async workspace(user: AuthUser, schoolId: string, studentId?: string) {
     const ledger = await this.operations.fees(user, schoolId, studentId);
-    const [settings, reviews] = await Promise.all([
+    const [settings, reviews, gatewayPayments] = await Promise.all([
       sql`SELECT payee_name,upi_id,instructions,revision FROM school_fee_payment_settings WHERE school_id=${schoolId}::uuid`.execute(this.db),
       sql`SELECT r.id,r.invoice_id,r.kind,r.amount_paise,r.method,r.reference,r.note,r.created_at,
         coalesce(d.outcome,'pending') AS status,d.response,d.payment_id,d.created_at AS reviewed_at
@@ -40,8 +41,12 @@ export class FeeReviewService {
         LEFT JOIN fee_review_decisions d ON d.request_id=r.id AND d.school_id=r.school_id
         WHERE r.school_id=${schoolId}::uuid AND (${studentId ?? null}::uuid IS NULL OR i.student_id=${studentId ?? null}::uuid)
         ORDER BY r.created_at DESC,r.id`.execute(this.db),
+      sql`SELECT g.id,g.invoice_id,g.amount_paise,g.state,g.provider_payment_id,g.payment_id FROM fee_gateway_orders g
+        JOIN fee_invoices i ON i.school_id=g.school_id AND i.id=g.invoice_id
+        WHERE g.school_id=${schoolId}::uuid AND (${studentId ?? null}::uuid IS NULL OR i.student_id=${studentId ?? null}::uuid)
+        ORDER BY g.created_at DESC LIMIT 100`.execute(this.db),
     ]);
-    return { ...ledger, reviews: reviews.rows, payment_settings: settings.rows[0] ?? { payee_name: "", upi_id: "", instructions: "", revision: 0 }, can_submit: studentId ? await this.guardian(this.db, user, schoolId, studentId) : false };
+    return { ...ledger, gateway_payments: gatewayPayments.rows, online_payments_enabled: config().RAZORPAY_ENABLED, payment_mode: config().RAZORPAY_ENABLED ? "sandbox" : null, reviews: reviews.rows, payment_settings: settings.rows[0] ?? { payee_name: "", upi_id: "", instructions: "", revision: 0 }, can_submit: studentId ? await this.guardian(this.db, user, schoolId, studentId) : false };
   }
 
   async settings(user: AuthUser, schoolId: string, body: unknown) {

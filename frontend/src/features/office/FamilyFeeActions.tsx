@@ -1,7 +1,8 @@
+import { RazorpayPayment } from "./RazorpayPayment";
 import { useRef, useState, type FormEvent } from "react";
 import { parseRupees, rupees, submitFeeReview, type FeePaymentSettings, type FeeReview, type Invoice } from "./api";
 
-export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved, expanded = false }: { schoolId: string; invoice: Invoice; settings?: FeePaymentSettings; reviews: FeeReview[]; onSaved: () => Promise<unknown>; expanded?: boolean }) {
+export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved, expanded = false, onlinePayments = false }: { schoolId: string; invoice: Invoice; settings?: FeePaymentSettings; reviews: FeeReview[]; onSaved: () => Promise<unknown>; expanded?: boolean; onlinePayments?: boolean }) {
   const [mode, setMode] = useState<"closed" | "review" | "pay" | "charge">(expanded ? "review" : "closed");
   const [amount, setAmount] = useState((invoice.balance_paise / 100).toFixed(2));
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [success, setSuccess] = useState("");
@@ -32,6 +33,8 @@ export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved
     {mode === "closed" ? <button className="office-secondary" type="button" onClick={() => open("review")}>Review fee{invoice.balance_paise > 0 ? " & pay" : ""}</button> : <section className="office-fee-detail" aria-label={`Review ${invoice.reference}`}>
       <h3>Review your fee</h3>
       <dl className="office-fee-breakdown"><div><dt>Original charge</dt><dd>{rupees(invoice.amount_paise)}</dd></div><div><dt>After credits</dt><dd>{rupees(invoice.adjusted_amount_paise)}</dd></div><div><dt>Received</dt><dd>{rupees(invoice.paid_paise)}</dd></div><div><dt>Outstanding</dt><dd>{rupees(invoice.balance_paise)}</dd></div><div><dt>Refund due</dt><dd>{rupees(invoice.refund_due_paise)}</dd></div></dl>
+      {onlinePayments && invoice.balance_paise > 0 ? <label className="office-field">Online payment amount (₹)<input value={amount} onChange={event => setAmount(event.target.value)} inputMode="decimal" type="number" min="1" max={(invoice.balance_paise / 100).toFixed(2)} step="0.01" /></label> : null}
+      {onlinePayments ? <RazorpayPayment schoolId={schoolId} invoiceId={invoice.id} amount={!pendingPayment && payable <= invoice.balance_paise ? payable : 0} onSaved={onSaved} /> : null}
       {pendingPayment ? <p className="office-notice">A payment is awaiting school verification. Check review history before paying again.</p> : null}
       <div className="office-actions">
         {invoice.balance_paise > 0 && !pendingPayment ? <button className="office-primary" type="button" disabled={busy} onClick={() => open("pay")}>Pay / report payment</button> : null}
