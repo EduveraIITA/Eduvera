@@ -24,12 +24,13 @@ export function FamilyReceiptList({ payments, invoices, href }: { payments: Paym
     <span className="family-fee-amount"><strong>{rupees(payment.amount_paise)}</strong><small>View receipt</small></span><ChevronRight size={18} aria-hidden="true" />
   </Link></li>)}</ul> : <p className="office-empty">No receipts recorded.</p>}</section>;
 }
-export function FamilyReceiptDetail({ payment, invoice, testPayment }: { payment: Payment; invoice?: Invoice; testPayment: boolean }) {
+export function FamilyReceiptDetail({ payment, invoice, testPayment, pdfUrl }: { payment: Payment; invoice?: Invoice; testPayment: boolean; pdfUrl?:string|undefined }) {
   return <section className="office-panel family-fee-receipt" aria-label="Receipt details">
     <div className="family-fee-detail-heading"><span><Receipt size={22} aria-hidden="true" />{testPayment ? "Test payment receipt" : "Payment receipt"}</span><PrintFeeButton label="Print receipt" /></div>
     {testPayment ? <p className="office-notice">Sandbox payment · No real money collected</p> : null}
     <p className="family-fee-total">{rupees(payment.amount_paise)}</p><p>{invoice?.description || "School fee"}</p>
     <dl className="office-fee-breakdown"><div><dt>Payment reference</dt><dd>{payment.reference}</dd></div><div><dt>Recorded on</dt><dd>{feeDate(payment.created_at)}</dd></div><div><dt>Payment method</dt><dd>{payment.method.replaceAll("_", " ")}</dd></div><div><dt>Invoice reference</dt><dd>{invoice?.reference || "Unavailable"}</dd></div></dl>
     <p className="office-hint">This receipt records the verified payment above.</p>
+    {pdfUrl?<a className="office-secondary" href={pdfUrl}>Download PDF receipt</a>:null}
   </section>;
 }

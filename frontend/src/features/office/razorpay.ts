@@ -5,7 +5,7 @@ interface Options {
   modal: { ondismiss: () => void };
   theme: { color: string };
 }
-interface Checkout { open(): void; on(event: "payment.failed", callback: () => void): void }
+interface Checkout { open(): void; close(): void; on(event: "payment.failed", callback: () => void): void }
 declare global { interface Window { Razorpay?: new (options: Options) => Checkout } }
 let loading: Promise<void> | undefined;
 export function loadRazorpay(): Promise<void> {

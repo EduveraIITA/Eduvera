@@ -4712,6 +4712,29 @@ reference in SMTP and HTTPS provider emails; it no longer needs a remote image
 request. Focused checks cover MIME metadata, code scoping and legacy digests;
 database CI covers guess limits. Live deployment/email verification follows CI.
 
+### Razorpay wallet recovery, payment status and emailed PDFs — 9 October 2026
+
+The observed Stage headers enforce same-origin opener isolation and self-only
+form posting. Enabled Razorpay now uses popup-compatible opener isolation and
+allows form posts only to self and the exact Razorpay API origin. This addresses
+a likely wallet popup failure; user-device completion is not yet verified.
+Invoice status persists across visits and refreshes while visible. Verified failed
+and pending attempts are distinct from captured and school-review payments.
+Parents can download an authorized PDF from invoice status or receipt detail.
+
+Migration 059 adds a transactional, deduplicated email queue. A post-commit worker
+uses Eduera's existing configured sender, verifies the initiating guardian still
+has access and a verified email, and attaches a branded PDF only for allocated
+capture. Other states get accurate status templates. Provider acceptance is not
+claimed as inbox delivery. Ambiguous sending is recorded without automatic resend;
+payment remains committed even when email fails. Old receipts are not backfilled.
+The embedded receipt font and its license are packaged in the runtime image.
+
+Local verification: backend typecheck/build, focused lint, 18 provider/template/PDF
+tests and 30 fee frontend tests passed. The sample PDF was rendered and visually
+checked. Additional isolated-database tests cover duplicate enqueue, recipient
+eligibility, PDF authorization and ambiguous sends; CI remains required. Live
+wallet completion and actual email inbox receipt are separate acceptance checks.
 ### Compact invitation confirmation — 9 October 2026
 
 User correction replaces the separate "Invitation ready" receipt with a compact

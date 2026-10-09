@@ -6,6 +6,8 @@ import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { RazorpayClient, type RazorpayOrder, type RazorpayPayment } from "./razorpay.client.js";
+import { enqueuePaymentEmail, readPaymentDocument } from './payment-email.service.js';
+import { paymentReceiptPdf } from './payment-receipt.js';
 
 interface Order { id: string; school_id: string; invoice_id: string; created_by: string; amount_paise: number; currency: string; key_id: string; provider_order_id: string; provider_payment_id: string | null; payment_id: string | null; state: string }
 type Db = DatabaseService | Transaction<Database>;
@@ -79,8 +81,20 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     z.uuid().parse(school); z.uuid().parse(invoice);
     await this.guardian(this.db, user, school, invoice);
     const rows = (await sql<Order>`SELECT * FROM fee_gateway_orders WHERE school_id=${school}::uuid AND invoice_id=${invoice}::uuid ORDER BY created_at DESC LIMIT 10`.execute(this.db)).rows;
-    for (const row of rows) if (row.state === "created") await this.reconcile(row);
-    return (await sql`SELECT id,state,amount_paise,payment_id FROM fee_gateway_orders WHERE school_id=${school}::uuid AND invoice_id=${invoice}::uuid ORDER BY created_at DESC LIMIT 10`.execute(this.db)).rows;
+    for (const row of rows) if (row.state === "created") { try { await this.reconcile(row); } catch { this.logger.warn('Payment status refresh deferred; returning saved status.'); } }
+    return (await sql`SELECT o.id,CASE WHEN o.state='created' THEN coalesce(o.last_payment_status,'created') ELSE o.state END AS state,
+      o.amount_paise,o.payment_id,coalesce(o.provider_payment_id,o.last_attempt_id) AS provider_payment_id,
+      o.created_at,o.checked_at,(SELECT delivery_state FROM fee_payment_emails e WHERE e.order_id=o.id ORDER BY e.created_at DESC LIMIT 1) AS email_status
+      FROM fee_gateway_orders o WHERE o.school_id=${school}::uuid AND o.invoice_id=${invoice}::uuid ORDER BY o.created_at DESC LIMIT 10`.execute(this.db)).rows;
+  }
+  async receipt(user: AuthUser, school: string, invoice: string, receiptId: string) {
+    z.uuid().parse(school);z.uuid().parse(invoice);z.uuid().parse(receiptId);
+    await this.guardian(this.db,user,school,invoice);
+    const row=(await sql<{id:string}>`SELECT id FROM fee_gateway_orders WHERE school_id=${school}::uuid AND invoice_id=${invoice}::uuid AND payment_id=${receiptId}::uuid AND state='captured'`.execute(this.db)).rows[0];
+    if(!row)throw new NotFoundException('Receipt not found.');
+    const data=await readPaymentDocument(this.db,row.id);
+    if(!data)throw new NotFoundException('Receipt not found.');
+    return paymentReceiptPdf({...data,state:'captured'});
   }
   private async find(providerOrder: string, school?: string, invoice?: string) {
     const row = (await sql<Order>`SELECT * FROM fee_gateway_orders WHERE provider_order_id=${providerOrder}
@@ -93,7 +107,15 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     if (order.key_id !== this.gateway.keyId()) throw new ConflictException("Checkout key changed; school reconciliation is required.");
     if (!providerId.safeParse(payment.id).success || payment.order_id !== order.provider_order_id || payment.amount !== order.amount_paise || payment.currency !== order.currency) throw new BadRequestException("Payment does not match the saved invoice order.");
     // Authorization is not capture. Dashboard automatic capture or a later webhook/poll must confirm capture.
-    if (payment.status !== "captured" || payment.captured !== true) return { state: "pending", payment_id: null };
+    if (payment.status !== "captured" || payment.captured !== true) {
+      const state=payment.status==='failed'?'failed':'pending';
+      await this.db.transaction().execute(async db=>{
+        await this.lock(db,order.school_id);
+        const changed=await sql`UPDATE fee_gateway_orders SET last_payment_status=${state},last_attempt_id=${payment.id},checked_at=now() WHERE id=${order.id}::uuid AND state='created' RETURNING id`.execute(db);
+        if(changed.rows.length)await enqueuePaymentEmail(db,order.id,payment.id,state);
+      });
+      return { state, payment_id: null };
+    }
     return this.db.transaction().execute(async db => {
       await this.lock(db, order.school_id);
       const locked = (await sql<Order>`SELECT * FROM fee_gateway_orders WHERE id=${order.id}::uuid FOR UPDATE`.execute(db)).rows[0]!;
@@ -114,6 +136,7 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
         AND event_user_is_authorized(${order.school_id}::uuid,'fees.updated',${JSON.stringify(payload)}::jsonb,user_id)`.execute(db);
       await db.insertInto("event_outbox").values({ school_id: order.school_id, event_type: "fees.updated", aggregate_type: "fee_payment", aggregate_id: order.id,
         audience_user_ids: audience.rows.map(row => row.user_id), payload, idempotency_key: `razorpay:${order.id}:${state}`, notification_user_ids: [], notification_payload: null }).execute();
+      await enqueuePaymentEmail(db,order.id,payment.id,state);
       return { state, payment_id: receipt };
     });
   }
@@ -122,7 +145,10 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     await sql`UPDATE fee_gateway_orders SET checked_at=now() WHERE id=${order.id}::uuid`.execute(this.db);
     if (order.key_id !== this.gateway.keyId()) return;
     const result = await this.gateway.request<{ items: RazorpayPayment[] }>(`orders/${order.provider_order_id}/payments`);
-    for (const payment of result.items ?? []) if (payment.status === "captured") await this.settle(order, payment);
+    const items=[...(result.items??[])].sort((a,b)=>(b.created_at??0)-(a.created_at??0));
+    const captured=items.filter(payment=>payment.status==='captured');
+    if(captured.length) {for(const payment of captured)await this.settle(order,payment);}
+    else {const latest=items.find(payment=>payment.status==='authorized')??items[0];if(latest)await this.settle(order,latest);}
   }
   async reconcilePending() {
     if (this.reconciling || !this.gateway.enabled()) return;
@@ -140,7 +166,7 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     const previous = (await sql<{ payload_hash: string }>`SELECT payload_hash FROM fee_gateway_webhooks WHERE event_id=${eventId}`.execute(this.db)).rows[0];
     if (previous) { if (previous.payload_hash !== hash) throw new ConflictException("Webhook event ID was reused."); return { received: true }; }
     const event = z.object({ event: z.string(), payload: z.object({ payment: z.object({ entity: z.object({ id: providerId, order_id: providerId }) }).optional() }) }).parse(JSON.parse(rawBody.toString("utf8")));
-    if (["payment.captured", "order.paid"].includes(event.event) && event.payload.payment) {
+    if (["payment.captured", "order.paid", "payment.failed", "payment.authorized"].includes(event.event) && event.payload.payment) {
       const entity = event.payload.payment.entity;
       // The account can receive payments from other applications. Ignore unknown orders.
       const row = (await sql<Order>`SELECT * FROM fee_gateway_orders WHERE provider_order_id=${entity.order_id}`.execute(this.db)).rows[0];
