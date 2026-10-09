@@ -1,6 +1,5 @@
-import { invitationCodeHash } from '../src/common/invitation-code.js';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth/password.js';
@@ -116,7 +115,7 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     expect(replacement.data.email).toBe(email);
     expect(replacement.data.token).not.toBe(original.data.token);
     const stored=(await pool.query('SELECT token_hash,role FROM school_invitations WHERE id=$1',[id])).rows[0];
-    expect(stored.token_hash).toBe(invitationCodeHash(email,replacement.data.token));
+    expect(stored.token_hash).toBe(createHmac('sha256','onboarding-test-cookie-secret-at-least-32').update(`invitation-v2:${email}:${replacement.data.token}`).digest('hex'));
     expect(stored.role).toBe('staff');
     expect((await request('public','invitations/accept/',join(original.data.token,email))).status).toBe(400);
     await request('admin',path(`invitations/${id}/revoke`),{});
