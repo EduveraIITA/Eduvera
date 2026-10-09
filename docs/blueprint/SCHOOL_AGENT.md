@@ -348,5 +348,23 @@ task evaluation, domain-by-domain action acceptance (including nested marks and
 report-comment revision workflows not covered by the 34 routine binders),
 load/latency and failure drills,
 chat retention/deletion and school data-provider approval, fresh-schema/RLS runtime
-validation, and physical-device/user sign-off. No Git push or production deployment
-was performed in this increment.
+validation, and physical-device/user sign-off. The implementation/hardening
+increments above were local-only; the subsequent Stage release is recorded below.
+
+## Stage release — 9 October 2026
+
+Application **f5c3d7162d7f20162d0ff03acaaf5ae79ddb05f4** is deployed at
+**https://omnischool-stage.up.railway.app**. [CI/deploy run 37918047922](https://github.com/EduveraIITA/Eduvera/actions/runs/37918047922)
+passed 444 backend and 629 frontend tests, builds/lint/typechecks, fresh PostgreSQL
+17 migrations, secret scan and exact-release health checks. Stage successfully
+applied 055 agent storage and 056 private-table access protection. Browser checks
+verified all four demo portals, five-tab navigation, full-chat navigation hiding
+and no overflow/errors at 320/390/1024px. Authorized history reads succeed; the
+teacher's existing AI restriction remains unchanged. No full Stage reseed occurred.
+
+**Stage has no reachable model configured.** Its status returns Ollama/qwen3:8b
+with `ready:false`; the composer is disabled with an explicit explanation. This
+is a verified application/schema deployment, not a live Stage inference claim.
+The Mac-backed Cloudflare preview still reports local Ollama ready. Choose an
+approved reachable provider before expecting agent replies on Railway. No model
+keys or public local-model tunnel were created. Production acceptance remains open.

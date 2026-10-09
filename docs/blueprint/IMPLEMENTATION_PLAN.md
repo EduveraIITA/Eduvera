@@ -4300,6 +4300,42 @@ fresh PostgreSQL 17 schema with every isolated-integration flag enabled, and
 lint and `git diff --check` passed; final fixture edits passed targeted lint and
 frontend typecheck again. Remote CI/deployment verification remains separate.
 
+### Agent, transport and home Stage release verified — 9 October 2026
+
+- Pushed merged application commit **f5c3d7162d7f20162d0ff03acaaf5ae79ddb05f4**
+  to `origin/Stage` without rewriting remote history. [Stage run 37918047922](https://github.com/EduveraIITA/Eduvera/actions/runs/37918047922)
+  completed successfully: Verify in 8m15s and Railway deployment in 4m49s.
+- CI confirmed **444 backend tests / 58 files** and **629 frontend tests / 84
+  files**, with fresh PostgreSQL 17 migrations, repository secret scanning,
+  typecheck/lint and all three application builds. Stage applied additive
+  `055_school_agent.sql` and `056_school_agent_access.sql`; the feedback migration
+  was already present. The full demo reseed step was skipped.
+- Independently verified `/releasez` returns that exact SHA with environment
+  `stage`, and `/readyz` returns database/events OK at
+  **https://omnischool-stage.up.railway.app**. Pipeline checks also verified both
+  SPAs, install icons, OpenAPI, student demo access and protected metrics.
+- Authenticated WebKit checks on the deployed application passed for principal,
+  teacher, parent and student: working demo login, five bottom destinations on
+  home, bottom navigation hidden in full chat, no overflow at 320/390/1024px, and
+  no JavaScript errors or server-500 responses. Checked the loaded conversation
+  state, not just its loading placeholder; principal screenshot visually inspected.
+  Authorized principal/parent/student history reads succeeded with the new table
+  protection. Teacher AI access still returns its existing deliberate role denial.
+- **Railway inference is not configured:** principal/parent/student status reports
+  `ollama`, `qwen3:8b`, `ready:false`. The UI visibly explains the unavailable local
+  model and disables input. No model credentials, public Ollama exposure or cloud
+  fallback were introduced. Enabling Stage inference requires an approved model
+  endpoint reachable from Railway; application deployment is not inference setup.
+- The existing **https://verde-too-independent-bargains.trycloudflare.com** preview
+  remains healthy. Its four-portal browser check passed, with local Ollama ready
+  for authorized accounts. The three unrelated duplicate files remain uncommitted.
+  The disposable PostgreSQL 17 test container was stopped, preserving its data.
+  This is a verified **Stage**, not production, release; physical-device/product
+  acceptance and the remaining agent release gates still apply.
+- CI emitted existing maintenance warnings about actions' Node 20 deprecation
+  and the upcoming ubuntu-latest image migration. Those did not fail this release;
+  no workflow-version change was mixed into this deployment.
+
 ### Razorpay sandbox fee checkout — 9 October 2026
 
 Added a sandbox-only adapter to the existing family fee workflow; see
