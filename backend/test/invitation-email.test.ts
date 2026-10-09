@@ -76,7 +76,9 @@ describe('invitation SMTP delivery', () => {
     expect(message.html).toContain('&lt;script&gt;private&amp;code&lt;/script&gt;');
     expect(message.html).toContain('&quot;quoted&quot;@example.test');
     expect(message.html.match(/href="[^"]+"/g)).toEqual(['href="https://school.example.test/join"', 'href="https://school.example.test/join"']);
-    expect(message.html).not.toMatch(/<img|<script|<form/i);
+    expect(message.html).not.toMatch(/<script|<form/i);
+    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/assets/edura-leaf-mark.png"']);
+    expect(message.html).toContain('alt="Eduera logo" width="48" height="48"');
     expect(message.text).toContain('<script>private&code</script>');
     expect(message.html).toContain('2099-10-04T00:00:00.000Z');
   });

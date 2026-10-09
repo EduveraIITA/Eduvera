@@ -5,6 +5,7 @@ function escapeHtml(value: string) {
 /** Codes stay in the message body, never in links or remote image requests. */
 export function invitationTemplate(input: {email: string; token: string; expires_at: Date | string; publicUrl: string}) {
   const joinUrl = new URL('/join', input.publicUrl).href;
+  const logoUrl = new URL('/assets/edura-leaf-mark.png', input.publicUrl).href;
   const expiry = new Date(input.expires_at).toISOString();
   const text = `You have been invited to join your institution on Eduera.\n\nOpen: ${joinUrl}\nEmail: ${input.email}\nInvitation code: ${input.token}\nExpires: ${expiry}\n\nUse the same email and enter this single-use code. For an existing account, use your current password. Do not forward this code. If you were not expecting this invitation, you can ignore this email.`;
   const html = `<!doctype html>
@@ -12,7 +13,7 @@ export function invitationTemplate(input: {email: string; token: string; expires
 <body style="margin:0;padding:0;background:#f3f6fa;font-family:Arial,Helvetica,sans-serif;color:#172b4d">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fa"><tr><td align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e1e8f0;border-radius:16px">
-<tr><td style="padding:28px 28px 20px;border-bottom:1px solid #e1e8f0"><span style="font-size:26px;font-weight:bold;color:#2563eb">Eduera</span><br><span style="font-size:13px;color:#52647a">Your institution. Connected.</span></td></tr>
+<tr><td style="padding:28px 28px 20px;border-bottom:1px solid #e1e8f0"><table role="presentation" cellspacing="0" cellpadding="0"><tr><td width="60" style="vertical-align:middle;padding-right:12px"><img src="${escapeHtml(logoUrl)}" alt="Eduera logo" width="48" height="48" style="display:block;width:48px;height:48px;border:0"></td><td style="vertical-align:middle"><span style="font-size:26px;font-weight:bold;color:#2563eb">Eduera</span><br><span style="font-size:13px;color:#52647a">Your institution. Connected.</span></td></tr></table></td></tr>
 <tr><td style="padding:28px">
 <h1 style="margin:0 0 16px;font-size:26px;line-height:1.3">You're invited to join</h1>
 <p style="font-size:16px;line-height:1.6;margin:0 0 24px">Your institution has invited you to Eduera. Use the code below to accept your invitation.</p>

@@ -4555,3 +4555,13 @@ Deployment and real browser checkout remain separate verification steps.
 - Local verification: backend typecheck, focused ESLint and all 10 invitation
   tests passed, including SMTP/API HTML delivery, HTML escaping, secret-free links,
   disabled sending and provider failure handling. `git diff --check` passed.
+
+### Invitation logo — 9 October 2026
+
+- Reused the app's existing `frontend/public/assets/edura-leaf-mark.png` in
+  the invitation header at 48px alongside the Eduera wordmark. The fixed image
+  URL uses the configured public origin, with no recipient/code/query parameters.
+  This supersedes the previous template's no-remote-image design at the user's
+  request. Text branding and the full invitation remain usable if images are blocked.
+- Verified the deployed static asset returns HTTP 200 with image/png. No new
+  image, third-party image host, tracking pixel or dependency was introduced.
