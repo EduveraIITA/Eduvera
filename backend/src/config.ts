@@ -73,6 +73,10 @@ export function loadConfig() {
     && ["1", "true", "yes", "on"].includes((process.env.DEMO_MODE ?? "").toLowerCase());
   const value = schema.parse(stageDemo ? {
     ...process.env,
+    // Temporary Razorpay test defaults requested for the Stage demo only.
+    RAZORPAY_ENABLED: process.env.RAZORPAY_ENABLED ?? "true",
+    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? "rzp_test_TlmHlao5mqz2zj",
+    RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ?? "SdEBCytWR6MESwdilWCISzBb",
     INVITATION_EMAIL_ENABLED: process.env.INVITATION_EMAIL_ENABLED ?? "true",
     SMTP_USER: process.env.SMTP_USER ?? "projectpathyakram@gmail.com",
     SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "fakdej-cixxir-3jEcti",
