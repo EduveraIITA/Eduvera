@@ -4663,3 +4663,22 @@ Deployment and real browser checkout remain separate verification steps.
   `eduvera-stage-00024-jer`; release/readiness/root checks returned HTTP 200 and
   the service reports 100% traffic on that revision. User/device visual acceptance
   is not yet claimed; ask for UI validation before release.
+
+### Family fees clarity and receipt printing — 9 October 2026
+
+User-requested cleanup preserves the shared parent/student shell and blue semantic
+palette. Fee descriptions now lead compact rows, balances align on the right,
+and status labels and readable due dates replace reference-first scanning.
+References remain available in rows, details and printouts. Verified receipts
+open a student-scoped detail route with an individual print action. Statement,
+invoice, receipt register and review print actions use a dedicated print document
+with school/student identity and full references; payment controls and navigation
+are excluded. Razorpay test receipts retain explicit sandbox labeling. No payment
+or verification rules change, and student views remain read-only.
+
+Validation: 18 focused frontend tests pass, covering receipt navigation, selected
+receipt-only print content, unavailable receipt isolation, invoice printing,
+child switching, review confirmation and existing mocked gateway flows. Browser
+print dialog/device printing and live gateway completion are separate acceptance
+checks; no real payment was made. Build/lint and Stage verification are recorded
+in the associated PR; user visual acceptance remains pending.
