@@ -1,4 +1,5 @@
 import { TeacherFeedbackModule } from "./teacher-feedback/teacher-feedback.module.js";
+import { InvitationEmailWorker } from "./common/invitation-queue.js";
 import { CompanyModule } from "./company/company.module.js";
 import { AnalyticsModule } from "./analytics/analytics.module.js";
 import { PrincipalInsightsModule } from "./principal-insights/principal-insights.module.js";
@@ -63,6 +64,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
+    InvitationEmailWorker,
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },

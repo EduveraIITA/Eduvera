@@ -72,12 +72,15 @@
   padding: 2.5rem 1.5rem 2rem;
   gap: 1rem;
   text-align: center;
+  background: color-mix(in srgb, var(--edura-surface) 78%, transparent);
+  border-color: color-mix(in srgb, var(--edura-border) 60%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
   box-shadow: var(--edura-shadow-raised);
   animation: invitation-popup-enter 240ms ease-out both;
 }
 .invitation-confirmation--popup::backdrop {
-  background: rgb(11 28 48 / 24%);
-  backdrop-filter: blur(2px);
+  background: transparent;
 }
 .invitation-confirmation--popup .invitation-confirmation__icon { flex-basis: 4.5rem; height: 4.5rem; }
 .invitation-confirmation--popup .invitation-confirmation__icon svg { width: 4.5rem; height: 4.5rem; }
@@ -93,3 +96,7 @@
   .invitation-confirmation--popup { animation: none; }
 }
 .invitation-confirmation--popup:not([open]) { display: none; }
+.invitation-confirmation__spinner { color: var(--edura-brand); animation: invitation-sending-spin 1s linear infinite; }
+@keyframes invitation-sending-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .invitation-confirmation__spinner { animation: none; } }
+@media (prefers-reduced-transparency: reduce) { .invitation-confirmation--popup { background: var(--edura-surface); backdrop-filter: none; } }

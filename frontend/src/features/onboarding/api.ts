@@ -1,6 +1,9 @@
 import { apiFetch } from '../../lib/api';
-export interface Invitation {id:string;school_id?:string;school_name?:string;email:string;role?:string;expires_at:string;accepted_at:string|null;revoked_at:string|null}
-export interface ReadyInvitation {token:string;email:string;expires_at:string;delivery?:'manual'|'email_accepted'|'failed';delivery_error?:string;delivery_message?:string}
+export type InvitationDelivery='manual'|'queued'|'sending'|'email_accepted'|'failed'|'unknown'|'cancelled';
+export const deliveryPending=(delivery?:InvitationDelivery|null)=>delivery==='queued'||delivery==='sending';
+export const deliveryLabel=(delivery?:InvitationDelivery|null)=>deliveryPending(delivery)?'Sending email…':delivery==='email_accepted'?'Email sent':delivery==='failed'?'Email failed — resend invitation':delivery==='unknown'?'Email unconfirmed — check inbox before resending':delivery==='cancelled'?'Email cancelled':'';
+export interface Invitation {delivery_job_id?:string|null;delivery?:InvitationDelivery|null;id:string;school_id?:string;school_name?:string;email:string;role?:string;expires_at:string;accepted_at:string|null;revoked_at:string|null}
+export interface ReadyInvitation {delivery_job_id?:string;id?:string;token:string;email:string;expires_at:string;delivery?:InvitationDelivery;delivery_error?:string;delivery_message?:string}
 export interface Institution {id:string;name:string;code:string;institution_kind:'school'|'college'|'coaching'|'hybrid';admin_count:number;pending_admins:number;onboarding_status?:'setup_in_progress'|'active'|'suspended'}
 export type InstitutionApplicationStatus='submitted'|'needs_information'|'approved'|'rejected'|'withdrawn';
 export interface InstitutionApplication {id:string;institution_name:string;requested_code:string;institution_kind:'school'|'college'|'hybrid';timezone:string;state_code:string;district:string;website:string;applicant_role_title:string;regulator_type:'udise'|'aishe'|'board_affiliation'|'trust_registration'|'other';regulator_reference:string;status:InstitutionApplicationStatus;review_note:string;revision:number;submitted_at:string;updated_at:string;provisioned_school_id:string|null;first_name?:string;last_name?:string;applicant_email?:string;timeline?:Array<{action:string;from_status:string|null;to_status:string;note:string;created_at:string}>}

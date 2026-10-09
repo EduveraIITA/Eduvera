@@ -29,6 +29,18 @@ beforeEach(()=>{
   vi.mocked(createCoachingWorkspace).mockResolvedValue({id:'coaching',name:'Lotus Tutorials',code:'lotus-tutorials'});
 });
 describe('company and school onboarding',()=>{
+  it('does not confuse a previous send with the newly queued resend, and polls for acceptance',async()=>{
+    const old={id:'invite',email:'learner@example.test',role:'staff',expires_at:'2099-10-04',accepted_at:null,revoked_at:null,delivery:'email_accepted' as const,delivery_job_id:'previous-job'};
+    const workspace={can_invite_admin:true,invitations:[old],students:[],guardians:[],roles:[]};
+    vi.mocked(getInvitations).mockResolvedValue(workspace);
+    vi.mocked(resendMemberInvitation).mockResolvedValue({id:'invite',delivery_job_id:'new-job',token:'012345',email:old.email,expires_at:old.expires_at,delivery:'queued'});
+    const user=userEvent.setup();mount(<InvitationsPage/>,'/principal/invitations');
+    await user.click(await screen.findByRole('button',{name:'Resend invitation email'}));
+    expect(await screen.findByRole('dialog',{name:'Sending invitation…'})).toBeVisible();
+    expect(screen.queryByRole('heading',{name:'Invitation sent'})).not.toBeInTheDocument();
+    vi.mocked(getInvitations).mockResolvedValue({...workspace,invitations:[{...old,delivery_job_id:'new-job'}]});
+    expect(await screen.findByRole('dialog',{name:'Invitation sent'},{timeout:3500})).toBeVisible();
+  });
   it('starts with invitation history and opens a separate, cancellable form',async()=>{
     const user=userEvent.setup();mount(<InvitationsPage/>,'/principal/invitations');
     expect(await screen.findByText('No invitations yet.')).toBeVisible();

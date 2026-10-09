@@ -4835,3 +4835,36 @@ callback refresh without restarting the deadline, manual dismissal, focus restor
 hidden codes and persistent failure states. Frontend production build and targeted
 TypeScript-aware lint pass. Real-device visual review and deployment remain separate
 gates; no live invitation email was sent for these tests.
+
+### Background invitation delivery and translucent confirmation — 10 October 2026
+
+User correction removes the dark backdrop and changes the invitation popup to a
+translucent, blurred theme surface (opaque fallback for reduced transparency).
+Pending mail shows a dismissible sending state; only provider acceptance starts
+the success animation and four-second dismissal. Workspace polling exposes queued,
+sending, accepted, failed, unconfirmed and cancelled delivery without exposing codes.
+Delivery job IDs prevent a stale pre-resend success from confirming the new attempt.
+
+Migration 060 adds a durable PostgreSQL invitation queue. School/company create and
+resend transactions enqueue atomically and return without waiting for SMTP/HTTPS.
+The existing always-allocated Stage CPU runs a one-second worker; atomic SKIP LOCKED
+claims prevent duplicate concurrent processing. Codes are AES-GCM encrypted with a
+domain-separated key derived from the configured application secret, bound to the
+invitation ID, and erased on completion/cancellation. Revoked, expired, accepted or
+rotated invitations are skipped. Interrupted/ambiguous sends are marked unconfirmed
+without automatic resending; the authorized sender can check and resend manually.
+Pending jobs survive process restarts. No new infrastructure or credentials required.
+
+Invitation/payment HTML now references a public, versioned PNG endpoint serving the
+same original transparent logo, rather than attaching it as a CID MIME part. Real
+payment PDF attachments remain unchanged. The logo URL contains no user identifiers.
+Remote-image blocking may hide the image in some clients; the text brand remains.
+Already-sent messages and their Gmail attachment chips cannot be changed retroactively.
+
+Local evidence: 30 focused frontend tests and 17 backend email/asset/crypto/PDF tests
+pass; frontend production build and backend build/typecheck pass. Ten new disposable
+PostgreSQL integration cases cover transaction rollback, concurrent workers, slow
+providers, invalidated invitations, interrupted attempts and sanitized failures.
+They require the isolated CI database (no local PostgreSQL available). Full CI,
+Stage deployment, and real-device/email-client visual review remain separate gates.
+No live invitation or payment emails were sent while testing.

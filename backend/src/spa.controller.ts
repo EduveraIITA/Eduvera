@@ -4,9 +4,17 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Public } from "./common/decorators.js";
 import { config } from "./config.js";
+import { invitationLogo } from './common/invitation-logo.js';
 
 @Controller()
 export class SpaController {
+  @Public()
+  @Get('email-assets/eduera-logo-v1.png')
+  emailLogo(@Res() reply: FastifyReply) {
+    return reply.header('Cache-Control', 'public, max-age=31536000, immutable')
+      .header('Content-Disposition', 'inline').type('image/png').send(Buffer.from(invitationLogo.content, 'base64'));
+  }
+
   @Public()
   @Get("manifest.webmanifest")
   async manifest(@Res() reply: FastifyReply) {

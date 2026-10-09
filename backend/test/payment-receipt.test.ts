@@ -9,7 +9,7 @@ it('creates an actual PDF only for allocated captured payments',async()=>{
 it('escapes supplied values and uses a sign-in protected link without email or secrets',()=>{
  const email=paymentEmail({...sample,school:'<script>alert(1)</script>'},'https://school.example','student-id','invoice-id');
  expect(email.html).toContain('&lt;script&gt;');expect(email.html).not.toContain('<script>');expect(email.html).toContain('student_id=student-id');expect(email.html).toContain('invoice=invoice-id');
- expect(email.subject).toContain('[Test]');expect(email.text).toContain('No real money');expect(email.inlineImages[0]?.cid).toBeTruthy();
+ expect(email.subject).toContain('[Test]');expect(email.text).toContain('No real money');expect(email.html).toContain('https://school.example/email-assets/eduera-logo-v1.png');expect(email).not.toHaveProperty('inlineImages');
 });
 it('never claims a receipt for failed, pending or unallocated payments',()=>{
  for(const state of ['pending','failed','review_required'] as const){const email=paymentEmail({...sample,state,receipt:null},'https://school.example','student','invoice');expect(email.text).toContain('No receipt has been issued');}

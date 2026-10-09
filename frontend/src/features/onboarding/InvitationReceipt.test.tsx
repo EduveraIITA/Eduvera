@@ -12,6 +12,24 @@ function Confirmation(){
 }
 
 describe('invitation success popup',()=>{
+  it('shows sending immediately and starts the dismissal timer only after actual acceptance',async()=>{
+    vi.useFakeTimers();const onClose=vi.fn();
+    const {rerender}=render(<InvitationReceipt invite={{...invitation,delivery:'queued'}} onClose={onClose}/>);
+    expect(screen.getByRole('dialog',{name:'Sending invitation…'})).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Sending in the background');
+    expect(screen.queryByText('Invitation sent')).not.toBeInTheDocument();
+    await act(()=>vi.advanceTimersByTime(15000));expect(onClose).not.toHaveBeenCalled();
+    rerender(<InvitationReceipt invite={invitation} onClose={onClose}/>);
+    expect(screen.getByRole('dialog',{name:'Invitation sent'})).toBeInTheDocument();
+    await act(()=>vi.advanceTimersByTime(4000));expect(onClose).toHaveBeenCalledOnce();
+  });
+  it('replaces the sending popup with a persistent failure notice',()=>{
+    const {rerender}=render(<InvitationReceipt invite={{...invitation,delivery:'sending'}} onClose={()=>{}}/>);
+    rerender(<InvitationReceipt invite={{...invitation,delivery:'unknown'}} onClose={()=>{}}/>);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Check the recipient’s inbox');
+    expect(document.body.style.overflow).toBe('');
+  });
   it('opens above the page with the recipient, focuses close and auto-dismisses',async()=>{
     vi.useFakeTimers();
     const {container}=render(<Confirmation/>);

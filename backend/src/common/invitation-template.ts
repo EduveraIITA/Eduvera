@@ -1,4 +1,3 @@
-import { invitationLogo } from './invitation-logo.js';
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]!));
 }
@@ -8,7 +7,7 @@ export function invitationTemplate(input: {email: string; token: string; expires
   const joinLink = new URL('/join', input.publicUrl);
   joinLink.hash = new URLSearchParams({email: input.email, token: input.token}).toString();
   const joinUrl = joinLink.href;
-  const logoUrl = `cid:${invitationLogo.cid}`;
+  const logoUrl = new URL('/email-assets/eduera-logo-v1.png', input.publicUrl).href;
   const expiry = new Date(input.expires_at).toISOString();
   const displayExpiry = new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -36,5 +35,5 @@ export function invitationTemplate(input: {email: string; token: string; expires
 <p style="margin:16px 0 0;text-align:center;font-size:13px;line-height:1.8;color:#667085">Trouble with the button? &nbsp;<a href="${escapeHtml(joinUrl)}" style="color:#4938c5;text-decoration:underline;font-weight:600">Open direct join portal</a></p>
 </td></tr><tr><td class="email-section" style="padding:28px 40px;border-top:1px solid #edf0f3;border-radius:0 0 28px 28px;background:#f8fafb;text-align:center;font-size:13px;line-height:1.8;color:#667085"><p style="margin:0 0 20px">This single-use invite was intended strictly for you. Keep the code private and do not forward this email. If you weren't expecting this request, you can safely disregard this message.</p><p style="margin:0">&copy; Eduera</p></td></tr>
 </table></td></tr></table></body></html>`;
-  return {subject: 'Your invitation to Eduera', text, html, inlineImages:[invitationLogo]};
+  return {subject: 'Your invitation to Eduera', text, html};
 }
