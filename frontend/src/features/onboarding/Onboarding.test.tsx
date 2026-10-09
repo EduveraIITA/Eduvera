@@ -1,7 +1,7 @@
 import { cleanup,render,screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import CompanyPage from './CompanyPage';
 import SelfServiceOnboardingPage from './SelfServiceOnboardingPage';
@@ -112,6 +112,38 @@ describe('company and school onboarding',()=>{
     vi.mocked(apiFetch).mockResolvedValue({school_id:'new',role:'admin'});const user=userEvent.setup();mount(<JoinPage/>);
     await user.type(screen.getByLabelText('Invitation code'),'012345');await user.type(screen.getByLabelText('Email'),'admin@example.test');await user.type(screen.getByLabelText('First name'),'First');await user.type(screen.getByLabelText('Last name'),'Admin');await user.type(screen.getByLabelText('Password'),'Testing!RiverPebbles2026');await user.click(screen.getByRole('button',{name:'Accept invitation'}));
     expect(await screen.findByRole('status')).toHaveTextContent('membership is active');expect(apiFetch).toHaveBeenCalledWith('/api/v1/auth/csrf/');expect(apiFetch).toHaveBeenCalledWith('/api/v1/invitations/accept/',expect.objectContaining({method:'POST'}));
+  });
+  it('prefills the email link, removes its fragment and waits for explicit acceptance',async()=>{
+    function LocationProbe(){const location=useLocation();return <span data-testid="join-location">{location.pathname+location.hash}</span>;}
+    vi.mocked(apiFetch).mockResolvedValue({school_id:'new',role:'admin'});
+    const user=userEvent.setup();
+    mount(<><JoinPage/><LocationProbe/></>,'/join#email=admin%2Bschool%40example.test&token=012345');
+    expect(screen.getByLabelText('Invitation code')).toHaveValue('012345');
+    expect(screen.getByLabelText('Email')).toHaveValue('admin+school@example.test');
+    expect(screen.getByTestId('join-location')).toHaveTextContent(/^\/join$/);
+    expect(apiFetch).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText('First name'),'First');
+    await user.type(screen.getByLabelText('Last name'),'Admin');
+    await user.type(screen.getByLabelText('Password'),'Testing!RiverPebbles2026');
+    await user.click(screen.getByRole('button',{name:'Accept invitation'}));
+    expect(await screen.findByRole('status')).toHaveTextContent('membership is active');
+    const request=vi.mocked(apiFetch).mock.calls.find(call=>call[0]==='/api/v1/invitations/accept/');
+    expect(JSON.parse(request![1]!.body as string)).toMatchObject({email:'admin+school@example.test',token:'012345'});
+  });
+  it.each(['#email=a%40example.test&token=123','#email=bad&token=012345','#token=012345'])('leaves malformed link %s available for manual entry',fragment=>{
+    mount(<JoinPage/>,'/join'+fragment);
+    expect(screen.getByLabelText('Invitation code')).toHaveValue('');
+    expect(screen.getByLabelText('Email')).toHaveValue('');
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+  it('retains prefilled details after an expired invitation error',async()=>{
+    vi.mocked(apiFetch).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('Invitation expired. Request a new invitation.'));
+    const user=userEvent.setup();mount(<JoinPage/>,'/join#email=admin%40example.test&token=012345');
+    await user.type(screen.getByLabelText('First name'),'First');await user.type(screen.getByLabelText('Last name'),'Admin');await user.type(screen.getByLabelText('Password'),'Testing!RiverPebbles2026');
+    await user.click(screen.getByRole('button',{name:'Accept invitation'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invitation expired');
+    expect(screen.getByLabelText('Invitation code')).toHaveValue('012345');
+    expect(screen.getByLabelText('Email')).toHaveValue('admin@example.test');
   });
   it('routes company operators and new school admins to the correct workspace',()=>{
     expect(authDestination({status:'authenticated',companyOperator:true,portals:[],memberships:[]})).toBe('/company');

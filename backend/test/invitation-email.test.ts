@@ -73,12 +73,20 @@ describe('invitation SMTP delivery', () => {
     mocks.sendMail.mockResolvedValue({accepted: [], rejected: [invitation.email]});
     expect((await deliverInvitation(invitation)).delivery).toBe('failed');
   });
-  it('escapes message values and keeps codes out of links and remote resources', () => {
+  it('escapes message values and confines prefill to link fragments', () => {
     const message = invitationTemplate({...invitation, token: '<script>private&code</script>', email: '"quoted"@example.test', publicUrl: 'https://school.example.test'});
     expect(message.html).not.toContain('<script>');
     expect(message.html).toContain('&lt;script&gt;private&amp;code&lt;/script&gt;');
     expect(message.html).toContain('&quot;quoted&quot;@example.test');
-    expect(message.html.match(/href="[^"]+"/g)).toEqual(['href="https://school.example.test/join"', 'href="https://school.example.test/join"']);
+    const links=[...message.html.matchAll(/href="([^"]+)"/g)].map(match=>new URL(match[1]!.replaceAll('&amp;','&')));
+    expect(links).toHaveLength(2);
+    for(const link of links){
+      expect(link.origin+link.pathname).toBe('https://school.example.test/join');
+      expect(link.search).toBe('');
+      const params=new URLSearchParams(link.hash.slice(1));
+      expect(params.get('token')).toBe('<script>private&code</script>');
+      expect(params.get('email')).toBe('"quoted"@example.test');
+    }
     expect(message.html).not.toMatch(/<script|<form/i);
     expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="cid:eduera-logo"']);
     expect(message.html).toContain('alt="Eduera logo" width="48" height="48"');
@@ -91,12 +99,16 @@ describe('invitation SMTP delivery', () => {
     expect(message.html).toContain('INVITATION CODE');
     expect(message.html).toContain('SINGLE-USE');
     expect(message.html).toContain('>012345</p>');
-    expect(message.html).toContain('Select the code to copy it.');
+    expect(message.html).toContain('Your email and code are filled in automatically when you accept.');
     expect(message.html).toContain('Open direct join portal');
     expect(message.html).toContain('max-width:480px');
     expect(message.html).not.toMatch(/<button|onclick|navigator.clipboard|Help Center|Eduera Inc/i);
     expect(message.inlineImages).toHaveLength(1);
     expect(message.inlineImages[0]).toMatchObject({filename:'eduera-logo.png',cid:'eduera-logo'});
     expect(message.text).toContain('Invitation code: 012345');
+    const link=new URL(message.text.match(/Open: (.+)/)![1]!);
+    expect(new URLSearchParams(link.hash.slice(1)).get('token')).toBe('012345');
+    // PNG IHDR color type 6 carries alpha; the old app icon was opaque RGB.
+    expect(Buffer.from(message.inlineImages[0]!.content,'base64')[25]).toBe(6);
   });
 });

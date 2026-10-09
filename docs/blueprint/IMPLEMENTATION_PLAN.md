@@ -4747,3 +4747,23 @@ Verification: 11 focused email tests and backend production build pass locally.
 These tests use mocked transports; no live email was sent. Real inbox/client
 visual verification and deployment remain pending. This change and the compact
 confirmation above remain local until the user authorizes publishing to GitHub.
+
+### Invitation link prefill and transparent logo — 9 October 2026
+
+User correction: Accept Invitation now centers its label without an offset arrow.
+Both email links and the plain-text alternative carry the invited email and code
+in the URL fragment. The join form reads valid details, preserves leading zeros,
+and removes the fragment with history replacement. Opening a link never consumes
+an invitation: acceptance still requires the existing explicit form submission,
+CSRF, password/account checks, expiry and single-use validation. Invalid or older
+bare links retain manual entry. Email copy now describes the code as a backup.
+This explicitly supersedes the earlier code-free-link decision at the user's
+request; fragments are not included in HTTP requests/referrer headers.
+
+The embedded logo now reuses the existing transparent RGBA brand PNG verbatim,
+instead of the opaque RGB app icon, preserving the original artwork for dark
+email backgrounds. Local verification: 11 email tests and 20 onboarding tests,
+both production builds and targeted lint pass. Tests cover fragment encoding,
+leading zeros, plus-address email, no acceptance on open, history cleanup,
+invalid-link fallback, expired-invitation errors and logo alpha metadata.
+Real email-client rendering and Stage deployment are separate verification gates.
