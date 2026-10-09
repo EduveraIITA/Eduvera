@@ -7,6 +7,11 @@ on:
     branches: [Stage]
   workflow_dispatch:
     inputs:
+      retire_railway:
+        description: Retire the old Railway app after Google Cloud cutover (preserves database and volumes)
+        type: choice
+        options: [none, inspect, remove]
+        default: none
       seed:
         description: Re-seed the Stage demo data after migrations
         required: false
@@ -32,7 +37,7 @@ jobs:
   # tests may mutate it without touching shared Stage data.
   verify:
     name: Verify
-    if: github.event_name != 'workflow_dispatch' || !inputs.bootstrap_google_cloud
+    if: github.event_name != 'workflow_dispatch' || (!inputs.bootstrap_google_cloud && (inputs.retire_railway == '' || inputs.retire_railway == 'none'))
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -142,6 +147,23 @@ jobs:
           RAILWAY_ENVIRONMENT: stage
         run: node deploy/gcp/copy-stage-config.mjs
 
+  retire-railway:
+    name: Retire old Railway app
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/Stage' && (inputs.retire_railway == 'inspect' || inputs.retire_railway == 'remove')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RETIRE_MODE: ${{ inputs.retire_railway }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @railway/cli@5.54.0
+      - name: Verify Google Cloud and inspect or remove only the old application
+        run: node deploy/retire-railway.mjs
+
   google-cloud:
     name: Google Cloud Stage
     needs: verify
@@ -159,7 +181,8 @@ jobs:
   deploy:
     name: Deploy to Railway
     needs: verify
-    if: github.event_name != 'pull_request' && vars.STAGE_DEPLOY_TARGET != 'google-cloud'
+    # Retired by user decision. Never resume Railway deployments from a push.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
