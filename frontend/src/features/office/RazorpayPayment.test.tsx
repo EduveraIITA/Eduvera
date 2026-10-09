@@ -54,7 +54,8 @@ it('does not let a late status response erase a verified payment',async()=>{
  vi.mocked(apiFetch).mockReturnValueOnce(new Promise(resolve=>{resolveInitial=resolve;})).mockResolvedValueOnce({key_id:'rzp_test_fixture',order_id:'order_one',amount:2500,currency:'INR'}).mockResolvedValueOnce({state:'captured',payment_id:'receipt'});
  render(<RazorpayPayment schoolId="school" invoiceId="invoice" amount={2500} onSaved={vi.fn()}/>);
  await userEvent.click(screen.getByRole('button',{name:/Pay with Razorpay/}));
- await act(()=>options.handler({razorpay_order_id:'order_one',razorpay_payment_id:'pay_one',razorpay_signature:'signature'}));
- await act(()=>resolveInitial([]));
+ act(()=>options.handler({razorpay_order_id:'order_one',razorpay_payment_id:'pay_one',razorpay_signature:'signature'}));
+ await screen.findByText('Payment confirmed');
+ await act(async()=>{resolveInitial([]);await Promise.resolve();});
  expect(screen.getByText('Payment confirmed')).toBeVisible();
 });
