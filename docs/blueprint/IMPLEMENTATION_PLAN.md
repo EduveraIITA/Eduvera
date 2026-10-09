@@ -4767,3 +4767,13 @@ both production builds and targeted lint pass. Tests cover fragment encoding,
 leading zeros, plus-address email, no acceptance on open, history cleanup,
 invalid-link fallback, expired-invitation errors and logo alpha metadata.
 Real email-client rendering and Stage deployment are separate verification gates.
+
+
+### Invitation email copy cleanup — 9 October 2026
+
+User correction centers the numeric invitation code with inline text alignment
+and an HTML alignment fallback. Removes the invited-email/current-password
+paragraph from HTML and the corresponding lines from the plain-text alternative.
+A 24px gap separates expiry and the accept button. Link prefill, original
+transparent logo, expiry and acceptance rules remain intact. The existing email
+transport/escaping tests are used for verification; release status follows CI.
