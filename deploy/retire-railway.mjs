@@ -13,6 +13,15 @@ const invoke=args=>execFileSync('railway',args,{encoding:'utf8',stdio:['ignore',
 // Inventory contains resource IDs/names, not rendered environment variables.
 const inventory=JSON.parse(invoke(['service','list','--project',project,'--environment','stage','--json']));
 console.log(JSON.stringify({project,environment:'stage',inventory}));
+const state=JSON.parse(invoke(['status','--project',project,'--environment','stage','--json']));
+// Do not log configuration values; report retained storage metadata only.
+const storage=[];
+function volumes(value,key='') {
+  if(!value||typeof value!=='object')return;
+  if(/volume/i.test(key)) storage.push({key,details:Array.isArray(value)?value.map(v=>({id:v.id,name:v.name})):Object.keys(value)});
+  for(const [k,v] of Object.entries(value))if(v&&typeof v==='object')volumes(v,k);
+}
+volumes(state);console.log(JSON.stringify({retainedStorage:storage}));
 if(process.env.RETIRE_MODE==='remove') {
   // Pinned from read-only run 37936798220. Never select a database or another app.
   const service='bfce4d21-5994-4612-8c7b-8cd28681f7e5';
