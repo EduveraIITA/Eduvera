@@ -1,4 +1,4 @@
-import { ChevronRight, Printer, Receipt } from "lucide-react";
+import { ChevronRight, Printer, Receipt, BookOpen, TriangleAlert, CircleCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { invoiceStatusLabel, rupees, type Invoice, type Payment } from "./api";
 
@@ -13,8 +13,8 @@ export function PrintFeeButton({ label = "Print statement" }: { label?: string }
 export function FamilyInvoiceList({ invoices, href }: { invoices: Invoice[]; href: (id: string) => string }) {
   return <section className="family-fee-records" aria-label="Invoices">{invoices.length ? <ul>{invoices.map(invoice => <li key={invoice.id}>
     <Link className="family-fee-row" to={href(invoice.id)}>
-      <span className="family-fee-copy"><strong>{invoice.description || "School fee"}</strong><span><FeeStatus invoice={invoice} /><small>Due {feeDate(invoice.due_on)}</small></span><small className="family-fee-reference">{invoice.reference}</small></span>
-      <span className="family-fee-amount"><strong>{rupees(invoice.balance_paise)}</strong><small>{invoice.balance_paise > 0 ? "View & pay" : "View details"}</small></span><ChevronRight size={18} aria-hidden="true" />
+      <span className={`fee-row-icon ${invoiceStatusLabel(invoice)==="Overdue"?"is-overdue":""}`}>{invoiceStatusLabel(invoice)==="Overdue"?<TriangleAlert size={20}/>:invoice.balance_paise===0?<CircleCheck size={20}/>:<BookOpen size={20}/>}</span><span className="family-fee-copy"><strong>{invoice.description || "School fee"}</strong><span><FeeStatus invoice={invoice} /><small>Due {feeDate(invoice.due_on)}</small></span><small className="family-fee-reference">{invoice.reference}</small></span>
+      <span className="family-fee-amount"><strong>{rupees(invoice.balance_paise)}</strong><small>{invoice.balance_paise > 0 ? "Balance" : invoice.collection_state === "credited" ? "Adjusted" : "Settled"}</small></span><ChevronRight size={18} aria-hidden="true" />
     </Link>
   </li>)}</ul> : <p className="office-empty">No invoices have been issued. This does not mean all fees are cleared.</p>}</section>;
 }

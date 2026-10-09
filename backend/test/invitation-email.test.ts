@@ -86,7 +86,6 @@ describe('invitation SMTP delivery', () => {
     const message = invitationTemplate({...invitation, token: '<script>private&code</script>', email: '"quoted"@example.test', publicUrl: 'https://school.example.test'});
     expect(message.html).not.toContain('<script>');
     expect(message.html).toContain('&lt;script&gt;private&amp;code&lt;/script&gt;');
-    expect(message.html).toContain('&quot;quoted&quot;@example.test');
     const links=[...message.html.matchAll(/href="([^"]+)"/g)].map(match=>new URL(match[1]!.replaceAll('&amp;','&')));
     expect(links).toHaveLength(2);
     for(const link of links){

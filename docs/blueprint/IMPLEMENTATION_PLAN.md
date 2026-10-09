@@ -4790,3 +4790,30 @@ both production builds and targeted lint pass. Tests cover fragment encoding,
 leading zeros, plus-address email, no acceptance on open, history cleanup,
 invalid-link fallback, expired-invitation errors and logo alpha metadata.
 Real email-client rendering and Stage deployment are separate verification gates.
+
+
+### Invitation email copy cleanup — 9 October 2026
+
+User correction centers the numeric invitation code with inline text alignment
+and an HTML alignment fallback. Removes the invited-email/current-password
+paragraph from HTML and the corresponding lines from the plain-text alternative.
+A 24px gap separates expiry and the accept button. Link prefill, original
+transparent logo, expiry and acceptance rules remain intact. The existing email
+transport/escaping tests are used for verification; release status follows CI.
+
+### Reference-led family finance screens — 9 October 2026
+
+User supplied a two-screen reference for fee overview and invoice statement.
+Implemented a total/paid/overdue summary, invoice status filter, segmented tabs,
+compact icon rows and an enquiry entry point using existing school ledger data.
+Pay balance opens unpaid invoice selection: the existing checkout is scoped to
+one invoice, not an unsupported multi-invoice charge. Invoice statements show
+original charge, actual credits, linked verified receipts, outstanding/refund
+balance, copy reference, print and refresh controls. No office hours, verification
+claims or sample monetary values from the image are introduced as live data.
+Shared portal navigation, receipt printing and payment authorization remain intact.
+
+Validation: 21 focused fee/review/gateway tests pass including filter replacement,
+enquiry navigation and statement refresh without payment submission; focused lint
+passes. Production build and Stage release follow CI. Visual acceptance against
+the user's reference and physical iPad printing remain user acceptance checks.
