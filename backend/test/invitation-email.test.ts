@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({sendMail: vi.fn(), close: vi.fn(), createTransp
 vi.mock('../src/config.js', () => ({config: () => mocks.settings}));
 vi.mock('nodemailer', () => ({default: {createTransport: mocks.createTransport}}));
 import { deliverInvitation, invitationEmailFailure } from '../src/common/invitation-email.js';
+import { invitationTemplate } from '../src/common/invitation-template.js';
 const invitation = {email: 'recipient@example.test', token: 'private-code', expires_at: '2099-10-04T00:00:00Z'};
 beforeEach(() => {
   vi.unstubAllGlobals(); vi.clearAllMocks(); mocks.settings.INVITATION_EMAIL_PROVIDER = 'smtp'; mocks.settings.INVITATION_EMAIL_ENABLED = true; mocks.settings.SMTP_PORT = 465;
@@ -28,6 +29,8 @@ describe('invitation SMTP delivery', () => {
     const body=JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body.to).toEqual([invitation.email]);
     expect(body.text).toContain(invitation.token);
+    expect(body.html).toContain('Accept invitation');
+    expect(body.html).toContain(invitation.token);
   });
   it('reports API authentication failures without exposing the response body', async () => {
     mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
@@ -46,6 +49,7 @@ describe('invitation SMTP delivery', () => {
     expect(mocks.createTransport).toHaveBeenCalledWith(expect.objectContaining({secure: true, tls: {minVersion: 'TLSv1.2', rejectUnauthorized: true}, debug: false}));
     expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({to: invitation.email, text: expect.stringContaining('https://school.example.test/join')}));
     expect(mocks.sendMail.mock.calls[0]![0].text).toContain(invitation.token);
+    expect(mocks.sendMail.mock.calls[0]![0].html).toContain('Accept invitation');
     expect(mocks.close).toHaveBeenCalledOnce();
   });
   it('does not contact SMTP in manual mode', async () => {
@@ -65,5 +69,15 @@ describe('invitation SMTP delivery', () => {
   it('does not report acceptance for a rejected recipient', async () => {
     mocks.sendMail.mockResolvedValue({accepted: [], rejected: [invitation.email]});
     expect((await deliverInvitation(invitation)).delivery).toBe('failed');
+  });
+  it('escapes message values and keeps codes out of links and remote resources', () => {
+    const message = invitationTemplate({...invitation, token: '<script>private&code</script>', email: '"quoted"@example.test', publicUrl: 'https://school.example.test'});
+    expect(message.html).not.toContain('<script>');
+    expect(message.html).toContain('&lt;script&gt;private&amp;code&lt;/script&gt;');
+    expect(message.html).toContain('&quot;quoted&quot;@example.test');
+    expect(message.html.match(/href="[^"]+"/g)).toEqual(['href="https://school.example.test/join"', 'href="https://school.example.test/join"']);
+    expect(message.html).not.toMatch(/<img|<script|<form/i);
+    expect(message.text).toContain('<script>private&code</script>');
+    expect(message.html).toContain('2099-10-04T00:00:00.000Z');
   });
 });
