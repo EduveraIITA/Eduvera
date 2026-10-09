@@ -563,7 +563,9 @@ describe("implemented application routes", () => {
     await interact.click(toggle);
     expect(await screen.findByRole("button", { name: /Open digital student ID for Aarav Sharma/ }, { timeout: 5000 })).toBeVisible();
     expect(screen.queryByText("Syncing school records...")).not.toBeInTheDocument();
-  }, 12000);
+  // Two complete home renders and multiple bounded 5s waits need more than a
+  // 12s aggregate on shared CI runners; assertions and per-wait limits remain.
+  }, 30000);
 
   it("uses the avatar child switcher across parent pages instead of page-level dropdowns", async () => {
     const interact = userEvent.setup();
