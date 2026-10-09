@@ -4510,3 +4510,21 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
   Cloud, not those separate snapshots. Historical SMTP app-password revocation,
   production security/retention/load gates and global model-region review remain
   open; this release is not a claim of zero abuse or production certification.
+
+### Branded invitation email — 9 October 2026
+
+- Added an inline-styled blue/mint HTML invitation with a selectable single-use
+  code, invited email, UTC expiry, join button and existing-account instructions.
+  Plain text remains available. Both SMTP and Resend receive the HTML variant;
+  account-action messages retain their existing plain-text behavior.
+- Dynamic HTML values are escaped. Codes remain out of links; no remote images,
+  tracking pixels or scripts are included. The existing post-commit send, expiry,
+  authority checks and honest provider-acceptance/failure states are preserved.
+- Removed obsolete Railway-specific advice from transport connection errors.
+- GCP delivery still requires the runtime to reference the owner's new
+  `eduera-smtp-password` secret as `SMTP_PASSWORD`, and SMTP delivery enabled.
+  Creating the secret alone does not activate sending. No live inbox delivery
+  is claimed by this code change.
+- Local verification: backend typecheck, focused ESLint and all 10 invitation
+  tests passed, including SMTP/API HTML delivery, HTML escaping, secret-free links,
+  disabled sending and provider failure handling. `git diff --check` passed.
