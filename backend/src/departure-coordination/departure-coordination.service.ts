@@ -43,7 +43,6 @@ export class DepartureCoordinationService {
     await this.lockSchool(tx,reference.school_id);
     const trip=await tx.selectFrom("transport_trips").selectAll().where("id","=",tripId).forUpdate().executeTakeFirstOrThrow();
     if(trip.assigned_collector_user_id!==user.id || !await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey.");
-    if(trip.service_date!==await this.localDate(tx,trip.school_id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey on its service date. Ask school operations to reconcile an overdue journey.");
     return trip;
   }
 
@@ -590,6 +589,7 @@ export class DepartureCoordinationService {
         const row=await tx.updateTable("transport_trips").set({collector_assignment_status:status,assignment_accepted_at:action==="accept"?now:null,assignment_declined_at:action==="decline"?now:null,assignment_note:input.note,revision:trip.revision+1,updated_at:now}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
         await this.audit(tx,trip.school_id,user.id,`trip.assignment_${status}`,"transport_trip",trip.id,{note:input.note}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action:`assignment_${status}`}); return row;
       }
+      if(!managementSchoolId&&trip.service_date!==await this.localDate(tx,trip.school_id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey on its service date. Ask school operations to reconcile an overdue journey.");
       if(!managementSchoolId&&trip.collector_assignment_status!=="accepted") throw new ConflictException("Accept the assigned duty before operating this trip.");
       if(!managementSchoolId&&["boarding","cancel"].includes(action)&&!(await this.journeyWindow(tx,trip.id)).controls_available) throw new ConflictException("Journey controls open 30 minutes before departure and are available on the service date. Contact school operations for other changes.");
       if(["boarding","start"].includes(action)) {
@@ -629,6 +629,7 @@ export class DepartureCoordinationService {
       uuid.parse(studentId);
       const trip=managementSchoolId?await this.managedTrip(tx,user,managementSchoolId,tripId):await this.operatingTrip(tx,user,tripId);
       if(!managementSchoolId&&trip.collector_assignment_status!=="accepted") throw new ConflictException("Accept the duty before recording riders.");
+      if(!managementSchoolId&&trip.service_date!==await this.localDate(tx,trip.school_id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey on its service date. Ask school operations to reconcile an overdue journey.");
       if(managementSchoolId&&input.state==="boarded") throw new BadRequestException("Boarding must be recorded by the assigned attendant.");
       if(managementSchoolId&&input.note.length<3) throw new BadRequestException("Describe the evidence used for school reconciliation.");
       const rider=await tx.selectFrom("transport_trip_roster").selectAll().where("trip_id","=",tripId).where("student_id","=",studentId).forUpdate().executeTakeFirst(); if(!rider) throw new NotFoundException("Rider not found on this trip."); if(rider.revision!==input.expected_revision) throw new ConflictException("Rider status changed. Reload the roster.");

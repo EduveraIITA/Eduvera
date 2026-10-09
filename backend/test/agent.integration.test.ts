@@ -65,7 +65,7 @@ beforeAll(async()=>{
     else if(question==='List my test notifications')message=!last?call('notifications',{}):{content:'I found your test notification. You can ask me to mark it read.'};
     else if(question==='Mark it read')message=call('read_notification',{record_id:followupNotification});
     else if(question.includes('about aarav'))message=!last?call('find_students',{search:'Aarav Sharma'}):{content:'Aarav Sharma, admission CIS-2023-071, is in Class 7A.'};
-    else if(question.includes('his presence'))message=!last?call('record_student_attendance',{student:'CIS-2023-071',status:'present'}):{content:JSON.parse(last.content).error??'Please review the attendance change.'};
+    else if(/mark (?:his presence|him (?:present|absent))/i.test(question))message=!last?call('record_student_attendance',{student:'CIS-2023-071',status:/\babsent\b/i.test(question)?'absent':'present',reason:'Isolated pronoun-resolution verification'}):{content:JSON.parse(last.content).error??'Please review the attendance change.'};
     else if(question.includes('cross-turn isolation setup'))message=!last?call('record_student_attendance',{student:'Rohan Verma',status:question.includes(' present')?'absent':'present',reason:'Rejected model-only arguments'}):{content:JSON.parse(last.content).error??'Please review the setup change.'};
     else if(question.includes('Change Aarav Sharma attendance to'))message=!last?call('record_student_attendance',{student:'Ananya Iyer',status:question.includes(' to present')?'absent':'present',reason:'Reused from the prior turn'}):{content:JSON.parse(last.content).error??'Please review the corrected change.'};
     else if(question.includes('Record one student'))message=!last?call('record_student_attendance',{student:'Ananya Iyer',status:question.includes('absent')?'absent':'present',reason:'Explicit isolated test correction'}) : {content:JSON.parse(last.content).error??'Please review the change.'};
@@ -165,26 +165,19 @@ describe('agent end-to-end guarded execution',()=>{
   it('reproduces lookup then pronoun attendance without asking for an internal ID',async()=>{
     const admin=new Session();await admin.login('admin');
     const target=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
-    // Fresh CI seeds include today's observations and immutable revision history.
-    // Temporarily move the current fixture out of today's lookup, then restore it;
-    // never delete or rewrite append-only attendance revisions.
-    const displaced=await pool.query("UPDATE attendance_records SET date=date-interval '100 years' WHERE student_id=$1 AND date=$2 RETURNING id",[target.selected.student.id,target.date]);
-    try {
+    const desired=target.selected.student.status==='present'?'absent':'present';
     const first=await run(admin,'Check about aarav sharma','principal');
     expect(first.run.status).toBe('completed');expect(first.run.evidence[0].capability).toBe('find_students');
     modelRequests=[];
-    const second=await run(admin,'Can you mark his presence today','principal',first.thread);
+    const second=await run(admin,`Can you mark him ${desired} today? Correction reason: Isolated pronoun-resolution verification.`,'principal',first.thread);
     expect(second.run.status).toBe('confirmation');expect(second.run.action.capability).toBe('record_student_attendance');
-    expect(second.run.action.preview).toMatchObject({student:'Aarav Sharma',class_name:'Class 7A',previous_status:'Not marked',status:'present'});
+    expect(second.run.action.preview).toMatchObject({student:'Aarav Sharma',class_name:'Class 7A',previous_status:target.selected.student.status??'Not marked',status:desired});
     expect(second.run.action.href).toContain('student_id=');
     expect(JSON.stringify(modelRequests)).toContain('App-provided record references');
     expect(JSON.stringify(modelRequests)).toContain(second.run.action.input.body.student_id);
     await admin.request(`/api/v1/agent/threads/${first.thread}/actions/${second.run.action.id}`,{decision:'reject'});
     const check=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
-    expect(check.selected.student.status).toBeNull();
-    } finally {
-      if(displaced.rows.length)await pool.query('UPDATE attendance_records SET date=$2 WHERE id=ANY($1::uuid[])',[displaced.rows.map(row=>row.id),target.date]);
-    }
+    expect(check.selected.student.status).toBe(target.selected.student.status);
   });
   it('isolates each write intent and never reuses a rejected learner or broadens a retry',async()=>{
     const admin=new Session();await admin.login('admin');
@@ -466,7 +459,7 @@ describe('agent end-to-end guarded execution',()=>{
     const teacher=new Session();await teacher.login('staff');const me=await teacher.request('/api/v1/auth/session/');
     const initial=await teacher.raw('/api/v1/agent/status?portal=teacher');
     const admin=new Session();await admin.login('admin');
-    const today=(await pool.query("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text today")).rows[0].today;
+    const today=(await pool.query("SELECT current_date::text today")).rows[0].today;
     let grant:string|undefined;
     if(initial.status===403){
       grant=(await admin.request(`/api/v1/schools/${me.user.active_school_id}/roles/members/${me.user.id}/exceptions`,{permission:'ai.use',reason:'Isolated agent integration verification',scope_kind:'institution',valid_from:today,valid_until:today})).id;
