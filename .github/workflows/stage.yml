@@ -12,11 +12,16 @@ on:
         required: false
         type: boolean
         default: false
+      bootstrap_google_cloud:
+        description: Copy current Railway Stage configuration into pre-created Google secrets (one-time migration)
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   # PR verification must not cancel an in-flight Stage deployment.
   group: stage-${{ github.event_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ jobs:
   # tests may mutate it without touching shared Stage data.
   verify:
     name: Verify
+    if: github.event_name != 'workflow_dispatch' || !inputs.bootstrap_google_cloud
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -68,6 +74,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Google Cloud deployment contract tests
+        run: node --test deploy/gcp/*.test.mjs
+
       - name: Backend · install, typecheck, lint, build
         working-directory: backend
         run: |
@@ -108,13 +117,49 @@ jobs:
           npm run typecheck
           npm run build
 
+  google-cloud-bootstrap:
+    name: Copy Stage configuration for Google Cloud migration
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/Stage' && inputs.bootstrap_google_cloud
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: gcp-stage
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: eduera-511111
+          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
+          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - run: npm install -g @railway/cli@5.54.0
+      - name: Copy secrets without printing their values
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'omnischool' }}
+          RAILWAY_ENVIRONMENT: stage
+        run: node deploy/gcp/copy-stage-config.mjs
+
+  google-cloud:
+    name: Google Cloud Stage
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/Stage'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/google-cloud-stage.yml
+
+  # Retained until the Google Cloud cutover is verified. Set STAGE_DEPLOY_TARGET
+  # to google-cloud to stop future Railway deploys; the existing service remains.
   # Ships one container to Railway (Singapore) that serves all three:
   # the mobile app at /, the desktop dashboard at /staff/, the API at /api.
   # Railway builds backend/Dockerfile with the repo root as context (railway.json).
   deploy:
     name: Deploy to Railway
     needs: verify
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.STAGE_DEPLOY_TARGET != 'google-cloud'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

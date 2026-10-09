@@ -4335,3 +4335,51 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
 - CI emitted existing maintenance warnings about actions' Node 20 deprecation
   and the upcoming ubuntu-latest image migration. Those did not fail this release;
   no workflow-version change was mixed into this deployment.
+
+### Google Cloud trial connection — 9 October 2026
+
+- User selected **Eduera (`eduera-511111`)** and authorised setup limited to the
+  **$300 trial**. No paid-account upgrade, GPU/Marketplace deployment or spending
+  beyond available trial credit is authorised. Keep the current deployment intact
+  until a separate Google Cloud deployment is verified.
+- Google Cloud CLI 588.0.0 is installed and user authentication is verified. The
+  local CLI now selects the user-specified project. Project billing reports enabled;
+  read-only inventories returned no Cloud Run services, Cloud SQL instances,
+  Artifact Registry repositories, storage buckets or Secret Manager secrets.
+- The linked billing account is not accessible to the authenticated user:
+  `gcloud billing accounts describe` returns permission denied. Trial status,
+  remaining credit and expiry have therefore **not** been verified. Request billing
+  viewer access or user-provided Billing overview evidence before provisioning
+  billable resources. Budget alerts alone are not a hard spending cap.
+- No cloud resources, IAM grants, secrets, databases or deployment pipelines were
+  created or changed by this setup. Uploads currently use local disk and background
+  event processing needs continuous execution; account for both in a hosting design.
+  This is connection/preflight evidence, not a deployed or production-ready service.
+
+### Google Cloud Stage automation in progress — 9 October 2026
+
+- The user subsequently authorised creating the required infrastructure against
+  their stated $300 trial credit and selected the deployed Stage data as the source.
+  The account still cannot independently verify billing credits; budget creation
+  failed validation. No successful budget setup or hard spending cap is claimed.
+- Concurrent team work was discovered after provisioning began. The team owns the
+  existing **`eduera-db`** PostgreSQL 17 micro instance and **`eduera/web`** image
+  repository in Mumbai. User explicitly chose those resources and requested
+  deletion of our duplicate **`eduvera-stage`** database. Its create operation is
+  still running; removing deletion protection returned 409 until creation finishes.
+  No team data has been modified.
+- Created branch/repository/workflow-restricted GitHub OIDC federation, a deploy
+  service account, separate runtime/migration identities, private upload bucket,
+  empty migration-secret containers and the `gcp-stage` GitHub environment.
+  The extra empty `eduvera-stage` image repository also exists; it is not the chosen
+  image destination. No Cloud Run application is deployed by this work yet.
+- Added the Google Cloud job to the Stage workflow without removing Railway.
+  Source-secret copying is an explicit separate dispatch, never an automatic
+  reseed. Release images are built on GitHub; deployment uses a migration job,
+  candidate checks and application traffic rollback. Secret values are excluded
+  from logs, artifacts and container contexts. Deployment is initially disabled.
+- Locally verified five deployment-contract tests, both workflows with actionlint
+  structural validation, full shell validation of the new reusable workflow, and
+  `git diff --check`. Existing Railway shellcheck warnings remain unchanged.
+  GitHub execution, database/file copying, cloud runtime and public verification
+  remain pending; see [Google Cloud Stage](../../deploy/gcp/README.md).

@@ -14,6 +14,7 @@ backend/storage/leave-documents/*
 coverage/
 *.tsbuildinfo
 *.log
+gha-creds-*.json
 .runtime/
 tmp/
 

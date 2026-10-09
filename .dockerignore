@@ -7,3 +7,8 @@
 **/coverage
 backend/storage/leave-documents/*
 *.log
+gha-creds-*.json
+.runtime
+tmp
+**/.env
+**/.env.*

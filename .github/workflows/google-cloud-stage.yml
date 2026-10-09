@@ -1,0 +1,55 @@
+name: Google Cloud Stage release
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: google-cloud-stage-release
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: gcp-stage
+    env:
+      GCP_PROJECT_ID: eduera-511111
+      GCP_REGION: asia-south1
+      GCP_SERVICE: eduvera-stage
+      GCP_MIGRATION_JOB: eduvera-stage-migrate
+      GCP_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/web
+      GCP_STAGE_DEPLOY_ENABLED: ${{ vars.GCP_STAGE_DEPLOY_ENABLED }}
+      GCP_TRIAL_DEPLOY_UNTIL: ${{ vars.GCP_TRIAL_DEPLOY_UNTIL }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check target and trial deployment window
+        run: node deploy/gcp/release.mjs guard
+      - name: Build the tested release on GitHub (no Cloud Build charge)
+        run: docker build --platform linux/amd64 --file backend/Dockerfile --tag "$GCP_IMAGE:$GITHUB_SHA" .
+      # Authenticate after the build so a long build cannot expire the OIDC token.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: eduera-511111
+          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
+          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Verify keyless access and push release image
+        run: |
+          gcloud artifacts repositories describe eduera --location="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)'
+          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+          docker push "$GCP_IMAGE:$GITHUB_SHA"
+      - name: Migrate, verify candidate, promote and verify public service
+        if: vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+        run: node deploy/gcp/release.mjs deploy
+      - name: Report prepared image (not a deployment)
+        if: vars.GCP_STAGE_DEPLOY_ENABLED != 'true'
+        run: |
+          echo '### Google Cloud image prepared; deployment is disabled' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Keyless access and image upload succeeded. Database/file migration and runtime verification must finish before GCP_STAGE_DEPLOY_ENABLED is enabled. The existing app is unchanged.' >> "$GITHUB_STEP_SUMMARY"
