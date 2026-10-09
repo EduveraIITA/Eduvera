@@ -1,5 +1,6 @@
+import { invitationCodeHash, issueInvitationCode } from '../common/invitation-code.js';
 import { deliverInvitation } from "../common/invitation-email.js";
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
@@ -402,10 +403,10 @@ export class OperationsService {
         studentId=found.rows[0]!.id;
       }
       if(data.guardian_id && !(await sql`SELECT 1 FROM guardian_school_profiles g JOIN parents p ON p.id=g.guardian_id LEFT JOIN users u ON u.id=p.user_id WHERE g.school_id=${schoolId}::uuid AND g.guardian_id=${data.guardian_id}::uuid AND (p.user_id IS NULL OR lower(u.email)=${data.email})`.execute(db)).rows.length) throw new BadRequestException('Guardian record must belong to this institution and email.');
-      const token=randomBytes(32).toString('base64url');
+      const {token,tokenHash}=await issueInvitationCode(db,data.email);
       await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND email=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL AND (${authority.role}='admin' OR role<>'admin')`.execute(db);
       const result=await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,student_id,guardian_id)
-        VALUES(${schoolId}::uuid,${data.email},${data.role},${digest(token)},${user.id}::uuid,now()+interval '72 hours',${studentId??null}::uuid,${data.guardian_id??null}::uuid) RETURNING id,expires_at`.execute(db);
+        VALUES(${schoolId}::uuid,${data.email},${data.role},${tokenHash},${user.id}::uuid,now()+interval '30 minutes',${studentId??null}::uuid,${data.guardian_id??null}::uuid) RETURNING id,expires_at`.execute(db);
       return {...result.rows[0]!,email:data.email,token};
     });
     return deliverInvitation(invitation);
@@ -426,9 +427,9 @@ export class OperationsService {
       if (Date.now() - new Date(found.created_at).getTime() < 60_000) {
         throw new ConflictException('Please wait one minute before sending this invitation again.');
       }
-      const token = randomBytes(32).toString('base64url');
+      const {token,tokenHash}=await issueInvitationCode(db,found.email);
       const row = (await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
-        SET token_hash=${digest(token)},expires_at=now()+interval '72 hours',created_at=now()
+        SET token_hash=${tokenHash},expires_at=now()+interval '30 minutes',created_at=now()
         WHERE id=${id}::uuid AND school_id=${schoolId}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
       return {...row,email:found.email,token};
     });
@@ -436,13 +437,22 @@ export class OperationsService {
   }
 
   async acceptInvite(body: unknown) {
-    const data = personSchema.extend({ token: z.string().min(40).max(100), password: z.string().min(1).max(128) }).parse(body);
+    const data = personSchema.extend({ token: z.string().trim().regex(/^(?:\d{6}|[A-Za-z0-9_-]{40,100})$/), password: z.string().min(1).max(128) }).parse(body);
+    // Commit attempts independently so failed acceptance cannot undo the limit.
+    const bucketKey=digest('invitation-email:'+data.email);
+    const attempts=(await sql<{hits:number}>`INSERT INTO api_rate_limit_buckets(bucket_key,hits,expires_at)
+      VALUES(${bucketKey},1,now()+interval '15 minutes') ON CONFLICT(bucket_key) DO UPDATE SET
+      hits=CASE WHEN api_rate_limit_buckets.expires_at<=now() THEN 1 ELSE api_rate_limit_buckets.hits+1 END,
+      expires_at=CASE WHEN api_rate_limit_buckets.expires_at<=now() THEN excluded.expires_at ELSE api_rate_limit_buckets.expires_at END
+      RETURNING hits`.execute(this.db)).rows[0]!;
+    if(attempts.hits>5) throw new HttpException('Too many invitation attempts. Wait 15 minutes before trying again.',429);
+    const tokenHash=invitationCodeHash(data.email,data.token);
     return this.db.transaction().execute(async (db) => {
-      const candidate = await sql<{ school_id: string }>`SELECT school_id FROM school_invitations WHERE token_hash=${digest(data.token)}`.execute(db);
+      const candidate = await sql<{ school_id: string }>`SELECT school_id FROM school_invitations WHERE token_hash=${tokenHash}`.execute(db);
       if (!candidate.rows[0]) throw new BadRequestException("Invitation is invalid, expired or already used.");
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${candidate.rows[0].school_id},0))`.execute(db);
       const found = await sql<{ id: string; school_id: string; email: string; role: MembershipRole; source:string; created_by:string; student_id:string|null; guardian_id:string|null; custom_role_id:string|null }>`SELECT id,school_id,email,role,source,created_by,student_id,guardian_id,custom_role_id FROM school_invitations
-        WHERE token_hash=${digest(data.token)} AND expires_at>now() AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`.execute(db);
+        WHERE token_hash=${tokenHash} AND expires_at>now() AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`.execute(db);
       const invite = found.rows[0];
       if (!invite || invite.email !== data.email) throw new BadRequestException("Invitation is invalid, expired or already used.");
       if(invite.source==='company') {

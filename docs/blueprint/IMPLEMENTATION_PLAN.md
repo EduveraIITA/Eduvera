@@ -4696,3 +4696,18 @@ invitations. A one-minute cooldown limits accidental repeats. Receipts distingui
 provider acceptance, failure and manual delivery. UI/transport and TypeScript
 checks pass locally; database integration cases are included for CI. Live inbox
 delivery remains unverified.
+
+
+### Numeric invitation codes and embedded email logo — 9 October 2026
+
+User-requested correction: new school, staff-profile and company invitations use
+cryptographically generated six-digit codes (including leading zeros), expire in
+30 minutes, and retain existing single-use, recipient and authority checks.
+Numeric hashes use an email-bound HMAC with the stable cookie secret; previously
+issued long-code hashes remain compatible until their original expiry. Five
+acceptance attempts per recipient per 15 minutes are committed separately from
+acceptance so failed guesses cannot roll back the limit. Resend replaces the code.
+The established Eduera logo is embedded as an inline PNG attachment with a CID
+reference in SMTP and HTTPS provider emails; it no longer needs a remote image
+request. Focused checks cover MIME metadata, code scoping and legacy digests;
+database CI covers guess limits. Live deployment/email verification follows CI.

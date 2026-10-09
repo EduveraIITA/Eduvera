@@ -1,8 +1,8 @@
+import { issueInvitationCode } from '../common/invitation-code.js';
 import { InstitutionsService } from '../institutions/institutions.service.js';
 import { manualSchema } from '../institutions/schemas.js';
 import { deliverInvitation } from '../common/invitation-email.js';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { AuthUser } from '../common/request.js';
@@ -39,13 +39,13 @@ export class CompanyService {
     return { schools: schools.rows, invitations: invitations.rows, applications: applications.rows };
   }
   private async invitation(db: Db, user: AuthUser, school: string, recipient: string) {
-    const token = randomBytes(32).toString('base64url');
+    const {token,tokenHash}=await issueInvitationCode(db,recipient);
     const pending = await sql`SELECT 1 FROM users u WHERE lower(u.email)=${recipient} AND u.onboarding_pending
       AND NOT EXISTS(SELECT 1 FROM school_memberships m WHERE m.user_id=u.id AND m.school_id=${school}::uuid AND m.is_active)`.execute(db);
     if (pending.rows.length) throw new ConflictException('This account must complete its original school onboarding first.');
     await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${school}::uuid AND email=${recipient} AND accepted_at IS NULL AND revoked_at IS NULL`.execute(db);
     const row = (await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,source)
-      VALUES(${school}::uuid,${recipient},'admin',${createHash('sha256').update(token).digest('hex')},${user.id}::uuid,now()+interval '72 hours','company') RETURNING id,expires_at`.execute(db)).rows[0]!;
+      VALUES(${school}::uuid,${recipient},'admin',${tokenHash},${user.id}::uuid,now()+interval '30 minutes','company') RETURNING id,expires_at`.execute(db)).rows[0]!;
     await this.audit(db,user,school,'company.admin_invited',{invitation_id:row.id,email:recipient});
     return {...row,email:recipient,token};
   }
@@ -90,9 +90,9 @@ export class CompanyService {
           AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`.execute(db)).rows[0];
       if (!found) throw new NotFoundException('This invitation was accepted or revoked. Refresh the invitation list.');
       if (Date.now()-new Date(found.created_at).getTime()<60_000) throw new ConflictException('Please wait one minute before sending this invitation again.');
-      const token=randomBytes(32).toString('base64url');
+      const {token,tokenHash}=await issueInvitationCode(db,found.email);
       const row=(await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
-        SET token_hash=${createHash('sha256').update(token).digest('hex')},expires_at=now()+interval '72 hours',created_at=now()
+        SET token_hash=${tokenHash},expires_at=now()+interval '30 minutes',created_at=now()
         WHERE id=${id}::uuid AND school_id=${school}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
       await this.audit(db,user,school,'company.admin_invitation_email_resent',{invitation_id:id});
       return {...row,email:found.email,token};

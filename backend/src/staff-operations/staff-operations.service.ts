@@ -1,5 +1,5 @@
+import { issueInvitationCode } from '../common/invitation-code.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { createHash, randomBytes } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
@@ -12,7 +12,6 @@ type Db = Kysely<Database> | Transaction<Database>;
 type MembershipRole = "staff" | "admin";
 const uuid = z.string().uuid();
 const date = z.iso.date();
-const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
 const profileInput = z.object({
   first_name: z.string().trim().min(1).max(100),
@@ -242,10 +241,10 @@ export class StaffOperationsService {
         }))).execute();
         let invitation: { token: string; expires_at: Date; id: string } | null = null;
         if (!account.rows[0]) {
-          const token = randomBytes(32).toString("base64url");
+          const {token,tokenHash}=await issueInvitationCode(db,data.email);
           await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND lower(email)=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL`.execute(db);
           const invite = await sql<{ id: string; expires_at: Date }>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at)
-            VALUES (${schoolId}::uuid,${data.email},'staff',${digest(token)},${user.id}::uuid,now()+interval '72 hours') RETURNING id,expires_at`.execute(db);
+            VALUES (${schoolId}::uuid,${data.email},'staff',${tokenHash},${user.id}::uuid,now()+interval '30 minutes') RETURNING id,expires_at`.execute(db);
           invitation = { ...invite.rows[0]!, token };
         }
         await this.audit(db, user, schoolId, "staff.profile.created", profile.id, { staff_kind: profile.staff_kind, position: profile.designation, invitation_created: Boolean(invitation) });
