@@ -4922,8 +4922,11 @@ Deployment and real browser checkout remain separate verification steps.
   UI tests, **1/1** real PostgreSQL auth/session integration test, and **7/7** Google Cloud
   release-contract tests. The database test proves anonymous denial, four-profile listing,
   CSRF rejection, session rotation, target identity restoration, audit evidence and
-  exclusion of the company persona. Stage deployment and physical-device acceptance are
-  recorded separately after the push-triggered release completes.
+  exclusion of the company persona. Workflow `37984688625` then passed the complete clean
+  PostgreSQL/backend, **674/674** frontend, desktop and release-contract gates and promoted
+  Cloud Run revision `eduvera-stage-00057-hew` to 100% traffic. An authenticated Stage check
+  listed exactly four profiles and rotated a principal session to staff. Physical-device
+  acceptance remains open.
 
 ### Generic action-following agent contract — 10 October 2026
 
@@ -4947,10 +4950,14 @@ Deployment and real browser checkout remain separate verification steps.
 - The design follows provider guidance to keep role/goals/style in a compact system
   instruction and expose clear, predictable function schemas; deterministic application
   code remains responsible for effects. Verified with backend typecheck/build, **31/31**
-  capability/prompt contracts, **23/23** multi-provider protocol tests and **32/32**
+  capability/prompt contracts, **24/24** multi-provider protocol tests and **32/32**
   isolated real-database agent integration tests, including a natural “You can” continuation
-  after a dismissed proposal. Stage deployment and live-device acceptance remain pending
-  until the release pipeline completes.
+  after a dismissed proposal. The same Stage workflow deployed the contract. A real Vertex
+  request using ordinary possessive wording prepared `record_student_attendance` for Aarav
+  Sharma; the review was dismissed and a fresh read confirmed that the record stayed
+  unchanged. Local/Cloudflare repeated the same no-write flow, and both public readiness
+  checks report healthy database and event storage. Broader live-device and adversarial
+  model evaluation remain open; this smoke test is not a general reliability claim.
 
 ### Family fees clarity and receipt printing — 9 October 2026
 
