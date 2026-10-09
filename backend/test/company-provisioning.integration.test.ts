@@ -102,6 +102,40 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     expect((await request('public','invitations/accept/',join(result.data.token,email))).status).toBe(200);
     expect((await pool.query('SELECT u.email FROM parents p JOIN users u ON u.id=p.user_id WHERE p.id=$1',[guardian])).rows[0].email).toBe(email);
   });
+  it('resends school invitations with rotation, cooldown and tenant protection',async()=>{
+    const email='resend.'+suffix+'@example.test';
+    const original=await request('admin',path('invitations'),{email,role:'staff'});
+    const id=original.data.id;
+    expect((await request('admin',path(`invitations/${id}/resend`),{})).status).toBe(409);
+    await pool.query("UPDATE school_invitations SET created_at=now()-interval '2 minutes' WHERE id=$1",[id]);
+    expect((await request('admin',path(`invitations/${id}/resend`),{},'POST',false)).status).toBe(403);
+    expect((await request('staff',`schools/${createdSchool}/invitations/${id}/resend/`,{})).status).toBe(403);
+    const replacement=await request('staff',path(`invitations/${id}/resend`),{});
+    expect(replacement.status).toBe(201);
+    expect(replacement.data.email).toBe(email);
+    expect(replacement.data.token).not.toBe(original.data.token);
+    const stored=(await pool.query('SELECT token_hash,role FROM school_invitations WHERE id=$1',[id])).rows[0];
+    expect(stored.token_hash).toBe(createHash('sha256').update(replacement.data.token).digest('hex'));
+    expect(stored.role).toBe('staff');
+    expect((await request('public','invitations/accept/',join(original.data.token,email))).status).toBe(400);
+    await request('admin',path(`invitations/${id}/revoke`),{});
+    expect((await request('admin',path(`invitations/${id}/resend`),{})).status).toBe(404);
+  });
+  it('restricts company resend to company operators and invalidates the old code',async()=>{
+    const email='companyresend.'+suffix+'@example.test';
+    const root=`company/institutions/${createdSchool}/admin-invitations/`;
+    const original=await request('company',root,{email});
+    const id=original.data.id;
+    expect((await request('company',`${root}${id}/resend/`,{})).status).toBe(409);
+    await pool.query("UPDATE school_invitations SET created_at=now()-interval '2 minutes' WHERE id=$1",[id]);
+    expect((await request('admin',`${root}${id}/resend/`,{})).status).toBe(403);
+    const replacement=await request('company',`${root}${id}/resend/`,{});
+    expect(replacement.status).toBe(201);
+    expect(replacement.data.token).not.toBe(original.data.token);
+    expect((await request('public','invitations/accept/',join(original.data.token,email))).status).toBe(400);
+    await request('company',`${root}${id}/revoke/`,{});
+    expect((await request('company',`${root}${id}/resend/`,{})).status).toBe(404);
+  });
   it('activates a staff account without granting work access through the invitation',async()=>{
     const email='staffinvite.'+suffix+'@example.test';const result=await request('admin',path('invitations'),{email,role:'staff'});expect(result.status).toBe(201);
     expect((await request('public','invitations/accept/',join(result.data.token,email))).status).toBe(200);

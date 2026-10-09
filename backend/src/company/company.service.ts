@@ -80,6 +80,26 @@ export class CompanyService {
     });
     return deliverInvitation(invitation);
   }
+  async resend(user: AuthUser, school: string, id: string) {
+    z.uuid().parse(school); z.uuid().parse(id);
+    const invitation = await this.db.transaction().execute(async db => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${school},0))`.execute(db);
+      await this.authorize(user,db);
+      const found = (await sql<{email:string;created_at:Date}>`SELECT email,created_at FROM school_invitations
+        WHERE school_id=${school}::uuid AND id=${id}::uuid AND source='company'
+          AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`.execute(db)).rows[0];
+      if (!found) throw new NotFoundException('This invitation was accepted or revoked. Refresh the invitation list.');
+      if (Date.now()-new Date(found.created_at).getTime()<60_000) throw new ConflictException('Please wait one minute before sending this invitation again.');
+      const token=randomBytes(32).toString('base64url');
+      const row=(await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
+        SET token_hash=${createHash('sha256').update(token).digest('hex')},expires_at=now()+interval '72 hours',created_at=now()
+        WHERE id=${id}::uuid AND school_id=${school}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
+      await this.audit(db,user,school,'company.admin_invitation_email_resent',{invitation_id:id});
+      return {...row,email:found.email,token};
+    });
+    return deliverInvitation(invitation);
+  }
+
   async revoke(user: AuthUser, school: string, id: string) {
     z.uuid().parse(school);z.uuid().parse(id);
     return this.db.transaction().execute(async db=>{

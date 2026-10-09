@@ -74,6 +74,9 @@ export class OperationsController {
   @Post("schools/:schoolId/invitations/")
   invite(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.invite(req.authUser, school, req.body); }
 
+  @Post("schools/:schoolId/invitations/:id/resend/")
+  resend(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.resendInvitation(req.authUser, school, id); }
+
   @Post("schools/:schoolId/invitations/:id/revoke/")
   revoke(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.revokeInvitation(req.authUser, school, id); }
 

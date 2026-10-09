@@ -4682,3 +4682,17 @@ child switching, review confirmation and existing mocked gateway flows. Browser
 print dialog/device printing and live gateway completion are separate acceptance
 checks; no real payment was made. Build/lint and Stage verification are recorded
 in the associated PR; user visual acceptance remains pending.
+
+
+### Invitation email actions — 9 October 2026
+
+School invitation creation now explicitly says **Send invitation email**. Pending
+and expired school/company invitations offer **Resend invitation email**. Resend
+retains recipient, role, target records and source; rotates the stored token hash;
+renews the 72-hour expiry; records an audit action; and sends after commit.
+School locks serialize resend with acceptance/revocation. Accepted or revoked
+invitations cannot be resent; delegated inviters cannot resend company or admin
+invitations. A one-minute cooldown limits accidental repeats. Receipts distinguish
+provider acceptance, failure and manual delivery. UI/transport and TypeScript
+checks pass locally; database integration cases are included for CI. Live inbox
+delivery remains unverified.
