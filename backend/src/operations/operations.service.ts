@@ -411,6 +411,30 @@ export class OperationsService {
     return deliverInvitation(invitation);
   }
 
+  async resendInvitation(user: AuthUser, schoolId: string, id: string) {
+    uuid.parse(id);
+    const invitation = await this.mutate(user, schoolId, "members.invite", "invitation.email_resent", async (db) => {
+      const authority = await this.authorize(user, schoolId, "members.invite", db);
+      const found = (await sql<{id:string;email:string;role:MembershipRole;source:string;created_at:Date}>`
+        SELECT id,email,role,source,created_at FROM school_invitations
+        WHERE id=${id}::uuid AND school_id=${schoolId}::uuid AND accepted_at IS NULL AND revoked_at IS NULL
+        FOR UPDATE`.execute(db)).rows[0];
+      if (!found) throw new NotFoundException('This invitation was accepted or revoked. Refresh the invitation list.');
+      if (authority.role !== 'admin' && (found.role === 'admin' || found.source !== 'school')) {
+        throw new ForbiddenException('Only institution administrators can resend this invitation.');
+      }
+      if (Date.now() - new Date(found.created_at).getTime() < 60_000) {
+        throw new ConflictException('Please wait one minute before sending this invitation again.');
+      }
+      const token = randomBytes(32).toString('base64url');
+      const row = (await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
+        SET token_hash=${digest(token)},expires_at=now()+interval '72 hours',created_at=now()
+        WHERE id=${id}::uuid AND school_id=${schoolId}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
+      return {...row,email:found.email,token};
+    });
+    return deliverInvitation(invitation);
+  }
+
   async acceptInvite(body: unknown) {
     const data = personSchema.extend({ token: z.string().min(40).max(100), password: z.string().min(1).max(128) }).parse(body);
     return this.db.transaction().execute(async (db) => {

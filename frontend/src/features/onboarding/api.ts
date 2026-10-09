@@ -19,3 +19,7 @@ export const getInvitations=(school:string)=>apiFetch<InvitationWorkspace>(`/api
 export const inviteMember=(school:string,body:unknown)=>apiFetch<ReadyInvitation>(`/api/v1/schools/${school}/invitations/`,{method:'POST',body:JSON.stringify(body)});
 export const revokeMember=(school:string,id:string)=>apiFetch(`/api/v1/schools/${school}/invitations/${id}/revoke/`,{method:'POST',body:'{}'});
 export function invitationState(invitation:Invitation) {return invitation.accepted_at?'Accepted':invitation.revoked_at?'Revoked':new Date(invitation.expires_at)>new Date()?'Pending':'Expired';}
+
+export const resendMemberInvitation=(school:string,id:string)=>apiFetch<ReadyInvitation>(`/api/v1/schools/${school}/invitations/${id}/resend/`,{method:'POST',body:'{}'});
+
+export const resendAdminInvitation=(school:string,id:string)=>apiFetch<ReadyInvitation>(`/api/v1/company/institutions/${school}/admin-invitations/${id}/resend/`,{method:'POST',body:'{}'});
