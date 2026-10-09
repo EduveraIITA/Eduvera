@@ -1,0 +1,70 @@
+# Razorpay sandbox fee payments
+
+User decision, 9 October 2026: add Razorpay sandbox to the existing family fee flow.
+This extends the future gateway boundary in FEE_PAY_REVIEW.md and implements the
+capture/evidence requirements of School Operations Blueprint section 17.
+
+## Runtime setup
+
+Set these **server environment variables** on the existing Eduera Stage service:
+
+- `RAZORPAY_ENABLED=true`
+- `RAZORPAY_KEY_ID`: the account's `rzp_test_...` key
+- `RAZORPAY_KEY_SECRET`: the paired private test secret
+- `DEMO_MODE=true` (already used for Stage)
+- Optional `RAZORPAY_WEBHOOK_SECRET`: an independent randomly generated secret
+  shared with the Razorpay dashboard webhook configuration.
+
+No credentials are embedded in source, frontend variables or the example file.
+Live keys and the production deployment environment are rejected. Disabled is the
+default. Apply migration `057_razorpay_sandbox.sql` before starting the updated app.
+
+In Razorpay **Test mode**, enable automatic capture. Configure a webhook for
+`payment.captured` and `order.paid` at:
+`https://omnischool-stage.up.railway.app/api/v1/payments/razorpay/webhook/`.
+Use the independent webhook secret, not the API secret. Webhooks are optional for
+sandbox operation: a bounded background poll runs every minute and the family has
+an explicit **Check payment status** recovery button.
+
+## Behavior and limits
+
+- Parent → Fees & receipts → invoice → **Pay with Razorpay**. Existing styling,
+  navigation, fee questions and offline reporting remain available.
+- Orders use integer paise and the current server balance. The minimum is ₹1.
+  Active linked guardians only; students cannot initiate or verify a payment.
+- One active provider order per invoice is reused across retries/guardians. A
+  different requested amount is rejected until the existing checkout is resolved.
+  Changing an amount on an unpaid order is not supported in this first sandbox slice.
+- Verify the signature using the stored order ID, then fetch authoritative payment
+  details. An authorized payment is not a receipt: only a captured payment matching
+  order, amount and currency can be posted.
+- Concurrent callbacks/webhooks/polls serialize using the existing school lock and
+  invoice row lock. Provider order/payment IDs are unique. Receipts, audit and
+  authorized outbox events commit atomically. Browser closure does not lose payment.
+- Raw webhook bytes are signature verified. Event IDs and payload hashes deduplicate
+  delivery; unknown account orders are ignored. Background checks retain failed orders
+  for retry without logging provider responses or credentials.
+- Receipts explicitly use `razorpay_test`; they affect only the configured demo ledger.
+  Sandbox screens explicitly say no real money is collected.
+- If cash/credit/another adjustment changes the balance during checkout, preserve
+  the captured payment as `review_required` without over-allocating it. It is visible
+  in principal Fees → Reviews. Reconciliation/refund is an operator/provider task;
+  no automated refunds or bank settlement claims are made.
+- An order created immediately before a network/database failure can be unpaid and
+  orphaned at the provider. Only persisted orders are returned to Checkout.
+- Credential rotation with pending orders requires operator reconciliation using the
+  previous key; the app does not silently switch an existing order to another account.
+
+## Validation
+
+Focused tests cover exact-byte signature tampering, provider failures, checkout
+verification UI, family/tenant authorization, amount validation, reusable orders,
+concurrent receipt posting, pending authorization, balance-change reconciliation,
+webhook replay, and recovery after missed callbacks. Database tests require the
+repository's isolated PostgreSQL test environment and run in the Stage PR workflow.
+
+Actual browser checkout against Razorpay and Stage runtime activation remain release
+checks until the hosting account can be accessed and its environment configured.
+No live payments, settlement or production-readiness claims are made.
+
+Reference: https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/integration-steps/

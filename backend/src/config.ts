@@ -51,6 +51,10 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().default(""),
   OPENAI_MODEL: z.string().default("gpt-5-mini"),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
+  RAZORPAY_ENABLED: booleanString("false"),
+  RAZORPAY_KEY_ID: z.string().default(""),
+  RAZORPAY_KEY_SECRET: z.string().default(""),
+  RAZORPAY_WEBHOOK_SECRET: z.string().default(""),
   PHOTO_ATTENDANCE_ENABLED: booleanString("false"),
   PHOTO_ATTENDANCE_BASE_URL: z.string().url().default("http://127.0.0.1:8100/api"),
   PHOTO_ATTENDANCE_API_TOKEN: z.string().default(""),
@@ -73,6 +77,9 @@ export function loadConfig() {
     SMTP_USER: process.env.SMTP_USER ?? "projectpathyakram@gmail.com",
     SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "fakdej-cixxir-3jEcti",
   } : process.env);
+  if (value.RAZORPAY_ENABLED && (value.DEPLOYMENT_ENVIRONMENT === "production" || !value.DEMO_MODE || !value.RAZORPAY_KEY_ID.startsWith("rzp_test_") || !value.RAZORPAY_KEY_SECRET)) {
+    throw new Error("Razorpay sandbox requires DEMO_MODE, a test key ID and a server-side key secret.");
+  }
   if (value.INVITATION_EMAIL_ENABLED) {
     if (!value.PUBLIC_URL) throw new Error("PUBLIC_URL is required for invitation email");
     if (value.INVITATION_EMAIL_PROVIDER === "resend") {

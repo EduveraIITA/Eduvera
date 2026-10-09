@@ -25,10 +25,14 @@ async function bootstrap(): Promise<void> {
     bodyLimit: 12 * 1024 * 1024,
     logger: { level: settings.LOG_LEVEL, redact: ["req.headers.authorization", "req.headers.cookie", "res.headers.set-cookie"] },
   });
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { bufferLogs: true });
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { bufferLogs: true, rawBody: true });
   const server = app.getHttpAdapter().getInstance();
   await app.register(cookie, { secret: settings.COOKIE_SECRET, hook: "onRequest" });
-  await app.register(helmet, settings.NODE_ENV === "production" ? {} : { contentSecurityPolicy: false });
+  await app.register(helmet, settings.NODE_ENV === "production" ? { contentSecurityPolicy: { directives: {
+    scriptSrc: ["'self'", "https://checkout.razorpay.com"],
+    frameSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
+    connectSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
+  } } } : { contentSecurityPolicy: false });
   await app.register(compress);
   await app.register(multipart, { limits: { files: 1, fileSize: 24 * 1024 * 1024, fields: 20, parts: 21 } });
   try {

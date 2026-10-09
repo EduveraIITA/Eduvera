@@ -20,7 +20,7 @@ export interface Invoice extends FeeStudent {
   refund_due_paise: number; collection_state: "collectible" | "paid" | "credited" | "refund_due" | "partially_refunded" | "refunded";
 }
 export interface Payment { id: string; invoice_id: string; amount_paise: number; method: string; reference: string; created_at: string }
-export interface FeeLedger { currency: "INR"; invoices: Invoice[]; payments: Payment[]; online_payments_enabled: boolean; reviews?: FeeReview[]; payment_settings?: FeePaymentSettings; can_submit?: boolean }
+export interface FeeLedger { currency: "INR"; invoices: Invoice[]; payments: Payment[]; online_payments_enabled: boolean; gateway_payments?: Array<{ id: string; invoice_id: string; amount_paise: number; state: string; provider_payment_id: string | null; payment_id: string | null }>; reviews?: FeeReview[]; payment_settings?: FeePaymentSettings; can_submit?: boolean }
 
 const schoolPath = (schoolId: string, path: string) => `/api/v1/schools/${encodeURIComponent(schoolId)}/${path}/`;
 export const getAdministration = (schoolId: string) => apiFetch<Administration>(schoolPath(schoolId, "administration"));

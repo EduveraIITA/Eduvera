@@ -4299,3 +4299,18 @@ fresh PostgreSQL 17 schema with every isolated-integration flag enabled, and
 **629 frontend tests / 84 files**. All three builds/typechecks, backend/frontend
 lint and `git diff --check` passed; final fixture edits passed targeted lint and
 frontend typecheck again. Remote CI/deployment verification remains separate.
+
+### Razorpay sandbox fee checkout — 9 October 2026
+
+Added a sandbox-only adapter to the existing family fee workflow; see
+[setup, behavior and release checks](RAZORPAY_SANDBOX.md). Durable provider orders,
+server signature and capture verification, raw-body webhook deduplication, bounded
+recovery polling, audit/outbox events and explicitly labelled test receipts extend
+the existing ledger. Balance changes preserve captured funds for school review.
+Live credentials and production-environment activation are rejected. Existing
+manual-payment review and student read-only access remain unchanged.
+
+Local backend/frontend typechecks and focused signature/UI tests are the first
+verification gate; isolated database integration runs in PR CI. Stage credentials
+and real sandbox browser checkout remain pending until the hosting service is
+accessible. No deployment or full gateway release gate is claimed by this entry.
