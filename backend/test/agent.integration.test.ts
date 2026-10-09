@@ -165,9 +165,10 @@ describe('agent end-to-end guarded execution',()=>{
   it('reproduces lookup then pronoun attendance without asking for an internal ID',async()=>{
     const admin=new Session();await admin.login('admin');
     const target=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
-    // Fresh CI seeds include today's observations; the reported regression starts
-    // with an unmarked learner. Restore any fixture observation even on failure.
-    const saved=await pool.query('DELETE FROM attendance_records WHERE student_id=$1 AND date=$2 RETURNING to_jsonb(attendance_records) AS record',[target.selected.student.id,target.date]);
+    // Fresh CI seeds include today's observations and immutable revision history.
+    // Temporarily move the current fixture out of today's lookup, then restore it;
+    // never delete or rewrite append-only attendance revisions.
+    const displaced=await pool.query("UPDATE attendance_records SET date=date-interval '100 years' WHERE student_id=$1 AND date=$2 RETURNING id",[target.selected.student.id,target.date]);
     try {
     const first=await run(admin,'Check about aarav sharma','principal');
     expect(first.run.status).toBe('completed');expect(first.run.evidence[0].capability).toBe('find_students');
@@ -182,7 +183,7 @@ describe('agent end-to-end guarded execution',()=>{
     const check=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
     expect(check.selected.student.status).toBeNull();
     } finally {
-      for(const row of saved.rows)await pool.query('INSERT INTO attendance_records SELECT * FROM jsonb_populate_record(NULL::attendance_records,$1::jsonb)',[JSON.stringify(row.record)]);
+      if(displaced.rows.length)await pool.query('UPDATE attendance_records SET date=$2 WHERE id=ANY($1::uuid[])',[displaced.rows.map(row=>row.id),target.date]);
     }
   });
   it('isolates each write intent and never reuses a rejected learner or broadens a retry',async()=>{
@@ -468,7 +469,7 @@ describe('agent end-to-end guarded execution',()=>{
     const today=(await pool.query("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text today")).rows[0].today;
     let grant:string|undefined;
     if(initial.status===403){
-      grant=(await admin.request(`/api/v1/schools/${me.user.active_school_id}/roles/members/${me.user.id}/exceptions`,{permission:'ai.use',reason:'Isolated agent integration verification',scope_kind:'assigned_resources',valid_from:today,valid_until:today})).id;
+      grant=(await admin.request(`/api/v1/schools/${me.user.active_school_id}/roles/members/${me.user.id}/exceptions`,{permission:'ai.use',reason:'Isolated agent integration verification',scope_kind:'institution',valid_from:today,valid_until:today})).id;
     }else expect(initial.status).toBe(200);
     try{
       await notification(teacher);const result=await run(teacher,'Mark the test notification read','teacher');expect(result.run.status).toBe('confirmation');

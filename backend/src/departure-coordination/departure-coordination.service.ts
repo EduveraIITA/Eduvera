@@ -43,6 +43,7 @@ export class DepartureCoordinationService {
     await this.lockSchool(tx,reference.school_id);
     const trip=await tx.selectFrom("transport_trips").selectAll().where("id","=",tripId).forUpdate().executeTakeFirstOrThrow();
     if(trip.assigned_collector_user_id!==user.id || !await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey.");
+    if(trip.service_date!==await this.localDate(tx,trip.school_id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey on its service date. Ask school operations to reconcile an overdue journey.");
     return trip;
   }
 

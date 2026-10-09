@@ -26,6 +26,7 @@ beforeAll(async()=>{
     users[role]=(await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Private','Test',$4) RETURNING id",[`private-${role}-${suffix}`,`private-${role}-${suffix}@example.test`,await hashPassword(password),role])).rows[0].id;
     await pool.query('INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,$3)',[school,users[role],role==='parent'?'guardian':role]);
   }
+  await pool.query('UPDATE users SET pro_features_enabled=true WHERE id=$1',[users.admin]);
   api=spawn(process.execPath,['dist/main.js'],{env:{...process.env,DATABASE_URL:databaseUrl,EVENT_DATABASE_URL:databaseUrl,NODE_ENV:'test',DEPLOYMENT_ENVIRONMENT:'test',DEMO_MODE:'false',HOST:'127.0.0.1',PORT:'8145',TRUST_PROXY:'true',RATE_LIMIT_STORE:'postgres',COOKIE_SECRET:'private-login-test-cookie-secret-32-chars',AGENT_PROVIDER:'ollama',AGENT_MODEL:'not-running-test-model',AGENT_USER_HOURLY_LIMIT:'1',LOG_LEVEL:'silent'},stdio:['ignore','ignore','inherit']});
   for(let i=0;i<150;i++){try{if((await fetch(base+'/readyz')).ok)return;}catch{/* starting */}await new Promise(resolve=>setTimeout(resolve,50));}
   throw new Error('Private-login test API did not start');
