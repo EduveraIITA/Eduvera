@@ -189,7 +189,6 @@ export function Shell() {
         <HelpButton>
           <b>Front office</b>
           <span>Attendance, leave and timetable questions go to the school office. Decisions about leave are made by leadership and recorded against a name.</span>
-          {demoMode ? <span>This is demo data. Password for every demo account: <span className="mono">OmniDemo@2026</span></span> : null}
         </HelpButton>
       </aside>
 

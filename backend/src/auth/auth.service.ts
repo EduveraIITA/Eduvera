@@ -1,5 +1,5 @@
 import { RolesService } from "../roles/roles.service.js";
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { sql } from "kysely";
@@ -9,7 +9,7 @@ import { AuditService } from "../common/audit.service.js";
 import { deliverAccountAction } from "../common/account-email.js";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
-import { hashPassword, validatePassword, verifyPassword } from "./password.js";
+import { hashPassword, isPublishedDemoPassword, validatePassword, verifyPassword } from "./password.js";
 import {
   createMfaSecret,
   createRecoveryCodes,
@@ -124,6 +124,12 @@ export class AuthService {
   }
 
   async createSession(user: AuthUser, request: FastifyRequest): Promise<{ rawToken: string; csrfToken: string }> {
+    if (!user.active_school_id) {
+      const memberships = await this.db.selectFrom('school_memberships').select('school_id')
+        .where('user_id','=',user.id).where('is_active','=',true).limit(2).execute();
+      // Only an unambiguous authenticated membership may establish tenant context.
+      if (memberships.length === 1) user.active_school_id = memberships[0]!.school_id;
+    }
     const rawToken = randomBytes(32).toString("base64url");
     const csrfToken = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + config().SESSION_TTL_SECONDS * 1000);
@@ -142,12 +148,19 @@ export class AuthService {
 
   async login(body: unknown, request: FastifyRequest): Promise<{ user: AuthUser; mfaChallenge?: string }> {
     const data = loginSchema.parse(body);
+    const accountBucket = AuthService.tokenHash('login-account:' + data.identifier.toLowerCase());
+    const attempts = (await sql<{hits:number}>`INSERT INTO api_rate_limit_buckets(bucket_key,hits,expires_at)
+      VALUES(${accountBucket},1,now()+interval '15 minutes') ON CONFLICT(bucket_key) DO UPDATE SET
+      hits=CASE WHEN api_rate_limit_buckets.expires_at<=now() THEN 1 ELSE api_rate_limit_buckets.hits+1 END,
+      expires_at=CASE WHEN api_rate_limit_buckets.expires_at<=now() THEN excluded.expires_at ELSE api_rate_limit_buckets.expires_at END
+      RETURNING hits`.execute(this.db)).rows[0]!;
+    if (attempts.hits > 10) throw new HttpException('Too many sign-in attempts. Please wait 15 minutes before trying again.',429);
     const user = await this.db.selectFrom("users").selectAll()
       .where((eb) => eb.or([
         eb(sql`lower(email)`, "=", data.identifier.toLowerCase()),
         eb(sql`lower(username)`, "=", data.identifier.toLowerCase()),
       ])).executeTakeFirst();
-    if (!user || !user.is_active || !(await verifyPassword(data.password, user.password_hash))) {
+    if (!user || !user.is_active || (!config().DEMO_MODE && isPublishedDemoPassword(data.password)) || !(await verifyPassword(data.password, user.password_hash))) {
       await this.audit.record({
         action: "auth.login.failed", request,
         metadata: { identifier_hash: createHash("sha256").update(data.identifier.toLowerCase()).digest("hex") },
@@ -155,6 +168,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email/username or password.");
     }
     const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${user.id}::uuid`.execute(this.db);
+    await sql`DELETE FROM api_rate_limit_buckets WHERE bucket_key=${accountBucket}`.execute(this.db);
     if (factor.rows[0]?.active) {
       const challenge = randomBytes(32).toString("base64url");
       await this.db.transaction().execute(async (db) => {

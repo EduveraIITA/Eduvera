@@ -23,6 +23,8 @@ setInterval(() => {
 }, 60_000).unref();
 
 function rule(path: string): { limit: number; windowMs: number } {
+  if (/\/agent\/threads\/[^/]+\/messages\/?$/.test(path)) return { limit: 10, windowMs: 60_000 };
+  if (/\/agent\/threads\/?$/.test(path)) return { limit: 60, windowMs: 60_000 };
   if (path.replace(/\/$/, "").endsWith("/invitations/accept")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/auth/register/")) return { limit: 5, windowMs: 60 * 60_000 };
   if (path.endsWith("/auth/login/") || path.endsWith("/auth/demo-session/")) return { limit: 10, windowMs: 60_000 };
@@ -35,10 +37,11 @@ function rule(path: string): { limit: number; windowMs: number } {
 
 export function rateLimitHook(db: DatabaseService) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const path = request.url.split("?")[0] ?? request.url;
+    const path = (request.url.split("?")[0] ?? request.url).replace(/\/+$/, '') + '/';
     if (!path.startsWith("/api/")) return;
     const { limit, windowMs } = rule(path);
-    const bucketKey = createHash("sha256").update(`${request.ip}:${request.method}:${path}`).digest("hex");
+    const normalizedPath = path.replace(/\/agent\/threads\/[^/]+\/messages\/?$/, '/agent/messages');
+    const bucketKey = createHash("sha256").update(`${request.ip}:${request.method}:${normalizedPath}`).digest("hex");
     const expiresAt = new Date(Date.now() + windowMs);
     let bucket: { hits: number; expires_at: Date };
     if (config().rateLimitStore === "memory") {

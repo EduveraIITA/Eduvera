@@ -3,6 +3,11 @@ const N = 32768;
 const R = 8;
 const P = 1;
 
+// Public fixture credentials are never acceptable outside explicit local demos.
+export function isPublishedDemoPassword(password: string): boolean {
+  return password.toLowerCase() === "omnidemo@2026";
+}
+
 function scrypt(password: string, salt: Buffer, length: number, options: { N: number; r: number; p: number; maxmem: number }): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     nodeScrypt(password, salt, length, options, (error, derived) => {
@@ -14,6 +19,7 @@ function scrypt(password: string, salt: Buffer, length: number, options: { N: nu
 
 export function validatePassword(password: string, identity?: { email?: string; firstName?: string; lastName?: string }): string[] {
   const errors: string[] = [];
+  if (isPublishedDemoPassword(password)) errors.push("This password is publicly known. Choose a private password.");
   if (password.length < 12) errors.push("Password must contain at least 12 characters.");
   if (password.length > 128) errors.push("Password must not exceed 128 characters.");
   if (!/[a-z]/.test(password)) errors.push("Password must include a lowercase letter.");

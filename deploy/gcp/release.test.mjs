@@ -17,6 +17,7 @@ const fixture = () => {
   job: { spec: { template: { spec: { taskCount: 1, template: { spec: { maxRetries: 0, serviceAccountName: 'stage-migrator@eduera-511111.iam.gserviceaccount.com', containers: [{ command: ['node'], args: ['dist/database/migrate.js'], env: [{ name: 'MIGRATION_DATABASE_URL', valueFrom: { secretKeyRef: { name: 'database', key: '1' } } }] }] } } } } } },
   };
   result.service.spec.template.spec.containers[0].env.push(
+    { name: 'DEMO_MODE', value: 'false' },
     { name: 'PUBLIC_URL', value: 'https://eduvera-stage-367469594690.asia-south1.run.app' },
     { name: 'ALLOWED_ORIGINS', value: 'https://eduvera-stage-367469594690.asia-south1.run.app' },
   );
@@ -50,4 +51,10 @@ test('rejects a costly migrator and a wrong canonical origin', () => {
   const second = fixture();
   second.service.spec.template.spec.containers[0].env.find(item => item.name === 'PUBLIC_URL').value = 'https://other.run.app';
   assert.throws(() => assertRuntime(second.service, second.job));
+});
+test('cloud AI deployment requires the reviewed model, budget and expiry', () => {
+  const cloud = { AGENT_PROVIDER:'vertex', AGENT_MODEL:'gemini-3.1-flash-lite', AGENT_GOOGLE_PROJECT:'eduera-511111', AGENT_GOOGLE_LOCATION:'global', AGENT_ENABLED_UNTIL:new Date(Date.now()+86400000).toISOString(), AGENT_USER_HOURLY_LIMIT:'10', AGENT_USER_DAILY_LIMIT:'30', AGENT_DAILY_BUDGET_MICROS:'500000', AGENT_MONTHLY_BUDGET_MICROS:'5000000' };
+  const check = values => { const {service,job}=fixture();service.spec.template.spec.containers[0].env.push(...Object.entries(values).map(([name,value])=>({name,value})));return assertRuntime(service,job); };
+  assert.equal(check(cloud),'old');
+  for (const [key,value] of Object.entries({AGENT_MODEL:'expensive-model',AGENT_GOOGLE_PROJECT:'other-project',AGENT_BASE_URL:'https://other.example',AGENT_ENABLED_UNTIL:'2020-01-01',AGENT_DAILY_BUDGET_MICROS:'50000000',AGENT_MONTHLY_BUDGET_MICROS:'',AGENT_USER_DAILY_LIMIT:'1000'})) assert.throws(()=>check({...cloud,[key]:value}));
 });

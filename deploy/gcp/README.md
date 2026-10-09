@@ -61,7 +61,7 @@ an initial copy is not proof that two live databases remain synchronized.
 
 ## Current state
 
-- App: https://eduvera-stage-367469594690.asia-south1.run.app (Stage/demo).
+- App: https://eduvera-stage-367469594690.asia-south1.run.app (private Stage accounts).
 - The team's `eduera-db` now contains an initial, verified point-in-time copy of
   all 183 public application tables, 200 students and 64 migration records. All
   table row counts matched the exported consistent snapshot. No stored attachment
@@ -94,3 +94,50 @@ References: [Google GitHub authentication](https://github.com/google-github-acti
 [Cloud Run runtime contract](https://docs.cloud.google.com/run/docs/container-contract),
 [trial restrictions](https://docs.cloud.google.com/free/docs/free-cloud-features),
 [budget limitations](https://docs.cloud.google.com/billing/docs/how-to/budgets).
+
+## Private accounts and cloud AI hardening (9 October)
+
+Public demo authentication is now disabled on Cloud Run. The four existing review
+accounts are preserved with separate random passwords, delivered privately outside
+Git. Other known shared-demo password hashes and existing sessions were retired;
+this does not delete school records. Managed deployments now refuse `DEMO_MODE=true`.
+Both web login pages remove demo shortcuts. SMTP delivery is disabled: the former
+embedded mail credential was removed from configuration, but its owner must revoke
+that old app password at the mail provider; removing source is not revocation.
+
+The new Vertex adapter uses the runtime's short-lived Google service identity, no
+exported key, and only `gemini-3.1-flash-lite`. The API and minimal invocation role
+are provisioned; a synthetic connectivity probe passed. Application deployment and
+four-portal evaluation are pending until recorded below.
+
+Reviewed standard pricing: $0.25 / million input tokens and $1.50 / million output
+tokens. The model's global endpoint is outside a guaranteed India-only processing
+boundary; the application/database remain in Mumbai. No grounding, code execution,
+GPU, provisioned throughput or automatic provider fallback is enabled.
+
+Required Cloud Run variables when enabling:
+`AGENT_PROVIDER=vertex`, `AGENT_MODEL=gemini-3.1-flash-lite`,
+`AGENT_GOOGLE_PROJECT=eduera-511111`, `AGENT_GOOGLE_LOCATION=global`,
+`AGENT_ENABLED=true`, `AGENT_ENABLED_UNTIL=2026-11-08T00:00:00Z`,
+`AGENT_USER_HOURLY_LIMIT=10`, `AGENT_USER_DAILY_LIMIT=30`,
+`AGENT_DAILY_BUDGET_MICROS=500000`, `AGENT_MONTHLY_BUDGET_MICROS=5000000`.
+Remove `AGENT_API_KEY` and `AGENT_BASE_URL`. `AGENT_ENABLED=false` stops new inference.
+Existing previews still require explicit confirmation and fresh authorization.
+
+Migration 057 adds a private durable reservation ledger. Every generation first
+counts input tokens then reserves a conservative upper estimate ($1/M input with
+10%/512-token overhead, $5/M maximum output). Reservations are never refunded on
+timeout/error, so failed calls cannot evade the limit. The shared app allowance is
+$0.50/day and $5/month, counted in UTC; these are conservative reservations, **not
+Google billing caps or the total hosting budget**. At most 24k input / 2048 output
+tokens, 10 calls/run, two concurrent runs and one/user. Account limits span threads
+and survive restarts. Database failure blocks paid generation.
+
+Cloud trial credit can apply to eligible Vertex Google models; the separate AI
+Studio/Gemini Developer API is excluded. The remaining credit/actual billing
+allocation is not visible to this login. Review billing before the expiry above.
+
+Sources: [trial eligibility](https://docs.cloud.google.com/free/docs/free-cloud-features),
+[Gemini API billing exclusion](https://ai.google.dev/gemini-api/docs/billing),
+[Flash-Lite model](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite),
+[standard pricing](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing).

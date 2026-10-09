@@ -4,15 +4,8 @@ import { Navigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
-const DEMO = [
-  { u: "meera.principal", name: "Meera Kapoor", role: "Principal", hint: "Every register, every decision" },
-  { u: "kavita.staff", name: "Kavita Mehta", role: "Teacher", hint: "Class registers and leave" },
-  { u: "pooja.parent", name: "Pooja Sharma", role: "Parent", hint: "Aarav and Ananya" },
-  { u: "aarav.student", name: "Aarav Sharma", role: "Student", hint: "Class 7A" },
-];
-
 export function LoginPage() {
-  const { status, persona, login, demoMode } = useAuth();
+  const { status, persona, login } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,18 +52,6 @@ export function LoginPage() {
 
         <button className="btn pri" type="submit" disabled={busy} style={{ padding: 12 }}>{busy ? "Signing in…" : "Sign in"}</button>
 
-        {demoMode ? (
-          <div className="col xs">
-            <div className="lbl">Demo accounts · password <span className="mono" style={{ textTransform: "none" }}>OmniDemo@2026</span></div>
-            <div className="demo-grid">
-              {DEMO.map((d) => (
-                <button key={d.u} type="button" className="demo-acc" disabled={busy} onClick={() => { setIdentifier(d.u); setPassword("OmniDemo@2026"); void run(d.u, "OmniDemo@2026"); }}>
-                  <b>{d.name}</b><span>{d.role} · {d.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </form>
     </div>
   );

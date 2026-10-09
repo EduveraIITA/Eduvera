@@ -63,16 +63,7 @@ const schema = z.object({
 export type AppConfig = ReturnType<typeof loadConfig>;
 
 export function loadConfig() {
-  // Temporary Stage-demo credentials, explicitly requested by the account owner.
-  // Remove after rotation; environment variables always take precedence.
-  const stageDemo = process.env.DEPLOYMENT_ENVIRONMENT === "stage"
-    && ["1", "true", "yes", "on"].includes((process.env.DEMO_MODE ?? "").toLowerCase());
-  const value = schema.parse(stageDemo ? {
-    ...process.env,
-    INVITATION_EMAIL_ENABLED: process.env.INVITATION_EMAIL_ENABLED ?? "true",
-    SMTP_USER: process.env.SMTP_USER ?? "projectpathyakram@gmail.com",
-    SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "fakdej-cixxir-3jEcti",
-  } : process.env);
+  const value = schema.parse(process.env);
   if (value.INVITATION_EMAIL_ENABLED) {
     if (!value.PUBLIC_URL) throw new Error("PUBLIC_URL is required for invitation email");
     if (value.INVITATION_EMAIL_PROVIDER === "resend") {
@@ -141,8 +132,8 @@ export function loadConfig() {
     if (publicUrl.protocol !== "https:" || publicUrl.origin !== value.PUBLIC_URL || !allowedOrigins.includes(publicUrl.origin)) {
       throw new Error("PUBLIC_URL must be an exact HTTPS origin included in ALLOWED_ORIGINS");
     }
-    if (deploymentEnvironment === "production" && value.DEMO_MODE) {
-      throw new Error("DEMO_MODE must be false in production deployments");
+    if (value.DEMO_MODE) {
+      throw new Error("DEMO_MODE must be false in managed deployments");
     }
   }
   if (value.PHOTO_ATTENDANCE_ENABLED && value.PHOTO_ATTENDANCE_API_TOKEN.length < 24) {

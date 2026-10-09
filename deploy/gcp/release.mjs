@@ -24,6 +24,16 @@ export function assertRuntime(service, job) {
     if (!app.env?.find(item => item.name === name)?.valueFrom?.secretKeyRef) throw new Error(`${name} must use Secret Manager`);
   }
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
+  if (env.DEMO_MODE !== 'false') throw new Error('Public demo access must remain disabled');
+  if (env.AGENT_PROVIDER === 'vertex' && env.AGENT_ENABLED !== 'false') {
+    if (env.AGENT_MODEL !== 'gemini-3.1-flash-lite' || env.AGENT_GOOGLE_PROJECT !== 'eduera-511111' || env.AGENT_GOOGLE_LOCATION !== 'global' || env.AGENT_BASE_URL || env.AGENT_API_KEY) throw new Error('Only the reviewed keyless cloud model is allowed');
+    const expiry = Date.parse(env.AGENT_ENABLED_UNTIL ?? '');
+    if (!Number.isFinite(expiry) || expiry <= Date.now() || expiry > Date.now() + 90 * 86400000) throw new Error('Cloud AI requires an unexpired trial review deadline');
+    for (const [name, max] of Object.entries({ AGENT_USER_HOURLY_LIMIT: 10, AGENT_USER_DAILY_LIMIT: 30, AGENT_DAILY_BUDGET_MICROS: 500000, AGENT_MONTHLY_BUDGET_MICROS: 5000000 })) {
+      const value = Number(env[name]);
+      if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error(`Unsafe AI allowance: ${name}`);
+    }
+  }
   if (env.DEPLOYMENT_ENVIRONMENT !== 'stage' || env.COOKIE_SECURE !== 'true' || env.RATE_LIMIT_STORE !== 'postgres') throw new Error('Unsafe runtime environment');
   if (env.PUBLIC_URL !== 'https://eduvera-stage-367469594690.asia-south1.run.app' || !env.ALLOWED_ORIGINS?.split(',').includes(env.PUBLIC_URL)) throw new Error('The canonical app origin must be allowed');
   if (!app.volumeMounts?.some(mount => mount.mountPath === env.UPLOAD_DIR && template.spec.volumes?.some(volume => volume.name === mount.name && volume.csi?.driver === 'gcsfuse.run.googleapis.com' && volume.csi.volumeAttributes?.bucketName === 'eduera-511111-stage-files'))) throw new Error('Uploads must use the private persistent Stage bucket');
@@ -52,7 +62,8 @@ export async function verify(origin, sha, request = fetch) {
   if (!(await (await get('/')).text()).includes('<title>Edura OS · OmniSchool</title>')) throw new Error('Mobile app failed');
   if (!(await (await get('/staff/')).text()).includes('<title>OmniSchool · Staff</title>')) throw new Error('Staff app failed');
   for (const path of ['/favicon.png', '/apple-touch-icon.png', '/icons/eduvera-192.png', '/api/schema']) await get(path);
-  if (!(await (await get('/api/v1/auth/session/')).json()).demo_mode) throw new Error('Stage demo access is unavailable');
+  if ((await (await get('/api/v1/auth/session/')).json()).demo_mode !== false) throw new Error('Public demo access must be disabled');
+  if ((await request(`${origin}/api/v1/auth/demo-session/`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{"role":"admin"}',signal:AbortSignal.timeout(20000),redirect:'error'})).status !== 404) throw new Error('Demo authentication must reject public access');
   if ((await request(`${origin}/metrics`, { signal: AbortSignal.timeout(20000), redirect: 'error' })).status !== 401) throw new Error('Metrics must reject anonymous access');
 }
 

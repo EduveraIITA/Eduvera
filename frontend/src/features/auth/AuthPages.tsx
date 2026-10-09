@@ -20,7 +20,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import { authDestination, useAuth, type RegisterInput } from "./AuthContext";
-import type { DemoPersona } from "../../lib/api";
 import { SchoolBrand } from "../school/SchoolBrand";
 import "./auth.css";
 
@@ -105,7 +104,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
-  const [pending, setPending] = useState<"login" | DemoPersona | null>(null);
+  const [pending, setPending] = useState<"login" | null>(null);
   const [error, setError] = useState(auth.serviceError);
 
   if (auth.status === "authenticated") return <Navigate to={authDestination(auth)} replace />;
@@ -144,19 +143,6 @@ export function LoginPage() {
     }
   }
 
-  async function enterDemo(persona: DemoPersona) {
-    setError(null);
-    setPending(persona);
-    try {
-      await auth.enterDemo(persona);
-      const destination = persona === "company" ? "/company" : persona === "parent" ? "/parent/home" : persona === "student" ? "/student" : persona === "staff" ? "/teacher" : "/principal";
-      void navigate(destination, { replace: true });
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "The demo workspace is unavailable.");
-    } finally {
-      setPending(null);
-    }
-  }
 
   return (
     <AuthLayout eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
@@ -192,35 +178,6 @@ export function LoginPage() {
           {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
       </form>}
-
-      {auth.demoMode ? (
-        <div className="demo-entry">
-          <div className="auth-divider"><span>or explore the live demo</span></div>
-          <div className="demo-entry__buttons">
-            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("parent")}>
-              <span><img src="/assets/pooja-sharma.png" alt="" /></span><b>Parent view</b><small>Pooja Sharma</small>
-              {pending === "parent" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
-            </button>
-            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("student")}>
-              <span><img src="/assets/aarav-sharma.png" alt="" /></span><b>Student view</b><small>Aarav Sharma</small>
-              {pending === "student" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
-            </button>
-            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("staff")}>
-              <span><img src="/assets/kavita-mehta.png" alt="" /></span><b>Teacher view</b><small>Kavita Mehta</small>
-              {pending === "staff" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
-            </button>
-            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("admin")}>
-              <span><img src="/assets/meera-kapoor.png" alt="" /></span><b>Principal view</b><small>Meera Kapoor</small>
-              {pending === "admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
-            </button>
-            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("school_admin")}>
-              <span aria-hidden="true">A</span><b>Admin view</b><small>Arjun Rao · Roles & access</small>
-              {pending === "school_admin" ? <LoaderCircle className="auth-spin" size={16} /> : <ArrowRight size={16} />}
-            </button>
-            <button type="button" disabled={pending !== null} onClick={() => void enterDemo("company")}><span><ShieldCheck size={20}/></span><b>Company view</b><small>Eduera · Institution provisioning</small>{pending === "company" ? <LoaderCircle className="auth-spin" size={16}/> : <ArrowRight size={16}/>}</button>
-          </div>
-        </div>
-      ) : null}
 
       <p className="auth-switch">New to Edura OS? <Link to="/signup">Create an account</Link></p>
     </AuthLayout>

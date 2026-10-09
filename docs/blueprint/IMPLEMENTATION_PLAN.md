@@ -4452,3 +4452,28 @@ frontend typecheck again. Remote CI/deployment verification remains separate.
   production security and operational gates documented above remain open.
 - This evidence is recorded in a documentation-only `[skip ci]` follow-up; the
   verified deployed application release remains the SHA above.
+
+### Private Stage accounts and bounded cloud AI — 9 October 2026 (in progress)
+
+- User decision: preserve four existing review personas, remove public shortcuts
+  and shared credentials, enable a low-cost Google model using trial credit with
+  abuse controls. No authorization to upgrade billing or use GPUs.
+- Verified on Cloud Run revision `eduvera-stage-00003-6kd`: `DEMO_MODE=false`,
+  private passwords for all four accounts login successfully; 413 other published
+  fixture-password hashes disabled, 15 old/probe sessions revoked. Profiles and
+  school records remain. Credentials are delivered only in a Git-ignored 0600
+  local file. Password rotation is independent of the pending code release.
+- Removed public persona shortcuts from mobile and desktop login, prohibited the
+  published password outside local demo mode, added durable per-identifier login
+  throttling, and restored unambiguous school membership for password sessions.
+- Added keyless Vertex adapter, approved Flash-Lite model restriction, per-account
+  request limits, durable pre-generation cost reservations (migration 057), input,
+  output and concurrency bounds, kill switch and review expiry. Existing domain
+  authorization, confirmation, stale-preview and audit protections remain.
+- Minimal Google runtime invocation role and Vertex API are provisioned; a small
+  synthetic model probe passed. App deployment/real portal evaluation are pending.
+  Pricing, trial limits and processing-region boundary are documented in
+  `deploy/gcp/README.md`. This is not a claim of zero abuse or production readiness.
+- An embedded SMTP fallback credential was removed; delivery is off. Provider-side
+  revocation of the historical app password remains an owner action. Separate old
+  Railway/local snapshots are not secured or synchronized by this database change.
