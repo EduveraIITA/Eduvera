@@ -460,6 +460,10 @@ permissions are still checked when enabled. Disabling Pro masks historical
 tool-derived answers and blocks confirming pending actions; rejection remains
 available. Future paid plans need a separate server entitlement gate combined
 with this preference. Additive migration: `058_user_pro_features.sql`. The
-local-only implementation has clean-database backend tests (337 passed, 153
+implementation has clean-database backend tests (337 passed, 153
 intentional skips) and a 640-test frontend suite. Both production builds and
-linters pass. Stage remains unchanged.
+linters pass. Stage workflow `37948358227` deployed commit `5d1f452` after the
+existing SMTP Secret Manager binding was corrected from a whitespace-prefixed
+environment name. Migration 058 completed, revision `eduvera-stage-00024-jer`
+has 100% traffic, and release/readiness/root checks returned HTTP 200. User/device
+visual acceptance remains required.

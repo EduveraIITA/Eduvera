@@ -4617,8 +4617,15 @@ Deployment and real browser checkout remain separate verification steps.
   Browser QA verified mini/full transitions, bottom-nav hiding, correct learner
   source values and no overflow/composer clipping at 320/390/768/1024/1440px.
   Native and Cloudflare readiness both returned 200.
-- **Local-only, not pushed/deployed.** Stage still needs deployment and fresh
-  acceptance. Historic Stage HTTP-200 failures did not retain the provider finish
+- **Deployed to Google Cloud Stage** at commit `5d1f452` by workflow
+  `37948358227` (attempt 2). Migration 058 completed and revision
+  `eduvera-stage-00024-jer` receives 100% traffic. Release identity, database/event
+  readiness, private-session mode and both web roots passed the automated gate;
+  independent `/releasez`, `/readyz` and root checks returned HTTP 200. The first
+  deployment attempt correctly preserved the previous serving revision when a
+  whitespace-prefixed SMTP secret binding prevented startup; the binding was
+  corrected to the existing `eduera-smtp-password` Secret Manager secret before
+  the successful retry. Historic Stage HTTP-200 failures did not retain the provider finish
   reason, so their exact root cause is not claimed as proven. User/physical-device
   review, broad adversarial/multilingual evaluation, load/latency, chat retention,
   provider data approval and existing dependency/security advisories remain open.
@@ -4648,8 +4655,11 @@ Deployment and real browser checkout remain separate verification steps.
   timestamps against bounded five-second application/database clock skew while
   continuing to reject materially future or pre-publication observations. A
   first backend run against reused fixtures had dashboard count mismatches;
-  clean reseed resolved them. Migration 058 was applied only to
-  local `omnischool_node` under the migration advisory lock. Local backend and
+  clean reseed resolved them. Migration 058 was applied to local
+  `omnischool_node` and Google Cloud Stage under their migration advisory locks.
+  Local backend and
   Cloudflare health returned HTTP 200; an authenticated local demo preference
-  read returned `enabled:false`. No Stage deployment or user/device visual
-  acceptance is claimed. Ask for UI validation before release.
+  read returned `enabled:false`. Stage workflow `37948358227` deployed revision
+  `eduvera-stage-00024-jer`; release/readiness/root checks returned HTTP 200 and
+  the service reports 100% traffic on that revision. User/device visual acceptance
+  is not yet claimed; ask for UI validation before release.
