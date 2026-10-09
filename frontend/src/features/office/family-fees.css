@@ -1,0 +1,61 @@
+.office-page--fees { gap: 1.25rem; }
+.family-fee-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .5rem 0; }
+.family-fee-summary > div { display: grid; gap: .375rem; }
+.family-fee-summary span, .family-fee-summary small { color: var(--edura-ink-muted); font-size: .8125rem; }
+.family-fee-summary strong, .family-fee-total { font-size: 1.75rem; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: var(--edura-ink); }
+.family-fee-print { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; white-space: nowrap; min-height: 44px; }
+.office-page--fees .workspace-sections { border-bottom: 1px solid var(--edura-border); gap: 1.5rem; }
+.office-page--fees .workspace-sections a { border-radius: 0; padding: .75rem .125rem; background: transparent; border-bottom: 2px solid transparent; }
+.office-page--fees .workspace-sections a[aria-current="page"] { color: var(--edura-brand); background: transparent; border-bottom-color: var(--edura-brand); }
+.family-fee-records { border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface); overflow: hidden; }
+.family-fee-records ul { list-style: none; padding: 0; margin: 0; }
+.family-fee-records li + li { border-top: 1px solid var(--edura-border); }
+.family-fee-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 18px; align-items: center; gap: 1rem; padding: 1.25rem; color: var(--edura-ink); text-decoration: none; }
+.family-fee-row:hover { background: var(--edura-surface-soft); }
+.family-fee-row:focus-visible, .family-fee-print:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: -3px; }
+.family-fee-copy { display: grid; gap: .5rem; min-width: 0; }
+.family-fee-copy > strong { font-size: .9375rem; font-weight: 600; overflow-wrap: anywhere; }
+.family-fee-copy > span, .family-fee-meta { display: flex; align-items: center; gap: .5rem .75rem; flex-wrap: wrap; }
+.family-fee-copy small, .family-fee-amount small, .family-fee-meta { color: var(--edura-ink-muted); font-size: .75rem; }
+.family-fee-reference { color: var(--edura-ink-muted); overflow-wrap: anywhere; font-size: .75rem; }
+.family-fee-row .family-fee-reference { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.family-fee-amount { display: grid; gap: .5rem; text-align: right; font-variant-numeric: tabular-nums; }
+.family-fee-amount strong { font-size: 1rem; white-space: nowrap; }
+.family-fee-amount small { color: var(--edura-brand); }
+.family-fee-row > svg { color: var(--edura-ink-muted); }
+.family-fee-status { display: inline-flex; font-size: .6875rem; font-weight: 600; border-radius: .375rem; padding: .25rem .5rem; color: var(--edura-brand); background: var(--edura-surface-soft); }
+.family-fee-status.is-overdue { background: var(--edura-warning-soft); color: var(--edura-warning); }
+.family-fee-status.is-settled { background: var(--edura-positive-soft); color: var(--edura-positive); }
+.family-fee-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+.family-fee-detail-heading h2 { font-size: 1.125rem; margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.family-fee-detail-heading > span { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+.office-page--fees .office-fee-breakdown { gap: 0; }
+.office-page--fees .office-fee-breakdown > div { padding: .75rem 0; border-bottom: 1px solid var(--edura-border); }
+.office-page--fees .office-fee-breakdown dt { color: var(--edura-ink-muted); }
+.office-page--fees .office-fee-breakdown dd { text-align: right; overflow-wrap: anywhere; min-width: 0; font-variant-numeric: tabular-nums; }
+.office-page--fees .office-hint { font-size: .75rem; }
+.family-fee-print-document { display: none; }
+@media (max-width: 480px) {
+  .family-fee-row { gap: .5rem; padding: 1rem .75rem; grid-template-columns: minmax(0, 1fr) auto 14px; }
+  .family-fee-copy > strong { font-size: .8125rem; }
+  .family-fee-amount strong { font-size: .875rem; }
+  .family-fee-summary { flex-wrap: wrap; }
+  .family-fee-summary strong { font-size: 1.5rem; }
+}
+@media print {
+  body:has(> .family-fee-print-document) > :not(.family-fee-print-document) { display: none !important; }
+  body:has(> .family-fee-print-document) { background: white !important; overflow: visible !important; height: auto !important; }
+  .family-fee-print-document { display: block !important; color: #111; background: #fff; font: 11pt Arial, sans-serif; padding: 8mm; }
+  .family-fee-print-document header { border-bottom: 1px solid #777; margin-bottom: 6mm; padding-bottom: 3mm; }
+  .family-fee-print-document h1 { font-size: 20pt; }
+  .family-fee-print-document h2 { font-size: 14pt; }
+  .family-fee-print-document section { break-inside: avoid; border-bottom: 1px solid #aaa; padding: 4mm 0; }
+  .family-fee-print-document table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9pt; }
+  .family-fee-print-document th, .family-fee-print-document td { padding: 3mm 1mm; border-bottom: 1px solid #aaa; text-align: right; vertical-align: top; overflow-wrap: anywhere; }
+  .family-fee-print-document th:first-child, .family-fee-print-document td:first-child { width: 27%; text-align: left; }
+  .family-fee-print-document small { display: block; margin-top: 2mm; }
+  .family-fee-print-document tr { break-inside: avoid; }
+  .family-fee-print-document dl { display: grid; grid-template-columns: 35% 65%; gap: 3mm; }
+  .family-fee-print-document dd { margin: 0; overflow-wrap: anywhere; }
+  .family-fee-print-document p { overflow-wrap: anywhere; }
+}
