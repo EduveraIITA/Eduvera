@@ -327,6 +327,7 @@ interface TeacherAttendancePageProps {
   onLoadHistory?: () => Promise<AttendanceRegisterHistoryResponse>;
   portal?: "teacher" | "principal";
   initialCaptureSource?: AttendanceCaptureSource;
+  initialStudentId?: string;
 }
 
 export function TeacherAttendancePage({
@@ -340,6 +341,7 @@ export function TeacherAttendancePage({
   onLoadHistory,
   portal = "teacher",
   initialCaptureSource = "live_app",
+  initialStudentId,
 }: TeacherAttendancePageProps) {
   const navigate = useNavigate();
   const [baseline, setBaseline] = useState<AttendanceSnapshot>(() =>
@@ -348,7 +350,7 @@ export function TeacherAttendancePage({
   const [records, setRecords] = useState<Record<string, EditableRecord>>(
     () => attendanceSnapshot(data).records,
   );
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => data.roster.find(student => student.id === initialStudentId)?.admission_number ?? "");
   const [rosterFilter, setRosterFilter] = useState<"all" | "unmarked" | "exceptions">("all");
   const [state, setState] = useState<RegisterActionState>("idle");
   const [error, setError] = useState("");
@@ -1097,6 +1099,7 @@ export function TeacherAttendancePage({
               />
             </label>
             <div className="roll-call-filters" role="group" aria-label="Filter students">
+              {search ? <button type="button" onClick={() => { setSearch(""); setRosterFilter("all"); }}>Clear search</button> : null}
               {([
                 ["all", "All students", data.roster.length],
                 ["unmarked", "Not marked", unmarkedCount],

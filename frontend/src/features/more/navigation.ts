@@ -30,7 +30,7 @@ const groups: Record<Portal, Group[]> = {
   student: [
     { name: "Learning", ids: ["analytics", "results", "diary"] },
     { name: "Schedule & attendance", ids: ["timetable", "calendar", "attendance", "leave", "copilot"] },
-    { name: "School life", ids: ["events", "messages"] },
+    { name: "School life", ids: ["departure", "events", "messages"] },
     { name: "Payments & policies", ids: ["fees", "policies"] },
     { name: "Account", ids: ["security"] },
   ],

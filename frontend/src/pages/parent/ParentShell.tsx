@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
@@ -16,6 +16,8 @@ import { NotificationCenter } from "../../features/notifications/NotificationCen
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { getAccessibleStudents } from "../../features/school/api";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
+import { AssistantPanel, AssistantTab } from "../../features/assistant/DemoChat";
+import { useDemoChat } from "../../features/assistant/useDemoChat";
 import { demoParentChild } from "./parentDemoData";
 import type { ParentChildSummary, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
@@ -149,6 +151,7 @@ export function ParentShell({
     ...selectableChildren.slice(currentChildIndex), ...selectableChildren.slice(0, currentChildIndex),
   ];
   const displayedChild=selectableChildren.find((option)=>option.id===currentChildId)??child;
+  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:parent:${currentChildId}`);
   const stackedTheme=(position:number)=>{
     const option=orderedChildren[position];
     const optionIndex=option?selectableChildren.findIndex((candidate)=>candidate.id===option.id):-1;
@@ -223,25 +226,28 @@ export function ParentShell({
         </div>
       </header>
 
-      <main className="parent-main">{children}</main>
+      <main className="parent-main" inert={chat.open}>{children}</main>
+      <AssistantPanel chat={chat} context={{ portal: "parent", pageTitle: pageLabel, studentId: currentChildId }} />
 
-      <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
-        {parentRoutes.filter((item) => ["home", "attendance", "diary", "more"].includes(item.id)).map((item) => {
+      {!chat.fullPage ? <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
+        {parentRoutes.filter((item) => ["home", "attendance", "diary", "more"].includes(item.id)).map((item, index) => {
           const Icon = item.icon;
-          const isActive = mobileActive === item.id;
+          const isActive = !chat.active && mobileActive === item.id;
           return (
+            <Fragment key={item.id}>
+            {index === 2 ? <AssistantTab chat={chat} className="parent-nav-item" /> : null}
             <NavLink
-              key={item.id}
               className={isActive ? "parent-nav-item is-active" : "parent-nav-item"}
               to={selectedStudentId ? `${item.path}?student_id=${encodeURIComponent(selectedStudentId)}` : item.path}
-              aria-current={isActive ? "page" : undefined}
+              aria-current={chat.active ? false : isActive ? "page" : undefined}
             >
               <Icon size={21} strokeWidth={isActive ? 2.25 : 1.8} />
               <span>{item.label}</span>
             </NavLink>
+            </Fragment>
           );
         })}
-      </nav>
+      </nav> : null}
     </div>
   );
 }

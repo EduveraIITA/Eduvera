@@ -20,6 +20,7 @@ const assessmentInput = z.object({ cycle_id: uuid, class_section_id: uuid, subje
 const resultInput = z.object({ result_id: uuid, outcome: z.enum(["scored","absent","exempt","withheld","not_evaluated"]), marks: z.coerce.number().min(0).nullable().default(null), grade: z.string().trim().max(24).default(""), feedback: z.string().trim().max(1000).default(""), expected_revision: z.coerce.number().int().positive(), reason: z.string().trim().min(3).max(500) });
 const resultsInput = z.object({ expected_assessment_revision: z.coerce.number().int().positive(), results: z.array(resultInput).min(1).max(500) });
 const actionInput = z.object({ expected_revision: z.coerce.number().int().positive(), note: z.string().trim().max(1000).default("") });
+export { cycleInput, assessmentInput, resultsInput, actionInput };
 
 @Injectable()
 export class AssessmentsService {

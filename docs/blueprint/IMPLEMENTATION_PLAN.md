@@ -57,7 +57,7 @@ decisions cannot be replaced by synthetic software tests.
 | D2: Bounded policy | Attendance threshold/calendar configuration plus local G1-G3 institution profile, seeded policy register, immutable draft/review/publication and version acknowledgement | Policy rehearsal, scoped precedence, equal-priority conflict rejection, machine-evaluated explanations and prospective rollback remain open; legal applicability remains institution-reviewed |
 | E1: Finance | No authoritative fee ledger; existing labels need review | Obligations, integer minor units, allocations, receipts, verified callbacks, reversals, reconciliation; never gate collection on unpaid fees |
 | E2: Academic/admin breadth | Diary/homework completion; timetable editing; local offline assessment/result lifecycle in WF-LOCAL-020 | Weighted term aggregation, configurable grading policy, transcripts, office requests/documents/lost property; extend only after core acceptance |
-| F1: Intelligence | Provider-neutral read-only attendance assistant | Evidence/freshness, scoped retrieval tests, safe drafting, policy rehearsal; no authority, diagnosis, release or autonomous reconciliation |
+| F1: Intelligence | Read-only attendance copilot plus locally verified, provider-neutral cross-app agent with explicit reviewed actions (9 October user decision; see SCHOOL_AGENT.md) | Domain-by-domain coverage/acceptance, cloud-model evaluations, retention/load/security release gates; no physical authority, diagnosis or autonomous reconciliation |
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
@@ -3653,3 +3653,521 @@ completed successfully, including Railway deployment and public release verifica
 
 This records a verified Stage release, not a production rollout or physical-phone
 acceptance. The user should refresh Stage and review the new Attendance review flow.
+
+### Principal Overview: daily decisions, not stacked dashboards — 8 October 2026 (local)
+
+The user explicitly authorized simplifying the **principal home**, superseding the
+earlier exclusion of home screens for this portal only, and required retaining its
+blue top card. Teacher, parent and student homes remain unchanged. Blueprint v1.0
+sections 5–6 were reread: leadership should see exceptions, coverage and decisions,
+with the home answering what needs attention, what is happening and where to act.
+Apple's [layout](https://developer.apple.com/design/human-interface-guidelines/layout)
+and [color](https://developer.apple.com/design/human-interface-guidelines/color)
+guidance informed consistent spacing, scan-first hierarchy and meaningful emphasis;
+the established app theme, shared headers and navigation were retained.
+
+- The blue card now has one dated register-submission measure, a progress bar,
+  marked-student context and direct links to registers and the timetable. It no
+  longer repeats the same pending-register count in a nested spotlight, displays
+  a misleading zero-absence summary before recording starts, or declares all
+  operations clear from an empty action list. Today appears only off today's date.
+- A compact Needs attention list replaces the embedded analytics dashboard and
+  review brief. It links to current follow-ups, changed-assignment/schedule records,
+  unassigned teaching periods, recent attendance declines and the separate term
+  minimum list when those signals exist. Counts come from existing authorized
+  read models; they are not summed into a misleading unique-student total.
+  Institution-wide query scope ignores prior detail filters, retains the selected
+  date, and includes actor/school identity in the review query key. Current follow-up
+  and coverage scope is explained when viewing a different date. Failed/pending
+  review data never produces an all-clear message; Retry is available.
+- Coming up uses compact dated event links and preserves assigned-duty context.
+  Full class registers stay in Attendance; charts and institutional metrics stay
+  in Insights. No new metric, policy, permission, migration or domain write was added.
+- `/principal/attendance/thresholds` retains all returned below-minimum records,
+  their recorded-day evidence, policy threshold and dated class-register links.
+  The existing 20-record API limit is explicitly labelled when reached, not
+  presented as a complete institution count. This list is distinct from the
+  28-day decline review and still excludes students with fewer than 5 recorded days.
+- `/principal/followups` provides the existing authorized open/resolved conversation
+  workspace outside the home, with one page title. Old `#attendance-followups`
+  home links redirect there. Both new detail pages return to the dated Overview.
+  The home timetable shortcut also returns to Overview; entry from More retains
+  its original Back destination. Other portals retain the original inbox headings.
+
+Verified locally: **512 frontend tests in 69 files**, including **17 new home and
+detail tests**, plus frontend typecheck, lint, build and `git diff --check` passed.
+WebKit exercised date changes/Today, threshold list and its actual source register,
+follow-up Open/Resolved filters, dated Back links, keyboard activation, timetable,
+attendance review, event detail and legacy conversation anchors without domain
+mutations or page errors. Overview and new detail layouts passed overflow checks
+at **320/390/768/1024/1440px**; mobile and desktop screenshots were visually reviewed.
+The progress-caption gap is **10px** after correcting a shared paragraph-reset
+specificity conflict. Both local and ngrok `/readyz` returned database/events OK.
+
+This work is **local only**, not pushed or deployed. Physical-phone acceptance is
+requested through the running preview. The unrelated three untracked ` 2` duplicate
+files remain untouched. Existing threshold sample limits and analytics evidence
+limitations remain; this is a navigation/presentation change, not broader coverage
+of school decision-support domains.
+
+### Principal Overview: read-only snapshot and useful school summaries — 9 October 2026 (local)
+
+The user's review supersedes the previous home-card design: the blue card must be
+small and non-actionable, with more useful information in the space below. The
+established theme, shared header/navigation and all other portal homes are retained.
+Blueprint sections 5–6 and the existing Insights metric contracts were reread.
+
+- Replaced the large single-metric card, progress bar and action footer with a
+  two-column daily snapshot: students marked and registers submitted. The date
+  control, conditional Today button and Timetable link are outside the card.
+  Absence/late context appears only when there are marked records. The snapshot
+  contains no link, button, input or progress control and measures approximately
+  **102px high at a 390px viewport** with the current unmarked demo day.
+- Needs attention now also includes pending registers, deadline clashes and
+  submitted/moderated assessment decisions. Existing follow-up, coverage, decline,
+  minimum-attendance and saved-register exception routes are preserved. The first
+  four checks are visible; remaining checks use one keyboard-accessible disclosure.
+  The list does not sum unrelated counts or claim an all-clear before both read
+  models succeed.
+- Added School pulse below attention: a compact recorded-attendance trend, published
+  result average, next-seven-day teacher assignment coverage and current outstanding
+  fees. Each opens its existing focused Insights topic. Coming up remains a short
+  dated event list. Desktop uses two columns without stretching the left-hand gap.
+  Chart-caption spacing is explicitly **16px**.
+- Whole-school current-term analytics are separate from the selected daily date;
+  term end dates and operational dates are shown. Existing attendance denominators,
+  half-day treatment and missing-data gaps are retained. Published-result averages
+  are not official grades, assigned periods are not verified lesson delivery, and
+  fees due today are excluded from the overdue label. Missing samples show explicit
+  empty states, not invented zero/100% metrics. Independent request failures retain
+  the other summaries and provide retry. Fetching is separated into a shared hook,
+  using existing actor/school query keys, event invalidation and minute refreshes.
+
+Verified locally: **520 frontend tests in 70 files**, including **25 principal-home
+and detail tests**, plus frontend typecheck, lint, production build and whitespace
+checks. The first full run exposed two existing CalendarView tests whose broad
+date selector also matched Today after the real date rolled to 9 October. Their
+fixture clock is now fixed; assertions and calendar runtime behavior are unchanged.
+The complete suite then passed.
+
+WebKit rechecked **320/390/768/1024/1440px**, 200% home text without horizontal
+overflow, the non-interactive snapshot, measured spacing, all four School pulse
+destinations, date/Today behavior, keyboard register navigation, dated threshold
+list and source register, follow-up filters/Back, timetable/Back, event details and
+legacy anchors. Mobile/desktop screenshots were visually inspected; no page errors
+or domain writes occurred. Both local and ngrok readiness returned database/events
+OK. The implementation contract in `PRINCIPAL_INSIGHTS.md` is updated accordingly.
+
+This revision remains **local only**, not pushed or deployed. Physical-phone review
+is still requested through the running preview. No backend, migration, permission
+or notification changes were made; the three unrelated untracked duplicate files
+remain untouched.
+
+### Student and parent homes: preservation-first touch-up — 9 October 2026 (local)
+
+The user requested a light polish, explicitly retaining most of the existing homes.
+Blueprint sections 5–6 informed the status treatment and stable daily navigation.
+The new shared styles are scoped to `.family-home`; other screens and the shared
+shell are unchanged. This is not an information-architecture or workflow redesign.
+
+- Preserved the student/parent accent colors, identity cards and digital IDs,
+  parent child-card deck and switching, daily activity rail, all four summary
+  tiles, shortcuts, diary, packing checklist and existing drill-downs.
+- Applied consistent heading sizes, label/detail spacing, lighter borders and
+  shadows, and clearer activity metadata. Current-period and attention/status
+  colors remain meaningful. Removed the redundant diary eyebrow and shortened
+  parent shortcut labels without changing their destinations or child scope.
+- Renamed the mixed daily/term summary to **At a glance** and clarified **Classes
+  today**. Unrecorded student attendance now uses a neutral clock, not a confirmed
+  checkmark; verified attendance retains its positive status treatment. No metric
+  calculation, authorization, request, database or notification behavior changed.
+
+Verified locally: **524 frontend tests in 71 files**, frontend typecheck, lint,
+production build and whitespace checks. The suite includes four new family-home
+tests and 59 route, identity-card and activity regressions. An initial run caught
+an incorrect icon alias in a new test; the assertion was corrected and the complete
+suite rerun successfully. WebKit checked both portals at **320/390/768/1024/1440px**, including
+all four summary tiles, keyboard digital-ID activation/QR rendering/focus return,
+student checklist and schedule sheet, parent standings/homework, child switching,
+child-scoped event/leave links, and timetable navigation. No page errors or domain
+record writes occurred. Mobile and desktop screenshots were visually reviewed.
+At 200% home text, neither portal introduced horizontal page overflow at
+320/390/768/1440px; this is not a comprehensive accessibility certification.
+
+The existing local preview remains running; local and ngrok readiness returned
+database/events OK. This touch-up is **local only**, not pushed or deployed, and
+physical-phone review is requested. Prior principal-home work and unrelated
+untracked duplicate files are preserved.
+
+### Transport workflow hardening and map-first rides — 9 October 2026 (local)
+
+Read blueprint sections 5–6 and the departure/transport domain contract before
+implementation. The user moved the task from UI-only work to workflow hardening,
+then requested map-first staff/parent screens, a ride list instead of a dropdown,
+and a 30-minute operating window. The shared theme, role shells and home pages
+remain intact. `DEPARTURE_AND_TRANSPORT_COORDINATION.md` records the updated contract.
+
+- Staff use **My rides → dated ride**. Controls open 30 minutes before departure;
+  self-service duty changes close then. The backend enforces this in school time,
+  including invitation response and approval; urgent cover stays school-managed.
+- Active rides lead with their map, then route/vehicle/stop and actual milestones.
+  Planned rides have no empty map. Family/student coordinates are returned only
+  while their own learner is boarded on an in-progress, current-day ride.
+- Hardened lifecycle transitions, authority/link/current-role checks, transaction
+  ordering, optimistic concurrency, request withdrawal/duplicate protection,
+  bus-to-pickup reconciliation, overdue school reconciliation, real handover notes,
+  accepted duty and colleague-cover authorization, foreground GPS and retention.
+  Added departure/transport event refreshes without putting coordinates in events.
+- Local checks: **32 backend tests / 4 files**, including **14 isolated real-DB
+  scenarios**; backend typecheck/lint/build; **567 frontend tests / 77 files**,
+  frontend typecheck/lint/build and whitespace checks. This is not a claim that all
+  backend suites or fresh migrations passed.
+- Real HTTPS WebKit sessions verified staff ride list/detail, persisted map,
+  authenticated location upload, parent/student visibility and future-ride control
+  suppression, at 320/390/768/1024/1440px without horizontal overflow or page errors.
+  Mobile and desktop screenshots were inspected. Simulated browser geolocation
+  required correcting the test driver's timestamp unit, not changing production
+  timestamps. Phone/device/physical-handover acceptance remains outstanding.
+- User explicitly asked for an in-progress **database ride**, rejecting a static
+  preview. Removed that preview approach and created dedicated local test accounts,
+  a synthetic learner/guardian relationship, route/stop/assignment, an accepted
+  in-progress trip and next-day trip in **Transport Test School**. Existing journey
+  records were not changed. The active trip ID is
+  `3ddc436d-c9ce-4d14-b461-41ef3c8f297f`; its seeded sample location can be replaced
+  with the staff screen's actual device sharing. Credentials are provided privately
+  in the task response, not committed to this repository.
+
+The managed preview remains running. Local and HTTPS ngrok `/readyz` returned
+database/events OK. Nothing pushed or deployed. The isolated backend test database
+was a schema-only copy because local PostgreSQL 14 cannot run the existing PG15+
+migration 033; fresh PostgreSQL 17 validation is still required. The domain record
+also lists planning/exception acceptance gaps; this work is not described as fully
+production-ready. Prior unrelated work and untracked duplicate files are preserved.
+
+### Existing-login active demo ride correction — 9 October 2026, 02:00 school time
+
+The user rejected separate test logins and explicitly requested an already-active
+fake ride using the existing demo personas. In local `omnischool_node` only, the
+existing Cambridge `DEMO-SOUTH` trip
+`5ea993a2-388e-44b1-ac1d-3451462843c6` was seeded from its planned state to an
+in-progress review fixture dated **2026-10-09 at 02:00 Asia/Kolkata**. It retains
+Kavita as attendant and the existing Aarav/Ananya roster and guardian relationships.
+The fixture includes simulated boarding, ready plans, and a saved sample location;
+it does not assert a physical journey occurred. The prior trip/roster/plan snapshot
+is retained in a `trip.demo_fixture_activated` audit, with a coordinate-free refresh
+event. Older unfinished demo trips were not overwritten, and no application guard,
+permission, normal trip-start rule or UI code was changed for this seed.
+
+Collector/family service reads verified the current active ride and map under
+`kavita.staff` and `pooja.parent`; duty changes are unavailable on that active ride.
+The four previously created `ride.*.cb6726` test accounts/memberships were disabled
+and their test sessions revoked. Their records remain recoverable; no school,
+learner or journey history was deleted. The normal Teacher view and Parent view
+demo entries are the intended review path—no new credentials are required.
+
+### Transport friction reduction and expanded re-test — 9 October 2026
+
+- User decision: routine roster boarding, non-travel, arrival and handover are
+  one-tap actions, without obligatory notes or a second form. Concerns, exception
+  resolution and school reconciliation still require an explanation. Existing
+  transaction, authorization, revision, audit and physical-outcome checks remain.
+  Historical routine notes are collapsed; pending/error states prevent duplicate
+  actions and false success. Office pickup authority workflow is unchanged.
+- Accepted active rides automatically start foreground geolocation, including on
+  reopening the ride. Native browser permission remains necessary. Hidden pages
+  pause and returning pages resume; explicit pause/device denial requires a manual
+  retry. Completion/unmount clears the watcher. No background-tracking guarantee,
+  GPS-inferred handover or first-sample success claim was introduced.
+- Verified **579 frontend tests / 77 files**, build/typecheck/lint; **35 backend
+  tests / 4 files**, including **15 isolated real-DB scenarios**, typecheck/build/
+  lint. HTTPS WebKit with the existing staff account sent a location accepted with
+  HTTP 201 without clicking any sharing control; no page errors or overflow at
+  320/390/768/1440px. Device/physical-operation acceptance remains outstanding.
+- User requested a reset and chose boarding. In local `omnischool_node`, the same
+  trip `5ea993a2-388e-44b1-ac1d-3451462843c6` is now boarding at **02:20**, with
+  **12 existing demo students / six drop-off stops** on a one-off demo route.
+  New current plans supersede the previous two completed plans; old handovers and
+  audit history remain. Cleared 13 prior GPS samples for this exact trip. Added an
+  explicit demo reset before-snapshot audit and coordinate-free refresh event.
+  Existing logins, recurring routes/assignments and future trips are unchanged.
+- The user explicitly approved closing the older 6/7 October demo trips that
+  prevented departure. They were reconciled using the school service, with notes
+  identifying synthetic test outcomes and before-snapshot audits. No production
+  guard was bypassed for the next user-operated departure. No new users were made.
+  Full fixture IDs and stop list are in `DEPARTURE_AND_TRANSPORT_COORDINATION.md`.
+
+Local preview remains available; no push or production deployment was requested
+or performed in this increment. Preserve the earlier documented PG17 fresh-schema
+and physical-device/weak-network release gates.
+
+### Naggar location-focused, full-bus walking fixture — 9 October 2026
+
+- Latest user decision replaces the earlier immediate Bengaluru boarding test:
+  **40 existing demo students**, eight geotagged pickup/drop-off stops near Naggar
+  Castle, two dated rides at normal **08:00 / 16:00** school-local times. Controls
+  open at **07:30 / 15:30**; both rides remain planned/expected for user testing.
+  Morning ID `1712c7d2-224a-46e0-877c-7ac5bc36594b`; evening retains
+  `5ea993a2-388e-44b1-ac1d-3451462843c6`. Existing Kavita/Pooja/Aarav logins apply.
+- Aarav's morning and afternoon stop is beside Naggar Castle; the morning route
+  ends at a fictitious school meeting point and evening reverses it. The mapped
+  road stretch is 838.3 m one way (~1.68 km out-and-back), under the requested 5 km
+  walking limit. Detailed coordinates/source and road-access caveat are recorded
+  in `DEPARTURE_AND_TRANSPORT_COORDINATION.md`. No synthetic live GPS was added.
+- Stop focus is an optional staff roster view using fresh, sufficiently accurate
+  GPS with manual fallback. It shows pending students at a nearby stop, handles
+  morning school arrival separately, flags unresolved concerns elsewhere, preserves
+  All riders, and never auto-records boarding/handover. Added staff-only route-stop
+  projection and map pins without exposing other learners/stops through family API.
+  Preserved shared styling/navigation and made the stop chooser a 44 px control.
+- **593 frontend tests / 78 files**, typecheck/lint/build; **37 backend tests /
+  4 files**, including **17 isolated real-DB scenarios**, typecheck/lint/build.
+  Two 40-rider lifecycle tests verify both journey directions and per-child privacy.
+  Actual staff/parent HTTPS reads verified both scheduled fixtures. Browser-only
+  intercepted movement verified nearby five-rider focus, nine map pins, movement
+  changes and one-tap actions; no actual planned rider state was consumed by QA.
+  No browser errors/overflow at 320/390/768/1024/1440px; screenshots inspected.
+- Preview and HTTPS `/readyz` remain healthy. Real walking/GPS, background and weak-
+  network acceptance remain unverified. No production deployment or Git push.
+
+### Temporary HTTPS preview recovery — 9 October 2026, 02:49 IST
+
+- Supersedes the earlier HTTPS-health observation above: ngrok subsequently
+  returned HTTP 403 `ERR_NGROK_725` (monthly bandwidth exhausted). Local preview,
+  database and event service remained healthy. The user approved an alternative
+  temporary HTTPS link; no billing/account changes were made.
+- Installed official Homebrew `cloudflared` 2026.10.0 and started a task-scoped
+  launchd tunnel to the existing local preview, not a new app/database/login:
+  **https://route-homeless-trembl-titans.trycloudflare.com**. Managed job:
+  `gui/501/dev.eduvera.preview-https`; ignored local configuration/logs live in
+  `.runtime/dev.eduvera.preview-https.plist` and `.runtime/preview-https*.log`.
+  Its working directory is `/tmp`; it does not require access to source files.
+  The preliminary localhost.run and foreground Cloudflare trials were stopped.
+- Replacement HTTPS `/readyz` returned database/events OK. WebKit signed into
+  existing staff and parent demos and read both planned 08:00/16:00, 40-rider
+  fixtures. With SSE deliberately unavailable, the parent page still fetched
+  updated data on its existing 10-second interval (two requests observed).
+  Browser-only active-ride simulation verified automatic geolocation attempts,
+  nine map pins, nearby five-rider focus, one-tap boarding and focus after movement.
+  No actual ride/rider state was mutated by this QA; no browser errors or overflow
+  at 320/390/768/1024/1440px. New host is a secure browser context.
+- Cloudflare Quick Tunnels are temporary, have no uptime guarantee and explicitly
+  do not support SSE. Transport polling remains 10 seconds for families and
+  15 seconds for staff; instant cross-view notifications are not a release claim
+  on this preview. The host computer and app/tunnel must remain running; restarting
+  the tunnel can change its hostname. See transport record for operational notes.
+  Physical walking/GPS acceptance and production release gates remain open.
+
+### Shared demo assistant and full conversation — 9 October 2026
+
+- Explicit user decision: a centre **Chat** item joins the four primary mobile
+  destinations in principal, teacher, parent and student views. Existing staff
+  permission filtering remains; restricted accounts do not gain hidden modules.
+  Existing school Messages remain separate from assistant Chat. Shared branding,
+  home content, child themes and other navigation destinations are preserved.
+- Compact mode shows only the latest local reply above its composer, with a
+  short reply-change animation and a lightly blurred/dimmed, inert page behind
+  it. Escape, Close and the backdrop dismiss it. Topic links open the appropriate
+  authorized portal screen and preserve the selected parent child. No live
+  counts are fabricated and requested writes are not represented as completed.
+- Tapping the reply or its expand icon opens `/<portal>/assistant` with the
+  conversation history. **Full chat hides the bottom navigation**, places the
+  composer above the keyboard/safe area, and keeps the existing header Back.
+  Back restores the compact reply and five-item navigation. Desktop operations
+  retains its sidebar. Native transitions wait for the destination DOM to mount
+  before capturing the new surface; reduced-motion navigation skips animation,
+  and older browsers have a fade fallback.
+- Conversation memory is local to the mounted authenticated session, separated
+  by portal/child and reset by account/school changes or reload. New chat clears
+  the current thread. Voice is explicitly not connected. This is the requested
+  **UI demo**, not delivery of blueprint §18/F1: no model, retrieval, provider,
+  autonomous actions, persistent messages, database or transport-fixture writes.
+- Verification: full frontend suite **612 tests / 80 files** passed, followed by
+  **80 focused assistant/navigation/route tests / 5 files**, including 19 assistant
+  tests covering final transition timing, reduced motion, memory isolation and
+  redirect fallback. Typecheck, lint and
+  production build passed. WebKit exercised all four real demo portals on the
+  existing HTTPS preview: compact/full/Back, history, input, topic navigation,
+  bottom-bar removal/restoration, reduced motion, and 320/390/768/1024/1440px
+  layouts without horizontal overflow or page errors. No chat-initiated network
+  writes were observed. Instrumented native transitions verified actual
+  compact → full and full → compact snapshots; mobile screenshots inspected.
+- Local and HTTPS `/readyz` report database/events OK. Preview remains
+  **https://route-homeless-trembl-titans.trycloudflare.com**. No Git push or
+  production deployment in this increment. Physical-phone keyboard, safe-area
+  and perceived motion validation is still requested from the user.
+
+### HTTPS preview restored after host restart — 9 October 2026, 12:05 IST
+
+- The previous Cloudflare Quick Tunnel URL stopped resolving after its local
+  connector and preview services disappeared. The local preview on port 8000 was
+  stopped as well; its scratch runtime under `/tmp` had been cleared.
+- PostgreSQL 14 had a stale `postmaster.pid` naming PID 1125, now an unrelated
+  macOS process. No PostgreSQL process or listener was using the data directory.
+  Stopped the failed Homebrew service, moved that exact lock to
+  `postmaster.pid.stale-20261009-1203` for recovery, and restarted PostgreSQL.
+  `pg_isready` accepts connections and the existing `omnischool_node` database
+  opens outside recovery. No database records were reset.
+- Rebootstrapped the existing launchd preview and Cloudflare tunnel jobs. The
+  preview's ignored local plist now disables the exhausted ngrok child while
+  keeping the same local app, API and database. The replacement Cloudflare URL is
+  **https://procedure-brighton-bush-website.trycloudflare.com**. Both local and
+  HTTPS `/readyz` report database/events OK, HTTPS `/login` and `/teacher` return
+  200, and WebKit rendered the login screen without page errors.
+- This is still an accountless Cloudflare Quick Tunnel. Its hostname can change
+  when the tunnel is restarted, and it requires this machine and both launchd
+  jobs to remain running. No production deployment or Git push was performed.
+
+### Working cross-app agent with reviewed execution — 9 October 2026
+
+- User decision extends blueprint §18/F1 beyond its first read-only slice: the
+  assistant should answer and prepare actions across all four app views, using
+  installed local Ollama first and interchangeable providers. Safety/physical
+  authority remains human-only. Research, configuration, coverage, operational
+  limits and remaining release gates are in [SCHOOL_AGENT.md](SCHOOL_AGENT.md).
+- Replaced the wired dummy reply/session flow with authenticated, persistent,
+  owner/school/portal/child-scoped conversations. Preserved the existing five-tab
+  navigation, compact latest-reply overlay, blur/dim, transition and full-chat
+  bottom-bar removal. Added progress/cancel, history, source timestamps, explicit
+  action previews and app-owned verification links/receipts. No fake microphone,
+  scheduled execution or fabricated action success is exposed.
+- Implemented native Ollama, OpenAI Responses, Anthropic Messages, Gemini and
+  OpenAI-compatible provider adapters. The live default is installed `qwen3:8b`
+  on this Mac; no download or cloud inference was performed. Cloud adapters have
+  mocked protocol tests only and need live provider/model acceptance. Model keys
+  remain server-only; changing provider never silently enables remote fallback.
+- Capability catalogue has **133 entries: 47 reads, 76 reviewed writes, 10 human
+  handoffs**. Covers attendance, timetable/year planning, diary, learner/staff
+  leave, messages, notifications, events, assessments, report cards, insights,
+  records, fees and transport planning. The catalogue reuses guarded domain APIs
+  and validators, rather than letting the model execute URLs, SQL or code. These
+  counts are implementation coverage, not 133 individually verified workflows.
+  Complete parity with every app command, attachments/voice/printing, imports,
+  authority/policy/safety decisions and unattended multi-action execution are not
+  claimed. Physical boarding/handover/location controls stay with the person.
+- Every change waits for an immutable, expiring UI confirmation. Confirmation
+  reloads scope, verifies the source snapshot, atomically claims the action and
+  uses the original domain endpoint with a stable idempotency key. Stale state,
+  changed permissions and duplicate confirmations fail closed. Ambiguous writes
+  become uncertain, never automatically retried. Historical answers are checked
+  against current source access both for UI history and later model context;
+  narrower record sets cannot leak through old conversation memory.
+- Added migration **055_school_agent.sql**, four isolated agent tables and explicit
+  runtime-role grants. The normal migration runner hit a pre-existing **033
+  checksum mismatch**; additive 055 alone was applied and checksum-recorded in an
+  advisory-locked transaction. Earlier migration-history drift was not rewritten.
+  Existing development records and the user's transport fixtures were preserved.
+- Verified **37 backend tests / 3 files**, including **15 isolated real-DB
+  scenarios**, plus backend build/typecheck/lint. Covers confirmation/CSRF, replay,
+  source changes, rejection/expiry, ownership/child/portal boundaries, membership
+  revocation, historical access narrowing, unrestricted-tool rejection,
+  cross-user cancellation, worker lease recovery, uncertain-write no-replay,
+  attendance registration and existing staff AI grants. Full frontend suite:
+  **616 tests / 82 files**; focused
+  assistant/navigation/notification checks: **81 tests / 7 files**. Frontend
+  typecheck, targeted lint, production build and `git diff --check` passed.
+  The final copy-only refinement passed another **18 assistant tests / 4 files**
+  and build. Final public HTTPS WebKit checks loaded all four real demo portals
+  at 390px with no overflow or JavaScript errors; student/parent/principal
+  composers enabled after loading and teacher disabled with the role explanation.
+- Actual Ollama read examples returned student recorded attendance in **21.3 s**
+  and the teacher's dated classes in **13.2 s**. A **28.9 s** real-model notification
+  proposal waited for browser confirmation, changed only after Confirm and opened
+  the notification panel from its receipt. These isolated timings are not an SLO.
+  Reviewed writes and fixture mutations used `omnischool_agent_test_20261009`, not
+  the user's main data. WebKit checked all four portals at **320/390/1024px** without
+  overflow or JavaScript errors, and verified composer/nav visibility and the
+  student preview/receipt. Physical-phone keyboard/motion and user sign-off remain.
+- The main demo teacher's existing role does **not** grant `ai.use`. The agent
+  respects that boundary and explains it in the UI. Permission was enabled only
+  in the disposable test database for staff QA; enabling the real demo permission
+  awaits the user's response. Other app permissions and existing logins remain
+  unchanged.
+- Local and HTTPS `/readyz` report database/events OK. The preview remains
+  **https://procedure-brighton-bush-website.trycloudflare.com** and uses polling
+  because this Quick Tunnel does not support SSE. Host/preview/Ollama must stay
+  running. No Git push or production deployment in this increment.
+
+Production acceptance remains open: fresh PostgreSQL 17/migration-history and
+runtime-role/RLS validation, chosen cloud-provider data approval and live tests,
+adversarial/multilingual domain evaluations, bounded retention/deletion policy,
+load/latency/failure drills and user/device review. A local safe-action test does
+not establish universal model reliability or release readiness.
+
+### Agent follow-up and reviewed-attendance hardening — 9 October 2026
+
+- Investigated the user's actual Aarav conversation: identity lookup succeeded;
+  the presence follow-up had no successful read, no proposed action and no write.
+  The model confused an admission number with an internal UUID. Conversation
+  context previously kept prose without freshly authorized structured references,
+  substring routing confused "his"/"history" and presence/academic marks, and
+  only a whole-class attendance submission tool was available.
+- Rebuilt minimal record references from freshly reauthorized historical sources,
+  with exact unique name/admission aliases and fail-closed ambiguity. Whole-word
+  tool routing uses the current request plus prior authorized domains. The school
+  timezone supplies today's date. The app also binds revision numbers for **34
+  routine ID-based writes** from the exact affected record; nested marks/comment
+  revisions still require their separate domain acceptance. A generic notification
+  follow-up test verifies refreshed evidence, not just attendance-specific logic.
+- Added guarded student-attendance lookup and single-student observation commands,
+  reusing the existing attendance transaction and authorization/audit/event logic.
+  The app resolves the class, student, dated roster and register version. A unique
+  authorized match is mandatory; locked/stale/out-of-roster requests fail closed.
+  Corrections require the user's actual reason, and omitted notes are preserved.
+  Model-invented optional class filters/reasons no longer silently shape the change.
+- Product clarification for the user's individual-attendance request: recording
+  one learner preserves all other learner observations and **does not submit an
+  open class register**. A submitted register correction keeps its submitted state.
+  A separate class submission remains necessary. No attendance or security policy
+  was relaxed, no new migration was required, and physical transport observations
+  remain human-only. Catalogue now has **135 entries: 48 reads, 77 reviewed writes,
+  10 handoffs**; those counts are coverage, not universal workflow certification.
+- The confirmation shows student, class, date, previous/new status and actual
+  reason/notes rather than internal IDs. Confirm is still mandatory. Its receipt
+  opens the correct dated register filtered to that student; Clear search restores
+  the full roster. The established theme/navigation are preserved. Scroll targets
+  account for the fixed header, and composer/keyboard space is reserved so the
+  confirmation is not hidden. Failed tools and unverified completion claims have
+  bounded recovery plus metadata-only audit events; only receipts establish writes.
+- Verified **59 backend tests / 3 files**: 24 real-database integration scenarios,
+  25 contract checks and 10 mocked provider-protocol checks. Added cases cover
+  lookup → pronoun, ambiguity, draft/other-row/note preservation, correction reason,
+  idempotency, stale preview/version, locked/foreign roster and parent denial.
+  **15 selected legacy API/attendance tests** passed; 28 tests outside that selection
+  were skipped. Backend build/typecheck/targeted lint passed. The legacy full-roster
+  ranking test now derives the actual active roster size instead of assuming 25
+  after the user's transport fixtures added two learners; eligible cohort checks
+  are unchanged.
+- Full frontend suite **618 tests / 82 files** passed. The final chat-scroll change
+  passed **93 focused tests / 6 files**, typecheck, lint and production build.
+  Actual Ollama + WebKit verified preview → Confirm → correct student register →
+  full roster at **320/390/768/1024/1440px**, with no horizontal overflow or page
+  errors and no bottom navigation in full chat. Screenshots were visually checked;
+  physical-phone keyboard/motion and user validation remain open.
+- Repeatable real-`qwen3:8b` evaluation is in `backend/test/agent-live.eval.ts`.
+  The reported two-message request now creates a correct Aarav presence preview;
+  ambiguous "Sharma" asks for a choice instead of preparing the wrong learner.
+  An initial wider evaluation exposed invented Class 10 and a verb included in
+  the student's name; both were corrected before the passing run. A reviewed
+  Ananya correction was confirmed and database-verified in the isolated test DB.
+  The final live-model rerun also verified correction → reason question → user
+  explanation → preview → Confirm, preserving the user's exact reason. Its five
+  turns took 12.2, 12.3, 17.3, 16.3 and 13.5 seconds; these are samples, not an SLO.
+  All test mutations used **omnischool_agent_test_20261009**; main school attendance
+  and transport fixtures were preserved. The real demo teacher's `ai.use` grant
+  remains unchanged and awaits the user's approval.
+- This is verified local hardening, not closure of every release gate. Live cloud
+  providers, domain-by-domain/multilingual/adversarial evaluations, retention and
+  erasure policy, load/failure drills, PostgreSQL 17/RLS/runtime validation and the
+  pre-existing migration-033 tracking mismatch remain documented in
+  [SCHOOL_AGENT.md](SCHOOL_AGENT.md). No Git push or production deployment occurred.
+
+### Preview restored after the power cut — 9 October 2026
+
+- Rebootstrapped the existing local-preview and preview-HTTPS launchd jobs without
+  changing application permissions, data or logins. The replacement temporary URL
+  is **https://verde-too-independent-bargains.trycloudflare.com**; the earlier
+  `procedure-brighton-bush-website` URL is no longer current.
+- Public root and `/readyz` returned 200; local and public readiness report
+  database/events OK. Ollama's installed local model is available. Keep the Mac,
+  preview and Ollama running. This is still an accountless temporary Quick Tunnel
+  with polling (no SSE), not a permanent address or new reboot-persistent install.

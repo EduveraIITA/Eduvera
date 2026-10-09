@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppProviders } from "./app/AppProviders";
+import AssistantPage from "./features/assistant/AssistantPage";
 import { PortalScreenFrame } from "./features/navigation/PortalScreenFrame";
 import {
   AuthenticatedOnly,
@@ -85,6 +86,8 @@ const TeacherHomeRoute = lazy(async () => ({ default: (await import("./features/
 const TeacherAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherAttendanceRoute }));
 const TeacherTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).TeacherTimetableRoute }));
 const PrincipalHomeRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalHomeRoute }));
+const PrincipalFollowupsPage = lazy(async () => ({ default: (await import("./features/principal-home/PrincipalHomeDetails")).PrincipalFollowupsPage }));
+const PrincipalAttendanceThresholdsPage = lazy(async () => ({ default: (await import("./features/principal-home/PrincipalHomeDetails")).PrincipalAttendanceThresholdsPage }));
 const PrincipalInsightsPage = lazy(async () => ({ default: (await import("./features/principal-insights/PrincipalInsightsPage")).PrincipalInsightsPage }));
 const PrincipalAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalAttendanceRoute }));
 const PrincipalTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalTimetableRoute }));
@@ -141,6 +144,7 @@ const TeacherAcademicReportsRoute = lazy(async () => ({ default: (await import("
 const ParentDeparturePage = lazy(() => import("./features/departure/ParentDeparturePage"));
 const CollectorJourneyPage = lazy(() => import("./features/departure/CollectorJourneyPage"));
 const PrincipalDeparturePage = lazy(() => import("./features/departure/PrincipalDeparturePage"));
+const JourneyDetailPage = lazy(() => import("./features/departure/JourneyDetailPage"));
 
 function PageLoader() {
   return (
@@ -207,6 +211,7 @@ export function App() {
               <Route path="/teacher/students" element={<PortalOnly portal="teacher"><PeoplePage /></PortalOnly>} />
               <Route path="/teacher/students/import" element={<PortalOnly portal="teacher"><PeopleImportPage /></PortalOnly>} />
               <Route path="/workspace" element={<AuthenticatedOnly><WorkspaceUnavailablePage /></AuthenticatedOnly>} />
+              {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`assistant-${portal}`} path={`/${portal}/assistant`} element={<PortalOnly portal={portal}><AssistantPage portal={portal} /></PortalOnly>} />)}
               {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`analytics-redirect-${portal}`} path={`/${portal}/analytics/*`} element={<PortalOnly portal={portal}><LegacyAnalyticsRedirect /></PortalOnly>} />)}
               {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`insights-${portal}`} path={`/${portal}/insights`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} /></PortalOnly>} />)}
               {(["principal", "teacher", "parent", "student"] as const).flatMap(portal => (["attendance", "results", "progress"] as const).filter(topic => topic !== "progress" || portal === "principal" || portal === "teacher").map(topic => <Route key={`insights-${portal}-${topic}`} path={`/${portal}/insights/${topic}`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} topic={topic} /></PortalOnly>} />))}
@@ -227,6 +232,7 @@ export function App() {
               <Route path="/parent/policies" element={<PortalOnly portal="parent"><ParentPoliciesRoute /></PortalOnly>} />
               <Route path="/parent/results" element={<PortalOnly portal="parent"><ParentResultsRoute /></PortalOnly>} />
               <Route path="/parent/departure" element={<PortalOnly portal="parent"><ParentDeparturePage /></PortalOnly>} />
+              <Route path="/student/departure" element={<PortalOnly portal="student"><ParentDeparturePage student /></PortalOnly>} />
 
               <Route path="/student" element={<PortalOnly portal="student"><StudentHomeRoute /></PortalOnly>} />
               <Route path="/student/attendance" element={<PortalOnly portal="student"><StudentAttendanceRoute /></PortalOnly>} />
@@ -271,7 +277,10 @@ export function App() {
               <Route path="/teacher/assessments" element={<PortalOnly portal="teacher"><TeacherAssessmentsRoute /></PortalOnly>} />
               <Route path="/teacher/report-cards" element={<PortalOnly portal="teacher"><TeacherAcademicReportsRoute /></PortalOnly>} />
               <Route path="/teacher/transport" element={<PortalOnly portal="teacher"><CollectorJourneyPage /></PortalOnly>} />
+              <Route path="/teacher/transport/:tripId" element={<PortalOnly portal="teacher"><CollectorJourneyPage /></PortalOnly>} />
               <Route path="/principal" element={<PortalOnly portal="principal"><PrincipalHomeRoute /></PortalOnly>} />
+              <Route path="/principal/followups" element={<PortalOnly portal="principal"><PrincipalFollowupsPage /></PortalOnly>} />
+              <Route path="/principal/attendance/thresholds" element={<PortalOnly portal="principal"><PrincipalAttendanceThresholdsPage /></PortalOnly>} />
               {(["review", "recording", "followups", "learning-review", "operations", "finance"] as const).map(topic => <Route key={`insight-review-${topic}`} path={`/principal/insights/${topic}`} element={<PortalOnly portal="principal"><PrincipalInsightsPage topic={topic} /></PortalOnly>} />)}
               <Route path="/principal/insights/review/:studentId" element={<PortalOnly portal="principal"><PrincipalInsightsPage topic="review" /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
@@ -299,6 +308,7 @@ export function App() {
               <Route path="/principal/assessments" element={<PortalOnly portal="principal"><PrincipalAssessmentsRoute /></PortalOnly>} />
               <Route path="/principal/report-cards" element={<PortalOnly portal="principal"><PrincipalAcademicReportsRoute /></PortalOnly>} />
               <Route path="/principal/departure" element={<PortalOnly portal="principal"><PrincipalDeparturePage /></PortalOnly>} />
+              <Route path="/principal/departure/journeys/:tripId" element={<PortalOnly portal="principal"><JourneyDetailPage /></PortalOnly>} />
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>

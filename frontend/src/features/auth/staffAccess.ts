@@ -21,7 +21,8 @@ const TEACHER_SECTION_PERMISSIONS: Readonly<Record<string, string>> = {
   messages: "messages.view",
   safeguarding: "safeguarding.review",
   events: "events.view",
-  transport: "departure.collect",
+  // The inbox can contain a cover invitation before the recipient has a trip.
+  // Operating a trip remains assigned-resource authorized on the server.
   assessments: "assessments.view",
   "report-cards": "reports.comment",
   fees: "fees.manage",

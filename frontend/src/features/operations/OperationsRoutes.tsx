@@ -224,7 +224,8 @@ export function TeacherAttendanceRoute() {
 
   return (
     <TeacherAttendancePage
-      key={`${query.data.class.id}-${date}`}
+      key={`${query.data.class.id}-${date}-${params.get('student_id')??''}`}
+      initialStudentId={params.get('student_id')??undefined}
       data={query.data}
       date={date}
       onDateChange={setDate}
@@ -293,7 +294,8 @@ export function PrincipalAttendanceRoute() {
 
     return (
       <TeacherAttendancePage
-        key={`${roster.data.class.id}-${date}`}
+        key={`${roster.data.class.id}-${date}-${params.get('student_id')??''}`}
+        initialStudentId={params.get('student_id')??undefined}
         portal="principal"
         initialCaptureSource={params.get("source") === "paper" ? "paper" : "live_app"}
         data={roster.data}

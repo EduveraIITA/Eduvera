@@ -237,6 +237,19 @@ export class SchoolController {
     return this.school.saveTeacherAttendance(request.authUser, request.body, request);
   }
 
+  @Get("teacher/attendance/student/")
+  @RequirePermission("attendance.view")
+  studentAttendanceLookup(@Req() request: AuthenticatedRequest, @Query() query: Record<string, string>) {
+    return this.school.studentAttendanceLookup(request.authUser, query);
+  }
+
+  @Post("teacher/attendance/student/")
+  @HttpCode(200)
+  @RequirePermission("attendance.record")
+  studentAttendanceSave(@Req() request: AuthenticatedRequest) {
+    return this.school.saveStudentAttendance(request.authUser, request.body, request);
+  }
+
   @Post("attendance-continuity/batches/")
   @HttpCode(200)
   @RequirePermission("attendance.record")

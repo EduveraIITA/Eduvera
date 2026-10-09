@@ -39,6 +39,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   student: [
+    { id: "departure", name: "Departure & bus", description: "Your approved arrangement, journeys and recorded arrival", icon: Bus, tone: "blue", path: "/student/departure" },
     { id: "analytics", name: "Insights", description: "Your attendance trends and published subject scores", icon: ChartNoAxesCombined, tone: "blue", path: "/student/insights" },
     { id: "results", name: "Results", description: "Your published assessment results and feedback", icon: Award, tone: "blue", path: "/student/results" },
     { id: "calendar", name: "Calendar", description: "Your month: school days, leave and each day's periods", icon: CalendarRange, tone: "blue", path: "/student/calendar" },

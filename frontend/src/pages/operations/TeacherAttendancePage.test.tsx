@@ -93,6 +93,12 @@ function renderRegister(overrides: Partial<React.ComponentProps<typeof TeacherAt
 }
 
 describe("teacher attendance register lifecycle", () => {
+  it('opens the requested learner from an agent receipt and can return to the whole roster',async()=>{
+    const interact=userEvent.setup();renderRegister({initialStudentId:'student-2'});
+    expect(screen.getByRole('textbox',{name:'Search student or roll number'})).toHaveValue('CIS-2026-02');
+    expect(screen.getByText('Ananya Iyer')).toBeVisible();expect(screen.queryByText('Aarav Sharma')).not.toBeInTheDocument();
+    await interact.click(screen.getByRole('button',{name:'Clear search'}));expect(screen.getByText('Aarav Sharma')).toBeVisible();
+  });
   it("makes an offline device save unmistakable and prevents a duplicate submission", () => {
     renderRegister({
       data: {

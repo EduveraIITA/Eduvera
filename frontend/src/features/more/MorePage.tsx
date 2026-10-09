@@ -42,7 +42,7 @@ function ToolTile({ tool, studentId, attention = 0 }: { tool: Tool; studentId?: 
   return <article className={`more-tile more-tile--${tool.tone} more-tile--planned`}>{body}</article>;
 }
 
-function useMoreAttention(portal: Portal, studentId: string | undefined, toolIds: string[]) {
+function useMoreAttention(portal: Portal, studentId: string | undefined) {
   const auth = useOptionalAuth();
   const member = currentStaffMembership(auth?.memberships ?? []);
   const userId = auth?.user?.id ?? "anonymous";
@@ -63,8 +63,8 @@ function useMoreAttention(portal: Portal, studentId: string | undefined, toolIds
     retry: false,
   });
   const collector = useQuery({
-    queryKey: ["departure", "collector"], queryFn: getCollectorDeparture,
-    enabled: auth?.status === "authenticated" && portal === "teacher" && toolIds.includes("transport"),
+    queryKey: ["departure", "collector",userId], queryFn: getCollectorDeparture,
+    enabled: auth?.status === "authenticated" && portal === "teacher",
     staleTime: 15_000, refetchOnMount: "always", retry: false,
   });
   const counts = { ...(home.data?.more_attention ?? {}) };
@@ -72,7 +72,7 @@ function useMoreAttention(portal: Portal, studentId: string | undefined, toolIds
     const today = schoolDateToday();
     const trips = collector.data.trips.filter((trip) => trip.assigned_collector_user_id === userId
       && trip.service_date >= today && trip.state === "planned" && trip.collector_assignment_status === "pending");
-    const swaps = collector.data.swaps.filter((swap) => swap.target_user_id === userId && swap.status === "submitted");
+    const swaps = collector.data.swaps.filter((swap) => swap.target_user_id === userId && swap.status === "submitted" && swap.self_service_open === true);
     if (trips.length + swaps.length) counts.transport = trips.length + swaps.length;
   }
   return counts;
@@ -94,7 +94,11 @@ export function MoreContent({ portal }: { portal: Portal }) {
     { id: "delegated-people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: LockKeyhole, tone: "teal", path: "/teacher/students" },
     { id: "delegated-office", name: "Institute settings", description: "Delegated academic setup and history", icon: LockKeyhole, tone: "blue", path: "/teacher/administration" });
   if (portal === "teacher" && member?.permissions?.includes("members.invite")) tools.unshift({ id: "member-invitations", name: "Invite members", description: "Invite staff, students and guardians", icon: LockKeyhole, tone: "blue", path: `/${portal}/invitations` });
-  const attention = useMoreAttention(portal, studentId, tools.map((tool) => tool.id));
+  const attention = useMoreAttention(portal, studentId);
+  if(portal==="teacher"&&(attention.transport??0)>0&&!tools.some(tool=>tool.id==="transport")) {
+    const invitationTool=toolsFor("teacher").find(tool=>tool.id==="transport");
+    if(invitationTool)tools.push(invitationTool);
+  }
   const adminSchool = auth?.memberships.find(item => item.role === "admin" && item.school_id === auth.user?.active_school_id)
     ?? auth?.memberships.find(item => item.role === "admin");
   const activation = useQuery({ queryKey: ["institution-activation", adminSchool?.school_id],

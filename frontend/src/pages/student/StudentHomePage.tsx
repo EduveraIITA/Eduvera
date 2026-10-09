@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Clock3,
   FileText,
   PackageCheck,
   Sparkles,
@@ -24,6 +25,7 @@ import type { HomeAction } from "../../features/home-actions/types";
 import { HomeActionDeck, HomeActionSpotlight } from "../../features/home-actions/HomeActionDeck";
 import { TodayActivities, type TodayActivityPeriod } from "../../features/today-activities/TodayActivities";
 import "./student-pages.css";
+import "../../features/family-home/family-home.css";
 
 export interface StudentHomePeriod extends TodayActivityPeriod {
   materials?:string[];
@@ -179,7 +181,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
 
   return (
     <StudentShell activeNav="home" section="Home" className={data.className} notificationCount={data.unreadNotifications}>
-      <div className="student-page-stack student-home-page">
+      <div className="student-page-stack student-home-page family-home">
         <div className="student-home-anchor">
           <StudentIdentityCard identity={data} eyebrow={greeting()} />
           {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
@@ -188,7 +190,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
 
         <section className={`student-home-presence ${data.presence.verified ? "is-verified" : ""}`} aria-label="Today's attendance status">
-          <span className="student-home-presence__icon"><CheckCircle2 size={22} /></span>
+          <span className="student-home-presence__icon">{data.presence.verified ? <CheckCircle2 size={22} aria-hidden="true" /> : <Clock3 size={22} aria-hidden="true" />}</span>
           <span><small>Today's presence</small><strong>{data.presence.label}</strong><em>{data.presence.detail}</em></span>
           <button type="button" onClick={() => navigate("/student/attendance")}>Details <ChevronRight size={16} /></button>
         </section>
@@ -202,7 +204,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
         />
 
         <section className="student-home-overview" aria-labelledby="student-home-overview-heading">
-          <header><div><h2 id="student-home-overview-heading">Today</h2></div></header>
+          <header><div><h2 id="student-home-overview-heading">At a glance</h2></div></header>
           <div>
             <button type="button" onClick={() => navigate("/student/attendance")}>
               <span className="tone-blue"><ClipboardCheck size={19} /></span><small>Attendance</small><strong className={attendanceScoreTone}>{data.attendancePercent.toFixed(1)}%</strong><em className={attendanceSafe ? "is-safe" : "is-warning"}>{attendanceSafe ? "Safe zone" : "Needs attention"}</em>
@@ -228,7 +230,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
         </section>
 
         {data.diary.length ? <section className="student-card student-home-diary" aria-labelledby="student-home-diary-heading">
-          <header><div><span>Class desk</span><h2 id="student-home-diary-heading">Today's diary</h2></div><span>{data.diary.length} items</span></header>
+          <header><div><h2 id="student-home-diary-heading">Today's diary</h2></div><span>{data.diary.length} items</span></header>
           {data.diary.map((item) => (
             <article key={item.id}><span><BookOpenText size={18} /></span><div><strong>{item.title}</strong><p>{item.detail}</p><small>{item.label}</small></div></article>
           ))}

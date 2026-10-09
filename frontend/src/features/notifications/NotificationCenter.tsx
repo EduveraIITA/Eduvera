@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, LoaderCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { apiFetch } from "../../lib/api";
 import "./notifications.css";
@@ -56,12 +56,22 @@ export function NotificationCenter({
   onOpen,
 }: NotificationCenterProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const auth = useOptionalAuth();
   const authUserId = auth?.user?.id ?? "anonymous";
   const notificationsQueryKey = ["notifications", authUserId] as const;
   const anchor = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const routeOpen = new URLSearchParams(location.search).get("notifications") === "open";
+  const open = panelOpen || routeOpen;
+  const setOpen = useCallback((value: boolean) => {
+    setPanelOpen(value);
+    const params = new URLSearchParams(location.search);
+    if (params.get("notifications") !== "open") return;
+    params.delete("notifications");
+    void navigate({ pathname: location.pathname, search: params.toString(), hash: location.hash }, { replace: true });
+  }, [location.hash, location.pathname, location.search, navigate]);
   const query = useQuery({
     queryKey: notificationsQueryKey,
     queryFn: () => apiFetch<NotificationPage>("/api/v1/notifications/"),
@@ -102,7 +112,7 @@ export function NotificationCenter({
       document.removeEventListener("pointerdown", closeOnOutside);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   const items = query.data?.results ?? [];
   const unreadCount = query.data?.unread_count ?? fallbackUnreadCount ?? 0;
@@ -134,7 +144,7 @@ export function NotificationCenter({
         onClick={() => {
           onOpen?.();
           if (!open && auth?.status === "authenticated") void query.refetch();
-          setOpen((current) => !current);
+          setOpen(!open);
         }}
       >
         <Bell size={iconSize} />

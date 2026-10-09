@@ -39,6 +39,7 @@ const subjectPlanInput = z.object({
 });
 const revisionInput = z.object({ expected_revision: z.coerce.number().int().positive(), note: z.string().trim().max(1000).default("") });
 const generateInput = z.object({ expected_revision: z.coerce.number().int().positive(), correction_reason: z.string().trim().max(500).default("") });
+export { schemeInput, subjectPlanInput, revisionInput, generateInput, commentInput };
 const commentInput = z.object({
   expected_revision: z.coerce.number().int().positive(),
   class_teacher_comment: z.string().trim().max(1000).default(""),

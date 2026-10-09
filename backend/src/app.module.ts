@@ -7,6 +7,7 @@ import { PermissionGuard } from "./roles/permission.guard.js";
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { AiModule } from "./ai/ai.module.js";
+import { AgentModule } from "./agent/agent.module.js";
 import { CoordinationModule } from "./coordination/coordination.module.js";
 import { PeopleModule } from "./people/people.module.js";
 import { DayPlanModule } from "./day-plans/day-plan.module.js";
@@ -42,6 +43,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
     SchoolModule,
     ChatModule,
     AiModule,
+    AgentModule,
     CoordinationModule,
     PeopleModule,
     DayPlanModule,

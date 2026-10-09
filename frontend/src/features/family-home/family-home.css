@@ -1,0 +1,75 @@
+/* Home-only polish. Preserve portal accents, card decks, routes and interactions. */
+.family-home { gap: 20px; }
+.family-home :is(.today-activities__heading h2, .student-home-overview h2, .student-home-actions h2, .student-home-diary h2, .section-eyebrow-row h2) {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+  letter-spacing: -.025em;
+}
+.family-home .student-home-id-card { box-shadow: var(--edura-shadow-card); }
+.family-home .student-home-id-card:focus-visible { outline: 3px solid var(--edura-brand); outline-offset: 3px; }
+.family-home .student-home-id-card > header,
+.family-home .student-home-id-card > footer small { letter-spacing: 0; text-transform: none; font-weight: 600; }
+.family-home :is(.home-action-spotlight--surface, .home-action-deck--quiet .home-action-card) { border: 1px solid var(--edura-border); box-shadow: none; }
+.family-home :is(.home-action-spotlight__content, .home-action-card__content) { gap: 4px; }
+.family-home :is(.home-action-spotlight__content > strong, .home-action-card__content > strong) { font-size: 14px; }
+.family-home .home-action-spotlight__content > strong { white-space: normal; }
+.family-home .home-action-spotlight__content > small { -webkit-line-clamp: 2; }
+.family-home :is(.home-action-spotlight__meta b, .home-action-card__meta b) { font-weight: 600; letter-spacing: 0; text-transform: none; }
+.family-home :is(.home-action-spotlight__content > small, .home-action-card__content > small) { font-size: 12px; }
+.family-home .today-activities__heading { padding-inline: 0; gap: 8px; }
+.family-home .today-activities__heading > div { flex-wrap: wrap; }
+.family-home .today-activities__heading button { min-height: 44px; padding: 0 4px; background: none; font-size: 12px; font-weight: 600; }
+.family-home .today-activity-card { border-color: var(--edura-border); background: var(--edura-surface); box-shadow: none; }
+.family-home .today-activity-card::after { content: none; }
+.family-home .today-activity-card.is-current { border-color: var(--activity-color); background: color-mix(in srgb, var(--activity-color) 4%, var(--edura-surface)); }
+.family-home .today-activity-card__topline > span { letter-spacing: 0; text-transform: none; font-weight: 600; }
+.family-home .today-activity-card__topline b { padding: 0; color: var(--edura-ink-secondary); background: none; box-shadow: none; font-weight: 600; }
+.family-home .today-activity-card__icon { width: 40px; height: 40px; border-radius: var(--edura-radius-control); box-shadow: none; }
+.family-home .today-activity-card h3 { font-size: 18px; line-height: 1.4; }
+.family-home .today-activity-card p { margin-top: 4px; font-size: 12px; }
+.family-home .today-activity-card__progress { height: 3px; margin-top: 16px; }
+.family-home .today-activity-card footer { margin-top: 12px; gap: 12px; }
+.family-home .today-activity-card footer span { padding: 0; background: none; color: var(--edura-ink-secondary); }
+.family-home .today-activity-card__action:focus-visible { outline-offset: -3px; }
+.family-home .student-home-presence { min-height: 88px; padding: 16px; gap: 12px; color: var(--edura-ink); border: 1px solid var(--edura-border); background: var(--edura-surface); box-shadow: none; }
+.family-home .student-home-presence__icon { width: 36px; height: 36px; background: var(--edura-surface-soft); color: var(--edura-ink-secondary); }
+.family-home .student-home-presence.is-verified .student-home-presence__icon { color: var(--edura-positive); background: var(--edura-positive-soft); }
+.family-home .student-home-presence small { color: var(--edura-ink-secondary); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.family-home .student-home-presence strong { margin-top: 4px; font-size: 15px; line-height: 1.4; }
+.family-home .student-home-presence em { margin-top: 4px; color: var(--edura-ink-secondary); white-space: normal; font-size: 12px; line-height: 1.5; }
+.family-home .student-home-presence button { min-height: 44px; padding: 0; color: var(--edura-brand); background: none; font-weight: 600; }
+.family-home .student-home-overview > div { gap: 12px; }
+.family-home .student-home-overview > div > button { padding: 16px; gap: 4px; border: 1px solid var(--edura-border); box-shadow: none; }
+.family-home .student-home-overview > div > button:hover { background: var(--edura-surface-soft); transform: none; }
+.family-home .student-home-overview strong { font-size: 26px; line-height: 1.3; }
+.family-home .student-home-overview small { margin-top: 4px; font-size: 12px; font-weight: 600; }
+.family-home .student-home-actions > div { gap: 12px; }
+.family-home .student-home-actions button { padding: 12px 16px; }
+.family-home .student-home-actions button strong { font-size: 13px; }
+.family-home .student-home-actions button small { margin-top: 4px; font-size: 12px; }
+.family-home .student-home-diary { border: 1px solid var(--edura-border); box-shadow: none; }
+.family-home .student-home-diary article strong { font-size: 14px; }
+.family-home .student-home-diary article p { margin-top: 4px; font-size: 12px; line-height: 1.5; }
+.family-home .metric-grid { border-color: var(--edura-border); }
+.family-home .metric-card { padding: 16px; }
+.family-home .metric-card__header { font-size: 12px; letter-spacing: 0; line-height: 1.5; }
+.family-home .metric-card__open-indicator { display: inline-flex; margin-left: 4px; vertical-align: middle; }
+.family-home .metric-card__value-row { flex-wrap: wrap; gap: 4px 8px; }
+.family-home .metric-card__value { font-size: 26px; line-height: 1.3; }
+.family-home .metric-card__value-row .metric-card__value { white-space: normal; overflow-wrap: anywhere; }
+.family-home .metric-card__detail { margin-top: 8px; line-height: 1.5; }
+.family-home .metric-card__hit-area:focus-visible { outline-offset: -3px; }
+.family-home .shortcut-list { border: 1px solid var(--edura-border); box-shadow: none; }
+.family-home .shortcut-list button { padding: 12px 16px; gap: 12px; }
+.family-home .shortcut-icon { width: 36px; height: 36px; border-radius: var(--edura-radius-control); }
+.family-home .shortcut-list strong { white-space: normal; font-size: 14px; line-height: 1.5; }
+.family-home .shortcut-list small { margin-top: 4px; white-space: normal; font-size: 12px; line-height: 1.5; }
+.family-home :is(button, a):focus-visible { outline: 3px solid var(--edura-brand); outline-offset: -3px; }
+@media (min-width: 360px) {
+  .family-home .student-home-presence { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .family-home .student-home-presence button { grid-column: auto; }
+}
+@media (max-width: 380px) {
+  .family-home :is(.student-home-overview > div > button, .metric-card) { padding: 12px; }
+}

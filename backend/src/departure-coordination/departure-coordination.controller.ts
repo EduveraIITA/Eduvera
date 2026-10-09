@@ -8,7 +8,13 @@ export class DepartureCoordinationController {
   constructor(private readonly service: DepartureCoordinationService) {}
 
   @Get("family/")
-  family(@Req() req:AuthenticatedRequest,@Query("student_id") studentId?:string) { return this.service.family(req.authUser,studentId); }
+  family(@Req() req:AuthenticatedRequest,@Query("student_id") studentId?:string,@Query("date") date?:string) { return this.service.family(req.authUser,studentId,date); }
+
+  @Get("student/")
+  student(@Req() req:AuthenticatedRequest,@Query("date") date?:string) { return this.service.family(req.authUser,undefined,date,true); }
+
+  @Post("family/requests/:requestId/withdraw/")
+  withdraw(@Req() req:AuthenticatedRequest,@Param("requestId") requestId:string,@Body() body:unknown) { return this.service.withdrawRequest(req.authUser,requestId,body); }
 
   @Post("family/requests/")
   request(@Req() req:AuthenticatedRequest,@Body() body:unknown) { return this.service.requestChange(req.authUser,body); }
@@ -33,9 +39,21 @@ export class DepartureCoordinationController {
   @RequirePermission("departure.manage")
   trip(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Body() body:unknown) { return this.service.createTrip(req.authUser,schoolId,body); }
 
+  @Get("schools/:schoolId/trips/:tripId/")
+  @RequirePermission("departure.manage")
+  journey(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("tripId") tripId:string) { return this.service.journey(req.authUser,schoolId,tripId); }
+
   @Post("schools/:schoolId/service-patterns/")
   @RequirePermission("departure.manage")
   servicePattern(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Body() body:unknown) { return this.service.createServicePattern(req.authUser,schoolId,body); }
+
+  @Post("schools/:schoolId/trips/:tripId/reconcile/:studentId/")
+  @RequirePermission("departure.manage")
+  reconcileRider(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("tripId") tripId:string,@Param("studentId") studentId:string,@Body() body:unknown) { return this.service.recordRider(req.authUser,tripId,studentId,body,schoolId); }
+
+  @Post("schools/:schoolId/trips/:tripId/close/:action/")
+  @RequirePermission("departure.manage")
+  closeJourney(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("tripId") tripId:string,@Param("action") action:string,@Body() body:unknown) { return this.service.tripAction(req.authUser,tripId,action,body,schoolId); }
 
   @Post("schools/:schoolId/trips/generate/")
   @RequirePermission("departure.manage")
@@ -82,7 +100,8 @@ export class DepartureCoordinationController {
   planAction(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("planId") planId:string,@Param("action") action:string,@Body() body:unknown) { return this.service.planAction(req.authUser,schoolId,planId,action,body); }
 
   @Get("collector/")
-  @RequirePermission("departure.collect")
+  // This inbox also includes cover invitations for staff without a trip yet.
+  // The service limits reads to active staff and writes retain resource checks.
   collector(@Req() req:AuthenticatedRequest) { return this.service.collectorWorkspace(req.authUser); }
 
   @Post("collector/duty-swaps/")
@@ -90,7 +109,7 @@ export class DepartureCoordinationController {
   requestDutySwap(@Req() req:AuthenticatedRequest,@Body() body:unknown) { return this.service.requestDutySwap(req.authUser,body); }
 
   @Post("collector/duty-swaps/:swapId/respond/")
-  @RequirePermission("departure.collect")
+  // Target identity and current institution membership are checked in the transaction.
   respondDutySwap(@Req() req:AuthenticatedRequest,@Param("swapId") swapId:string,@Body() body:unknown) { return this.service.respondDutySwap(req.authUser,swapId,body); }
 
   @Post("trips/:tripId/actions/:action/")

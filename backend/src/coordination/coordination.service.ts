@@ -17,6 +17,7 @@ const entrySchema = z.object({ context: contextSchema, kind: z.enum(["guardian_r
   guardian_id: z.string().uuid().optional(), observed_at: z.iso.datetime({ offset: true }).optional(),
   outcome: z.enum(["absence_explained", "record_corrected", "query_withdrawn"]).optional(),
   expected_revision: z.number().int().positive(), idempotency_key: z.string().uuid() }).strict();
+export { createSchema, entrySchema };
 interface Followup {
   id: string; school_id: string; student_id: string; attendance_record_id: string; attendance_date: string;
   source_revision: number; question: string; owner_user_id: string; due_at: Date; state: string; revision: number;

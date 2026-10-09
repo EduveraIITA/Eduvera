@@ -1263,7 +1263,15 @@ describe("OmniSchool API", () => {
     expect(percentages).toEqual([...percentages].sort((left: number, right: number) => right - left));
     expect(body.ranking.leaders[0].name).toMatch(/\.$/);
     expect(body.ranking.leaders[0]).toMatchObject({ avatar_url: "/assets/ananya-iyer.png", streak: expect.any(Number) });
-    expect(body.ranking.students).toHaveLength(25);
+    const rosterSize=(await pool.query<{count:number}>(`SELECT count(*)::int AS count FROM enrollments peer
+      WHERE peer.is_active AND (peer.class_section_id,peer.term_id) IN (
+        SELECT mine.class_section_id,mine.term_id FROM enrollments mine
+        JOIN students student ON student.id=mine.student_id JOIN users account ON account.id=student.user_id
+        WHERE account.username='aarav.student' AND mine.is_active
+      )`)).rows[0]!.count;
+    // The walking-transport demo added learners without enough recorded days to
+    // rank. The list includes the full roster, not just the eligible cohort.
+    expect(body.ranking.students).toHaveLength(rosterSize);
     expect(body.ranking.students[0]).toMatchObject({ rank: 1, percentage: 100, is_current: false });
     expect(body.ranking.students[0].name).toMatch(/\.$/);
     expect(body.ranking.students.filter((item: any) => item.is_current)).toMatchObject([
@@ -1590,9 +1598,9 @@ describe("OmniSchool API", () => {
     schoolInternals.requireSchoolRole = async (...args: Parameters<SchoolRoleHook>) => {
       const membership = await originalRequireSchoolRole(...args);
       roleChecks += 1;
-      // saveTeacherAttendance checks once while building the screen and once
-      // immediately before opening its transaction. Pause after the latter.
-      if (roleChecks === 2) {
+      // Entry guard, screen access, then the pre-transaction membership check.
+      // Pause after the latter so revocation is caught inside the write lock.
+      if (roleChecks === 3) {
         signalPreflight();
         await continueWrite;
       }
@@ -1623,7 +1631,7 @@ describe("OmniSchool API", () => {
     }
   });
 
-  it("exposes attendance writes only through the bulk register command", async () => {
+  it("keeps legacy direct attendance CRUD disabled; writes use reviewed register commands", async () => {
     const browser = new BrowserSession();
     expect((await browser.login("kavita.staff")).status).toBe(200);
     const legacyCreate = await browser.request("/api/v1/attendance-records/", {

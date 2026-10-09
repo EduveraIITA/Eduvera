@@ -27,6 +27,7 @@ import { TodayActivities, type TodayActivityPeriod } from "../../features/today-
 import type { ParentHomeData, ParentPageAction } from "./parentTypes";
 import {DayPlanNotice} from '../../features/day-plans/DayPlanNotice';
 import "./parent-pages.css";
+import "../../features/family-home/family-home.css";
 
 export interface ParentHomePageProps {
   data?: ParentHomeData;
@@ -59,7 +60,7 @@ function MetricCard({
   return (
     <article className="metric-card">
       <div className="metric-card__header">
-        <span>{label}{onOpen ? <span className="metric-card__open-indicator" aria-hidden="true"> ↗</span> : null}</span>
+        <span>{label}{onOpen ? <span className="metric-card__open-indicator" aria-hidden="true"><ChevronRight size={13} /></span> : null}</span>
         {icon}
       </div>
       <div className="metric-card__value-row">
@@ -191,7 +192,7 @@ export function ParentHomePage({
       selectedChildId={visibleChildId}
       childSwitchDisabled={Boolean(activeTransition)}
     >
-      <div className="parent-stack home-page">
+      <div className="parent-stack home-page family-home">
         <div className="parent-home-anchor">
           <div className={`parent-id-stack${childCount > 1 ? " has-multiple" : ""}${childCount > 2 ? " has-three-or-more" : ""}${activeTransition ? ` is-${activeTransition.phase} direction-${activeTransition.direction}` : ""}`} aria-busy={activeTransition?.phase === "preparing"}>
             {activeTransition?.phase === "animating" && activeTransition.incoming ? <div className="parent-id-stack__incoming" aria-hidden="true" inert>
@@ -220,7 +221,7 @@ export function ParentHomePage({
 
         <section aria-labelledby="metrics-heading">
           <div className="section-eyebrow-row">
-            <h2 id="metrics-heading">This term</h2>
+            <h2 id="metrics-heading">At a glance</h2>
             <span className="section-link-label">{data.metrics.termLabel}</span>
           </div>
           <div className="metric-grid">
@@ -231,7 +232,7 @@ export function ParentHomePage({
             </>}>
               <span className="mini-pill mini-pill--success">{data.metrics.attendanceStatus}</span><span>{data.metrics.threshold}</span>
             </MetricCard>
-            <MetricCard label="Schedule" icon={<CalendarDays size={19} />} value={`${data.metrics.periodsToday} Periods`}>
+            <MetricCard label="Classes today" icon={<CalendarDays size={19} />} value={`${data.metrics.periodsToday}`}>
               <span>Dismissal:</span><strong className="blue-text">{data.metrics.dismissal}</strong>
             </MetricCard>
             <MetricCard label="Homework" icon={<ClipboardList size={19} />} value={data.metrics.homeworkTotal === undefined ? `${data.metrics.homeworkTasks} Pending` : `${data.metrics.homeworkTasks}/${data.metrics.homeworkTotal}`} onOpen={() => setHomeworkOpen(true)}
@@ -239,7 +240,7 @@ export function ParentHomePage({
               <span className="metric-card__rank">{data.metrics.homeworkTotal === undefined ? "Term history unavailable" : `${data.metrics.homeworkTotal} assigned this term`}</span>
               <span className="metric-card__rank">{homeworkTrend == null ? "Not enough homework history" : "last 30d vs prior 30d"}</span>
             </>}>
-              <span className="blue-dot" /><span>{data.metrics.homeworkTasks} pending</span>
+              <span>{data.metrics.homeworkTasks} pending</span>
             </MetricCard>
             <MetricCard label="Dues Status" icon={<CheckCircle2 size={19} />} value={data.metrics.duesStatus} tone="positive">
               <span>{data.metrics.duesDetail}</span>
@@ -254,17 +255,17 @@ export function ParentHomePage({
           <div className="surface-card shortcut-list">
             <button type="button" onClick={() => navigate(parentPath("/parent/events"))}>
               <span className="shortcut-icon"><CalendarDays size={19} /></span>
-              <span><strong>Events & Activities</strong><small>Invitations, consent, schedules, and preparation</small></span>
+              <span><strong>Events & activities</strong><small>Invitations, consent and schedules</small></span>
               <ChevronRight size={21} />
             </button>
             <button type="button" disabled={!onContactTeacher} aria-disabled={!onContactTeacher} onClick={() => void onContactTeacher?.()}>
               <span className="shortcut-icon"><Phone size={19} /></span>
-              <span><strong>{onContactTeacher ? "Contact Homeroom Teacher" : "Teacher contact unavailable"}</strong><small>{data.homeroomTeacher.name} - {data.homeroomTeacher.availability}</small></span>
+              <span><strong>{onContactTeacher ? "Contact class teacher" : "Teacher contact unavailable"}</strong><small>{data.homeroomTeacher.name} - {data.homeroomTeacher.availability}</small></span>
               <ChevronRight size={21} />
             </button>
             <button type="button" onClick={() => navigate(parentPath("/parent/leave?tab=apply"))}>
               <span className="shortcut-icon"><CalendarDays size={19} /></span>
-              <span><strong>Submit Future Leave Application</strong><small>Medical, family, or personal leave</small></span>
+              <span><strong>Apply for leave</strong><small>Medical, family or personal leave</small></span>
               <ChevronRight size={21} />
             </button>
             <button type="button" onClick={() => navigate(parentPath("/parent/departure"))} aria-label="Open departure and transport">

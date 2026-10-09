@@ -1,7 +1,6 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  Bot,
   CalendarDays,
   ClipboardCheck,
   Home,
@@ -12,6 +11,8 @@ import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
+import { AssistantPanel, AssistantTab } from "../../features/assistant/DemoChat";
+import { useDemoChat } from "../../features/assistant/useDemoChat";
 
 import "./student-pages.css";
 
@@ -66,7 +67,7 @@ export interface StudentShellProps {
 const schoolNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
-  { key: "copilot" as const, label: "Copilot", icon: Bot },
+  { key: "classes" as const, label: "Timetable", icon: CalendarDays },
   { key: "launcher" as const, label: "More", icon: MoreHorizontal },
 ];
 
@@ -117,6 +118,7 @@ export function StudentShell({
   const studentSchools = auth?.memberships.filter((membership) => membership.role === "student") ?? [];
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;
   const resolvedSchoolName = schoolName ?? membershipSchoolName;
+  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:student:${studentSchools[0]?.school_id ?? ""}`);
 
   return (
     <div className={`student-app student-app--${variant}`}>
@@ -138,19 +140,21 @@ export function StudentShell({
         </div>
       </header>
 
-      <main className="student-main">{children}</main>
+      <main className="student-main" inert={chat.open}>{children}</main>
+      <AssistantPanel chat={chat} context={{ portal: "student", pageTitle: pageTitle ?? pageTitleFor(location.pathname, activeNav, section) }} />
 
-      <nav className="student-bottom-nav" aria-label="Student navigation">
-        {navItems.map(({ key, label, icon: Icon }) => (
+      {!chat.fullPage ? <nav className="student-bottom-nav" aria-label="Student navigation">
+        {navItems.map(({ key, label, icon: Icon }, index) => (
+          <Fragment key={key}>
+          {index === 2 ? <AssistantTab chat={chat} className="student-bottom-nav__item" /> : null}
           <NavLink
-            key={key}
             to={routeMap[key]}
             end={key === "home"}
-            aria-current={mobileActive === key ? "page" : undefined}
-            className={({ isActive }) => `student-bottom-nav__item ${mobileActive === key || isActive ? "is-active" : ""}`}
+            aria-current={chat.active ? false : mobileActive === key ? "page" : undefined}
+            className={({ isActive }) => `student-bottom-nav__item ${!chat.active && (mobileActive === key || isActive) ? "is-active" : ""}`}
           >
             {({ isActive }) => {
-              const selected = mobileActive === key || isActive;
+              const selected = !chat.active && (mobileActive === key || isActive);
               return (
                 <>
                   <Icon size={22} strokeWidth={selected ? 2.35 : 1.9} />
@@ -159,8 +163,9 @@ export function StudentShell({
               );
             }}
           </NavLink>
+          </Fragment>
         ))}
-      </nav>
+      </nav> : null}
     </div>
   );
 }

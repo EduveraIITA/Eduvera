@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CalendarView, type CalendarViewProps } from "./CalendarView";
 
+// Fixed fixture dates must not collide with the real day's separate Today button.
+vi.mock("../../lib/schoolTime", () => ({ schoolDateToday: () => "2026-10-08" }));
+
 afterEach(cleanup);
 
 function props(overrides: Partial<CalendarViewProps> = {}): CalendarViewProps {

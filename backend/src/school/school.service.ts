@@ -21,6 +21,7 @@ import { SchoolEventService } from "./school-event.service.js";
 import { classUpdates } from "./class-updates.js";
 import {lockSchedule,protectPublishedPlans} from '../day-plans/schedule.js';
 import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendance-workspace.js';
+import { findAttendanceStudents, studentAttendanceInput, studentAttendanceSearch } from '../attendance/student-attendance.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
 type LeaveStatus = "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn";
@@ -2168,7 +2169,37 @@ export class SchoolService {
   }
 
   async saveTeacherAttendance(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
-    const data = attendanceBulkSchema.parse(body);
+    await this.requireSchoolRole(user, ["staff", "admin"]);
+    return this.saveAttendanceRecords(user, attendanceBulkSchema.parse(body), request, false);
+  }
+
+  async studentAttendanceLookup(user: AuthUser, query: unknown) {
+    const input = studentAttendanceSearch.parse(query);
+    const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
+    const date = input.date ?? await this.schoolLocalDate(membership.school_id);
+    const matches = await findAttendanceStudents(this.db, membership.school_id, user.id, membership.role, date, input.student, input.class_name);
+    if (matches.length !== 1) return { date, matches: matches.slice(0,20), has_more: matches.length > 20, selected: null };
+    const match = matches[0]!;
+    const screen = await this.teacherAttendanceScreen(user, match.class_section_id, date);
+    const student = screen.roster.find(row => row.id === match.id);
+    if (!student) throw new ConflictException("The enrollment changed. Search for the student again.");
+    return { date, matches, has_more: false, selected: {
+      student: { id: student.id, name: student.name, admission_number: student.admission_number, status: student.status, remarks: student.remarks },
+      class: { id: screen.class.id, name: screen.class.name }, register: screen.register,
+      availability: screen.availability, roster_fingerprint: screen.continuity_snapshot.roster_fingerprint,
+    } };
+  }
+
+  async saveStudentAttendance(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
+    await this.requireSchoolRole(user, ["staff", "admin"]);
+    const { student_id, status, remarks, ...input } = studentAttendanceInput.parse(body);
+    // Omitted remarks are preserved, not replaced by the bulk contract's default.
+    return this.saveAttendanceRecords(user, { ...input, records: [{ student_id, status, ...(remarks !== undefined ? { remarks } : {}) }] }, request, true);
+  }
+
+  private async saveAttendanceRecords(user: AuthUser,
+    data: Omit<z.infer<typeof attendanceBulkSchema>, 'records'> & { records: { student_id: string; status: z.infer<typeof studentAttendanceInput>['status']; remarks?: string }[] },
+    request: AuthenticatedRequest, single: boolean) {
     const rawIdempotencyKey = request.headers["idempotency-key"];
     const idempotencyKey = Array.isArray(rawIdempotencyKey) ? rawIdempotencyKey[0] : rawIdempotencyKey;
     if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
@@ -2179,11 +2210,12 @@ export class SchoolService {
     const rosterIds = new Set(screen.roster.map((student) => student.id));
     if (data.records.some((record) => !rosterIds.has(record.student_id))) throw new BadRequestException("Every attendance record must belong to the selected class roster.");
     if (new Set(data.records.map((record) => record.student_id)).size !== data.records.length) throw new BadRequestException("A student may only appear once in an attendance submission.");
-    if (data.records.length !== rosterIds.size) throw new BadRequestException("Mark every student before submitting the class register.");
+    if (!single && data.records.length !== rosterIds.size) throw new BadRequestException("Mark every student before submitting the class register.");
     if (data.date < screen.class.term_starts_on || data.date > screen.class.term_ends_on) {
       throw new BadRequestException("Attendance can only be submitted inside the selected class term.");
     }
     const canonical = {
+      ...(single ? { operation: 'record_student' } : {}),
       class_section_id: data.class_section_id,
       date: data.date,
       expected_revision: data.expected_revision,
@@ -2328,27 +2360,31 @@ export class SchoolService {
           student_id: conflictingClass.student_id,
         });
       }
-      const changed = data.records.filter((record) => {
+      const records = data.records.map(record => ({ ...record, remarks: record.remarks ?? previousByStudent.get(record.student_id)?.remarks ?? '' }));
+      const changed = records.filter((record) => {
         const previous = previousByStudent.get(record.student_id);
         return !previous || previous.status !== record.status || previous.remarks !== record.remarks;
       });
       if (changed.some((record) => previousByStudent.has(record.student_id)) && !data.reason) {
         throw new BadRequestException("A correction reason is required when changing an existing attendance record.");
       }
-      const advancesRevision = changed.length > 0 || !currentRegister || currentRegister.state === "draft";
+      const advancesRevision = changed.length > 0 || !currentRegister || (!single && currentRegister.state === "draft");
       const nextRevision = currentRevision + (advancesRevision ? 1 : 0);
       const effectiveRevision = Math.max(1, nextRevision);
       const now = new Date();
-      const nextState = "submitted" as const;
+      // Recording a learner is NOT submission of the whole class register.
+      const nextState = single ? (currentRegister?.state ?? 'draft') as 'draft' | 'submitted' : 'submitted';
+      const submittedBy = single ? currentRegister?.submitted_by ?? null : user.id;
+      const submittedAt = single ? currentRegister?.submitted_at ?? null : now;
       const register = currentRegister
         ? await tx.updateTable("attendance_registers").set({
-            state: nextState, revision: effectiveRevision, submitted_by: user.id,
-            submitted_at: now, updated_at: now,
+            state: nextState, revision: effectiveRevision, submitted_by: submittedBy,
+            submitted_at: submittedAt, updated_at: now,
           }).where("id", "=", currentRegister.id).returningAll().executeTakeFirstOrThrow()
         : await tx.insertInto("attendance_registers").values({
             school_id: membership.school_id, class_section_id: data.class_section_id,
-            term_id: screen.class.term_id, date: data.date, state: "submitted",
-            revision: effectiveRevision, submitted_by: user.id, submitted_at: now,
+            term_id: screen.class.term_id, date: data.date, state: nextState,
+            revision: effectiveRevision, submitted_by: submittedBy, submitted_at: submittedAt,
             locked_by: null, locked_at: null, reopened_by: null, reopened_at: null,
             reopen_reason: null,
           }).returningAll().executeTakeFirstOrThrow();
@@ -2410,17 +2446,18 @@ export class SchoolService {
             new_check_in_at: savedRecord.check_in_at ?? null,
             previous_check_out_at: previous?.check_out_at ?? null,
             new_check_out_at: savedRecord.check_out_at ?? null,
-            reason: previous ? data.reason! : "Initial register submission", changed_by: user.id,
+            reason: previous ? data.reason! : single ? "Initial student attendance record" : "Initial register submission", changed_by: user.id,
             request_id: request.requestId, register_revision: effectiveRevision,
           };
         })).execute();
       }
 
-      const submittedByStudent = new Map(data.records.map((record) => [record.student_id, record]));
+      const submittedByStudent = new Map(records.map((record) => [record.student_id, record]));
       const result = {
         ...provisionalResult,
         roster: screen.roster.map((student) => {
-          const submitted = submittedByStudent.get(student.id)!;
+          const submitted = submittedByStudent.get(student.id);
+          if (!submitted) return student;
           const saved = persisted.get(student.id);
           return {
             ...student, status: submitted.status, remarks: submitted.remarks,
@@ -2432,7 +2469,7 @@ export class SchoolService {
       };
       await tx.updateTable("attendance_submissions").set({ result_body: result as any }).where("id", "=", submission.id).execute();
       await tx.insertInto("audit_events").values({
-        action: "attendance.class.submitted", actor_id: user.id, school_id: membership.school_id,
+        action: single ? "attendance.student.recorded" : "attendance.class.submitted", actor_id: user.id, school_id: membership.school_id,
         target_type: "class_section", target_id: data.class_section_id, request_id: request.requestId,
         ip_hash: null, metadata: {
           date: data.date, records: data.records.length, changed: changed.length,

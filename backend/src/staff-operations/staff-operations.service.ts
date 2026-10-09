@@ -53,6 +53,7 @@ const assignmentInput = z.object({
   notes: z.string().trim().max(1000).default(""),
   backup_staff_profile_id: uuid.nullable().default(null),
 });
+export { profileInput, policyInput, assignmentInput };
 
 @Injectable()
 export class StaffOperationsService {

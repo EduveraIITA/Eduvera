@@ -105,6 +105,19 @@ const implementedScreenRoutes: RouteSmokeCase[] = [
 ];
 
 describe("implemented application routes", () => {
+  it.each(["teacher", "principal", "parent", "student"] as const)("hides only the bottom navigation in the %s full chat", portal => {
+    const content = <span>Full conversation</span>;
+    const shell = portal === "parent" ? <ParentShell active="chat" pageLabel="Chat">{content}</ParentShell>
+      : portal === "student" ? <StudentShell activeNav="chat" pageTitle="Chat">{content}</StudentShell>
+      : <OperationsShell portal={portal} active="chat" title="Chat">{content}</OperationsShell>;
+    const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[`/${portal}/assistant`]}>{shell}</MemoryRouter></QueryClientProvider>);
+    expect(container.querySelector(".student-bottom-nav, .parent-bottom-nav, .operations-mobile-nav")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Chat" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
+    expect(container.querySelector(".assistant-dock")).toBeNull();
+    if (portal === "teacher" || portal === "principal") expect(container.querySelector(".operations-sidebar")).toBeInTheDocument();
+  });
+
   it("keeps a permission-scoped staff home available without loading the teaching-day API", async () => {
     mockCustomStaffSession(["departure.collect"]);
     const { container } = render(<MemoryRouter initialEntries={["/teacher"]}><App /></MemoryRouter>);
@@ -114,7 +127,7 @@ describe("implemented application routes", () => {
     expect(screen.getByRole("link", { name: /My work/ })).toBeVisible();
     expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
     expect(container.querySelectorAll(".operations-mobile-nav a")).toHaveLength(2);
-    expect(container.querySelector(".operations-mobile-nav")?.textContent).toBe("TodayMore");
+    expect(container.querySelector(".operations-mobile-nav")?.textContent).toBe("TodayChatMore");
   });
 
   it("hides and guards modules that current work assignments did not grant", async () => {
@@ -176,19 +189,23 @@ describe("implemented application routes", () => {
     expect(container.querySelectorAll(".school-brand__eduvera img")).toHaveLength(2);
   });
 
-  it("keeps mobile navigation to four destinations and no duplicate header More shortcut", () => {
+  it("keeps four destinations plus centre Chat and no duplicate header More shortcut", () => {
     const wrap = (content: ReactNode) => render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>{content}</MemoryRouter></QueryClientProvider>);
     wrap(<StudentShell activeNav="home"><span /></StudentShell>);
     expect(document.querySelectorAll(".student-bottom-nav a")).toHaveLength(4);
+    expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Chat", "Timetable", "More"]);
     expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
     cleanup();
     wrap(<ParentShell active="home" pageLabel="Home"><span /></ParentShell>);
     expect(document.querySelectorAll(".parent-bottom-nav a")).toHaveLength(4);
+    expect([...document.querySelector(".parent-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Chat", "Diary", "More"]);
     expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
     cleanup();
     for (const portal of ["teacher", "principal"] as const) {
       wrap(<OperationsShell portal={portal} active="home" title="Today" subtitle="School"><span /></OperationsShell>);
       expect(document.querySelectorAll(".operations-mobile-nav a")).toHaveLength(4);
+      expect(document.querySelectorAll(".operations-mobile-nav > *")).toHaveLength(5);
+      expect(document.querySelector(".operations-mobile-nav > :nth-child(3)")).toHaveTextContent("Chat");
       expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
       cleanup();
     }

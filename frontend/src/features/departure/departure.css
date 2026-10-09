@@ -2,6 +2,12 @@
 .departure-page * {
   box-sizing: border-box;
 }
+.departure-page > button.departure-primary { min-height:44px; padding:12px 18px; border:0; border-radius:12px; font:inherit; font-weight:600; cursor:pointer; }
+.departure-page .departure-trip-picker select { min-height:44px; padding:8px 12px; font:inherit; }
+.departure-panel > .departure-privacy-note { margin:0; padding:12px 16px; }
+.departure-rider-list article > div > strong,
+.departure-rider-list article > div > small { display:block; }
+.departure-rider-list article > div > small { margin-top:6px; }
 .departure-page {
   width: 100%;
   display: grid;
@@ -971,3 +977,108 @@
     transition: none !important;
   }
 }
+.departure-date { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--edura-ink-secondary); }
+.departure-date input { min-height:44px; max-width:65%; padding:8px 12px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); background:var(--edura-surface); color:var(--edura-ink); }
+.departure-journey-message { display:flex; align-items:flex-start; gap:12px; padding:16px; margin:0; line-height:1.6; }
+.departure-journey-message svg { flex-shrink:0; margin-top:4px; color:var(--edura-brand); }
+.departure-milestones { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; padding:16px; border-top:1px solid var(--edura-border); }
+.departure-milestones span { display:grid; gap:8px; font-size:12px; color:var(--edura-ink-secondary); }
+.departure-milestones strong { font-size:14px; color:var(--edura-ink); }
+.departure-rider-note { grid-column:1/-1; margin:8px 0 0; color:var(--edura-ink-secondary); font-size:14px; overflow-wrap:anywhere; }
+.departure-rider-confirm { grid-column:1/-1; display:grid; gap:12px; width:100%; }
+.departure-rider-confirm label { display:grid; gap:8px; font-size:14px; }
+.departure-rider-confirm textarea { width:100%; box-sizing:border-box; padding:12px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); font:inherit; resize:vertical; }
+.departure-rider-confirm > div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px; }
+.departure-history { list-style:none; margin:0; padding:0 16px; }
+.departure-history li { display:grid; gap:8px; padding:16px 0; border-top:1px solid var(--edura-border); overflow-wrap:anywhere; }
+.departure-history time { color:var(--edura-ink-secondary); font-size:12px; }
+.departure-history p { margin:0; }
+.departure-trip-list a { display:inline-flex; align-items:center; gap:8px; min-height:44px; color:var(--edura-brand); }
+
+/* Ride-first layout: a real location, then one information sheet. No fake ETA. */
+.ride-list { display:grid; gap:24px; }
+.ride-list section > h2 { margin:0 4px 10px; font-size:14px; font-weight:650; color:var(--edura-ink-secondary,#667085); }
+.ride-list-group { overflow:hidden; border:1px solid var(--edura-border,#dce3ef); border-radius:18px; background:var(--edura-surface,#fff); }
+.ride-list-row { display:grid; grid-template-columns:55px minmax(0,1fr) 19px; align-items:center; gap:14px; padding:18px 16px; color:var(--edura-ink,#17273c); text-decoration:none; }
+.ride-list-row + .ride-list-row { border-top:1px solid var(--edura-border,#dce3ef); }
+.ride-list-row:focus-visible { outline:3px solid var(--edura-brand,#164ed0); outline-offset:-3px; }
+.ride-list-row:hover { background:var(--edura-surface-muted,#f5f7fb); }
+.ride-list-time { display:grid; justify-items:center; gap:8px; align-self:start; padding-top:2px; color:var(--edura-brand,#164ed0); }
+.ride-list-time strong { font-size:16px; font-variant-numeric:tabular-nums; }
+.ride-list-content { min-width:0; }
+.ride-list-content h3 { font-size:16px; margin:0; line-height:1.45; overflow-wrap:anywhere; }
+.ride-list-content p { margin:6px 0 8px; font-size:13px; line-height:1.5; color:var(--edura-ink-secondary,#667085); }
+.ride-list-status { font-size:12px; color:var(--edura-ink-secondary,#667085); }
+.ride-list-status.is-active { color:#08705f; font-weight:650; }
+.ride-list-status.is-pending { color:#87480a; font-weight:650; }
+.ride-card { overflow:hidden; border:1px solid var(--edura-border,#dce3ef); border-radius:20px; background:var(--edura-surface,#fff); }
+.ride-information { padding:20px; }
+.ride-heading { display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:12px; }
+.ride-heading > div { min-width:0; }
+.ride-heading h2 { margin:0; font-size:18px; line-height:1.35; font-weight:750; letter-spacing:-.025em; overflow-wrap:anywhere; }
+.ride-heading p { margin:6px 0 0; font-size:13px; line-height:1.55; color:var(--edura-ink-secondary,#667085); }
+.ride-icon { display:grid; place-items:center; width:40px; height:40px; border-radius:12px; color:var(--edura-brand,#164ed0); background:var(--edura-brand-soft,#e8efff); }
+.ride-heading .departure-state { font-size:11px; padding:7px 9px; letter-spacing:0; text-transform:none; }
+.ride-facts { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:20px; margin:20px 0 0; padding:18px 0 0; border-top:1px solid var(--edura-border,#dce3ef); }
+.ride-facts dt { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--edura-ink-secondary,#667085); }
+.ride-facts dt svg { flex-shrink:0; }
+.ride-facts dd { margin:8px 0 0; font-size:14px; line-height:1.55; font-weight:650; overflow-wrap:anywhere; }
+.ride-facts dd small { font-size:12px; font-weight:400; color:var(--edura-ink-secondary,#667085); }
+.ride-message { margin:18px 0 0; color:var(--edura-ink-secondary,#667085); font-size:13px; line-height:1.6; }
+.ride-message.is-concern { padding:12px; border-radius:10px; color:#87480a; background:#fff5dd; }
+.ride-milestones { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; list-style:none; padding:18px 0 0; margin:18px 0 0; border-top:1px solid var(--edura-border,#dce3ef); }
+.ride-milestones li { display:flex; gap:9px; align-items:flex-start; min-width:0; }
+.ride-milestone-icon { flex:0 0 24px; height:24px; display:grid; place-items:center; border-radius:50%; color:var(--edura-ink-secondary,#667085); background:var(--edura-surface-muted,#f1f4fa); }
+.ride-milestones .is-recorded .ride-milestone-icon { color:#08705f; background:#e4f7ef; }
+.ride-milestones strong { display:block; margin:2px 0 7px; font-size:12px; font-weight:600; }
+.ride-milestones time { display:block; color:var(--edura-ink-secondary,#667085); font-size:12px; }
+.ride-privacy { margin:18px 0 0; color:var(--edura-ink-secondary,#667085); font-size:12px; line-height:1.65; }
+.ride-map-panel .departure-map { height:clamp(220px,32dvh,320px); }
+.ride-location-caption { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:11px 16px; font-size:11px; color:#08705f; background:#f1faf7; border-bottom:1px solid var(--edura-border,#dce3ef); }
+.ride-location-caption strong { font-weight:650; }
+.ride-location-caption > span { margin-left:auto; color:var(--edura-ink-secondary,#667085); }
+.ride-location-caption.is-delayed { color:#87480a; background:#fff5dd; }
+.ride-arrangement { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; background:var(--edura-surface,#fff); border:1px solid var(--edura-border,#dce3ef); border-radius:16px; }
+.ride-arrangement > div { min-width:0; }
+.ride-arrangement > div > span { font-size:12px; color:var(--edura-ink-secondary,#667085); }
+.ride-arrangement h2 { font-size:16px; line-height:1.4; margin:7px 0 0; }
+.ride-arrangement p { font-size:13px; line-height:1.6; margin:8px 0 0; color:var(--edura-ink-secondary,#667085); }
+.ride-tracking { padding-top:18px; }
+.ride-tracking-actions { display:flex; align-items:center; gap:10px; }
+.ride-tracking-actions button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:10px 14px; border:1px solid var(--edura-border,#dce3ef); border-radius:12px; color:var(--edura-brand,#164ed0); background:var(--edura-surface,#fff); font:inherit; font-size:13px; font-weight:650; cursor:pointer; }
+.ride-tracking-status { display:flex; align-items:center; gap:8px; flex:1; min-width:0; margin:0; font-size:14px; color:var(--edura-ink-secondary); }
+.ride-tracking-status svg { flex-shrink:0; color:var(--edura-brand); }
+.ride-tracking-status.is-concern { color:var(--edura-danger,#a32f2f); }
+.departure-rider-note summary { width:fit-content; padding:8px 0; cursor:pointer; color:var(--edura-brand); }
+.departure-rider-note p { margin:4px 0 8px; }
+.rider-focus-controls { padding:16px; border-bottom:1px solid var(--edura-border); }
+.rider-focus-switch { display:flex; padding:4px; gap:4px; border-radius:var(--edura-radius-control,12px); background:var(--edura-surface-muted,#f1f4fa); }
+.rider-focus-switch button { display:flex; flex:1; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:8px; border:0; border-radius:8px; background:transparent; color:var(--edura-ink-secondary); font:inherit; font-size:14px; font-weight:650; cursor:pointer; }
+.rider-focus-switch button[aria-pressed=true] { background:var(--edura-surface,#fff); color:var(--edura-brand); }
+.rider-focus-controls :is(button,select,a):focus-visible { outline:3px solid var(--edura-brand); outline-offset:2px; }
+.rider-focus-context { display:grid; gap:12px; margin-top:16px; }
+.rider-focus-context label { display:flex; align-items:center; gap:12px; }
+.rider-focus-label { font-size:13px; color:var(--edura-ink-secondary); }
+.rider-focus-select { display:block; position:relative; flex:1; min-width:0; }
+.rider-focus-select svg { position:absolute; inset-inline-end:12px; top:14px; pointer-events:none; color:var(--edura-ink-secondary); }
+.departure-page .rider-focus-context select { appearance:none; width:100%; min-width:0; height:44px; min-height:44px; padding:8px 36px 8px 12px; border:1px solid var(--edura-border); border-radius:8px; background:var(--edura-surface,#fff); color:var(--edura-ink); font:inherit; font-size:14px; }
+.rider-focus-heading { display:flex; align-items:center; gap:8px; }
+.rider-focus-heading > div { flex:1; min-width:0; }
+.rider-focus-heading h3 { margin:0; font-size:16px; overflow-wrap:anywhere; }
+.rider-focus-heading p,.rider-focus-hint { margin:4px 0 0; font-size:13px; line-height:1.5; color:var(--edura-ink-secondary); }
+.rider-focus-nearby { font-size:12px; color:var(--edura-brand); font-weight:650; }
+.rider-focus-context a { display:inline-flex; align-items:center; min-height:44px; width:fit-content; color:var(--edura-brand); font-size:13px; }
+.rider-focus-controls button:disabled { opacity:.55; cursor:default; }
+.departure-stop-marker { display:grid; place-items:center; border:2px solid var(--edura-brand,#164ed0); border-radius:50%; background:var(--edura-surface,#fff); color:var(--edura-brand,#164ed0); font-size:12px; font-weight:700; }
+.departure-stop-marker.is-focused { background:var(--edura-brand,#164ed0); color:#fff; }
+.ride-tracking-actions button:disabled { cursor:default; opacity:.75; }
+.ride-card button:focus-visible { outline:3px solid var(--edura-brand,#164ed0); outline-offset:3px; }
+.ride-map-container { position:relative; isolation:isolate; }
+.ride-map-container .departure-map { z-index:0; }
+.ride-map-recenter { position:absolute; z-index:1; top:14px; right:14px; display:grid; place-items:center; width:44px; height:44px; border:1px solid #dce3ef; border-radius:12px; color:#17273c; background:#fff; box-shadow:0 2px 8px rgb(20 40 70 / .1); cursor:pointer; }
+.ride-map-container .leaflet-control-zoom { border:1px solid #dce3ef; border-radius:10px; overflow:hidden; box-shadow:0 2px 8px rgb(20 40 70 / .08); }
+.ride-map-container .leaflet-control-zoom a { width:40px; height:40px; line-height:40px; color:#17273c; }
+.ride-map-error { position:absolute; z-index:1; top:14px; left:12px; right:70px; display:grid; gap:6px; padding:10px 12px; background:#fff; border:1px solid #dce3ef; border-radius:10px; font-size:12px; line-height:1.5; }
+.ride-map-error button { border:0; padding:6px 0; min-height:36px; background:none; color:var(--edura-brand,#164ed0); font:inherit; font-weight:650; text-align:left; cursor:pointer; }
+@media(min-width:768px) { .ride-information { padding:24px; } .ride-map-panel .departure-map { height:360px; } }
+@media(max-width:360px) { .ride-information { padding:16px; } .ride-heading { grid-template-columns:34px minmax(0,1fr); gap:10px; } .ride-icon { width:34px; height:34px; } .ride-heading > .departure-state { grid-column:2; justify-self:start; } .ride-facts { gap:12px; } }

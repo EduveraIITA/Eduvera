@@ -26,4 +26,9 @@ describe("custom staff access", () => {
     expect(teacherPathIsAuthorized(busAttendant, "/teacher/assessments")).toBe(false);
     expect(teacherPathIsAuthorized(busAttendant, "/teacher/report-cards")).toBe(false);
   });
+  it("allows a staff member to open their invitation inbox without giving them journey-operating permissions",()=>{
+    const invited={...busAttendant,permissions:[]};
+    expect(teacherPathIsAuthorized(invited,"/teacher/transport")).toBe(true);
+    expect(teacherToolIsVisible(invited,"transport")).toBe(false);
+  });
 });

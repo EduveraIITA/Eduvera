@@ -18,6 +18,12 @@ function eventData(type: string, payload: Record<string, unknown>) {
 afterEach(() => vi.useRealTimers());
 
 describe("school event protocol", () => {
+  it.each(["transport.updated","departure.updated"])("refreshes every departure view on %s without an unknown-event fallback",type=>{
+    const result=resolveSchoolEvent(eventData(type,{refresh:["departure","parent.home","principal.home","teacher.home"]}),type,"guardian-1");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toContainEqual({queryKey:["departure"]});
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({queryKey:["departure"]});
+  });
   it("refreshes enrollment and family lists on a people event", () => {
     const result=resolveSchoolEvent(eventData("people.updated",{student_id:"new-student",class_section_id:"class-7a"}),"people.updated","admin-1");
     expect(result.usedFallback).toBe(false);

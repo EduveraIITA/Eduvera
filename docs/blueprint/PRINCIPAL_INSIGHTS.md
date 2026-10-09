@@ -1,19 +1,30 @@
 # Principal insights
 
-The principal Overview keeps four summary cards and a compact action brief beside
-daily operations. Its dated **View all insights** link opens `/principal/insights`.
-The dedicated destination now merges Analytics and Insights at `/<portal>/insights`.
-The principal overview leads with a compact attention brief, followed by the current
-institution snapshot, recorded trends/results and school operations. Teachers and
-families retain only their existing authorized analytics. Legacy `/analytics/*`
+The principal home Overview has a compact, read-only blue daily snapshot: students
+marked and registers submitted. Its date control and Timetable link sit outside the
+card. Below it, Needs attention links to the work, School pulse summarizes current
+term attendance/results and current coverage/fees, and Coming up shows dated events.
+At most four attention rows appear initially; further checks use one disclosure.
+The full register directory, review lists and conversations are separate pages.
+
+The dedicated destination merges Analytics and Insights at `/<portal>/insights`.
+Its principal landing page leads with a compact attention brief, followed by the
+current institution snapshot, recorded trends/results and school operations.
+Teachers and families retain only their existing authorized analytics. Legacy `/analytics/*`
 bookmarks redirect with class, learner and period context intact.
 Principal mobile navigation is Overview / Attendance / Insights / More; Timetable
 remains in More and the desktop sidebar. Teacher navigation is unchanged.
 
 Overview always uses a whole-school 28-day review window and 50% academic threshold,
 ignoring full-dashboard query filters to avoid a silently narrowed daily summary.
-Overview's existing source-record dialogs are unchanged. The dedicated Insights
-experience uses separate topic pages, not more dialogs or competing dashboards.
+Overview's School pulse uses whole-school current-term analytics, with the reporting
+end date visible. Selecting an older daily snapshot does not turn current fees or
+forward teacher assignments into historical values. The blue card itself is never
+actionable. Full source data remains behind links to existing authorized workflows.
+`/principal/attendance/thresholds` contains the dated minimum-attendance list and
+`/principal/followups` contains the existing conversation workspace; both return to
+the dated Overview. Legacy home conversation anchors redirect to the latter page.
+The dedicated Insights experience also uses separate topic pages.
 The deadline brief opens Coverage & deadlines. Back navigation retains filters and
 returns related reviews to their parent topic.
 
@@ -77,9 +88,22 @@ Filters persist in the URL and retain the existing page date. The dashboard refr
 on school events and every minute. Loading, incomplete data, empty results and
 recoverable errors have explicit states. The two read models fail independently:
 available trend graphs remain usable if operational highlights cannot load, and
-vice versa. Charts have text/table alternatives; Overview's existing detail dialogs
-support keyboard dismissal and restore focus. Student details are capped
-at 50 with that limit disclosed. Aggregate totals remain uncapped.
+vice versa. Charts have text/table alternatives and missing observations remain
+gaps rather than zero. Home attention rows include register submission, assignment
+mismatches, attendance follow-ups/declines, term thresholds, unassigned periods,
+deadline clashes and submitted/moderated assessments when present. These counts
+are not added into an invented unique-student total. The home threshold list is
+capped at 20 and labelled when reached; the Insights review list is capped at 50
+with shown/total context. Aggregate Insights totals remain uncapped.
+
+The School pulse result average is the existing mean of scored results from latest
+published assessment snapshots in the current term, not an official report-card
+grade or a pass rate. Teaching coverage means assigned effective periods, not
+delivered lessons. Fees due today contribute to outstanding balances but not the
+overdue label. A missing denominator shows Not recorded / No scores / No periods;
+it is never an invented zero or 100%. Failed academic and operational requests
+remain independent and recoverable. These home summaries reuse existing query keys,
+active-school authorization, school-event invalidation and minute refreshes.
 
 Historical attendance uses current enrolments and the effective calendar, rather
 than a frozen historical cohort. Follow-up state, fee balances and forward schedule

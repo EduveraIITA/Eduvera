@@ -17,7 +17,7 @@ export function FollowupInsights({ data }: { data: PrincipalInsights }) {
         <p>{item.state === "in_review" ? "School review" : "Awaiting reply"} · Owner: {item.owner}</p>
         <Link className="analytics-module-link" to={`/principal/attendance?class_section_id=${item.class_id}&date=${item.attendance_date}`}>Open source register</Link>
       </li>)}</ul>
-      <Link className="analytics-module-link" to="/principal#attendance-followups">Open follow-up conversations</Link>
+      <Link className="analytics-module-link" to={`/principal/followups?date=${data.period.end}`}>Open follow-up conversations</Link>
     </section>
   </div>;
 }
