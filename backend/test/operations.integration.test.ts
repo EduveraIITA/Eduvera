@@ -137,7 +137,7 @@ suite("school operations against disposable PostgreSQL", () => {
   it("delivers a single-use invitation without storing its raw token", async () => {
     const invitation = await schoolRequest("invitations", { email: studentEmail, role: "student" });
     expect(invitation.status).toBe(201); inviteToken = invitation.data.token;
-    expect(inviteToken.length).toBeGreaterThan(40);
+    expect(inviteToken).toMatch(/^\d{6}$/);
     const stored = await pool.query("SELECT token_hash FROM school_invitations WHERE id=$1", [invitation.data.id]);
     expect(stored.rows[0].token_hash).not.toBe(inviteToken);
     const payload = { token: inviteToken, email: studentEmail, first_name: "Mira", last_name: "Sen", password };
