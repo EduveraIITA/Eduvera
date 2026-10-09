@@ -28,11 +28,11 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { bufferLogs: true, rawBody: true });
   const server = app.getHttpAdapter().getInstance();
   await app.register(cookie, { secret: settings.COOKIE_SECRET, hook: "onRequest" });
-  await app.register(helmet, settings.NODE_ENV === "production" ? { contentSecurityPolicy: { directives: {
-    scriptSrc: ["'self'", "https://checkout.razorpay.com"],
+  await app.register(helmet, settings.NODE_ENV === "production" ? (settings.RAZORPAY_ENABLED ? { contentSecurityPolicy: { directives: {
+    scriptSrc: ["'self'", "https://checkout.razorpay.com", "https://cdn.razorpay.com", "https://checkout-static-next.razorpay.com"],
     frameSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
-    connectSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
-  } } } : { contentSecurityPolicy: false });
+    connectSrc: ["'self'", "https://api.razorpay.com", "https://api-dark.razorpay.com", "https://checkout.razorpay.com", "https://express.razorpay.com", "https://lumberjack.razorpay.com", "https://lumberjack-cx.razorpay.com", "https://lumberjack-metrics.razorpay.com"],
+  } } } : {}) : { contentSecurityPolicy: false });
   await app.register(compress);
   await app.register(multipart, { limits: { files: 1, fileSize: 24 * 1024 * 1024, fields: 20, parts: 21 } });
   try {
