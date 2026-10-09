@@ -230,7 +230,7 @@ suite("permission-scoped analytics against PostgreSQL", () => {
   it("rejects malformed filters and gives null rather than a fabricated zero", async () => isolated(async (f, tx) => {
     await expect(f.service.overview(f.admin, f.school, "principal", { period: "36500" })).rejects.toThrow();
     await expect(f.service.overview(f.admin, f.school, "principal", { class_id: "bad" })).rejects.toThrow();
-    await expect(f.service.overview(f.admin, f.school, "principal", { student_id: f.pupilA })).rejects.toThrow(/filter/);
+    await expect(f.service.overview(f.teacher, f.school, "teacher", { student_id: f.pupilA })).rejects.toThrow(/filter/);
     await sql`DELETE FROM attendance_records WHERE student_id IN (${f.pupilA}::uuid,${f.pupilB}::uuid)`.execute(tx);
     const report = await f.service.overview(f.admin, f.school, "principal", {});
     expect(report.attendance?.percentage).toBeNull();
@@ -238,6 +238,38 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     expect(report.assessments?.subjects).toEqual([]);
     expect(report.assessments?.overall.average).toBeNull();
     expect(report.attendance?.subjects).toEqual([]);
+  }));
+
+  it('serves bounded principal learner analytics with published results and honest denominators',async()=>isolated(async f=>{
+    await f.assessment(f.classA,f.pupilA,[{outcome:'scored',marks:10},{outcome:'scored',marks:16}]);
+    const report=await f.service.principalReport(f.admin,f.school,{student:f.pupilA,period:'30',limit:1});
+    expect(report.status).toBe('ready');
+    if(report.status!=='ready')throw new Error('Missing report');
+    expect(report.attendance).toMatchObject({percentage:62.5,attended:2.5,denominator:4,excused:1});
+    expect(report.results?.overall).toMatchObject({average:80,scored:1});
+    expect(report).not.toHaveProperty('institution');expect(report).not.toHaveProperty('registers');
+    expect(JSON.stringify(report)).not.toMatch(/password|phone|email|date_of_birth|feedback/);
+    const verify=await f.service.overview(f.admin,f.school,'principal',{student_id:f.pupilA,period:'30'});
+    expect(verify.attendance?.percentage).toBe(report.attendance?.percentage);expect(verify.assessments?.overall.average).toBe(80);
+    expect(verify.institution).toBeNull();expect(verify.registers).toBeNull();
+  }));
+
+  it('clarifies ambiguous names and classes, scopes every lookup, and validates pagination',async()=>isolated(async(f,tx)=>{
+    expect(await f.service.principalReport(f.admin,f.school,{student:'Learner'})).toMatchObject({status:'choose_student',has_more:false});
+    const scoped=await f.service.principalReport(f.admin,f.school,{student:'Learner',class_name:'7A',topic:'attendance'});
+    expect(scoped.status).toBe('ready');expect(scoped).not.toHaveProperty('results');
+    expect(await f.service.principalReport(f.admin,f.school,{class_name:'99Z'})).toMatchObject({status:'choose_class'});
+    for(const who of [f.parent,f.student,f.teacher])await expect(f.service.principalReport(who,f.school,{})).rejects.toThrow(/principal/);
+    await expect(f.service.principalReport(f.admin,f.otherSchool,{})).rejects.toThrow(/principal/);
+    await expect(f.service.principalReport(f.admin,f.school,{school_id:f.otherSchool})).rejects.toThrow();
+    await expect(f.service.principalReport(f.admin,f.school,{limit:1000})).rejects.toThrow();
+    await expect(f.service.overview(f.admin,f.school,'principal',{student_id:randomUUID()})).rejects.toThrow(/not available/);
+    const page=await f.service.principalReport(f.admin,f.school,{topic:'attendance',group_by:'class',limit:1,offset:1,period:'30'});
+    if(page.status!=='ready')throw new Error('Missing report');
+    expect(page.attendance?.comparison).toMatchObject({total:2,offset:1,limit:1,has_more:false});
+    expect(page.attendance?.comparison.items).toHaveLength(1);
+    await sql`UPDATE school_memberships SET is_active=false WHERE user_id=${f.admin.id}::uuid`.execute(tx);
+    await expect(f.service.principalReport(f.admin,f.school,{})).rejects.toThrow(/principal/);
   }));
 
   it("removes assessment aggregates immediately when the resource assignment ends", async () => isolated(async (f, tx) => {

@@ -96,7 +96,10 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
             </span>
           </div>
           {error ? <span className="account-menu__error" role="alert">{error}</span> : null}
-          <button className="account-menu__logout" role="menuitem" type="button" onClick={() => { setOpen(false); void navigate("/account/security"); }}>
+          <button className="account-menu__logout account-menu__link" role="menuitem" type="button" onClick={() => { setOpen(false); void navigate(`/account/profile?from=${encodeURIComponent(window.location.pathname+window.location.search)}`); }}>
+            <CircleUserRound size={16} /> Profile <ArrowRight size={14} />
+          </button>
+          <button className="account-menu__logout account-menu__link" role="menuitem" type="button" onClick={() => { setOpen(false); void navigate("/account/security"); }}>
             <ShieldCheck size={16} /> Account security <ArrowRight size={14} />
           </button>
           <button className="account-menu__logout" role="menuitem" type="button" disabled={pending} onClick={() => void signOut()}>

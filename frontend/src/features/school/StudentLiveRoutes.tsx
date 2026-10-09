@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useNavigate,useSearchParams } from "react-router-dom";
+import { Navigate,useNavigate,useSearchParams } from "react-router-dom";
+import { useProFeatures } from '../auth/useProFeatures';
 import { schoolDateToday, shiftSchoolDate } from "../../lib/schoolTime";
 import { timetableSummaryRange, readTimetableView } from "../timetable/TimetableNavigator";
 import { askAttendanceCopilot } from "../attendance/api";
@@ -44,6 +45,7 @@ function useRefreshSchoolData() {
 
 function StudentAttendanceExperience({ openCopilot = false }: { openCopilot?: boolean }) {
   const navigate = useNavigate();
+  const pro=useProFeatures();
   const query = useQuery({
     queryKey: ["school", "student", "attendance"],
     queryFn: getStudentAttendance,
@@ -53,6 +55,7 @@ function StudentAttendanceExperience({ openCopilot = false }: { openCopilot?: bo
   return (
     <StudentAttendancePage
       data={adaptStudentAttendance(query.data)}
+      proFeaturesEnabled={pro.enabled}
       onAskCopilot={(question) => askAttendanceCopilot({ question })}
       initialCopilotOpen={openCopilot}
       onCopilotClose={openCopilot ? () => navigate("/student/attendance", { replace: true }) : undefined}
@@ -63,13 +66,14 @@ function StudentAttendanceExperience({ openCopilot = false }: { openCopilot?: bo
 }
 
 export function StudentHomeRoute() {
+  const pro=useProFeatures();
   const query = useQuery({
     queryKey: ["school", "student", "home"],
     queryFn: getStudentHome,
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
-  return <StudentHomePage data={adaptStudentHome(query.data)} />;
+  return <StudentHomePage data={adaptStudentHome(query.data)} proFeaturesEnabled={pro.enabled} />;
 }
 
 export function StudentDiaryRoute() {
@@ -103,11 +107,15 @@ export function StudentAttendanceRoute() {
 }
 
 export function StudentCopilotRoute() {
+  const pro=useProFeatures();
+  if(pro.isPending)return <ScreenLoading/>;
+  if(!pro.enabled)return <Navigate to="/student/attendance" replace/>;
   return <StudentAttendanceExperience openCopilot />;
 }
 
 export function StudentEligibilityRoute() {
   const navigate = useNavigate();
+  const pro=useProFeatures();
   const refresh = useRefreshSchoolData();
   const query = useQuery({
     queryKey: ["school", "student", "eligibility"],
@@ -128,6 +136,7 @@ export function StudentEligibilityRoute() {
   return (
     <StudentEligibilityPage
       data={adaptStudentEligibility(query.data)}
+      proFeaturesEnabled={pro.enabled}
       onAskCopilot={(question) => askAttendanceCopilot({ question })}
       onViewTimetable={() => navigate("/student/timetable")}
       onSubmitDocument={submitDocument}

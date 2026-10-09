@@ -7,6 +7,7 @@ import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { SchoolService } from "../school/school.service.js";
 import { provider, MockProvider } from "./providers.js";
+import { requireProFeatures } from '../auth/pro-features.js';
 
 const querySchema = z.object({ student_id: z.string().uuid().optional(), question: z.string().trim().min(3).max(800), conversation_id: z.string().uuid().optional() });
 
@@ -23,6 +24,7 @@ export class AiService {
   constructor(private readonly db: DatabaseService, private readonly school: SchoolService) {}
 
   async query(user: AuthUser, input: unknown, request: FastifyRequest) {
+    await requireProFeatures(this.db,user.id);
     const data = querySchema.parse(input);
     if ([...data.question].some((char) => /\p{Cc}/u.test(char) && char !== "\n" && char !== "\t")) throw new BadRequestException("Question contains unsupported control characters.");
     const student = await this.school.studentForUser(user, data.student_id);

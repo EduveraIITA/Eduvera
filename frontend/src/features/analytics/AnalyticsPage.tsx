@@ -28,9 +28,9 @@ function ComparisonSwitch({ value, onChange }: { value: Comparison; onChange: (v
   </div>;
 }
 export function AnalyticsContent({ data, portal, topic = "attendance", comparison = "subject", onComparisonChange }: { data: AnalyticsOverview; portal: Portal; topic?: AnalyticsTopic; comparison?: Comparison; onComparisonChange?: (value: Comparison) => void }) {
-  const family = portal === "parent" || portal === "student", attendance = data.attendance, results = data.assessments;
+  const family = portal === "parent" || portal === "student" || Boolean(data.selected_student), attendance = data.attendance, results = data.assessments;
   const suffix = data.student ? `?student_id=${encodeURIComponent(data.student.id)}` : "";
-  const attendanceSuffix = family ? suffix : `?${new URLSearchParams({ date: data.range.to, ...(data.selected_class_id ? { class_section_id: data.selected_class_id } : {}) })}`;
+  const attendanceSuffix = data.selected_student ? `?${new URLSearchParams({date:data.range.to,student_id:data.selected_student.id,...(data.selected_class_id?{class_section_id:data.selected_class_id}:{})})}` : family ? suffix : `?${new URLSearchParams({ date: data.range.to, ...(data.selected_class_id ? { class_section_id: data.selected_class_id } : {}) })}`;
   const pendingReview = results?.pipeline.find(stage => stage.status === "submitted")?.count ?? 0;
   const scored = results?.subjects.reduce((n, subject) => n + subject.scored, 0) ?? 0;
   const other = results?.subjects.reduce((n, subject) => n + subject.other, 0) ?? 0;
@@ -99,14 +99,14 @@ export function AnalyticsContent({ data, portal, topic = "attendance", compariso
 
 export default function AnalyticsPage({ portal, topic }: { portal: Portal; topic?: AnalyticsTopic }) {
   const auth = useAuth(), [params, setParams] = useSearchParams(), location = useLocation(), client = useQueryClient();
-  const principalOverview = portal === "principal" && !topic;
+  const principalOverview = portal === "principal" && !topic && !params.has('student_id');
   const family = portal === "parent" || portal === "student";
   const role = { principal: "admin", teacher: "staff", parent: "guardian", student: "student" }[portal];
   const membership = auth.memberships.find(item => item.role === role && item.school_id === auth.user?.active_school_id)
     ?? auth.memberships.find(item => item.role === role);
-  const schoolId = membership?.school_id ?? "", studentId = family ? params.get("student_id") ?? undefined : undefined;
+  const schoolId = membership?.school_id ?? "", studentId = family || portal==='principal' ? params.get("student_id") ?? undefined : undefined;
   const snapshot = topic === "institution";
-  const classId = !family && !snapshot ? params.get("class") ?? params.get("insight_class") ?? undefined : undefined;
+  const classId = !family && !snapshot ? params.get("class") ?? params.get("class_id") ?? params.get("insight_class") ?? undefined : undefined;
   const periodValue = params.get("period"), period: AnalyticsPeriod = periodValue === "30" || periodValue === "90" ? periodValue : "term";
   const query = useQuery({ queryKey: ["analytics", auth.user?.id, schoolId, portal, studentId, classId, period],
     queryFn: () => getAnalytics(schoolId, portal, period, studentId, classId), enabled: Boolean(schoolId), staleTime: 30_000 });
@@ -122,7 +122,7 @@ export default function AnalyticsPage({ portal, topic }: { portal: Portal; topic
   if (principalOverview && location.hash === "#principal-deadlines") return <Navigate replace to={`${insightPath(portal, "operations", search)}#principal-deadlines`} />;
   const content = <div className="analytics-page">
     <div className="analytics-toolbar">
-      {snapshot ? <span className="analytics-scope">Current institution</span> : !family && (query.data?.classes.length || classId) ? <label className="analytics-class-filter"><span className="analytics-sr-only">Class</span><select value={classId ?? ""} onChange={event => change("class", event.target.value)}><option value="">{portal === "principal" ? "All classes" : "My work"}</option>{query.data?.classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label>
+      {snapshot ? <span className="analytics-scope">Current institution</span> : !family && !studentId && (query.data?.classes.length || classId) ? <label className="analytics-class-filter"><span className="analytics-sr-only">Class</span><select value={classId ?? ""} onChange={event => change("class", event.target.value)}><option value="">{portal === "principal" ? "All classes" : "My work"}</option>{query.data?.classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label>
         : <span className="analytics-scope">{query.data?.scope_label ?? (family ? "Learner overview" : portal === "principal" ? "School overview" : "Your assigned work")}</span>}
       {!snapshot && !principalOverview ? periodSelect : null}
       <button type="button" className="analytics-refresh" aria-label="Refresh insights" disabled={query.isFetching || !schoolId} onClick={() => { void query.refetch(); if (principalOverview) void client.invalidateQueries({ queryKey: ["principal-insights", schoolId] }); }}><RefreshCw size={18} aria-hidden="true" /></button>
@@ -139,8 +139,8 @@ export default function AnalyticsPage({ portal, topic }: { portal: Portal; topic
           : snapshot && query.data.institution ? <InstitutionDetail data={query.data.institution} />
             : topic === "registers" && query.data.registers ? <RegisterDetail data={query.data.registers} />
               : topic ? <AnalyticsContent data={query.data} portal={portal} topic={topic} comparison={params.get("compare") === "class" ? "class" : "subject"} onComparisonChange={value => change("compare", value)} /> : <AnalyticsSummary data={query.data} portal={portal} search={search} />}
-        {portal === "principal" && (topic === "attendance" || topic === "results") && !deniedTopic ? <Link className="insight-related-link" to={insightPath(portal, topic === "attendance" ? "review" : "learning-review", new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), via: topic }).toString())}><span><strong>{topic === "attendance" ? "Attendance review" : "Learning review"}</strong><small>{topic === "attendance" ? "Students who may need a check-in" : "Published results below a review threshold"}</small></span><ArrowRight size={18} aria-hidden="true" /></Link> : null}
-        <p className="analytics-freshness">Updated {new Date(query.data.generated_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} · {portal === "teacher" ? "Current assignments only" : family ? "Personal overview" : "Institution overview"}</p>
+        {portal === "principal" && !studentId && (topic === "attendance" || topic === "results") && !deniedTopic ? <Link className="insight-related-link" to={insightPath(portal, topic === "attendance" ? "review" : "learning-review", new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), via: topic }).toString())}><span><strong>{topic === "attendance" ? "Attendance review" : "Learning review"}</strong><small>{topic === "attendance" ? "Students who may need a check-in" : "Published results below a review threshold"}</small></span><ArrowRight size={18} aria-hidden="true" /></Link> : null}
+        <p className="analytics-freshness">Updated {new Date(query.data.generated_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} · {portal === "teacher" ? "Current assignments only" : family || studentId ? "Personal overview" : "Institution overview"}</p>
       </> : null}
     {principalOverview && schoolId ? <OperationalSummaries /> : null}
   </div>;

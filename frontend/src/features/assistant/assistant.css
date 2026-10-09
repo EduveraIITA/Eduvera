@@ -62,6 +62,17 @@
 .assistant-composer button[type="submit"] { background: var(--edura-brand); color: var(--edura-surface); }
 .assistant-composer button:disabled { opacity: .55; cursor: wait; }
 .agent-answer { white-space: pre-wrap; }
+.assistant-response:has(.agent-chart) .assistant-response__body { max-height: min(380px, 43dvh); }
+.agent-chart { margin: 0 0 16px; min-width: 0; }
+.agent-chart-source { margin-bottom: 24px; }
+.agent-chart h3 { margin: 0 0 4px; font-size: 15px; font-weight: 650; }
+.agent-chart__scope { margin-bottom: 12px !important; color: var(--edura-ink-muted); font-size: 12px !important; }
+.agent-chart--compact .analytics-bars { gap: 8px; }
+.agent-chart--compact .analytics-bars__label { font-size: 12px; margin-bottom: 4px; }
+.agent-chart--compact .analytics-bars small:empty { display: none; }
+.agent-chart--compact .analytics-donut__plot { max-width: 112px; }
+.agent-chart--compact .analytics-donut { margin: 8px 0; }
+.assistant-response:has(.agent-chart) .assistant-open-thread p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .agent-caption { color: var(--edura-ink-muted); font-size: 13px !important; line-height: 1.5; }
 .agent-error { padding: 12px 0; color: var(--edura-danger, #a32628); font-size: 14px; }
 .agent-error button { display: block; min-height: 44px; background: transparent; border: 0; color: var(--edura-brand); font: inherit; cursor: pointer; }

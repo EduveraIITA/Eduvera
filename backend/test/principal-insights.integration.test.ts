@@ -76,4 +76,16 @@ suite("principal insights scoped database aggregation",()=>{
     await expect(service.overview(admin,school,{date:'2026-02-30'})).rejects.toThrow(/ISO date/);
     await expect(service.overview(admin,school,{days:100000})).rejects.toThrow(/window/);
   });
+  it('returns only the selected operational topic with its definitions and current authorization',async()=>{
+    const fees=await service.review(admin,school,{topic:'fees',date:end,days:14});
+    expect(fees).toMatchObject({topic:'fees',currency:'INR',unit:'paise'});
+    expect(fees).not.toHaveProperty('engagement');expect(fees).not.toHaveProperty('learning');
+    const attendance=await service.review(admin,school,{topic:'attendance',date:end,days:14});
+    expect(attendance).toHaveProperty('engagement');expect(attendance).not.toHaveProperty('fees');
+    expect(attendance.definitions).toMatch(/Missing records are not absence/);
+    await expect(service.review(staff,school,{topic:'attendance'})).rejects.toThrow(/administrator/);
+    await expect(service.review(admin,otherSchool,{topic:'fees'})).rejects.toThrow(/administrator/);
+    await expect(service.review(admin,school,{topic:'coverage',class_section_id:otherClass})).rejects.toThrow(/class/);
+    await expect(service.review(admin,school,{topic:'fees',sql:'SELECT *'})).rejects.toThrow();
+  });
 });

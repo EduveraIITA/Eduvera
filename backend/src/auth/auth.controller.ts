@@ -180,4 +180,13 @@ export class AuthController {
   me(@Req() request: AuthenticatedRequest) {
     return this.auth.me(request.authUser);
   }
+
+  @ApiCookieAuth()
+  @Get("pro-features/")
+  proFeatures(@Req() request: AuthenticatedRequest) { return this.auth.proFeatures(request.authUser); }
+
+  @ApiCookieAuth()
+  @Post("pro-features/")
+  @HttpCode(200)
+  setProFeatures(@Req() request: AuthenticatedRequest) { return this.auth.setProFeatures(request.authUser, request.body, request); }
 }

@@ -3,10 +3,11 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AgentScope, Capability } from './catalogue.js';
+import type { AgentChart } from './charts.js';
 
 /** Ephemeral transport credentials. Never store or include these in a model prompt. */
 export interface AgentCredentials { cookie: string; csrf: string; requestId: string }
-export interface Evidence { id: string; title: string; href: string; retrieved_at: string; capability: string }
+export interface Evidence { id: string; title: string; href: string; retrieved_at: string; capability: string; chart?:AgentChart }
 
 export function stableHash(value: unknown): string {
   function sorted(item: unknown): unknown {

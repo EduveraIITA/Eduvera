@@ -127,6 +127,23 @@ Required Cloud Run variables when enabling:
 Remove `AGENT_API_KEY` and `AGENT_BASE_URL`. `AGENT_ENABLED=false` stops new inference.
 Existing previews still require explicit confirmation and fresh authorization.
 
+Local testing now uses this same Vertex model/project with Application Default
+Credentials, not the Gemini Developer API. Authenticate with
+`gcloud auth application-default login` and set its quota project with
+`gcloud auth application-default set-quota-project eduera-511111`. Never copy ADC
+credentials into the repository, browser or Cloud Run; Cloud Run retains its
+attached service identity. The local ignored `.env` uses $0.25/day and $1/month
+reservations in its own database, with the same account limits and review expiry.
+Those allowances are separate from Stage, not a combined billing-project limit.
+Migration 057 must exist before local paid inference can proceed.
+
+The pending local agent increment uses Google's official JS SDK with automatic
+function execution and hidden retries disabled. App-controlled `p-retry` reserves
+every generation attempt, preserves Gemini thought signatures and never replays
+a school write. See `docs/blueprint/SCHOOL_AGENT.md` for its verified scope and
+the opt-in, paid synthetic evaluation. This paragraph is not a Stage deployment
+claim; the deployed release below remains the previously verified application.
+
 Migration 057 adds a private durable reservation ledger. Every generation first
 counts input tokens then reserves a conservative upper estimate ($1/M input with
 10%/512-token overhead, $5/M maximum output). Reservations are never refunded on

@@ -30,6 +30,9 @@ const SignupPage = lazy(async () => ({
 const AccountSecurityPage = lazy(async () => ({
   default: (await import("./features/auth/AccountSecurityPages")).AccountSecurityPage,
 }));
+const AccountProfilePage = lazy(async () => ({
+  default: (await import('./features/auth/AccountProfilePage')).AccountProfilePage,
+}));
 const ForgotPasswordPage = lazy(async () => ({
   default: (await import("./features/auth/AccountSecurityPages")).ForgotPasswordPage,
 }));
@@ -204,6 +207,7 @@ export function App() {
               <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/account/security" element={<AuthenticatedOnly><AccountSecurityPage /></AuthenticatedOnly>} />
+              <Route path="/account/profile" element={<AuthenticatedOnly><AccountProfilePage /></AuthenticatedOnly>} />
               <Route path="/onboarding/start" element={<AuthenticatedOnly><SelfServiceOnboardingPage /></AuthenticatedOnly>} />
               <Route path="/onboarding/pending" element={<Navigate to="/onboarding/start" replace />} />
               <Route path="/company" element={<CompanyOnly><CompanyPage /></CompanyOnly>} />

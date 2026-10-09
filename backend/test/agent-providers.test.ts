@@ -1,5 +1,8 @@
 import { afterEach,describe,expect,it,vi } from 'vitest';
 import { AnthropicAgentModel,CompatibleAgentModel,GeminiAgentModel,OllamaAgentModel,OpenAIResponsesModel,createAgentModel,agentSettings } from '../src/agent/providers.js';
+import { ApiError, type GoogleGenAI, type GenerateContentResponse } from '@google/genai';
+import { ModelFailure } from '../src/agent/model-errors.js';
+const sdkClient=(generate:ReturnType<typeof vi.fn>,count=vi.fn().mockResolvedValue({totalTokens:123}))=>({models:{generateContent:generate,countTokens:count}} as unknown as Pick<GoogleGenAI,'models'>);
 const tool={name:'read_attendance',description:'Read attendance',parameters:{type:'object',properties:{},additionalProperties:false}};
 const signal=new AbortController().signal;
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
@@ -7,26 +10,21 @@ describe('provider-independent tool protocols',()=>{
   it('uses Vertex OAuth, counts tokens and reserves allowance before generation',async()=>{
     vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
     const events:string[]=[];
-    const fetcher=vi.fn().mockImplementation((url:string)=>{
-      events.push(url.endsWith(':countTokens')?'count':'generate');
-      return Promise.resolve(new Response(JSON.stringify(url.endsWith(':countTokens')?{totalTokens:123}:{candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Checked'}]}}]})));
-    });vi.stubGlobal('fetch',fetcher);
+    const generate=vi.fn().mockImplementation(()=>{events.push('generate');return Promise.resolve({candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Checked'}]}}]});});
+    const count=vi.fn().mockImplementation(()=>{events.push('count');return Promise.resolve({totalTokens:123});});
     const budget=vi.fn(()=>{events.push('reserve');return Promise.resolve();});
-    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',budget,()=>Promise.resolve('short-lived-token'));
+    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',budget,sdkClient(generate,count));
     expect((await provider.complete([{role:'user',content:'Check attendance'}],[tool],signal)).text).toBe('Checked');
     expect(events).toEqual(['count','reserve','generate']);expect(budget).toHaveBeenCalledWith(123,2048);
-    const request=fetcher.mock.calls[1]![1];expect(request.headers.Authorization).toBe('Bearer short-lived-token');
-    expect(request.headers['x-goog-api-key']).toBeUndefined();
-    expect(JSON.parse(request.body).generationConfig).toMatchObject({candidateCount:1,maxOutputTokens:2048});
+    expect(generate.mock.calls[0]![0].config).toMatchObject({candidateCount:1,maxOutputTokens:2048,automaticFunctionCalling:{disable:true},toolConfig:{functionCallingConfig:{mode:'VALIDATED'}}});
   });
   it('never generates when budget is exhausted or cloud access has expired',async()=>{
     vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
-    const fetcher=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({totalTokens:100}))));
-    vi.stubGlobal('fetch',fetcher);
-    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',()=>Promise.reject(new Error('Budget exhausted')),()=>Promise.resolve('token'));
-    await expect(provider.complete([],[],signal)).rejects.toThrow(/Budget/);expect(fetcher).toHaveBeenCalledTimes(1);
+    const generate=vi.fn(),count=vi.fn().mockResolvedValue({totalTokens:100});
+    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://aiplatform.googleapis.com/v1/projects/test-project/locations/global/publishers/google','','vertex',()=>Promise.reject(new Error('Budget exhausted')),sdkClient(generate,count));
+    await expect(provider.complete([],[],signal)).rejects.toThrow(/Budget/);expect(count).toHaveBeenCalledTimes(1);expect(generate).not.toHaveBeenCalled();
     vi.stubEnv('AGENT_ENABLED_UNTIL','2020-01-01');
-    await expect(provider.complete([],[],signal)).rejects.toThrow(/paused/);expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(provider.complete([],[],signal)).rejects.toThrow(/paused/);expect(count).toHaveBeenCalledTimes(1);
   });
   it('locks Vertex to the reviewed cheap model and refuses unbudgeted generation',()=>{
     vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_GOOGLE_PROJECT','eduera-511111');vi.stubEnv('AGENT_MODEL','gemini-3.1-flash-lite');
@@ -83,7 +81,7 @@ describe('provider-independent tool protocols',()=>{
     expect(first.text).not.toContain('private');
     await provider.complete([...messages,{role:'assistant',content:'',calls:first.calls},{role:'tool',name:tool.name,content:'{}',callId:'c1'}],[tool],signal);
     const body=JSON.parse(fetcher.mock.calls[1]![1].body);expect(body.contents[1]).toEqual(content);expect(body.contents[2].parts[0].functionResponse).toMatchObject({id:'c1',name:tool.name,response:{}});
-    expect(fetcher.mock.calls[0]![1].headers['x-goog-api-key']).toBe('key');
+    expect(new Headers(fetcher.mock.calls[0]![1].headers).get('x-goog-api-key')).toBe('key');
   });
   it('requires explicit cloud models and refuses insecure remote endpoints',()=>{
     vi.stubEnv('AGENT_PROVIDER','openai-compatible');vi.stubEnv('AGENT_MODEL','');expect(()=>createAgentModel()).toThrow(/AGENT_MODEL/);
@@ -91,10 +89,47 @@ describe('provider-independent tool protocols',()=>{
   });
   it('bounds provider response bytes before parsing',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('x'.repeat(256001))));
-    await expect(new OllamaAgentModel('qwen3:8b','http://localhost:11434').complete([],[],signal)).rejects.toThrow(/safety limit/);
+    await expect(new OllamaAgentModel('qwen3:8b','http://localhost:11434').complete([],[],signal)).rejects.toThrow(/too_large/);
   });
   it('does not expose remote provider error bodies',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('secret credential',{status:500})));
     await expect(new OllamaAgentModel('qwen3:8b','http://localhost:11434').complete([],[],signal)).rejects.toThrow('Model service returned HTTP 500.');
+  });
+});
+
+describe('Gemini recovery through the official SDK',()=>{
+  const good={candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Checked evidence'}]}}]} as GenerateContentResponse;
+  it.each(['MALFORMED_FUNCTION_CALL','UNEXPECTED_TOOL_CALL','MAX_TOKENS'])('recovers %s without exposing or dispatching partial calls',async finishReason=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
+    const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason,content:{role:'model',parts:[{functionCall:{name:'unsafe',args:{secret:'do not log'}}}]}}]}).mockResolvedValueOnce(good);
+    const reserve=vi.fn().mockResolvedValue(undefined),diagnostic=vi.fn().mockResolvedValue(undefined);
+    const provider=new GeminiAgentModel('gemini-3.1-flash-lite','https://unused.test','','vertex',reserve,sdkClient(generate),diagnostic);
+    expect((await provider.complete([{role:'user',content:'Analyze records'}],[tool],signal)).text).toBe('Checked evidence');
+    expect(reserve).toHaveBeenCalledTimes(2);expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({attempt:1,retrying:true}));
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('secret');
+    expect(JSON.stringify(generate.mock.calls[1]![0].contents)).not.toContain('unsafe');
+  });
+  it('retries 429 but never repeats the application tool result or loses its signature',async()=>{
+    const signed={role:'model',parts:[{functionCall:{id:'read1',name:tool.name,args:{}},thoughtSignature:'opaque'}]};
+    const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:signed}]}).mockRejectedValueOnce(new ApiError({status:429,message:'PRIVATE BODY'})).mockResolvedValueOnce(good);
+    const provider=new GeminiAgentModel('test','https://unused.test','key','gemini',undefined,sdkClient(generate));
+    const messages=[{role:'user' as const,content:'Check records'}];const first=await provider.complete(messages,[tool],signal);
+    await provider.complete([...messages,{role:'assistant',content:'',calls:first.calls},{role:'tool',name:tool.name,callId:'read1',content:'{"value":42}'}],[tool],signal);
+    const history=generate.mock.calls[2]![0].contents;
+    expect(history.filter((x:any)=>x.role==='model')).toEqual([signed,good.candidates![0]!.content]);
+    expect(history.filter((x:any)=>x.parts?.[0]?.functionResponse)).toHaveLength(1);
+  });
+  it.each([400,401,403])('does not retry invalid/auth HTTP %s or expose provider bodies',async status=>{
+    const generate=vi.fn().mockRejectedValue(new ApiError({status,message:'PRIVATE BODY'}));
+    const provider=new GeminiAgentModel('test','https://unused.test','key','gemini',undefined,sdkClient(generate));
+    await expect(provider.complete([],[],signal)).rejects.toMatchObject({code:'http',status});expect(generate).toHaveBeenCalledTimes(1);
+  });
+  it('never retries safety refusals, honours cancellation, and caps failed generation attempts',async()=>{
+    const generate=vi.fn().mockResolvedValue({candidates:[{finishReason:'SAFETY'}]});
+    const provider=new GeminiAgentModel('test','https://unused.test','key','gemini',undefined,sdkClient(generate));
+    await expect(provider.complete([],[],signal)).rejects.toMatchObject({code:'blocked'});expect(generate).toHaveBeenCalledTimes(1);
+    await expect(provider.complete([],[],AbortSignal.abort())).rejects.toThrow();expect(generate).toHaveBeenCalledTimes(1);
+    generate.mockReset().mockResolvedValue({candidates:[{finishReason:'MALFORMED_FUNCTION_CALL'}]});
+    await expect(provider.complete([],[],signal)).rejects.toBeInstanceOf(ModelFailure);expect(generate).toHaveBeenCalledTimes(3);
   });
 });

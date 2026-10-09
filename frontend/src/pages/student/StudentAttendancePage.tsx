@@ -74,6 +74,7 @@ export interface StudentAttendanceData {
 }
 
 export interface StudentAttendancePageProps {
+  proFeaturesEnabled?: boolean;
   data?: StudentAttendanceData;
   routes?: Partial<StudentRouteMap>;
   onApplyMedicalExcuse?: () => void;
@@ -235,6 +236,7 @@ export function StudentAttendancePage({
   onApplyMedicalExcuse,
   onAskCopilot,
   initialCopilotOpen = false,
+  proFeaturesEnabled = false,
   onCopilotClose,
   activeNav = "attendance",
 }: StudentAttendancePageProps) {
@@ -299,7 +301,7 @@ export function StudentAttendancePage({
 
         <section className="student-attendance-tools" aria-label="Attendance options">
           <button type="button" onClick={onApplyMedicalExcuse??(()=>navigate("/student/leave/new"))}>Apply for leave<ChevronRight size={17} aria-hidden="true"/></button>
-          <button type="button" onClick={()=>setCopilotOpen(true)}>Attendance help<ChevronRight size={17} aria-hidden="true"/></button>
+          {proFeaturesEnabled && <button type="button" onClick={()=>setCopilotOpen(true)}>Attendance help<ChevronRight size={17} aria-hidden="true"/></button>}
           <button type="button" onClick={event=>{event.currentTarget.focus();setRankingOpen(true);}}>Class attendance<ChevronRight size={17} aria-hidden="true"/></button>
 
         {rankingOpen&&<AttendanceRankingDialog ranking={data.ranking} className={data.className} onClose={()=>setRankingOpen(false)}/>}
@@ -328,7 +330,7 @@ export function StudentAttendancePage({
         </section>:<p className="student-attendance-empty">An estimate needs recorded attendance first.</p>}</details>
         </section>
       </div>
-      <AttendanceCopilotSheet open={copilotOpen} onClose={() => { setCopilotOpen(false); onCopilotClose?.(); }} onAsk={onAskCopilot} />
+      <AttendanceCopilotSheet open={proFeaturesEnabled&&copilotOpen} onClose={() => { setCopilotOpen(false); onCopilotClose?.(); }} onAsk={onAskCopilot} />
     </StudentShell>
   );
 }

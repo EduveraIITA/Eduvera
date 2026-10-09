@@ -66,10 +66,10 @@ export default function AssistantPage({portal}:{portal:AssistantPortal}) {
           <AgentReply run={run} busy={conversation.busy} onDecide={(id,decision)=>void conversation.decide(id,decision)}/>
         </div>
       </li>)}
-    </ol>:<div className="assistant-page__empty"><p>What would you like to do?</p><p className="agent-caption">Check school records, plan your day or prepare a change. You’ll review changes before they are saved.</p></div>}
+    </ol>:<div className="assistant-page__empty"><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
     <div ref={end} className="assistant-page__end"/>
     <div className="assistant-page__composer" ref={footer}>
-      <p role="status">{conversation.pending?latest?.progress+'…':conversation.awaiting?'Review the pending action above.':'Answers use your access. Changes need confirmation.'}</p>
+      <p role="status">{conversation.pending?latest?.progress+'…':conversation.awaiting?'Review the pending action above.':conversation.status?.pro_features_enabled?'Answers use your access. Changes need confirmation.':'Answers use your school access.'}</p>
       <AssistantComposer key={portal+':'+(studentId??'self')+':'+conversation.threadId} onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </div>
   </div>;

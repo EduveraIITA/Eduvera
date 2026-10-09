@@ -17,6 +17,7 @@ export interface UserTable {
   avatar_url: Generated<string>;
   role: "student" | "parent" | "staff" | "admin";
   is_active: Generated<boolean>;
+  pro_features_enabled: Generated<boolean>;
   email_verified_at: Generated<Date | null>;
   created_at: Timestamp;
   updated_at: Timestamp;

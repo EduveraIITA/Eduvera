@@ -530,17 +530,26 @@ export class DayPlanService {
           throw new ConflictException(
             "This assignment has ended. Ask the school office to record a historical response.",
           );
-        const received = input.received_at
-          ? new Date(input.received_at)
-          : new Date();
-        const published = (
+        const publication = (
           await sql<{
             published_at: Date;
-          }>`SELECT published_at FROM day_plan_versions WHERE plan_id=${plan.id}::uuid AND version=${reference.version}`.execute(
+            database_now: Date;
+          }>`SELECT published_at, now() AS database_now FROM day_plan_versions WHERE plan_id=${plan.id}::uuid AND version=${reference.version}`.execute(
             db,
           )
-        ).rows[0]!.published_at;
-        if (received.getTime() > Date.now() + 5000 || received < published)
+        ).rows[0]!;
+        const published = publication.published_at;
+        // Use the database clock for server-received responses. Application and
+        // database hosts can differ by a few milliseconds; using the app clock
+        // here could make an immediate response appear to predate publication.
+        const received = input.received_at
+          ? new Date(input.received_at)
+          : publication.database_now;
+        const clockSkewToleranceMs = 5000;
+        if (
+          received.getTime() > Date.now() + clockSkewToleranceMs ||
+          received.getTime() < published.getTime() - clockSkewToleranceMs
+        )
           throw new BadRequestException(
             "The response time must be after publication and not in the future.",
           );

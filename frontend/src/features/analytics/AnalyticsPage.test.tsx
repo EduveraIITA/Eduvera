@@ -118,6 +118,16 @@ describe("role-specific Analytics", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("student_id=child-b&period=30");
     expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/parent/insights?student_id=child-b&period=30");
   });
+  it('opens a principal source at the selected learner rather than institution totals',async()=>{
+    vi.mocked(getAnalytics).mockResolvedValue({...data,selected_student:{id:'learner',name:'Aarav Sharma'},scope_label:'Aarav Sharma',selected_class_id:'class-a',institution:null,registers:null});
+    show('principal','/results?student_id=learner&class=class-a&period=30');
+    await screen.findByRole('heading',{name:'Published results'});
+    expect(getAnalytics).toHaveBeenLastCalledWith('school','principal','30','learner','class-a');
+    expect(screen.getByText('Aarav Sharma')).toBeVisible();
+    expect(screen.queryByRole('combobox',{name:'Class',exact:true})).not.toBeInTheDocument();
+    expect(screen.queryByText('Institution average')).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Back to Insights'})).toHaveAttribute('href','/principal/insights?student_id=learner&class=class-a&period=30');
+  });
   it("hides a denied domain instead of manufacturing totals", async () => {
     vi.mocked(getAnalytics).mockResolvedValue({ ...data, attendance: null });
     show("teacher");

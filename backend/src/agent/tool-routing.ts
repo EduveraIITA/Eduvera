@@ -13,7 +13,7 @@ const topics: Record<string,string[]> = {
   transport: ['transport','bus','ride','rides','journey','journeys','pickup','dropoff'],
   leave: ['leave','leave_request'], staff: ['staff','teacher','teachers','cover','responsibility'],
   events: ['event','events','activity','activities','rsvp','excursion'],
-  insights: ['insights','analytics','trend','trends','average','averages'],
+  insights: ['insights','analytics','trend','trends','average','averages','compare','comparison','decline','declines','ageing','deadlines','coverage','performance'],
   overview: ['overview','summary','dashboard'],
 };
 const stop = new Set('the and for can what how today please show with record check read get first current this that now need want only all you about his her their him them it mark date'.split(' '));
@@ -26,6 +26,7 @@ export function intentDomains(query: string): string[] {
   return result;
 }
 export const domainStarters: Record<string,string[]> = {
+  insights:['principal_analytics','principal_review','insights','school_insights','find_students'],
   attendance: ['student_attendance','record_student_attendance','my_attendance','subject_attendance','class_registers','attendance_register','record_attendance'],
   records: ['find_students','student_attendance','enrollment_options','school_records'],
   assessments: ['assessments','my_results','assessment_details','save_marks'],

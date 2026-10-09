@@ -12,6 +12,7 @@ import { DatabaseService } from "../database/database.service.js";
 import { SchoolService } from "../school/school.service.js";
 import type { PhotoAttendanceAnalysis, VisionSession } from "./contracts.js";
 import { PhotoAttendanceVisionClient } from "./vision-client.js";
+import { proFeaturesEnabled, requireProFeatures } from '../auth/pro-features.js';
 
 export interface UploadedPhoto {
   filename: string;
@@ -88,6 +89,7 @@ export class PhotoAttendanceService {
   }
 
   async setup(user: AuthUser, classSectionId: string, date: string) {
+    const previewEnabled = await proFeaturesEnabled(this.db,user.id);
     const screen = await this.school.teacherAttendanceScreen(user, classSectionId, date);
     const membership = await this.membership(user, screen.class.school_id);
     await this.requireClassPhotoAccess(user,screen.class.school_id,classSectionId,date);
@@ -106,7 +108,7 @@ export class PhotoAttendanceService {
       try {
         health = await this.vision.health();
         if (!health.model_files_present) unavailableReason = "The local face models are not installed.";
-        llm = await this.vision.llmStatus().catch(() => null);
+        if (previewEnabled) llm = await this.vision.llmStatus().catch(() => null);
       } catch (error) {
         unavailableReason = error instanceof Error ? error.message : "The local photo-analysis service is unavailable.";
       }
@@ -138,7 +140,8 @@ export class PhotoAttendanceService {
       }),
       model: health ? { backend: health.backend, id: health.model_id, loaded: health.model_loaded } : null,
       ai_assist: {
-        available: Boolean(llm?.available && llm.installed && llm.supports_images !== false),
+        preview_enabled: previewEnabled,
+        available: previewEnabled && Boolean(llm?.available && llm.installed && llm.supports_images !== false),
         model: llm?.model ?? null,
         unavailable_reason: llm?.available && !llm.installed
           ? `The local vision model ${llm.model} is not installed.`
@@ -313,6 +316,7 @@ export class PhotoAttendanceService {
   ): Promise<PhotoAttendanceAnalysis> {
     this.validatePhoto(photo);
     const input = analysisSchema.parse(fields);
+    if (input.analysis_mode === 'local_llm') await requireProFeatures(this.db,request.authUser.id);
     const screen = await this.school.teacherAttendanceScreen(request.authUser, classSectionId, input.date);
     await this.membership(request.authUser, screen.class.school_id);
     await this.requireClassPhotoAccess(request.authUser,screen.class.school_id,classSectionId,input.date);

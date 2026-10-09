@@ -23,6 +23,7 @@ export interface AnalyticsOverview {
   range: { period: AnalyticsPeriod; from: string; to: string; capped: boolean };
   scope_label: string;
   selected_class_id?: string | null;
+  selected_student?: {id:string;name:string}|null;
   classes: Array<{ id: string; name: string }>;
   institution: InstitutionSnapshot | null;
   registers: RegisterSubmission | null;

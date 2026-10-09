@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { engagementSignals, percentage, shiftDate, type AttendanceStudent } from "./insight-rules.js";
+import { principalReviewInput } from '../analytics/agent-report-contracts.js';
 
 const input = z.object({date:z.iso.date().optional(),days:z.coerce.number().refine(v=>[14,28,56].includes(v)).default(28),class_section_id:z.uuid().optional(),threshold:z.coerce.number().int().min(1).max(99).default(50)});
 type Daily={date:string;expected:number;recorded:number;scored:number;points:number};
@@ -16,6 +17,18 @@ type DeadlineRow={date:string;class_id:string;class_name:string;homework:number;
 @Injectable()
 export class PrincipalInsightsService {
   constructor(private readonly db:DatabaseService) {}
+  async review(user:AuthUser,schoolId:string,query:unknown) {
+    const {topic,...options}=principalReviewInput.parse(query);
+    const report=await this.overview(user,schoolId,options);
+    const topics={
+      attendance:{attendance:report.attendance,engagement:report.engagement,definitions:'A decline is at least 10 percentage points with at least 5 scored days and 80% completeness in both windows. Missing records are not absence. Lists are capped at 50; totals are uncapped. Missing homework completion records do not prove non-submission.'},
+      learning:{learning:report.learning,threshold:report.threshold,definitions:'Latest published snapshots published in this review window. Scores below the selected percentage are review indicators, not diagnoses or official pass/fail grades.'},
+      followups:{followups:report.followups,definitions:'Current open/overdue work and resolutions in the review period. Counts are records, not unique students. Detail is capped at 50.'},
+      coverage:{schedule:report.schedule,deadlines:report.deadlines,definitions:'Next seven days from the operational date, not the historical review window. Assigned periods do not establish delivered lessons. Deadline pressure is at least 3 due items per class-day.'},
+      fees:{fees:report.fees,currency:'INR',unit:'paise',definitions:'Outstanding invoices due by the operational date, net of credits, allocated payments and refunds. Aggregate ageing only; not individual balances. Due today is not overdue.'},
+    };
+    return {topic,generated_at:report.generated_at,period:report.period,operational_date:report.operational_date,class_section_id:report.class_section_id,...topics[topic]};
+  }
   async overview(user:AuthUser,schoolId:string,query:unknown) {
     const parsed=input.safeParse(query);
     if(!z.uuid().safeParse(schoolId).success||!parsed.success) throw new BadRequestException("Use a valid school, ISO date, 14/28/56-day window and a review threshold from 1 to 99.");

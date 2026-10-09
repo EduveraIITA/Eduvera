@@ -35,6 +35,8 @@ async function notification(session:Session){
 }
 beforeAll(async()=>{
   // Only this suite's runs in the strictly guarded disposable database.
+  await pool.query("UPDATE users SET pro_features_enabled=true WHERE username IN ('aarav.student','pooja.parent','kavita.staff','meera.principal')");
+  await pool.query("DELETE FROM notifications WHERE title='Agent test notification'");
   await pool.query("DELETE FROM agent_runs WHERE model='test-tools'");
   await pool.query('DELETE FROM api_rate_limit_buckets');
   model=createServer((req,res)=>{let raw='';req.on('data',(chunk:Buffer)=>{raw+=chunk.toString();});req.on('end',()=>{
@@ -80,6 +82,38 @@ beforeEach(async()=>{modelRequests=[];await pool.query('DELETE FROM api_rate_lim
 afterAll(async()=>{api?.kill('SIGTERM');await new Promise<void>(resolve=>{if(!model)return resolve();model.close(()=>resolve());model.closeAllConnections();});await pool.end();});
 
 describe('agent end-to-end guarded execution',()=>{
+  it('hides advanced tools when Pro is off and rejects direct specialist AI calls',async()=>{
+    const student=new Session();await student.login('student');
+    const on=await student.request('/api/v1/agent/status?portal=student');
+    expect(on.pro_features_enabled).toBe(true);
+    try {
+      const changed=await student.request('/api/v1/auth/pro-features/',{enabled:false});
+      expect(changed).toMatchObject({enabled:false,preview:true});
+      const off=await student.request('/api/v1/agent/status?portal=student');
+      expect(off.pro_features_enabled).toBe(false);
+      expect(off.tools).toBeLessThan(on.tools);
+      const basic=await run(student,'Check attendance');
+      expect(basic.run.status).toBe('completed');
+      expect(basic.run.evidence.map((item:any)=>item.capability)).toEqual(['my_attendance']);
+      expect(basic.run.evidence[0].chart).toBeUndefined();
+      expect(JSON.stringify(modelRequests)).not.toContain('read_notification');
+      expect((await student.raw('/api/v1/ai/attendance/query/',{question:'How is my attendance?'})).status).toBe(403);
+      expect((await student.raw('/api/v1/auth/pro-features/',{enabled:'yes'})).status).toBe(400);
+    } finally { await student.request('/api/v1/auth/pro-features/',{enabled:true}); }
+  });
+  it('does not execute a pending AI action after Pro is turned off',async()=>{
+    const admin=new Session();await admin.login('student');
+    await notification(admin);
+    const prepared=await run(admin,'Mark the test notification read','student');
+    expect(prepared.run.status).toBe('confirmation');
+    try {
+      await admin.request('/api/v1/auth/pro-features/',{enabled:false});
+      const denied=await admin.raw(`/api/v1/agent/threads/${prepared.thread}/actions/${prepared.run.action.id}`,{decision:'confirm'});
+      expect(denied.status).toBe(403);
+      const rejected=await admin.request(`/api/v1/agent/threads/${prepared.thread}/actions/${prepared.run.action.id}`,{decision:'reject'});
+      expect(rejected.status).toBe('rejected');
+    } finally { await admin.request('/api/v1/auth/pro-features/',{enabled:true}); }
+  });
   it('reproduces lookup then pronoun attendance without asking for an internal ID',async()=>{
     const admin=new Session();await admin.login('admin');
     const target=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
@@ -240,6 +274,7 @@ describe('agent end-to-end guarded execution',()=>{
     const marker='Previously visible learner: private-history-marker';
     // Represents an aggregate whose old record is absent from the newly scoped API response.
     await pool.query('UPDATE agent_runs SET answer=$1 WHERE id=$2',[marker,previous.runId]);
+    await pool.query("UPDATE agent_runs SET evidence=jsonb_set(evidence,'{0,chart}',$1::jsonb) WHERE id=$2",[JSON.stringify({kind:'bar',title:marker,points:[{label:marker,value:85}]}),previous.runId]);
     await pool.query("UPDATE agent_tool_steps SET result=result || $1::jsonb WHERE run_id=$2",[JSON.stringify({previous_learner:{id:randomUUID(),name:marker}}),previous.runId]);
     const old=(await session.request(`/api/v1/agent/threads/${previous.thread}`)).runs[0];
     expect(old.answer).toContain('no longer available');expect(old.evidence).toHaveLength(0);

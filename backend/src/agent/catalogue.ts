@@ -15,9 +15,11 @@ import { studentAttendanceInput, studentAttendanceSearch } from '../attendance/s
 import { domainStarters, intentDomains, routingWords } from './tool-routing.js';
 import { schoolDate } from './references.js';
 import { recordRevision } from './revisions.js';
+import { principalReportInput, principalReviewInput } from '../analytics/agent-report-contracts.js';
+import { chartChoice } from './charts.js';
 
 export type Portal = 'principal' | 'teacher' | 'parent' | 'student';
-export interface AgentScope { userId: string; schoolId: string; portal: Portal; studentId: string | null; permissions: string[]; timezone: string }
+export interface AgentScope { userId: string; schoolId: string; portal: Portal; studentId: string | null; permissions: string[]; timezone: string; proFeaturesEnabled?: boolean }
 export interface ApiCommand { method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'; path: string; query?: Record<string, unknown>; body?: unknown }
 export interface Capability {
   name: string; title: string; domain: string; description: string; portals: Portal[];
@@ -196,7 +198,17 @@ write('generate_report_cards', 'Generate a report-card release', 'reports', ['pr
 write('report_comment', 'Save a report-card remark', 'reports', staff, z.object({ ...commentInput.shape, student_id: uuid }), (i,s) => schoolPath(s,`academic-reports/batches/${i.id}/students/${i.body.student_id}/comments`), 'report-cards', { id: true, method: 'PUT', permission: 'reports.comment' });
 for(const action of ['submit','approve','return','publish'] as const) write(`${action}_report_cards`,`${action} report-card release`,'reports',['principal'],revisionInput,(i,s)=>schoolPath(s,`academic-reports/batches/${i.id}/actions/${action}`),(i,s)=>screenPath(s,'report-cards',{batch:i.id}),{id:true});
 
-read('insights', 'Attendance, results and school analytics with denominators', 'insights', all, z.object({ term_id: uuid.optional() }).strict(), (_,s) => schoolPath(s,`analytics/${s.portal}`), 'insights', (i,s) => ({ ...i, ...familyQuery(s) }), 'attendance.view');
+read('insights', 'Attendance, results and school analytics with denominators', 'insights', all, z.object({ period:z.enum(['term','30','90']).optional(),class_id:uuid.optional() }).strict(), (_,s) => schoolPath(s,`analytics/${s.portal}`), (i,s)=>screenPath(s,'insights',i), (i,s) => ({ ...i, ...familyQuery(s) }), 'attendance.view');
+read('principal_analytics','Analyze a student by name/admission number, class or whole institution: recorded attendance, subject percentages and published marks. Use the same period in separate calls to compare learner, class and school; never substitute school data for a learner. Ambiguous names return choices. Pagination never changes aggregate totals.','insights',['principal'],principalReportInput,(_,s)=>schoolPath(s,'analytics/principal/report'),'insights');
+catalogue.find(cap=>cap.name==='principal_analytics')!.title='Attendance and results analysis';
+read('principal_review','Principal decision review: attendance declines and recording gaps, published learning results, open follow-ups, next-week cover/deadline conflicts or aggregate fee ageing. Read-only evidence, not automatic decisions or communication.','insights',['principal'],principalReviewInput,(_,s)=>schoolPath(s,'principal-insights/review'),(i,s)=>screenPath(s,`insights/${({attendance:'review',learning:'learning-review',followups:'followups',coverage:'operations',fees:'finance'} as Record<string,string>)[i.topic]}`,{date:i.date,insight_days:i.days,class:i.class_section_id,insight_threshold:i.threshold}));
+catalogue.find(cap=>cap.name==='principal_review')!.title='Principal operational review';
+for(const name of ['insights','principal_analytics']) {
+  const capability=catalogue.find(cap=>cap.name===name)!;
+  capability.schema=capability.schema.extend({chart:chartChoice.optional().describe('Chart preset: attendance_comparison = BAR percentages by subject/class; attendance_breakdown = DONUT present/absent/late records (NOT subject bars); attendance_trend = LINE over time; results_comparison = BAR published subject/class averages; results_distribution = DONUT scored-result bands; none = no chart. Match the requested chart. Values come only from the API.')});
+  const request=capability.request!;
+  capability.request=(input,scope)=>{const query={...input};delete query.chart;return request(query,scope);};
+}
 read('school_insights', 'Principal attention and decision-support indicators', 'insights', ['principal'], empty, (_,s) => schoolPath(s,'principal-insights'), 'insights', () => ({}));
 read('staff_workspace', 'Staff directory, responsibilities, leave and cover', 'staff', staff, empty, (_,s) => schoolPath(s,'staff/workspace'), (_,s) => screenPath(s,s.portal === 'teacher' ? 'responsibilities' : 'staff'), () => ({}));
 write('create_staff_profile','Create a staff profile','staff',['principal'],profileInput,(_,s)=>schoolPath(s,'staff/profiles'),'staff');
@@ -259,6 +271,7 @@ export const CAPABILITIES: readonly Capability[] = catalogue;
 catalogue.find(cap=>cap.name==='class_registers')!.modelProjection=value=>({date:value.date,classes:value.classes});
 /** Screen destinations are application-owned; the model never supplies a URL. */
 export function verificationScreen(cap:Capability,input:any,scope:AgentScope,data?:any,basis?:any) {
+  if(cap.name==='principal_analytics'||cap.name==='insights')return screenPath(scope,`insights/${input.topic==='results'||String(input.chart??'').startsWith('results_')?'results':'attendance'}`,{period:input.period??'term',...(input.group_by==='class'?{compare:'class'}:{}),...(data?.student?.id&&cap.name==='principal_analytics'?{student_id:data.student.id}:{}),...(data?.class_id||input.class_id?{class:data?.class_id??input.class_id}:{})});
   const record=data?.plan??basis?.plan??data??basis;
   if (cap.domain==='notifications') return screenPath(scope,scope.portal==='parent'?'home':'',{ notifications:'open' });
   if (cap.name==='find_students'&&data?.results?.length===1) return screenPath(scope,'students',{student:data.results[0].id});
@@ -290,7 +303,14 @@ export function verificationScreen(cap:Capability,input:any,scope:AgentScope,dat
   return cap.screen(input,scope);
 }
 export function availableCapabilities(scope: AgentScope) {
-  return CAPABILITIES.filter(cap => cap.portals.includes(scope.portal) && (scope.portal !== 'teacher' || !cap.permission || scope.permissions.includes(cap.permission)));
+  return CAPABILITIES.filter(cap => cap.portals.includes(scope.portal)
+    && (scope.portal !== 'teacher' || !cap.permission || scope.permissions.includes(cap.permission))
+    && (scope.proFeaturesEnabled !== false || isBasicAssistantCapability(cap.name)));
+}
+// Small, evidence-linked answers remain available without the Pro preview.
+// Actions, analytics, charts, discovery of other records and workflows require Pro.
+export function isBasicAssistantCapability(name: string) {
+  return name === 'my_attendance' || name.endsWith('_overview');
 }
 export function capabilityTool(capability: Capability): ToolDefinition {
   return { name: capability.name, description: capability.description, parameters: z.toJSONSchema(capability.toolSchema ?? capability.schema, { io: 'input', unrepresentable: 'any' }) };

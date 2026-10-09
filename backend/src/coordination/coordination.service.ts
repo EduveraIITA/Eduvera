@@ -168,7 +168,12 @@ export class CoordinationService {
         if (!link) throw new BadRequestException("Choose a guardian linked to this student.");
         guardianId = input.guardian_id;
         observedAt = new Date(input.observed_at);
-        if (observedAt.getTime() > Date.now() || observedAt < new Date(row.created_at)) throw new BadRequestException("Response time must fall between opening this follow-up and now.");
+        const clockSkewToleranceMs = 5000;
+        if (
+          observedAt.getTime() > Date.now() + clockSkewToleranceMs ||
+          observedAt.getTime() < new Date(row.created_at).getTime() - clockSkewToleranceMs
+        )
+          throw new BadRequestException("Response time must fall between opening this follow-up and now.");
       } else {
         if (!input.outcome) throw new BadRequestException("Choose a recorded outcome.");
         const ownerOrAdmin = row.owner_user_id === req.authUser.id || Boolean(await db.selectFrom("school_memberships").select("id").where("school_id", "=", row.school_id)

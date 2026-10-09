@@ -8,7 +8,7 @@ export function shortDate(date: string) {
 }
 
 export function AttendanceTrend({ attendance, monthly, minimum, compact = false }: {
-  attendance: NonNullable<AnalyticsOverview["attendance"]>; monthly: boolean; minimum?: number; compact?: boolean;
+  attendance: {trend:Array<{date:string;end:string;percentage:number|null}>}; monthly: boolean; minimum?: number; compact?: boolean;
 }) {
   const id = useId(), points = attendance.trend;
   const x = (index: number) => points.length === 1 ? 176 : 32 + index * 288 / (points.length - 1);

@@ -261,7 +261,7 @@ export function PhotoAttendanceDialog({
               <label className="photo-attendance-check"><input type="checkbox" checked={captureConfirmed} onChange={(event) => setCaptureConfirmed(event.target.checked)} /><span>I confirm this capture is authorized for this class. A photo does not prove liveness or absence.</span></label>
             </div>
 
-            <label className={`photo-ai-assist${setup.ai_assist.available ? "" : " is-unavailable"}`} aria-disabled={!setup.ai_assist.available}>
+            {setup.ai_assist.preview_enabled && <label className={`photo-ai-assist${setup.ai_assist.available ? "" : " is-unavailable"}`} aria-disabled={!setup.ai_assist.available}>
               <input type="checkbox" checked={useLocalAi && setup.ai_assist.available} disabled={!setup.ai_assist.available} onChange={(event) => setUseLocalAi(event.target.checked)} />
               <span className="photo-ai-assist__icon"><ScanSearch size={19} /></span>
               <span>
@@ -270,7 +270,7 @@ export function PhotoAttendanceDialog({
                   ? `${setup.ai_assist.model ?? "Local vision model"} compares detected faces with enrolled references after normal face matching.`
                   : setup.ai_assist.unavailable_reason ?? "Local AI cross-check is unavailable."}</small>
               </span>
-            </label>
+            </label>}
 
             <button className="photo-attendance-primary" type="button" disabled={!photo || !setup.available || !setup.attendance.can_mark || setup.enrolled_count === 0 || period.trim().length === 0 || captureReference.trim().length < 3 || !captureConfirmed || analysisState === "analyzing"} onClick={() => void analyze()}>
               {analysisState === "analyzing" ? <><LoaderCircle className="spin" size={18} />Analyzing on this Mac…</> : <><ScanFace size={18} />Analyze classroom photo</>}

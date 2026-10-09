@@ -7,6 +7,7 @@ import { useAgentConversation } from './useAgentConversation';
 import { AssistantComposer, useAssistantKeyboard } from './AssistantComposer';
 import { useAssistantNavigation } from './useAssistantNavigation';
 import { AssistantText } from './AssistantText';
+import { AgentChart } from './AgentChart';
 import './assistant.css';
 
 export function AssistantTab({chat,className='',sidebar=false}:{chat:DemoChatControl;className?:string;sidebar?:boolean}) {
@@ -36,7 +37,9 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
     document.addEventListener('keydown',escape);
     return()=>document.removeEventListener('keydown',escape);
   },[]);
-  const source=latest?.action ? {href:latest.action.receipt?.href??latest.action.href,title:latest.action.status==='succeeded'?'Verify in app':'Open affected screen'} : latest?.evidence.at(-1);
+  const chartSource=latest?.evidence.filter(item=>item.chart).at(-1);
+  const source=latest?.action ? {href:latest.action.receipt?.href??latest.action.href,title:latest.action.status==='succeeded'?'Verify in app':'Open affected screen'} : chartSource??latest?.evidence.at(-1);
+  const chart=chartSource?.chart;
   return <><div className="assistant-backdrop" aria-hidden="true" onClick={chat.close}/>
     <section id={chat.id} ref={panel} className="assistant-dock" tabIndex={-1} aria-label="AI chat">
       <div className="assistant-response">
@@ -48,12 +51,13 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
         </header>
         <div className="assistant-response__body" aria-live="polite" aria-atomic="true" aria-busy={conversation.pending}>
           <div key={(latest?.id??'welcome')+':'+(latest?.status??'')} className="assistant-response__content">
+            {chart?<AgentChart compact chart={chart}/>:null}
             <Link className="assistant-open-thread" to={fullPath} state={returnState} onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}><p><AssistantText text={text}/></p><span className="sr-only">Open full conversation</span></Link>
-            {latest?.action?.status==='pending'?<Link className="assistant-source-link" to={fullPath} state={returnState} onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}>Review action<ArrowRight size={17} aria-hidden="true"/></Link>
-              :source?<Link className="assistant-source-link" to={source.href} onClick={chat.close}>{source.title}<ArrowRight size={17} aria-hidden="true"/></Link>:null}
           </div>
         </div>
-        <span className="assistant-demo-note">{conversation.pending?'Checking your school records…':conversation.awaiting?'Nothing changes until you confirm.':'Changes need your confirmation.'}</span>
+        {latest?.action?.status==='pending'?<Link className="assistant-source-link" to={fullPath} state={returnState} onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}>Review action<ArrowRight size={17} aria-hidden="true"/></Link>
+          :source?<Link className="assistant-source-link" to={source.href} onClick={chat.close}>{source.title}<ArrowRight size={17} aria-hidden="true"/></Link>:null}
+        <span className="assistant-demo-note">{conversation.pending?'Checking your school records…':conversation.awaiting?'Nothing changes until you confirm.':conversation.status?.pro_features_enabled?'Changes need your confirmation.':'Answers use your school access.'}</span>
       </div>
       <AssistantComposer onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </section>

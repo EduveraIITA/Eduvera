@@ -48,6 +48,7 @@ function mockSession(membershipRoles: Array<"guardian" | "student" | "staff"> = 
         demo_mode: true,
       });
     }
+    if (path === "/api/v1/auth/pro-features/") return Promise.resolve({ enabled: false, preview: true });
     if (path === "/api/v1/onboarding/workspace/") {
       return Promise.resolve({ applications: [], coaching_workspaces: [] });
     }
@@ -247,8 +248,16 @@ describe("implemented application routes", () => {
   });
 
   it("opens Copilot from its visible navigation destination", async () => {
+    const base=apiFetchMock.getMockImplementation() as (path:string)=>Promise<unknown>;
+    apiFetchMock.mockImplementation((path:string):Promise<unknown>=>path==='/api/v1/auth/pro-features/'?Promise.resolve({enabled:true,preview:true}):base(path));
     render(<MemoryRouter initialEntries={["/student/copilot"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("dialog", { name: "Attendance Copilot" })).toBeVisible();
+  });
+
+  it("hides the direct Copilot route when Pro features are off", async () => {
+    render(<MemoryRouter initialEntries={["/student/copilot"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Attendance", level: 1 })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Attendance Copilot" })).not.toBeInTheDocument();
   });
 
   it("renders a real launcher instead of silently changing portals", async () => {

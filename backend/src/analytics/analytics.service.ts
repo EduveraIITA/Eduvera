@@ -7,6 +7,7 @@ import { effectiveSchoolAccess } from "../roles/authorization.js";
 import { SchoolService } from "../school/school.service.js";
 import { addCounts, attendanceMetric, attendanceTrend, dateOffset, emptyCounts, round, type AttendanceCounts } from "./analytics-metrics.js";
 import { institutionSnapshot, registerSubmission } from "./institution-metrics.js";
+import { principalReportInput, analyticsDefinitions } from './agent-report-contracts.js';
 
 const inputSchema = z.object({
   period: z.enum(["term", "30", "90"]).default("term"),
@@ -22,7 +23,7 @@ type DailyRow = AttendanceCounts & { date: string; class_id: string; class_name:
 export class AnalyticsService {
   constructor(private readonly db: DatabaseService, private readonly school: SchoolService) {}
 
-  async overview(user: AuthUser, schoolId: string, portalValue: string, query: unknown) {
+  async overview(user: AuthUser, schoolId: string, portalValue: string, query: unknown, reportStudent?:{id:string;name:string}) {
     z.uuid().parse(schoolId);
     const portal = portalSchema.parse(portalValue), input = inputSchema.parse(query);
     if (user.active_school_id && user.active_school_id !== schoolId) throw new ForbiddenException("Select this institution before opening Analytics.");
@@ -35,8 +36,14 @@ export class AnalyticsService {
         AND member.role=${role} AND member.is_active LIMIT 1`.execute(this.db);
     const context = membership.rows[0];
     if (!context) throw new ForbiddenException("Active access to this view is required.");
+    if(reportStudent && portal!=='principal')throw new ForbiddenException('Principal access is required.');
     const family = portal === "parent" || portal === "student";
-    if (family && input.class_id || !family && input.student_id) throw new BadRequestException("This filter is not available in this view.");
+    if (family && input.class_id || portal==='teacher' && input.student_id) throw new BadRequestException("This filter is not available in this view.");
+    if(portal==='principal'&&input.student_id) {
+      reportStudent=(await sql<{id:string;name:string}>`SELECT s.id,p.first_name||' '||p.last_name AS name FROM students s
+        JOIN school_people p ON p.id=s.person_id AND p.school_id=s.school_id WHERE s.id=${input.student_id}::uuid AND s.school_id=${schoolId}::uuid`.execute(this.db)).rows[0];
+      if(!reportStudent)throw new NotFoundException('Student not available in this institution.');
+    }
     let student = null;
     let term: Term | undefined;
     if (family) {
@@ -65,7 +72,7 @@ export class AnalyticsService {
     const to = [term.ends_on, context.today].sort()[0]!;
     const from = [term.starts_on, dateOffset(to, -(input.period === "term" ? 365 : Number(input.period) - 1))].sort().at(-1)!;
     const scope: Scope = { school: schoolId, user: user.id, admin: portal === "principal", family,
-      student: student?.id ?? null, term: term.id, from, to, today: context.today, timezone: context.timezone, classId: input.class_id ?? null };
+      student: student?.id ?? reportStudent?.id ?? null, term: term.id, from, to, today: context.today, timezone: context.timezone, classId: input.class_id ?? null };
     const permissions = family ? null : await effectiveSchoolAccess(this.db, user.id, schoolId);
     const permits = (permission: string) => family || permissions?.sources.some(source => source.permission === permission);
     const classes = family ? [] : (await sql<{ id: string; name: string }>`SELECT c.id,'Class '||c.grade||c.section AS name
@@ -80,14 +87,55 @@ export class AnalyticsService {
     const [attendance, assessments, institution, registers] = await Promise.all([
       permits("attendance.view") ? this.attendance(scope, input.period === "term", classes) : null,
       permits("assessments.view") ? this.assessments(scope) : null,
-      scope.admin && !scope.classId ? institutionSnapshot(this.db, scope) : null,
-      scope.admin && permits("attendance.view") ? registerSubmission(this.db, scope) : null,
+      scope.admin && !scope.classId && !scope.student ? institutionSnapshot(this.db, scope) : null,
+      scope.admin && !scope.student && permits("attendance.view") ? registerSubmission(this.db, scope) : null,
     ]);
-    return { portal, generated_at: new Date().toISOString(), student, term: { ...term, attendance_threshold: Number(term.attendance_threshold) },
+    return { portal, generated_at: new Date().toISOString(), student, selected_student:reportStudent??null, term: { ...term, attendance_threshold: Number(term.attendance_threshold) },
       range: { period: input.period, from, to, capped: input.period === "term" && from > term.starts_on },
-      scope_label: family ? student?.user.display_name ?? "Learner" : input.class_id ? classes.find(item => item.id === input.class_id)!.name
-        : portal === "principal" ? "All classes" : "Your assigned work",
+      scope_label: reportStudent?.name ?? (family ? student?.user.display_name ?? "Learner" : input.class_id ? classes.find(item => item.id === input.class_id)!.name
+        : portal === "principal" ? "All classes" : "Your assigned work"),
       selected_class_id: input.class_id ?? null, classes, attendance, assessments, institution, registers };
+  }
+
+  /** Bounded principal read model: no SQL, arbitrary fields or school scope from the model. */
+  async principalReport(user:AuthUser,schoolId:string,query:unknown) {
+    z.uuid().parse(schoolId);
+    const input=principalReportInput.parse(query);
+    const member=(await sql<{today:string}>`SELECT (now() AT TIME ZONE school.timezone)::date::text AS today
+      FROM school_memberships m JOIN schools school ON school.id=m.school_id JOIN users u ON u.id=m.user_id
+      WHERE m.user_id=${user.id}::uuid AND m.school_id=${schoolId}::uuid AND m.role='admin' AND m.is_active AND u.is_active LIMIT 1`.execute(this.db)).rows[0];
+    if(!member||(user.active_school_id&&user.active_school_id!==schoolId))throw new ForbiddenException('Active principal access to this institution is required.');
+    const classes=(await sql<{id:string;name:string}>`SELECT DISTINCT c.id,'Class '||c.grade||c.section AS name
+      FROM class_sections c JOIN academic_terms t ON t.school_id=c.school_id AND t.academic_year=c.academic_year
+      WHERE c.school_id=${schoolId}::uuid AND t.is_active AND ${member.today}::date BETWEEN t.starts_on AND t.ends_on ORDER BY name,c.id`.execute(this.db)).rows;
+    const normalize=(value:string)=>value.toLowerCase().replace(/^class\s*/,'').replace(/\s/g,'');
+    const matchedClasses=input.class_name?classes.filter(c=>c.id===input.class_name||normalize(c.name)===normalize(input.class_name!)):[];
+    if(input.class_name&&matchedClasses.length!==1)return {status:'choose_class' as const,matches:matchedClasses,message:'Choose one exact class from the current academic year. No report was generated.'};
+    const classId=matchedClasses[0]?.id;
+    let selected:{id:string;name:string;class_id:string;class_name:string;admission_number:string}|undefined;
+    if(input.student) {
+      const matches=(await sql<NonNullable<typeof selected>>`SELECT DISTINCT s.id,p.first_name||' '||p.last_name AS name,s.admission_number,c.id AS class_id,'Class '||c.grade||c.section AS class_name
+        FROM students s JOIN school_people p ON p.id=s.person_id AND p.school_id=s.school_id
+        JOIN enrollments e ON e.student_id=s.id AND e.is_active JOIN academic_terms t ON t.id=e.term_id AND t.school_id=s.school_id
+        JOIN class_sections c ON c.id=e.class_section_id AND c.school_id=s.school_id
+        WHERE s.school_id=${schoolId}::uuid AND t.is_active AND ${member.today}::date BETWEEN t.starts_on AND t.ends_on AND e.enrolled_on<=${member.today}::date
+          AND (${classId??null}::uuid IS NULL OR c.id=${classId??null}::uuid)
+          AND (s.id::text=${input.student} OR lower(s.admission_number)=lower(${input.student})
+            OR position(lower(${input.student}) in lower(p.first_name||' '||p.last_name))>0)
+        ORDER BY name,s.id,c.id LIMIT 11`.execute(this.db)).rows;
+      if(matches.length!==1)return {status:'choose_student' as const,matches:matches.slice(0,10),has_more:matches.length>10,message:'Choose a unique student by name and class or admission number. No individual analytics were disclosed.'};
+      selected=matches[0]!;
+    }
+    const report=await this.overview(user,schoolId,'principal',{period:input.period,...(classId?{class_id:classId}:{})},selected);
+    const page=<T>(rows:T[])=>({items:rows.slice(input.offset,input.offset+input.limit),total:rows.length,offset:input.offset,limit:input.limit,has_more:input.offset+input.limit<rows.length});
+    const attendance=report.attendance?{...attendanceMetric(report.attendance),trend:report.attendance.trend,
+      comparison:input.group_by==='class'?page(report.attendance.classes):page(report.attendance.subjects)}:null;
+    const results=report.assessments?{overall:report.assessments.overall,comparison:page(input.group_by==='class'?report.assessments.classes:report.assessments.subjects),pipeline:report.assessments.pipeline}:null;
+    return {status:'ready' as const,generated_at:report.generated_at,scope:report.scope_label,student:selected??null,class_id:classId??selected?.class_id??null,
+      range:report.range,term:report.term.name,group_by:input.group_by,definitions:analyticsDefinitions,
+      ...(input.topic!=='results'?{attendance}:{}),...(input.topic!=='attendance'?{results}:{}),
+      ...(!selected&&input.topic==='summary'?{institution:report.institution,registers:report.registers}:{}),
+      limitations:['Only recorded attendance and latest published scores are evidence. No causal, diagnostic or intervention-effect claim is supported.','Compare separate class/school reports using the same period; learner records alone cannot establish a school average.']};
   }
 
   private async attendance(scope: Scope, monthly: boolean, classes: Array<{ id: string; name: string }>) {
@@ -122,7 +170,7 @@ export class AnalyticsService {
       if (!comparisons.has(row.class_id)) comparisons.set(row.class_id, { id: row.class_id, name: row.class_name, counts: emptyCounts() });
       addCounts(comparisons.get(row.class_id)!.counts, row);
     }
-    if (admin) for (const cls of classes.filter(item => !classId || item.id === classId)) {
+    if (admin&&!student) for (const cls of classes.filter(item => !classId || item.id === classId)) {
       if (!comparisons.has(cls.id)) comparisons.set(cls.id, { ...cls, counts: emptyCounts() });
     }
     return { ...attendanceMetric(counts), trend: attendanceTrend(result.rows, from, to, monthly), subjects: await this.subjectAttendance(scope),
@@ -205,7 +253,7 @@ export class AnalyticsService {
       JOIN assessment_publication_results r ON r.publication_id=p.id AND r.school_id=a.school_id AND r.assessment_id=a.id
       WHERE (${student}::uuid IS NULL OR r.student_id=${student}::uuid)
       GROUP BY GROUPING SETS ((s.id,s.name),(c.id,c.grade,c.section),()) ORDER BY name NULLS LAST`.execute(this.db);
-    const pipeline = family ? [] : (await sql<{ status: string; count: number }>`SELECT a.status,count(*)::int AS count
+    const pipeline = family||student ? [] : (await sql<{ status: string; count: number }>`SELECT a.status,count(*)::int AS count
       FROM assessments a JOIN assessment_cycles cycle ON cycle.id=a.cycle_id AND cycle.school_id=a.school_id
       WHERE a.school_id=${school}::uuid AND cycle.term_id=${term}::uuid
         AND (COALESCE(a.scheduled_at,a.created_at) AT TIME ZONE ${timezone})::date BETWEEN ${from}::date AND ${to}::date

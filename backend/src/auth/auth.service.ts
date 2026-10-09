@@ -10,6 +10,7 @@ import { deliverAccountAction } from "../common/account-email.js";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { hashPassword, isPublishedDemoPassword, validatePassword, verifyPassword } from "./password.js";
+import { proFeaturesEnabled } from "./pro-features.js";
 import {
   createMfaSecret,
   createRecoveryCodes,
@@ -435,6 +436,20 @@ export class AuthService {
       school_permissions: await Promise.all(memberships.map(async m => ({school_id:m.school_id,...await this.roles.effective(user,m.school_id)}))),
       demo_mode: config().DEMO_MODE,
     };
+  }
+
+  async proFeatures(user: AuthUser) {
+    return { enabled: await proFeaturesEnabled(this.db, user.id), preview: true };
+  }
+
+  async setProFeatures(user: AuthUser, body: unknown, request: FastifyRequest) {
+    const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(body);
+    const previous = await proFeaturesEnabled(this.db, user.id);
+    if (previous !== enabled) {
+      await sql`UPDATE users SET pro_features_enabled=${enabled},updated_at=now() WHERE id=${user.id}::uuid AND is_active`.execute(this.db);
+      await this.audit.record({ action: 'auth.pro_features.changed', request, actorId: user.id, targetType: 'user', targetId: user.id, metadata: { enabled } });
+    }
+    return { enabled, preview: true };
   }
 
   response(user: AuthUser, csrfToken: string) {

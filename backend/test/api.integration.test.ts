@@ -1221,14 +1221,18 @@ describe("OmniSchool API", () => {
   it("answers attendance questions through the configured generic provider", async () => {
     const browser = new BrowserSession();
     await browser.login("aarav.student");
-    const response = await browser.request("/api/v1/ai/attendance/query/", { method: "POST", body: JSON.stringify({ question: "What happens if I miss 2 more school days?" }) }, true);
-    expect(response.status).toBe(200);
-    const body = await json(response);
-    expect(body).toMatchObject({ provider: "mock", model: "deterministic-attendance-v1", student_id: expect.any(String), conversation_id: expect.any(String) });
-    expect(body.answer).toContain("2 additional absence(s)");
-    expect(body.answer).not.toContain("undefined");
-    expect(body.answer).not.toMatch(/[0-9a-f]{8}-[0-9a-f-]{27,}/i);
-    expect(body.sources.length).toBeGreaterThan(0);
+    const previous = await json<{enabled:boolean}>(await browser.request('/api/v1/auth/pro-features/'));
+    await browser.request('/api/v1/auth/pro-features/',{method:'POST',body:JSON.stringify({enabled:true})},true);
+    try {
+      const response = await browser.request("/api/v1/ai/attendance/query/", { method: "POST", body: JSON.stringify({ question: "What happens if I miss 2 more school days?" }) }, true);
+      expect(response.status).toBe(200);
+      const body = await json(response);
+      expect(body).toMatchObject({ provider: "mock", model: "deterministic-attendance-v1", student_id: expect.any(String), conversation_id: expect.any(String) });
+      expect(body.answer).toContain("2 additional absence(s)");
+      expect(body.answer).not.toContain("undefined");
+      expect(body.answer).not.toMatch(/[0-9a-f]{8}-[0-9a-f-]{27,}/i);
+      expect(body.sources.length).toBeGreaterThan(0);
+    } finally { await browser.request('/api/v1/auth/pro-features/',{method:'POST',body:JSON.stringify({enabled:previous.enabled})},true); }
   });
 
   it("serves a distinct live student home dashboard", async () => {

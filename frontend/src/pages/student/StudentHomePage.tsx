@@ -125,7 +125,7 @@ function readKitState(storageKey: string): Record<string, boolean> {
   }
 }
 
-export function StudentHomePage({ data }: { data: StudentHomeData }) {
+export function StudentHomePage({ data, proFeaturesEnabled = false }: { data: StudentHomeData; proFeaturesEnabled?: boolean }) {
   const navigate = useNavigate();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [kitOpen, setKitOpen] = useState(false);
@@ -227,7 +227,7 @@ export function StudentHomePage({ data }: { data: StudentHomeData }) {
           <header><h2 id="student-home-actions-heading">Quick actions</h2></header>
           <div>
             <button type="button" onClick={() => navigate("/student/leave/new")}><FileText size={19} /><span><strong>Apply leave</strong><small>Start a request</small></span><ChevronRight size={17} /></button>
-            <button type="button" onClick={() => navigate("/student/copilot")}><Bot size={19} /><span><strong>Ask Copilot</strong><small>Attendance guidance</small></span><ChevronRight size={17} /></button>
+            {proFeaturesEnabled && <button type="button" onClick={() => navigate("/student/copilot")}><Bot size={19} /><span><strong>Ask Copilot</strong><small>Attendance guidance</small></span><ChevronRight size={17} /></button>}
           </div>
         </section>
 

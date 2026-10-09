@@ -219,6 +219,8 @@
 .account-menu__role { display: inline-flex; width: fit-content; margin-top: 3px; padding: 1px 5px; border-radius: 999px; color: #004e47 !important; background: var(--edura-positive-soft); font-size: 11px !important; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
 .account-menu__logout { display: flex; width: 100%; min-height: 39px; margin-top: 5px; padding: 0 10px; align-items: center; gap: 8px; border-radius: var(--edura-radius-control); color: #8d1a1a; background: transparent; font-size: 11px; font-weight: 700; }
 .account-menu__logout:hover { background: #fff0ee; }
+.account-menu__link { color: var(--edura-ink); }
+.account-menu__link:hover { background: var(--edura-surface-soft); }
 .account-menu__logout svg:last-child { margin-left: auto; }
 .account-menu__error { display: block; padding: 6px 8px 2px; color: #9c1d1d; font-size: 11px; line-height: 1.35; }
 

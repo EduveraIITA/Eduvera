@@ -51,6 +51,7 @@ export interface StudentEligibilityData {
 }
 
 export interface StudentEligibilityPageProps {
+  proFeaturesEnabled?: boolean;
   data?: StudentEligibilityData;
   routes?: Partial<StudentRouteMap>;
   onAskCopilot?: AttendanceCopilotHandler;
@@ -88,6 +89,7 @@ export function StudentEligibilityPage({
   data = demoEligibilityData,
   routes,
   onAskCopilot,
+  proFeaturesEnabled = false,
   onViewTimetable,
   onSubmitDocument,
 }: StudentEligibilityPageProps) {
@@ -194,11 +196,11 @@ export function StudentEligibilityPage({
 
         <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />{data.nextClass ? `Next: ${data.nextClass.name} · ${data.nextClass.time}` : "View timetable"}</button>
         {data.nextClass ? <p className="workspace-context">{data.nextClass.room} · {data.nextClass.block} · {data.nextClass.teacher} · {data.nextClass.startsIn}</p> : null}
-        <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
+        {proFeaturesEnabled && <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
           <span><Sparkles size={18} /></span>
           <span><small>Ask about attendance</small><strong>{attendanceQuestion}</strong></span>
           <ChevronRight size={20} />
-        </button>
+        </button>}
         <section className="medical-document-card">
           <div className="medical-document-card__copy">
             <span><FileText size={23} /></span>
@@ -206,7 +208,7 @@ export function StudentEligibilityPage({
           </div>
           <div className="medical-document-card__actions">
             <button className="primary-action primary-action--container" type="button" onClick={() => setSheetOpen(true)}><CloudUpload size={18} />Submit Document</button>
-            <button className="secondary-action" type="button" onClick={() => { setCopilotQuestion("What documents make a medical absence excused?"); setCopilotOpen(true); }}>Policy Info</button>
+            {proFeaturesEnabled && <button className="secondary-action" type="button" onClick={() => { setCopilotQuestion("What documents make a medical absence excused?"); setCopilotOpen(true); }}>Policy Info</button>}
           </div>
         </section>
       </div>
@@ -238,7 +240,7 @@ export function StudentEligibilityPage({
       )}
       <AttendanceCopilotSheet
         key={copilotQuestion}
-        open={copilotOpen}
+        open={proFeaturesEnabled&&copilotOpen}
         initialQuestion={copilotQuestion}
         onClose={() => setCopilotOpen(false)}
         onAsk={onAskCopilot}

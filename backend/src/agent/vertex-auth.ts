@@ -1,17 +1,15 @@
-import { z } from 'zod';
+import { GoogleAuth } from 'google-auth-library';
+import { ModelFailure } from './model-errors.js';
 
-let cached: { token: string; until: number } | undefined;
-// Fixed Google metadata destination: no request-controlled URL and no exported key.
+const auth = new GoogleAuth({scopes:['https://www.googleapis.com/auth/cloud-platform']});
+// ADC uses the attached service identity in Cloud Run and the gcloud ADC login
+// on the developer Mac. Google's library owns refresh; credentials stay server-side.
 export async function vertexAccessToken(signal: AbortSignal): Promise<string> {
-  if (cached && cached.until > Date.now() + 60_000) return cached.token;
-  const response = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
-    headers: { 'Metadata-Flavor': 'Google' }, redirect: 'error',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
-  });
-  if (!response.ok) throw new Error('The cloud model identity is unavailable.');
-  const data = z.object({ access_token: z.string().min(20).max(10000), expires_in: z.number().int().positive().max(7200), token_type: z.literal('Bearer') }).parse(await response.json());
-  cached = { token: data.access_token, until: Date.now() + data.expires_in * 1000 };
-  return cached.token;
+  signal.throwIfAborted();
+  const token=await auth.getAccessToken().catch(()=>{throw new ModelFailure('identity');});
+  signal.throwIfAborted();
+  if(!token)throw new ModelFailure('identity');
+  return token;
 }
 
 export function vertexSettings() {

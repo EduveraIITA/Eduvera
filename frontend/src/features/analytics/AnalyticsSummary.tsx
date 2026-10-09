@@ -7,7 +7,7 @@ import { RegisterSummary } from "./InstitutionAnalytics";
 import { insightPath } from "./InsightNavigation";
 
 export function AnalyticsSummary({ data, portal, search }: { data: AnalyticsOverview; portal: Portal; search: string }) {
-  const family = portal === "parent" || portal === "student";
+  const family = portal === "parent" || portal === "student" || Boolean(data.selected_student);
   const attendance = data.attendance, results = data.assessments;
   const scored = results?.subjects.reduce((sum, subject) => sum + subject.scored, 0) ?? 0;
   const pending = results?.pipeline.filter(stage => stage.status === "submitted" || stage.status === "moderated").reduce((sum, stage) => sum + stage.count, 0) ?? 0;

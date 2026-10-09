@@ -5,6 +5,7 @@ import { AssistantPanel,AssistantTab } from './DemoChat';
 import { AssistantComposer } from './AssistantComposer';
 import { useDemoChat } from './useDemoChat';
 import type { AgentRun } from './agentApi';
+import type { AgentChartData } from './agentApi';
 const state=vi.hoisted(()=>({runs:[] as AgentRun[],pending:false,busy:false,awaiting:false,loading:false,error:'',status:{local:true,ready:true},send:vi.fn(),cancel:vi.fn()}));
 vi.mock('./useAgentConversation',()=>({useAgentConversation:()=>state}));
 const context={portal:'teacher' as const,pageTitle:'Today'};
@@ -14,6 +15,17 @@ const open=()=>fireEvent.click(screen.getByRole('button',{name:'Chat',exact:true
 beforeEach(()=>{state.runs=[];state.pending=false;state.awaiting=false;state.error='';state.send.mockResolvedValue(true);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 describe('connected compact assistant',()=>{
+  it('shows a verified chart above the composer and replaces it with the next reply',()=>{
+    const chart:AgentChartData={kind:'bar',title:'Subject attendance',scope:'My class',from:'2026-04-01',to:'2026-10-09',unit:'percent',points:[{label:'Maths',value:90,detail:'9 of 10 lessons'}],note:'Recorded data',total:1,shown:1};
+    state.runs=[{...run('Here is the comparison'),evidence:[{id:'e',title:'Attendance',href:'/teacher/insights/attendance',retrieved_at:new Date().toISOString(),capability:'insights',chart}]}];
+    const view=render(<MemoryRouter><Harness/></MemoryRouter>);open();
+    const chartNode=screen.getByRole('region',{name:'Subject attendance'}),composer=screen.getByRole('textbox');
+    expect(chartNode.compareDocumentPosition(composer)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('link',{name:'Attendance'})).toHaveAttribute('href','/teacher/insights/attendance');
+    expect(screen.getByRole('link',{name:'Open full chat'})).toBeVisible();
+    state.runs=[run('Next reply without a chart')];view.rerender(<MemoryRouter><Harness/></MemoryRouter>);
+    expect(screen.queryByRole('region',{name:'Subject attendance'})).not.toBeInTheDocument();
+  });
   it('keeps the page and only the latest animated reply',()=>{
     state.runs=[run('First reply')];const view=render(<MemoryRouter><Harness/></MemoryRouter>);open();
     expect(screen.getByRole('heading',{name:'Today'})).toBeVisible();expect(screen.getByText('First reply')).toBeVisible();

@@ -4565,3 +4565,91 @@ Deployment and real browser checkout remain separate verification steps.
   request. Text branding and the full invitation remain usable if images are blocked.
 - Verified the deployed static asset returns HTTP 200 with image/png. No new
   image, third-party image host, tracking pixel or dependency was introduced.
+
+### Local agent SDK recovery, decision APIs and compact charts — 9 October 2026
+
+- Read blueprint §18 and the current agent/insights release contracts. User
+  explicitly requested established provider techniques, richer safe principal
+  analytics, local Gemini using the existing trial-credit project, and charts
+  above the mini-chat composer. Preserved the existing theme and navigation.
+- Replaced hand-written Gemini transport with official `@google/genai` 2.28.0 and
+  `google-auth-library` 11.2.0. Validated function calling, native thought-signature
+  retention and `p-retry` 7.1.0 bounded recovery keep app tools/confirmation separate
+  from model generation. Each attempted generation is budget-reserved; malformed
+  responses cannot dispatch partial commands. Permanent denials/refusals do not
+  retry. Code-only failure audits and specific safe errors replace opaque failures.
+- Added two authorized, read-only APIs/tools: principal learner/class/institution
+  attendance and published-result reports, and focused attendance/learning/
+  follow-up/coverage/deadline/fee-ageing reviews. Strict inputs, current institution
+  membership, ambiguous-name choices, minimal identity fields, parameterized SQL,
+  published snapshots and denominator definitions apply. Catalogue now contains
+  137 capabilities (50 reads, 77 reviewed writes, 10 human handoffs), not 137
+  individually certified workflows. Individual-source screens preserve learner,
+  class, period and subject/class comparison instead of opening school totals.
+- Chart presets become server-produced line/bar/donut data from authorized API
+  results; the model cannot supply values, HTML, code or arbitrary URLs. The latest
+  mini reply shows a compact four-bar preview; full chat has full source charts,
+  data tables, explanatory definitions and direct verification links. Missing data
+  stays missing, donuts use whole record partitions, and daily-derived subject
+  attendance is explicitly a projection. Historical charts share source revocation
+  checks with their answers. Source links remain outside the mini scroll region.
+- Verified ADC sign-in and quota project `eduera-511111`. Local preview uses the
+  same `gemini-3.1-flash-lite` Vertex model as Stage, no API key or billing upgrade.
+  Separate local reservations: $0.25/day, $1/month, 10 requests/hour, 30/day,
+  expiry 8 November. Added only migration 057 to local `omnischool_node` under
+  the advisory lock; existing migration checksum drift was not overwritten.
+  Trial credit can apply to eligible Vertex usage; remaining credit is unknown,
+  and per-database allowances are not a project-wide/hosting billing cap.
+- Verification: **471/471 backend tests** on a freshly migrated/CI-seeded disposable
+  PostgreSQL 17 database; **634/634 frontend tests**, then **77/77 focused frontend
+  tests** including a new learner-source regression. Typechecks, full lint and
+  builds passed. A first full run reused old fixtures and omitted CI demo mode;
+  its 11 failures were not waived—the complete clean run passed. No real local
+  ride/attendance data was reset by tests. Provider tests cover malformed calls,
+  output limits, 429, permanent errors, safety, cancellation, signature retention
+  and durable budget refusal; chart tests cover nulls, truncation and source routing.
+- Real opt-in Vertex evaluation through the full isolated API passed the final
+  four-turn greeting → learner bar chart → learner/class/school results →
+  attendance/coverage/follow-up review. An earlier sample omitted school scope and
+  chose the wrong chart; clearer schemas/tool guidance corrected the tested cases.
+  Total eval reservation 162073 micro-USD/12 generations; local browser chart
+  26928 micro-USD/2 generations. These are conservative reservations, not invoices.
+  Browser QA verified mini/full transitions, bottom-nav hiding, correct learner
+  source values and no overflow/composer clipping at 320/390/768/1024/1440px.
+  Native and Cloudflare readiness both returned 200.
+- **Local-only, not pushed/deployed.** Stage still needs deployment and fresh
+  acceptance. Historic Stage HTTP-200 failures did not retain the provider finish
+  reason, so their exact root cause is not claimed as proven. User/physical-device
+  review, broad adversarial/multilingual evaluation, load/latency, chat retention,
+  provider data approval and existing dependency/security advisories remain open.
+  No claim that every request or model is reliable, or that AI misuse is eliminated.
+
+### Per-user Pro features preview switch — 9 October 2026
+
+- Added Profile → Pro features across all four views. The switch is an opt-in
+  **preview preference**, initially off; it is not a paid entitlement or a
+  subscription claim. Basic evidence-linked overview/personal-attendance chat
+  remains available. When off, advanced agent tools, reviewed action proposals,
+  chart generation and specialist attendance AI are absent from the UI/tool
+  catalogue; server checks reject direct specialist API calls and confirmation
+  of a pending AI action. Normal school workflows stay available.
+- Additive migration `058_user_pro_features.sql` stores the preference per user.
+  Existing `ai.use`, photo attendance and role/record permissions remain
+  mandatory when Pro is on. Historical agent answers based on now-hidden tools
+  are masked while Pro is off. Account changes are audited; toggling does not
+  create a billing entitlement. A future plan gate must be evaluated server-side
+  **in addition** to this preference, not replaced by it.
+- Verified after merging current `Stage`, on a freshly migrated and seeded
+  disposable PostgreSQL 17 database: backend **337 passed, 153 intentional
+  skips**; frontend **640 passed**. Tests include
+  off-state tool filtering, direct attendance-AI denial, pending-action
+  confirmation denial and the profile toggle. Both builds and both linters
+  passed. Verification also hardened day-plan and attendance-follow-up response
+  timestamps against bounded five-second application/database clock skew while
+  continuing to reject materially future or pre-publication observations. A
+  first backend run against reused fixtures had dashboard count mismatches;
+  clean reseed resolved them. Migration 058 was applied only to
+  local `omnischool_node` under the migration advisory lock. Local backend and
+  Cloudflare health returned HTTP 200; an authenticated local demo preference
+  read returned `enabled:false`. No Stage deployment or user/device visual
+  acceptance is claimed. Ask for UI validation before release.

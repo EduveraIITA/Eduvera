@@ -2,6 +2,7 @@ import { ArrowRight, Check, FileCheck2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { AgentAction, AgentRun } from './agentApi';
 import { AssistantText } from './AssistantText';
+import { AgentChart } from './AgentChart';
 const human=(key:string)=>key.replace(/_/g,' ').replace(/^./,letter=>letter.toUpperCase());
 function Fields({value,labels}:{value:unknown;labels:Record<string,string>}) {
   if(Array.isArray(value))return <ol className="agent-field-list">{(value as unknown[]).map((item,index)=><li key={index}><Fields value={item} labels={labels}/></li>)}</ol>;
@@ -38,6 +39,7 @@ export function ActionReview({action,busy,onDecide}:{action:AgentAction;busy:boo
 }
 export function AgentReply({run,busy,onDecide}:{run:AgentRun;busy:boolean;onDecide:(id:string,decision:'confirm'|'reject')=>void}) {
   return <>
+    {run.evidence.filter(source=>source.chart).map(source=><div className="agent-chart-source" key={source.id}><AgentChart chart={source.chart!}/><Link className="assistant-source-link" to={source.href}>Open {source.chart!.scope} analysis<ArrowRight size={17} aria-hidden="true"/></Link></div>)}
     <p className="agent-answer"><AssistantText text={run.status==='running'?run.progress+'…':run.answer}/></p>
     {run.status==='failed'?<p className="agent-caption">No action was automatically retried.</p>:null}
     {run.action?<ActionReview action={run.action} busy={busy} onDecide={onDecide}/>:null}

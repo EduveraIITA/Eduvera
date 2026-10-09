@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { vertexAccessToken, vertexSettings } from './vertex-auth.js';
 import { assertAgentEnabled } from './limits.js';
+import { ModelFailure, type ModelDiagnostic } from './model-errors.js';
+import { ApiError, GoogleGenAI, FunctionCallingConfigMode, ThinkingLevel, type Content, type GenerateContentConfig, type Tool } from '@google/genai';
+import pRetry from 'p-retry';
 
 export type ModelBudget = (inputTokens: number, maxOutputTokens: number) => Promise<void>;
 
@@ -36,21 +39,25 @@ function argumentsObject(value: unknown): Record<string, unknown> {
   return z.record(z.string(), z.unknown()).parse(parsed);
 }
 async function post(url: string, body: unknown, signal: AbortSignal, key?: string, extraHeaders: Record<string,string> = {}) {
-  const response = await fetch(url, { method: 'POST', redirect: 'error', signal,
-    headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}), ...extraHeaders }, body: JSON.stringify(body) });
+  let response: Response;
+  try {
+    response = await fetch(url, { method: 'POST', redirect: 'error', signal,
+      headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}), ...extraHeaders }, body: JSON.stringify(body) });
+  } catch { signal.throwIfAborted(); throw new ModelFailure('network'); }
   // Never persist provider errors verbatim: they can contain credentials or prompt data.
-  if (!response.ok) throw new Error(`Model service returned HTTP ${response.status}.`);
+  if (!response.ok) { await response.body?.cancel(); throw new ModelFailure('http',response.status); }
   const reader=response.body?.getReader();
-  if (!reader) throw new Error('Empty model response.');
+  if (!reader) throw new ModelFailure('empty_response');
   const chunks:Uint8Array[]=[];let size=0;
   while (true) {
     const {done,value}=await reader.read();if(done)break;
     size+=value.byteLength;
-    if(size>256_000){await reader.cancel();throw new Error('Model response exceeded the safety limit.');}
+    if(size>256_000){await reader.cancel();throw new ModelFailure('too_large');}
     chunks.push(value);
   }
   const raw=Buffer.concat(chunks).toString('utf8');
-  return JSON.parse(raw) as Record<string, any>;
+  try { return JSON.parse(raw) as Record<string, any>; }
+  catch { throw new ModelFailure('invalid_json'); }
 }
 function functions(tools: ToolDefinition[]) {
   return tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }));
@@ -148,66 +155,108 @@ export class AnthropicAgentModel implements AgentModel {
 }
 /** Preserve complete model parts, including Gemini's opaque thought signatures. */
 export class GeminiAgentModel implements AgentModel {
-  private history:Array<{role:string;parts:any[]}> = [];
+  private history:Content[] = [];
   private consumed=0;
   private nativeIds=new Map<string,string|undefined>();
+  private client: Pick<GoogleGenAI,'models'>;
   constructor(readonly model:string,private readonly base:string,private readonly key:string,
     readonly provider:'gemini'|'vertex'='gemini',private readonly budget?:ModelBudget,
-    private readonly accessToken=vertexAccessToken) {}
+    client?:Pick<GoogleGenAI,'models'>,
+    private readonly diagnostic?:(event:ModelDiagnostic)=>Promise<void>) {
+    // Official SDK owns REST serialization, authentication/refresh and typed responses.
+    // Disable hidden SDK retries: p-retry below reserves every billable attempt.
+    const httpOptions={timeout:60_000,retryOptions:{attempts:1}};
+    this.client=client ?? (provider==='vertex'
+      ? new GoogleGenAI({vertexai:true,project:vertexSettings().project,location:vertexSettings().location,apiVersion:'v1',httpOptions})
+      : new GoogleGenAI({apiKey:key,httpOptions:{...httpOptions,baseUrl:new URL(base).origin},apiVersion:new URL(base).pathname.replace(/^\//,'')}));
+  }
   async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal):Promise<ModelReply> {
     for(const message of messages.slice(this.consumed)) {
       if(message.role==='system'||(message.role==='assistant'&&message.calls?.length))continue;
       if(message.role==='tool') {
         const nativeId=this.nativeIds.get(message.callId??'');
+        if(!message.name)throw new ModelFailure('malformed_call');
         const part={functionResponse:{name:message.name,...(nativeId?{id:nativeId}:{}),response:JSON.parse(message.content)}};
         const last=this.history.at(-1);
-        if(last?.role==='user'&&last.parts.every(item=>item.functionResponse))last.parts.push(part);
+        if(last?.role==='user'&&last.parts?.every(item=>item.functionResponse))last.parts.push(part);
         else this.history.push({role:'user',parts:[part]});
       } else this.history.push({role:message.role==='assistant'?'model':'user',parts:[{text:message.content}]});
     }
     this.consumed=messages.length;
-    const body={
+    const config:GenerateContentConfig={
       systemInstruction:{parts:[{text:messages.filter(message=>message.role==='system').map(message=>message.content).join('\n')}]},
-      contents:this.history,generationConfig:{maxOutputTokens:this.provider==='vertex'?2048:2500,
-        ...(this.provider==='vertex'?{candidateCount:1,thinkingConfig:{thinkingLevel:'LOW'}}:{})},
-      tools:[{functionDeclarations:tools.map(tool=>({name:tool.name,description:tool.description,parametersJsonSchema:tool.parameters}))}],
-      toolConfig:{functionCallingConfig:{mode:'AUTO'}},
+      maxOutputTokens:this.provider==='vertex'?2048:2500,abortSignal:signal,
+      automaticFunctionCalling:{disable:true},
+      ...(this.provider==='vertex'?{candidateCount:1,thinkingConfig:{thinkingLevel:ThinkingLevel.LOW}}:{}),
+      ...(tools.length?{tools:[{functionDeclarations:tools.map(tool=>({name:tool.name,description:tool.description,parametersJsonSchema:tool.parameters}))}],
+        toolConfig:{functionCallingConfig:{mode:FunctionCallingConfigMode.VALIDATED}}}:{}),
     };
-    const endpoint=`${this.base.replace(/\/$/,'')}/models/${encodeURIComponent(this.model)}`;
-    let token:string|undefined;
-    if(this.provider==='vertex') {
-      assertAgentEnabled();
-      if(!this.budget)throw new Error('A durable cloud AI budget is required.');
-      if(Buffer.byteLength(JSON.stringify(body),'utf8')>180000)throw new Error('Model context exceeded the safety limit.');
-      token=await this.accessToken(signal);
-      const count=await post(`${endpoint}:countTokens`,{contents:body.contents,systemInstruction:body.systemInstruction,tools:body.tools},signal,token);
-      const inputTokens=z.number().int().nonnegative().parse(count.totalTokens);
-      await this.budget(inputTokens,2048);
+    // Only model generation is retried. No application tool is dispatched here.
+    // Reserve every billable attempt, including failed/uncertain generations.
+    return pRetry(async()=>{
+      try {
       signal.throwIfAborted();
-    }
-    const response=await post(`${endpoint}:generateContent`,body,signal,token,this.provider==='vertex'?{}:{'x-goog-api-key':this.key});
+      if(Buffer.byteLength(JSON.stringify({contents:this.history,config}),'utf8')>180000)throw new ModelFailure('too_large');
+      if(this.provider==='vertex') {
+        assertAgentEnabled();
+        if(!this.budget)throw new Error('A durable cloud AI budget is required.');
+        const count=await this.client.models.countTokens({model:this.model,contents:this.history,config:{abortSignal:signal,systemInstruction:config.systemInstruction!,...(config.tools?{tools:config.tools as Tool[]}:{})}});
+        await this.budget(z.number().int().nonnegative().parse(count.totalTokens),2048);
+        signal.throwIfAborted();
+      }
+    const response=await this.client.models.generateContent({model:this.model,contents:this.history,config});
+    if(Buffer.byteLength(JSON.stringify(response),'utf8')>256000)throw new ModelFailure('too_large');
     const candidate=response.candidates?.[0];
-    if(candidate?.finishReason!=='STOP'||!candidate.content?.parts)throw new Error('Incomplete model response.');
-    this.history.push(candidate.content);
-    const parts:any[]=candidate.content.parts;
+    const finish=String(candidate?.finishReason??'').replace(/^FINISH_REASON_/,'');
+    if(response.promptFeedback?.blockReason || ['SAFETY','RECITATION','BLOCKLIST','PROHIBITED_CONTENT','SPII','IMAGE_PROHIBITED_CONTENT'].includes(finish)) throw new ModelFailure('blocked');
+    if(finish==='MAX_TOKENS') throw new ModelFailure('output_limit');
+    if(['MALFORMED_FUNCTION_CALL','UNEXPECTED_TOOL_CALL'].includes(finish)) throw new ModelFailure('malformed_call');
+    if(finish!=='STOP'||!candidate?.content||!Array.isArray(candidate.content.parts))throw new ModelFailure('empty_response');
+    const parts=candidate.content.parts;
     const calls=parts.filter(part=>part.functionCall).map((part,index)=>{
-      const call=part.functionCall;const id=call.id??`call_${this.consumed}_${index}`;
+      const call=part.functionCall!;const id=call.id??`call_${this.consumed}_${index}`;
       this.nativeIds.set(id,call.id);
-      return {id,name:call.name,arguments:argumentsObject(call.args??{})};
+      if(!tools.some(tool=>tool.name===call.name))throw new ModelFailure('malformed_call');
+      try { return {id,name:call.name!,arguments:argumentsObject(call.args??{})}; }
+      catch { throw new ModelFailure('malformed_call'); }
     });
-    return {text:parts.filter(part=>typeof part.text==='string'&&!part.thought).map(part=>part.text).join('\n').slice(0,12000),calls};
+    const text=parts.filter(part=>typeof part.text==='string'&&!part.thought).map(part=>part.text).join('\n').slice(0,12000);
+    if(!text.trim()&&!calls.length)throw new ModelFailure('empty_response');
+    this.history.push(candidate.content); // preserve all native signatures exactly
+    return {text,calls};
+      } catch(error) {
+        signal.throwIfAborted();
+        if(error instanceof ApiError)throw new ModelFailure('http',error.status);
+        if(error instanceof SyntaxError)throw new ModelFailure('invalid_json');
+        if(error instanceof TypeError && /fetch|network/i.test(error.message))throw new ModelFailure('network');
+        throw error;
+      }
+    },{
+      retries:2,minTimeout:1000,maxTimeout:2500,randomize:true,signal,
+      shouldRetry:({error})=>error instanceof ModelFailure&&error.retryable,
+      onFailedAttempt:async({error,attemptNumber,retriesLeft})=>{
+      signal.throwIfAborted();
+      if(!(error instanceof ModelFailure))return;
+      const retrying=error.retryable&&retriesLeft>0;
+      await this.diagnostic?.({code:error.code,...(error.status?{status:error.status}:{}),attempt:attemptNumber,retrying});
+      // Discard invalid candidate entirely; never execute partial tool arguments.
+      if(retrying&&['malformed_call','output_limit','empty_response','invalid_json'].includes(error.code)) {
+        this.history.push({role:'user',parts:[{text:'The previous generation could not be used. Answer concisely using only the declared tools with valid required arguments. Use find_tools if needed. Do not invent data or repeat any school action.'}]});
+      }
+      },
+    });
   }
 }
-export function createAgentModel(budget?:ModelBudget): AgentModel {
+export function createAgentModel(budget?:ModelBudget, diagnostic?:(event:ModelDiagnostic)=>Promise<void>): AgentModel {
   const setting = agentSettings();
   if(setting.provider==='vertex') {
     if(!budget)throw new Error('A durable cloud AI budget is required.');
-    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget);
+    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget,undefined,diagnostic);
   }
   if(setting.provider!=='ollama'&&setting.provider!=='openai-compatible'&&!setting.key)throw new Error('The configured cloud model has no API key.');
   if(!setting.model)throw new Error('Choose an explicit AGENT_MODEL for the configured provider.');
   if (setting.provider === 'ollama') return new OllamaAgentModel(setting.model, setting.base);
-  if (setting.provider === 'gemini') return new GeminiAgentModel(setting.model,setting.base,setting.key!);
+  if (setting.provider === 'gemini') return new GeminiAgentModel(setting.model,setting.base,setting.key!,'gemini',undefined,undefined,diagnostic);
   if (setting.provider === 'anthropic') {
     if (!setting.key) throw new Error('The configured cloud model has no API key.');
     return new AnthropicAgentModel(setting.model,setting.base,setting.key);

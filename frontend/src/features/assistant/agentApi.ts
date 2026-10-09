@@ -1,6 +1,12 @@
 import { apiFetch } from '../../lib/api';
 import type { AssistantContext } from './context';
-export interface AgentSource { id: string; title: string; href: string; retrieved_at: string; capability: string }
+export interface AgentChartData {
+  interval?:'monthly'|'weekly';
+  kind:'line'|'bar'|'donut'; title:string; scope:string; from:string; to:string; unit:'percent'|'records';
+  points:Array<{label:string;value:number|null;detail:string;date?:string;end?:string}>;
+  note:string; total:number; shown:number;
+}
+export interface AgentSource { id: string; title: string; href: string; retrieved_at: string; capability: string; chart?:AgentChartData }
 export interface AgentAction {
   capability?: string;
   preview?: { student?: string; class_name?: string; date: string; previous_status: string; status: string; reason?: string; remarks?: string; register_note: string };
@@ -11,7 +17,7 @@ export interface AgentAction {
 export interface AgentRun { id:string; question:string; answer:string; status:'running'|'completed'|'confirmation'|'failed'|'cancelled'; progress:string; provider:string; model:string; evidence:AgentSource[]; action:AgentAction|null; created_at:string }
 export interface AgentThread { id:string; title:string; runs:AgentRun[] }
 export interface ThreadSummary { id:string; title:string; updated_at:string }
-export interface AgentStatus { provider:string; model:string; ready:boolean; local:boolean; tools:number }
+export interface AgentStatus { provider:string; model:string; ready:boolean; local:boolean; tools:number; pro_features_enabled:boolean }
 const root='/api/v1/agent';
 const scope=(context:AssistantContext)=>({ portal:context.portal,...(context.studentId ? { student_id:context.studentId } : {}) });
 export const agentApi={

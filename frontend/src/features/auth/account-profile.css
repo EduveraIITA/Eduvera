@@ -1,0 +1,18 @@
+.account-profile-group{max-width:720px;margin:0 auto 12px;border:1px solid var(--edura-line);border-radius:var(--edura-radius-card);background:#fff;overflow:hidden}
+.account-profile-row{display:flex;min-height:84px;padding:16px;align-items:center;gap:13px}
+.account-profile-row__icon{display:grid;width:38px;height:38px;flex:0 0 auto;place-items:center;border-radius:var(--edura-radius-control);color:var(--edura-brand);background:var(--edura-surface-strong)}
+.account-profile-row__copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:4px}
+.account-profile-row__copy strong{font-size:15px}
+.account-profile-row__copy small,.account-profile-explainer{color:var(--edura-ink-muted);font-size:12px;line-height:1.5}
+.account-profile-switch{position:relative;width:50px;height:31px;flex:0 0 auto;padding:3px;border:0;border-radius:999px;background:#ccd5e3;cursor:pointer;transition:background .2s}
+.account-profile-switch[aria-checked="true"]{background:var(--edura-brand)}
+.account-profile-switch>span{display:block;width:25px;height:25px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .2s}
+.account-profile-switch[aria-checked="true"]>span{transform:translateX(19px)}
+.account-profile-switch:focus-visible,.account-profile-security:focus-visible{outline:3px solid var(--edura-brand);outline-offset:3px}
+.account-profile-switch:disabled{opacity:.55;cursor:wait}
+.account-profile-explainer{margin:0;padding:0 16px 16px}
+.account-profile-status{max-width:720px;margin:0 auto 12px;color:var(--edura-ink-muted);font-size:12px}
+.account-profile-security{display:flex;max-width:720px;min-height:55px;margin:0 auto;padding:0 16px;align-items:center;gap:11px;border:1px solid var(--edura-line);border-radius:var(--edura-radius-card);color:var(--edura-ink);background:#fff;font-size:14px;font-weight:700}
+.account-profile-security svg{color:var(--edura-brand)}
+.account-profile-security span{margin-left:auto;color:var(--edura-ink-muted);font-size:23px}
+@media(prefers-reduced-motion:reduce){.account-profile-switch,.account-profile-switch>span{transition:none}}

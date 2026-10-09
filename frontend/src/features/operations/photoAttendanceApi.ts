@@ -23,6 +23,7 @@ export interface PhotoAttendanceSetup {
   }>;
   model: { backend: string; id: string | null; loaded: boolean } | null;
   ai_assist: {
+    preview_enabled?: boolean;
     available: boolean;
     model: string | null;
     unavailable_reason: string | null;

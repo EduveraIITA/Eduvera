@@ -77,7 +77,7 @@ English-language grounding is not multilingual or arbitrary-language certificati
 ## Implemented coverage
 
 `backend/src/agent/catalogue.ts` is authoritative. As verified on 9 October, it
-contains **135 capabilities: 48 reads, 77 reviewed writes, 10 human handoffs**.
+contains **137 capabilities: 50 reads, 77 reviewed writes, 10 human handoffs**.
 These counts describe the catalogue, not 135 individually certified end-to-end
 workflows. Portal visibility, staff grants and the underlying API narrow the tools
 offered to each account. A tool is not an independent authorization grant.
@@ -94,7 +94,7 @@ offered to each account. A tool is not an independent authorization grant.
 | Events | 3 | 7 | 1 |
 | Assessments and result registers | 3 | 10 | 0 |
 | Report-card schemes and releases | 4 | 9 | 0 |
-| Insights | 2 | 0 | 0 |
+| Insights | 4 | 0 | 0 |
 | Staff leave, cover and responsibilities | 1 | 8 | 1 |
 | School and student records | 3 | 5 | 1 |
 | Fees and payment reviews | 2 | 5 | 0 |
@@ -368,3 +368,98 @@ is a verified application/schema deployment, not a live Stage inference claim.
 The Mac-backed Cloudflare preview still reports local Ollama ready. Choose an
 approved reachable provider before expecting agent replies on Railway. No model
 keys or public local-model tunnel were created. Production acceptance remains open.
+
+## Vertex recovery, scoped analytics and verified charts — 9 October 2026
+
+The Railway section above is historical. Stage subsequently moved to Google Cloud
+and enabled Vertex; see `deploy/gcp/README.md`. This new increment is **local-only,
+not yet pushed or deployed**. It follows blueprint §18 and the user's request to
+use established provider tooling and show data charts above the compact composer.
+
+- Gemini/Vertex now uses the official `@google/genai` 2.28.0 SDK and
+  `google-auth-library` 11.2.0. Native response parts and thought signatures are
+  retained per run, with consecutive function responses grouped correctly.
+  `VALIDATED` function calling constrains the model to declared schemas. The SDK's
+  automatic tool execution is disabled: application authorization and reviewed
+  commands remain the only execution boundary.
+- `p-retry` 7.1.0 provides bounded jittered backoff for transient generation
+  failures and unusable model responses. SDK retries are disabled so every
+  generation attempt gets its own durable reservation. At most three attempts
+  per generation, still subject to the existing ten-call/run allowance and
+  cancellation. No application write is automatically retried. Blocked content,
+  identity/permission failures and permanent request errors fail closed.
+- Code-only `agent.model.response_failed` and `agent.run.failed` audit records
+  distinguish malformed calls, output limits, refusals, HTTP failures and
+  cancellation without storing provider bodies or credentials. The original
+  Stage incident reached HTTP 200 but retained no finish reason; its exact
+  historic model failure cannot be reconstructed or claimed as proven.
+- `GET /schools/:schoolId/analytics/principal/report` provides a strict, bounded,
+  principal-only report by learner name/admission number, exact class or school,
+  term/30/90 days, attendance/results and subject/class comparisons. Ambiguous
+  matches require a choice. Server aggregates preserve denominators, published
+  snapshots, missing-data semantics and uncapped totals despite pagination.
+  No DOB, guardian contacts, private feedback or arbitrary SQL enters this tool.
+- `GET /schools/:schoolId/principal-insights/review` projects one of attendance,
+  learning, follow-ups, upcoming coverage/deadlines or aggregate fee ageing from
+  the existing authorized repeatable-read model. The response explains its
+  period, units and review criteria. It makes no intervention decision and sends
+  no communication. Teacher and family callers cannot use principal tools.
+- All personas can request charts through their authorized `insights` tool;
+  principals also have `principal_analytics`. The model selects an enum preset,
+  never chart numbers/code/HTML. The server creates line, bar or complete-partition
+  donut data from the actual API result. Missing points remain gaps, subject
+  attendance is labelled as a daily-record projection, and truncation is visible.
+  Compact chat shows one latest chart (four bars maximum); full chat retains
+  all source charts, definitions and accessible data tables. Each chart opens
+  its app-owned source, preserving learner, class, period and comparison mode.
+  Revoked-source history hides the old answer and chart together.
+
+Local ADC authentication is complete with quota project `eduera-511111`. The
+ignored local environment now uses the same approved Vertex model as Stage,
+without an API key, paid-account upgrade or GPU. Its separate local ledger allows
+$0.25/day and $1/month in conservative reservations, 10 requests/hour and 30/day,
+expiring 8 November 2026. Local and Stage allowances are **not** one project-wide
+billing cap. Trial credit eligibility depends on the billing account's remaining
+credit; its balance is still unverified. Existing local migration drift was not
+rewritten: only additive 057 was applied under the migration advisory lock.
+
+Verification: clean PostgreSQL 17 with the CI seed sequence passed all 471 backend
+tests; the full frontend suite passed 634, followed by 77 focused tests including
+one newly added learner-source test. Both typechecks, full lint and builds passed.
+The explicit paid `test/agent-vertex.eval.ts` harness uses disposable synthetic
+data, real SDK/ADC, full app authorization and durable budgets. Its final four-turn
+run passed greeting, learner attendance bar chart, learner/class/school published
+marks comparison and a multi-topic attendance/coverage/follow-up review. The first
+run exposed wrong chart selection and an omitted school scope, which informed
+clearer tool contracts; a passing sample is not universal model certification.
+The eval ledger reserved 162073 micro-USD across 12 calls; local browser chart
+verification reserved 26928 across two calls, neither figure is an invoice.
+
+Browser QA verified a real local chart, full conversation, learner source values,
+and no page overflow/composer clipping at 320/390/768/1024/1440px. Local and
+Cloudflare readiness returned 200. User/physical-device sign-off, Stage deployment
+and fresh Stage evaluation are pending. Adversarial/multilingual evaluation,
+retention/provider approval and load/latency gates remain open. The dependency
+audit still reports pre-existing application/development advisories; this is not
+a claim of production readiness or zero AI misuse.
+
+References: [official SDK](https://googleapis.github.io/js-genai/release_docs/classes/client.GoogleGenAI.html),
+[function calling](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/tools/function-calling),
+[thought signatures](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking/thought-signatures),
+[ADC](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc),
+[Google Cloud trial terms](https://docs.cloud.google.com/free/docs/free-cloud-features).
+
+#### Pro preview preference (9 October 2026)
+
+Profile now has a per-user Pro features preview toggle (off by default). This is
+not billing or an entitlement. Off means the assistant is limited to scoped
+overview/personal-attendance reads, with no agent actions or verified charts;
+student attendance Copilot and the optional photo local-AI cross-check are
+hidden and denied on direct API access. Existing role, record and school
+permissions are still checked when enabled. Disabling Pro masks historical
+tool-derived answers and blocks confirming pending actions; rejection remains
+available. Future paid plans need a separate server entitlement gate combined
+with this preference. Additive migration: `058_user_pro_features.sql`. The
+local-only implementation has clean-database backend tests (337 passed, 153
+intentional skips) and a 640-test frontend suite. Both production builds and
+linters pass. Stage remains unchanged.
