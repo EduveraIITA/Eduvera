@@ -158,6 +158,8 @@ describe('agent capability boundary',()=>{
     expect(attendanceArguments({student:'Ananya Iyer',class_name:'Class 10'},'Mark Ananya Iyer absent',[],'Asia/Kolkata')).not.toHaveProperty('class_name');
     expect(attendanceArguments({student:'Mark Mark Sharma'},'Mark Mark Sharma present',[],'Asia/Kolkata')).toMatchObject({student:'Mark Sharma'});
     expect(attendanceArguments({student:'Sharma',class_name:'Class 7A'},'Mark Sharma from Class 7A present',[],'Asia/Kolkata')).toMatchObject({student:'Sharma',class_name:'Class 7A'});
+    expect(attendanceArguments({student:'invented'},"Change Aarav Sharma's attendance to present",[],'Asia/Kolkata')).toMatchObject({student:'Aarav Sharma'});
+    expect(attendanceArguments({student:'invented'},'Change Aarav Sharma’s attendance to absent',[],'Asia/Kolkata')).toMatchObject({student:'Aarav Sharma'});
     expect(attendanceArguments({student:'Ananya Iyer',status:'absent',reason:'Model invented'},'Change the Aarav Sharma attendent to present today. Accidently we marked absent.',[],'Asia/Kolkata')).toMatchObject({student:'Aarav Sharma',status:'present',reason:'Accidently we marked absent'});
     expect(explicitAttendanceStudent('Correct the attendance of Aarav Sharma to late')).toBe('Aarav Sharma');
     expect(explicitAttendanceStatus('Change Aarav Sharma attendance to present; he was marked absent by mistake.')).toBe('present');

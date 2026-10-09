@@ -24,7 +24,10 @@ export function explicitAttendanceStudent(question:string):string|undefined {
     const name=direct?.trim()
       .replace(/^(?:the\s+)?(?:one\s+)?(?:student|learner)\s+/i,'')
       .replace(/\s+from\s+class\s+[\p{L}\p{N} -]+$/iu,'')
-      .replace(/^the\s+/i,'');
+      .replace(/^the\s+/i,'')
+      // Natural action wording commonly uses “Aarav Sharma's attendance”.
+      // Possession is grammar, not part of the learner's lookup identity.
+      .replace(/(?:['’]s|s['’])$/iu,'');
     if(name&&!/^(?:him|her|them|his|their|he|she|they|that student|this student|everyone|all)$/i.test(name))return name;
   }
   return undefined;
