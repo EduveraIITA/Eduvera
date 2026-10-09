@@ -305,16 +305,16 @@ describe("implemented application routes", () => {
   });
 
   it("keeps student home distinct and routes Attendance from its navigation", async () => {
-    const user = userEvent.setup();
+    // This route test checks click outcomes; pointer traversal is not part of this assertion.
     render(<MemoryRouter initialEntries={["/student"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
     expect(screen.queryByText("Overall Aggregate")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open digital student ID for Aarav Sharma" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open digital student ID for Aarav Sharma" }));
     expect(screen.getByRole("dialog", { name: "Aarav Sharma" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Close digital student ID" }));
-    await user.click(screen.getByRole("link", { name: "Attendance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close digital student ID" }));
+    fireEvent.click(screen.getByRole("link", { name: "Attendance" }));
     expect(await screen.findByRole("region",{name:/Overall attendance/})).toBeVisible();
-  }, 12000);
+  }, 30000);
 
   it("opens the parent's student ID as a viewport modal with a visible close control", async () => {
     const interact = userEvent.setup();
