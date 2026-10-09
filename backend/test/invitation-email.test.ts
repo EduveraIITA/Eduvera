@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({sendMail: vi.fn(), close: vi.fn(), createTransp
 vi.mock('../src/config.js', () => ({config: () => mocks.settings}));
 vi.mock('nodemailer', () => ({default: {createTransport: mocks.createTransport}}));
 import { deliverInvitation, invitationEmailFailure } from '../src/common/invitation-email.js';
+import { invitationLogo } from '../src/common/invitation-logo.js';
 import { invitationTemplate } from '../src/common/invitation-template.js';
 import { sendTransactionalEmail } from '../src/common/email-transport.js';
 const invitation = {email: 'recipient@example.test', token: 'private-code', expires_at: '2099-10-04T00:00:00Z'};
@@ -40,8 +41,8 @@ describe('invitation SMTP delivery', () => {
     expect(body.text).toContain(invitation.token);
     expect(body.html).toContain('Accept Invitation');
     expect(body.html).toContain(invitation.token);
-    expect(body.attachments[0]).toMatchObject({filename:'eduera-logo.png',content_type:'image/png',content_id:'eduera-logo'});
-    expect(Buffer.from(body.attachments[0].content,'base64').subarray(1,4).toString()).toBe('PNG');
+    expect(body.attachments).toBeUndefined();
+    expect(body.html).toContain('https://school.example.test/email-assets/eduera-logo-v1.png');
   });
   it('reports API authentication failures without exposing the response body', async () => {
     mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
@@ -61,7 +62,7 @@ describe('invitation SMTP delivery', () => {
     expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({to: invitation.email, text: expect.stringContaining('https://school.example.test/join')}));
     expect(mocks.sendMail.mock.calls[0]![0].text).toContain(invitation.token);
     expect(mocks.sendMail.mock.calls[0]![0].html).toContain('Accept Invitation');
-    expect(mocks.sendMail.mock.calls[0]![0].attachments[0]).toMatchObject({cid:'eduera-logo',contentDisposition:'inline',encoding:'base64',contentType:'image/png'});
+    expect(mocks.sendMail.mock.calls[0]![0].attachments).toEqual([]);
     expect(mocks.close).toHaveBeenCalledOnce();
   });
   it('does not contact SMTP in manual mode', async () => {
@@ -96,7 +97,7 @@ describe('invitation SMTP delivery', () => {
       expect(params.get('email')).toBe('"quoted"@example.test');
     }
     expect(message.html).not.toMatch(/<script|<form/i);
-    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="cid:eduera-logo"']);
+    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/email-assets/eduera-logo-v1.png"']);
     expect(message.html).toContain('alt="Eduera logo" width="48" height="48"');
     expect(message.text).toContain('<script>private&code</script>');
     expect(message.html).toContain('Oct 4, 2099, 12:00 AM UTC');
@@ -111,12 +112,11 @@ describe('invitation SMTP delivery', () => {
     expect(message.html).toContain('Open direct join portal');
     expect(message.html).toContain('max-width:480px');
     expect(message.html).not.toMatch(/<button|onclick|navigator.clipboard|Help Center|Eduera Inc/i);
-    expect(message.inlineImages).toHaveLength(1);
-    expect(message.inlineImages[0]).toMatchObject({filename:'eduera-logo.png',cid:'eduera-logo'});
+    expect(message).not.toHaveProperty('inlineImages');
     expect(message.text).toContain('Invitation code: 012345');
     const link=new URL(message.text.match(/Open: (.+)/)![1]!);
     expect(new URLSearchParams(link.hash.slice(1)).get('token')).toBe('012345');
     // PNG IHDR color type 6 carries alpha; the old app icon was opaque RGB.
-    expect(Buffer.from(message.inlineImages[0]!.content,'base64')[25]).toBe(6);
+    expect(Buffer.from(invitationLogo.content,'base64')[25]).toBe(6);
   });
 });

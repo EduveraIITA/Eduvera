@@ -1,5 +1,5 @@
 import { invitationCodeHash, issueInvitationCode } from '../common/invitation-code.js';
-import { deliverInvitation } from "../common/invitation-email.js";
+import { enqueueInvitation } from "../common/invitation-queue.js";
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -376,7 +376,9 @@ export class OperationsService {
 
   async invitationWorkspace(user: AuthUser, schoolId: string) {
     const authority=await this.authorize(user,schoolId,"members.invite");
-    const invitations=await sql`SELECT id,email,role,expires_at,accepted_at,revoked_at FROM school_invitations
+    const invitations=await sql`SELECT id,email,role,expires_at,accepted_at,revoked_at,
+      (SELECT id FROM invitation_email_jobs j WHERE j.invitation_id=school_invitations.id AND j.token_hash=school_invitations.token_hash) AS delivery_job_id,
+      (SELECT delivery_state FROM invitation_email_jobs j WHERE j.invitation_id=school_invitations.id AND j.token_hash=school_invitations.token_hash) AS delivery FROM school_invitations
       WHERE school_id=${schoolId}::uuid AND (${authority.role}='admin' OR (role<>'admin' AND source='school')) ORDER BY created_at DESC LIMIT 100`.execute(this.db);
     const students=await sql`SELECT s.id,s.admission_number,concat_ws(' ',p.first_name,p.last_name) AS name,coalesce(u.email,p.contact_email) AS email
       FROM students s JOIN school_people p ON p.id=s.person_id LEFT JOIN users u ON u.id=s.user_id WHERE s.school_id=${schoolId}::uuid ORDER BY p.first_name`.execute(this.db);
@@ -407,9 +409,9 @@ export class OperationsService {
       await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND email=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL AND (${authority.role}='admin' OR role<>'admin')`.execute(db);
       const result=await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,student_id,guardian_id)
         VALUES(${schoolId}::uuid,${data.email},${data.role},${tokenHash},${user.id}::uuid,now()+interval '30 minutes',${studentId??null}::uuid,${data.guardian_id??null}::uuid) RETURNING id,expires_at`.execute(db);
-      return {...result.rows[0]!,email:data.email,token};
+      return enqueueInvitation(db, {...result.rows[0]!,email:data.email,token});
     });
-    return deliverInvitation(invitation);
+    return invitation;
   }
 
   async resendInvitation(user: AuthUser, schoolId: string, id: string) {
@@ -431,9 +433,9 @@ export class OperationsService {
       const row = (await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
         SET token_hash=${tokenHash},expires_at=now()+interval '30 minutes',created_at=now()
         WHERE id=${id}::uuid AND school_id=${schoolId}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
-      return {...row,email:found.email,token};
+      return enqueueInvitation(db, {...row,email:found.email,token});
     });
-    return deliverInvitation(invitation);
+    return invitation;
   }
 
   async acceptInvite(body: unknown) {
