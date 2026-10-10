@@ -43,6 +43,8 @@ describe.skipIf(!isolated)("campus event business rules", () => {
   let picnicSessionId: string;
   let aaravId: string;
   let rohanId: string;
+  let picnicTimes: { starts_at: Date; ends_at: Date } | undefined;
+  let picnicSessionTimes: { id: string; starts_at: Date; ends_at: Date }[] = [];
 
   beforeAll(async () => {
     service = new CampusEventsService(new DatabaseService(), new SchoolEventService(new DatabaseService()));
@@ -123,9 +125,36 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     picnicSessionId = eventContext.picnic_session_id;
     aaravId = eventContext.aarav_id;
     rohanId = eventContext.rohan_id;
+
+    // These cases exercise upcoming-event rules. The demo picnic's calendar date
+    // eventually passes; move only this isolated fixture, preserving durations.
+    picnicTimes = (await pool.query<{ starts_at: Date; ends_at: Date }>(
+      "SELECT starts_at,ends_at FROM campus_events WHERE id=$1", [picnicId],
+    )).rows[0]!;
+    picnicSessionTimes = (await pool.query<{ id: string; starts_at: Date; ends_at: Date }>(
+      "SELECT id,starts_at,ends_at FROM campus_event_sessions WHERE event_id=$1", [picnicId],
+    )).rows;
+    const shiftMs = Date.now() + 14 * 24 * 60 * 60 * 1000 - picnicTimes.starts_at.getTime();
+    await pool.query(`UPDATE campus_events
+      SET starts_at=starts_at+$2::double precision*interval '1 millisecond',
+          ends_at=ends_at+$2::double precision*interval '1 millisecond' WHERE id=$1`, [picnicId, shiftMs]);
+    await pool.query(`UPDATE campus_event_sessions
+      SET starts_at=starts_at+$2::double precision*interval '1 millisecond',
+          ends_at=ends_at+$2::double precision*interval '1 millisecond' WHERE event_id=$1`, [picnicId, shiftMs]);
   });
 
-  afterAll(async () => { await pool.end(); });
+  afterAll(async () => {
+    try {
+      if (picnicTimes) await pool.query(
+        "UPDATE campus_events SET starts_at=$2,ends_at=$3 WHERE id=$1",
+        [picnicId, picnicTimes.starts_at, picnicTimes.ends_at],
+      );
+      for (const session of picnicSessionTimes) await pool.query(
+        "UPDATE campus_event_sessions SET starts_at=$2,ends_at=$3 WHERE id=$1",
+        [session.id, session.starts_at, session.ends_at],
+      );
+    } finally { await pool.end(); }
+  });
 
   function classTest(startsAt = validStart, endsAt = validEnd) {
     return {

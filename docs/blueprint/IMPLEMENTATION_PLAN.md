@@ -5210,3 +5210,9 @@ INR 11,500.00, not 1,150,000; no provider recovery occurred. One earlier local h
 run overlapped suites against the same actor and was discarded; the integration suite
 was rerun sequentially and passed. No Stage school record was changed by these tests.
 Google release evidence follows CI; these checks do not certify every model response.
+
+First release attempt passed 540/542 backend tests, including the agent suite, but
+stopped on two existing campus-event tests whose fixed demo picnic date had passed.
+The isolated suite now shifts that fixture and its sessions into the future and
+restores their original timestamps afterward. All 15 event tests pass locally;
+production consent/history and register-lock rules are unchanged. Full CI is rerun.
