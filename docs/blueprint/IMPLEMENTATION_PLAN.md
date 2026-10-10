@@ -5229,3 +5229,12 @@ context (thread `5786451a-a5d5-4013-9a7c-593ccf82626d`). No school record was ch
 Local port 8000 and the existing Cloudflare preview both pass readiness checks.
 Stopped the temporary isolated PostgreSQL cluster and read-only Cloud SQL proxy;
 the user's preview and tunnel remain available.
+
+### Chat navigation belongs to the header — 10 October 2026
+
+User correction: conversation history and new-chat are navigation controls, not
+conversation content. The full assistant page removes both rows from the transcript
+and places two icon-only, 40-pixel controls in the shared Chat title bar across
+principal, teacher, parent and student portals. Accessible labels and native focus
+remain; the history icon opens a bounded translucent conversation menu, while the
+compose icon starts a new chat. No agent, database or permission behavior changed.

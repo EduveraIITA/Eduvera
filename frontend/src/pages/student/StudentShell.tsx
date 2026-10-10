@@ -63,6 +63,7 @@ export interface StudentShellProps {
   pageTitle?: string;
   backTo?: string;
   onBack?: () => void;
+  pageTitleTrailing?: ReactNode;
 }
 
 const schoolNav = [
@@ -110,6 +111,7 @@ export function StudentShell({
   pageTitle,
   backTo,
   onBack,
+  pageTitleTrailing,
 }: StudentShellProps) {
   const location = useLocation();
   const auth = useOptionalAuth();
@@ -141,7 +143,7 @@ export function StudentShell({
           </div>
         </div>
         <div className="student-topbar__context">
-          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} />
+          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} trailing={pageTitleTrailing} />
         </div>
       </header>
 

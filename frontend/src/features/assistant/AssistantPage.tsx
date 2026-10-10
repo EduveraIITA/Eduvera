@@ -9,6 +9,7 @@ import { StudentShell } from '../../pages/student/StudentShell';
 import { AssistantComposer, useAssistantKeyboard } from './AssistantComposer';
 import { useAgentConversation } from './useAgentConversation';
 import { AgentReply } from './AgentReply';
+import { AssistantHeaderActions } from './AssistantHeaderActions';
 import { useAssistantNavigation } from './useAssistantNavigation';
 import type { AssistantContext, AssistantPortal } from './context';
 import './assistant.css';
@@ -59,11 +60,10 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
   const fallback=portal==='parent'?'/parent/home':'/'+portal;
   const returnTo=typeof state?.assistantReturnTo==='string'&&(state.assistantReturnTo===fallback||state.assistantReturnTo.startsWith('/'+portal+'/'))&&!state.assistantReturnTo.startsWith('/'+portal+'/assistant')?state.assistantReturnTo:fallback;
   const onBack=()=>navigate.go(returnTo,{replace:true,state:{assistantReopen:true}},()=>window.scrollTo({top:typeof state?.assistantScrollY==='number'?state.assistantScrollY:0,behavior:'instant'}));
+  const headerActions=<AssistantHeaderActions threads={conversation.threads} currentThreadId={conversation.threadId}
+    disabled={conversation.busy||conversation.pending||conversation.awaiting||conversation.accessDenied}
+    onNewChat={()=>void conversation.newChat()} onSelect={conversation.select}/>;
   const content=<div className="assistant-page" ref={page}>
-    <div className="assistant-page__notice">
-      <button type="button" onClick={()=>void conversation.newChat()} disabled={conversation.busy||conversation.pending||conversation.awaiting||conversation.accessDenied}>New chat</button>
-    </div>
-    {conversation.threads.length>1?<details className="agent-history"><summary>Conversations</summary><ul>{conversation.threads.map(thread=><li key={thread.id}><button type="button" aria-current={thread.id===conversation.threadId?'true':undefined} disabled={conversation.busy} onClick={()=>conversation.select(thread.id)}>{thread.title}</button></li>)}</ul></details>:null}
     {conversation.error?<div role="alert" className="agent-error">{conversation.error}<button type="button" onClick={conversation.retry}>Retry connection</button></div>:null}
     {conversation.accessDenied?<p className="agent-caption">Ask your school administrator to enable “Use AI assistance” for your role.</p>:null}
     {conversation.status&&!conversation.status.ready?<p role="status" className="agent-error">{conversation.status.local?'The local model is unavailable. Ask the server administrator to check Ollama and the configured model.':'The configured model is unavailable. Check the server’s model and provider settings.'}</p>:null}
@@ -81,7 +81,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
       <AssistantComposer key={portal+':'+(studentId??'self')+':'+conversation.threadId} onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </div>
   </div>;
-  if(portal==='teacher'||portal==='principal')return <OperationsShell portal={portal} active="chat" title="Chat" onBack={onBack}>{content}</OperationsShell>;
-  if(portal==='parent')return <ParentShell active="chat" pageLabel="Chat" selectedChildId={studentId} childSwitchDisabled={conversation.busy} onBack={onBack}>{content}</ParentShell>;
-  return <StudentShell activeNav="chat" pageTitle="Chat" onBack={onBack}>{content}</StudentShell>;
+  if(portal==='teacher'||portal==='principal')return <OperationsShell portal={portal} active="chat" title="Chat" pageTitleTrailing={headerActions} onBack={onBack}>{content}</OperationsShell>;
+  if(portal==='parent')return <ParentShell active="chat" pageLabel="Chat" pageTitleTrailing={headerActions} selectedChildId={studentId} childSwitchDisabled={conversation.busy} onBack={onBack}>{content}</ParentShell>;
+  return <StudentShell activeNav="chat" pageTitle="Chat" pageTitleTrailing={headerActions} onBack={onBack}>{content}</StudentShell>;
 }

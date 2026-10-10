@@ -39,6 +39,7 @@
 
 .portal-page-title__trailing {
   display: flex;
+  flex: 0 0 auto;
   min-width: 0;
   margin-left: auto;
   align-items: center;
