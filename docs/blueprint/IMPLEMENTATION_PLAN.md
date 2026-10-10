@@ -5163,3 +5163,43 @@ providers, invalidated invitations, interrupted attempts and sanitized failures.
 They require the isolated CI database (no local PostgreSQL available). Full CI,
 Stage deployment, and real-device/email-client visual review remain separate gates.
 No live invitation or payment emails were sent while testing.
+
+### Conversation-first agent and API-owned controls — 10 October 2026
+
+User clarification: the assistant is a school conversation partner that can act,
+not a single-command form. Read blueprint §18 before this change. Stage audit of
+the reported thread showed an English regex replaced the learner with the literal
+`his attendence to`, followed by Vertex HTTP 400. There was no authorization-denied
+API result in that thread. A separate protocol audit found that discovery returned
+a root array where Gemini requires an object-valued function response.
+
+This supersedes the earlier “Generic action-following agent contract” implementation:
+remove forced highest-ranked writes, phrase-specific continuation detection, and
+English-regex rewriting/gating of learner/date/status arguments. Topic retrieval
+uses the latest user topic for domain-less follow-ups, while the model receives the
+conversation and chooses whether to discuss, read, clarify or act. All authorized
+operations remain discoverable. The concise v7 prompt and tool descriptions explain
+outcomes, not a repeated list of approval prohibitions. API access, fresh-read binding,
+revisions, idempotency, immutable review, confirmation, Pro-off checks and audit remain
+server-owned. Correction reasons/notes must still come from actual user messages.
+
+Gemini function results now wrap root arrays/primitives in an object and discovery
+returns a named `tools` array. Error results distinguish invalid input, missing data,
+state conflict, real access denial and service failure. Added a staff-only, existing-
+API-backed `student_fees` read for scoped conversational follow-ups and a verification
+link to that learner's fee view. No provider switch, extra infrastructure or new
+database migration is introduced.
+
+Research: [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
+and [Google function calling](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/tools/function-calling)
+support clear function contracts, application-owned execution and native tool-result
+history. Retain the official Google SDK and native signatures; adding an orchestration
+library would not itself fix corrupt arguments or invalid provider payloads.
+
+Local evidence so far: backend build/typecheck/lint, 67 focused unit/protocol/chart
+tests and 32 isolated integration tests pass. A paid real-Gemini conversation verified
+lookup, pronoun/date handling, missing-reason clarification, review dismissal, intervening
+discussion, resumption, confirmed one-student update and recovery from historical false
+refusal. Cross-domain testing exposed a stale test database missing the fee migration;
+fresh-schema validation, final totals and release evidence follow. No Stage school
+record was changed by these tests. These checks do not certify every model response.

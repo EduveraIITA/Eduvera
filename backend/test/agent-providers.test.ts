@@ -109,6 +109,15 @@ describe('provider-independent tool protocols',()=>{
     vi.stubEnv('AGENT_PROVIDER','openai-compatible');vi.stubEnv('AGENT_MODEL','');expect(()=>createAgentModel()).toThrow(/AGENT_MODEL/);
     vi.stubEnv('AGENT_BASE_URL','http://model.example/v1');expect(()=>agentSettings()).toThrow(/HTTPS/);
   });
+  it.each([{payload:[{name:'record_attendance'}]},{payload:null},{payload:'No matches'},{payload:42}])('wraps non-object Gemini tool results in a valid response object: %j',async ({payload})=>{
+    const content={role:'model',parts:[{functionCall:{id:'discovery',name:tool.name,args:{}},thoughtSignature:'opaque'}]};
+    const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason:'STOP',content}]}).mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Ready'}]}}]});
+    const provider=new GeminiAgentModel('test','https://unused.test','key','gemini',undefined,sdkClient(generate));
+    const messages=[{role:'user' as const,content:'Find the operation for my earlier request'}];
+    const first=await provider.complete(messages,[tool],signal);
+    await provider.complete([...messages,{role:'assistant',content:'',calls:first.calls},{role:'tool',name:tool.name,callId:'discovery',content:JSON.stringify(payload)}],[tool],signal);
+    expect(generate.mock.calls[1]![0].contents[2].parts[0].functionResponse).toMatchObject({id:'discovery',response:{result:payload}});
+  });
   it('bounds provider response bytes before parsing',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('x'.repeat(256001))));
     await expect(new OllamaAgentModel('qwen3:8b','http://localhost:11434').complete([],[],signal)).rejects.toThrow(/too_large/);

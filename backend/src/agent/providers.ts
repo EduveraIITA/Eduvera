@@ -193,7 +193,11 @@ export class GeminiAgentModel implements AgentModel {
       if(message.role==='tool') {
         const nativeId=this.nativeIds.get(message.callId??'');
         if(!message.name)throw new ModelFailure('malformed_call');
-        const part={functionResponse:{name:message.name,...(nativeId?{id:nativeId}:{}),response:JSON.parse(message.content)}};
+        // Gemini requires a JSON object (protobuf Struct), not a root array or
+        // primitive. Discovery and other provider-neutral tools may return either.
+        const payload:unknown=JSON.parse(message.content);
+        const response=payload!==null&&typeof payload==='object'&&!Array.isArray(payload)?payload:{result:payload};
+        const part={functionResponse:{name:message.name,...(nativeId?{id:nativeId}:{}),response:response as Record<string,unknown>}};
         const last=this.history.at(-1);
         if(last?.role==='user'&&last.parts?.every(item=>item.functionResponse))last.parts.push(part);
         else this.history.push({role:'user',parts:[part]});

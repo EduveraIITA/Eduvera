@@ -669,3 +669,34 @@ made nine model calls and conservatively reserved 127,041 micro-USD in the isola
 ledger; this is not a Google invoice or broad tone/accuracy certification. The
 temporary access grant and database were removed afterward. Physical-device review
 and deployment remain open gates.
+
+## Conversation-first correction — 10 October 2026
+
+Current prompt: `2026-10-10.api-owned-v7`. The assistant chooses conversation,
+reads, clarification and operations from the full scoped transcript. Topic routing
+only preloads relevant tools; it does not force writes or interpret permission.
+Domain-less follow-ups retain the recent topic without a retry-phrase allowlist.
+Older assistant refusals are not evidence of current access restrictions.
+
+The application no longer substitutes regex-derived names, dates or statuses for
+structured model arguments. Name resolution, exact record scope, state checks,
+correction reasons, revision binding and confirmation remain in the APIs. Human
+review is the check on interpreted consequential intent; the system does not claim
+that English keyword parsing can prove a user's intent. Reasons and non-empty notes
+must occur in user-authored messages; generated explanations cannot populate audit
+fields. No proposal executes merely because the model calls its tool.
+
+`find_tools` returns operation descriptions, and the next model round receives their
+schemas. Effect/control contracts remain available to the server/UI, without repeating
+approval prohibitions in every tool's model description. Gemini receives object-shaped
+function responses, including for array-returning tools. Errors carry typed categories
+so a missing field or temporary service failure is not presented as an authorization
+policy. The new `student_fees` read uses the existing scoped fee API and is not exposed
+to family roles; their existing server-injected child scope remains unchanged.
+
+`backend/test/agent-conversation.eval.ts` is an opt-in paid Vertex conversation test.
+It requires a loopback disposable database whose name contains `test` or `ci`, uses
+synthetic data, exercises clarification/discussion/resumption/approval and a historical
+false refusal, and never targets Stage or the personal preview database. The ordinary
+integration suite covers permission, Pro-off, CSRF, stale revisions, rejection and
+idempotent confirmation independently of the model.

@@ -85,7 +85,7 @@ function write(name: string, title: string, domain: string, portals: Portal[], b
       const parsed = toolSchema.parse(value);
       const { record_id, ...fields } = parsed;
       return { ...(options.id ? { id: record_id } : {}), body: fields };
-    }, description: `${title}. Creates a preview, NOT a completed action. Never invent values; read current records first.`, ...(options.permission ? { permission: options.permission } : {}),
+    }, description: `${title}. Returns the app's result or a review of the requested change.`, ...(options.permission ? { permission: options.permission } : {}),
     request: (i, s, commandId) => {
       const data = { ...i.body, ...(options.scoped || json.properties?.school_id ? { school_id: s.schoolId } : {}), ...(options.student && json.properties?.student_id ? familyQuery(s) : {}),
         ...(json.properties?.idempotency_key ? { idempotency_key: commandId } : {}) };
@@ -118,7 +118,7 @@ singleAttendance.toolSchema = studentAttendanceSearch.extend({
   reason: studentAttendanceInput.shape.reason,
   remarks: studentAttendanceInput.shape.remarks,
 });
-singleAttendance.description = 'Prepare one student’s attendance (present, absent, late, excused or half_day) from the user’s explicit observation. Give their name, admission number or known student ID, not a pronoun. Omit date for today. The app resolves the class and revision, preserves all other students and asks for confirmation. A correction needs the user’s reason. Does not submit the class register.';
+singleAttendance.description = 'Record or correct attendance for one student. Resolve pronouns from the conversation into their name, admission number or known ID. Use YYYY-MM-DD for the requested school-local date; omit only for today. The app looks up the current record and class, preserves other students and opens a review. For a correction, copy the reason from the user’s words. Does not submit the class register.';
 singleAttendance.parseArguments = value => singleAttendance.toolSchema!.parse(value);
 singleAttendance.prepare = {
   read:'student_attendance',
@@ -243,6 +243,9 @@ write('update_student','Update student name, admission number and birth date','r
 write('add_school_closure','Add a holiday or school closure','timetable',['principal'],z.object({term_id:uuid,starts_on:date,ends_on:date,kind:z.enum(['public_holiday','local_holiday','emergency_closure']),label:z.string().min(3).max(160),reason:z.string().min(3).max(500)}),'/principal/calendar/closures','calendar');
 write('set_teaching_target','Set curriculum teaching-time target','timetable',['principal'],z.object({term_id:uuid,class_section_id:uuid,subject_id:uuid,target_minutes:z.number().int().min(30).max(120000),expected_revision:z.number().int().nonnegative(),reason:z.string().min(3).max(500)}),'/principal/timetable/targets','timetable');
 read('fee_workspace', 'Invoices, payments and fee reviews', 'fees', all, empty, (_,s) => schoolPath(s,'fees/workspace'), 'fees', (_,s) => familyQuery(s), 'fees.manage');
+read('student_fees', 'Read invoices, outstanding balances, payments and fee reviews for one student. Use the student ID from find_students or another authorized record.', 'fees', staff,
+  z.object({student_id:uuid}).strict(), (_,s)=>schoolPath(s,'fees/workspace'), (i,s)=>screenPath(s,'fees',{student_id:i.student_id}), i=>({student_id:i.student_id}), 'fees.manage');
+catalogue.find(cap=>cap.name==='student_fees')!.title='Student fees';
 read('fee_students', 'Permitted students for school invoices', 'fees', staff, empty, (_,s) => schoolPath(s,'fees/students'), 'fees', () => ({}), 'fees.manage');
 write('create_invoice', 'Create fee invoice', 'fees', staff, operations.invoiceSchema, (_,s) => schoolPath(s,'fees/invoices'), 'fees', { permission: 'fees.manage' });
 write('record_payment', 'Record a payment already received; does not transfer money', 'fees', staff, operations.paymentSchema, (i,s) => schoolPath(s,`fees/invoices/${i.id}/payments`), 'fees', { id: true, permission: 'fees.manage' });

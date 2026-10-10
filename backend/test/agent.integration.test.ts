@@ -61,13 +61,17 @@ beforeAll(async()=>{
       }else message={content:'The homework action was recorded by the app.'};
     }
     else if(question.includes('forbidden SQL'))message=call('execute_sql',{sql:'DELETE FROM users'});
-    else if(/(?:continue|proceed|go ahead|you can)/i.test(question)&&conversation.includes('Change Aarav Sharma attendance to'))message=!last?call('record_student_attendance',{student:'Ananya Iyer',status:conversation.includes('to present')?'absent':'present',reason:'Reused from an old proposal'}):{content:JSON.parse(last.content).error??'Please review the continued change.'};
+    else if(question==='No change please, explain the options')message={content:'We can review the existing entry or prepare a correction when you want. Nothing has changed.'};
+    else if(/(?:continue|proceed|go ahead|you can|try again)/i.test(question)&&conversation.includes('Change Aarav Sharma attendance to')){
+      const goal=body.messages.findLast((item:any)=>item.role==='user'&&item.content.startsWith('Change Aarav Sharma attendance to'))?.content??'';
+      message=!last?call('record_student_attendance',{student:'Aarav Sharma',status:goal.includes('to present')?'present':'absent',reason:'Accidentally marked the previous status'}):{content:JSON.parse(last.content).error??'Please review the continued change.'};
+    }
     else if(question==='List my test notifications')message=!last?call('notifications',{}):{content:'I found your test notification. You can ask me to mark it read.'};
     else if(question==='Mark it read')message=call('read_notification',{record_id:followupNotification});
     else if(question.includes('about aarav'))message=!last?call('find_students',{search:'Aarav Sharma'}):{content:'Aarav Sharma, admission CIS-2023-071, is in Class 7A.'};
     else if(/mark (?:his presence|him (?:present|absent))/i.test(question))message=!last?call('record_student_attendance',{student:'CIS-2023-071',status:/\babsent\b/i.test(question)?'absent':'present',reason:'Isolated pronoun-resolution verification'}):{content:JSON.parse(last.content).error??'Please review the attendance change.'};
-    else if(question.includes('cross-turn isolation setup'))message=!last?call('record_student_attendance',{student:'Rohan Verma',status:question.includes(' present')?'absent':'present',reason:'Rejected model-only arguments'}):{content:JSON.parse(last.content).error??'Please review the setup change.'};
-    else if(question.includes('Change Aarav Sharma attendance to'))message=!last?call('record_student_attendance',{student:'Ananya Iyer',status:question.includes(' to present')?'absent':'present',reason:'Reused from the prior turn'}):{content:JSON.parse(last.content).error??'Please review the corrected change.'};
+    else if(question.includes('cross-turn isolation setup'))message=!last?call('record_student_attendance',{student:'Ananya Iyer',status:question.includes(' present')?'present':'absent',reason:'cross-turn isolation setup'}):{content:JSON.parse(last.content).error??'Please review the setup change.'};
+    else if(question.includes('Change Aarav Sharma attendance to'))message=!last?call('record_student_attendance',{student:'Aarav Sharma',status:question.includes(' to present')?'present':'absent',reason:'Accidentally marked the previous status'}):{content:JSON.parse(last.content).error??'Please review the corrected change.'};
     else if(question.includes('Record one student'))message=!last?call('record_student_attendance',{student:'Ananya Iyer',status:question.includes('absent')?'absent':'present',reason:'Explicit isolated test correction'}) : {content:JSON.parse(last.content).error??'Please review the change.'};
     else if(question.includes('Ambiguous student attendance'))message=!last?call('record_student_attendance',{student:'Sharma',status:'present'}):{content:JSON.parse(last.content).error??'Choose a student.'};
     else if(question.includes('false completion')||question.includes('App verification:'))message={content:'I have marked him present.'};
@@ -179,7 +183,7 @@ describe('agent end-to-end guarded execution',()=>{
     const check=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
     expect(check.selected.student.status).toBe(target.selected.student.status);
   });
-  it('isolates each write intent and never reuses a rejected learner or broadens a retry',async()=>{
+  it('preserves conversational goals but not rejected proposal arguments; leaves tool choice to the model',async()=>{
     const admin=new Session();await admin.login('admin');
     const ananya=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
     const setupStatus=ananya.selected.student.status==='absent'?'present':'absent';
@@ -199,11 +203,16 @@ describe('agent end-to-end guarded execution',()=>{
     expect(JSON.stringify(modelRequests[beforeRequest])).not.toContain('Rejected model-only arguments');
     await admin.request(`/api/v1/agent/threads/${setup.thread}/actions/${corrected.run.action.id}`,{decision:'reject'});
 
-    const retry=await run(admin,'You can.','principal',setup.thread);
+    const discussion=await run(admin,'No change please, explain the options','principal',setup.thread);
+    expect(discussion.run.status).toBe('completed');expect(discussion.run.action).toBeNull();
+    expect(discussion.run.answer).toContain('Nothing has changed');
+    const retry=await run(admin,'Try again','principal',setup.thread);
     expect(retry.run.status).toBe('confirmation');expect(retry.run.action).toMatchObject({capability:'record_student_attendance'});
     expect(retry.run.action.preview).toMatchObject({student:'Aarav Sharma',status:desired,reason:'Accidentally marked the previous status'});
     expect(retry.run.action.input.body.student_id).toBe(aarav.selected.student.id);
     expect(retry.run.action.capability).not.toBe('record_attendance');
+    const offered=modelRequests.at(-1)!.tools.map((item:any)=>item.function.name);
+    expect(offered).toContain('record_student_attendance');expect(offered).toContain('student_attendance');
     await admin.request(`/api/v1/agent/threads/${setup.thread}/actions/${retry.run.action.id}`,{decision:'reject'});
   });
   it('records just one learner, preserves every other row and leaves a draft register open',async()=>{

@@ -97,14 +97,10 @@ export function capabilityManifest(capability:CapabilityDescriptor) {
 }
 
 export function modelToolDescription(capability:CapabilityDescriptor) {
-  const policy=capability.contract.control==='autonomous'
-    ? 'Reads authorized app data and returns evidence.'
-    : capability.contract.control==='monitored'
-      ? 'Executes only after fresh validation, then returns an audited receipt; no separate approval screen.'
-      : capability.contract.control==='approval'
-        ? 'Prepares a review only. The user must confirm in the app before anything changes.'
-        : 'Opens the responsible app screen; the agent cannot execute it.';
-  return `${capability.description} Effect: ${capability.contract.summary} Control: ${policy}`;
+  // Execution policy is consumed by the server, not a prohibition for the model.
+  // The operation's actual result tells the assistant whether it is complete,
+  // needs details, or has opened a review/screen.
+  return capability.description;
 }
 
 export function summarizeCapabilityPolicy(capabilities:readonly CapabilityDescriptor[]) {

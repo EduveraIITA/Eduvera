@@ -18,27 +18,24 @@ const topics: Record<string,string[]> = {
 };
 const stop = new Set('the and for can what how today please show with record check read get first current this that now need want only all you about his her their him them it mark date'.split(' '));
 export const routingWords = (value: string) => value.toLowerCase().replace(/report cards?/g,'reportcard').split(/[^a-z_]+/).filter(word => word.length>2 && !stop.has(word));
-export function intentDomains(query: string): string[] {
+function topicDomains(query: string): string[] {
   const words = routingWords(query);
-  const result = Object.entries(topics).filter(([,terms]) => words.some(word => terms.includes(word))).map(([domain]) => domain);
+  return Object.entries(topics).filter(([,terms]) => words.some(word => terms.includes(word))).map(([domain]) => domain);
+}
+export function intentDomains(query: string): string[] {
+  const result = topicDomains(query);
   // A person-only lookup such as "Check about Aarav Sharma" needs a search tool.
   if (!result.length && /\b(check|about|find|who|lookup|look up)\b/i.test(query)) result.push('records');
   return result;
 }
 
-const continuation = /^(?:yes|okay|ok|sure|please\s+do|do\s+it|go\s+ahead|continue|proceed|you\s+can|please\s+proceed)\b/i;
-const action = /\b(?:add|approve|assign|cancel|change|complete|correct|create|decline|delete|dismiss|invite|mark|open|pay|publish|record|remove|reply|respond|reopen|report|request|resolve|save|schedule|send|set|submit|update|withdraw)\b/i;
-
-/** Resolve only an explicit conversational continuation to the latest user goal.
- * This never imports model arguments or tool output into action intent. */
+/** Retrieval hint only, never action authority. The model interprets the full
+ * conversation. Any domain-less follow-up retains the latest user topic, without
+ * a list of magic continuation phrases or forcing a guessed write operation. */
 export function conversationRoutingQuery(question:string,previousUserQuestions:readonly string[]):string {
-  if(!continuation.test(question.trim()))return question;
-  const prior=[...previousUserQuestions].reverse().find(item=>intentDomains(item).length>0||action.test(item));
+  if(topicDomains(question).length)return question;
+  const prior=[...previousUserQuestions].reverse().find(item=>intentDomains(item).length>0);
   return prior?`${prior}\n${question}`:question;
-}
-
-export function requestsAction(query:string):boolean {
-  return action.test(query)&&(!/^\s*(?:can|could|may)\s+(?:i|we)\b/i.test(query)||/\b(?:can|could|would)\s+you\b/i.test(query));
 }
 export const domainStarters: Record<string,string[]> = {
   insights:['principal_analytics','principal_review','insights','school_insights','find_students'],
@@ -47,6 +44,6 @@ export const domainStarters: Record<string,string[]> = {
   assessments: ['assessments','my_results','assessment_details','save_marks'],
   messages: ['conversations','conversation_messages','message_recipients','send_message','create_conversation'],
   notifications: ['notifications','read_notification'],
-  fees: ['fee_workspace','fee_students','record_payment','report_fee_payment'],
+  fees: ['student_fees','fee_workspace','fee_students','record_payment','report_fee_payment'],
   timetable: ['my_timetable','teacher_day_plan','day_plan_options','day_plan_details'],
 };

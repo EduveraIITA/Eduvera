@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { z } from 'zod';
@@ -6,19 +6,19 @@ import type { AuthenticatedRequest } from '../common/request.js';
 import { DatabaseService } from '../database/database.service.js';
 import { RolesService } from '../roles/roles.service.js';
 import { SchoolService } from '../school/school.service.js';
-import { availableCapabilities, capabilityManifest, capabilityTool, findCapabilities, verificationScreen, type AgentScope, type Capability, type Portal } from './catalogue.js';
+import { availableCapabilities, capabilityTool, findCapabilities, verificationScreen, type AgentScope, type Capability, type Portal } from './catalogue.js';
 import { proFeaturesEnabled, requireProFeatures } from '../auth/pro-features.js';
 import { AgentGateway, assertKnownIds, assertLocalScreen, collectIds, stableHash, type AgentCredentials, type Evidence } from './gateway.js';
 import { agentContextWindowTokens, agentSettings, createAgentModel, modelAvailability, type ModelMessage, type ToolDefinition } from './providers.js';
 import { recordReferences, resolveReferences, reportsUnverifiedWrite, type RecordReference } from './references.js';
-import { allowsAttendanceWrite, attendanceActionGroundingError, attendanceArguments } from './attendance-intent.js';
+import { attendanceArguments } from './attendance-intent.js';
 import { AgentLimitError, assertAgentEnabled, reserveModelCall } from './limits.js';
 import { ModelFailure } from './model-errors.js';
 import { analyticsChart } from './charts.js';
 import { CAPABILITY_CONTRACT_VERSION, summarizeCapabilityPolicy } from './capability-contract.js';
 import { conversationSummaryPrompt, needsStoredConversationCompaction, turnsToCompact, type MemoryTurn } from './conversation-memory.js';
-import { AGENT_PROMPT_VERSION,actionToolPrompt,agentSystemPrompt,basicAgentPrompt,responsePrompt,skillPrompt } from './agent-prompts.js';
-import { conversationRoutingQuery, requestsAction } from './tool-routing.js';
+import { AGENT_PROMPT_VERSION,agentSystemPrompt,basicAgentPrompt,responsePrompt,skillPrompt } from './agent-prompts.js';
+import { conversationRoutingQuery } from './tool-routing.js';
 import { AgentMemoryService,agentMemoryLimits,longTermMemoryPrompt,userIdentityPrompt,userMemoryTool,AGENT_MEMORY_CONTRACT_VERSION } from './long-term-memory.js';
 
 const portalSchema = z.enum(['principal','teacher','parent','student']);
@@ -68,6 +68,11 @@ function safeFailure(error: unknown) {
   if (error instanceof BadRequestException || error instanceof ForbiddenException || error instanceof ConflictException) return error.message.slice(0,600);
   if (error instanceof z.ZodError) return `The action needs valid ${[...new Set(error.issues.slice(0,6).map(issue => issue.path.join('.').replace(/_/g,' ')))].join(', ')}. Look up missing records in the app; do not ask the user for internal IDs.`;
   return 'The request could not be completed. Nothing was changed. Rephrase the goal or open the source screen.';
+}
+export function toolFailureCode(error:unknown) {
+  if(error instanceof z.ZodError)return 'invalid_arguments';
+  const status=(error as {appStatus?:number}|null)?.appStatus??(error instanceof HttpException?error.getStatus():undefined);
+  return status===401||status===403?'access_denied':status===404?'not_found':status===409?'state_conflict':status===400?'validation':'unavailable';
 }
 function conversationOutcome(turn:ConversationTurn,answerVisible:boolean) {
   if(turn.action_status==='rejected')return 'The proposed change was dismissed. Nothing changed.';
@@ -335,9 +340,7 @@ export class AgentService implements OnModuleDestroy {
         WHERE run.thread_id=${thread.id}::uuid AND run.id<>${id}::uuid
           AND (${memory.through}::uuid IS NULL OR (run.created_at,run.id)>(SELECT cursor.created_at,cursor.id FROM agent_runs cursor WHERE cursor.id=${memory.through}::uuid))
         ORDER BY run.created_at DESC,run.id DESC LIMIT ${conversationLimit}`.execute(this.db)).rows.reverse();
-      // The transcript is user-authored context for deterministic effect checks.
-      // It contains no model tool arguments and the most recent explicit detail wins.
-      const intentQuestion=[...recentConversation.slice(-12).map(run=>run.question),question].join('\n');
+      const userMessages=[...recentConversation.map(run=>run.question),question];
       const model = createAgentModel((input,output)=>reserveModelCall(this.db,id,input,output),async event=>{
         await this.log(scope,'agent.model.response_failed',id,credentials.requestId,event);
         if(event.retrying)await sql`UPDATE agent_runs SET progress='Recovering AI response' WHERE id=${id}::uuid AND status='running'`.execute(this.db);
@@ -365,21 +368,12 @@ export class AgentService implements OnModuleDestroy {
         const cap=available.find(cap=>cap.name===item.step.capability);
         if(cap)contextDomains.push(cap.domain);
       }
-      const answeringReason=/(?:correction reason|reason for (?:the |this )?(?:change|correction))/i.test(visibleHistory.at(-1)?.answer??'');
-      const allowedForCurrentRequest=(capability:(typeof available)[number])=>allowsAttendanceWrite(capability.name,intentQuestion,answeringReason);
       const routingQuery=conversationRoutingQuery(question,recentConversation.slice(-12).map(run=>run.question));
-      const selected = new Map(findCapabilities(routingQuery,available,contextDomains).filter(allowedForCurrentRequest).map(cap => [cap.name,cap]));
+      const selected = new Map(findCapabilities(routingQuery,available,contextDomains).map(cap => [cap.name,cap]));
       const activeDomains=[...new Set([...selected.values()].map(capability=>capability.domain))];
       const domainSkills=skillPrompt(activeDomains);
-      const matchingActions=requestsAction(routingQuery)?[...selected.values()].filter(capability=>capability.kind==='write'):[];
-      // Catalogue ranking already combines the user's domain, action wording and
-      // capability description. Requiring only the highest-ranked write keeps
-      // clear action requests out of a refusal/text-only path without allowing a
-      // model to execute a batch. Missing fields are still rejected by the tool
-      // schema and returned to the model as a focused clarification.
-      const requiredActions=matchingActions.slice(0,1);
       const operatingPrompt=scope.proFeaturesEnabled
-        ? [agentSystemPrompt(scope,available),domainSkills,actionToolPrompt(requiredActions),responsePrompt(scope,recentConversation.length===0)].filter(Boolean).join('\n\n')
+        ? [agentSystemPrompt(scope,available),domainSkills,responsePrompt(scope,recentConversation.length===0)].filter(Boolean).join('\n\n')
         : basicAgentPrompt(scope);
       const messages:ModelMessage[] = [{ role:'system',content:operatingPrompt },
         {role:'user' as const,content:userIdentityPrompt(scope)},
@@ -409,8 +403,7 @@ export class AgentService implements OnModuleDestroy {
         // The account-level switch is an execution boundary, not only a UI preference.
         // Re-check it during a run so disabling Pro also stops in-flight model/tool work.
         await requireProFeatures(this.db,scope.userId);
-        const result = await model.complete(messages,[discover,userMemoryTool,...[...selected.values()].slice(-14).map(capabilityTool)],controller.signal,
-          turn===0&&requiredActions.length?{required:[requiredActions[0]!.name]}:undefined);
+        const result = await model.complete(messages,[discover,userMemoryTool,...[...selected.values()].slice(-14).map(capabilityTool)],controller.signal);
         const current = (await sql<{status:string}>`SELECT status FROM agent_runs WHERE id=${id}::uuid`.execute(this.db)).rows[0];
         if (current?.status !== 'running') return;
         await requireProFeatures(this.db,scope.userId);
@@ -447,14 +440,14 @@ export class AgentService implements OnModuleDestroy {
             await requireProFeatures(this.db,scope.userId);
             if (call.name === 'find_tools') {
               const query = z.object({ query:z.string().max(120) }).strict().parse(call.arguments).query;
-              const found = findCapabilities(query,available,contextDomains).filter(allowedForCurrentRequest);
+              const found = findCapabilities(query,available,contextDomains);
               found.forEach(cap => selected.set(cap.name,cap));
-              output = found.length ? found.map(capabilityManifest) : { domains:[...new Set(available.map(cap => cap.domain))], message:'Search by a domain or ask the user to clarify.' };
+              output = found.length ? {tools:found.map(cap=>({name:cap.name,description:cap.description,domain:cap.domain}))} : { domains:[...new Set(available.map(cap => cap.domain))], message:'Search by a domain or action.' };
             } else {
               const capability = selected.get(call.name);
-              if (!capability) throw new ForbiddenException('Find an available tool before using it.');
+              if (!capability) throw new BadRequestException('This tool is not loaded. Use find_tools to find an available operation.');
               const arguments_ = resolveReferences(['student_attendance','record_student_attendance'].includes(capability.name)
-                ? attendanceArguments(call.arguments,intentQuestion,references,scope.timezone,answeringReason) : call.arguments,references);
+                ? attendanceArguments(call.arguments,userMessages) : call.arguments,references);
               let input = capability.parseArguments ? capability.parseArguments(arguments_) : capability.schema.parse(arguments_);
               await sql`UPDATE agent_runs SET progress=${capability.kind === 'write' ? `Preparing: ${capability.title}` : capability.title} WHERE id=${id}::uuid AND status='running'`.execute(this.db);
               if (capability.kind === 'handoff') {
@@ -486,11 +479,6 @@ export class AgentService implements OnModuleDestroy {
                 }
                 if (!basis) throw new BadRequestException('Read the affected record in this domain before preparing a change.');
                 if(capability.bindInput)input=capability.bindInput(input,basis.result);
-                const groundingError=attendanceActionGroundingError(capability.name,input,intentQuestion,basis.result,answeringReason);
-                if(groundingError) {
-                  await this.log(scope,'agent.action.intent_mismatch',id,credentials.requestId,{capability:capability.name,prompt_version:promptVersion});
-                  throw new BadRequestException(groundingError);
-                }
                 // Evidence binding is deterministic; the model never chooses a snapshot to bypass.
                 input.basis_id = basis.id;
                 capability.schema.parse(input);
@@ -516,8 +504,12 @@ export class AgentService implements OnModuleDestroy {
               output = { evidence_id:stepId, source:source.title, retrieved_at:source.retrieved_at, data:capability.modelProjection?capability.modelProjection(data,input):data };
             }
           } catch(error) {
-            await this.log(scope,'agent.tool.failed',id,credentials.requestId,{ tool:call.name,code:error instanceof z.ZodError?'invalid_arguments':(error as {appStatus?:number}).appStatus??'tool_rejected',turn });
-            output = { error:safeFailure(error), data:(error as {agentContext?:unknown}).agentContext, instruction:'Correct the inputs using authorized reads or ask the user for a name/class, missing observation or correction reason. Never request internal IDs. Do not claim success.' };
+            const code=toolFailureCode(error);
+            await this.log(scope,'agent.tool.failed',id,credentials.requestId,{ tool:call.name,code,turn });
+            output = { code,error:safeFailure(error), data:(error as {agentContext?:unknown}).agentContext,
+              instruction:code==='unavailable'
+                ? 'The operation could not run. This is a service failure, not evidence of a permission restriction. Explain what could not be checked; do not infer the missing data. Nothing changed.'
+                : 'Use this result to continue the conversation: correct the inputs, read the needed data, or ask for the missing detail. A validation error is not a permission denial. Nothing changed.' };
             if (++errors >= 3) { await this.finish(id,'failed',safeFailure(error),evidence); return; }
           }
           messages.push({ role:'tool',content:modelData(output),name:call.name,callId:call.id });
