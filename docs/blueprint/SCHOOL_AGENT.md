@@ -693,6 +693,9 @@ function responses, including for array-returning tools. Errors carry typed cate
 so a missing field or temporary service failure is not presented as an authorization
 policy. The new `student_fees` read uses the existing scoped fee API and is not exposed
 to family roles; their existing server-injected child scope remains unchanged.
+Fee tool projections convert integer paise to labelled INR amounts and compute
+outstanding totals in application code. Persisted source evidence is unchanged;
+the model does not need to infer units or sum the ledger itself.
 
 `backend/test/agent-conversation.eval.ts` is an opt-in paid Vertex conversation test.
 It requires a loopback disposable database whose name contains `test` or `ci`, uses

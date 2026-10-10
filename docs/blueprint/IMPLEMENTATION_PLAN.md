@@ -5196,10 +5196,17 @@ support clear function contracts, application-owned execution and native tool-re
 history. Retain the official Google SDK and native signatures; adding an orchestration
 library would not itself fix corrupt arguments or invalid provider payloads.
 
-Local evidence so far: backend build/typecheck/lint, 67 focused unit/protocol/chart
-tests and 32 isolated integration tests pass. A paid real-Gemini conversation verified
+Cross-domain evaluation also caught incorrect paise-to-rupee interpretation. Fee
+tools now provide application-formatted INR amounts and computed outstanding totals;
+the unmodified integer ledger remains the audited source. Missing values remain unknown.
+
+Verified locally: backend build/typecheck/focused lint, **70 unit/protocol/chart/money
+tests** and **32 integration tests** pass. All tracked migrations applied successfully
+to a fresh isolated PostgreSQL 17 cluster. A paid real-Gemini conversation verified
 lookup, pronoun/date handling, missing-reason clarification, review dismissal, intervening
-discussion, resumption, confirmed one-student update and recovery from historical false
-refusal. Cross-domain testing exposed a stale test database missing the fee migration;
-fresh-schema validation, final totals and release evidence follow. No Stage school
-record was changed by these tests. These checks do not certify every model response.
+discussion, resumption, confirmed one-student update, recovery from historical false
+refusal, and switching to that learner's fees. The final fee answer correctly reported
+INR 11,500.00, not 1,150,000; no provider recovery occurred. One earlier local harness
+run overlapped suites against the same actor and was discarded; the integration suite
+was rerun sequentially and passed. No Stage school record was changed by these tests.
+Google release evidence follows CI; these checks do not certify every model response.

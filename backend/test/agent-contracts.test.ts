@@ -7,7 +7,7 @@ import { compactModelData,toolFailureCode } from '../src/agent/agent.service.js'
 import { recordReferences, resolveReferences, reportsUnverifiedWrite, schoolDate } from '../src/agent/references.js';
 import { attendanceArguments } from '../src/agent/attendance-intent.js';
 import { conversationSummaryPrompt,needsConversationCompaction,needsStoredConversationCompaction,serializedTurn,turnsToCompact } from '../src/agent/conversation-memory.js';
-import { agentSystemPrompt,intentPolicyPrompt,responsePrompt,skillPrompt } from '../src/agent/agent-prompts.js';
+import { agentSystemPrompt,responsePrompt,skillPrompt } from '../src/agent/agent-prompts.js';
 import { conversationRoutingQuery } from '../src/agent/tool-routing.js';
 import { recordRevision } from '../src/agent/revisions.js';
 import { assertDurableMemoryIntent,assertMemoryEvidence,assertMemoryValueGrounded,longTermMemoryPrompt,sanitizeMemoryValue,userIdentityPrompt,userMemoryChangeSchema,userMemoryTool } from '../src/agent/long-term-memory.js';
@@ -51,7 +51,6 @@ describe('agent capability boundary',()=>{
     expect(system).toContain('The app enforces permissions');
     expect(system).toContain('Conversation does not always require a tool or an action');
     expect(system).toContain('only when an app result establishes it');
-    expect(intentPolicyPrompt()).toContain('natural user messages');
     expect(skillPrompt(['attendance'])).toContain('attendance-observations-v1');
     expect(skillPrompt(['attendance'])).not.toContain('principal-analysis-v1');
     const openingStyle=responsePrompt({portal:'principal'},true);

@@ -18,6 +18,7 @@ import { recordRevision } from './revisions.js';
 import { principalReportInput, principalReviewInput } from '../analytics/agent-report-contracts.js';
 import { chartChoice } from './charts.js';
 import { capabilityManifest, humanOnly, modelToolDescription, monitored, observed, reviewed, type CapabilityContract } from './capability-contract.js';
+import {feeModelProjection} from './fee-projection.js';
 
 export type Portal = 'principal' | 'teacher' | 'parent' | 'student';
 export interface AgentScope {
@@ -246,6 +247,7 @@ read('fee_workspace', 'Invoices, payments and fee reviews', 'fees', all, empty, 
 read('student_fees', 'Read invoices, outstanding balances, payments and fee reviews for one student. Use the student ID from find_students or another authorized record.', 'fees', staff,
   z.object({student_id:uuid}).strict(), (_,s)=>schoolPath(s,'fees/workspace'), (i,s)=>screenPath(s,'fees',{student_id:i.student_id}), i=>({student_id:i.student_id}), 'fees.manage');
 catalogue.find(cap=>cap.name==='student_fees')!.title='Student fees';
+for(const name of ['student_fees','fee_workspace'])catalogue.find(cap=>cap.name===name)!.modelProjection=feeModelProjection;
 read('fee_students', 'Permitted students for school invoices', 'fees', staff, empty, (_,s) => schoolPath(s,'fees/students'), 'fees', () => ({}), 'fees.manage');
 write('create_invoice', 'Create fee invoice', 'fees', staff, operations.invoiceSchema, (_,s) => schoolPath(s,'fees/invoices'), 'fees', { permission: 'fees.manage' });
 write('record_payment', 'Record a payment already received; does not transfer money', 'fees', staff, operations.paymentSchema, (i,s) => schoolPath(s,`fees/invoices/${i.id}/payments`), 'fees', { id: true, permission: 'fees.manage' });

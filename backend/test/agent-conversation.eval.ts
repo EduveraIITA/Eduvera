@@ -91,6 +91,10 @@ try {
   const fees=await turn(recovery,'Leave that change for now. Are there unpaid fees for him?');
   assert.equal(fees.status,'completed');assert.equal(fees.action,null);
   assert(fees.evidence.some((item:any)=>item.capability==='student_fees'),'Topic switch must read the learner’s fee ledger');
+  const school=(await request('/auth/session/')).user.active_school_id;
+  const ledger=await request(`/schools/${school}/fees/workspace?student_id=${student}`);
+  const expectedRupees=ledger.invoices.reduce((sum:number,row:any)=>sum+row.balance_paise,0)/100;
+  assert(fees.answer.replace(/,/g,'').includes(String(expectedRupees)),'Fee answer must use rupees, not paise');
   const diagnostics=(await pool.query("SELECT metadata FROM audit_events WHERE action='agent.model.response_failed' AND target_id IN (SELECT id FROM agent_runs WHERE thread_id=ANY($1::uuid[]))",[[thread,recovery]])).rows;
   assert.equal(diagnostics.length,0,'No provider recovery should be necessary');
   console.log(JSON.stringify({verified:true,thread,recovery,checks:'discussion, lookup, pronoun/date, clarification, rejection, contextual resumption, API approval, receipt, follow-up, prior false refusal, cross-domain switch'}));
