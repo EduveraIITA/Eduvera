@@ -5216,3 +5216,16 @@ stopped on two existing campus-event tests whose fixed demo picnic date had pass
 The isolated suite now shifts that fixture and its sessions into the future and
 restores their original timestamps afterward. All 15 event tests pass locally;
 production consent/history and register-lock rules are unchanged. Full CI is rerun.
+
+Release verified: [Stage run 38019566819](https://github.com/EduveraIITA/Eduvera/actions/runs/38019566819)
+passed **542 backend tests and 674 mobile tests**, backend/mobile typecheck/lint/build,
+desktop typecheck/build, migration and candidate/public checks. Release
+`ecd86c05013a430be97e654329346fac2d6232a8` serves 100% of Stage traffic on
+`eduvera-stage-00060-zom`. Public `/releasez` matches and `/readyz` reports database
+and events ready. Authenticated Vertex `gemini-3.1-flash-lite` reports ready.
+A deployed read-only three-turn smoke verified student lookup, general study-support
+discussion without an action, and return to the student's class in conversational
+context (thread `5786451a-a5d5-4013-9a7c-593ccf82626d`). No school record was changed.
+Local port 8000 and the existing Cloudflare preview both pass readiness checks.
+Stopped the temporary isolated PostgreSQL cluster and read-only Cloud SQL proxy;
+the user's preview and tunnel remain available.
