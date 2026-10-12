@@ -8,6 +8,7 @@ export const TEACHER_TOOL_PERMISSIONS: Readonly<Record<string, string>> = {
   registers: "attendance.view",
   calendar: "timetable.view",
   weekly: "timetable.view",
+  notices: "messages.view",
   messages: "messages.view",
   events: "events.view",
   safeguarding: "safeguarding.review",

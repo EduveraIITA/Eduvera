@@ -154,6 +154,16 @@ const JourneyDetailPage = lazy(() => import("./features/departure/JourneyDetailP
 const ParentRequestsRoute = lazy(async () => ({ default: (await import("./features/requests/RequestInboxPage")).ParentRequestsRoute }));
 const TeacherRequestsRoute = lazy(async () => ({ default: (await import("./features/requests/RequestInboxPage")).TeacherRequestsRoute }));
 const PrincipalRequestsRoute = lazy(async () => ({ default: (await import("./features/requests/RequestInboxPage")).PrincipalRequestsRoute }));
+const ParentNoticesRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).ParentNoticesRoute }));
+const ParentNoticeDetailRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).ParentNoticeDetailRoute }));
+const TeacherNoticesRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).TeacherNoticesRoute }));
+const TeacherNoticeDetailRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).TeacherNoticeDetailRoute }));
+const TeacherNoticeCreateRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).TeacherNoticeCreateRoute }));
+const TeacherNoticeEditRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).TeacherNoticeEditRoute }));
+const PrincipalNoticesRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).PrincipalNoticesRoute }));
+const PrincipalNoticeDetailRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).PrincipalNoticeDetailRoute }));
+const PrincipalNoticeCreateRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).PrincipalNoticeCreateRoute }));
+const PrincipalNoticeEditRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).PrincipalNoticeEditRoute }));
 
 function PageLoader() {
   return (
@@ -240,6 +250,8 @@ export function App() {
               <Route path="/parent/events/:eventId" element={<PortalOnly portal="parent"><ParentEventDetailRoute /></PortalOnly>} />
               <Route path="/parent/more" element={<PortalOnly portal="parent"><ParentMoreRoute /></PortalOnly>} />
               <Route path="/parent/requests" element={<PortalOnly portal="parent"><ParentRequestsRoute /></PortalOnly>} />
+              <Route path="/parent/notices" element={<PortalOnly portal="parent"><ParentNoticesRoute /></PortalOnly>} />
+              <Route path="/parent/notices/:noticeId" element={<PortalOnly portal="parent"><ParentNoticeDetailRoute /></PortalOnly>} />
               <Route path="/parent/calendar" element={<PortalOnly portal="parent"><ParentCalendarRoute /></PortalOnly>} />
               <Route path="/parent/fees" element={<PortalOnly portal="parent"><FamilyFeesPage portal="parent" /></PortalOnly>} />
               <Route path="/parent/policies" element={<PortalOnly portal="parent"><ParentPoliciesRoute /></PortalOnly>} />
@@ -283,6 +295,10 @@ export function App() {
               <Route path="/teacher/administration" element={<PortalOnly portal="teacher"><AdministrationPage /></PortalOnly>} />
               <Route path="/teacher/more" element={<PortalOnly portal="teacher"><TeacherMoreRoute /></PortalOnly>} />
               <Route path="/teacher/requests" element={<PortalOnly portal="teacher"><TeacherRequestsRoute /></PortalOnly>} />
+              <Route path="/teacher/notices" element={<PortalOnly portal="teacher"><TeacherNoticesRoute /></PortalOnly>} />
+              <Route path="/teacher/notices/new" element={<PortalOnly portal="teacher"><TeacherNoticeCreateRoute /></PortalOnly>} />
+              <Route path="/teacher/notices/:noticeId" element={<PortalOnly portal="teacher"><TeacherNoticeDetailRoute /></PortalOnly>} />
+              <Route path="/teacher/notices/:noticeId/edit" element={<PortalOnly portal="teacher"><TeacherNoticeEditRoute /></PortalOnly>} />
               <Route path="/teacher/calendar" element={<PortalOnly portal="teacher"><TeacherCalendarRoute /></PortalOnly>} />
               <Route path="/teacher/classes" element={<PortalOnly portal="teacher"><TeacherClassesPage /></PortalOnly>} />
               <Route path="/teacher/classes/:classId" element={<PortalOnly portal="teacher"><TeacherClassPage /></PortalOnly>} />
@@ -319,6 +335,10 @@ export function App() {
               <Route path="/principal/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="principal"><PrincipalEventRegisterRoute /></PortalOnly>} />
               <Route path="/principal/more" element={<PortalOnly portal="principal"><PrincipalMoreRoute /></PortalOnly>} />
               <Route path="/principal/requests" element={<PortalOnly portal="principal"><PrincipalRequestsRoute /></PortalOnly>} />
+              <Route path="/principal/notices" element={<PortalOnly portal="principal"><PrincipalNoticesRoute /></PortalOnly>} />
+              <Route path="/principal/notices/new" element={<PortalOnly portal="principal"><PrincipalNoticeCreateRoute /></PortalOnly>} />
+              <Route path="/principal/notices/:noticeId" element={<PortalOnly portal="principal"><PrincipalNoticeDetailRoute /></PortalOnly>} />
+              <Route path="/principal/notices/:noticeId/edit" element={<PortalOnly portal="principal"><PrincipalNoticeEditRoute /></PortalOnly>} />
               <Route path="/principal/calendar" element={<PortalOnly portal="principal"><PrincipalCalendarRoute /></PortalOnly>} />
               <Route path="/principal/governance" element={<PortalOnly portal="principal"><PrincipalGovernanceRoute /></PortalOnly>} />
               <Route path="/principal/assessments" element={<PortalOnly portal="principal"><PrincipalAssessmentsRoute /></PortalOnly>} />

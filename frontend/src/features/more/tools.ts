@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Award, BookOpen, Bot, Bus, CalendarCheck2, CalendarDays, CalendarRange, CalendarX2, ClipboardCheck,
-  FileText, Handshake, Inbox, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
+  FileText, Handshake, Inbox, Megaphone, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
 import { ChartNoAxesCombined } from "lucide-react";
@@ -26,6 +26,7 @@ export interface Tool {
 const TOOLS: Record<Portal, Tool[]> = {
   parent: [
     { id: "requests", name: "Requests", description: "Decisions, responses and acknowledgements that need you", icon: Inbox, tone: "blue", path: "/parent/requests" },
+    { id: "notices", name: "Notices", description: "School updates and your recorded responses", icon: Megaphone, tone: "blue", path: "/parent/notices" },
     { id: "teacher-feedback", name: "Teacher feedback", description: "Share your experience in a quick teaching check-in", icon: MessageCircle, tone: "teal", path: "/parent/teacher-feedback" },
     { id: "analytics", name: "Insights", description: "Attendance trends and your child's published progress", icon: ChartNoAxesCombined, tone: "blue", path: "/parent/insights" },
     { id: "departure", name: "Departure & bus", description: "Today's pickup plan, change requests and live school-bus journey", icon: Bus, tone: "blue", path: "/parent/departure" },
@@ -59,6 +60,7 @@ const TOOLS: Record<Portal, Tool[]> = {
   ],
   teacher: [
     { id: "requests", name: "Requests", description: "Assignments, cover, reviews and responses that need you", icon: Inbox, tone: "blue", path: "/teacher/requests" },
+    { id: "notices", name: "Notices", description: "Class and school updates with recorded responses", icon: Megaphone, tone: "blue", path: "/teacher/notices" },
     { id: "analytics", name: "Insights", description: "Assigned-class attendance and assessment progress", icon: ChartNoAxesCombined, tone: "blue", path: "/teacher/insights" },
     { id: "transport", name: "Transport journey", description: "Operate an assigned route, rider roster and journey location", icon: Bus, tone: "blue", path: "/teacher/transport" },
     { id: "assessments", name: "Assessments & marking", description: "Assigned offline assessments, marks and moderation", icon: Award, tone: "blue", path: "/teacher/assessments" },
@@ -77,6 +79,7 @@ const TOOLS: Record<Portal, Tool[]> = {
   ],
   principal: [
     { id: "requests", name: "Requests", description: "Prioritised school decisions and operational reviews", icon: Inbox, tone: "blue", path: "/principal/requests" },
+    { id: "notices", name: "Notices", description: "School-wide updates, delivery and responses", icon: Megaphone, tone: "blue", path: "/principal/notices" },
     { id: "teacher-feedback", name: "Teacher feedback", description: "Create quick check-ins and review private results", icon: MessageCircle, tone: "teal", path: "/principal/teacher-feedback" },
     { id: "analytics", name: "Insights", description: "Trends, results, follow-ups and school operations", icon: ChartNoAxesCombined, tone: "blue", path: "/principal/insights" },
     { id: "departure", name: "Transport & pickup", description: "Routes, rosters and student handover", icon: Bus, tone: "blue", path: "/principal/departure" },

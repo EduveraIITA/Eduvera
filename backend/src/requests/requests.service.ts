@@ -33,6 +33,7 @@ interface StaffActionRow {
   created_at: string | Date | null;
   urgent: boolean;
   subject_label: string | null;
+  priority?: RequestPriority | null;
 }
 
 function iso(value: string | Date | null | undefined): string | null {
@@ -85,7 +86,7 @@ export class RequestsService {
       ? await this.parentItems(user, scope)
       : portal === "teacher"
         ? await this.teacherItems(user, scope)
-        : await this.principalItems(scope);
+        : await this.principalItems(user, scope);
     const deduplicated = new Map<string, RequestInboxItem>();
     for (const item of [...baseItems, ...projected]) deduplicated.set(item.id, item);
     const items = sortRequestItems([...deduplicated.values()]).slice(0, 100);
@@ -172,7 +173,7 @@ export class RequestsService {
   private item(
     row: StaffActionRow,
     values: Pick<RequestInboxItem, "kind" | "category" | "action_label" | "href">,
-    priority: RequestPriority = row.urgent ? "urgent" : "high",
+    priority: RequestPriority = row.priority ?? (row.urgent ? "urgent" : "high"),
   ): RequestInboxItem {
     return {
       id: `${values.kind}:${row.id}`,
@@ -193,7 +194,21 @@ export class RequestsService {
   }
 
   private async parentItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
-    const [policies, invoices] = await Promise.all([
+    const [notices, policies, invoices] = await Promise.all([
+      sql<StaffActionRow>`
+        SELECT notice.id,notice.title,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Read and acknowledge.' ELSE 'Choose a response.' END::text AS detail,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Acknowledgement needed' ELSE 'Response needed' END::text AS status_label,
+          notice.due_at,notice.published_at AS occurs_at,notice.created_at,
+          (notice.priority='urgent' OR notice.due_at<now())::boolean AS urgent,
+          notice.priority::text AS priority,${scope.student_name}::text AS subject_label
+        FROM school_notice_recipients recipient
+        JOIN school_notices notice ON notice.id=recipient.notice_id AND notice.school_id=recipient.school_id
+        JOIN parents parent ON parent.id=recipient.guardian_id
+        WHERE parent.user_id=${user.id}::uuid AND recipient.student_id=${scope.student_id}::uuid
+          AND notice.status='published' AND notice.response_mode<>'information' AND recipient.responded_at IS NULL
+        ORDER BY notice.due_at,notice.id LIMIT 30
+      `.execute(this.db),
       sql<StaffActionRow>`
         SELECT version.id,version.title,
           'Read and acknowledge the published school policy.'::text AS detail,
@@ -223,6 +238,7 @@ export class RequestsService {
       `.execute(this.db),
     ]);
     return [
+      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/parent/notices/${encodeURIComponent(row.id)}?student_id=${encodeURIComponent(scope.student_id ?? "")}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
       ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: "/parent/policies" }, row.urgent ? "urgent" : "normal")),
       ...invoices.rows.map((row) => this.item(row, { kind: "fee_due", category: "finance", action_label: "View fees", href: `/parent/fees?student_id=${encodeURIComponent(scope.student_id ?? "")}` })),
     ];
@@ -231,7 +247,20 @@ export class RequestsService {
   private async teacherItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
     const profile = await this.db.selectFrom("staff_profiles").select("id")
       .where("school_id", "=", scope.school_id).where("user_id", "=", user.id).executeTakeFirst();
-    const [assignments, coverage, trips, swaps, assessments, policies] = await Promise.all([
+    const [notices, assignments, coverage, trips, swaps, assessments, policies] = await Promise.all([
+      sql<StaffActionRow>`
+        SELECT notice.id,notice.title,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Read and acknowledge.' ELSE 'Choose a response.' END::text AS detail,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Acknowledgement needed' ELSE 'Response needed' END::text AS status_label,
+          notice.due_at,notice.published_at AS occurs_at,notice.created_at,
+          (notice.priority='urgent' OR notice.due_at<now())::boolean AS urgent,
+          notice.priority::text AS priority,NULL::text AS subject_label
+        FROM school_notice_recipients recipient
+        JOIN school_notices notice ON notice.id=recipient.notice_id AND notice.school_id=recipient.school_id
+        WHERE recipient.user_id=${user.id}::uuid AND notice.school_id=${scope.school_id}::uuid
+          AND notice.status='published' AND notice.response_mode<>'information' AND recipient.responded_at IS NULL
+        ORDER BY notice.due_at,notice.id LIMIT 30
+      `.execute(this.db),
       profile ? sql<StaffActionRow>`
         SELECT assignment.id,type.name AS title,
           concat_ws(' · ',NULLIF(assignment.scope_label,''),NULLIF(assignment.location,'')) AS detail,
@@ -316,6 +345,7 @@ export class RequestsService {
       `.execute(this.db),
     ]);
     return [
+      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/teacher/notices/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
       ...assignments.rows.map((row) => this.item(row, { kind: "responsibility_offer", category: "staffing", action_label: "Review assignment", href: "/teacher/responsibilities" })),
       ...coverage.rows.map((row) => this.item(row, { kind: "coverage_offer", category: "staffing", action_label: "Review cover", href: "/teacher/responsibilities" })),
       ...trips.rows.map((row) => this.item(row, { kind: "transport_assignment", category: "transport", action_label: "Review ride", href: `/teacher/transport?trip_id=${encodeURIComponent(row.id)}` })),
@@ -325,8 +355,38 @@ export class RequestsService {
     ];
   }
 
-  private async principalItems(scope: Scope): Promise<RequestInboxItem[]> {
-    const [leave, departure, swaps, fees, policies, assessments, continuity, concerns] = await Promise.all([
+  private async principalItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
+    const [notices, noticeExceptions, leave, departure, swaps, fees, policies, assessments, continuity, concerns] = await Promise.all([
+      sql<StaffActionRow>`
+        SELECT notice.id,notice.title,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Read and acknowledge.' ELSE 'Choose a response.' END::text AS detail,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Acknowledgement needed' ELSE 'Response needed' END::text AS status_label,
+          notice.due_at,notice.published_at AS occurs_at,notice.created_at,
+          (notice.priority='urgent' OR notice.due_at<now())::boolean AS urgent,
+          notice.priority::text AS priority,NULL::text AS subject_label
+        FROM school_notice_recipients recipient
+        JOIN school_notices notice ON notice.id=recipient.notice_id AND notice.school_id=recipient.school_id
+        WHERE recipient.user_id=${user.id}::uuid AND notice.school_id=${scope.school_id}::uuid
+          AND notice.status='published' AND notice.response_mode<>'information' AND recipient.responded_at IS NULL
+        ORDER BY notice.due_at,notice.id LIMIT 30
+      `.execute(this.db),
+      sql<StaffActionRow>`
+        SELECT notice.id,notice.title,
+          concat_ws(' · ',
+            CASE WHEN count(*) FILTER (WHERE latest.status='failed')>0 THEN count(*) FILTER (WHERE latest.status='failed')||' delivery failed' END,
+            CASE WHEN notice.due_at<now() THEN count(*) FILTER (WHERE recipient.responded_at IS NULL)||' responses overdue' END)::text AS detail,
+          'Follow-up needed'::text AS status_label,notice.due_at,notice.published_at AS occurs_at,notice.created_at,
+          true AS urgent,'urgent'::text AS priority,NULL::text AS subject_label
+        FROM school_notices notice
+        JOIN school_notice_recipients recipient ON recipient.notice_id=notice.id
+        LEFT JOIN LATERAL (SELECT attempt.status FROM school_notice_delivery_attempts attempt
+          WHERE attempt.recipient_id=recipient.id ORDER BY attempt.created_at DESC,attempt.id DESC LIMIT 1) latest ON true
+        WHERE notice.school_id=${scope.school_id}::uuid AND notice.status='published'
+        GROUP BY notice.id
+        HAVING count(*) FILTER (WHERE latest.status='failed')>0
+          OR (notice.response_mode<>'information' AND notice.due_at<now() AND count(*) FILTER (WHERE recipient.responded_at IS NULL)>0)
+        ORDER BY notice.due_at NULLS LAST,notice.id LIMIT 30
+      `.execute(this.db),
       sql<StaffActionRow>`
         SELECT request.id,concat(profile.first_name,' ',profile.last_name,' · ',policy.name)::text AS title,
           concat(to_char(request.starts_on,'DD Mon'),'–',to_char(request.ends_on,'DD Mon'),' · ',request.reason)::text AS detail,
@@ -432,6 +492,8 @@ export class RequestsService {
       `.execute(this.db),
     ]);
     return [
+      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/principal/notices/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
+      ...noticeExceptions.rows.map((row) => this.item(row, { kind: "notice_exception", category: "communication", action_label: "Review notice", href: `/principal/notices/${encodeURIComponent(row.id)}` }, "urgent")),
       ...leave.rows.map((row) => this.item(row, { kind: "staff_leave_review", category: "leave", action_label: "Review leave", href: "/principal/staff?section=leave" })),
       ...departure.rows.map((row) => this.item(row, { kind: "departure_change", category: "transport", action_label: "Review change", href: "/principal/departure?section=requests" })),
       ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap_approval", category: "transport", action_label: "Review duty change", href: "/principal/departure?section=roster" })),

@@ -19,6 +19,7 @@ export class PermissionGuard implements CanActivate {
     const controller=context.getClass().name;
     const resources: Array<[string|undefined,string]> = [[params.classSectionId || query.class_section_id || (typeof body.class_section_id==='string' ? body.class_section_id : undefined),'class_sections'],[params.studentId,'students'],[params.eventId,'campus_events'],[params.conversationId,'chat_conversations'],[params.reportId,'chat_message_reports']];
     if(params.id && controller==='CoordinationController') resources.push([params.id,'attendance_followups']);
+    if(params.id && controller==='NoticesController') resources.push([params.id,'school_notices']);
     if(params.id && controller==='DayPlanController') resources.push([params.id,context.getHandler().name==='respond' ? 'day_plan_periods':'day_plans']);
     if(params.sessionId && controller==='PhotoAttendanceController') resources.push([params.sessionId,'photo_attendance_sessions']);
     let school=supplied;

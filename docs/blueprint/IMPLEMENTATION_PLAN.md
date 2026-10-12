@@ -48,7 +48,7 @@ decisions cannot be replaced by synthetic software tests.
 | B2: Daily plan | Weekly baseline plus dated, versioned daily plans; notices/materials; coverage responses; shared family schedule; conflict checks and outbox updates | Local UI acceptance and school-operating validation; resource catalogue/advanced authoring remains later timetable scope |
 | B3: Attendance | Full-roster commands, revision checks, idempotency, correction history, calendar, leave; immutable source-rich observations; encrypted account-scoped offline queue with expiry/quarantine; reviewed paper and office capture | Print/export reconciliation, physical offline/device drill and school-operating acceptance; retain unrecorded/unknown states |
 | B4: Attendance follow-up | Attendance facts and parent/teacher screens | First local slice implemented below: explicit owner/deadline, guardian reply, assisted response, outcome, event update |
-| B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes; role-aware Requests inbox aggregating existing parent, staff and principal obligations | Notice creation/audiences; delivery-attempt versus acknowledgment versus decision states; explicit non-app routing; physical role-by-role acceptance of Requests |
+| B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes; role-aware Requests inbox; locally implemented scoped notices with immutable recipients, distinct delivery/open/response state and assisted non-app capture | Physical role-by-role acceptance; external SMS provider delivery; operating-policy sign-off; broader conversation acceptance |
 | B6: Pilot readiness | Scoped documents, auth/CSRF, event replay and tests | Scoped object storage, malware scanning, non-owner RLS runtime roles/context, privileged auth, recovery drill, accessibility/device validation, release evidence |
 | C1: Departure coordination | No trusted operational release implementation | Departure plans and revisions; collection authority; verification/approval/readiness/execution; current-authority checks and fallback; separate school sign-off |
 | C2: Restricted care | Local restricted-care slice: encrypted intake/notes, dated primary and alternate recipients, explicit per-case access, reporting evidence, closure gate and neutral event envelopes | Authenticated UI/operational sign-off; evidence storage, retention/legal hold, external delivery and institution tabletop drill remain release gates |
@@ -86,7 +86,42 @@ governance, academic or student-care screen, where the existing domain rules per
 
 Focused request projection/UI tests, both typechecks, both linters and both production builds are
 release evidence for this increment. Physical phone review by the product owner remains open; the
-broader B5 delivery/acknowledgement and non-app routing gaps above are not claimed as complete.
+broader B5 acceptance gaps above are not claimed as complete.
+
+## Active delivery: notices and response tracking — 13 October 2026
+
+The next B5 slice is implemented locally as an explicit **Notices** workflow rather than an
+announcement-shaped chat message. A notice is a draft until an authorized publisher releases an
+immutable recipient snapshot. Principals can address staff, all guardians or one class; staff can
+address guardians only in a class where their current `messages.send` assignment is effective.
+Publication rechecks that authority and fails when the audience resolves to nobody.
+
+- Notice modes are **information**, **acknowledgement** and **choice**. Choice is a generic response,
+  not legal consent: event consent remains in the event workflow and cannot be manufactured by a
+  notice. Information notices never create a Request.
+- Delivery attempts (`app`, `SMS`, `paper`, `phone`, `in person`), opening and the recorded response
+  are separate records. An app delivery does not imply that the person opened or acknowledged it.
+  Guardians without an app account remain in the audience and start with a queued paper route.
+- Parents and directly addressed staff respond in their own portal. Administrators can record the
+  effective time, channel and attributed actor for an assisted response, or append manual delivery
+  evidence. All state changes use revision checks, command idempotency, domain audit rows, the common
+  audit ledger and a content-free transactional outbox envelope.
+- Pending acknowledgements and choices project into the role-aware Requests inbox. Principals receive
+  a separate exception only for a latest failed delivery or an overdue missing response. Notice text
+  does not enter realtime event payloads.
+- The web flow has focused list, compose, review/publish and detail pages. It preserves the shared
+  app bars and navigation, uses one page title, and keeps recipient progress and manual follow-up
+  progressively disclosed rather than stacking summary cards.
+
+Verified locally: migration `061_school_notices.sql` applied successfully to a disposable clone of
+the current local schema; the focused backend workflow suite passes **4/4** across audience scope,
+idempotency, delivery/response separation, Requests projection, assisted non-app capture and neutral
+events. Backend typecheck, lint and production build pass. Focused Notices/Requests/navigation UI
+tests pass **12/12**, and the frontend regression excluding unrelated duplicate files passes
+**682/682 across 94 files**. The new frontend files pass lint and typechecking; the repository-wide frontend
+typecheck remains obstructed by pre-existing untracked duplicate `* 2.tsx` test files and is not
+claimed. No cloud/shared database migration or deployment is claimed. Physical parent/staff/principal
+review, real provider delivery and operating-policy sign-off remain B5 acceptance gates.
 
 ## Active delivery: institution governance and policy centre — 4 October 2026
 
