@@ -5238,3 +5238,11 @@ and places two icon-only, 40-pixel controls in the shared Chat title bar across
 principal, teacher, parent and student portals. Accessible labels and native focus
 remain; the history icon opens a bounded translucent conversation menu, while the
 compose icon starts a new chat. No agent, database or permission behavior changed.
+
+### Personal HTTPS preview restarted — 13 October 2026
+
+The previous Cloudflare quick tunnel and local preview were no longer registered
+after the host stopped. Both task-scoped launchd jobs are running again. The current
+preview is **https://nevada-senior-coding-enabled.trycloudflare.com**; public `/login`
+returns 200 and `/readyz` reports database and events ready. The older ngrok endpoint
+still returns `ERR_NGROK_3200`, so it was not reused.
