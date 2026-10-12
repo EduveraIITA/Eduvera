@@ -24,7 +24,8 @@ describe("More hierarchy", () => {
   it("does not reveal unauthorized work or empty groups in restricted staff search", () => {
     const member = { id: "m", school_id: "s", school_name: "School", role: "staff" as const, permissions: ["departure.collect"] };
     const visible = toolsFor("teacher").filter(tool => teacherToolIsVisible(member, tool.id));
-    expect(groupTools("teacher", visible).map(group => group.name)).toEqual(["My work", "Staff services", "Account"]);
+    expect(groupTools("teacher", visible).map(group => group.name)).toEqual(["Needs attention", "My work", "Staff services", "Account"]);
+    expect(searchTools("teacher", visible, "requests")[0]?.path).toBe("/teacher/requests");
     expect(searchTools("teacher", visible, "marks")).toEqual([]);
     expect(searchTools("teacher", visible, "bus")[0]?.path).toBe("/teacher/transport");
   });

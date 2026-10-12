@@ -28,7 +28,7 @@ export function PrincipalHomeAttention({ data, date, queries }: { data: Principa
     <span className={`principal-home__count${item.urgent ? " is-urgent" : ""}`}>{item.count}</span><ChevronRight size={16} aria-hidden="true" />
   </Link></li>);
   return <section className="principal-home__section" aria-labelledby="principal-attention-title">
-    <header><h2 id="principal-attention-title">Needs attention</h2><Link to={`/principal/insights?date=${date}`}>Insights<ChevronRight size={15} aria-hidden="true" /></Link></header>
+    <header><h2 id="principal-attention-title">Needs attention</h2><Link to="/principal/requests">All requests<ChevronRight size={15} aria-hidden="true" /></Link></header>
     <div className="principal-home__group">
       {rows.length ? <ul className="principal-home__rows">{rows.slice(0, 4)}</ul> : null}
       {rows.length > 4 ? <details className="principal-home__more-checks"><summary>{rows.length - 4} more {rows.length === 5 ? "check" : "checks"}</summary><ul className="principal-home__rows">{rows.slice(4)}</ul></details> : null}

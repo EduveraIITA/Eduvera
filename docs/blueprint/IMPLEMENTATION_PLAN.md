@@ -48,7 +48,7 @@ decisions cannot be replaced by synthetic software tests.
 | B2: Daily plan | Weekly baseline plus dated, versioned daily plans; notices/materials; coverage responses; shared family schedule; conflict checks and outbox updates | Local UI acceptance and school-operating validation; resource catalogue/advanced authoring remains later timetable scope |
 | B3: Attendance | Full-roster commands, revision checks, idempotency, correction history, calendar, leave; immutable source-rich observations; encrypted account-scoped offline queue with expiry/quarantine; reviewed paper and office capture | Print/export reconciliation, physical offline/device drill and school-operating acceptance; retain unrecorded/unknown states |
 | B4: Attendance follow-up | Attendance facts and parent/teacher screens | First local slice implemented below: explicit owner/deadline, guardian reply, assisted response, outcome, event update |
-| B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes | Dedicated action inbox aggregating obligations; notice creation/audiences; delivery-attempt versus acknowledgment versus decision states; explicit non-app routing |
+| B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes; role-aware Requests inbox aggregating existing parent, staff and principal obligations | Notice creation/audiences; delivery-attempt versus acknowledgment versus decision states; explicit non-app routing; physical role-by-role acceptance of Requests |
 | B6: Pilot readiness | Scoped documents, auth/CSRF, event replay and tests | Scoped object storage, malware scanning, non-owner RLS runtime roles/context, privileged auth, recovery drill, accessibility/device validation, release evidence |
 | C1: Departure coordination | No trusted operational release implementation | Departure plans and revisions; collection authority; verification/approval/readiness/execution; current-authority checks and fallback; separate school sign-off |
 | C2: Restricted care | Local restricted-care slice: encrypted intake/notes, dated primary and alternate recipients, explicit per-case access, reporting evidence, closure gate and neutral event envelopes | Authenticated UI/operational sign-off; evidence storage, retention/legal hold, external delivery and institution tabletop drill remain release gates |
@@ -61,6 +61,32 @@ decisions cannot be replaced by synthetic software tests.
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
+
+## Active delivery: role-aware Requests inbox — 13 October 2026
+
+Parents, staff and principals now have one **Requests** module for work that needs their attention.
+It is a read-only, role-scoped projection over authoritative domain workflows, not a second approval
+engine: selecting an item opens the owning attendance, event, leave, staffing, transport, finance,
+governance, academic or student-care screen, where the existing domain rules perform any change.
+
+- The common contract separates category, status, subject, due time, priority and destination. It
+  orders **Act now**, **Review soon** and **When you can** deterministically by urgency and deadline.
+- Parent scope is restricted to a linked child and includes existing family actions, required policy
+  acknowledgements and outstanding fee obligations. Staff scope includes assigned registers, cover,
+  responsibility offers, transport duty, assessment work and policy acknowledgements. Principal
+  scope includes institution-wide leave, departure and transport decisions, finance review, policy
+  review, assessment moderation, attendance reconciliation and open student concerns.
+- Requests are reachable first in each applicable More menu, carry a live attention indicator, and
+  the principal Home attention section links to the full inbox. Students intentionally do not receive
+  this adult operational inbox.
+- Cross-role calls were exercised against the local seeded school: parent-to-principal,
+  staff-to-parent and principal-to-staff contexts each return `403`. The seeded principal receives
+  three scoped items, the teacher four and the parent currently has a truthful empty state. Mobile
+  Chromium checks at 390 px show no horizontal overflow or browser errors for all three views.
+
+Focused request projection/UI tests, both typechecks, both linters and both production builds are
+release evidence for this increment. Physical phone review by the product owner remains open; the
+broader B5 delivery/acknowledgement and non-app routing gaps above are not claimed as complete.
 
 ## Active delivery: institution governance and policy centre — 4 October 2026
 

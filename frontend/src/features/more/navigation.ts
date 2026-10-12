@@ -5,6 +5,7 @@ import { ClipboardCheck } from "lucide-react";
 type Group = { name: string; ids: string[] };
 const groups: Record<Portal, Group[]> = {
   principal: [
+    { name: "Needs attention", ids: ["requests"] },
     { name: "School overview", ids: ["analytics"] },
     { name: "People", ids: ["people", "staff", "teacher-feedback"] },
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
@@ -13,6 +14,7 @@ const groups: Record<Portal, Group[]> = {
     { name: "Account", ids: ["security"] },
   ],
   teacher: [
+    { name: "Needs attention", ids: ["requests"] },
     { name: "My work", ids: ["analytics", "responsibilities", "classes", "registers", "transport", "assessments", "report-cards"] },
     { name: "Schedule & activities", ids: ["weekly", "calendar", "events"] },
     { name: "Communication & care", ids: ["messages", "safeguarding"] },
@@ -21,6 +23,7 @@ const groups: Record<Portal, Group[]> = {
     { name: "Account", ids: ["security"] },
   ],
   parent: [
+    { name: "Needs attention", ids: ["requests"] },
     { name: "Learning", ids: ["analytics", "results", "diary", "teacher-feedback"] },
     { name: "Schedule & attendance", ids: ["timetable", "calendar", "leave"] },
     { name: "School life", ids: ["departure", "events", "messages"] },
@@ -66,6 +69,7 @@ const adminShortcuts: Shortcut[] = [
   { owner: "governance", name: "Policy register", path: "/principal/governance?section=register", keywords: "compliance policies" },
 ];
 const aliases: Record<string, string> = {
+  requests: "actions approvals decisions consent acknowledgement review pending urgent",
   analytics: "analytics charts graphs insights overview trends progress statistics attendance scores",
   results: "marks marksheet exam report card grades", assessments: "tests exam marks marking moderation results",
   "report-cards": "marksheet grades grading term reports remarks", departure: "bus pickup drop collector route transport",

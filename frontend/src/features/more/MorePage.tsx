@@ -13,6 +13,7 @@ import { currentStaffMembership, teacherToolIsVisible } from "../auth/staffAcces
 import { toolsFor, type Tool } from "./tools";
 import { groupTools, searchTools } from "./navigation";
 import { getActivation } from "../activation/api";
+import { getRequestsInbox } from "../requests/api";
 import "./more.css";
 
 type MoreLayout = "grid" | "list";
@@ -67,7 +68,15 @@ function useMoreAttention(portal: Portal, studentId: string | undefined) {
     enabled: auth?.status === "authenticated" && portal === "teacher",
     staleTime: 15_000, refetchOnMount: "always", retry: false,
   });
+  const requests = useQuery({
+    queryKey: ["requests", portal, studentId ?? "default", "more-count"],
+    queryFn: () => getRequestsInbox(portal as "parent" | "teacher" | "principal", studentId),
+    enabled: auth?.status === "authenticated" && portal !== "student",
+    staleTime: 20_000,
+    retry: false,
+  });
   const counts = { ...(home.data?.more_attention ?? {}) };
+  if (requests.data?.summary.total) counts.requests = requests.data.summary.total;
   if (portal === "teacher" && collector.data) {
     const today = schoolDateToday();
     const trips = collector.data.trips.filter((trip) => trip.assigned_collector_user_id === userId

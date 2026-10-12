@@ -32,6 +32,7 @@ import { InstitutionActivationModule } from "./institution-activation/institutio
 import { AssessmentsModule } from "./assessments/assessments.module.js";
 import { AcademicReportsModule } from "./academic-reports/academic-reports.module.js";
 import { DepartureCoordinationModule } from "./departure-coordination/departure-coordination.module.js";
+import { RequestsModule } from "./requests/requests.module.js";
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
     AssessmentsModule,
     AcademicReportsModule,
     DepartureCoordinationModule,
+    RequestsModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
