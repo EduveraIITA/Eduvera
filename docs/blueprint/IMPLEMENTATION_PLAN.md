@@ -5246,3 +5246,10 @@ after the host stopped. Both task-scoped launchd jobs are running again. The cur
 preview is **https://nevada-senior-coding-enabled.trycloudflare.com**; public `/login`
 returns 200 and `/readyz` reports database and events ready. The older ngrok endpoint
 still returns `ERR_NGROK_3200`, so it was not reused.
+
+The demo-profile APIs were then checked through the live preview with all four saved
+review logins: every login returned 200, advertised the switcher and listed exactly
+four profiles. The missing screen was a frontend redirect-order bug: a protected
+route's `next=` parameter won over the temporary review profile destination. Demo
+identities now always see Profile first after password login; ordinary accounts still
+honour `next=`. This changes navigation only, not authentication or authorization.

@@ -120,7 +120,9 @@ export function LoginPage() {
         setPassword("");
         return;
       }
-      void navigate(safeNextPath(location.search) ?? (result.demoProfileSwitcher ? "/account/profile?demo_profiles=1" : "/"), { replace: true });
+      // Development review identities must always see the temporary profile
+      // switcher first, even when a protected route supplied `next=`.
+      void navigate(result.demoProfileSwitcher ? "/account/profile?demo_profiles=1" : safeNextPath(location.search) ?? "/", { replace: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Sign in could not be completed.");
     } finally {
