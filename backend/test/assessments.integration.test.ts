@@ -38,7 +38,7 @@ suite("offline assessment and result lifecycle",()=>{
     classId=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2031-32','7','A') RETURNING id",[schoolId])).rows[0].id;
     subjectId=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'ENG','English','English') RETURNING id",[schoolId])).rows[0].id;
     await pool.query(`INSERT INTO class_section_staff_assignments(school_id,class_section_id,user_id,role,subject_id,valid_from,valid_until,assigned_by)
-      VALUES($1,$2,$3,'subject_teacher',$4,'2031-04-01','2031-09-30',$5)`,[schoolId,classId,examiner.id,subjectId,admin.id]);
+      VALUES($1,$2,$3,'subject_teacher',$4,current_date,'2031-09-30',$5)`,[schoolId,classId,examiner.id,subjectId,admin.id]);
     const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Learner','One') RETURNING id",[schoolId])).rows[0];
     studentId=(await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,'A-001') RETURNING id",[schoolId,person.id])).rows[0].id;
     await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,'2031-04-01')",[studentId,classId,termId]);

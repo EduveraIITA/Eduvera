@@ -29,7 +29,6 @@ export class AssessmentsController {
   }
 
   @Get("workspace/")
-  @RequirePermission("assessments.view")
   workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
     return this.assessments.workspace(req.authUser, schoolId);
   }

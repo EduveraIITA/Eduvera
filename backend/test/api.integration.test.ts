@@ -1296,7 +1296,7 @@ describe("OmniSchool API", () => {
     expect(percentages[0]).toBe(100);
     expect(percentages).toEqual([...percentages].sort((left: number, right: number) => right - left));
     expect(body.ranking.leaders[0].name).toMatch(/\.$/);
-    expect(body.ranking.leaders[0]).toMatchObject({ avatar_url: "/assets/ananya-iyer.png", streak: expect.any(Number) });
+    expect(body.ranking.leaders[0]).toMatchObject({ avatar_url: "/assets/demo-camera-attendance/student-01.jpg", streak: expect.any(Number) });
     const rosterSize=(await pool.query<{count:number}>(`SELECT count(*)::int AS count FROM enrollments peer
       WHERE peer.is_active AND (peer.class_section_id,peer.term_id) IN (
         SELECT mine.class_section_id,mine.term_id FROM enrollments mine

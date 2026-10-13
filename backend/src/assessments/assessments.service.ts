@@ -176,8 +176,12 @@ export class AssessmentsService {
   }
 
   async workspace(user: AuthUser, schoolId: string) {
-    const permission = await schoolPermission(this.db,user,schoolId,"assessments.view");
-    const admin = permission.role === "admin";
+    const membership = await this.db.selectFrom("school_memberships").select("role")
+      .where("school_id","=",schoolId).where("user_id","=",user.id)
+      .where("is_active","=",true).where("role","in",["admin","staff"])
+      .orderBy(sql`role='admin'`,"desc").executeTakeFirst();
+    if (!membership) throw new ForbiddenException("Active school staff access is required.");
+    const admin = membership.role === "admin";
     const cycles = await sql`SELECT cycle.*,term.name AS term_name,term.academic_year,
       count(assessment.id)::int AS assessment_count,
       count(assessment.id) FILTER(WHERE assessment.status='published')::int AS published_count
@@ -208,7 +212,9 @@ export class AssessmentsService {
           AND binding.context_kind='class' AND binding.scope_id=section.id
         WHERE section.school_id=${schoolId}::uuid AND binding.user_id=${user.id}::uuid
           AND binding.status='active' AND binding.role_active
-          AND 'assessments.mark'=ANY(binding.permissions)
+          AND binding.source_kind='class_assignment'
+          AND binding.role_id IN (SELECT id FROM staff_responsibility_types
+            WHERE school_id=${schoolId}::uuid AND code IN ('class_teacher','subject_teacher'))
           AND current_date BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
         ORDER BY section.academic_year DESC,name,section.id
       `.execute(this.db)).rows;
@@ -220,7 +226,9 @@ export class AssessmentsService {
         JOIN staff_role_bindings binding ON binding.school_id=subject.school_id
           AND binding.context_kind='class' AND binding.user_id=${user.id}::uuid
           AND binding.status='active' AND binding.role_active
-          AND 'assessments.mark'=ANY(binding.permissions)
+          AND binding.source_kind='class_assignment'
+          AND binding.role_id IN (SELECT id FROM staff_responsibility_types
+            WHERE school_id=${schoolId}::uuid AND code IN ('class_teacher','subject_teacher'))
           AND (binding.subject_id IS NULL OR binding.subject_id=subject.id)
           AND current_date BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
         WHERE subject.school_id=${schoolId}::uuid
@@ -319,7 +327,10 @@ export class AssessmentsService {
           JOIN schools school ON school.id=binding.school_id
           WHERE binding.school_id=${schoolId}::uuid AND binding.user_id=${user.id}::uuid
             AND binding.context_kind='class' AND binding.scope_id=${data.class_section_id}::uuid
-            AND binding.status='active' AND binding.role_active AND 'assessments.mark'=ANY(binding.permissions)
+            AND binding.status='active' AND binding.role_active
+            AND binding.source_kind='class_assignment'
+            AND binding.role_id IN (SELECT id FROM staff_responsibility_types
+              WHERE school_id=${schoolId}::uuid AND code IN ('class_teacher','subject_teacher'))
             AND (binding.subject_id IS NULL OR binding.subject_id=${data.subject_id}::uuid)
             AND (${data.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date
               BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
