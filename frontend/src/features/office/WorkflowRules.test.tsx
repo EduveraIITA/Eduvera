@@ -12,7 +12,7 @@ describe("Workflow rules", () => {
     vi.mocked(apiFetch).mockResolvedValue(rules); show();
     fireEvent.change(await screen.findByLabelText("Open boarding before departure (minutes)"), { target: { value: "45" } });
     fireEvent.click(screen.getByRole("button", { name: "Save rules" }));
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/v1/operating-rules/school-1", expect.objectContaining({ method: "POST", body: JSON.stringify({ ...rules, revision: undefined, journey_lead_minutes: 45, expected_revision: 4 }, (key, value) => value === undefined ? undefined : value) })));
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/v1/operating-rules/school-1", expect.objectContaining({ method: "POST", body: JSON.stringify({ ...rules, revision: undefined, journey_lead_minutes: 45, expected_revision: 4 }, (_key: string, value: unknown): unknown => value === undefined ? undefined : value) })));
     expect(await screen.findByRole("status")).toHaveTextContent("Operating rules saved.");
   });
   it("keeps navigation guarded until the changed category has saved", async () => {
