@@ -1,3 +1,4 @@
+import { operatingRules, type OperatingRules } from "../operating-rules/rules.js";
 import {
   BadRequestException,
   ConflictException,
@@ -65,6 +66,39 @@ export class CampusEventsService {
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
   ) {}
+
+  private async observationPolicy(db: Db, schoolId: string) {
+    return (await sql<{ observation_hours_before: number; observation_hours_after: number; revision: number }>`
+      SELECT observation_hours_before,observation_hours_after,revision
+      FROM campus_event_attendance_policies WHERE school_id=${schoolId}::uuid
+    `.execute(db)).rows[0] ?? { observation_hours_before: 2, observation_hours_after: 4, revision: 0 };
+  }
+
+  async saveObservationPolicy(req: AuthenticatedRequest, body: unknown) {
+    const input = z.object({ school_id: uuid, expected_revision: z.number().int().min(0),
+      observation_hours_before: z.number().int().min(0).max(168),
+      observation_hours_after: z.number().int().min(0).max(168) }).strict().parse(body);
+    return this.db.transaction().execute(async (db) => {
+      await this.requireAdmin(db, req.authUser, input.school_id, true);
+      await sql`SELECT id FROM schools WHERE id=${input.school_id}::uuid FOR UPDATE`.execute(db);
+      const before = await this.observationPolicy(db, input.school_id);
+      if (before.revision !== input.expected_revision) throw new ConflictException("Operating rules changed. Reload before saving.");
+      await sql`INSERT INTO campus_event_attendance_policies(school_id,observation_hours_before,observation_hours_after,updated_by)
+        VALUES(${input.school_id}::uuid,${input.observation_hours_before},${input.observation_hours_after},${req.authUser.id}::uuid)
+        ON CONFLICT(school_id) DO UPDATE SET observation_hours_before=excluded.observation_hours_before,
+        observation_hours_after=excluded.observation_hours_after,updated_by=excluded.updated_by,
+        revision=campus_event_attendance_policies.revision+1,updated_at=now()`.execute(db);
+      const after = await this.observationPolicy(db, input.school_id);
+      await this.audit(db, req, "campus_event.attendance_policy_updated", input.school_id, input.school_id, { before, after }, "school");
+      return after;
+    });
+  }
+
+  async getObservationPolicy(user: AuthUser, schoolValue: string) {
+    const schoolId = uuid.parse(schoolValue);
+    await this.requireAdmin(this.db, user, schoolId);
+    return this.observationPolicy(this.db, schoolId);
+  }
 
   private async membership(db: Db, user: AuthUser, schoolId: string, lock = false) {
     if (user.active_school_id && user.active_school_id !== schoolId) {
@@ -858,11 +892,12 @@ export class CampusEventsService {
       WHERE staff.event_id=${event.id}::uuid ORDER BY name,staff.role,staff.user_id
     `.execute(db)).rows;
     const familyOpen = event.status === "published" && Date.now() < new Date(event.starts_at).getTime();
+    const rules = await operatingRules(db, event.school_id);
     const canTake = this.canTake(actor) && sessions.some((session) => {
       if (event.status !== "published" || session.attendance_mode === "none" || session.state !== "open") return false;
       const now = Date.now();
-      if (now < Date.parse(session.starts_at) - 2 * 60 * 60 * 1000) return false;
-      return actor.role === "admin" || now <= Date.parse(session.ends_at) + 24 * 60 * 60 * 1000;
+      if (now < Date.parse(session.starts_at) - rules.event_entry_hours_before * 60 * 60 * 1000) return false;
+      return actor.role === "admin" || now <= Date.parse(session.ends_at) + rules.event_staff_hours_after * 60 * 60 * 1000;
     });
     const draftEditor = event.status === "draft"
       && (actor.role === "admin" || actor.ownsClassTest || actor.organizerAssigned);
@@ -1608,14 +1643,15 @@ export class CampusEventsService {
     event: EventRow,
     actor: ActorAccess,
     session: { attendance_mode: "none" | "check_in" | "check_in_out"; state: "open" | "locked"; starts_at: Date; ends_at: Date },
+    rules: OperatingRules,
   ) {
     if (event.status !== "published") return "event_not_published";
     if (session.attendance_mode === "none") return "attendance_not_enabled";
     if (session.state !== "open") return "register_locked";
     if (!this.canTake(actor)) return "not_attendance_taker";
     const now = Date.now();
-    if (now < new Date(session.starts_at).getTime() - 2 * 60 * 60 * 1000) return "attendance_window_not_open";
-    if (actor.role !== "admin" && now > new Date(session.ends_at).getTime() + 24 * 60 * 60 * 1000) {
+    if (now < new Date(session.starts_at).getTime() - rules.event_entry_hours_before * 60 * 60 * 1000) return "attendance_window_not_open";
+    if (actor.role !== "admin" && now > new Date(session.ends_at).getTime() + rules.event_staff_hours_after * 60 * 60 * 1000) {
       return "outside_attendance_window";
     }
     return null;
@@ -1626,6 +1662,7 @@ export class CampusEventsService {
     actor: ActorAccess,
     session: { attendance_mode: "none" | "check_in" | "check_in_out"; state: "open" | "locked"; starts_at: Date; ends_at: Date },
     statuses: AttendanceValue[],
+    rules: OperatingRules,
   ) {
     if (event.status !== "published") return "event_not_published";
     if (session.attendance_mode === "none") return "attendance_not_enabled";
@@ -1634,7 +1671,7 @@ export class CampusEventsService {
     const now = Date.now();
     const endsAt = new Date(session.ends_at).getTime();
     if (now < endsAt) return "session_not_ended";
-    if (actor.role !== "admin" && now > endsAt + 24 * 60 * 60 * 1000) return "lock_window_closed";
+    if (actor.role !== "admin" && now > endsAt + rules.event_staff_hours_after * 60 * 60 * 1000) return "lock_window_closed";
     if (statuses.includes("not_recorded")) return "attendance_incomplete";
     if (session.attendance_mode === "check_in_out" && statuses.some((status) => status === "present" || status === "late")) {
       return "checkout_incomplete";
@@ -1715,10 +1752,13 @@ export class CampusEventsService {
       `.execute(db)).rows;
       const count = (value: AttendanceValue) => rows.filter((row) => row.attendance_status === value).length;
       const recorded = rows.filter((row) => row.attendance_status !== "not_recorded").length;
-      const attendanceDisabledReason = this.attendanceDisabledReason(event, actor, session);
-      const lockDisabledReason = this.lockDisabledReason(event, actor, session, rows.map((row) => row.attendance_status));
+      const rules = await operatingRules(db, schoolId);
+      const attendanceDisabledReason = this.attendanceDisabledReason(event, actor, session, rules);
+      const lockDisabledReason = this.lockDisabledReason(event, actor, session, rows.map((row) => row.attendance_status), rules);
       const canViewFinanceDetails = actor.financeGranted;
+      const observationPolicy = await this.observationPolicy(db, schoolId);
       return {
+        observation_policy: observationPolicy,
         event: { id: event.id, title: event.title, status: event.status },
         session: { id: session.id, title: session.title, session_type: session.session_type, starts_at: iso(session.starts_at)!, ends_at: iso(session.ends_at)!, attendance_mode: session.attendance_mode, state: session.state, revision: session.revision },
         counts: { participants: rows.length, recorded, not_recorded: rows.length - recorded, present: count("present"), late: count("late"), excused: count("excused"), no_show: count("no_show"), checked_out: count("checked_out") },
@@ -1804,11 +1844,13 @@ export class CampusEventsService {
       if (session.state !== "open") throw new ConflictException("Reopen this locked event register before correcting it.");
       if (session.revision !== input.expected_revision) throw new ConflictException("This event register changed. Reload its current revision.");
       const now = new Date();
-      if (now.getTime() < new Date(session.starts_at).getTime() - 2 * 60 * 60 * 1000) {
+      const observationPolicy = await this.observationPolicy(db, input.school_id);
+      const rules = await operatingRules(db, input.school_id);
+      if (now.getTime() < new Date(session.starts_at).getTime() - rules.event_entry_hours_before * 60 * 60 * 1000) {
         throw new ForbiddenException("Event attendance cannot be recorded before the session check-in window opens.");
       }
-      if (actor.role !== "admin" && now.getTime() > new Date(session.ends_at).getTime() + 24 * 60 * 60 * 1000) {
-        throw new ForbiddenException("Assigned staff can record attendance from two hours before this session until 24 hours after it ends.");
+      if (actor.role !== "admin" && now.getTime() > new Date(session.ends_at).getTime() + rules.event_staff_hours_after * 60 * 60 * 1000) {
+        throw new ForbiddenException(`Assigned staff can record attendance from ${rules.event_entry_hours_before} hours before this session until ${rules.event_staff_hours_after} hours after it ends.`);
       }
       const participantRows = (await sql<{
         student_id: string;
@@ -1872,10 +1914,10 @@ export class CampusEventsService {
           throw new BadRequestException("An event attendance observation cannot be in the future.");
         }
         if (observedAt && (
-          observedAt.getTime() < new Date(session.starts_at).getTime() - 2 * 60 * 60 * 1000
-          || observedAt.getTime() > new Date(session.ends_at).getTime() + 4 * 60 * 60 * 1000
+          observedAt.getTime() < new Date(session.starts_at).getTime() - observationPolicy.observation_hours_before * 60 * 60 * 1000
+          || observedAt.getTime() > new Date(session.ends_at).getTime() + observationPolicy.observation_hours_after * 60 * 60 * 1000
         )) {
-          throw new BadRequestException("The attendance observation must fall between two hours before and four hours after this session.");
+          throw new BadRequestException(`Choose the time attendance was observed: this school's window is ${observationPolicy.observation_hours_before} hours before to ${observationPolicy.observation_hours_after} hours after the session. An administrator can change it in Operating rules.`);
         }
         if (row.status === "no_show" && (
           !(participant.participation_requirement === "mandatory"
@@ -1928,7 +1970,7 @@ export class CampusEventsService {
       }
       if (changes.length) await sql`UPDATE campus_event_sessions SET revision=revision+1,updated_at=now() WHERE id=${session.id}::uuid`.execute(db);
       const revision = changes.length ? session.revision + 1 : session.revision;
-      await this.audit(db, req, "campus_event.attendance_saved", event.school_id, event.id, { session_id: session.id, revision, changed_count: changes.length });
+      await this.audit(db, req, "campus_event.attendance_saved", event.school_id, event.id, { session_id: session.id, revision, changed_count: changes.length, observation_policy: observationPolicy, operating_rules: rules });
       await this.enqueue(db, event, "attendance", `campus-event:${event.id}:session:${session.id}:attendance:${input.idempotency_key}`, undefined, { session_id: session.id, session_revision: revision });
       const result = { event_id: event.id, session_id: session.id, revision, changed_count: changes.length };
       await this.saveCommand(db, input.school_id, req.authUser.id, input.idempotency_key, "attendance", requestHash, result);
@@ -1966,7 +2008,7 @@ export class CampusEventsService {
           WHERE roster.event_id=${event.id}::uuid AND roster.session_id=${session.id}::uuid
           ORDER BY roster.student_id
         `.execute(db)).rows.map((row) => row.status);
-        const disabled = this.lockDisabledReason(event, actor, session, statuses);
+        const disabled = this.lockDisabledReason(event, actor, session, statuses, await operatingRules(db, input.school_id));
         if (disabled) throw new ConflictException(`This event register cannot be locked (${disabled}).`);
         await sql`UPDATE campus_event_sessions SET state='locked',revision=revision+1,locked_by=${req.authUser.id}::uuid,
           locked_at=now(),lock_reason=${input.reason},updated_at=now() WHERE id=${session.id}::uuid`.execute(db);

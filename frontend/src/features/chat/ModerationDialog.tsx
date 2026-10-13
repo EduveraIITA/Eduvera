@@ -109,7 +109,7 @@ export function ModerationDialog({
   };
   const setFilter = (value: ReportFilter) => {
     if (!standalone) { setLocalFilter(value); setLocalId(""); return; }
-    setParams(current => { current.set("report_status", value); current.delete("report"); return current; });
+    setParams(current => { current.set("report_status", value); current.delete("report"); return current; }, { replace: true });
   };
   const [assignee, setAssignee] = useState("");
   const [note, setNote] = useState("");

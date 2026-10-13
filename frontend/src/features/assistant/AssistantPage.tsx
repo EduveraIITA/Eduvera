@@ -11,7 +11,10 @@ import { useAgentConversation } from './useAgentConversation';
 import { AgentReply } from './AgentReply';
 import { AssistantHeaderActions } from './AssistantHeaderActions';
 import { useAssistantNavigation } from './useAssistantNavigation';
+import { requestAssistantReopen } from './useDemoChat';
 import type { AssistantContext, AssistantPortal } from './context';
+import { browserHistoryIndex, previousPortalLocation } from '../navigation/portalHistory';
+import { samePortalHref } from '../navigation/portalReturnState';
 import './assistant.css';
 
 export default function AssistantPage({portal}:{portal:AssistantPortal}) {
@@ -59,7 +62,15 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
   const state=location.state as {assistantReturnTo?:unknown;assistantScrollY?:unknown}|null;
   const fallback=portal==='parent'?'/parent/home':'/'+portal;
   const returnTo=typeof state?.assistantReturnTo==='string'&&(state.assistantReturnTo===fallback||state.assistantReturnTo.startsWith('/'+portal+'/'))&&!state.assistantReturnTo.startsWith('/'+portal+'/assistant')?state.assistantReturnTo:fallback;
-  const onBack=()=>navigate.go(returnTo,{replace:true,state:{assistantReopen:true}},()=>window.scrollTo({top:typeof state?.assistantScrollY==='number'?state.assistantScrollY:0,behavior:'instant'}));
+  const restoreScroll=()=>window.scrollTo({top:typeof state?.assistantScrollY==='number'?state.assistantScrollY:0,behavior:'instant'});
+  const onBack=()=>{
+    if(samePortalHref(previousPortalLocation(browserHistoryIndex()),returnTo)){
+      requestAssistantReopen(returnTo);
+      navigate.back(restoreScroll);
+      return;
+    }
+    navigate.go(returnTo,{replace:true,state:{assistantReopen:true}},restoreScroll);
+  };
   const headerActions=<AssistantHeaderActions threads={conversation.threads} currentThreadId={conversation.threadId}
     disabled={conversation.busy||conversation.pending||conversation.awaiting||conversation.accessDenied}
     onNewChat={()=>void conversation.newChat()} onSelect={conversation.select}/>;

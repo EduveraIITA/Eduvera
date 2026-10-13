@@ -19,8 +19,10 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { browserHistoryIndex, previousPortalLocation } from "../navigation/portalHistory";
+import { samePortalHref } from "../navigation/portalReturnState";
 import {
   adjustStaffBalance,
   assignCoverage,
@@ -28,7 +30,6 @@ import {
   decideStaffLeave,
   respondCoverage,
   respondResponsibility,
-  saveCoveragePolicy,
   saveLeavePolicy,
   submitStaffLeave,
   updateStaffOnboarding,
@@ -199,7 +200,7 @@ function PrincipalStaffPage({
               key={id}
               className={section === id ? "is-active" : ""}
               aria-current={section === id ? "page" : undefined}
-              onClick={() => setParams({ section: id })}
+              onClick={() => setParams({ section: id }, { replace: true })}
             >
               <Icon size={17} />
               {label}
@@ -1230,19 +1231,7 @@ function PolicySettings({
 }) {
   const [editing, setEditing] = useState<LeavePolicy | null>(null);
   const [creating, setCreating] = useState(false);
-  const [savingCoverage, setSavingCoverage] = useState(false);
   const [error, setError] = useState("");
-  const coveragePolicy = data.coverage_policy ?? {
-    school_id: schoolId,
-    enabled: false,
-    deadline_minutes_before: 30,
-    fallback_kind: "independent_study" as const,
-    fallback_label: "Independent study",
-    supervisor_staff_profile_id: null,
-    supervisor_first_name: null,
-    supervisor_last_name: null,
-    revision: 0,
-  };
   const save = async (input: Record<string, unknown>, id?: string) => {
     setError("");
     try {
@@ -1252,27 +1241,6 @@ function PolicySettings({
       await refresh();
     } catch (cause) {
       setError((cause as Error).message);
-    }
-  };
-  const saveFallback = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSavingCoverage(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    try {
-      await saveCoveragePolicy(schoolId, {
-        enabled: form.has("enabled"),
-        deadline_minutes_before: Number(formValue(form, "deadline_minutes_before")),
-        fallback_kind: formValue(form, "fallback_kind") as typeof coveragePolicy.fallback_kind,
-        fallback_label: formValue(form, "fallback_label"),
-        supervisor_staff_profile_id: formValue(form, "supervisor_staff_profile_id") || null,
-        expected_revision: coveragePolicy.revision,
-      });
-      await refresh();
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setSavingCoverage(false);
     }
   };
   return (
@@ -1295,60 +1263,7 @@ function PolicySettings({
           Add policy
         </button>
       </header>
-      <form className="staff-cover-policy" onSubmit={(event) => void saveFallback(event)}>
-        <header>
-          <div>
-            <span>AUTOMATIC COVER</span>
-            <h3>Deadline fallback</h3>
-            <p>Use a planned alternative if cover is still unfilled near the period.</p>
-          </div>
-          <label className="staff-cover-policy__toggle">
-            <input name="enabled" type="checkbox" defaultChecked={coveragePolicy.enabled} />
-            Enabled
-          </label>
-        </header>
-        <div className="staff-cover-policy__fields">
-          <label>
-            Apply before class
-            <select name="deadline_minutes_before" defaultValue={coveragePolicy.deadline_minutes_before}>
-              <option value="15">15 minutes</option>
-              <option value="30">30 minutes</option>
-              <option value="60">1 hour</option>
-              <option value="120">2 hours</option>
-              <option value="1440">1 day</option>
-            </select>
-          </label>
-          <label>
-            Fallback
-            <select name="fallback_kind" defaultValue={coveragePolicy.fallback_kind}>
-              <option value="independent_study">Independent study</option>
-              <option value="physical_activity">Games / physical activity</option>
-              <option value="library_period">Library period</option>
-              <option value="merge_class">Merge with another class</option>
-              <option value="cancelled_period">Cancel period</option>
-            </select>
-          </label>
-          <label>
-            Name shown to staff
-            <input name="fallback_label" defaultValue={coveragePolicy.fallback_label} required minLength={3} maxLength={120} />
-          </label>
-          <label>
-            Responsible staff (optional)
-            <select name="supervisor_staff_profile_id" defaultValue={coveragePolicy.supervisor_staff_profile_id ?? ""}>
-              <option value="">School duty team</option>
-              {data.profiles.filter((profile) => profile.status === "active" && profile.user_id).map((profile) => (
-                <option value={profile.id} key={profile.id}>{staffName(profile)} · {profile.designation}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <footer>
-          <p>This records the fallback decision; it does not claim the activity happened.</p>
-          <button className="staff-primary staff-compact" disabled={savingCoverage}>
-            {savingCoverage ? "Saving…" : "Save fallback"}
-          </button>
-        </footer>
-      </form>
+      <Link className="staff-secondary" to={`/principal/administration?school=${schoolId}&section=rules&rule=coverage`}>Automatic cover operating rules <ChevronRight size={16}/></Link>
       <div className="staff-policy-list">
         {data.policies.map((policy) => (
           <button
@@ -1901,15 +1816,25 @@ function TeacherLeavePage({
   data: TeacherStaffWorkspace;
   refresh: () => Promise<void>;
 }) {
+  const navigate=useNavigate();
   const [params,setParams]=useSearchParams();
   const focusRequestId=params.get('request');
   const requestRevision=expectedRevision(params.get('request_revision'));
   const attentionNotificationId=params.get('attention_notification_id');
   const open=params.get('create')==='leave';
   const view=params.get('view')==='balances'?'balances':'requests';
-  const setOpen=(next:boolean)=>setParams(current=>{if(next)current.set('create','leave');else current.delete('create');return current;});
   const listParams=new URLSearchParams(params);listParams.delete('create');
-  const listPath=`/teacher/leave?${listParams}`;
+  const listQuery=listParams.toString();
+  const listPath=`/teacher/leave${listQuery?`?${listQuery}`:''}`;
+  const setOpen=(next:boolean)=>{
+    if(next){
+      setParams(current=>{const query=new URLSearchParams(current);query.set('create','leave');return query;});
+      return;
+    }
+    const previous=previousPortalLocation(browserHistoryIndex());
+    if(samePortalHref(previous,listPath)){void navigate(-1);return;}
+    void navigate(listPath,{replace:true});
+  };
   const sectionPath=(next:string)=>{const query=new URLSearchParams(listParams);query.set('view',next);return `/teacher/leave?${query}`;};
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -1979,7 +1904,7 @@ function TeacherLeavePage({
             <Plus size={18} />
             Apply for leave
           </button>
-        </div><nav className="workspace-sections" aria-label="Leave sections"><Link to={sectionPath('requests')} aria-current={view==='requests'?'page':undefined}>Requests</Link><Link to={sectionPath('balances')} aria-current={view==='balances'?'page':undefined}>Balances</Link></nav></>:null}
+        </div><nav className="workspace-sections" aria-label="Leave sections"><Link replace to={sectionPath('requests')} aria-current={view==='requests'?'page':undefined}>Requests</Link><Link replace to={sectionPath('balances')} aria-current={view==='balances'?'page':undefined}>Balances</Link></nav></>:null}
         {open ? (
           <section className="staff-panel staff-apply">
             <form

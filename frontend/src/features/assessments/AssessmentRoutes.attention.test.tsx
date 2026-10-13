@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FamilyResultsRoute } from "./AssessmentRoutes";
 
@@ -44,12 +44,18 @@ function renderRoute(path: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={["/parent/more", path]} initialIndex={1}>
         <LocationProbe />
+        <HistoryBack />
         <Routes><Route path="/parent/results" element={<FamilyResultsRoute portal="parent" />} /></Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+function HistoryBack() {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate(-1)}>Browser back</button>;
 }
 
 function LocationProbe() {
@@ -95,7 +101,7 @@ describe("family result attention targets", () => {
   it("clears the prior child's exact target when the family switches children", async () => {
     mocks.getResults.mockResolvedValue({ student: identity, results: [{ id: "assessment-1", publication_id: "publication-1" }] });
     mocks.getReports.mockResolvedValue({ student: identity, reports: [{ batch_id: "batch-1" }] });
-    renderRoute("/parent/results?student_id=student-1&assessment_id=assessment-1&publication_id=publication-1&report_batch_id=batch-1&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    renderRoute("/parent/results?student_id=student-1&assessment_id=assessment-1&publication_id=publication-1&report_batch_id=batch-1&attention_notification_id=10000000-0000-4000-a000-000000000001&period=30&view=summary");
     await screen.findByRole("button", { name: "Switch child" });
 
     fireEvent.click(screen.getByRole("button", { name: "Switch child" }));
@@ -105,5 +111,10 @@ describe("family result attention targets", () => {
     expect(screen.getByTestId("location")).not.toHaveTextContent("publication_id");
     expect(screen.getByTestId("location")).not.toHaveTextContent("report_batch_id");
     expect(screen.getByTestId("location")).not.toHaveTextContent("attention_notification_id");
+    expect(screen.getByTestId("location")).toHaveTextContent("period=30");
+    expect(screen.getByTestId("location")).toHaveTextContent("view=summary");
+
+    fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/parent/more"));
   });
 });

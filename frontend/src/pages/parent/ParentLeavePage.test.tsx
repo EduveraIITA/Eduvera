@@ -2,12 +2,18 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { ParentLeavePage } from "./ParentLeavePage";
 import { fallbackLeaveData } from "./parentDemoData";
 import { TestQueryProvider } from "../../test/TestQueryProvider";
 
 afterEach(cleanup);
+
+function HistoryProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><output data-testid="location">{location.pathname}{location.search}</output><button type="button" onClick={() => navigate(-1)}>Browser back</button></>;
+}
 
 describe("ParentLeavePage", () => {
   it("requires consent and exposes an accessible pending-to-authorized flow", async () => {
@@ -61,5 +67,20 @@ describe("ParentLeavePage", () => {
 
     expect(screen.getByRole("heading", { name: "No sign-off waiting" })).toBeVisible();
     expect(screen.queryByText("REQ-2026-884")).not.toBeInTheDocument();
+  });
+
+  it("replaces leave-tab view state so browser Back leaves the screen", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestQueryProvider><MemoryRouter initialEntries={["/sentinel", "/parent/leave"]} initialIndex={1}>
+        <ParentLeavePage />
+        <HistoryProbe />
+      </MemoryRouter></TestQueryProvider>,
+    );
+
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/parent/leave?tab=history");
+    await user.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/sentinel");
   });
 });

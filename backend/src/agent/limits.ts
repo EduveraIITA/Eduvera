@@ -3,6 +3,15 @@ import { sql } from 'kysely';
 import { z } from 'zod';
 import type { DatabaseService } from '../database/database.service.js';
 
+// Deployment-owned resource limits: school admins cannot raise shared billing caps.
+export function agentExecutionLimits() {
+  return z.object({
+    modelCalls: z.coerce.number().int().min(1).max(20).default(10),
+    tools: z.coerce.number().int().min(1).max(40).default(12),
+    batch: z.coerce.number().int().min(1).max(4).default(4),
+  }).parse({ modelCalls: process.env.AGENT_MAX_MODEL_CALLS, tools: process.env.AGENT_MAX_TOOL_CALLS, batch: process.env.AGENT_MAX_TOOL_BATCH });
+}
+
 export function agentLimits() {
   return z.object({
     enabled: z.boolean(),
@@ -49,7 +58,7 @@ export async function reserveModelCall(db: DatabaseService, runId: string, input
       COALESCE(sum(reserved_micros),0)::bigint AS month,
       count(*) FILTER (WHERE run_id=${runId}::uuid)::int AS calls
       FROM agent_model_usage WHERE created_at >= date_trunc('month',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`.execute(tx)).rows[0]!;
-    if (Number(usage.day) + reserve > limits.dailyMicros || Number(usage.month) + reserve > limits.monthlyMicros || usage.calls >= 10) throw new AgentLimitError();
+    if (Number(usage.day) + reserve > limits.dailyMicros || Number(usage.month) + reserve > limits.monthlyMicros || usage.calls >= agentExecutionLimits().modelCalls) throw new AgentLimitError();
     await sql`INSERT INTO agent_model_usage(run_id,input_tokens,max_output_tokens,reserved_micros)
       VALUES(${runId}::uuid,${inputTokens},${outputTokens},${reserve})`.execute(tx);
   });

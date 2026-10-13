@@ -57,6 +57,8 @@ function FamilyFrame({
 export function FamilyEventListPage({
   audience,
   events,
+  view: controlledView,
+  onViewChange,
   hasMore = false,
   loadingMore = false,
   onLoadMore,
@@ -65,13 +67,20 @@ export function FamilyEventListPage({
 }: {
   audience: "parent" | "student";
   events: CampusEventDto[];
+  view?: "upcoming" | "past";
+  onViewChange?: (view: "upcoming" | "past") => void;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
   child?: ParentChildSummary;
   onSelectChild?: (id: string) => ParentPageAction;
 }) {
-  const [view, setView] = useState<"upcoming" | "past">("upcoming");
+  const [localView, setLocalView] = useState<"upcoming" | "past">("upcoming");
+  const view = controlledView ?? localView;
+  const setView = (next: "upcoming" | "past") => {
+    if (onViewChange) onViewChange(next);
+    else setLocalView(next);
+  };
   const [now] = useState(() => Date.now());
   const visible = events.filter((event) =>
     view === "upcoming"
@@ -103,7 +112,10 @@ export function FamilyEventListPage({
               <CampusEventCard
                 key={event.id}
                 event={event}
-                to={`${prefix}/events/${event.id}${child ? `?student_id=${encodeURIComponent(child.id)}` : ""}`}
+                to={`${prefix}/events/${event.id}?${new URLSearchParams({
+                  ...(child ? { student_id: child.id } : {}),
+                  ...(view === "past" ? { view } : {}),
+                })}`.replace(/\?$/, "")}
               />
             ))}
           </div>
@@ -126,6 +138,7 @@ interface FamilyEventDetailProps {
   financeError?: unknown;
   child?: ParentChildSummary;
   selectedStudentId: string;
+  listView?: "upcoming" | "past";
   focusAction?: FamilyEventActionFocus;
   onSelectChild?: (id: string) => ParentPageAction;
   onRsvp: (status: Extract<RsvpStatus, "accepted" | "declined">) => Promise<void>;
@@ -141,6 +154,7 @@ export function FamilyEventDetailPage({
   financeError,
   child,
   selectedStudentId,
+  listView,
   focusAction,
   onSelectChild,
   onRsvp,
@@ -183,7 +197,12 @@ export function FamilyEventDetailPage({
   };
 
   return (
-    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild} backTo={`${prefix}/events${child ? `?student_id=${encodeURIComponent(child.id)}` : ""}`}>
+    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild} backTo={`${prefix}/events${(() => {
+      const listParams = new URLSearchParams();
+      if (child) listParams.set("student_id", child.id);
+      if (listView === "past") listParams.set("view", "past");
+      return listParams.size ? `?${listParams}` : "";
+    })()}`}>
       <div className="family-event-detail">
         <section className={`family-event-detail-hero family-event-detail-hero--${event.event_type}`}>
           <div><span>{eventTypeLabels[event.event_type]}</span><EventStatusBadge status={event.status} /></div>

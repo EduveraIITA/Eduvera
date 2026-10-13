@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertCircle, Check, ChevronDown } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import {
   createNotice, getNotice, getNoticeReferences, noticeCommandKey, updateNotice,
@@ -15,9 +15,9 @@ function localDateTime(value: string | null | undefined) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function NoticeComposerForm({ portal, schoolId, noticeId, initial, classes, referencesPending }: {
+function NoticeComposerForm({ portal, schoolId, noticeId, initial, classes, referencesPending, detailContext }: {
   portal: "teacher" | "principal"; schoolId?: string; noticeId?: string; initial?: NoticeDetail;
-  classes: Array<{ id: string; name: string }>; referencesPending: boolean;
+  classes: Array<{ id: string; name: string }>; referencesPending: boolean; detailContext: string;
 }) {
   const navigate = useNavigate(); const firstAudience = initial?.audiences[0];
   const [title, setTitle] = useState(initial?.title ?? ""); const [body, setBody] = useState(initial?.body ?? "");
@@ -35,7 +35,7 @@ function NoticeComposerForm({ portal, schoolId, noticeId, initial, classes, refe
     if (noticeId && initial) return updateNotice(noticeId, input, initial.revision, command.current.key);
     if (!schoolId) throw new Error("Select a school before creating a notice.");
     return createNotice(schoolId, input, command.current.key);
-  }, onSuccess: (result) => navigate(`/${portal}/notices/${result.id}`, { replace: true }) });
+  }, onSuccess: (result) => navigate(`/${portal}/notices/${result.id}${detailContext}`, { replace: true }) });
 
   function submit(event: FormEvent) {
     event.preventDefault(); setError("");
@@ -71,16 +71,20 @@ function NoticeComposerForm({ portal, schoolId, noticeId, initial, classes, refe
 
 export function NoticeComposerPage({ portal, noticeId }: { portal: "teacher" | "principal"; noticeId?: string }) {
   const auth = useAuth(); const role = portal === "principal" ? "admin" : "staff";
+  const [params] = useSearchParams();
   const schoolId = auth.memberships.find((membership) => membership.role === role)?.school_id;
   const existing = useQuery({ queryKey: ["notice", portal, noticeId], queryFn: () => getNotice(portal, noticeId!), enabled: Boolean(noticeId) });
   const references = useQuery({ queryKey: ["notice-references", portal, schoolId], queryFn: () => getNoticeReferences(portal, schoolId), enabled: Boolean(schoolId) });
   const loading = Boolean(noticeId) && existing.isPending;
   const issue = existing.error instanceof Error ? existing.error.message : references.error instanceof Error ? references.error.message : "";
-  return <NoticeShell portal={portal} title={noticeId ? "Edit notice" : "New notice"} backTo={noticeId ? `/${portal}/notices/${noticeId}` : `/${portal}/notices`}>
+  const listView=params.get("view");
+  const detailContext=["attention","published","draft","cancelled"].includes(listView??"")?`?view=${encodeURIComponent(listView!)}`:"";
+  const listBack=`/${portal}/notices${detailContext}`;
+  return <NoticeShell portal={portal} title={noticeId ? "Edit notice" : "New notice"} backTo={noticeId ? `/${portal}/notices/${noticeId}${detailContext}` : listBack}>
     <div className="notices-workspace notice-compose">
       {loading ? <div className="notice-loading" role="status"><span /><span /></div>
         : issue ? <div className="notice-inline-alert" role="alert"><AlertCircle size={18} /><span>{issue}</span></div>
-          : <NoticeComposerForm key={existing.data?.id ?? "new"} portal={portal} schoolId={schoolId} noticeId={noticeId} initial={existing.data} classes={references.data?.classes ?? []} referencesPending={references.isPending} />}
+          : <NoticeComposerForm key={existing.data?.id ?? "new"} portal={portal} schoolId={schoolId} noticeId={noticeId} initial={existing.data} classes={references.data?.classes ?? []} referencesPending={references.isPending} detailContext={detailContext} />}
     </div>
   </NoticeShell>;
 }

@@ -462,7 +462,9 @@ export class RequestsService {
       ) counts ON true
       WHERE session.school_id=${scope.school_id}::uuid AND event.status='published'
         AND session.attendance_mode<>'none' AND session.state='open'
-        AND now()>=session.starts_at-interval '2 hours'
+        AND now()>=session.starts_at-make_interval(hours => COALESCE((SELECT r.event_entry_hours_before FROM institution_operating_rules r WHERE r.school_id=session.school_id),2))
+        AND (now()<=session.ends_at+make_interval(hours => COALESCE((SELECT r.event_staff_hours_after FROM institution_operating_rules r WHERE r.school_id=session.school_id),24))
+          OR counts.checkout_pending>0)
         AND (session.ends_at<=now() OR counts.incomplete>0)
         AND (
           (${portal}='principal' AND (session.ends_at<=now() OR EXISTS(
@@ -470,7 +472,7 @@ export class RequestsService {
             WHERE assigned.school_id=event.school_id AND assigned.event_id=event.id AND assigned.user_id=${user.id}::uuid
           )))
           OR
-          (${portal}='teacher' AND now()<=session.ends_at+interval '24 hours' AND (
+          (${portal}='teacher' AND now()<=session.ends_at+make_interval(hours => COALESCE((SELECT r.event_staff_hours_after FROM institution_operating_rules r WHERE r.school_id=session.school_id),24)) AND (
             EXISTS(
               SELECT 1 FROM staff_role_bindings binding
               WHERE binding.school_id=event.school_id AND binding.context_kind='event' AND binding.scope_id=event.id

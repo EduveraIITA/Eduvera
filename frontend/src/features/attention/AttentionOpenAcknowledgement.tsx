@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/api";
 import { useOptionalAuth } from "../auth/AuthContext";
+import { portalReturnState, portalReturnTarget } from "../navigation/portalReturnState";
 
 const notificationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -37,7 +38,12 @@ export function AttentionOpenAcknowledgement() {
         const parameters = new URLSearchParams(location.search);
         if (parameters.get("attention_notification_id") === notificationId) {
           parameters.delete("attention_notification_id");
-          void navigate({ pathname: location.pathname, search: parameters.toString(), hash: location.hash }, { replace: true });
+          const cleanHref = `${location.pathname}${parameters.size ? `?${parameters}` : ""}${location.hash}`;
+          const returnTo = portalReturnTarget(location.state, openedTarget);
+          void navigate(
+            { pathname: location.pathname, search: parameters.toString(), hash: location.hash },
+            { replace: true, state: returnTo ? portalReturnState(returnTo, cleanHref) : undefined },
+          );
         }
       }
       await Promise.all([
@@ -50,7 +56,7 @@ export function AttentionOpenAcknowledgement() {
       attempted.current = "";
     });
     return () => { active = false; };
-  }, [auth?.status, location.hash, location.pathname, location.search, navigate, notificationId, queryClient, userId]);
+  }, [auth?.status, location.hash, location.pathname, location.search, location.state, navigate, notificationId, queryClient, userId]);
 
   return null;
 }

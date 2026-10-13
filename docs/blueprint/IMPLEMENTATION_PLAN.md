@@ -64,6 +64,25 @@ and attendance primitives; it does not imply that the complete Stage B exit gate
 
 ## Active delivery: role-aware Requests inbox — 13 October 2026
 
+Transport drill-down correction (13 October, local): the principal Transport & pickup
+landing screen now lists the exact departure/transport attention items from the same
+read model as More, including dates and direct review destinations. The reviewed local
+five-item queue consists of unstarted planned demo journeys, not unread messages.
+No journeys or rider outcomes were silently closed. Journey, roster and pickup mutations
+invalidate Attention/Requests immediately. Loading failures remain visible with retry.
+Twenty focused transport tests and a clean frontend build pass; phone acceptance and
+cloud deployment remain pending.
+
+Event badge correction (13 October, local): routine open-register attention now expires
+at the configured event staff-entry deadline for principals as well as staff. Recorded
+check-ins awaiting checkout remain principal exceptions; no attendance, session state,
+or audit history is changed. Events now shows the authoritative attention items above
+Upcoming/Drafts/Past filters, with exact action links independent of event-list pagination.
+Event writes invalidate Requests/Attention, and the shared read model refreshes each minute
+while active. A live local principal projection confirms zero event-register attention for
+the three expired, unrecorded 10 October picnic sessions. 59 focused event/More tests pass;
+backend build passes. Cloud rollout and authenticated phone acceptance remain pending.
+
 Parents, staff and principals now have one **Requests** module for work that needs their attention.
 It is a read-only, role-scoped projection over authoritative domain workflows, not a second approval
 engine: selecting an item opens the owning attendance, event, leave, staffing, transport, finance,
@@ -1078,8 +1097,69 @@ Verification:
   event consent/RSVP needs a school-approved purpose-authority and attribution design; and the
   repository-wide non-owner PostgreSQL runtime/RLS context remains the existing B6 release gate.
 
+### Event-register attendance interaction consolidation — 13 October 2026
+
+- The event-session register now renders participants through the same reusable attendance row,
+  search/filter controls and fixed submit bar as the class register. Event statuses are supplied
+  as typed configuration rather than implemented through a second roster interaction, while
+  event-only readiness, observed-time, check-in/out and immutable correction evidence remain
+  contextual details inside that shared row.
+- Replaced the competing summary tiles and permanently visible lock controls with one compact
+  progress summary and one current next action. Register locking remains an explicit, reasoned
+  disclosure after all decisions are complete; event attendance remains separate from academic
+  attendance.
+- Verified the focused class/event attendance regression suites (**47 tests**), targeted frontend
+  lint, and a clean production build excluding unrelated local duplicate scratch files. Physical
+  phone review and user acceptance of the consolidated interaction remain open.
+- Follow-up from phone review: styled the History control consistently, restored the 16px
+  separation between filters and roster, and omitted empty row detail containers (React arrays
+  containing only null children had produced blank dividers). The 47 focused tests still pass.
+- Historical event entry now requires an explicit observed time instead of assigning receipt time
+  to old sessions. A batch time applies to unsaved physical marks, with individual editing retained;
+  client validation prevents out-of-window submission, and bulk marking preserves existing decisions.
+- Migration 082 adds school-scoped observation-window settings (0–168 hours before/after, defaults
+  2/4). The central Operating rules screen exposes the editor; backend membership checks restrict
+  updates to active administrators, revision checks prevent stale updates, and policy changes plus
+  the policy used for each attendance save are audited. This user-requested parameter configuration
+  is immediate; the blueprint's broader draft/rehearsal/scheduled-policy lifecycle remains unimplemented.
+- Verification: 49 focused frontend tests pass, backend build and targeted lint pass. Migration 082
+  applied to the local review database. Cloud deployment and real-phone acceptance remain pending.
+
 ## Stage navigation and deployment integration — 30 September 2026
 
+### Central operating rules — 13 October 2026 (local)
+
+Phone-review correction: text-only category rows now use a two-column label/chevron
+layout rather than occupying the shared list's 39px icon column. Removed the nested
+outer card and shortened the introductory copy. The actual component with shared CSS
+was visually checked in 320/390px constrained browser fixtures, with larger widths
+also measured; labels remain full-width and all rows retain 58px touch targets.
+The category navigation regression test passes. Authenticated phone acceptance remains open.
+
+Follow-up: migration 083 adds bounded institution-wide submission, event entry/locking,
+journey lead-time and message edit/upload-size rules. Admin writes are scope-checked,
+revision-checked and audited transactionally. Event capability checks and Requests use
+the same timing values as write gates; message edit affordances use a server-provided
+expiry. Runtime AI model/tool budgets are now bounded environment configuration; shared
+billing caps and safety invariants are not tenant-editable. Current defaults are preserved.
+The local migration is applied. Rollback-only verification passed save/read, stale-write
+rejection, staff read/write denial, cross-school denial and audit creation. Cloud rollout,
+cross-device proactive rule refresh and authenticated phone acceptance remain pending.
+Follow-up checks passed: 106 focused backend tests, 39 focused frontend tests, backend
+build and a clean frontend production build (excluding the previously noted duplicate
+scratch files). Local and Cloudflare readiness both report database/events healthy.
+
+- Added admin-only Institute settings → Operating rules, with separate event attendance,
+  leave cover, departure/transport and messaging editors using the existing domain APIs.
+- Removed transaction-screen event settings, moved cover fallback controls out of leave
+  entitlements, and linked transport setup and messaging privacy to the central editors.
+- Collected additional code/runtime-controlled rules and their ownership in
+  `docs/blueprint/OPERATING_RULES.md`; those are not represented as editable or migrated.
+- Verification: 51 focused event/staff/rule-index tests passed; backend compilation and a
+  clean frontend production build passed. The clean build excludes pre-existing duplicate
+  scratch files whose test typings fail the unfiltered workspace build. Local and Cloudflare
+  `/readyz` both report database/events healthy. Authenticated phone visual acceptance and
+  cloud deployment are pending. Messaging still lacks optimistic revision checks.
 - Merged Stage's mobile More, Calendar and Teacher Classes routes and desktop design-system update
   with the campus-event routes. Teacher and principal event entry points now live in More rather
   than duplicate home-page actions; parent events are also reachable from More, and event screens
@@ -5485,3 +5565,55 @@ across 118 files, focused lint passes and the Vite production build succeeds. Th
 same complete contract; a fresh isolated replay was attempted but the repository's
 current migration chain stops after migration 032 on an unrelated SQL syntax error, so
 that replay is not represented as passing in this evidence.
+
+### Navigation and Back contract — 13 October 2026 (local, not deployed)
+
+The shared portal app bars now distinguish navigation history from transient view state.
+Opening a record, editor or workflow remains a semantic drill-down and adds a history entry;
+changing a date, tab, filter, selected child or other in-page view replaces the current entry.
+Back first returns to the observed same-portal semantic predecessor. A direct link, reload or
+missing predecessor instead replaces the current route with the role-specific canonical parent,
+so fallback navigation cannot create a list/detail/list loop or cross into another portal.
+
+Requests and notifications attach a validated, same-portal return location to exact-item links.
+The title bar uses that provenance when present and rejects external, protocol-relative and
+cross-role targets. Canonical parents are role aware: principal Insights and timetable,
+teacher timetable, parent timetable and student Copilot no longer inherit a generic hierarchy.
+Account Profile/Security and Operating rules retain their actual origin chain rather than always
+returning to a fixed More page.
+
+Selected-child changes preserve harmless list context but remove record, revision, workflow and
+attention identifiers that belong to the previous learner. Notices and Events carry their current
+list view through detail, editor and event-register routes. Attendance uses the shared Back path
+while retaining its unsaved-change confirmation; cancelling that confirmation leaves the user on
+the register. Loading and unavailable states in the corrected restricted-care flow retain the same
+portal shell and safe Back destination.
+
+Focused local suites were run separately as the work landed: **17/17** provenance,
+Requests and notification checks; **83/83** student-context checks; **88/88** URL-state checks;
+and a later **143/143** shared navigation, account, attention, notices, events, restricted-care,
+assistant and attendance regression. Query-backed invitation, leave, people, import, fee and
+governance close/success behavior passed **65/65** focused checks. The reusable unsaved-work guard
+and its day-plan/attendance integrations passed **44/44** focused checks. These sets overlap and are
+not presented as a combined regression count. Focused lint, a canonical-source TypeScript check
+(excluding the already documented duplicate scratch files), the production Vite build, and local
+plus Cloudflare readiness pass. Full repository regression, physical phone/edge-swipe validation
+and any Stage or cloud deployment remain open; this section records local implementation only.
+
+### Leave-cover operating-rule presentation — 13 October 2026 (local, not deployed)
+
+The administrator's Leave cover rule now uses one grouped settings surface instead of
+nesting a second bordered form inside a generic staff panel. The page has one heading,
+one concise explanation, an accessible platform-style switch, four clearly named rule
+rows and one primary save action. Secondary explanation is reduced to a single neutral
+note; it no longer competes with the controls or creates another visual section.
+
+The existing operating-rule API, revision check, authorization and audit behavior are
+unchanged. A successful refresh remounts the editor at the returned policy revision so
+the switch and other uncontrolled inputs cannot display stale values after a save.
+
+Verified locally: the focused Operating rules, navigation and Staff Operations suites
+pass **21/21**, focused lint passes and the production Vite bundle succeeds. The canonical
+TypeScript build remains blocked by the already documented untracked duplicate
+`* 2.tsx` test files; no Stage deployment was requested. Physical phone review remains
+required before treating the new spacing as accepted.

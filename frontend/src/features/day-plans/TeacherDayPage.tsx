@@ -51,18 +51,18 @@ export default function TeacherDayPage() {
   const setDate = (nextDate: string) => {
     const next = new URLSearchParams(params);
     next.set("date", nextDate);
-    setParams(next);
+    setParams(next, { replace: true });
   };
   const setView = (nextView: TimetableView) => {
     const next = new URLSearchParams(params);
     next.set("view", nextView);
-    setParams(next);
+    setParams(next, { replace: true });
   };
   const setSelection = (nextDate: string, nextView: TimetableView) => {
     const next = new URLSearchParams(params);
     next.set("date", nextDate);
     next.set("view", nextView);
-    setParams(next);
+    setParams(next, { replace: true });
   };
   return (
     <OperationsShell

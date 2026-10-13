@@ -1,0 +1,169 @@
+.coverage-rule {
+  display: grid;
+  overflow: hidden;
+  border-radius: 22px;
+  color: var(--edura-ink);
+  background: var(--edura-surface);
+  box-shadow: 0 2px 10px rgba(20, 38, 63, 0.05);
+}
+
+.coverage-rule__header {
+  display: flex;
+  min-height: 92px;
+  padding: 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.coverage-rule__header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+}
+
+.coverage-rule__header p {
+  margin: 5px 0 0;
+  color: var(--edura-ink-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.rule-switch {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.rule-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.rule-switch__track {
+  display: block;
+  position: relative;
+  width: 51px;
+  height: 31px;
+  border-radius: 999px;
+  background: #d5dae3;
+  transition: background-color 180ms ease;
+}
+
+.rule-switch__track span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(15, 28, 49, 0.2);
+  transition: transform 180ms ease;
+}
+
+.rule-switch input:checked + .rule-switch__track { background: #2aae78; }
+.rule-switch input:checked + .rule-switch__track span { transform: translateX(20px); }
+.rule-switch input:focus-visible + .rule-switch__track { outline: 3px solid rgba(29, 78, 216, 0.22); outline-offset: 3px; }
+
+.coverage-rule__group {
+  margin: 0 14px;
+  overflow: hidden;
+  border: 1px solid #e1e6ee;
+  border-radius: 16px;
+  background: #fbfcfe;
+}
+
+.coverage-rule__row {
+  display: grid;
+  min-height: 76px;
+  padding: 13px 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 48%);
+  align-items: center;
+  gap: 16px;
+}
+
+.coverage-rule__row + .coverage-rule__row { border-top: 1px solid #e4e8ef; }
+.coverage-rule__row > span { display: grid; min-width: 0; gap: 2px; }
+.coverage-rule__row strong { font-size: 14px; line-height: 1.3; }
+.coverage-rule__row small { color: var(--edura-ink-muted); font-size: 11px; line-height: 1.35; }
+
+.coverage-rule__row input,
+.coverage-rule__row select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #d7dee9;
+  border-radius: 11px;
+  color: var(--edura-ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.coverage-rule__row input:focus-visible,
+.coverage-rule__row select:focus-visible {
+  border-color: var(--edura-brand);
+  outline: 3px solid rgba(29, 78, 216, 0.12);
+}
+
+.coverage-rule__note {
+  display: flex;
+  margin: 14px 18px 0;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--edura-ink-muted);
+}
+
+.coverage-rule__note svg { flex: 0 0 auto; margin-top: 1px; color: #718096; }
+.coverage-rule__note p { margin: 0; font-size: 11px; line-height: 1.45; }
+
+.coverage-rule__error {
+  margin: 12px 18px 0;
+  padding: 11px 12px;
+  border-radius: 12px;
+  color: #9f1d1d;
+  background: #fff0ef;
+  font-size: 12px;
+}
+
+.coverage-rule__save {
+  justify-self: end;
+  min-height: 48px;
+  min-width: 148px;
+  margin: 16px 14px 14px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--edura-brand);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.coverage-rule__save:active { transform: scale(0.985); }
+.coverage-rule__save:disabled { cursor: wait; opacity: 0.58; }
+
+@media (max-width: 520px) {
+  .coverage-rule__header { min-height: 84px; padding: 18px; }
+  .coverage-rule__header h2 { font-size: 20px; }
+  .coverage-rule__row { min-height: 72px; padding: 12px; grid-template-columns: minmax(0, .85fr) minmax(145px, 1.15fr); gap: 10px; }
+  .coverage-rule__save { min-height: 46px; }
+}
+
+@media (max-width: 360px) {
+  .coverage-rule__row { grid-template-columns: 1fr; gap: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rule-switch__track,
+  .rule-switch__track span,
+  .coverage-rule__save { transition: none; }
+}

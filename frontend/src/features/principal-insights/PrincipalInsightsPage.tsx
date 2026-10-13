@@ -26,7 +26,7 @@ export function PrincipalInsightsPage({ topic = "review" }: { topic?: PrincipalI
   const parentTopic = studentId || topic === "recording" ? "review" : params.get("via") === "attendance" || params.get("via") === "results" ? params.get("via")! : "";
   const backParams = new URLSearchParams(search);
   if (parentTopic !== "review") backParams.delete("via");
-  const change = (key: string, value: string) => setParams(previous => { const next = new URLSearchParams(canonicalInsightSearch(previous.toString())); if (value) next.set(key, value); else next.delete(key); return next; });
+  const change = (key: string, value: string) => setParams(previous => { const next = new URLSearchParams(canonicalInsightSearch(previous.toString())); if (value) next.set(key, value); else next.delete(key); return next; }, { replace: true });
   useEffect(() => { if (query.isSuccess && location.hash === "#principal-deadlines") document.getElementById("principal-deadlines")?.scrollIntoView?.({ block: "start" }); }, [query.isSuccess, location.hash]);
   return <OperationsShell portal="principal" active="insights" title={titles[topic]} backTo={insightPath("principal", parentTopic, backParams.toString())}>
     <div className="analytics-page">

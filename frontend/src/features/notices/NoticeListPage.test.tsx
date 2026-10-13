@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -56,5 +56,18 @@ describe("notice attention drill-down", () => {
     const row = await screen.findByRole("link", { name: "Tomorrow's uniform. Delivery issue" });
     expect(row).toHaveAttribute("href", "/principal/notices/notice-1?focus=attention");
     expect(screen.getByText("1 person needs follow-up")).toBeVisible();
+  });
+
+  it("preserves the selected list view when opening a notice", async () => {
+    vi.mocked(getNotices).mockResolvedValue({ portal: "principal", school_id: "school-1", student_id: null,
+      attention: { total: 0, unread: 0, action_required: 0, exceptions: 0 },
+      results: [notice({ status: "draft", can_manage: true, attention_reasons: [] })] });
+    show("principal", "/principal/notices");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Drafts" }));
+    expect(screen.getByRole("link", { name: "Tomorrow's uniform. Draft" })).toHaveAttribute(
+      "href",
+      "/principal/notices/notice-1?view=draft",
+    );
   });
 });

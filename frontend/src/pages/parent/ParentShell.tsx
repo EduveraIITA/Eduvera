@@ -17,6 +17,7 @@ import { AttentionBadge, AttentionUnavailableBadge, attentionLabel } from "../..
 import { useAttention } from "../../features/attention/useAttention";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
+import { searchForStudentContext } from "../../features/navigation/studentContextSearch";
 import { getAccessibleStudents } from "../../features/school/api";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import { AssistantPanel, AssistantTab } from "../../features/assistant/DemoChat";
@@ -92,6 +93,7 @@ export interface ParentShellProps {
   childSwitchDisabled?: boolean;
   backTo?: string;
   onBack?: () => void;
+  beforeBack?: () => boolean | void;
   institutionLevel?: boolean;
   pageTitleTrailing?: ReactNode;
 }
@@ -108,6 +110,7 @@ export function ParentShell({
   childSwitchDisabled = false,
   backTo,
   onBack,
+  beforeBack,
   institutionLevel = false,
   pageTitleTrailing,
 }: ParentShellProps) {
@@ -181,9 +184,7 @@ export function ParentShell({
   const chooseChild = async (childId: string) => {
     if(onSelectChild)await onSelectChild(childId);
     else {
-      const next=new URLSearchParams(searchParams);
-      next.set("student_id",childId);
-      setSearchParams(next);
+      setSearchParams(searchForStudentContext(searchParams, childId), { replace: true });
     }
     setSelectorOpen(false);
   };
@@ -236,7 +237,7 @@ export function ParentShell({
           </div>
         </div>
         <div className="parent-header__context">
-          <PortalPageTitle title={pageLabel} rootPath="/parent/home" backTo={contextualBackTo} onBack={onBack} trailing={pageTitleTrailing} />
+          <PortalPageTitle title={pageLabel} rootPath="/parent/home" backTo={contextualBackTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
           {active !== "home" && active !== "events" && !institutionLevel ? <span className="parent-header__child-label">
             {presenceStatus ? <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : "presence-dot presence-dot--away"} /> : null}
             <span className="parent-header__child-name">{displayedChild.name} · Class {displayedChild.grade.replace("Grade ", "")}{displayedChild.section}</span>

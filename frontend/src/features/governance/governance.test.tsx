@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { GovernanceAdminPage } from "./GovernanceAdminPage";
 import { PolicyLibraryPage } from "./PolicyLibraryPage";
 import type { GovernanceWorkspace, PolicyFamily, PublishedPolicy } from "./api";
@@ -33,8 +33,8 @@ const workspace: GovernanceWorkspace = {
   },
 };
 
-function LocationProbe() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
-function shell(children: React.ReactNode, entry = "/") { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[entry]}><LocationProbe />{children}</MemoryRouter></QueryClientProvider>); }
+function LocationProbe() { const location = useLocation(); const navigate=useNavigate(); return <><span data-testid="location">{location.pathname}{location.search}</span><button type="button" onClick={()=>navigate(-1)}>Browser back</button></>; }
+function shell(children: React.ReactNode, entry = "/principal/governance") { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[entry]}><LocationProbe />{children}</MemoryRouter></QueryClientProvider>); }
 afterEach(cleanup);
 
 describe("governance policy centre", () => {
@@ -63,6 +63,19 @@ describe("governance policy centre", () => {
     await userEvent.setup().click(screen.getByRole('button',{name:'Go back'}));
     expect(screen.getByRole('navigation',{name:'Governance sections'})).toBeVisible();
     expect(screen.getByText('Draft v1')).toBeVisible();
+  });
+
+  it("does not reopen a cancelled policy editor with browser Back",async()=>{
+    const user=userEvent.setup();
+    shell(<GovernanceAdminPage schoolId="school-1" data={workspace} refresh={vi.fn().mockResolvedValue(undefined)}/>);
+    await user.click(screen.getByRole("button",{name:/Policy register/}));
+    await user.click(screen.getByRole("button",{name:/Child protection and mandatory reporting/}));
+    expect(screen.getByRole("region",{name:"Policy editor"})).toBeVisible();
+    await user.click(screen.getByRole("button",{name:"Cancel"}));
+    expect(screen.queryByRole("region",{name:"Policy editor"})).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button",{name:"Browser back"}));
+    expect(screen.getByText("Draft v1")).toBeVisible();
+    expect(screen.queryByRole("region",{name:"Policy editor"})).not.toBeInTheDocument();
   });
 
   it("keeps institution applicability separate from the policy register", async () => {

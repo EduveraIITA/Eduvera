@@ -54,11 +54,11 @@ export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data
   }
 
   function showSchemes() {
-    const next=new URLSearchParams(listParams);next.set("view","schemes");setParams(next);
+    const next=new URLSearchParams(listParams);next.set("view","schemes");setParams(next,{replace:true});
   }
 
   function showReleases() {
-    const next=new URLSearchParams(listParams);next.set("view","releases");setParams(next);
+    const next=new URLSearchParams(listParams);next.set("view","releases");setParams(next,{replace:true});
   }
 
   return <OperationsShell portal={portal} active="more" title={selectedScheme?"Grading scheme":selectedBatch?"Report release":"Report cards"} schoolName={schoolName} backTo={isDetail?listPath:`/${portal}/more`}>
@@ -70,7 +70,7 @@ export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data
         </div>
         {activeList === "schemes" ? <button className="workspace-add-link" aria-label="New scheme" onClick={() => setDialog("scheme")}><Plus size={20}/></button> : null}
       </div> : null}
-      {!isDetail && activeList === "releases" ? <div className="workspace-list-toolbar"><select aria-label="Filter report releases" value={status} onChange={event=>setParams(current=>{current.set("status",event.target.value);return current;})}>{statuses.map(value=><option key={value} value={value}>{value==="all"?"All releases":value==="draft"?"To review":value==="reviewed"?"Ready to publish":nice(value)} · {data.batches.filter(item=>value==="all"||item.status===value).length}</option>)}</select></div> : null}
+      {!isDetail && activeList === "releases" ? <div className="workspace-list-toolbar"><select aria-label="Filter report releases" value={status} onChange={event=>setParams(current=>{current.set("status",event.target.value);return current;},{replace:true})}>{statuses.map(value=><option key={value} value={value}>{value==="all"?"All releases":value==="draft"?"To review":value==="reviewed"?"Ready to publish":nice(value)} · {data.batches.filter(item=>value==="all"||item.status===value).length}</option>)}</select></div> : null}
       <section className="report-workspace">
         {!isDetail?<article className="report-panel report-library">
           <div className="report-list">

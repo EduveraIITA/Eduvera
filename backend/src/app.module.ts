@@ -1,4 +1,5 @@
 import { TeacherFeedbackModule } from "./teacher-feedback/teacher-feedback.module.js";
+import { OperatingRulesModule } from "./operating-rules/operating-rules.module.js";
 import { InvitationEmailWorker } from "./common/invitation-queue.js";
 import { CompanyModule } from "./company/company.module.js";
 import { AnalyticsModule } from "./analytics/analytics.module.js";
@@ -38,6 +39,7 @@ import { AttentionModule } from "./attention/attention.module.js";
 
 @Module({
   imports: [
+    OperatingRulesModule,
     TeacherFeedbackModule,
     AnalyticsModule,
     SchedulePlanningModule,

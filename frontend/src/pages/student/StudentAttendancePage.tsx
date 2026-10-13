@@ -287,7 +287,7 @@ export function StudentAttendancePage({
         </section>
 
         <section className="student-attendance-subjects" aria-label="Subject attendance">
-          <div className="attendance-queue-toolbar"><label><span className="sr-only">Filter subjects</span><select value={filter} onChange={event=>setParams(current=>{if(event.target.value==="all")current.delete("subjects");else current.set("subjects",event.target.value);return current;})}>
+          <div className="attendance-queue-toolbar"><label><span className="sr-only">Filter subjects</span><select value={filter} onChange={event=>setParams(current=>{if(event.target.value==="all")current.delete("subjects");else current.set("subjects",event.target.value);return current;},{replace:true})}>
             <option value="all">All subjects · {data.subjects.length}</option>
             <option value="near">Needs attention · {attentionCount}</option>
             <option value="core">Core subjects</option>

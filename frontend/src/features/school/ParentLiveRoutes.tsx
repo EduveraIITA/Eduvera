@@ -34,6 +34,7 @@ import {
 import { LiveRouteError, ScreenLoading } from "./LiveRouteState";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 
 function useRefreshSchoolData() {
   const queryClient = useQueryClient();
@@ -44,11 +45,7 @@ function useSelectedStudent() {
   const [searchParams, setSearchParams] = useSearchParams();
   const studentId = searchParams.get("student_id") ?? undefined;
   const selectStudent = (nextStudentId: string) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("student_id", nextStudentId);
-    next.delete("leave_id");
-    next.delete("diary_item");
-    setSearchParams(next);
+    setSearchParams(searchForStudentContext(searchParams, nextStudentId), { replace: true });
   };
   return { searchParams, studentId, selectStudent };
 }
@@ -309,9 +306,9 @@ export function ParentTimetableRoute() {
       audience="parent"
       focusPublishedSource={attentionResolution === "exact"}
       attentionStatus={attentionResolution === "stale" ? <AttentionTargetUnavailable message="This timetable update no longer matches the published source, revision, child and date. It was not marked as opened." /> : undefined}
-      dayPlan={query.data.day_plan} selectedDate={anchor} scheduleLoading={query.isPlaceholderData} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
-      view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next);}}
-      onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next);}}
+      dayPlan={query.data.day_plan} selectedDate={anchor} scheduleLoading={query.isPlaceholderData} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next,{replace:true});}}
+      view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next,{replace:true});}}
+      onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next,{replace:true});}}
       summary={summary.data} summaryLoading={summary.isPending} summaryError={summary.isError?summary.error.message:undefined} onSummaryRetry={()=>void summary.refetch()}
       child={adaptStudentSummary(query.data.student)}
       onSelectChild={selectStudent}

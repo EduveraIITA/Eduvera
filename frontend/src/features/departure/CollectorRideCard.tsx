@@ -22,7 +22,7 @@ export function CollectorRideCard({trip,map,tracker}:{trip:CollectorTrip;map:Map
         </div>
         <p className="ride-privacy">Keep this screen open. Location is visible to families only while their child is on board.</p>
       </div>:null}
-      {trip.state==="planned"&&!trip.controls_available?<p className="ride-message">Boarding opens 30 minutes before departure. For urgent changes, contact school operations.</p>:null}
+      {trip.state==="planned"&&!trip.controls_available?<p className="ride-message">Boarding opens at the institution’s configured lead time before departure. For urgent changes, contact school operations.</p>:null}
     </div>
   </section>;
 }

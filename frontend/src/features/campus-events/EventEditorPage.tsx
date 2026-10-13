@@ -1,8 +1,9 @@
 import { CalendarPlus2, Check, Plus, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { eventTypeLabels } from "./EventPrimitives";
+import { eventDetailHref, eventListHref } from "./eventNavigation";
 import type { CampusEventDto, CampusEventInput, EventCatalogResponse } from "./types";
 import "./campus-events.css";
 
@@ -77,10 +78,12 @@ export function EventEditorPage({
   event?: CampusEventDto;
   onSave: (input: CampusEventInput) => Promise<void>;
 }) {
+  const [params] = useSearchParams();
   const [input, setInput] = useState(() => initialInput(event));
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
   const [error, setError] = useState("");
   const prefix = portal === "principal" ? "/principal" : "/teacher";
+  const backHref = event ? eventDetailHref(prefix, event.id, params) : eventListHref(prefix, params);
   const canManagePolicy = !event || event.permissions.can_manage_policy;
   const canManageAudience = !event || event.permissions.can_manage_audience;
   const canManageStaff = !event || event.permissions.can_manage_staff;
@@ -155,7 +158,7 @@ export function EventEditorPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" backTo={event ? `${prefix}/events/${event.id}` : `${prefix}/events`} contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" backTo={backHref} contentHasHeading>
       <form className="campus-event-editor" onSubmit={submit}>
         <header className="campus-event-editor__header campus-event-editor__header--actions">
           <button className="campus-event-primary" type="submit" disabled={state === "saving"}><Check size={17} />{state === "saving" ? "Saving..." : "Save draft"}</button>
@@ -192,7 +195,7 @@ export function EventEditorPage({
         <EventSessionEditor input={input} catalog={catalog} onChange={setInput} />
         <EventChecklistEditor input={input} onChange={setInput} />
 
-        <footer className="campus-event-editor__footer"><Link to={event ? `${prefix}/events/${event.id}` : `${prefix}/events`}>Cancel</Link><button className="campus-event-primary" type="submit" disabled={state === "saving"}>{state === "saving" ? "Saving..." : "Save draft"}</button></footer>
+        <footer className="campus-event-editor__footer"><Link to={backHref} replace>Cancel</Link><button className="campus-event-primary" type="submit" disabled={state === "saving"}>{state === "saving" ? "Saving..." : "Save draft"}</button></footer>
       </form>
     </OperationsShell>
   );

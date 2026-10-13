@@ -14,7 +14,8 @@ vi.mock("../auth/AuthContext", () => ({
 
 function LocationProbe() {
   const location = useLocation();
-  return <output data-testid="location">{location.pathname}{location.search}</output>;
+  const returnTo = (location.state as { portalReturnTo?: unknown } | null)?.portalReturnTo;
+  return <><output data-testid="location">{location.pathname}{location.search}</output><output data-testid="return-to">{typeof returnTo === "string" ? returnTo : ""}</output></>;
 }
 
 afterEach(() => {
@@ -75,7 +76,7 @@ describe("NotificationCenter", () => {
     const interact = userEvent.setup();
     render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={["/parent?notifications=open"]}>
+        <MemoryRouter initialEntries={["/parent/events?view=past&notifications=open"]}>
           <NotificationCenter buttonClassName="notification-trigger" />
           <LocationProbe />
         </MemoryRouter>
@@ -84,6 +85,7 @@ describe("NotificationCenter", () => {
 
     await interact.click(await screen.findByRole("button", { name: /A result has been published/i }));
     expect(screen.getByTestId("location")).toHaveTextContent(`/parent/results?student_id=30000000-0000-4000-a000-000000000003&assessment_id=40000000-0000-4000-a000-000000000004&attention_notification_id=${notificationId}`);
+    expect(screen.getByTestId("return-to")).toHaveTextContent("/parent/events?view=past");
     expect(apiFetchMock).not.toHaveBeenCalledWith(
       `/api/v1/notifications/${notificationId}/read/`,
       expect.anything(),

@@ -1,6 +1,6 @@
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowRight,
@@ -41,6 +41,7 @@ import { CreateAttendanceFollowup } from "../../features/coordination/CreateAtte
 import { AttendanceStudentRow } from "./AttendanceStudentRow";
 import { PhotoAttendanceDialog } from "./PhotoAttendanceDialog";
 import { AttendanceDateControl } from '../../features/attendance/AttendanceDateControl';
+import { useUnsavedChangesGuard } from "../../features/navigation/useUnsavedChangesGuard";
 import "./attendance-register.css";
 import "./attendance-workspace.css";
 
@@ -344,7 +345,6 @@ export function TeacherAttendancePage({
   initialCaptureSource = "live_app",
   initialStudentId,
 }: TeacherAttendancePageProps) {
-  const navigate = useNavigate();
   const [baseline, setBaseline] = useState<AttendanceSnapshot>(() =>
     attendanceSnapshot(data),
   );
@@ -712,8 +712,10 @@ export function TeacherAttendancePage({
     setShowHistory(true);
   };
 
-  const confirmDiscard = () =>
-    !dirty || window.confirm("Discard your unsaved attendance changes?");
+  const confirmDiscard = useUnsavedChangesGuard(
+    dirty,
+    "Discard your unsaved attendance changes?",
+  );
 
   const applyPhotoReview = (
     reviewedRecords: TeacherAttendanceRecordInput[],
@@ -759,14 +761,10 @@ export function TeacherAttendancePage({
       active="attendance"
       title={`${data.class.name} attendance`}
       subtitle={`${data.class.term} - ${data.class.room}`}
-      onBack={() => {
-        if (confirmDiscard())
-          void navigate(
-            portal === "teacher"
-              ? `/teacher/attendance?date=${date}`
-              : `/principal/attendance?date=${date}`,
-          );
-      }}
+      backTo={portal === "teacher"
+        ? `/teacher/attendance?date=${date}`
+        : `/principal/attendance?date=${date}`}
+      beforeBack={confirmDiscard}
       contentHasHeading
     >
       <div className="operations-stack roll-call-page">

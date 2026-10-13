@@ -13,15 +13,20 @@ vi.mock("../auth/AuthContext", () => ({
 function LocationProbe() {
   const location = useLocation();
   const navigate = useNavigate();
-  return <><output data-testid="location">{location.pathname}{location.search}</output><button type="button" onClick={() => navigate("/parent/more")}>Leave screen</button></>;
+  const returnTo = (location.state as { portalReturnTo?: unknown } | null)?.portalReturnTo;
+  return <><output data-testid="location">{location.pathname}{location.search}</output><output data-testid="return-to">{typeof returnTo === "string" ? returnTo : ""}</output><button type="button" onClick={() => navigate("/parent/more")}>Leave screen</button></>;
 }
 
-function setup() {
+function setup(withReturnState = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(client, "invalidateQueries");
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/parent/results?student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002"]}>
+      <MemoryRouter initialEntries={[withReturnState ? {
+        pathname: "/parent/results",
+        search: "?student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002",
+        state: { portalReturnTo: "/parent/results?student_id=child-1&period=term" },
+      } : "/parent/results?student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002"]}>
         <AttentionOpenAcknowledgement />
         <LocationProbe />
       </MemoryRouter>
@@ -52,6 +57,14 @@ describe("AttentionOpenAcknowledgement", () => {
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/parent/results?student_id=child-1"));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attention"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications", "10000000-0000-4000-a000-000000000001"] });
+  });
+
+  it("preserves same-portal return provenance while removing the acknowledgement id", async () => {
+    apiFetchMock.mockResolvedValue({ id: "20000000-0000-4000-a000-000000000002", read_at: "2026-10-13T10:00:00.000Z" });
+    setup(true);
+
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/parent/results?student_id=child-1"));
+    expect(screen.getByTestId("return-to")).toHaveTextContent("/parent/results?student_id=child-1&period=term");
   });
 
   it("keeps the attention id and cached signal when acknowledgement fails", async () => {

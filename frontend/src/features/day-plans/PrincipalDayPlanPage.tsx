@@ -28,11 +28,16 @@ import { PlanEditor } from "./PlanEditor";
 import { CoverageResponse } from "./CoverageResponse";
 import { ScheduleActions } from "./ScheduleActions";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { useUnsavedChangesGuard } from "../navigation/useUnsavedChangesGuard";
 import "./day-plans.css";
 export default function PrincipalDayPlanPage() {
   const auth = useAuth(),
     [params, setParams] = useSearchParams();
   const [dirty, setDirty] = useState(false);
+  const confirmDraftNavigation = useUnsavedChangesGuard(
+    dirty,
+    "Leave this draft without saving your latest edits?",
+  );
   const schools = auth.memberships.filter((m) => m.role === "admin");
   const requestedSchoolId = params.get("school");
   const requestedSchool = schools.find((membership) => membership.school_id === requestedSchoolId);
@@ -101,11 +106,7 @@ export default function PrincipalDayPlanPage() {
     enabled: Boolean(schoolId) && !inaccessibleSchoolTarget && (!requestedClassId || Boolean(section)),
   });
   const set = (values: Record<string, string>) => {
-    if (
-      dirty &&
-      !window.confirm("Leave this draft without saving your latest edits?")
-    )
-      return;
+    if (!confirmDraftNavigation()) return;
     const next = new URLSearchParams(params);
     if (["school", "date", "class"].some((key) => key in values && values[key] !== (params.get(key) ?? ""))) {
       next.delete("plan");
@@ -114,14 +115,15 @@ export default function PrincipalDayPlanPage() {
       if (value) next.set(key, value);
       else next.delete(key);
     }
-    setParams(next);
+    setParams(next, { replace: true });
   };
   return (
     <OperationsShell
       portal="principal"
       active="timetable"
       title="Timetable"
-      backTo={params.get("from") === "overview" ? `/principal?date=${date}` : "/principal/more"}
+      backTo={params.get("from") === "overview" ? `/principal?date=${date}` : "/principal"}
+      beforeBack={confirmDraftNavigation}
       subtitle="Timetable"
       schoolName={school?.school_name}
       contentHasHeading

@@ -7,15 +7,33 @@ import { useAuth } from "../auth/AuthContext";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import { getAdministration, personName, promoteClass, updateMember, type Administration, type Member } from "./api";
 import { CatalogManager } from "./CatalogManager";
+import { OperatingRules } from "./OperatingRules";
 import "./office.css";
 import "../onboarding/onboarding.css";
 import "../more/more.css";
 
-type Section = "setup" | "access" | "audit" | "promotion";
+type Section = "setup" | "access" | "audit" | "promotion" | "rules";
+type AdministrationPortal = "principal" | "teacher";
 const sections: Array<{ id: Section; label: string; icon: typeof Settings2 }> = [{ id: "setup", label: "Academic setup", icon: BookOpenCheck }, { id: "access", label: "Account access", icon: KeyRound }, { id: "audit", label: "Administrative history", icon: History }, { id: "promotion", label: "Promote a class", icon: Layers }];
 const formatDate = (value: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(value));
 const formString = (data: FormData, field: string) => { const value = data.get(field); return typeof value === "string" ? value : ""; };
 const auditReason = (item: Administration["audit"][number]) => typeof item.metadata.reason === "string" ? item.metadata.reason : "";
+
+export function administrationRoute(portal: AdministrationPortal, schoolId: string, section?: Section, rule?: string) {
+  const routeParams = new URLSearchParams();
+  if (schoolId) routeParams.set("school", schoolId);
+  if (section) routeParams.set("section", section);
+  if (section === "rules" && rule) routeParams.set("rule", rule);
+  const search = routeParams.toString();
+  return `/${portal}/administration${search ? `?${search}` : ""}`;
+}
+
+export function administrationBackTarget(portal: AdministrationPortal, schoolId: string, section?: Section, rule?: string | null) {
+  if (section === "promotion") return `/${portal}/students`;
+  if (section === "rules" && rule) return administrationRoute(portal, schoolId, "rules");
+  if (section) return administrationRoute(portal, schoolId);
+  return `/${portal}/more`;
+}
 
 export default function AdministrationPage() {
   const auth = useAuth();
@@ -24,21 +42,22 @@ export default function AdministrationPage() {
   const [params] = useSearchParams();
   const schoolId = selectedSchool || schools.find(m => m.school_id === params.get("school"))?.school_id || schools[0]?.school_id || "";
   const canManageAccess = schools.find(m => m.school_id === schoolId)?.role === "admin";
-  const available = sections.filter(item => canManageAccess || item.id !== "access");
+  const available = [...sections, { id: "rules" as const, label: "Operating rules", icon: Settings2 }].filter(item => canManageAccess || (item.id !== "access" && item.id !== "rules"));
   const section = available.find(item => item.id === params.get("section"));
-  const portal = auth.hasPortal("principal") ? "principal" : "teacher";
-  const base = '/' + portal + '/administration?school=' + encodeURIComponent(schoolId);
+  const portal: AdministrationPortal = auth.hasPortal("principal") ? "principal" : "teacher";
+  const selectedRule = params.get("rule");
   const query = useQuery({ queryKey: ["office", "administration", schoolId], queryFn: () => getAdministration(schoolId), enabled: Boolean(schoolId) });
   const refresh = () => query.refetch().then(() => undefined);
-  return <OperationsShell portal={portal} active="more" title={section?.label ?? "Institute settings"} schoolName={schools.find(s => s.school_id === schoolId)?.school_name} backTo={section?.id === "promotion" ? '/' + portal + '/students' : section ? base : '/' + portal + '/more'}>
+  return <OperationsShell portal={portal} active="more" title={section?.label ?? "Institute settings"} schoolName={schools.find(s => s.school_id === schoolId)?.school_name} backTo={administrationBackTarget(portal, schoolId, section?.id, selectedRule)}>
     <div className="office-page">
       {schools.length > 1 ? <label className="office-field">Institution<select value={schoolId} onChange={event => setSelectedSchool(event.target.value)}>{schools.map(school => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {!schoolId ? <p className="office-alert">An active institution membership is required.</p> : query.isPending ? <ScreenLoading/> : query.isError ? <LiveRouteError error={query.error} onRetry={query.refetch}/> : query.data ? <>
         {!section ? <nav className="more-grid more-grid--list" aria-label="Institute settings">
-          {available.filter(item => item.id !== "promotion").map(item => { const Icon = item.icon; return <Link key={item.id} className="more-tile" to={base + '&section=' + item.id}><span className="more-tile__icon"><Icon size={20}/></span><span className="more-tile__copy"><strong>{item.label}</strong></span><ChevronRight size={18}/></Link>; })}
+          {available.filter(item => item.id !== "promotion").map(item => { const Icon = item.icon; return <Link key={item.id} className="more-tile" to={administrationRoute(portal, schoolId, item.id)}><span className="more-tile__icon"><Icon size={20}/></span><span className="more-tile__copy"><strong>{item.label}</strong></span><ChevronRight size={18}/></Link>; })}
           {canManageAccess ? <Link className="more-tile" to={'/principal/activation?school=' + encodeURIComponent(schoolId)}><span className="more-tile__icon"><ShieldCheck size={20}/></span><span className="more-tile__copy"><strong>Setup status</strong></span><ChevronRight size={18}/></Link> : null}
         </nav> : null}
         {section?.id === "setup" ? <CatalogManager schoolId={schoolId} data={query.data} refresh={refresh}/> : null}
+        {section?.id === "rules" && canManageAccess ? <OperatingRules key={schoolId} schoolId={schoolId}/> : null}
         {section?.id === "promotion" ? <Promotion schoolId={schoolId} data={query.data} refresh={refresh}/> : null}
         {section?.id === "access" ? <Access schoolId={schoolId} data={query.data} refresh={refresh}/> : null}
         {section?.id === "audit" ? <section className="office-panel"><h2>Administrative history</h2>{query.data.audit.length ? <ul className="office-list office-list--cards">{query.data.audit.map(item => <li key={item.id}><div><strong>{item.action.replaceAll(".", " ")}</strong><span>{personName(item)}, {formatDate(item.created_at)}</span>{auditReason(item) ? <small>Reason: {auditReason(item)}</small> : null}</div></li>)}</ul> : <p className="office-empty">No administrative changes recorded yet.</p>}</section> : null}

@@ -8,7 +8,7 @@ export function useClasses() {
   const requested = params.get("date") ?? "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) && !Number.isNaN(Date.parse(requested)) && new Date(requested).toISOString().slice(0, 10) === requested ? requested : schoolDateToday();
   const home = useQuery({ queryKey: ["teacher-home", date], queryFn: () => getTeacherHome(date) });
-  const setDate = (value: string) => { const next = new URLSearchParams(params); next.set("date", value); setParams(next); };
+  const setDate = (value: string) => { const next = new URLSearchParams(params); next.set("date", value); setParams(next, { replace: true }); };
   return { date, setDate, home, params, setParams };
 }
 

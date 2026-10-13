@@ -46,6 +46,7 @@ a.more-tile:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(15,
 .more-grid--list .more-tile:last-child { border-bottom: 0; }
 .more-grid--list a.more-tile:hover { transform: none; box-shadow: none; }
 .more-grid--list .more-tile__copy { margin: 0; }
+.more-grid--list .more-tile--text-only { grid-template-columns: minmax(0, 1fr) auto; }
 .more-grid--list .more-tile__copy strong { font-size: 14px; font-weight: 600; }
 .more-grid--list .more-tile__copy small { display: none; }
 .more-grid--list.more-search-results .more-tile__copy small { display: block; font-size: 11px; }

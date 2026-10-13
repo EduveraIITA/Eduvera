@@ -1,0 +1,20 @@
+.security-header > button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--edura-line);
+  border-radius: var(--edura-radius-control);
+  color: var(--edura-brand);
+  background: #fff;
+  font: inherit;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.security-header > button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--edura-brand) 25%, transparent);
+  outline-offset: 2px;
+}

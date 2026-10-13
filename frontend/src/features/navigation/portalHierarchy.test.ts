@@ -16,6 +16,14 @@ describe("portal navigation hierarchy", () => {
     ["/student/policies", "?school=1", "/student/apps?school=1"],
     ["/teacher/more", "", "/teacher"],
     ["/principal/timetable/weekly", "?class=class-1", "/principal/timetable?class=class-1"],
+    ["/parent/messages", "?student_id=child-2&conversation=thread-1", "/parent/messages?student_id=child-2"],
+    ["/student/copilot", "", "/student/attendance"],
+    ["/parent/insights", "?student_id=child-2", "/parent/more?student_id=child-2"],
+    ["/parent/timetable", "?student_id=child-2", "/parent/more?student_id=child-2"],
+    ["/teacher/insights", "", "/teacher/more"],
+    ["/student/insights", "", "/student/apps"],
+    ["/principal/insights", "", "/principal"],
+    ["/teacher/timetable", "", "/teacher"],
   ])("returns %s to its parent with only relevant context", (path, search, expected) => {
     expect(isSecondaryPortalPage(path)).toBe(true);
     expect(portalParent(path, search, "/")).toBe(expected);

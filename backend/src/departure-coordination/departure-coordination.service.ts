@@ -59,17 +59,17 @@ export class DepartureCoordinationService {
 
   private async journeyWindow(db:Db,tripId:string) {
     const result=await sql<{controls_open_at:Date;controls_available:boolean;duty_change_available:boolean}>`SELECT
-      ((t.service_date+t.scheduled_departure_time) AT TIME ZONE s.timezone)-interval '30 minutes' controls_open_at,
-      now()>=((t.service_date+t.scheduled_departure_time) AT TIME ZONE s.timezone)-interval '30 minutes'
+      ((t.service_date+t.scheduled_departure_time) AT TIME ZONE s.timezone)-make_interval(mins => COALESCE(r.journey_lead_minutes,30)) controls_open_at,
+      now()>=((t.service_date+t.scheduled_departure_time) AT TIME ZONE s.timezone)-make_interval(mins => COALESCE(r.journey_lead_minutes,30))
         AND (now() AT TIME ZONE s.timezone)::date<=t.service_date controls_available,
       t.state='planned' AND t.roster_frozen_at IS NULL
-        AND now()<((t.service_date+t.scheduled_departure_time) AT TIME ZONE s.timezone)-interval '30 minutes' duty_change_available
-      FROM transport_trips t JOIN schools s ON s.id=t.school_id WHERE t.id=${tripId}::uuid`.execute(db);
+        AND now()<((t.service_date+t.scheduled_departure_time) AT TIME ZONE s.timezone)-make_interval(mins => COALESCE(r.journey_lead_minutes,30)) duty_change_available
+      FROM transport_trips t JOIN schools s ON s.id=t.school_id LEFT JOIN institution_operating_rules r ON r.school_id=s.id WHERE t.id=${tripId}::uuid`.execute(db);
     return result.rows[0]!;
   }
 
   private async assertDutyChangeWindow(db:Db,tripId:string) {
-    if(!(await this.journeyWindow(db,tripId)).duty_change_available) throw new ConflictException("Duty changes close 30 minutes before departure. Contact school operations for urgent cover.");
+    if(!(await this.journeyWindow(db,tripId)).duty_change_available) throw new ConflictException("Duty changes are closed by the institution's journey operating window. Contact school operations for urgent cover.");
   }
 
   private async schoolAudience(db:Db,schoolId:string) {
@@ -736,7 +736,7 @@ export class DepartureCoordinationService {
       }
       if(!managementSchoolId&&trip.service_date!==await this.localDate(tx,trip.school_id)) throw new ForbiddenException("Only the currently assigned collector can operate this journey on its service date. Ask school operations to reconcile an overdue journey.");
       if(!managementSchoolId&&trip.collector_assignment_status!=="accepted") throw new ConflictException("Accept the assigned duty before operating this trip.");
-      if(!managementSchoolId&&["boarding","cancel"].includes(action)&&!(await this.journeyWindow(tx,trip.id)).controls_available) throw new ConflictException("Journey controls open 30 minutes before departure and are available on the service date. Contact school operations for other changes.");
+      if(!managementSchoolId&&["boarding","cancel"].includes(action)&&!(await this.journeyWindow(tx,trip.id)).controls_available) throw new ConflictException("Journey controls open at the institution's configured lead time on the service date. Contact school operations for other changes.");
       if(["boarding","start"].includes(action)) {
         if(action==="start"&&trip.service_date!==await this.localDate(tx,trip.school_id)) throw new ConflictException("Departure is available only on this journey's service date.");
         const active=await tx.selectFrom("transport_trips").select("id").where("assigned_collector_user_id","=",user.id).where("id","!=",trip.id).where("state","in",["boarding","in_progress"]).executeTakeFirst();

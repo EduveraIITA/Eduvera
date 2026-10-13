@@ -112,7 +112,7 @@ export function ParentLeavePage({
     const next = new URLSearchParams(searchParams);
     if (nextTab === "pending") next.delete("tab");
     else next.set("tab", nextTab);
-    setSearchParams(next, { replace: false });
+    setSearchParams(next, { replace: true });
   };
   const [consent, setConsent] = useState(true);
   const request = data.request;

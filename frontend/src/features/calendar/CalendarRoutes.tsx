@@ -18,6 +18,7 @@ import { AssessmentCalendarRows, useAssessmentCalendar } from './AssessmentCalen
 import { useCalendarSchedule } from './useCalendarSchedule';
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 
 const calendarAttentionKeys = [
   "calendar_change_id",
@@ -43,12 +44,12 @@ function useCalendarState() {
   const selected = params.get("date") ?? today;
   const ym = parseYm(selected);
   const mode: CalendarMode = params.get("view") === "day" ? "day" : "month";
-  const select = (iso: string) => { const next = new URLSearchParams(params); next.set("date", iso); clearCalendarAttention(next); setParams(next); };
+  const select = (iso: string) => { const next = new URLSearchParams(params); next.set("date", iso); clearCalendarAttention(next); setParams(next, { replace: true }); };
   return {
     year: ym[0], month0: ym[1], selected, select,
     mode,
-    onModeChange: (view: CalendarMode) => { const next = new URLSearchParams(params); next.set("view", view); setParams(next); },
-    onToday: () => { const next = new URLSearchParams(params); next.set('date', today); next.set('view', 'day'); clearCalendarAttention(next); setParams(next); },
+    onModeChange: (view: CalendarMode) => { const next = new URLSearchParams(params); next.set("view", view); setParams(next, { replace: true }); },
+    onToday: () => { const next = new URLSearchParams(params); next.set('date', today); next.set('view', 'day'); clearCalendarAttention(next); setParams(next, { replace: true }); },
     studentId: params.get("student_id") ?? undefined,
     calendarChangeId: params.get("calendar_change_id") ?? undefined,
     calendarChangeKind: params.get("calendar_change_kind") === "created" || params.get("calendar_change_kind") === "removed"
@@ -57,7 +58,7 @@ function useCalendarState() {
     calendarRevision: positiveInteger(params.get("calendar_revision")),
     calendarRecordRevision: positiveInteger(params.get("calendar_record_revision")),
     attentionNotificationId: params.get("attention_notification_id") ?? undefined,
-    selectStudent: (id: string) => { const next = new URLSearchParams(params); next.set("student_id", id); clearCalendarAttention(next); setParams(next); },
+    selectStudent: (id: string) => setParams(searchForStudentContext(params, id), { replace: true }),
   };
 }
 

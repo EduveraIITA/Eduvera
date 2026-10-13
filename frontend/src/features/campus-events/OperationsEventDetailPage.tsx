@@ -17,6 +17,7 @@ import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ConsentAuthorityDialog } from "./ConsentAuthorityDialog";
 import { OperationsEventFinancePanel } from "./EventFinancePanels";
 import { EventStatusBadge, eventAudienceLabel, eventTypeLabels, formatEventDate } from "./EventPrimitives";
+import { eventDetailSuffix, eventListHref, eventListView } from "./eventNavigation";
 import type { CampusEventDto, EventFinanceParticipant, EventFinanceResponse, EventViewerParticipant } from "./types";
 import "./campus-events.css";
 
@@ -57,8 +58,11 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
     && expectedEventRevision === event.revision;
   const cancellationRef = useRef<HTMLElement>(null);
   const canSeeFinance = event.permissions.can_view_finance_details && event.payment_required;
-  const view = params.get('view') === 'participants' ? 'participants' : params.get('view') === 'finance' && canSeeFinance ? 'finance' : 'sessions';
-  const sectionPath = (nextView: string) => { const next=new URLSearchParams(params);next.set('view',nextView);return `${prefix}/events/${event.id}?${next}`; };
+  const view: "sessions" | "participants" | "finance" = params.get('view') === 'participants' ? 'participants' : params.get('view') === 'finance' && canSeeFinance ? 'finance' : 'sessions';
+  const listView = eventListView(params);
+  const listBack = eventListHref(prefix, params);
+  const detailContext = (nextView: "sessions" | "participants" | "finance" = view) => eventDetailSuffix(params, nextView);
+  const sectionPath = (nextView: "sessions" | "participants" | "finance") => `${prefix}/events/${event.id}${detailContext(nextView)}`;
   const tracked = event.sessions.filter((session) => session.attendance_mode !== "none");
   const locked = tracked.filter((session) => session.state === "locked").length;
   useEffect(() => {
@@ -120,7 +124,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={event.title} subtitle="Events & activities" backTo={`${prefix}/events`} contentHasHeading>
+    <OperationsShell portal={portal} active="events" title={event.title} subtitle="Events & activities" backTo={listBack} contentHasHeading>
       <div className="campus-event-detail-page operations-stack">
         <section className={`campus-event-detail-hero campus-event-detail-hero--${event.event_type}`}>
           <div className="campus-event-detail-hero__copy">
@@ -133,7 +137,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
           </div>
           {event.permissions.can_edit || event.permissions.can_publish || event.permissions.can_complete || event.permissions.can_cancel ? (
             <details className="event-actions-menu"><summary aria-label="Event actions"><MoreHorizontal size={20}/></summary><div className="campus-event-detail-actions">
-              {event.permissions.can_edit ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/edit`}><Edit3 size={16} />Edit draft</Link> : null}
+              {event.permissions.can_edit ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/edit${detailContext()}`}><Edit3 size={16} />Edit draft</Link> : null}
               {event.permissions.can_publish ? <button className="campus-event-primary" type="button" disabled={pending !== null} onClick={() => void act("publish")}><Send size={16} />{pending === "publish" ? "Publishing..." : "Publish event"}</button> : null}
               {event.permissions.can_complete ? <button className="campus-event-primary" type="button" disabled={pending !== null} onClick={() => void act("complete")}><CheckCircle2 size={16} />{pending === "complete" ? "Completing..." : "Complete event"}</button> : null}
               {event.permissions.can_cancel ? <button className="campus-event-danger-link" type="button" onClick={() => setCancelOpen(true)}><XCircle size={16} />Cancel event</button> : null}
@@ -161,7 +165,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
           aria-label={cancellationFocusRequested ? "Event cancellation" : undefined}
         ><AlertTriangle size={19} /><div><strong>This event was cancelled</strong><p><b>Family notice:</b> {event.cancellation_reason || "No family notice was recorded."}</p>{event.cancellation_internal_reason ? <p><b>Internal reason:</b> {event.cancellation_internal_reason}</p> : null}{event.permissions.can_view_finance_details && (finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) > 0 ? <p><b>{finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required} fee {(finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) === 1 ? "record requires" : "records require"} a manual refund.</b> Invoice credits are already retained in the authoritative finance ledger.</p> : null}</div></section> : null}
 
-        <nav className="workspace-sections" aria-label="Event sections"><Link to={sectionPath('sessions')} aria-current={view==='sessions'?'page':undefined}>Sessions <b>{event.sessions.length}</b></Link><Link to={sectionPath('participants')} aria-current={view==='participants'?'page':undefined}>Participants <b>{event.counts.participants}</b></Link>{canSeeFinance?<Link to={sectionPath('finance')} aria-current={view==='finance'?'page':undefined}>Fees{(finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required)>0?<b>{finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required}</b>:null}</Link>:null}</nav>
+        <nav className="workspace-sections" aria-label="Event sections"><Link replace to={sectionPath('sessions')} aria-current={view==='sessions'?'page':undefined}>Sessions <b>{event.sessions.length}</b></Link><Link replace to={sectionPath('participants')} aria-current={view==='participants'?'page':undefined}>Participants <b>{event.counts.participants}</b></Link>{canSeeFinance?<Link replace to={sectionPath('finance')} aria-current={view==='finance'?'page':undefined}>Fees{(finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required)>0?<b>{finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required}</b>:null}</Link>:null}</nav>
 
         {view==='sessions'?<section className="campus-event-detail-panel">
           <header><h2>Sessions & attendance</h2><span>{tracked.length?`${locked}/${tracked.length} registers locked`:'No attendance tracking'}</span></header>
@@ -171,7 +175,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
                 <article key={session.id}>
                   <span className={`campus-event-session-icon is-${session.state}`}>{session.state === "locked" ? <LockKeyhole size={18} /> : <CalendarCheck2 size={18} />}</span>
                   <div><strong>{session.title}</strong><small>{formatEventDate(session.starts_at)} · {session.venue}</small><span>{session.attendance_mode === "none" ? "No attendance register" : `${session.counts.recorded}/${session.counts.recorded + session.counts.not_recorded} recorded · ${session.state}`}</span></div>
-                  {session.attendance_mode !== "none" ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/sessions/${session.id}/attendance`}>{session.state === "locked" ? "Review register" : event.permissions.can_take_attendance ? "Open register" : "View register"}</Link> : null}
+                  {session.attendance_mode !== "none" ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/sessions/${session.id}/attendance${listView === 'upcoming' ? '' : `?list_view=${listView}`}`}>{session.state === "locked" ? "Review register" : event.permissions.can_take_attendance ? "Open register" : "View register"}</Link> : null}
                 </article>
               ))}
             </div>

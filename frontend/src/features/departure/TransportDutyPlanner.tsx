@@ -30,7 +30,7 @@ export function TransportDutyPlanner({schoolId,data,focusSwapId,focusTripId}:{sc
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
   const dates=useMemo(()=>Array.from({length:7},(_,index)=>iso(addDays(week,index))),[week]);
-  const run=useMutation({mutationFn:async(action:()=>Promise<unknown>)=>action(),onSuccess:async()=>{setError("");setAssignmentTrip(null);await client.invalidateQueries({queryKey:["departure"]});},onError:cause=>setError(cause instanceof Error?cause.message:"The transport plan could not be updated.")});
+  const run=useMutation({mutationFn:async(action:()=>Promise<unknown>)=>action(),onSuccess:async()=>{setError("");setAssignmentTrip(null);await Promise.all([client.invalidateQueries({queryKey:["departure"]}),client.invalidateQueries({queryKey:["attention"]}),client.invalidateQueries({queryKey:["requests"]})]);},onError:cause=>setError(cause instanceof Error?cause.message:"The transport plan could not be updated.")});
   const tripsByDate=useMemo(()=>new Map(dates.map(day=>[day,data.trips.filter(trip=>trip.service_date===day)])),[data.trips,dates]);
   useEffect(()=>{
     if(!focusSwapId)return;

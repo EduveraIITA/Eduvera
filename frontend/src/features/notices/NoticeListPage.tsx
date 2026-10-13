@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Check, ChevronRight, FileText, Plus, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { currentStaffMembership, hasStaffPermission } from "../auth/staffAccess";
@@ -32,9 +32,10 @@ function responseLabel(notice: NoticeSummary) {
   return notice.response_mode === "choice" ? "Response needed" : "Acknowledgement needed";
 }
 
-function NoticeRow({ notice, portal, studentId }: { notice: NoticeSummary; portal: NoticePortal; studentId?: string }) {
+function NoticeRow({ notice, portal, studentId, filter }: { notice: NoticeSummary; portal: NoticePortal; studentId?: string; filter: NoticeFilter }) {
   const query = new URLSearchParams();
   if (studentId) query.set("student_id", studentId);
+  if (filter !== "all") query.set("view", filter);
   if (notice.can_manage && notice.attention_reasons?.some((reason) => reason === "delivery_failed" || reason === "response_overdue")) query.set("focus", "attention");
   const suffix = query.size ? `?${query.toString()}` : "";
   const unread = notice.attention_reasons?.includes("unread") ?? false;
@@ -57,26 +58,27 @@ function NoticeRow({ notice, portal, studentId }: { notice: NoticeSummary; porta
 
 export function NoticeListPage({ portal }: { portal: NoticePortal }) {
   const auth = useAuth();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const studentId = portal === "parent" ? params.get("student_id") ?? undefined : undefined;
   const role = portal === "principal" ? "admin" : portal === "teacher" ? "staff" : "guardian";
   const schoolId = auth.memberships.find((membership) => membership.role === role)?.school_id;
-  const [filter, setFilter] = useState<NoticeFilter>("all");
+  const requestedFilter = params.get("view");
+  const filter: NoticeFilter = filters.some((item) => item.id === requestedFilter) ? requestedFilter as NoticeFilter : "all";
   const query = useQuery({ queryKey: ["notices", portal, schoolId, studentId], queryFn: () => getNotices(portal, { schoolId, studentId }), staleTime: 15_000 });
   const visible = useMemo(() => (query.data?.results ?? [])
     .filter((notice) => filter === "all" ? true : filter === "attention" ? Boolean(notice.attention_reasons?.length) : notice.status === filter)
     .sort((left, right) => Number(Boolean(right.attention_reasons?.length)) - Number(Boolean(left.attention_reasons?.length))), [filter, query.data]);
   const resolvedStudentId = query.data?.student_id ?? studentId;
   const canCompose = portal === "principal" || (portal === "teacher" && hasStaffPermission(currentStaffMembership(auth.memberships), "messages.send"));
-  const compose = canCompose ? <Link className="notice-header-action" to={`/${portal}/notices/new`} aria-label="Create notice"><Plus size={19} /><span>New</span></Link> : null;
+  const compose = canCompose ? <Link className="notice-header-action" to={`/${portal}/notices/new${filter === "all" ? "" : `?view=${encodeURIComponent(filter)}`}`} aria-label="Create notice"><Plus size={19} /><span>New</span></Link> : null;
   return <NoticeShell portal={portal} title="Notices" backTo={`/${portal}/more`} studentId={resolvedStudentId ?? undefined} trailing={compose}>
     <div className="notices-workspace">
       <div className="notice-filters" role="group" aria-label="Filter notices">
-        {filters.filter((item) => portal !== "parent" || item.id === "all" || item.id === "attention" || item.id === "published" || item.id === "cancelled").map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}{item.id === "attention" && query.data?.attention.total ? ` ${query.data.attention.total}` : ""}</button>)}
+        {filters.filter((item) => portal !== "parent" || item.id === "all" || item.id === "attention" || item.id === "published" || item.id === "cancelled").map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => { const next = new URLSearchParams(params); if (item.id === "all") next.delete("view"); else next.set("view", item.id); setParams(next, { replace: true }); }}>{item.label}{item.id === "attention" && query.data?.attention.total ? ` ${query.data.attention.total}` : ""}</button>)}
       </div>
       {query.isPending ? <div className="notice-loading" role="status" aria-label="Loading notices"><span /><span /><span /></div>
         : query.isError ? <section className="notice-state notice-state--error" role="alert"><AlertCircle size={24} /><strong>Notices are unavailable</strong><p>{query.error instanceof Error ? query.error.message : "Try again in a moment."}</p><button type="button" onClick={() => void query.refetch()}><RefreshCw size={16} />Try again</button></section>
-          : visible.length ? <section className="notice-list" aria-label="Notices">{visible.map((notice) => <NoticeRow key={notice.id} notice={notice} portal={portal} studentId={resolvedStudentId ?? undefined} />)}</section>
+          : visible.length ? <section className="notice-list" aria-label="Notices">{visible.map((notice) => <NoticeRow key={notice.id} notice={notice} portal={portal} studentId={resolvedStudentId ?? undefined} filter={filter} />)}</section>
             : <section className="notice-state" role="status"><span className="notice-state__icon"><Check size={24} /></span><strong>{filter === "all" ? "No notices yet" : `No ${filter} notices`}</strong><p>{portal === "parent" ? "School notices will appear here." : "Create a notice when the school needs to inform people or collect a response."}</p></section>}
     </div>
   </NoticeShell>;

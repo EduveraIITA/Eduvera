@@ -8,6 +8,7 @@ import { AssessmentWorkspacePage, FamilyResultsPage } from "./AssessmentWorkspac
 import { getAssessmentWorkspace, getFamilyResults } from "./api";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 
 export function StaffAssessmentsRoute({portal}:{portal:"principal"|"teacher"}){
   const auth=useAuth(); const role=portal==="principal"?"admin":"staff"; const membership=auth.memberships.find((item)=>item.role===role); const schoolId=membership?.school_id??"";
@@ -43,13 +44,7 @@ export function FamilyResultsRoute({portal}:{portal:"parent"|"student"}){
     {assessmentLoaded||reportLoaded?<AttentionOpenAcknowledgement/>:null}
     {staleAttention?<AttentionTargetUnavailable message="This published result no longer matches an available record. It was not marked as opened."/>:null}
     <FamilyResultsPage key={`${studentId}:${assessmentId??""}:${publicationId??""}:${reportBatchId??""}`} portal={portal} data={resultData} reportCards={reports.data} children={students.data?.results??[]} onSelect={(id)=>{
-      const next=new URLSearchParams(params);
-      next.set("student_id",id);
-      next.delete("assessment_id");
-      next.delete("publication_id");
-      next.delete("report_batch_id");
-      next.delete("attention_notification_id");
-      setParams(next);
+      setParams(searchForStudentContext(params, id), { replace: true });
     }}/>
   </>;
 }

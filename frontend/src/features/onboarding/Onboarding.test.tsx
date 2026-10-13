@@ -1,7 +1,7 @@
 import { cleanup,render,screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router-dom';
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import CompanyPage from './CompanyPage';
 import SelfServiceOnboardingPage from './SelfServiceOnboardingPage';
@@ -17,6 +17,7 @@ vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({childre
 vi.mock('./api',async original=>({...await original(),getCompany:vi.fn(),createInstitution:vi.fn(),getInvitations:vi.fn(),inviteMember:vi.fn(),resendMemberInvitation:vi.fn(),getOnboardingWorkspace:vi.fn(),submitInstitutionApplication:vi.fn(),createCoachingWorkspace:vi.fn()}));
 vi.mock('../../lib/api',async original=>({...await original(),apiFetch:vi.fn()}));
 function mount(element:React.ReactNode,path='/'){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[path]}>{element}</MemoryRouter></QueryClientProvider>);}
+function NavigationProbe(){const location=useLocation();const navigationType=useNavigationType();return <><output data-testid="navigation-location">{location.pathname+location.search}</output><output data-testid="navigation-type">{navigationType}</output></>;}
 afterEach(cleanup);
 beforeEach(()=>{
   vi.clearAllMocks();auth.companyOperator=true;auth.hasPortal.mockReturnValue(true);
@@ -42,20 +43,28 @@ describe('company and school onboarding',()=>{
     expect(await screen.findByRole('dialog',{name:'Invitation sent'},{timeout:3500})).toBeVisible();
   });
   it('starts with invitation history and opens a separate, cancellable form',async()=>{
-    const user=userEvent.setup();mount(<InvitationsPage/>,'/principal/invitations');
+    const user=userEvent.setup();mount(<><InvitationsPage/><NavigationProbe/></>,'/principal/invitations');
     expect(await screen.findByText('No invitations yet.')).toBeVisible();
     expect(screen.queryByLabelText('Recipient email')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button',{name:'Invite member'}));
+    expect(screen.getByTestId('navigation-location')).toHaveTextContent('/principal/invitations?create=invitation');
+    expect(screen.getByTestId('navigation-type')).toHaveTextContent('PUSH');
     expect(screen.getByLabelText('Recipient email')).toBeVisible();
     expect(screen.queryByLabelText('Invitation status')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button',{name:'Cancel'}));
+    expect(screen.getByTestId('navigation-location')).toHaveTextContent('/principal/invitations');
+    expect(screen.getByTestId('navigation-type')).not.toHaveTextContent('PUSH');
     expect(screen.getByLabelText('Invitation status')).toBeVisible();
     expect(inviteMember).not.toHaveBeenCalled();
   });
   it.each(['staff','guardian'])('preselects the contextual %s invitation without creating one',async role=>{
-    mount(<InvitationsPage/>,`/principal/invitations?role=${role}&from=${role==='staff'?'staff':'students'}`);
+    const from=role==='staff'?'staff':'students';
+    mount(<><InvitationsPage/><NavigationProbe/></>,`/principal/invitations?role=${role}&from=${from}`);
     expect(await screen.findByLabelText('Account type')).toHaveValue(role);
     expect(inviteMember).not.toHaveBeenCalled();
+    await userEvent.setup().click(screen.getByRole('button',{name:'Cancel'}));
+    expect(screen.getByTestId('navigation-location')).toHaveTextContent(`/principal/invitations?role=${role}&from=${from}&view=history`);
+    expect(screen.getByTestId('navigation-type')).not.toHaveTextContent('PUSH');
   });
   it('resends a pending invitation and shows the mail-server result',async()=>{
     vi.mocked(getInvitations).mockResolvedValue({can_invite_admin:true,invitations:[{id:'invite',email:'learner@example.test',role:'staff',expires_at:'2099-10-04',accepted_at:null,revoked_at:null}],students:[],guardians:[],roles:[]});

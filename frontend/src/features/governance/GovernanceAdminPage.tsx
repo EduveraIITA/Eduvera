@@ -13,12 +13,12 @@ export function GovernanceAdminPage({ schoolId, schoolName, data, refresh }: { s
   const [params, setParams] = useSearchParams();
   const requested = params.get("section");
   const tab: Tab = requested === "register" || requested === "profile" || requested === "history" ? requested : "authority";
-  const setTab = (next: Tab) => setParams(current => { current.set("section", next); current.delete('policy');current.delete('rule');return current; });
+  const setTab = (next: Tab) => setParams(current => { current.set("section", next); current.delete('policy');current.delete('rule');return current; }, { replace: true });
   const policyId=params.get('policy'); const ruleId=params.get('rule');
   const selected=data.families.find(family=>family.id===policyId);
   const selectedRule=data.authority.rules.find(rule=>rule.id===ruleId);
   const parentParams=new URLSearchParams(params);parentParams.delete('policy');parentParams.delete('rule');parentParams.set('section',policyId?'register':'authority');
-  const closeDetail=()=>setParams(parentParams);
+  const closeDetail=()=>setParams(parentParams,{replace:true});
   const detailed=Boolean(policyId||ruleId);
   return <OperationsShell portal="principal" active="more" title={policyId?selected?.title??'Policy':ruleId?selectedRule?.title??'Decision route':'Policies & governance'} schoolName={schoolName} backTo={detailed?`/principal/governance?${parentParams}`:"/principal/more"}>
     <div className="governance-page">

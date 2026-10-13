@@ -2,7 +2,6 @@
 // @ts-nocheck
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   CheckCheck,
   FileText,
   Flag,
@@ -19,12 +18,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useOptionalAuth, type Portal } from "../auth/AuthContext";
 import { getAccessibleStudents } from "../school/api";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import { StudentShell } from "../../pages/student/StudentShell";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 import {
   createChatConversation,
   createChatGroup,
@@ -37,7 +37,6 @@ import {
   markChatRead,
   reportChatMessage,
   sendChatMessage,
-  updateChatPolicy,
   type ChatConversation,
   type ChatGroupType,
   type ChatMessage,
@@ -142,14 +141,11 @@ function GovernanceDialog({ recipients, portal, onClose, onCreate, pending }: {
     </form>
   </div>;
 }
-function PrivacyDialog({ policy, onClose, onSave, pending }: { policy?: ChatPolicy; onClose:()=>void; onSave:(input: Partial<Omit<ChatPolicy,"school_id"|"can_manage"|"privacy_notice_version">>)=>void; pending:boolean }) {
-  const [draft,setDraft]=useState(policy); useEffect(()=>setDraft(policy),[policy]);
+function PrivacyDialog({ policy, onClose }: { policy?: ChatPolicy; onClose:()=>void }) {
   return <div className="chat-picker-backdrop" role="presentation" onMouseDown={(e)=>{if(e.target===e.currentTarget)onClose();}}>
     <section className="chat-picker chat-privacy-panel"><header><span><strong>Messaging privacy & safeguards</strong><small>Verified school relationships, reporting and retention</small></span><button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button></header>
       <div className="chat-privacy-copy"><p><ShieldCheck size={18}/> Contacts are limited to approved school roles; phone numbers and email addresses stay private.</p><p><ShieldCheck size={18}/> Reports are reviewable only by authorised staff and audit logged.</p><p><ShieldCheck size={18}/> Messages follow school retention policy ({policy?.retention_days ?? 455} days).</p></div>
-      {draft?.can_manage ? <form className="chat-policy-controls" onSubmit={(e)=>{e.preventDefault();if(draft)onSave({student_teacher_direct_enabled:draft.student_teacher_direct_enabled,guardian_teacher_direct_enabled:draft.guardian_teacher_direct_enabled,student_group_replies:draft.student_group_replies,guardian_group_replies:draft.guardian_group_replies,attachments_enabled:draft.attachments_enabled,retention_days:draft.retention_days});}}>
-        {(["student_teacher_direct_enabled","guardian_teacher_direct_enabled","student_group_replies","guardian_group_replies","attachments_enabled"] as const).map((key)=><label key={key}><input type="checkbox" checked={draft[key]} onChange={(e)=>setDraft({...draft,[key]:e.target.checked})}/>{key.replaceAll("_"," ")}</label>)}<label>Retention days<input type="number" min={30} max={3650} value={draft.retention_days} onChange={(e)=>setDraft({...draft,retention_days:Number(e.target.value)})}/></label><button disabled={pending}>{pending?"Saving…":"Save policy"}</button>
-      </form> : <p className="chat-policy-hint">Only a school administrator can change these controls.</p>}
+      {policy?.can_manage ? <Link className="chat-policy-hint" to={`/principal/administration?school=${policy.school_id}&section=rules&rule=messages`}>Messaging operating rules</Link> : null}
     </section>
   </div>;
 }
@@ -164,7 +160,7 @@ function MessageActionsDialog({ message, position, onClose, onEdit, onReport }: 
   const canEdit = message.is_mine
     && !message.is_deleted
     && Boolean(message.body.trim())
-    && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000;
+    && Boolean(message.editable_until) && Date.now() < Date.parse(message.editable_until!);
   const canReport = !message.is_mine && !message.is_deleted && !message.is_reported_by_me;
 
   return (
@@ -247,7 +243,7 @@ function Bubble({
   const canEdit = message.is_mine
     && !message.is_deleted
     && Boolean(message.body.trim())
-    && Date.now() - new Date(message.created_at).getTime() <= 2 * 60_000;
+    && Boolean(message.editable_until) && Date.now() < Date.parse(message.editable_until!);
   const canReport = !message.is_mine && !message.is_deleted && !message.is_reported_by_me;
   const hasActions = canEdit || canReport;
   const cancelLongPress = () => {
@@ -403,11 +399,6 @@ export function ChatExperience({ portal }: { portal: Portal }) {
     next.set("conversation", id);
     setParams(next);
   };
-  const closeConversation = () => {
-    const next = new URLSearchParams(params);
-    next.delete("conversation");
-    setParams(next);
-  };
   const createMutation = useMutation({
     mutationFn: (recipient: ChatRecipient) => createChatConversation(
       recipient.id,
@@ -421,7 +412,6 @@ export function ChatExperience({ portal }: { portal: Portal }) {
     },
   });
   const groupMutation = useMutation({ mutationFn: (input: { title:string; group_type:ChatGroupType; member_ids:string[]; school_id:string }) => createChatGroup(input), onSuccess: async (r) => { setGroupOpen(false); await queryClient.invalidateQueries({queryKey:["chat","conversations"]}); chooseConversation(r.id); } });
-  const policyMutation = useMutation({ mutationFn: (input: Parameters<typeof updateChatPolicy>[0]) => updateChatPolicy(input), onSuccess: async () => { await queryClient.invalidateQueries({queryKey:["chat","policy"]}); setPrivacyOpen(false); } });
   const sendMutation = useMutation({
     mutationFn: () => sendChatMessage(selectedId, {
       body: draft,
@@ -557,7 +547,6 @@ export function ChatExperience({ portal }: { portal: Portal }) {
           ) : selectedConversationQuery.isPending ? (
             <>
               <header className="chat-thread__header">
-                <button className="chat-back" type="button" onClick={closeConversation} aria-label="Back to conversations"><ArrowLeft size={19} /></button>
                 <span className="chat-avatar"><LoaderCircle className="chat-spin" size={18} /></span>
                 <span><strong>Loading conversation…</strong><small>Checking access and messaging settings</small></span>
               </header>
@@ -566,7 +555,6 @@ export function ChatExperience({ portal }: { portal: Portal }) {
           ) : selectedConversationQuery.isError || !selected ? (
             <>
               <header className="chat-thread__header">
-                <button className="chat-back" type="button" onClick={closeConversation} aria-label="Back to conversations"><ArrowLeft size={19} /></button>
                 <span className="chat-avatar"><MessageCircle size={18} /></span>
                 <span><strong>Conversation unavailable</strong><small>Access or child context could not be verified</small></span>
               </header>
@@ -580,7 +568,6 @@ export function ChatExperience({ portal }: { portal: Portal }) {
           ) : (
             <>
               <header className="chat-thread__header">
-                <button className="chat-back" type="button" onClick={closeConversation} aria-label="Back to conversations"><ArrowLeft size={19} /></button>
                 <span className="chat-avatar">{initials(selected?.title ?? "Chat")}</span>
                 <span><strong>{selected?.title ?? "Conversation"}</strong><small>{selected?.student_name ? `About ${selected.student_name}` : "School communication"}</small></span>
                 <span className="chat-thread__meta">{selected?.group_type ? <b>{groupNames[selected.group_type]}</b> : null}<i title="Secure school conversation"><ShieldCheck size={13}/> Secure</i></span>
@@ -656,7 +643,7 @@ export function ChatExperience({ portal }: { portal: Portal }) {
       /> : null}
       {reportTarget ? <ReportDialog message={reportTarget} pending={reportMutation.isPending} error={reportMutation.isError ? reportMutation.error.message : undefined} onClose={() => setReportTarget(undefined)} onSubmit={(reason) => reportMutation.mutate(reason)} /> : null}
       {groupOpen ? <GovernanceDialog recipients={recipientsQuery.data?.results ?? []} portal={portal} pending={recipientsQuery.isPending || groupMutation.isPending} onClose={()=>setGroupOpen(false)} onCreate={(input)=>groupMutation.mutate(input)} /> : null}
-      {privacyOpen ? <PrivacyDialog policy={policyQuery.data} pending={policyMutation.isPending} onClose={()=>setPrivacyOpen(false)} onSave={(input)=>policyMutation.mutate(input)} /> : null}
+      {privacyOpen ? <PrivacyDialog policy={policyQuery.data} onClose={()=>setPrivacyOpen(false)} /> : null}
       {pickerOpen ? (
         <RecipientPicker
           recipients={recipientsQuery.data?.results ?? []}
@@ -694,10 +681,7 @@ function ChatRoute({ portal }: { portal: Portal }) {
     avatarUrl: selectedStudent.avatar_url,
   } : undefined;
   const selectChild = (nextStudentId: string) => {
-    const next = new URLSearchParams(params);
-    next.set("student_id", nextStudentId);
-    next.delete("conversation");
-    setParams(next);
+    setParams(searchForStudentContext(params, nextStudentId), { replace: true });
   };
 
   if (portal === "parent") {

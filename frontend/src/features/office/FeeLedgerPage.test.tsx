@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Link, MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FeeLedgerPage from "./FeeLedgerPage";
@@ -14,7 +14,8 @@ const review:FeeReview={id:"review-1",invoice_id:invoice.id,kind:"payment",amoun
 const gatewayPayment={id:"order-1",invoice_id:invoice.id,amount_paise:4000,state:"review_required",provider_payment_id:"pay-1",payment_id:null};
 beforeEach(()=>{vi.mocked(getFeeLedger).mockResolvedValue({currency:"INR",invoices:[invoice],payments:[],online_payments_enabled:false,reviews:[]});vi.mocked(getFeeStudents).mockResolvedValue({results:[invoice]});vi.mocked(getGatewayPaymentReview).mockResolvedValue(gatewayPayment);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
-function show(path="/principal/fees"){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[path]}><FeeLedgerPage/></MemoryRouter></QueryClientProvider>);}
+function NavigationProbe(){const location=useLocation();const navigate=useNavigate();return <><span data-testid="location">{location.pathname}{location.search}</span><button type="button" onClick={()=>navigate(-1)}>Browser back</button></>;}
+function show(path="/principal/fees"){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[path]}><NavigationProbe/><FeeLedgerPage/></MemoryRouter></QueryClientProvider>);}
 describe("fee workspace navigation",()=>{
  it("opens the payment form without the ledger and preserves its verification gate",async()=>{
    const user=userEvent.setup();show();await user.click(await screen.findByRole("button",{name:"Record payment"}));
@@ -24,6 +25,27 @@ describe("fee workspace navigation",()=>{
    expect(recordPayment).not.toHaveBeenCalled();
    await user.click(screen.getByRole("link",{name:"Go back"}));
    expect(await screen.findByRole("navigation",{name:"Ledger records"})).toBeVisible();
+ });
+ it("does not reopen a cancelled payment form with browser Back",async()=>{
+   const user=userEvent.setup();show("/principal/fees?student_id=student-1");
+   await user.click(await screen.findByRole("button",{name:"Record payment"}));
+   await user.click(screen.getByRole("button",{name:"Cancel"}));
+   expect(await screen.findByRole("navigation",{name:"Ledger records"})).toBeVisible();
+   expect(screen.getByTestId("location")).toHaveTextContent("student_id=student-1");
+   await user.click(screen.getByRole("button",{name:"Browser back"}));
+   expect(await screen.findByRole("navigation",{name:"Ledger records"})).toBeVisible();
+   expect(screen.queryByLabelText("Amount received (₹)")).not.toBeInTheDocument();
+ });
+ it("does not reopen a completed payment form with browser Back",async()=>{
+   const user=userEvent.setup();show("/principal/fees?student_id=student-1");
+   await user.click(await screen.findByRole("button",{name:"Record payment"}));
+   await user.type(screen.getByLabelText("Receipt, bank or cheque reference"),"CASH-100");
+   await user.click(screen.getByRole("checkbox",{name:/Funds have been received and verified/}));
+   await user.click(screen.getByRole("button",{name:"Confirm receipt"}));
+   expect(await screen.findByRole("navigation",{name:"Ledger records"})).toBeVisible();
+   await user.click(screen.getByRole("button",{name:"Browser back"}));
+   expect(await screen.findByRole("navigation",{name:"Ledger records"})).toBeVisible();
+   expect(screen.queryByLabelText("Amount received (₹)")).not.toBeInTheDocument();
  });
  it("keeps reviews and settings separate from invoices",async()=>{
    const user=userEvent.setup();show();await user.click(await screen.findByRole("button",{name:"Reviews"}));

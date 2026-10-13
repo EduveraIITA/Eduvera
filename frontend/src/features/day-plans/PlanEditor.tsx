@@ -44,36 +44,9 @@ export function PlanEditor({
     plan.revision,
   );
   useEffect(() => {
-    if (!dirty) return;
-    const guard = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener("beforeunload", guard);
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [dirty]);
-  useEffect(() => {
     onDirty?.(dirty);
     return () => onDirty?.(false);
   }, [dirty, onDirty]);
-  useEffect(() => {
-    if (!dirty) return;
-    const guard = (event: MouseEvent) => {
-      const link =
-        event.target instanceof Element
-          ? event.target.closest("a[href]")
-          : null;
-      if (
-        link &&
-        link.getAttribute("href")?.startsWith("/") &&
-        !window.confirm("Leave this draft without saving your latest edits?")
-      ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-    };
-    document.addEventListener("click", guard, true);
-    return () => document.removeEventListener("click", guard, true);
-  }, [dirty]);
   async function run(action: "save" | "publish" | "discard") {
     if (busy) return;
     setBusy(true);

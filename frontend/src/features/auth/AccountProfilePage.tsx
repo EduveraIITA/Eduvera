@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ShieldCheck, Sparkles } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../lib/api';
 import { useAuth } from './AuthContext';
 import { proFeaturesKey, useProFeatures, type ProFeaturesPreference } from './useProFeatures';
@@ -9,6 +9,7 @@ import { AssistantMemorySettings } from './AssistantMemorySettings';
 import { DemoProfileSwitcher } from './DemoProfileSwitcher';
 import './account-security.css';
 import './account-profile.css';
+import './account-navigation.css';
 
 export function AccountProfilePage() {
   const auth=useAuth();
@@ -17,8 +18,12 @@ export function AccountProfilePage() {
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const location=useLocation();
+  const navigate=useNavigate();
   const from=new URLSearchParams(location.search).get('from');
   const back=from && /^\/(principal|teacher|parent|student)(?:\/|$)/.test(from) && !from.includes('://') ? from : '/';
+  const returnState=location.state as {accountReturnTo?:unknown;accountCanPop?:unknown}|null;
+  const canPopBack=returnState?.accountReturnTo===back&&returnState.accountCanPop===true;
+  const profileHref=`${location.pathname}${location.search}`;
   async function setEnabled(enabled:boolean) {
     setBusy(true);setError('');
     try {
@@ -29,7 +34,7 @@ export function AccountProfilePage() {
     finally { setBusy(false); }
   }
   return <main className="security-page account-profile-page">
-    <header className="security-header"><Link to={back} aria-label="Back"><ArrowLeft size={21}/></Link><div><h1>Profile</h1><p>{auth.user?.display_name||auth.user?.email}</p></div></header>
+    <header className="security-header"><button type="button" aria-label="Back" onClick={()=>{if(canPopBack)void navigate(-1);else void navigate(back,{replace:true});}}><ArrowLeft size={21}/></button><div><h1>Profile</h1><p>{auth.user?.display_name||auth.user?.email}</p></div></header>
     <DemoProfileSwitcher/>
     <section className="account-profile-group" aria-labelledby="pro-features-title">
       <div className="account-profile-row">
@@ -44,6 +49,6 @@ export function AccountProfilePage() {
     {preference.isError?<p className="security-alert" role="alert">Could not load your preference. <button type="button" onClick={()=>void preference.refetch()}>Try again</button></p>:null}
     {error?<p className="security-alert" role="alert">{error}</p>:null}
     <AssistantMemorySettings userId={auth.user?.id}/>
-    <Link className="account-profile-security" to="/account/security"><ShieldCheck size={18}/> Account security <span aria-hidden="true">›</span></Link>
+    <Link className="account-profile-security" to={`/account/security?from=${encodeURIComponent(profileHref)}`} state={{accountReturnTo:profileHref,accountCanPop:true}}><ShieldCheck size={18}/> Account security <span aria-hidden="true">›</span></Link>
   </main>;
 }

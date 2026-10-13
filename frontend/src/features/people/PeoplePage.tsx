@@ -86,10 +86,10 @@ function Directory({ schoolId }: { schoolId: string }) {
   const [submitted, setSubmitted] = useState("");
   const [initial, setInitial] = useState<string | undefined>();
   const adding=params.get("create")==="student";
-  const setAdding=(value:boolean)=>setParams(current=>{const next=new URLSearchParams(current);if(value)next.set("create","student");else next.delete("create");return next;});
+  const setAdding=(value:boolean)=>setParams(current=>{const next=new URLSearchParams(current);if(value)next.set("create","student");else next.delete("create");return next;},{replace:!value});
   const [saved, setSaved] = useState("");
   const authorityId=auth.hasPortal("principal")?params.get("guardian"):null;
-  const setAuthorityId=(id:string|null)=>setParams(current=>{const next=new URLSearchParams(current);if(id)next.set("guardian",id);else next.delete("guardian");return next;});
+  const setAuthorityId=(id:string|null)=>setParams(current=>{const next=new URLSearchParams(current);if(id)next.set("guardian",id);else next.delete("guardian");return next;},{replace:id===null});
   const profileId=params.get("student");
   const profileQuery=useQuery({queryKey:["school","people","profile",schoolId,profileId,params.get("student_key")],queryFn:()=>listStudents(schoolId,params.get("student_key")??""),enabled:Boolean(profileId)});
   const profile=profileQuery.data?.results.find(student=>student.id===profileId);

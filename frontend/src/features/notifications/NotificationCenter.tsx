@@ -4,6 +4,7 @@ import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, LoaderCircle } f
 import { useLocation, useNavigate } from "react-router-dom";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { apiFetch } from "../../lib/api";
+import { portalReturnState } from "../navigation/portalReturnState";
 import "./notifications.css";
 
 type NotificationKind = "attendance" | "leave" | "diary" | "general";
@@ -147,7 +148,11 @@ export function NotificationCenter({
         await readMutation.mutateAsync(item.id);
       }
       setOpen(false);
-      void navigate(`${destination.pathname}${destination.search}${destination.hash}`);
+      const originParams = new URLSearchParams(location.search);
+      originParams.delete("notifications");
+      const originHref = `${location.pathname}${originParams.size ? `?${originParams}` : ""}${location.hash}`;
+      const destinationHref = `${destination.pathname}${destination.search}${destination.hash}`;
+      void navigate(destinationHref, { state: portalReturnState(originHref, destinationHref) });
     }
   }
 

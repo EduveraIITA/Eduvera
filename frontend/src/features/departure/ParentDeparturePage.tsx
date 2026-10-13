@@ -8,6 +8,7 @@ import { getFamilyDeparture, getStudentDeparture } from "./api";
 import { FamilyDepartureContent } from "./FamilyDepartureContent";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 import "./departure.css";
 
 export default function ParentDeparturePage({student=false}:{student?:boolean}) {
@@ -30,10 +31,10 @@ export default function ParentDeparturePage({student=false}:{student?:boolean}) 
   const focus=exactRequest&&requestId?{requestId}:exactTrip&&tripId?{tripId}:exactPlan&&planId?{planId}:undefined;
   const child={id:data.student.id,name:[data.student.first_name,data.student.last_name].join(" ").trim(),grade:data.student.grade??"",section:data.student.section??"",board:"",rollNumber:"",avatarUrl:data.student.avatar_url};
   const content=<div className="departure-page">
-    <label className="departure-date">Service date<input type="date" value={data.service_date} onChange={event=>{if(!event.target.value)return;const next=new URLSearchParams(params);next.set("date",event.target.value);setParams(next);}}/></label>
+    <label className="departure-date">Service date<input type="date" value={data.service_date} onChange={event=>{if(!event.target.value)return;const next=new URLSearchParams(params);next.set("date",event.target.value);setParams(next,{replace:true});}}/></label>
     {staleAttentionTarget?<AttentionTargetUnavailable message="This update no longer matches the current departure record. It was not marked as opened."/>:null}
     {exactAttentionTarget?<AttentionOpenAcknowledgement/>:null}
     <FamilyDepartureContent key={data.student.id+":"+data.service_date} data={data} actorId={auth.user?.id??""} {...focus?{focus}:{}}/>
   </div>;
-  return student?<StudentShell activeNav="launcher" section="Departure & bus" className={"Class "+child.grade+child.section}>{content}</StudentShell>:<ParentShell active="more" pageLabel="Departure & bus" backTo="/parent/more" child={child} selectedChildId={data.student.id} childOptions={data.children.map(item=>({id:item.id,name:[item.first_name,item.last_name].join(" ").trim(),grade:item.grade??"",section:item.section??"",avatarUrl:item.avatar_url}))} onSelectChild={id=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}>{content}</ParentShell>;
+  return student?<StudentShell activeNav="launcher" section="Departure & bus" className={"Class "+child.grade+child.section}>{content}</StudentShell>:<ParentShell active="more" pageLabel="Departure & bus" backTo="/parent/more" child={child} selectedChildId={data.student.id} childOptions={data.children.map(item=>({id:item.id,name:[item.first_name,item.last_name].join(" ").trim(),grade:item.grade??"",section:item.section??"",avatarUrl:item.avatar_url}))} onSelectChild={id=>setParams(searchForStudentContext(params,id), { replace: true })}>{content}</ParentShell>;
 }

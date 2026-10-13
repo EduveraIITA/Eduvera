@@ -16,10 +16,11 @@ import {
   UserRoundCheck,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useMemo } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
+import { portalReturnState } from "../navigation/portalReturnState";
 import {
   getRequestsInbox,
   type RequestCategory,
@@ -49,6 +50,10 @@ const stackMeta: Array<{ id: RequestPriority; title: string }> = [
   { id: "normal", title: "Later" },
 ];
 
+function isRequestCategory(value: string | null): value is RequestCategory {
+  return value !== null && Object.prototype.hasOwnProperty.call(categoryMeta, value);
+}
+
 function timeLabel(value: string | null, timezone: string) {
   if (!value) return null;
   const date = new Date(value);
@@ -61,12 +66,12 @@ function timeLabel(value: string | null, timezone: string) {
   }).format(date);
 }
 
-function RequestRow({ item, timezone }: { item: RequestInboxItem; timezone: string }) {
+function RequestRow({ item, timezone, returnTo }: { item: RequestInboxItem; timezone: string; returnTo: string }) {
   const meta = categoryMeta[item.category];
   const Icon = meta.icon;
   const due = timeLabel(item.due_at, timezone);
   return (
-    <Link className={`request-row request-row--${item.priority}`} to={item.href}>
+    <Link className={`request-row request-row--${item.priority}`} to={item.href} state={portalReturnState(returnTo, item.href)}>
       <span className="request-row__icon" aria-hidden="true"><Icon size={19} /></span>
       <span className="request-row__body">
         <span className="request-row__eyebrow">
@@ -89,7 +94,17 @@ function LoadingState() {
 }
 
 export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
-  const [category, setCategory] = useState<RequestCategory | "all">("all");
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const requestedCategory = params.get("category");
+  const category: RequestCategory | "all" = isRequestCategory(requestedCategory) ? requestedCategory : "all";
+  const returnTo = `${location.pathname}${location.search}${location.hash}`;
+  const setCategory = (nextCategory: RequestCategory | "all") => {
+    const next = new URLSearchParams(params);
+    if (nextCategory === "all") next.delete("category");
+    else next.set("category", nextCategory);
+    setParams(next, { replace: true });
+  };
   const categories = useMemo(() => Object.entries(data.summary.categories)
     .filter((entry): entry is [RequestCategory, number] => Boolean(entry[1]))
     .sort((left, right) => categoryMeta[left[0]].label.localeCompare(categoryMeta[right[0]].label)), [data.summary.categories]);
@@ -106,7 +121,7 @@ export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
         if (!items.length) return null;
         return <section className={`request-stack request-stack--${stack.id}`} key={stack.id} aria-labelledby={`request-stack-${stack.id}`}>
           <header><h2 id={`request-stack-${stack.id}`}>{stack.title}</h2><span aria-label={`${items.length} ${items.length === 1 ? "item" : "items"}`}>{items.length}</span></header>
-          <div className="request-stack__list">{items.map((item) => <RequestRow key={item.id} item={item} timezone={data.scope.timezone} />)}</div>
+          <div className="request-stack__list">{items.map((item) => <RequestRow key={item.id} item={item} timezone={data.scope.timezone} returnTo={returnTo} />)}</div>
         </section>;
       })}
     </div> : <section className="requests-empty" role="status"><BookOpenCheck size={28} aria-hidden="true" /><h2>Nothing needs your attention</h2><p>{category === "all" ? "New requests will appear here when you need to respond." : `There are no ${categoryMeta[category].label.toLowerCase()} requests right now.`}</p></section>}

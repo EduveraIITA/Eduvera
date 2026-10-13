@@ -52,4 +52,16 @@ describe("assistant view transitions", () => {
     expect(transition.start).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledOnce();
   });
+  it("pops the real source entry when returning from full chat", async () => {
+    const transition = nativeTransition();
+    const after = vi.fn();
+    const { result } = renderHook(useAssistantNavigation);
+    result.current.back(after);
+    const committed = transition.update();
+    expect(navigate).toHaveBeenCalledWith(-1);
+    expect(after).not.toHaveBeenCalled();
+    mountSurface("assistant-dock");
+    await committed;
+    expect(after).toHaveBeenCalledOnce();
+  });
 });

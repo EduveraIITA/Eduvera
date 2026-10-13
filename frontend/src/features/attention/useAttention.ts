@@ -29,6 +29,7 @@ export function useAttention(portal: AttentionPortal | "student" | null | undefi
     },
     enabled: auth?.status === "authenticated" && Boolean(supportedPortal) && hasScope,
     staleTime: 15_000,
+    refetchInterval: 60_000,
     refetchOnMount: "always",
     retry: false,
   });

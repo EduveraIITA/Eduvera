@@ -40,7 +40,7 @@ const nav = {
   ],
 } as const;
 
-export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack, pageTitleTrailing }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void; pageTitleTrailing?: ReactNode }) {
+export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack, beforeBack, pageTitleTrailing }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void; beforeBack?: () => boolean | void; pageTitleTrailing?: ReactNode }) {
   const auth = useOptionalAuth();
   const mobileNavIds = new Set(["home", "attendance", portal === "principal" ? "insights" : "timetable", "more"]);
   const { pathname } = useLocation();
@@ -93,7 +93,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
       <div className="operations-workspace">
         <header className="operations-topbar">
           <SchoolBrand name={schoolName} className="operations-topbar__brand" />
-          <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} trailing={pageTitleTrailing} /></div>
+          <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
         <main className="operations-main" inert={assistantOpen}>{planningTabs ? <PlanningNavigation/> : null}{children}</main>

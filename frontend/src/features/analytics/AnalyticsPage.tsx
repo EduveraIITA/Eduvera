@@ -12,6 +12,7 @@ import { AssessmentProgress, AttendanceBreakdown, AttendanceData, AttendanceTren
 import { AnalyticsSummary } from "./AnalyticsSummary";
 import { InstitutionDetail, InstitutionSummary, RegisterDetail } from "./InstitutionAnalytics";
 import { canonicalInsightSearch, insightPath } from "./InsightNavigation";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 import { InsightHighlights, OperationalSummaries } from "../principal-insights/InsightHighlights";
 import "./analytics.css";
 
@@ -110,7 +111,7 @@ export default function AnalyticsPage({ portal, topic }: { portal: Portal; topic
   const periodValue = params.get("period"), period: AnalyticsPeriod = periodValue === "30" || periodValue === "90" ? periodValue : "term";
   const query = useQuery({ queryKey: ["analytics", auth.user?.id, schoolId, portal, studentId, classId, period],
     queryFn: () => getAnalytics(schoolId, portal, period, studentId, classId), enabled: Boolean(schoolId), staleTime: 30_000 });
-  const change = (key: string, value: string) => { const next = new URLSearchParams(canonicalInsightSearch(params.toString())); if (value) next.set(key, value); else next.delete(key); setParams(next); };
+  const change = (key: string, value: string) => { const next = new URLSearchParams(canonicalInsightSearch(params.toString())); if (value) next.set(key, value); else next.delete(key); setParams(next, { replace: true }); };
   const search = canonicalInsightSearch(params.toString());
   const backTo = topic ? insightPath(portal, "", search) : undefined;
   const title = topic ? { attendance: "Attendance trends", results: "Result analysis", progress: "Assessment progress", institution: "Institution snapshot", registers: "Register submission" }[topic] : "Insights";
@@ -144,7 +145,7 @@ export default function AnalyticsPage({ portal, topic }: { portal: Portal; topic
       </> : null}
     {principalOverview && schoolId ? <OperationalSummaries /> : null}
   </div>;
-  if (portal === "parent") return <ParentShell active="more" pageLabel={title} backTo={backTo} child={child} selectedChildId={studentId} institutionLevel={!child} onSelectChild={id => change("student_id", id)}>{content}</ParentShell>;
+  if (portal === "parent") return <ParentShell active="more" pageLabel={title} backTo={backTo} child={child} selectedChildId={studentId} institutionLevel={!child} onSelectChild={id => setParams(searchForStudentContext(canonicalInsightSearch(params.toString()), id), { replace: true })}>{content}</ParentShell>;
   if (portal === "student") return <StudentShell activeNav="launcher" variant="edura" pageTitle={title} backTo={backTo}>{content}</StudentShell>;
   return <OperationsShell portal={portal} active={portal === "principal" ? "insights" : "more"} title={title} backTo={backTo} schoolName={membership?.school_name}>{content}</OperationsShell>;
 }

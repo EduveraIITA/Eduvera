@@ -65,11 +65,11 @@ function show(value: NoticeDetail, client = new QueryClient({ defaultOptions: { 
   return { ...view, client };
 }
 
-function showPrincipal(value: NoticeDetail) {
+function showPrincipal(value: NoticeDetail, path = "/principal/notices/notice-1?focus=attention") {
   vi.mocked(getNotice).mockResolvedValue(value);
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={["/principal/notices/notice-1?focus=attention"]}>
+      <MemoryRouter initialEntries={[path]}>
         <NoticeDetailPage portal="principal" noticeId="notice-1" />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -125,5 +125,19 @@ describe("notice exception attention navigation", () => {
     await waitFor(() => expect(section).toHaveFocus());
     expect(section).toHaveClass("is-attention-target");
     expect(screen.getByRole("button", { name: "Needs follow-up 1" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps the originating list view when a draft opens in the editor", async () => {
+    showPrincipal({
+      ...detail(3),
+      status: "draft",
+      can_manage: true,
+      recipient: undefined,
+    }, "/principal/notices/notice-1?view=draft");
+
+    expect(await screen.findByRole("link", { name: "Edit" })).toHaveAttribute(
+      "href",
+      "/principal/notices/notice-1/edit?view=draft",
+    );
   });
 });

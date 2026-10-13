@@ -1,4 +1,11 @@
 const homes: Record<string, string> = { parent: "/parent/home", student: "/student", teacher: "/teacher", principal: "/principal" };
+const catalogues: Record<string, string> = { parent: "/parent/more", student: "/student/apps", teacher: "/teacher/more", principal: "/principal/more" };
+const homeOwnedModules: Record<string, ReadonlySet<string>> = {
+  parent: new Set(["attendance", "diary"]),
+  student: new Set(["attendance", "timetable"]),
+  teacher: new Set(["attendance", "timetable"]),
+  principal: new Set(["attendance", "insights", "timetable"]),
+};
 export function isPortalHome(path: string) { return ["/parent", ...Object.values(homes)].includes(path.replace(/\/$/, "")); }
 export function isSecondaryPortalPage(path: string) { return /^\/(parent|student|teacher|principal)(\/|$)/.test(path) && !isPortalHome(path); }
 
@@ -11,15 +18,20 @@ export function portalParent(pathname: string, search: string, fallback: string)
   const home = homes[portal];
   if (!home) return fallback;
   const base = `/${portal}`, module = parts[1];
+  const source = new URLSearchParams(search), context = new URLSearchParams();
+  if (module === "messages" && source.has("conversation")) {
+    if (source.has("student_id")) context.set("student_id", source.get("student_id")!);
+    return `${base}/messages${context.size ? `?${context}` : ""}`;
+  }
   let target: string;
   if (module === "more" || module === "apps") target = home;
+  else if (portal === "student" && module === "copilot") target = `${base}/attendance`;
   else if (module === "events" && parts.length > 3) target = `${base}/events/${parts[2]}`;
   else if (parts.length > 2) target = `${base}/${module}`;
-  else if (["attendance", "timetable", "insights"].includes(module ?? "") || (portal === "parent" && module === "diary")) target = home;
-  else target = `${base}/${portal === "student" ? "apps" : "more"}`;
-  const source = new URLSearchParams(search), context = new URLSearchParams();
+  else if (homeOwnedModules[portal]?.has(module ?? "")) target = home;
+  else target = catalogues[portal] ?? fallback;
   for (const key of ["student_id", "school"]) if (source.has(key)) context.set(key, source.get(key)!);
-  if (!target.endsWith("/more") && !target.endsWith("/apps") && target !== home) {
+  if (target !== catalogues[portal] && target !== home) {
     for (const key of ["date", "class"]) if (source.has(key)) context.set(key, source.get(key)!);
   }
   return target + (context.size ? `?${context}` : "");

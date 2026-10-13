@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { CoverageOperatingRules } from "../office/CoverageOperatingRules";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigationType } from "react-router-dom";
 import { StaffOperationsPage } from "./StaffOperationsPage";
 import { saveCoveragePolicy, type AdminStaffWorkspace, type CoverageTask, type ResponsibilityAssignment, type StaffLeaveRequest, type StaffProfile, type TeacherStaffWorkspace } from "./api";
 import { saveAccessRole, assignAccessRole, type AccessRole, type RoleOptions, type RoleAssignment } from "./access-api";
@@ -28,8 +29,14 @@ const roleAssignment:RoleAssignment={source_id:"event-1",source_kind:"event_assi
 const assignment: ResponsibilityAssignment = { id: "assignment-1", responsibility_type_id: responsibilityType.id, staff_profile_id: profile.id, type_code: responsibilityType.code, type_name: responsibilityType.name, category: responsibilityType.category, scope_kind: responsibilityType.scope_kind, first_name: profile.first_name, last_name: profile.last_name, staff_code: profile.staff_code, designation: profile.designation, user_id: profile.user_id, class_section_id: null, subject_id: null, event_id: "event-1", class_name: null, subject_name: null, event_title: "Inter-house debate", scope_label: "", location: "Auditorium", starts_on: "2026-10-10", ends_on: "2026-10-10", starts_at: null, ends_at: null, status: "offered", notes: "Use the published rubric.", response_note: "", access_summary: responsibilityType.access_summary, restricted: true, revision: 1 };
 const coverage: CoverageTask = { id: "coverage-1", leave_request_id: request.id, absent_staff_profile_id: profile.id, replacement_staff_profile_id: null, absent_first_name: profile.first_name, absent_last_name: profile.last_name, absent_designation: profile.designation, replacement_first_name: null, replacement_last_name: null, replacement_user_id: null, class_name: "Class 7A", subject_name: "Mathematics", duty_date: "2026-10-05", period_number: 2, starts_at: "09:50", ends_at: "10:35", title: "Period 2 mathematics", location: "Room 204", status: "open", handover_note: "Continue fractions", response_note: "", revision: 1 };
 
+function NavigationProbe() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  return <><output data-testid="navigation-location">{location.pathname + location.search}</output><output data-testid="navigation-type">{navigationType}</output></>;
+}
+
 function renderPage(data: AdminStaffWorkspace | TeacherStaffWorkspace, portal: "principal" | "teacher", staffProfileId?: string, path = "/") {
-  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /><NavigationProbe /></MemoryRouter></QueryClientProvider>);
 }
 
 beforeEach(() => undefined);
@@ -46,10 +53,14 @@ describe("StaffOperationsPage", () => {
     expect(screen.getByText("2 used · 1 pending · 12 total")).toBeVisible();
     expect(screen.queryByText('Family medical appointment')).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "Apply for leave" }));
+    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/teacher/leave?view=balances&create=leave");
+    expect(screen.getByTestId("navigation-type")).toHaveTextContent("PUSH");
     expect(screen.getByRole("heading", { name: "Apply for leave" })).toBeVisible();
     expect(screen.getByLabelText("Handover note")).toBeVisible();
     expect(screen.queryByRole('navigation',{name:'Leave sections'})).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button',{name:'Cancel'}));
+    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/teacher/leave?view=balances");
+    expect(screen.getByTestId("navigation-type")).not.toHaveTextContent("PUSH");
     expect(screen.getByRole('link',{name:'Balances'})).toHaveAttribute('aria-current','page');
     await userEvent.setup().click(screen.getByRole('link',{name:'Requests'}));
     expect(screen.getByText('Family medical appointment')).toBeVisible();
@@ -151,14 +162,17 @@ describe("StaffOperationsPage", () => {
       coverage_policy:{school_id:"school-1",enabled:false,deadline_minutes_before:30,fallback_kind:"independent_study",fallback_label:"Independent study",supervisor_staff_profile_id:null,supervisor_first_name:null,supervisor_last_name:null,revision:1},
     };
     renderPage(principal,"principal",undefined,"/principal/staff?section=policies");
+    expect(screen.getByRole("link", { name: "Automatic cover operating rules" })).toHaveAttribute("href", "/principal/administration?school=school-1&section=rules&rule=coverage");
+    cleanup();
+    render(<CoverageOperatingRules schoolId="school-1" data={principal} refresh={async () => {}}/>);
     const user=userEvent.setup();
-    expect(screen.getByRole("heading",{name:"Deadline fallback"})).toBeVisible();
-    await user.click(screen.getByLabelText("Enabled"));
-    await user.selectOptions(screen.getByLabelText("Fallback"),"physical_activity");
-    await user.clear(screen.getByLabelText("Name shown to staff"));
-    await user.type(screen.getByLabelText("Name shown to staff"),"Games period");
-    await user.selectOptions(screen.getByLabelText("Responsible staff (optional)"),profile.id);
-    await user.click(screen.getByRole("button",{name:"Save fallback"}));
+    expect(screen.getByRole("heading",{name:"Leave cover"})).toBeVisible();
+    await user.click(screen.getByLabelText("Automatic fallback"));
+    await user.selectOptions(screen.getByLabelText(/Fallback plan/),"physical_activity");
+    await user.clear(screen.getByLabelText(/Staff label/));
+    await user.type(screen.getByLabelText(/Staff label/),"Games period");
+    await user.selectOptions(screen.getByLabelText(/Responsible team/),profile.id);
+    await user.click(screen.getByRole("button",{name:"Save changes"}));
     await waitFor(()=>expect(saveCoveragePolicy).toHaveBeenCalledWith("school-1",expect.objectContaining({
       enabled:true,deadline_minutes_before:30,fallback_kind:"physical_activity",fallback_label:"Games period",
       supervisor_staff_profile_id:profile.id,expected_revision:1,

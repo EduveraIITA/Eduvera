@@ -134,21 +134,31 @@ export function RestrictedCarePage({ portal, schoolId, schoolName, messageReport
   const intake=params.get('create')==='concern'; const caseId=params.get('case');
   const caseRevision=Number(params.get('case_revision'));
   const reportId=tab==='message_reports'?params.get('report'):null;
-  const navigate=(section:Tab,caseToOpen?:string,create=false)=>setParams(current=>{current.set('section',section);current.delete('case');current.delete('create');current.delete('report');if(caseToOpen)current.set('case',caseToOpen);if(create)current.set('create','concern');return current;});
-  const listParams=new URLSearchParams(params);listParams.delete('case');listParams.delete('create');listParams.set('section','cases');
+  const navigate=(section:Tab,caseToOpen?:string,create=false,replace=!caseToOpen&&!create)=>setParams(current=>{
+    const next=new URLSearchParams(current);
+    next.set('section',section);
+    for(const key of ['case','case_revision','create','report','attention_notification_id','focus'])next.delete(key);
+    if(caseToOpen)next.set('case',caseToOpen);
+    if(create)next.set('create','concern');
+    return next;
+  },{replace});
+  const listParams=new URLSearchParams(params);
+  for(const key of ['case','case_revision','create','report','attention_notification_id','focus'])listParams.delete(key);
+  listParams.set('section','cases');
   const baseTitle=portal==='principal'?'Student concerns':'Restricted care';
-  const reportListParams=new URLSearchParams(params);reportListParams.delete('report');
+  const reportListParams=new URLSearchParams(params);
+  for(const key of ['report','report_revision','attention_notification_id','focus'])reportListParams.delete(key);
   const pageTitle=intake?'Record a concern':caseId?'Concern details':reportId?'Message report':baseTitle;
   const backTo=intake||caseId?`/${portal}/safeguarding?${listParams}`:reportId?`/${portal}/safeguarding?${reportListParams}`:`/${portal}/more`;
   const query = useQuery({ queryKey: ["restricted-care", "workspace", schoolId], queryFn: () => getCareWorkspace(schoolId) });
   const refresh = async () => { await query.refetch(); await queryClient.invalidateQueries({ queryKey: ["notifications"] }); };
   const metrics = useMemo(() => ({ open: query.data?.cases.filter((item) => item.status !== "closed").length ?? 0, reporting: query.data?.cases.filter((item) => ["assessment_required","reporting_required"].includes(item.reporting_state)).length ?? 0 }), [query.data]);
-  if (query.isPending) return <OperationsShell portal={portal} active="safeguarding" title={portal === "principal" ? "Student concerns" : "Restricted care"} subtitle={schoolName}><ScreenLoading /></OperationsShell>;
-  if (query.error || !query.data) return <OperationsShell portal={portal} active="safeguarding" title={portal === "principal" ? "Student concerns" : "Restricted care"} subtitle={schoolName}><LiveRouteError error={query.error ?? new Error("Protected workspace unavailable") } onRetry={query.refetch} /></OperationsShell>;
+  if (query.isPending) return <OperationsShell portal={portal} active="safeguarding" title={pageTitle} subtitle={schoolName} backTo={backTo}><ScreenLoading /></OperationsShell>;
+  if (query.error || !query.data) return <OperationsShell portal={portal} active="safeguarding" title={pageTitle} subtitle={schoolName} backTo={backTo}><LiveRouteError error={query.error ?? new Error("Protected workspace unavailable") } onRetry={query.refetch} /></OperationsShell>;
   const data = query.data;
   return <OperationsShell portal={portal} active="safeguarding" title={pageTitle} subtitle={schoolName} backTo={backTo}>
     <main className="care-page"><SafetyBanner />
-    {intake?<IntakePage key={schoolId} schoolId={schoolId} data={data} onClose={()=>navigate('cases')} onCreated={id=>{navigate('cases',id);void refresh();}}/>:caseId?<CasePage key={`${schoolId}:${caseId}`} schoolId={schoolId} caseId={caseId} {...(Number.isInteger(caseRevision) && caseRevision > 0 ? { expectedRevision: caseRevision } : {})} onChanged={refresh}/>:reportId?messageReports:<>
+    {intake?<IntakePage key={schoolId} schoolId={schoolId} data={data} onClose={()=>navigate('cases')} onCreated={id=>{navigate('cases',id,false,true);void refresh();}}/>:caseId?<CasePage key={`${schoolId}:${caseId}`} schoolId={schoolId} caseId={caseId} {...(Number.isInteger(caseRevision) && caseRevision > 0 ? { expectedRevision: caseRevision } : {})} onChanged={refresh}/>:reportId?messageReports:<>
     <nav className="care-tabs" aria-label="Restricted care sections"><button type="button" aria-current={tab==='cases'?'page':undefined} className={tab === "cases" ? "is-active" : ""} onClick={() => navigate("cases")}>Cases</button>{data.can_manage_team && <button type="button" aria-current={tab==='team'?'page':undefined} className={tab === "team" ? "is-active" : ""} onClick={() => navigate("team")}>Care team</button>}{messageReports && <button type="button" aria-current={tab==='message_reports'?'page':undefined} className={tab === "message_reports" ? "is-active" : ""} onClick={() => navigate("message_reports")}>Message reports</button>}</nav>
     {tab === "cases" && <><div className="care-toolbar"><span>{metrics.open} open{metrics.reporting>0?` · ${metrics.reporting} need reporting decisions`:''}</span><button className="care-primary" type="button" onClick={()=>navigate('cases',undefined,true)}><Plus size={18}/>Record a concern</button></div><section className="care-route-status"><span className={data.routes.primary ? "is-ready" : "is-missing"}>{data.routes.primary ? <CheckCircle2 /> : <AlertTriangle />} Primary route · {data.routes.primary} available</span><span className={data.routes.alternate ? "is-ready" : "is-missing"}>{data.routes.alternate ? <CheckCircle2 /> : <AlertTriangle />} Alternate route · {data.routes.alternate} available</span></section><section className="care-queue" aria-label="Assigned cases">{data.cases.length ? data.cases.map((item) => <CaseCard key={item.id} item={item} onOpen={() => navigate('cases',item.id)} />) : <div className="care-empty"><ShieldCheck /><strong>No assigned cases</strong><p>This does not mean the institution has no concerns. You only see cases explicitly assigned to you.</p></div>}</section></>}
     {tab === "team" && data.can_manage_team && <TeamPanel schoolId={schoolId} data={data} refresh={refresh} />}

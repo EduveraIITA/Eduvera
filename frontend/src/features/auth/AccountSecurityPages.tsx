@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clipboard, KeyRound, LoaderCircle, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clipboard, KeyRound, LoaderCircle, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../../lib/api";
 import { AuthLayout, BackToLogin } from "./AuthPages";
 import { useAuth } from "./AuthContext";
 import "./account-security.css";
+import "./account-navigation.css";
 
 type MfaStatus = { status: "not_enrolled" | "pending" | "active" | "disabled"; confirmed_at: string | null; recovery_codes_remaining: number };
 type Enrollment = { secret: string; otpauth_uri: string };
@@ -18,6 +19,8 @@ async function publicMutation<T>(path: string, body: unknown) {
 
 export function AccountSecurityPage() {
   const auth = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   const [token, setToken] = useState(params.get("token") ?? window.sessionStorage.getItem("omnischool:development-verification-token") ?? "");
@@ -79,10 +82,13 @@ export function AccountSecurityPage() {
   const verified = auth.user?.email_verified === true;
   const mfaActive = mfa.data?.status === "active";
   const origin = params.get("from") ?? "";
-  const safeOrigin = /^\/(?:principal\/more|teacher\/more|parent\/more|student\/apps)(?:\?[^#]*)?$/.test(origin) ? origin : "/";
-  const next = auth.setupRequired ? "/principal/activation" : safeOrigin;
+  const safeOrigin = /^(?:\/(?:principal|teacher|parent|student)(?:\/[^?#]*)?(?:\?[^#]*)?|\/account\/profile(?:\?[^#]*)?)$/.test(origin) ? origin : "/";
+  const backTarget = safeOrigin;
+  const continueTarget = auth.setupRequired ? "/principal/activation" : safeOrigin;
+  const returnState=location.state as {accountReturnTo?:unknown;accountCanPop?:unknown}|null;
+  const canPopBack=returnState?.accountReturnTo===backTarget&&returnState.accountCanPop===true;
   return <main className="security-page">
-    <header className="security-header"><Link to={next} aria-label="Back">←</Link><div><h1>Account security</h1><p>{auth.user?.email}</p></div></header>
+    <header className="security-header"><button type="button" aria-label="Back" onClick={()=>{if(canPopBack)void navigate(-1);else void navigate(backTarget,{replace:true});}}><ArrowLeft size={21}/></button><div><h1>Account security</h1><p>{auth.user?.email}</p></div></header>
     <section className="security-summary" aria-label="Security progress"><div><ShieldCheck/><span><strong>{verified && mfaActive ? "Protected" : "Action needed"}</strong><small>{Number(verified)+Number(mfaActive)} of 2 checks</small></span></div></section>
     {error ? <p className="security-alert" role="alert">{error}</p> : null}
     {message ? <p className="security-message" role="status">{message}</p> : null}
@@ -95,7 +101,7 @@ export function AccountSecurityPage() {
       {mfa.isPending ? <p>Checking status…</p> : mfaActive ? <p className="security-complete-copy">Active · {mfa.data?.recovery_codes_remaining} unused recovery codes</p> : !verified ? <p className="security-disabled"><LockKeyhole/> Verify your email first.</p> : setup ? <div className="mfa-setup">{qr ? <img src={qr} alt="Authenticator setup QR code"/> : null}<p>Scan the QR code or enter this setup key:</p><code>{setup.secret}</code><form onSubmit={confirmMfa}><label>Six-digit authenticator code<input value={code} onChange={(event)=>setCode(event.target.value)} inputMode="numeric" pattern="[0-9]{6}" autoComplete="one-time-code" required/></label><button className="security-primary" disabled={busy}>Activate two-step verification</button></form></div> : <button className="security-primary" type="button" onClick={()=>void beginMfa()} disabled={busy}><KeyRound/> Set up authenticator</button>}
       {recoveryCodes.length ? <div className="recovery-codes" role="status"><h3>Save these recovery codes</h3><p>Each code works once. They will not be shown again.</p><div>{recoveryCodes.map((item)=><code key={item}>{item}</code>)}</div><button className="security-secondary" type="button" onClick={()=>void navigator.clipboard.writeText(recoveryCodes.join("\n"))}><Clipboard/> Copy codes</button></div> : null}
     </section>
-    {verified && mfaActive ? <Link className="security-continue" to={next}>Continue →</Link> : null}
+    {verified && mfaActive ? <Link className="security-continue" to={continueTarget}>Continue →</Link> : null}
   </main>;
 }
 

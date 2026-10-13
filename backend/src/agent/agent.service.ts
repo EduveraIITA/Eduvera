@@ -12,7 +12,7 @@ import { AgentGateway, assertKnownIds, assertLocalScreen, collectIds, stableHash
 import { agentContextWindowTokens, agentSettings, createAgentModel, modelAvailability, type ModelMessage, type ToolDefinition } from './providers.js';
 import { recordReferences, resolveReferences, reportsUnverifiedWrite, type RecordReference } from './references.js';
 import { attendanceArguments } from './attendance-intent.js';
-import { AgentLimitError, assertAgentEnabled, reserveModelCall } from './limits.js';
+import { AgentLimitError, assertAgentEnabled, reserveModelCall, agentExecutionLimits } from './limits.js';
 import { ModelFailure } from './model-errors.js';
 import { analyticsChart } from './charts.js';
 import { CAPABILITY_CONTRACT_VERSION, summarizeCapabilityPolicy } from './capability-contract.js';
@@ -396,7 +396,8 @@ export class AgentService implements OnModuleDestroy {
         compacted_memory:Boolean(memory.summary),long_term_memory_items:durableMemory.items.length,long_term_memory_tokens:durableMemory.tokens,
         capability_contract:CAPABILITY_CONTRACT_VERSION,memory_contract:AGENT_MEMORY_CONTRACT_VERSION });
       let errors = 0; let toolCount = 0;let memoryManaged=false;
-      for (let turn=0;turn<10;turn++) {
+      const executionLimits = agentExecutionLimits();
+      for (let turn=0;turn<executionLimits.modelCalls;turn++) {
         if (controller.signal.aborted) throw new Error('Cancelled');
         const state = (await sql<{status:string}>`SELECT status FROM agent_runs WHERE id=${id}::uuid`.execute(this.db)).rows[0];
         if (state?.status !== 'running') return;
@@ -416,11 +417,11 @@ export class AgentService implements OnModuleDestroy {
           await this.finish(id,'completed',result.text || 'Please tell me what you would like to check or change.',evidence);
           return;
         }
-        if (result.calls.length>4 || toolCount+result.calls.length>12) { await this.finish(id,'completed','Please narrow this request to one record or action.',evidence); return; }
+        if (result.calls.length>executionLimits.batch || toolCount+result.calls.length>executionLimits.tools) { await this.finish(id,'completed','Please narrow this request to one record or action.',evidence); return; }
         toolCount+=result.calls.length;
         // A model can violate parallel_tool_calls=false. Never execute a batch of writes.
         messages.push({ role:'assistant',content:result.text,calls:result.calls });
-        for (const call of result.calls.slice(0,4)) {
+        for (const call of result.calls.slice(0,executionLimits.batch)) {
           if (controller.signal.aborted) throw new Error('Cancelled');
           let output:unknown;
           if(call.name===userMemoryTool.name) {

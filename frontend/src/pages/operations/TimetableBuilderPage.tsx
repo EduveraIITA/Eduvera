@@ -74,7 +74,7 @@ export function PrincipalTimetablePage({ data, onTermChange, onCreate, onUpdate,
   const updateUrl = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params);
     for (const [key, value] of Object.entries(changes)) next.set(key, value);
-    setParams(next);
+    setParams(next, { replace: true });
     setMessage("");
   };
 

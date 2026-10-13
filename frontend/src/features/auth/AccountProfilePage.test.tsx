@@ -31,7 +31,7 @@ it('loads an off preference and enables the preview from Profile',async()=>{
   await userEvent.click(toggle);
   await waitFor(()=>expect(toggle).toHaveAttribute('aria-checked','true'));
   expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/auth/pro-features/',{method:'POST',body:JSON.stringify({enabled:true})});
-  expect(screen.getByRole('link',{name:'Back'})).toHaveAttribute('href','/student/attendance');
+  expect(screen.getByRole('button',{name:'Back'})).toBeVisible();
 });
 
 it('shows remembered preferences and requires a second step before clearing them',async()=>{

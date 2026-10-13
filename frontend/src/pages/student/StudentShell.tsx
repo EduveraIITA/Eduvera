@@ -63,6 +63,7 @@ export interface StudentShellProps {
   pageTitle?: string;
   backTo?: string;
   onBack?: () => void;
+  beforeBack?: () => boolean | void;
   pageTitleTrailing?: ReactNode;
 }
 
@@ -111,6 +112,7 @@ export function StudentShell({
   pageTitle,
   backTo,
   onBack,
+  beforeBack,
   pageTitleTrailing,
 }: StudentShellProps) {
   const location = useLocation();
@@ -143,7 +145,7 @@ export function StudentShell({
           </div>
         </div>
         <div className="student-topbar__context">
-          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} trailing={pageTitleTrailing} />
+          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
         </div>
       </header>
 

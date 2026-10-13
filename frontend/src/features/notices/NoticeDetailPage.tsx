@@ -65,7 +65,14 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
     opened.current = revisionToken;
     void openNotice(data.id, studentId).then(refreshAll).catch(() => { opened.current = null; });
   }, [data, ownRecipient, refreshAll, studentId]);
-  const backTo = `/${portal}/notices${studentId ? `?student_id=${encodeURIComponent(studentId)}` : ""}`;
+  const listParams = new URLSearchParams();
+  if (studentId) listParams.set("student_id", studentId);
+  const listView = params.get("view");
+  if (["attention", "published", "draft", "cancelled"].includes(listView ?? "")) listParams.set("view", listView!);
+  const backTo = `/${portal}/notices${listParams.size ? `?${listParams}` : ""}`;
+  const editorContext = listView && ["attention", "published", "draft", "cancelled"].includes(listView)
+    ? `?view=${encodeURIComponent(listView)}`
+    : "";
   if (query.isPending) return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}><div className="notices-workspace"><div className="notice-loading" role="status"><span /><span /><span /></div></div></NoticeShell>;
   if (query.isError || !data) return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}><div className="notices-workspace"><section className="notice-state notice-state--error" role="alert"><AlertCircle size={24} /><strong>Notice is unavailable</strong><p>{query.error instanceof Error ? query.error.message : "It may no longer be available."}</p><button type="button" onClick={() => void query.refetch()}><RefreshCw size={16} />Try again</button></section></div></NoticeShell>;
   const actionError = publishMutation.error ?? cancelMutation.error;
@@ -99,7 +106,7 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
       {ownRecipient ? <NoticeResponsePanel notice={data} recipient={ownRecipient} studentId={studentId} onSaved={save} /> : null}
 
       {data.can_manage ? <>
-        {data.status === "draft" ? <div className="notice-draft-actions"><Link to={`/${portal}/notices/${data.id}/edit`}><Pencil size={17} />Edit</Link><button type="button" disabled={publishMutation.isPending} onClick={() => publishMutation.mutate(data.revision)}><Send size={17} />{publishMutation.isPending ? "Publishing…" : "Publish"}</button></div> : null}
+        {data.status === "draft" ? <div className="notice-draft-actions"><Link to={`/${portal}/notices/${data.id}/edit${editorContext}`}><Pencil size={17} />Edit</Link><button type="button" disabled={publishMutation.isPending} onClick={() => publishMutation.mutate(data.revision)}><Send size={17} />{publishMutation.isPending ? "Publishing…" : "Publish"}</button></div> : null}
         {actionError ? <p className="notice-form-error" role="alert">{actionError instanceof Error ? actionError.message : "The notice could not be updated."}</p> : null}
         {data.metrics ? <section className="notice-metrics" aria-label="Notice progress">
           <div><UsersRound size={18} /><strong>{data.metrics.recipients}</strong><span>Recipients</span></div>

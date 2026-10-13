@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Link, MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PeopleImportPage from './PeopleImportPage';
@@ -17,7 +17,8 @@ beforeEach(()=>{
   vi.mocked(getImport).mockResolvedValue({id:'import-1',filename:'students.csv',state:'expired',revision:1,row_count:3,created_at:'2026-10-06T00:00:00Z',expires_at:'2026-10-07T00:00:00Z',receipt:null,review:null});
 });
 afterEach(()=>{cleanup();vi.clearAllMocks();});
-const show=(search='')=>render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/principal/students/import'+search]}><PeopleImportPage/></MemoryRouter></QueryClientProvider>);
+function NavigationProbe(){const location=useLocation();const navigate=useNavigate();return <><span data-testid="location">{location.pathname}{location.search}</span><button type="button" onClick={()=>navigate(-1)}>Browser back</button></>;}
+const show=(search='')=>render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/principal/students/import'+search]}><NavigationProbe/><PeopleImportPage/></MemoryRouter></QueryClientProvider>);
 describe('student import navigation',()=>{
   it('opens a focused upload form and returns to the import list',async()=>{
     const user=userEvent.setup();show();await user.click(await screen.findByRole('button',{name:'New import'}));
@@ -26,10 +27,24 @@ describe('student import navigation',()=>{
     expect(screen.getByText(/No login accounts, leave-signing permissions/)).toBeVisible();
     await user.click(screen.getByRole('button',{name:'Cancel'}));
     expect(await screen.findByText('students.csv')).toBeVisible();expect(stageImport).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button',{name:'Browser back'}));
+    expect(await screen.findByText('students.csv')).toBeVisible();
+    expect(screen.queryByLabelText('Academic term')).not.toBeInTheDocument();
   });
   it('restores an upload URL with an authorized institution only',async()=>{
     show('?create=import&school=outside-school');await screen.findByLabelText('Academic term');
     expect(enrollmentOptions).toHaveBeenCalledWith('school-1');expect(stageImport).not.toHaveBeenCalled();
+  });
+  it('replaces the upload form after staging succeeds so Back cannot reopen it',async()=>{
+    const user=userEvent.setup();vi.mocked(stageImport).mockResolvedValue({id:'import-1'});show();
+    await user.click(await screen.findByRole('button',{name:'New import'}));
+    await user.click(screen.getByText('Or paste CSV data'));
+    await user.type(screen.getByLabelText('CSV data'),'header\nrow');
+    await user.click(screen.getByRole('button',{name:'Upload & review'}));
+    expect(await screen.findByRole('heading',{name:'Draft expired'})).toBeVisible();
+    await user.click(screen.getByRole('button',{name:'Browser back'}));
+    expect(await screen.findByText('students.csv')).toBeVisible();
+    expect(screen.queryByLabelText('Academic term')).not.toBeInTheDocument();
   });
   it('opens a retained receipt/history record without the directory',async()=>{
     const user=userEvent.setup();show('?import=import-1&school=school-1');

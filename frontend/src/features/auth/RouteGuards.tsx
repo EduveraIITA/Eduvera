@@ -12,6 +12,15 @@ function SessionLoader() {
   );
 }
 
+function securityRedirect(location: ReturnType<typeof useLocation>) {
+  const origin = `${location.pathname}${location.search}`;
+  return <Navigate
+    to={`/account/security?from=${encodeURIComponent(origin)}`}
+    state={{ accountReturnTo: origin, accountCanPop: false }}
+    replace
+  />;
+}
+
 export function RoleLanding() {
   const auth = useAuth();
   if (auth.status === "loading") return <SessionLoader />;
@@ -41,7 +50,7 @@ export function AuthenticatedOnly({ children }: { children: ReactNode }) {
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
   if (auth.user?.email_verified === false && location.pathname !== "/account/security") {
-    return <Navigate to="/account/security" replace />;
+    return securityRedirect(location);
   }
   return children;
 }
@@ -54,7 +63,7 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
-  if (auth.user?.email_verified === false) return <Navigate to="/account/security" replace />;
+  if (auth.user?.email_verified === false) return securityRedirect(location);
   if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
   if(portal==='teacher') {
     const member=currentStaffMembership(auth.memberships);

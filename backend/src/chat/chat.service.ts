@@ -1,5 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
+import { operatingRules } from "../operating-rules/rules.js";
 import {
   BadRequestException,
   ForbiddenException,
@@ -535,7 +536,8 @@ export class ChatService {
   }
 
   async messages(user: AuthUser, conversationId: string, before?: string) {
-    await this.conversationForUser(user, conversationId);
+    const conversation = await this.conversationForUser(user, conversationId);
+    const rules = await operatingRules(this.db, conversation.school_id);
     let beforeDate: Date | undefined;
     if (before) {
       beforeDate = new Date(before);
@@ -573,6 +575,7 @@ export class ChatService {
         reply_to_id: row.reply_to_id,
         is_deleted: row.is_deleted,
         is_mine: row.sender_id === user.id,
+        editable_until: new Date(new Date(row.created_at).getTime() + rules.message_edit_minutes * 60_000).toISOString(),
         is_reported_by_me: Boolean(row.is_reported_by_me),
         report_status: row.report_status ?? null,
         created_at: row.created_at,
@@ -622,8 +625,9 @@ export class ChatService {
       throw new ForbiddenException("Student replies are disabled in this group.");
     }
     if (!data.body && !upload) throw new BadRequestException("Enter a message or attach a file.");
-    if (upload && (!allowedAttachments.has(upload.mimetype) || upload.data.length === 0 || upload.data.length > 10 * 1024 * 1024)) {
-      throw new BadRequestException("Attachments must be an image, PDF, DOC, or DOCX file up to 10 MB.");
+    const rules = await operatingRules(this.db, conversation.school_id);
+    if (upload && (!allowedAttachments.has(upload.mimetype) || upload.data.length === 0 || upload.data.length > rules.message_attachment_mb * 1024 * 1024)) {
+      throw new BadRequestException(`Attachments must be an image, PDF, DOC, or DOCX file up to ${rules.message_attachment_mb} MB.`);
     }
     if (data.reply_to_id) {
       const reply = await this.db.selectFrom("chat_messages").select("id")
@@ -766,14 +770,15 @@ export class ChatService {
   }
 
   async editMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown) {
-    await this.conversationForUser(user, conversationId,"messages.send");
+    const conversation = await this.conversationForUser(user, conversationId,"messages.send");
+    const rules = await operatingRules(this.db, conversation.school_id);
     if (!uuid.safeParse(messageId).success) throw new NotFoundException("Message not found.");
     const data = editMessageSchema.parse(body);
     const message = await this.db.selectFrom("chat_messages").selectAll().where("id", "=", messageId).where("conversation_id", "=", conversationId).executeTakeFirst();
     if (!message) throw new NotFoundException("Message not found.");
     if (message.sender_id !== user.id) throw new ForbiddenException("You can only edit messages you sent.");
-    if (message.message_type === "system" || Date.now() - new Date(message.created_at).getTime() > 2 * 60_000) {
-      throw new BadRequestException("Messages can only be edited for 2 minutes after sending.");
+    if (message.message_type === "system" || rules.message_edit_minutes === 0 || Date.now() - new Date(message.created_at).getTime() >= rules.message_edit_minutes * 60_000) {
+      throw new BadRequestException(`Messages can only be edited for ${rules.message_edit_minutes} minutes after sending.`);
     }
     await this.db.updateTable("chat_messages").set({ body: data.body, updated_at: new Date() }).where("id", "=", messageId).execute();
     return { id: messageId, edited: true };

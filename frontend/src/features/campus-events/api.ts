@@ -25,6 +25,14 @@ export function eventIdempotencyKey() {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 }
 
+export function saveEventObservationPolicy(schoolId: string, policy: { observation_hours_before: number; observation_hours_after: number; expected_revision: number }) {
+  return apiFetch("/api/v1/campus-events/attendance-policy", { method: "POST", body: JSON.stringify({ school_id: schoolId, ...policy }) });
+}
+
+export function getEventObservationPolicy(schoolId: string) {
+  return apiFetch<{ observation_hours_before: number; observation_hours_after: number; revision: number }>(`/api/v1/campus-events/attendance-policy?school_id=${encodeURIComponent(schoolId)}`);
+}
+
 function query(path: string, values: Record<string, string | undefined>) {
   const parameters = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) {

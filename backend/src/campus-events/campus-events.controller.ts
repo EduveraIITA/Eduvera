@@ -10,6 +10,17 @@ import { CampusEventsService } from "./campus-events.service.js";
 export class CampusEventsController {
   constructor(private readonly campusEvents: CampusEventsService) {}
 
+  @Get("attendance-policy")
+  getObservationPolicy(@Req() request: AuthenticatedRequest, @Query("school_id") schoolId: string) {
+    return this.campusEvents.getObservationPolicy(request.authUser, schoolId);
+  }
+
+  @Post("attendance-policy")
+  @HttpCode(200)
+  saveObservationPolicy(@Req() request: AuthenticatedRequest) {
+    return this.campusEvents.saveObservationPolicy(request, request.body);
+  }
+
   @Get("catalog")
   @RequirePermission("events.view")
   catalog(

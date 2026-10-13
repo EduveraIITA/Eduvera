@@ -1,7 +1,8 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ClassTestEditorPage } from "./ClassTestEditorPage";
 import { EventEditorPage } from "./EventEditorPage";
 import { EventRegisterPage } from "./EventRegisterPage";
 import { FamilyEventDetailPage, FamilyEventListPage, readFamilyEventActionFocus } from "./FamilyEventPages";
@@ -9,7 +10,7 @@ import { OperationsEventDetailPage } from "./OperationsEventDetailPage";
 import { OperationsEventListPage } from "./OperationsEventListPage";
 import type { CampusEventDto, EventCatalogResponse, EventFinanceResponse, EventRegisterInput, EventRegisterResponse } from "./types";
 
-vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ children, active }: { children: React.ReactNode; active: string }) => <main data-testid="operations-shell" data-active={active}>{children}</main> }));
+vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ children, active, backTo }: { children: React.ReactNode; active: string; backTo?: string }) => <main data-testid="operations-shell" data-active={active} data-back-to={backTo}>{children}</main> }));
 vi.mock("../../pages/parent/ParentShell", () => ({ ParentShell: ({ children, active }: { children: React.ReactNode; active: string }) => <main data-testid="parent-shell" data-active={active}>{children}</main> }));
 vi.mock("../../pages/student/StudentShell", () => ({ StudentShell: ({ children, activeNav }: { children: React.ReactNode; activeNav: string }) => <main data-testid="student-shell" data-active={activeNav}>{children}</main> }));
 
@@ -360,6 +361,18 @@ describe("campus event family workflows", () => {
 });
 
 describe("campus event planning", () => {
+  it("shows exact outstanding actions even when Upcoming is empty", () => {
+    render(<MemoryRouter><OperationsEventListPage portal="principal" events={[]} view="upcoming" onViewChange={vi.fn()} attentionItems={[{
+      id: "attention-1", source_kind: "event_session_register", source_id: "session-1", module: "events", state: "exception", signals: ["exception"], priority: "urgent",
+      title: "Picnic return register", status_label: "Awaiting checkout", subject_label: null, href: "/principal/events/event-1/sessions/session-1/register", created_at: null, due_at: null,
+    }]}/></MemoryRouter>);
+    expect(screen.getByRole("heading", { name: "No upcoming events" })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Picnic return register/ })).toHaveAttribute("href", "/principal/events/event-1/sessions/session-1/register");
+  });
+  it("does not manufacture an attention section for historical events", () => {
+    render(<MemoryRouter><OperationsEventListPage portal="principal" events={[]} view="past" onViewChange={vi.fn()}/></MemoryRouter>);
+    expect(screen.queryByRole("region", { name: "Events needing attention" })).not.toBeInTheDocument();
+  });
   it("preserves the selected event filter while loading another page", async () => {
     const onLoadMore = vi.fn();
     const onViewChange = vi.fn();
@@ -382,6 +395,25 @@ describe("campus event planning", () => {
     expect(within(row).getByText("1 open register")).toBeVisible();
     expect(screen.queryByText("View details")).not.toBeInTheDocument();
     expect(screen.getByRole("link",{name:"Schedule class test"})).toHaveAttribute("href","/teacher/events/new");
+  });
+
+  it("preserves a non-default list view through event drill-down and creation", () => {
+    const pastEvent = eventFixture({
+      status: "completed",
+      starts_at: "2020-09-18T04:30:00.000Z",
+      ends_at: "2020-09-18T11:30:00.000Z",
+    });
+    render(<MemoryRouter><OperationsEventListPage portal="principal" events={[pastEvent]} view="past" onViewChange={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByRole("link", { name: "Open Science museum visit" })).toHaveAttribute("href", "/principal/events/event-1?list_view=past");
+    expect(screen.getByRole("link", { name: "Create event" })).toHaveAttribute("href", "/principal/events/new?list_view=past");
+  });
+
+  it("returns a class-test draft to the list view it was opened from", () => {
+    render(<MemoryRouter initialEntries={["/teacher/events/new?list_view=past"]}><ClassTestEditorPage portal="teacher" catalog={catalog} onSave={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-back-to", "/teacher/events?view=past");
+    expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/teacher/events?view=past");
   });
 
   it("keeps session subsets scoped and searchable without rendering an always-open student wall", async () => {
@@ -626,6 +658,31 @@ describe("event attendance register", () => {
     permissions: { can_take_attendance: true, can_lock: true, can_reopen: false, attendance_disabled_reason: null },
   };
 
+  it("uses the route-provided detail context for Back", () => {
+    render(<MemoryRouter><EventRegisterPage portal="teacher" backTo="/teacher/events/event-1?list_view=past" register={register} onSave={vi.fn()} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-back-to", "/teacher/events/event-1?list_view=past");
+  });
+
+  it("keeps progress concise and reveals the irreversible lock step only when requested", async () => {
+    const onLock = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<MemoryRouter><EventRegisterPage portal="teacher" register={register} onSave={vi.fn()} onLock={onLock} onReopen={vi.fn()} onHistory={vi.fn().mockResolvedValue({ event: register.event, session: { id: register.session.id, title: register.session.title }, items: [] })} /></MemoryRouter>);
+
+    expect(screen.getByLabelText("1 of 1 attendance decisions recorded")).toHaveTextContent("All decisions recorded");
+    expect(screen.getByRole("heading", { name: "Participants" })).toBeVisible();
+    expect(screen.queryByText("Review every attendance decision")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Lock register" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Lock register" }));
+    expect(screen.getByRole("heading", { name: "Lock register" })).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm lock" });
+    expect(confirm).toBeDisabled();
+    await user.type(screen.getByLabelText("Reason"), "Session completed");
+    await user.click(confirm);
+    expect(onLock).toHaveBeenCalledWith("Session completed");
+  });
+
   it("requires a correction reason and hides statuses that are invalid before a check-in session starts", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<MemoryRouter><EventRegisterPage portal="teacher" register={register} onSave={onSave} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn().mockResolvedValue({ event: register.event, session: { id: register.session.id, title: register.session.title }, items: [] })} /></MemoryRouter>);
@@ -637,9 +694,9 @@ describe("event attendance register", () => {
     expect(status).not.toHaveTextContent("Checked out");
     await user.selectOptions(status, "excused");
     expect(screen.getByLabelText("Correction reason")).toBeVisible();
-    expect(screen.getByRole("button", { name: /Save 1 changes/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
     await user.type(screen.getByLabelText("Correction reason"), "Verified with trip lead");
-    await user.click(screen.getByRole("button", { name: /Save 1 changes/ }));
+    await user.click(screen.getByRole("button", { name: "Save register" }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ reason: "Verified with trip lead", records: [expect.objectContaining({ student_id: "student-1", status: "excused", observed_at: null })] }));
   });
 
@@ -651,7 +708,7 @@ describe("event attendance register", () => {
     });
     render(<MemoryRouter><EventRegisterPage portal="teacher" register={register} onSave={vi.fn()} onLock={vi.fn()} onReopen={vi.fn()} onHistory={onHistory} /></MemoryRouter>);
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "Change history" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "History" }));
     const dialog = await screen.findByRole("dialog", { name: "Change history" });
     expect(dialog).toBeVisible();
     expect(within(dialog).getByText(/Not recorded/)).toBeVisible();
@@ -673,6 +730,7 @@ describe("event attendance register", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const unmarked: EventRegisterResponse = {
       ...register,
+      session: { ...register.session, starts_at: new Date(Date.now() - 3_600_000).toISOString(), ends_at: new Date(Date.now() + 3_600_000).toISOString() },
       rows: [{ ...register.rows[0]!, attendance_status: "not_recorded", record_revision: 0, checked_in_at: null, checked_out_at: null }],
     };
     render(<MemoryRouter><EventRegisterPage portal="teacher" register={unmarked} onSave={onSave} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn().mockResolvedValue({ event: unmarked.event, session: { id: unmarked.session.id, title: unmarked.session.title }, items: [] })} /></MemoryRouter>);
@@ -682,12 +740,31 @@ describe("event attendance register", () => {
     const observed = screen.getByLabelText("Observed at for Aarav Sharma");
     expect(observed).toBeRequired();
     expect((observed as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-    await user.click(screen.getByRole("button", { name: /Save 1 changes/ }));
+    await user.click(screen.getByRole("button", { name: "Save register" }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const saved = onSave.mock.calls[0]?.[0] as EventRegisterInput | undefined;
     expect(saved?.records[0]?.status).toBe("present");
     expect(saved?.records[0]?.observed_at).toMatch(/Z$/);
   });
+
+  it("requires a historical batch time and preserves existing decisions when marking remaining students", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const past: EventRegisterResponse = { ...register,
+      session: { ...register.session, starts_at: "2020-09-18T05:00:00Z", ends_at: "2020-09-18T10:00:00Z" },
+      rows: [{ ...register.rows[0]!, attendance_status: "excused" }, { ...register.rows[0]!, student_id: "student-2", student_name: "Riddhi Kaur", attendance_status: "not_recorded", record_revision: 0 }],
+    };
+    const user = userEvent.setup();
+    render(<MemoryRouter><EventRegisterPage portal="principal" register={past} onSave={onSave} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn()} /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "Mark remaining present" }));
+    expect(screen.getByLabelText("Attendance status for Aarav Sharma")).toHaveValue("excused");
+    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Observed time"), { target: { value: "2020-09-19T11:00" } });
+    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Observed time"), { target: { value: "2020-09-18T11:00" } });
+    await user.click(screen.getByRole("button", { name: "Save register" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ records: [expect.objectContaining({ student_id: "student-2", status: "present", observed_at: new Date("2020-09-18T11:00").toISOString() })] }));
+  });
+
 
   it("excludes non-ready students from bulk marking but allows an explained physical observation", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
@@ -709,9 +786,10 @@ describe("event attendance register", () => {
     expect(screen.getByLabelText("Attendance status for Aarav Sharma")).toHaveValue("present");
     expect(blockedStatus).toHaveValue("not_recorded");
     await user.selectOptions(blockedStatus, "present");
-    expect(screen.getByRole("button", { name: /Save 2 changes/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
     await user.type(screen.getByLabelText("Observed attendance explanation for Riddhi Kaur"), "Teacher verified arrival at the gate");
-    await user.click(screen.getByRole("button", { name: /Save 2 changes/ }));
+    fireEvent.change(screen.getByLabelText("Observed time"), { target: { value: "2020-09-18T11:00" } });
+    await user.click(screen.getByRole("button", { name: "Save register" }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const saved = onSave.mock.calls[0]?.[0] as EventRegisterInput | undefined;
     expect(saved?.records).toContainEqual(expect.objectContaining({

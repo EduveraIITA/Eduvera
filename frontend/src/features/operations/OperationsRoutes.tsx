@@ -149,7 +149,7 @@ function useDateParam() {
   return [date, (next: string) => {
     const updated = new URLSearchParams(params);
     updated.set("date", next);
-    setParams(updated);
+    setParams(updated, { replace: true });
   }] as const;
 }
 
@@ -198,7 +198,7 @@ export function TeacherAttendanceRoute() {
   const setDate = (next: string) => {
     const updated = new URLSearchParams(params);
     updated.set("date", next);
-    setParams(updated);
+    setParams(updated, { replace: true });
   };
 
   if (!classId && home.isPending) return <Loading />;
@@ -279,7 +279,7 @@ export function PrincipalAttendanceRoute() {
   const setDate = (next: string) => {
     const updated = new URLSearchParams(params);
     updated.set("date", next);
-    setParams(updated);
+    setParams(updated, { replace: true });
   };
 
   if (classId) {
@@ -373,7 +373,7 @@ export function LegacyPrincipalTimetableRoute() {
   return (
     <PrincipalTimetablePage
       data={query.data}
-      onTermChange={(nextTermId) => { const next = new URLSearchParams(params); next.set("term", nextTermId); setParams(next); }}
+      onTermChange={(nextTermId) => { const next = new URLSearchParams(params); next.set("term", nextTermId); setParams(next, { replace: true }); }}
       onCreate={async (slot) => { await create.mutateAsync(slot); await refresh(); }}
       onUpdate={async (id, slot) => { await update.mutateAsync({ id, slot }); await refresh(); }}
       onDelete={async (id) => { await remove.mutateAsync(id); await refresh(); }}

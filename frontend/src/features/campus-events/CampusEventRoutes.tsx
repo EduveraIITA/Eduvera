@@ -1,3 +1,4 @@
+import { useAttention } from "../attention/useAttention";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -8,6 +9,7 @@ import type { ParentChildSummary } from "../../pages/parent/parentTypes";
 import { ApiError } from "../../lib/api";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { searchForStudentContext } from "../navigation/studentContextSearch";
 import {
   cancelCampusEvent,
   changeEventRegisterLock,
@@ -30,6 +32,7 @@ import {
 } from "./api";
 import { ClassTestEditorPage } from "./ClassTestEditorPage";
 import { EventEditorPage } from "./EventEditorPage";
+import { eventDetailHref, eventListHref } from "./eventNavigation";
 import { EventRegisterPage } from "./EventRegisterPage";
 import { FamilyEventDetailPage, FamilyEventListPage, readFamilyEventActionFocus } from "./FamilyEventPages";
 import { OperationsEventDetailPage } from "./OperationsEventDetailPage";
@@ -83,6 +86,8 @@ function useEventInvalidation() {
       ...(eventId ? [client.invalidateQueries({ queryKey: ["campus-event", eventId] })] : []),
       ...(eventId ? [client.invalidateQueries({ queryKey: ["campus-event-finance", eventId] })] : []),
       client.invalidateQueries({ queryKey: ["notifications"] }),
+      client.invalidateQueries({ queryKey: ["attention"] }),
+      client.invalidateQueries({ queryKey: ["requests"] }),
       client.invalidateQueries({ queryKey: ["school", "parent", "home"] }),
       client.invalidateQueries({ queryKey: ["school", "student", "home"] }),
       client.invalidateQueries({ queryKey: ["teacher-home"] }),
@@ -92,6 +97,7 @@ function useEventInvalidation() {
 }
 
 function OperationsListRoute({ portal }: { portal: "teacher" | "principal" }) {
+  const attention = useAttention(portal);
   const schoolId = useSchoolId(portal === "principal" ? "admin" : "staff");
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as EventView | null) ?? "upcoming";
@@ -106,7 +112,7 @@ function OperationsListRoute({ portal }: { portal: "teacher" | "principal" }) {
   if (query.isPending) return <ScreenLoading />;
   if (query.isError) return <RouteFailure error={query.error} retry={query.refetch} />;
   const events = query.data.pages.flatMap((page) => page.items);
-  return <OperationsEventListPage portal={portal} events={events} view={view} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage} onLoadMore={() => void query.fetchNextPage()} onViewChange={(next) => { const updated = new URLSearchParams(params); updated.set("view", next); setParams(updated); }} />;
+  return <OperationsEventListPage portal={portal} attentionItems={attention.data?.items.filter(item => item.module === "events") ?? []} events={events} view={view} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage} onLoadMore={() => void query.fetchNextPage()} onViewChange={(next) => { const updated = new URLSearchParams(params); updated.set("view", next); setParams(updated, { replace: true }); }} />;
 }
 
 function OperationsDetailRoute({ portal }: { portal: "teacher" | "principal" }) {
@@ -131,7 +137,7 @@ function OperationsDetailRoute({ portal }: { portal: "teacher" | "principal" }) 
   return <><OperationsEventAttentionGate event={event} target={attentionTarget} /><OperationsEventDetailPage portal={portal} schoolId={schoolId} viewerUserId={auth?.user?.id} event={event} finance={finance.data} financeError={finance.isError ? finance.error : undefined} onRecordRefund={async (studentId, input) => { await recordCampusEventRefund(schoolId, event.id, studentId, input); await Promise.all([refresh(event.id), finance.refetch()]); }} onAuthorityChanged={async () => { await refresh(event.id); await query.refetch(); }} onAction={async (action) => {
     await transitionCampusEvent(schoolId, event.id, action, event.revision);
     await refresh(event.id);
-    if (action === "discard") void navigate(`/${portal}/events`, { replace: true }); else await query.refetch();
+    if (action === "discard") void navigate(eventListHref(`/${portal}`, params), { replace: true }); else await query.refetch();
   }} onCancel={async (internalReason, audienceNotice) => { await cancelCampusEvent(schoolId, event.id, event.revision, internalReason, audienceNotice); await refresh(event.id); await query.refetch(); }} /></>;
 }
 
@@ -139,6 +145,7 @@ function EventEditorRoute({ portal, createClassTest = false }: { portal: "teache
   const { eventId } = useParams();
   const schoolId = useSchoolId(portal === "principal" ? "admin" : "staff");
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const refresh = useEventInvalidation();
   const catalog = useQuery({ queryKey: ["campus-events", "catalog", portal, schoolId], queryFn: () => getCampusEventCatalog(schoolId), enabled: Boolean(schoolId) });
   const detail = useQuery({ queryKey: ["campus-event", eventId, portal], queryFn: () => getCampusEvent(schoolId, eventId!), enabled: Boolean(schoolId && eventId) });
@@ -151,7 +158,7 @@ function EventEditorRoute({ portal, createClassTest = false }: { portal: "teache
   const save = async (input: CampusEventInput) => {
     const saved = existing ? await saveCampusEvent(schoolId, existing.id, existing.revision, input) : await createCampusEvent(schoolId, input);
     await refresh(saved.id);
-    void navigate(`/${portal}/events/${saved.id}`);
+    void navigate(eventDetailHref(`/${portal}`, saved.id, params), { replace: true });
   };
   return createClassTest || existing?.event_type === "class_test"
     ? <ClassTestEditorPage portal={portal} catalog={catalog.data} event={existing} onSave={save} />
@@ -160,6 +167,7 @@ function EventEditorRoute({ portal, createClassTest = false }: { portal: "teache
 
 function RegisterRoute({ portal }: { portal: "teacher" | "principal" }) {
   const { eventId = "", sessionId = "" } = useParams();
+  const [params] = useSearchParams();
   const schoolId = useSchoolId(portal === "principal" ? "admin" : "staff");
   const client = useQueryClient();
   const key = ["campus-event-register", eventId, sessionId];
@@ -168,7 +176,7 @@ function RegisterRoute({ portal }: { portal: "teacher" | "principal" }) {
   if (!schoolId || !eventId || !sessionId) return <RouteFailure error={new Error("This event register is not available in the active school workspace.")} />;
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <RouteFailure error={query.error} retry={query.refetch} />;
-  return <EventRegisterPage key={`${query.data.session.revision}-${query.data.session.state}`} portal={portal} register={query.data} onHistory={() => getEventRegisterHistory(schoolId, eventId, sessionId)} onSave={async (input) => { await saveEventRegister(schoolId, eventId, sessionId, input); await refresh(); }} onLock={async (reason) => { await changeEventRegisterLock(schoolId, eventId, sessionId, "lock", query.data.session.revision, reason); await refresh(); }} onReopen={async (reason) => { await changeEventRegisterLock(schoolId, eventId, sessionId, "reopen", query.data.session.revision, reason); await refresh(); }} />;
+  return <EventRegisterPage key={`${query.data.session.revision}-${query.data.session.state}`} portal={portal} backTo={eventDetailHref(`/${portal}`, eventId, params)} register={query.data} onHistory={() => getEventRegisterHistory(schoolId, eventId, sessionId)} onSave={async (input) => { await saveEventRegister(schoolId, eventId, sessionId, input); await refresh(); }} onLock={async (reason) => { await changeEventRegisterLock(schoolId, eventId, sessionId, "lock", query.data.session.revision, reason); await refresh(); }} onReopen={async (reason) => { await changeEventRegisterLock(schoolId, eventId, sessionId, "reopen", query.data.session.revision, reason); await refresh(); }} />;
 }
 
 function toParentChild(student: Awaited<ReturnType<typeof getAccessibleStudents>>["results"][number]): ParentChildSummary {
@@ -187,9 +195,7 @@ function useParentStudentSelection(enabled: boolean, selectFirstWhenMissing = tr
       : undefined;
   useEffect(() => {
     if (!enabled || !students.data || !studentId || requestedId === studentId || (!requestedId && !selectFirstWhenMissing)) return;
-    const updated = new URLSearchParams(params);
-    updated.set("student_id", studentId);
-    setParams(updated, { replace: true });
+    setParams(searchForStudentContext(params, studentId), { replace: true });
   }, [enabled, params, requestedId, selectFirstWhenMissing, setParams, studentId, students.data]);
   return { students, params, requestedId, setParams, studentId };
 }
@@ -199,6 +205,7 @@ function FamilyListRoute({ audience }: { audience: "parent" | "student" }) {
   const schoolId = useSchoolId(role);
   const { students, params, setParams, studentId: selectedStudentId } = useParentStudentSelection(audience === "parent");
   const studentId = audience === "parent" ? selectedStudentId : undefined;
+  const view = params.get("view") === "past" ? "past" : "upcoming";
   const query = useInfiniteQuery({
     queryKey: ["campus-events", audience, schoolId, studentId ?? "self"],
     queryFn: ({ pageParam }) => getFamilyCampusEvents(schoolId, studentId, pageParam),
@@ -214,7 +221,7 @@ function FamilyListRoute({ audience }: { audience: "parent" | "student" }) {
   if (query.isError) return <RouteFailure error={query.error} retry={query.refetch} />;
   const selected = students.data?.results.find((student) => student.id === studentId);
   const events = query.data.pages.flatMap((page) => page.items);
-  return <FamilyEventListPage audience={audience} events={events} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage} onLoadMore={() => void query.fetchNextPage()} child={selected ? toParentChild(selected) : undefined} onSelectChild={audience === "parent" ? (next) => { const updated = new URLSearchParams(params); updated.set("student_id", next); setParams(updated); } : undefined} />;
+  return <FamilyEventListPage audience={audience} events={events} view={view} onViewChange={(nextView) => { const updated = new URLSearchParams(params); if (nextView === "past") updated.set("view", nextView); else updated.delete("view"); setParams(updated, { replace: true }); }} hasMore={query.hasNextPage} loadingMore={query.isFetchingNextPage} onLoadMore={() => void query.fetchNextPage()} child={selected ? toParentChild(selected) : undefined} onSelectChild={audience === "parent" ? (next) => setParams(searchForStudentContext(params, next), { replace: true }) : undefined} />;
 }
 
 function FamilyDetailRoute({ audience }: { audience: "parent" | "student" }) {
@@ -266,7 +273,7 @@ function FamilyDetailRoute({ audience }: { audience: "parent" | "student" }) {
       throw error;
     }
   };
-  return <>{exactAttentionTarget ? <AttentionOpenAcknowledgement /> : null}{staleAttentionTarget?<AttentionTargetUnavailable message="This event update no longer matches the current record. It was not marked as opened."/>:null}<FamilyEventDetailPage audience={audience} event={event} finance={finance.data?.items.find((item) => item.student_id === studentId)} financeError={finance.isError ? finance.error : undefined} child={selected ? toParentChild(selected) : undefined} selectedStudentId={studentId} focusAction={readFamilyEventActionFocus(params.get("focus"))} onSelectChild={audience === "parent" ? (next) => { const updated = new URLSearchParams(params); updated.set("student_id", next); setParams(updated); } : undefined} onRsvp={(status) => withConflictRefresh(() => respondToCampusEvent(schoolId, event.id, studentId, status, participant?.rsvp_revision ?? 0))} onWithdraw={async (reason, idempotencyKey) => { await withdrawFromPaidCampusEvent(schoolId, event.id, studentId, reason, idempotencyKey); await refresh(); }} onConsent={(status, note) => withConflictRefresh(() => recordCampusEventConsent(schoolId, event.id, studentId, status, note, participant?.consent_revision ?? 0))} onChecklist={async (itemId, completed) => { await updateCampusEventChecklist(schoolId, event.id, itemId, studentId, completed); await refresh(); }} /></>;
+  return <>{exactAttentionTarget ? <AttentionOpenAcknowledgement /> : null}{staleAttentionTarget?<AttentionTargetUnavailable message="This event update no longer matches the current record. It was not marked as opened."/>:null}<FamilyEventDetailPage audience={audience} event={event} finance={finance.data?.items.find((item) => item.student_id === studentId)} financeError={finance.isError ? finance.error : undefined} child={selected ? toParentChild(selected) : undefined} selectedStudentId={studentId} listView={params.get("view") === "past" ? "past" : "upcoming"} focusAction={readFamilyEventActionFocus(params.get("focus"))} onSelectChild={audience === "parent" ? (next) => setParams(searchForStudentContext(params, next), { replace: true }) : undefined} onRsvp={(status) => withConflictRefresh(() => respondToCampusEvent(schoolId, event.id, studentId, status, participant?.rsvp_revision ?? 0))} onWithdraw={async (reason, idempotencyKey) => { await withdrawFromPaidCampusEvent(schoolId, event.id, studentId, reason, idempotencyKey); await refresh(); }} onConsent={(status, note) => withConflictRefresh(() => recordCampusEventConsent(schoolId, event.id, studentId, status, note, participant?.consent_revision ?? 0))} onChecklist={async (itemId, completed) => { await updateCampusEventChecklist(schoolId, event.id, itemId, studentId, completed); await refresh(); }} /></>;
 }
 
 export const PrincipalEventsRoute = () => <OperationsListRoute portal="principal" />;

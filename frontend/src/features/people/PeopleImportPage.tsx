@@ -14,20 +14,23 @@ export default function PeopleImportPage(){
   const auth=useAuth();const schools=auth.memberships.filter(m=>m.role==='admin'||(m.role==='staff'&&m.permissions?.includes('sis.manage')));const [params,setParams]=useSearchParams();
   const schoolId=schools.find(s=>s.school_id===params.get('school'))?.school_id||schools[0]?.school_id;const id=params.get('import');const uploading=params.get('create')==='import';
   const portal=auth.hasPortal("principal")?"principal":"teacher";
-  const open=(importId?:string)=>{setParams({...(schoolId?{school:schoolId}:{}),...(importId?{import:importId}:{})});};
+  const listParams=()=>new URLSearchParams(schoolId?{school:schoolId}:{});
+  const open=(importId:string)=>{const next=listParams();next.set('import',importId);setParams(next);};
+  const finishUpload=(importId:string)=>{const next=listParams();next.set('import',importId);setParams(next,{replace:true});};
+  const close=()=>setParams(listParams(),{replace:true});
   const historyPath=`/${portal}/students/import?${new URLSearchParams(schoolId?{school:schoolId}:{})}`;
   return <OperationsShell portal={portal} active="more" title={id?'Import review':uploading?'New import':'Student imports'} schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} backTo={id||uploading?historyPath:`/${portal}/students`} contentHasHeading><div className="operations-stack">
-    {schools.length>1?<label className="people-school">School<select value={schoolId} onChange={e=>setParams({school:e.target.value})}>{schools.map(s=><option key={s.school_id} value={s.school_id}>{s.school_name}</option>)}</select></label>:null}
-    {schoolId?(id?<ImportWorkspace key={id} schoolId={schoolId} id={id} onNew={()=>open()}/>:<ImportStart key={schoolId} schoolId={schoolId} onOpen={open} uploading={uploading} onUpload={()=>setParams({school:schoolId,create:'import'})} onCancel={()=>open()}/>):<p role="alert">An active school administrator membership is required.</p>}
+    {schools.length>1?<label className="people-school">School<select value={schoolId} onChange={e=>setParams({school:e.target.value},{replace:true})}>{schools.map(s=><option key={s.school_id} value={s.school_id}>{s.school_name}</option>)}</select></label>:null}
+    {schoolId?(id?<ImportWorkspace key={id} schoolId={schoolId} id={id} onNew={close}/>:<ImportStart key={schoolId} schoolId={schoolId} onOpen={open} uploading={uploading} onUpload={()=>setParams({school:schoolId,create:'import'})} onUploaded={finishUpload} onCancel={close}/>):<p role="alert">An active school administrator membership is required.</p>}
   </div></OperationsShell>;
 }
-function ImportStart({schoolId,onOpen,uploading,onUpload,onCancel}:{schoolId:string;onOpen:(id:string)=>void;uploading:boolean;onUpload:()=>void;onCancel:()=>void}){
+function ImportStart({schoolId,onOpen,uploading,onUpload,onUploaded,onCancel}:{schoolId:string;onOpen:(id:string)=>void;uploading:boolean;onUpload:()=>void;onUploaded:(id:string)=>void;onCancel:()=>void}){
   const options=useQuery({queryKey:["school","people","options",schoolId],queryFn:()=>enrollmentOptions(schoolId)});
   const history=useInfiniteQuery({queryKey:["school","people","imports",schoolId],queryFn:({pageParam})=>getImports(schoolId,pageParam),initialPageParam:undefined as string|undefined,getNextPageParam:p=>p.next_cursor??undefined});
   return <>
     {options.isError?<p role="alert" className="people-error">School setup could not load. <button onClick={()=>void options.refetch()}>Try again</button></p>:null}
     {options.isPending?<div className="people-panel import-skeleton" role="status" aria-label="Loading school setup"><span/><span/><span/></div>:null}
-    {options.data?.results.length?(uploading?<ImportUpload schoolId={schoolId} options={options.data.results} onUploaded={onOpen} onCancel={onCancel}/>:<div className="import-toolbar"><p className="people-muted">Review a CSV before enrolling students.</p><button className="people-primary" onClick={onUpload}><Plus size={17}/>New import</button></div>):options.data?<p className="people-warning">Set up an active term and classes before importing students.</p>:null}
+    {options.data?.results.length?(uploading?<ImportUpload schoolId={schoolId} options={options.data.results} onUploaded={onUploaded} onCancel={onCancel}/>:<div className="import-toolbar"><p className="people-muted">Review a CSV before enrolling students.</p><button className="people-primary" onClick={onUpload}><Plus size={17}/>New import</button></div>):options.data?<p className="people-warning">Set up an active term and classes before importing students.</p>:null}
     {!uploading?<section className="people-panel"><h2 className="sr-only">Import history</h2>
       {history.isPending?<p role="status">Loading imports…</p>:null}{history.isError?<p role="alert" className="people-error">History could not load. <button onClick={()=>void history.refetch()}>Try again</button></p>:null}
       {history.data&&!history.data.pages[0]?.results.length?<p className="people-muted">No imports yet. Your first uploaded batch will appear here.</p>:null}

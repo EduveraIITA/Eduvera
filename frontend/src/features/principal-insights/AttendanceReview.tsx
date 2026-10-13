@@ -20,8 +20,8 @@ export function AttendanceChecks({ data }: { data: PrincipalInsights }) {
       <p>{needsFollowup ? "Attendance has fallen, with no open follow-up yet." : data.engagement.total ? "Review the existing conversations before starting another." : "No declines meet the review rules. Missing records still need checking."}</p>
     </div>
     {needsFollowup < data.engagement.total ? <div className="analytics-comparison-switch" role="group" aria-label="Attendance review list">
-      <button type="button" aria-pressed={missing} onClick={() => setParams(previous => { const next = new URLSearchParams(previous); next.set("followup", "missing"); return next; })}>No follow-up {needsFollowup}</button>
-      <button type="button" aria-pressed={!missing} onClick={() => setParams(previous => { const next = new URLSearchParams(previous); next.set("followup", "all"); return next; })}>All {data.engagement.total}</button>
+      <button type="button" aria-pressed={missing} onClick={() => setParams(previous => { const next = new URLSearchParams(previous); next.set("followup", "missing"); return next; }, { replace: true })}>No follow-up {needsFollowup}</button>
+      <button type="button" aria-pressed={!missing} onClick={() => setParams(previous => { const next = new URLSearchParams(previous); next.set("followup", "all"); return next; }, { replace: true })}>All {data.engagement.total}</button>
     </div> : null}
     {students.length ? <ul className="attendance-review__list">{students.map(student => <li key={student.id}>
       <Link to={insightPath("principal", `review/${encodeURIComponent(student.id)}`, search)} aria-label={`Review ${student.name}`} aria-describedby={`review-change-${student.id} review-rate-${student.id}`}>

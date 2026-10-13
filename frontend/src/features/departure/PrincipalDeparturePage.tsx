@@ -7,11 +7,12 @@ import { useAuth } from "../auth/AuthContext";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
-import { assignTransportStudent, createDepartureAuthority, createDeparturePlan, createTransportRoute, createTransportTrip, decideDepartureRequest, departurePlanAction, getDepartureWorkspace, recordDepartureHandover, recordOfficeDepartureRequest, revokeDepartureAuthority, saveDeparturePolicy, type DepartureMode } from "./api";
+import { assignTransportStudent, createDepartureAuthority, createDeparturePlan, createTransportRoute, createTransportTrip, decideDepartureRequest, departurePlanAction, getDepartureWorkspace, recordDepartureHandover, recordOfficeDepartureRequest, revokeDepartureAuthority, type DepartureMode } from "./api";
 import { TransportDutyPlanner } from "./TransportDutyPlanner";
 import { DepartureRequestReview } from "./DepartureRequestReview";
 import { HandoverForm } from "./HandoverForm";
 import { TransportAssignmentForm } from "./TransportAssignmentForm";
+import { TransportAttention } from "./TransportAttention";
 import "./departure.css";
 
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
@@ -35,8 +36,9 @@ export default function PrincipalDeparturePage(){
   const section=sections.find(item=>item.id===params.get("section"));
   type Panel="policy"|"route"|"assign"|"trip"|"authority"|"plan"|"office";
   const edit=params.get("edit"); const panel=(["policy","route","assign","trip","authority","plan","office"].includes(edit??"")?edit:null) as Panel|null;
-  const setPanel=(next:Panel|null)=>{const value=new URLSearchParams(params);if(next)value.set("edit",next);else value.delete("edit");setParams(value);};
-  const pageLink=(id?:string)=>{const next=new URLSearchParams(params);for(const key of ["edit","request","swap","trip","plan","student","date"])next.delete(key);if(id)next.set("section",id);else next.delete("section");return `/principal/departure${next.size?`?${next}`:""}`;};
+  const pageParams=(id?:string)=>{const next=new URLSearchParams();if(id)next.set("section",id);return next;};
+  const setPanel=(next:Panel|null)=>{const value=pageParams(section?.id);if(next)value.set("edit",next);setParams(value);};
+  const pageLink=(id?:string)=>{const next=pageParams(id);return `/principal/departure${next.size?`?${next}`:""}`;};
   const [error,setError]=useState("");
   useEffect(()=>{
     const targetId=focusedRequestId?`attention-departure-request-${focusedRequestId}`:focusedSwapId?`attention-duty-swap-${focusedSwapId}`:focusedPlanId?`attention-departure-plan-${focusedPlanId}`:null;
@@ -48,7 +50,7 @@ export default function PrincipalDeparturePage(){
     });
     return()=>window.cancelAnimationFrame(frame);
   },[focusedRequestId,focusedSwapId,focusedPlanId,query.data?.requests.length,query.data?.swaps.length,query.data?.plans.length]);
-  const run=useMutation({mutationFn:async(fn:()=>Promise<unknown>)=>fn(),onSuccess:async()=>{setPanel(null);setError("");await client.invalidateQueries({queryKey:["departure"]});},onError:cause=>{setError(cause instanceof Error?cause.message:"The change could not be saved.");void client.invalidateQueries({queryKey:["departure"]});}});
+  const run=useMutation({mutationFn:async(fn:()=>Promise<unknown>)=>fn(),onSuccess:async()=>{setPanel(null);setError("");await Promise.all([client.invalidateQueries({queryKey:["departure"]}),client.invalidateQueries({queryKey:["attention"]}),client.invalidateQueries({queryKey:["requests"]})]);},onError:cause=>{setError(cause instanceof Error?cause.message:"The change could not be saved.");void client.invalidateQueries({queryKey:["departure"]});}});
   if(!schoolId)return <LiveRouteError error={new Error("Institution administrator access is required.")} onRetry={auth.refresh}/>; if(query.isPending)return <ScreenLoading/>; if(query.error||!query.data)return <LiveRouteError error={query.error??new Error("Departure operations are unavailable.")} onRetry={query.refetch}/>;
   const data=query.data; const activeTrips=data.trips.filter(item=>["boarding","in_progress"].includes(item.state));
   const focusedPlan=focusedPlanId?data.plans.find(item=>item.id===focusedPlanId):undefined;
@@ -68,6 +70,7 @@ export default function PrincipalDeparturePage(){
     {exactSwapAttention?<AttentionOpenAcknowledgement/>:null}
     {staleSwapAttention?<AttentionTargetUnavailable message="This duty change changed after the alert was created. It was not marked as opened."/>:null}
     <div className="departure-page departure-page--ops">
+    {!section&&!panel?<TransportAttention/>:null}
     {tripTargetWrongSection?<section className="departure-attention-state" role="alert"><strong>Transport duty unavailable</strong><p>This link no longer points to the duty-planning view. Open the current bus roster below.</p><Link to={pageLink("roster")}>Open bus rosters</Link></section>:null}
     {planTargetUnavailable?<section className="departure-attention-state" role="alert"><strong>Departure plan unavailable</strong><p>This plan no longer matches the linked learner and date, or it is no longer current.</p><Link to={pageLink("pickup")}>Open current handovers</Link></section>:null}
     {requestTargetUnavailable?<section className="departure-attention-state" role="alert"><strong>Departure request unavailable</strong><p>This request is no longer awaiting a school decision, or the link does not match this review queue.</p><Link to={pageLink("requests")}>Open current requests</Link></section>:null}
@@ -80,7 +83,7 @@ export default function PrincipalDeparturePage(){
     {section?.id==="roster"&&!panel&&!tripTargetWrongSection?<TransportDutyPlanner schoolId={schoolId} data={data} focusSwapId={focusedSwapId} focusTripId={focusedTripId}/>:null}
 
     {section?.id==="settings"&&!panel?<section className="departure-panel"><div className="departure-action-grid">
-      <button onClick={()=>setPanel("policy")}><ShieldCheck/><span><strong>Departure policy</strong><small>Modes, cutoff and privacy</small></span><ChevronRight/></button>
+      <Link to={`/principal/administration?school=${schoolId}&section=rules&rule=departure`}><ShieldCheck/><span><strong>Operating rules</strong><small>Modes, cutoff and privacy</small></span><ChevronRight/></Link>
       <button onClick={()=>setPanel("route")}><Route/><span><strong>New route</strong><small>Stops and vehicle</small></span><ChevronRight/></button>
       <button onClick={()=>setPanel("assign")} disabled={!data.routes.length}><UserRoundCheck/><span><strong>Assign learner</strong><small>Route and stop</small></span><ChevronRight/></button>
       <button onClick={()=>setPanel("trip")} disabled={!data.routes.length}><Bus/><span><strong>Create trip</strong><small>Freeze dated roster</small></span><ChevronRight/></button>
@@ -89,8 +92,8 @@ export default function PrincipalDeparturePage(){
       <button onClick={()=>setPanel("office")}><Clock3/><span><strong>Record assisted request</strong><small>Phone, paper or in person</small></span><ChevronRight/></button>
     </div></section>:null}
 
-    {panel?<section className="departure-panel departure-editor"><header><div><span>Setup</span><h2>{panel==="policy"?"Departure policy":panel==="route"?"Create transport route":panel==="assign"?"Assign learner to route":panel==="trip"?"Create dated trip":panel==="authority"?"Verify collection authority":panel==="office"?"Record assisted request":"Set dated departure plan"}</h2></div><button onClick={()=>setPanel(null)} aria-label="Close">×</button></header>
-      {panel==="policy"?<PolicyForm data={data} submit={payload=>run.mutate(()=>saveDeparturePolicy(schoolId,payload))}/>:null}
+    {panel?<section className="departure-panel departure-editor"><header><div><span>Setup</span><h2>{panel==="policy"?"Departure operating rules":panel==="route"?"Create transport route":panel==="assign"?"Assign learner to route":panel==="trip"?"Create dated trip":panel==="authority"?"Verify collection authority":panel==="office"?"Record assisted request":"Set dated departure plan"}</h2></div><button onClick={()=>setPanel(null)} aria-label="Close">×</button></header>
+      {panel==="policy"?<Link className="departure-primary" to={`/principal/administration?school=${schoolId}&section=rules&rule=departure`}>Open departure operating rules</Link>:null}
       {panel==="route"?<form className="departure-form" onSubmit={submitRoute}><label>Route code<input name="code" required maxLength={32}/></label><label>Route name<input name="name" required maxLength={120}/></label><label>Direction<select name="direction"><option value="from_institution">From institution</option><option value="to_institution">To institution</option></select></label><label>Service<select name="service_kind"><option value="institution_managed">Institution managed</option><option value="contracted">Contracted</option></select></label><label>Vehicle<input name="vehicle_label" placeholder="Bus 14 · DL 01 AB 1234"/></label><label>Provider<input name="provider_name" placeholder="School or contractor"/></label><label className="departure-span">Stops, one per line<textarea name="stops" required minLength={2} rows={5}/></label><button className="departure-primary" disabled={run.isPending}>Create route</button></form>:null}
       {panel==="assign"?<TransportAssignmentForm data={data} pending={run.isPending} onSubmit={payload=>run.mutate(()=>assignTransportStudent(schoolId,payload))}/>:null}
       {panel==="trip"?<form className="departure-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run.mutate(()=>createTransportTrip(schoolId,{route_id:value(f,"route_id"),service_date:value(f,"service_date"),direction:value(f,"direction"),scheduled_departure_time:value(f,"departure_time"),assigned_collector_user_id:value(f,"collector"),backup_collector_user_id:value(f,"backup")||null}));}}><label>Route<select name="route_id">{data.routes.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Date<input name="service_date" type="date" defaultValue={today()} required/></label><label>Direction<select name="direction"><option value="from_institution">From institution</option><option value="to_institution">To institution</option></select></label><label>Departure time<input name="departure_time" type="time" defaultValue="15:30" required/></label><label>Assigned collector<select name="collector">{data.collectors.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Backup collector<select name="backup"><option value="">No backup</option>{data.collectors.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><button className="departure-primary">Create trip and roster</button></form>:null}
@@ -110,16 +113,6 @@ export default function PrincipalDeparturePage(){
   </div></OperationsShell>;
 }
 
-function PolicyForm({data,submit}:{data:Awaited<ReturnType<typeof getDepartureWorkspace>>;submit:(payload:Record<string,unknown>)=>void}){
-  return <form className="departure-form" onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);submit({expected_revision:data.policy.revision,enabled:form.get("enabled")==="on",enabled_modes:form.getAll("modes"),change_cutoff:value(form,"cutoff"),location_retention_hours:Number(value(form,"retention")),location_stale_seconds:Number(value(form,"stale"))});}}>
-    <label className="departure-check"><input name="enabled" type="checkbox" defaultChecked={data.policy.enabled}/> Enable controlled departure</label>
-    <fieldset className="departure-mode-options departure-span"><legend>Allowed arrangements</legend>{(["guardian_pickup","authorized_collector","independent_departure","school_transport","external_transport"] as DepartureMode[]).map(item=><label key={item}><input type="checkbox" name="modes" value={item} defaultChecked={data.policy.enabled_modes.includes(item)}/>{modeLabel(item)}</label>)}</fieldset>
-    <label>Same-day cutoff<input name="cutoff" type="time" defaultValue={data.policy.change_cutoff.slice(0,5)} required/></label>
-    <label>Location retention (hours)<input name="retention" type="number" min={1} max={168} defaultValue={data.policy.location_retention_hours} required/></label>
-    <label>Stale after (seconds)<input name="stale" type="number" min={30} max={600} defaultValue={data.policy.location_stale_seconds} required/></label>
-    <button className="departure-primary">Save policy</button>
-  </form>;
-}
 
 function OfficeRequestForm({data,submit}:{data:Awaited<ReturnType<typeof getDepartureWorkspace>>;submit:(payload:Record<string,unknown>)=>void}){
   const initialMode=data.policy.enabled_modes.find(item=>item!=="school_transport")??"guardian_pickup";const [student,setStudent]=useState(data.students[0]?.id??"");const [mode,setMode]=useState<DepartureMode>(initialMode);const guardians=data.guardian_links.filter(item=>item.student_id===student);const authorities=data.authorities.filter(item=>item.student_id===student);

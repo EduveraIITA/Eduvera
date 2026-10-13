@@ -6,8 +6,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { eventDetailHref, eventListHref } from "./eventNavigation";
 import type {
   CampusEventDto,
   CampusEventInput,
@@ -117,10 +118,14 @@ export function ClassTestEditorPage({
   event?: CampusEventDto;
   onSave: (input: CampusEventInput) => Promise<void>;
 }) {
+  const [params] = useSearchParams();
   const [input, setInput] = useState(() => initialTest(event));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const prefix = portal === "teacher" ? "/teacher" : "/principal";
+  const backHref = event
+    ? eventDetailHref(prefix, event.id, params)
+    : eventListHref(prefix, params);
   const classId = input.audience.class_section_ids[0] ?? "";
   const subjects = useMemo(
     () =>
@@ -183,7 +188,7 @@ export function ClassTestEditorPage({
       active="events"
       title={event ? "Edit class test" : "Schedule class test"}
       subtitle="Events & activities"
-      backTo={`${prefix}/events${event ? `/${event.id}` : ""}`}
+      backTo={backHref}
       contentHasHeading
     >
       <form
@@ -448,7 +453,7 @@ export function ClassTestEditorPage({
           register.
         </p>
         <footer className="campus-event-editor__footer">
-          <Link to={`${prefix}/events${event ? `/${event.id}` : ""}`}>
+          <Link to={backHref} replace>
             Cancel
           </Link>
           <button

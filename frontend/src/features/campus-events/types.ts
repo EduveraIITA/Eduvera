@@ -209,6 +209,7 @@ export interface EventRegisterRow {
 }
 
 export interface EventRegisterResponse {
+  observation_policy?: { observation_hours_before: number; observation_hours_after: number; revision: number };
   event: { id: string; title: string; status: CampusEventStatus };
   session: Pick<CampusEventSession, "id" | "title" | "session_type" | "starts_at" | "ends_at" | "attendance_mode" | "state" | "revision">;
   counts: EventAttendanceCounts & { participants: number };

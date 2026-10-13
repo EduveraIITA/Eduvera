@@ -242,6 +242,7 @@
 .roll-call-note-toggle { grid-column: 3; grid-row: 1; display: grid; width: 36px; height: 44px; place-items: center; border-radius: var(--edura-radius-control); background: transparent; color: var(--edura-ink-muted); }
 .roll-call-note-toggle:hover, .roll-call-note-toggle.has-note, .roll-call-note-toggle[aria-expanded="true"] { background: var(--edura-surface-soft); color: var(--edura-brand); }
 .roll-call-choices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; grid-column: 2; grid-row: 1; }
+.roll-call-choices.has-2 { grid-template-columns: 1fr 1fr; }
 .roll-call-page .roll-call-choice, .roll-call-other {
   display: flex;
   min-width: 0;
@@ -261,18 +262,22 @@
 .roll-call-choice svg { flex-shrink: 0; }
 .roll-call-choice:hover { background: var(--edura-surface-soft); border-color: var(--edura-brand-bright); }
 .roll-call-choice.is-present[aria-pressed="true"] { color: var(--edura-positive); border-color: var(--edura-positive); background: var(--edura-positive-soft); }
+.roll-call-choice.is-positive[aria-pressed="true"] { color: var(--edura-positive); border-color: var(--edura-positive); background: var(--edura-positive-soft); }
 .roll-call-choice.is-absent[aria-pressed="true"] { color: var(--edura-danger); border-color: var(--edura-danger); background: var(--edura-danger-soft); }
+.roll-call-choice.is-negative[aria-pressed="true"] { color: var(--edura-danger); border-color: var(--edura-danger); background: var(--edura-danger-soft); }
 .roll-call-other { position: relative; }
 .roll-call-other > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .roll-call-other select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .roll-call-other:focus-within { outline: 2px solid var(--edura-brand-bright); outline-offset: 2px; }
 .roll-call-other.is-selected { color: var(--edura-warning); border-color: var(--edura-warning); background: var(--edura-warning-soft); }
+.roll-call-other.is-not_recorded { color: var(--edura-ink-muted); border-color: var(--edura-border); background: var(--edura-surface-soft); }
 .roll-call-other.is-excused { color: var(--edura-positive); border-color: var(--edura-positive); background: var(--edura-positive-soft); }
 .roll-call-page button:disabled, .roll-call-other.is-disabled { opacity: 0.5; cursor: not-allowed; }
 .roll-call-conflict { display: block; color: var(--edura-warning); margin-top: 4px; }
 .roll-call-note { display: grid; grid-column: 1 / -1; gap: 6px; padding-top: 12px; border-top: 1px solid var(--edura-border); }
 .roll-call-note > span { color: var(--edura-ink-muted); font-size: 11px; font-weight: 600; }
 .roll-call-note input { min-width: 0; width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-ink); font-size: 13px; }
+.roll-call-student__details { display: grid; grid-column: 1 / -1; gap: 10px; padding-top: 12px; border-top: 1px solid var(--edura-border); }
 .roll-call-empty { display: grid; justify-items: center; gap: 8px; padding: 40px 16px; color: var(--edura-ink-muted); text-align: center; }
 .roll-call-empty h3 { margin: 4px 0 0; font-size: 16px; color: var(--edura-ink); }
 .roll-call-empty p { font-size: 13px; }
