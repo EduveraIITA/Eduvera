@@ -49,6 +49,19 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
   beforeAll(()=>{db=new DatabaseService();service=new DepartureCoordinationService(db,new SchoolEventService(db));});
   afterAll(async()=>{await db?.destroy();await pool.end();});
 
+  it("loads exact plan and trip targets outside the default operations window",async()=>{
+    const f=await fixture("to_institution");
+    const plan=await service.createPlan(f.admin,f.school,{student_id:f.learnerIds[0],service_date:f.day,mode:"external_transport",external_arrangement:"Family-arranged taxi"});
+    await pool.query("UPDATE departure_plans SET service_date=current_date-30,state='exception' WHERE id=$1",[plan.id]);
+    await pool.query("UPDATE transport_trips SET service_date=current_date+120 WHERE id=$1",[f.trip.id]);
+    const ordinary=await service.workspace(f.admin,f.school);
+    expect(ordinary.plans.some((item:{id:string})=>item.id===plan.id)).toBe(false);
+    expect(ordinary.trips.some((item:{id:string})=>item.id===f.trip.id)).toBe(false);
+    const focused=await service.workspace(f.admin,f.school,plan.id,f.trip.id);
+    expect(focused.plans).toContainEqual(expect.objectContaining({id:plan.id,state:"exception"}));
+    expect(focused.trips).toContainEqual(expect.objectContaining({id:f.trip.id}));
+  });
+
   it.each(["to_institution","from_institution"] as const)("operates a 40-rider %s bus across eight geotagged stops",async direction=>{
     const f=await fixture(direction,40,8);const boarding=await open(f);
     const workspace=await service.collectorWorkspace(f.collector);const trip=workspace.trips.find(t=>t.id===f.trip.id)!;
@@ -160,6 +173,28 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     await expect(service.family(f.parent,f.learnerIds[0])).rejects.toThrow(/linked/);
   });
 
+  it.each([
+    ["from_institution", "departure_plan_exception", "transport_trip_cancellation"],
+    ["to_institution", "transport_trip_cancellation", "departure_plan_exception"],
+  ] as const)("emits one canonical family attention source when a %s journey is cancelled",async(direction,expectedKind,excludedKind)=>{
+    const f=await fixture(direction);
+    await departureIn(f.trip.id,0);
+    const accepted=await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
+    await service.tripAction(f.collector,f.trip.id,"cancel",{expected_revision:accepted.revision,note:"Vehicle unavailable"});
+    const rows=(await pool.query<{kind:string;student_id:string}>(`
+      SELECT notification_payload->>'attention_source_kind' kind,
+        notification_payload->>'attention_student_id' student_id
+      FROM event_outbox
+      WHERE school_id=$1
+        AND notification_payload->>'attention_source_kind' IN (
+          'transport_trip_cancellation','departure_plan_exception'
+        )
+    `,[f.school])).rows;
+    expect(rows.filter(row=>row.kind===expectedKind)).toHaveLength(f.learnerIds.length);
+    expect(rows.filter(row=>row.kind===excludedKind)).toHaveLength(0);
+    expect(new Set(rows.map(row=>row.student_id))).toEqual(new Set(f.learnerIds));
+  });
+
   it("serializes racing rider updates and keeps events for different riders at the same revision",async()=>{
     const f=await fixture();await open(f);
     const outcomes=await Promise.allSettled([service.recordRider(f.collector,f.trip.id,f.learnerIds[0]!,rider("boarded")),service.recordRider(f.collector,f.trip.id,f.learnerIds[0]!,rider("not_riding"))]);
@@ -197,6 +232,19 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     const trip=await service.createTrip(f.admin,f.school,{route_id:f.route.id,service_date:future,direction:"from_institution",assigned_collector_user_id:f.collector.id,scheduled_departure_time:"15:30"});
     await service.tripAction(f.collector,trip.id,"accept",{expected_revision:1});
     await expect(service.tripAction(f.collector,trip.id,"boarding",{expected_revision:2})).rejects.toThrow(/service date/);
+  });
+
+  it("loads an exact live duty request older than the ordinary 30-day inbox window",async()=>{
+    const f=await fixture();const backup=await actor("staff");
+    await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff')",[f.school,backup.id]);
+    await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
+    await departureIn(f.trip.id,60);
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:backup.id,reason:"Long-planned colleague cover"});
+    await pool.query("UPDATE transport_duty_swap_requests SET created_at=now()-interval '31 days' WHERE id=$1",[request.id]);
+
+    expect((await service.collectorWorkspace(backup)).swaps.some(swap=>swap.id===request.id)).toBe(false);
+    const focused=await service.collectorWorkspace(backup,request.id);
+    expect(focused.swaps).toContainEqual(expect.objectContaining({id:request.id,status:"submitted",self_service_open:true}));
   });
 
   it("opens controls only in the 30-minute window and closes self-service duty changes",async()=>{

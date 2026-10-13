@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, LoaderCircle } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -15,6 +15,7 @@ interface SchoolNotification {
   body: string;
   link: string;
   metadata?: Record<string, unknown>;
+  attention_eligible: boolean;
   read_at: string | null;
   created_at: string;
 }
@@ -72,9 +73,15 @@ export function NotificationCenter({
     params.delete("notifications");
     void navigate({ pathname: location.pathname, search: params.toString(), hash: location.hash }, { replace: true });
   }, [location.hash, location.pathname, location.search, navigate]);
-  const query = useQuery({
+  const query = useInfiniteQuery({
     queryKey: notificationsQueryKey,
-    queryFn: () => apiFetch<NotificationPage>("/api/v1/notifications/"),
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: "50" });
+      if (pageParam) params.set("cursor", pageParam);
+      return apiFetch<NotificationPage>(`/api/v1/notifications/?${params}`);
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: auth?.status === "authenticated",
     staleTime: 20_000,
   });
@@ -84,17 +91,21 @@ export function NotificationCenter({
         method: "POST",
       }),
     onSuccess: (_result, id) => {
-      queryClient.setQueryData<NotificationPage>(notificationsQueryKey, (current) => {
+      queryClient.setQueryData<InfiniteData<NotificationPage, string | undefined>>(notificationsQueryKey, (current) => {
         if (!current) return current;
-        const wasUnread = current.results.some((item) => item.id === id && !item.read_at);
+        const wasUnread = current.pages.some((page) => page.results.some((item) => item.id === id && !item.read_at));
         return {
           ...current,
-          unread_count: Math.max(0, current.unread_count - (wasUnread ? 1 : 0)),
-          results: current.results.map((item) =>
-            item.id === id ? { ...item, read_at: new Date().toISOString() } : item,
-          ),
+          pages: current.pages.map((page) => ({
+            ...page,
+            unread_count: Math.max(0, page.unread_count - (wasUnread ? 1 : 0)),
+            results: page.results.map((item) =>
+              item.id === id ? { ...item, read_at: new Date().toISOString() } : item,
+            ),
+          })),
         };
       });
+      void queryClient.invalidateQueries({ queryKey: ["attention"] });
     },
   });
 
@@ -114,21 +125,28 @@ export function NotificationCenter({
     };
   }, [open, setOpen]);
 
-  const items = query.data?.results ?? [];
-  const unreadCount = query.data?.unread_count ?? fallbackUnreadCount ?? 0;
+  const items = query.data?.pages.flatMap((page) => page.results) ?? [];
+  const unreadCount = query.data?.pages[0]?.unread_count ?? fallbackUnreadCount ?? 0;
 
   async function openNotification(item: SchoolNotification) {
-    if (!item.read_at) await readMutation.mutateAsync(item.id);
-    setOpen(false);
     if (item.link.startsWith("/") && !item.link.startsWith("//")) {
       const studentId = item.metadata?.student_id;
       const destination = new URL(item.link, window.location.origin);
       if (
         typeof studentId === "string" &&
+        !destination.searchParams.has("student_id") &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studentId)
       ) {
         destination.searchParams.set("student_id", studentId);
       }
+      if (item.attention_eligible) {
+        // Typed informational attention is acknowledged by the destination
+        // screen only after that screen has mounted successfully.
+        destination.searchParams.set("attention_notification_id", item.id);
+      } else if (!item.read_at) {
+        await readMutation.mutateAsync(item.id);
+      }
+      setOpen(false);
       void navigate(`${destination.pathname}${destination.search}${destination.hash}`);
     }
   }
@@ -171,7 +189,7 @@ export function NotificationCenter({
               {items.map((item) => (
                 <button
                   key={item.id}
-                  className={item.read_at ? "is-read" : "is-unread"}
+                  className={`notification-panel__item ${item.read_at ? "is-read" : "is-unread"}`}
                   type="button"
                   disabled={readMutation.isPending && readMutation.variables === item.id}
                   onClick={() => void openNotification(item)}
@@ -181,6 +199,18 @@ export function NotificationCenter({
                   {!item.read_at ? <i aria-label="Unread" /> : null}
                 </button>
               ))}
+              {query.hasNextPage ? (
+                <button
+                  className={`notification-panel__more${query.isFetchNextPageError ? " notification-panel__more--error" : ""}`}
+                  type="button"
+                  disabled={query.isFetchingNextPage}
+                  onClick={() => void query.fetchNextPage()}
+                >
+                  {query.isFetchingNextPage ? <LoaderCircle className="notification-spin" size={15} /> : null}
+                  {query.isFetchingNextPage ? "Loading earlier updates…"
+                    : query.isFetchNextPageError ? "Try loading earlier updates again" : "Earlier updates"}
+                </button>
+              ) : null}
             </div>
           )}
         </section>

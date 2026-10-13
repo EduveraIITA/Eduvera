@@ -37,6 +37,14 @@
 .schedule-settings__allocations summary { min-height:44px; cursor:pointer; font-weight:600; }
 .schedule-settings__allocations>div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem 0; font-size:.85rem; }
 .schedule-settings__publish { padding:1rem; display:grid; gap:.75rem; }
+.schedule-settings__publish.is-attention-target,.schedule-settings__row.is-attention-target,.schedule-settings__pattern .timetable-builder__periods > li.is-attention-target,.schedule-settings__attention-period.is-attention-target { outline:3px solid color-mix(in srgb,var(--edura-brand) 24%,transparent); outline-offset:2px; scroll-margin-block:96px; }
+.schedule-settings__pattern .timetable-builder__periods > li.is-attention-target:focus,.schedule-settings__attention-period.is-attention-target:focus { outline-color:var(--edura-brand); }
+.schedule-settings__attention-period { display:flex; align-items:center; gap:.75rem; padding:1rem; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); background:var(--edura-surface); }
+.schedule-settings__attention-period > span { display:grid; place-items:center; width:2.25rem; height:2.25rem; flex:none; border-radius:var(--edura-radius-control); color:var(--edura-brand); background:var(--edura-brand-soft); font-weight:800; }
+.schedule-settings__attention-period > div { min-width:0; display:grid; gap:.25rem; }
+.schedule-settings__attention-period small { margin:0; }
+.schedule-settings__attention-state { padding:1rem; border:1px solid color-mix(in srgb,var(--edura-warning) 28%,var(--edura-border)); border-radius:var(--edura-radius-control); background:var(--edura-warning-soft); }
+.schedule-settings__attention-state p { margin:.35rem 0 0; color:var(--edura-ink-secondary); line-height:1.5; }
 .schedule-settings__publish p { margin:0; }
 .schedule-settings__error { color:var(--edura-danger); }
 .schedule-settings__daily { display:flex; align-items:center; gap:.5rem; color:var(--edura-brand); font-size:.9rem; }

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -13,15 +13,29 @@ const options: RoleOptions = { contexts: [], permissions: [{ code: "assessments.
 function assignment(overrides: Partial<RoleAssignment> = {}): RoleAssignment {
   return { source_id: "exam-1", source_kind: "assessment_assignment", staff_profile_id: "kavita", user_id: "kavita-user", role_id: examiner.id, role_name: examiner.name, context_kind: "assessment", scope_id: "exam-1", scope_label: "English annual examination", subject_name: null, permissions: examiner.permissions, starts_on: "2026-10-07", ends_on: null, status: "active", display_status: "active", revision: 1, ...overrides };
 }
-function setup(assignments: RoleAssignment[], roles = [examiner, teacher, attendant, reviewer], canAssign = true) {
+function setup(assignments: RoleAssignment[], roles = [examiner, teacher, attendant, reviewer], canAssign = true, focusAssignmentId?: string) {
   const onAssign = vi.fn();
   const onManage = vi.fn();
-  const view = render(<MemoryRouter><StaffAssignmentOverview assignments={assignments} roles={roles} options={options} canAssign={canAssign} onAssign={onAssign} onManage={onManage}/></MemoryRouter>);
+  const view = render(<MemoryRouter><StaffAssignmentOverview assignments={assignments} roles={roles} options={options} canAssign={canAssign} onAssign={onAssign} onManage={onManage} focusAssignmentId={focusAssignmentId}/></MemoryRouter>);
   return { ...view, onAssign, onManage, user: userEvent.setup() };
 }
 afterEach(cleanup);
 
 describe("staff assignment overview", () => {
+  it("opens and focuses the exact assignment from a staff attention link", async () => {
+    setup([assignment()], [examiner], true, "exam-1");
+    const target=document.getElementById("attention-staff-assignment-exam-1");
+    expect(target).toHaveClass("is-attention-target");
+    expect(screen.getByText("English annual examination")).toBeVisible();
+    await waitFor(()=>expect(target).toHaveFocus());
+  });
+
+  it("shows a truthful state when the linked assignment is unavailable", () => {
+    setup([assignment()], [examiner], true, "missing-assignment");
+    expect(screen.getByRole("alert")).toHaveTextContent("Assignment unavailable");
+    expect(document.querySelector(".staff-assignment-scope.is-attention-target")).not.toBeInTheDocument();
+  });
+
   it("collapses repeated assignments into one role and prioritises class roles", async () => {
     const exams = Array.from({ length: 12 }, (_, i) => assignment({ source_id: `exam-${i}`, scope_id: `exam-${i}`, scope_label: `English class test ${i + 1}` }));
     const { container, user } = setup([...exams, assignment({ role_id: teacher.id, role_name: teacher.name, permissions: teacher.permissions, context_kind: "class", scope_label: "Class 7A", source_kind: "class_assignment", source_id: "class-7a" })]);

@@ -1,12 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { submitFeedback, type Campaign, type Rating } from './api';
 import { RatingSelector } from './RatingSelector';
 export { ratingLabels } from './RatingSelector';
-export function RespondFeedback({school,campaign,onSubmitted}:{school:string;campaign:Campaign;onSubmitted:()=>Promise<void>}) {
+export function RespondFeedback({school,campaign,onSubmitted,focused=false}:{school:string;campaign:Campaign;onSubmitted:()=>Promise<void>;focused?:boolean}) {
   const [ratings,setRatings]=useState<Record<string,Rating>>({});const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [sent,setSent]=useState(false);
+  const cardRef=useRef<HTMLElement>(null);
+  useEffect(()=>{if(!focused)return;const frame=window.requestAnimationFrame(()=>{cardRef.current?.scrollIntoView?.({behavior:'smooth',block:'center'});cardRef.current?.focus({preventScroll:true});});return()=>window.cancelAnimationFrame(frame);},[focused]);
   async function submit(event:FormEvent){event.preventDefault();if(busy)return;setBusy(true);setError('');try{await submitFeedback(school,campaign.id,ratings);setSent(true);await onSubmitted();}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}}
-  if(campaign.submitted||sent)return <section className="teacher-feedback__card" role="status"><h2>Thank you for your feedback</h2><p>{campaign.teacher_name} · {campaign.title}</p><p>Your response has been recorded.</p></section>;
-  return <form className="teacher-feedback__card teacher-feedback__form" onSubmit={event=>void submit(event)}>
+  if(campaign.submitted||sent)return <section ref={cardRef} id={`attention-${campaign.id}`} tabIndex={-1} className={`teacher-feedback__card${focused?' attention-focus':''}`} role="status"><h2>Thank you for your feedback</h2><p>{campaign.teacher_name} · {campaign.title}</p><p>Your response has been recorded.</p></section>;
+  return <form ref={cardRef as RefObject<HTMLFormElement>} id={`attention-${campaign.id}`} tabIndex={-1} className={`teacher-feedback__card teacher-feedback__form${focused?' attention-focus':''}`} onSubmit={event=>void submit(event)}>
     <h2>{campaign.teacher_name}</h2><p>{campaign.title} · Class {campaign.class_name}</p>
     <p>Low: needs improvement · Okay: meets expectations · High: doing well. Choose Not sure if you have not observed something.</p>
     {campaign.parameters.map((parameter,index)=><fieldset key={parameter}><legend>{parameter}</legend><RatingSelector name={`${campaign.id}-${index}`} value={ratings[parameter]} disabled={busy} onChange={rating=>setRatings(old=>{const next={...old};if(rating)next[parameter]=rating;else delete next[parameter];return next;})}/></fieldset>)}

@@ -5,6 +5,7 @@ import { AcademicReportsService } from "../src/academic-reports/academic-reports
 import { AssessmentsService } from "../src/assessments/assessments.service.js";
 import type { AuthUser } from "../src/common/request.js";
 import { DatabaseService } from "../src/database/database.service.js";
+import { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
@@ -30,8 +31,9 @@ suite("configurable grading and immutable report cards", () => {
 
   beforeAll(async () => {
     database = new DatabaseService();
-    reports = new AcademicReportsService(database);
-    assessments = new AssessmentsService(database);
+    const schoolEvents = new SchoolEventService(database);
+    reports = new AcademicReportsService(database, schoolEvents);
+    assessments = new AssessmentsService(database, schoolEvents);
     const suffix = randomUUID();
     await pool.query(`INSERT INTO institution_capability_packs(code,label,description,institution_kinds,cohort_label,learner_label,default_subject_names,requires_staff)
       VALUES('india_school_core','Indian school core','Test capability pack',ARRAY['school'],'Class','Student',ARRAY['English'],true) ON CONFLICT DO NOTHING`);
@@ -61,6 +63,11 @@ suite("configurable grading and immutable report cards", () => {
     termId = (await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on) VALUES($1,'2032-33','Term 1','2032-04-01','2032-09-30') RETURNING id", [schoolId])).rows[0].id;
     classId = (await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2032-33','8','A') RETURNING id", [schoolId])).rows[0].id;
     subjectId = (await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'ENG','English','English') RETURNING id", [schoolId])).rows[0].id;
+    const commenterProfile = (await pool.query(`INSERT INTO staff_profiles(school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by)
+      VALUES($1,$2,$3,'Examiner','One',$4,'teaching','Class teacher','full_time',current_date,'active',$5,$5) RETURNING id`, [schoolId, examiner.id, `REPORT-${suffix.slice(0, 8)}`, examiner.email, admin.id])).rows[0].id;
+    const classTeacherType = (await pool.query("SELECT id FROM staff_responsibility_types WHERE school_id=$1 AND code='class_teacher'", [schoolId])).rows[0].id;
+    await pool.query(`INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,class_section_id,starts_on,status,assigned_by)
+      VALUES($1,$2,$3,$4,current_date,'active',$5)`, [schoolId, classTeacherType, commenterProfile, classId, admin.id]);
     const person = (await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Learner','One') RETURNING id", [schoolId])).rows[0];
     studentId = (await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,'R-001') RETURNING id", [schoolId, person.id])).rows[0].id;
     await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,'2032-04-01')", [studentId, classId, termId]);
@@ -73,6 +80,7 @@ suite("configurable grading and immutable report cards", () => {
   afterAll(async () => {
     if (schoolId) {
       await pool.query("DELETE FROM notifications WHERE recipient_id=ANY($1::uuid[])", [createdUsers]);
+      await pool.query("DELETE FROM event_outbox WHERE school_id=$1", [schoolId]);
       for (const table of [
         "grading_report_assessment_sources", "grading_report_components", "grading_report_subjects", "grading_report_students", "grading_report_audits", "grading_report_batches",
         "grading_component_assessments", "grading_components", "grading_scheme_subjects", "grading_scheme_bands", "grading_schemes",
@@ -84,6 +92,8 @@ suite("configurable grading and immutable report cards", () => {
       await pool.query("DELETE FROM students WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM parents WHERE user_id=ANY($1::uuid[])", [createdUsers]);
       await pool.query("DELETE FROM school_people WHERE school_id=$1", [schoolId]);
+      await pool.query("DELETE FROM staff_responsibility_assignments WHERE school_id=$1", [schoolId]);
+      await pool.query("DELETE FROM staff_profiles WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM school_custom_roles WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM school_memberships WHERE school_id=$1", [schoolId]);
@@ -135,5 +145,19 @@ suite("configurable grading and immutable report cards", () => {
     expect(family.reports[0]).toMatchObject({ sequence: 2, overall_percentage: "90.00", overall_grade: "P" });
     const releases = await pool.query("SELECT sequence,status FROM grading_report_batches WHERE scheme_id=$1 ORDER BY sequence", [scheme.id]);
     expect(releases.rows).toEqual([{ sequence: 1, status: "published" }, { sequence: 2, status: "published" }]);
+    const events = await pool.query<{ event_type: string; audience_user_ids: string[]; payload: { action: string; status: string; revision: number } }>("SELECT event_type,audience_user_ids,payload FROM event_outbox WHERE aggregate_type='grading_report_batch' AND aggregate_id IN(SELECT id FROM grading_report_batches WHERE scheme_id=$1) ORDER BY sequence", [scheme.id]);
+    expect(events.rows.map((row) => row.event_type)).toEqual(Array(6).fill("academic_report.updated"));
+    expect(events.rows.map((row) => row.payload.action)).toEqual(["generated", "review", "publish", "generated", "review", "publish"]);
+    expect(events.rows[0]!.audience_user_ids).toEqual(expect.arrayContaining([admin.id, reviewer.id, examiner.id]));
+    expect(events.rows[0]!.audience_user_ids).not.toContain(guardian.id);
+    expect(events.rows[2]!.audience_user_ids).toEqual(expect.arrayContaining([admin.id, reviewer.id, examiner.id, guardian.id]));
+    const runtimeAuthorization = await pool.query<{ admin_on_generate: boolean; commenter_on_generate: boolean; guardian_on_generate: boolean; guardian_on_publish: boolean }>(`SELECT
+      event_user_is_authorized($1,'academic_report.updated',$2::jsonb,$3) AS admin_on_generate,
+      event_user_is_authorized($1,'academic_report.updated',$2::jsonb,$4) AS commenter_on_generate,
+      event_user_is_authorized($1,'academic_report.updated',$2::jsonb,$5) AS guardian_on_generate,
+      event_user_is_authorized($1,'academic_report.updated',$6::jsonb,$5) AS guardian_on_publish`, [
+      schoolId, JSON.stringify(events.rows[0]!.payload), admin.id, examiner.id, guardian.id, JSON.stringify(events.rows[2]!.payload),
+    ]);
+    expect(runtimeAuthorization.rows[0]).toEqual({ admin_on_generate: true, commenter_on_generate: true, guardian_on_generate: false, guardian_on_publish: true });
   });
 });

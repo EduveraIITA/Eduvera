@@ -33,6 +33,19 @@ describe("school event cross-tab channel", () => {
     expect(decodeSchoolEventChannelMessage(eventMessage())).toEqual(eventMessage());
   });
 
+  it("relays an authorized domain event from the leader tab", () => {
+    const message = eventMessage({
+      eventType: "governance.policy.published",
+      envelope: {
+        id: "policy-event-1",
+        type: "governance.policy.published",
+        created_at: "2026-10-13T08:00:00.000Z",
+        payload: {},
+      },
+    });
+    expect(decodeSchoolEventChannelMessage(message)).toEqual(message);
+  });
+
   it.each([
     eventMessage({ version: 2 }),
     eventMessage({ eventType: "school.secret.updated" }),

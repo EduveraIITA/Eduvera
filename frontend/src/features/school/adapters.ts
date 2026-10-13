@@ -379,11 +379,11 @@ function attendanceTrend(records: ApiAttendanceRecord[]) {
   ) * 10) / 10;
 }
 
-export function adaptParentAttendance(response: ParentAttendanceResponse): ParentAttendanceData {
+export function adaptParentAttendance(response: ParentAttendanceResponse, anchorDate = indiaDateToday()): ParentAttendanceData {
   const threshold = Number(response.term.threshold);
   const summary = response.summary;
   const todayIso = indiaDateToday();
-  const monthDate = parseLocalDate(todayIso);
+  const monthDate = parseLocalDate(anchorDate);
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();

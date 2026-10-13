@@ -3,6 +3,7 @@
 .teacher-feedback p{font-size:13px;line-height:1.65;color:var(--feedback-muted);margin:8px 0}.teacher-feedback [role=alert]{color:var(--edura-danger,#a32626)}
 .teacher-feedback__heading,.teacher-feedback__result-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.teacher-feedback__heading>div{flex:1}
 .teacher-feedback__card{padding:24px;background:var(--edura-surface,#fff);border:1px solid var(--edura-border,#e1e7ef);border-radius:var(--edura-radius-card,16px);min-width:0}
+.teacher-feedback__card.attention-focus{border-color:color-mix(in srgb,var(--edura-brand,#174bb8) 52%,var(--edura-border,#e1e7ef));box-shadow:0 0 0 3px color-mix(in srgb,var(--edura-brand,#174bb8) 10%,transparent);outline:none}
 .teacher-feedback button{font:inherit;font-size:13px;font-weight:700;min-height:44px;padding:10px 16px;border:1px solid var(--edura-border,#d7e0ed);border-radius:var(--edura-radius-control,10px);color:var(--edura-brand,#174bb8);background:var(--edura-surface,#fff);cursor:pointer}.teacher-feedback button.teacher-feedback__primary{background:var(--edura-brand,#174bb8);color:#fff;border-color:transparent}.teacher-feedback button:disabled{opacity:.55;cursor:default}
 .teacher-feedback :is(button,input,select):focus-visible{outline:3px solid var(--edura-brand,#174bb8);outline-offset:3px}
 .teacher-feedback__form{display:grid;gap:16px}.teacher-feedback__form>label,.teacher-feedback__grid>label,.teacher-feedback__custom>label{display:grid;gap:8px;font-size:13px;font-weight:700;min-width:0}

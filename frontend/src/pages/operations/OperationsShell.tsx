@@ -4,6 +4,8 @@ import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, Message
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useProFeatures } from "../../features/auth/useProFeatures";
+import { AttentionBadge, AttentionUnavailableBadge, attentionLabel, combineAttentionCounts } from "../../features/attention/AttentionBadge";
+import { useAttention } from "../../features/attention/useAttention";
 import { currentStaffMembership, hasStaffPermission } from "../../features/auth/staffAccess";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
@@ -50,6 +52,15 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
   const assistantEnabled = proFeatures.enabled;
   const assistantActive = assistantEnabled && chat.active;
   const assistantOpen = assistantEnabled && chat.open;
+  const attention = useAttention(portal);
+  const attentionForNavigation = (id: string) => id === "more" ? attention.data?.summary
+    : id === "attendance" ? combineAttentionCounts(attention.data?.modules.attendance, attention.data?.modules.registers)
+      : id === "timetable" ? combineAttentionCounts(attention.data?.modules.timetable, attention.data?.modules.weekly, attention.data?.modules.calendar)
+      : id === "chat" ? attention.data?.modules.messages
+        : id === "safeguarding" ? attention.data?.modules.safeguarding
+          : undefined;
+  const attentionOwnedNavigation = new Set(["more", "attendance", "timetable", "chat", "safeguarding"]);
+  const attentionUnavailableForNavigation = (id: string) => attention.isError && attentionOwnedNavigation.has(id);
   const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
   const navigation=nav[portal].filter(item=>{
     if(portal!=='teacher') return true;
@@ -68,7 +79,12 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           {navigation.map(({ id, label, path, icon: Icon }, index) => (
             <Fragment key={id}>
               {assistantEnabled && index === Math.min(2, navigation.length - 1) ? <AssistantTab chat={chat} sidebar /> : null}
-              <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : navigationActive === id ? "page" : undefined} className={!assistantActive && navigationActive === id ? "is-active" : ""}><Icon size={19} /><span>{portal === "principal" && id === "safeguarding" ? "Student concerns" : label}</span></NavLink>
+              <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : navigationActive === id ? "page" : undefined}
+                aria-label={`${portal === "principal" && id === "safeguarding" ? "Student concerns" : label}${attentionUnavailableForNavigation(id) ? ", attention status unavailable" : attentionLabel(attentionForNavigation(id)) ? `, ${attentionLabel(attentionForNavigation(id))}` : ""}`}
+                className={!assistantActive && navigationActive === id ? "is-active" : ""}>
+                <Icon size={19} /><span>{portal === "principal" && id === "safeguarding" ? "Student concerns" : label}</span>
+                {attentionUnavailableForNavigation(id) ? <AttentionUnavailableBadge /> : <AttentionBadge counts={attentionForNavigation(id)} variant="nav" />}
+              </NavLink>
             </Fragment>
           ))}
         </nav>
@@ -85,7 +101,12 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
         {!(assistantEnabled && chat.fullPage) ? <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
           {mobileNavigation.map(({ id, label, path, icon: Icon }, index) => <Fragment key={id}>
             {assistantEnabled && index === Math.min(2, mobileNavigation.length - 1) ? <AssistantTab chat={chat} /> : null}
-            <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : mobileActive === id ? "page" : undefined} className={!assistantActive && mobileActive === id ? "is-active" : ""}><Icon size={20} /><span>{label}</span></NavLink>
+            <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : mobileActive === id ? "page" : undefined}
+              aria-label={`${label}${attentionUnavailableForNavigation(id) ? ", attention status unavailable" : attentionLabel(attentionForNavigation(id)) ? `, ${attentionLabel(attentionForNavigation(id))}` : ""}`}
+              className={!assistantActive && mobileActive === id ? "is-active" : ""}>
+              <Icon size={20} /><span>{label}</span>
+              {attentionUnavailableForNavigation(id) ? <AttentionUnavailableBadge /> : <AttentionBadge counts={attentionForNavigation(id)} variant="nav" />}
+            </NavLink>
           </Fragment>)}
         </nav> : null}
       </div>

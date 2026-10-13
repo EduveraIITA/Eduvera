@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BellRing,
   BookOpen,
@@ -98,6 +98,8 @@ export interface StudentTimetablePageProps {
   routes?: Partial<StudentRouteMap>;
   onDownload?: () => void | Promise<void>;
   onBellAlertsChange?: (enabled: boolean) => void;
+  attentionStatus?: ReactNode;
+  focusPublishedSource?: boolean;
 }
 
 function TimetableShell({
@@ -140,11 +142,14 @@ export function StudentTimetablePage({
   termLabel = "Academic Year 2026-27 - Term 1",
   routes,
   onBellAlertsChange,
+  attentionStatus,
+  focusPublishedSource = false,
 }: StudentTimetablePageProps) {
   const [bellAlerts, setBellAlerts] = useState(() => storedBellPreference(false));
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [selectedPeriod, setSelectedPeriod] = useState<{ day: TimetableDay; period: TimetablePeriod } | null>(null);
+  const publishedSourceRef = useRef<HTMLElement>(null);
   const currentSchoolClock = schoolClock(now);
   const todayKey = weekdayKeys[currentSchoolClock.weekday];
   const nowMinutes = currentSchoolClock.minutes;
@@ -201,6 +206,15 @@ export function StudentTimetablePage({
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!focusPublishedSource) return;
+    const frame = window.requestAnimationFrame(() => {
+      publishedSourceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      publishedSourceRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusPublishedSource, selectedDate]);
+
   function toggleBellAlerts() {
     const enabled = !bellAlerts;
     setBellAlerts(enabled);
@@ -217,6 +231,7 @@ export function StudentTimetablePage({
     return <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
       <div className="student-page-stack timetable-page">
         {navigator}
+        {attentionStatus}
         {view !== "year" ? <div className="day-panel day-skeleton" role="status" aria-label="Loading selected day"><span /><span /></div> : null}
       </div>
     </TimetableShell>;
@@ -227,8 +242,9 @@ export function StudentTimetablePage({
       <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
         <div className="student-page-stack timetable-page">
           {navigator}
+          {attentionStatus}
           <DayPlanNotice plan={dayPlan}/>
-          <section className="student-card student-empty-state timetable-empty-state">
+          <section ref={focusPublishedSource ? publishedSourceRef : undefined} tabIndex={focusPublishedSource ? -1 : undefined} className={`student-card student-empty-state timetable-empty-state${focusPublishedSource ? " is-attention-target" : ""}`}>
             <BookOpen size={24} />
             <div><strong>No timetable published</strong><p>No periods are scheduled for the selected date.</p></div>
           </section>
@@ -241,6 +257,7 @@ export function StudentTimetablePage({
     <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
       <div className="student-page-stack timetable-page">
         {navigator}
+        {attentionStatus}
         <section className="timetable-intro">
           <header>
             <p className="workspace-context">{className} · {termLabel}</p>
@@ -258,11 +275,16 @@ export function StudentTimetablePage({
         <DayPlanNotice plan={dayPlan}/>
 
         {displayDays.length === 0 ? (
-          <section className="student-card student-empty-state timetable-empty-state">
+          <section ref={focusPublishedSource ? publishedSourceRef : undefined} tabIndex={focusPublishedSource ? -1 : undefined} className={`student-card student-empty-state timetable-empty-state${focusPublishedSource ? " is-attention-target" : ""}`}>
             <BookOpen size={24} />
             <div><strong>No periods scheduled</strong><p>This school day has no published classes.</p></div>
           </section>
-        ) : <section className="student-card timetable-week-chart" aria-labelledby="week-chart-heading">
+        ) : <section
+          ref={focusPublishedSource ? publishedSourceRef : undefined}
+          className={`student-card timetable-week-chart${focusPublishedSource ? " is-attention-target" : ""}`}
+          tabIndex={focusPublishedSource ? -1 : undefined}
+          aria-labelledby="week-chart-heading"
+        >
           <header>
             <div><h2 id="week-chart-heading">Period schedule</h2><p>{dateLabelForStudent(selectedDate)}</p></div>
             <strong>{displayDays.reduce((total, day) => total + day.periods.filter(p=>!p.cancelled).length, 0)} periods</strong>

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useId, useMemo, useState, type ChangeEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -42,12 +42,23 @@ export interface ParentLeavePageProps {
     acceptedDocumentTypes: string[];
     maxDocumentSizeBytes: number;
   };
+  focusRequestId?: string;
+  authorityUpdate?: { enabled: boolean; effective: boolean; validFrom: string | null; validUntil: string | null };
 }
 
 type LeaveTab = "pending" | "history" | "apply";
 type SubmissionState = "idle" | "submitting" | "success" | "error";
 
-function LeaveHistory({ data }: { data: ParentLeaveData }) {
+function LeaveHistory({ data, focusRequestId }: { data: ParentLeaveData; focusRequestId?: string }) {
+  useEffect(() => {
+    if (!focusRequestId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`attention-${focusRequestId}`);
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusRequestId]);
   return (
     <section className="leave-history" aria-labelledby="leave-history-heading">
       <div className="leave-history__heading">
@@ -63,7 +74,12 @@ function LeaveHistory({ data }: { data: ParentLeaveData }) {
         ) : data.history.map((item) => {
           const Icon = item.kind === "medical" ? Stethoscope : UsersRound;
           return (
-            <article key={item.id} className="surface-card leave-history-item">
+            <article
+              key={item.id}
+              id={`attention-${item.id}`}
+              tabIndex={-1}
+              className={`surface-card leave-history-item${item.id === focusRequestId ? " attention-focus" : ""}`}
+            >
               <span className="leave-history-item__icon"><Icon size={20} /></span>
               <span className="leave-history-item__content">
                 <span className="leave-history-item__title">{item.title}<small>{item.durationLabel}</small></span>
@@ -86,6 +102,8 @@ export function ParentLeavePage({
   onOpenDocument,
   onCreateLeave,
   leaveConstraints,
+  focusRequestId,
+  authorityUpdate,
 }: ParentLeavePageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -281,7 +299,7 @@ export function ParentLeavePage({
               </div>
             </article>
 
-            <LeaveHistory data={data} />
+            <LeaveHistory data={data} focusRequestId={focusRequestId} />
           </>
         ) : null}
 
@@ -293,10 +311,16 @@ export function ParentLeavePage({
           </section>
         ) : null}
 
-        {tab === "history" ? <LeaveHistory data={data} /> : null}
+        {tab === "history" ? <LeaveHistory data={data} focusRequestId={focusRequestId} /> : null}
 
         {tab === "apply" ? (
           <section className="surface-card parent-leave-form" aria-labelledby="parent-apply-heading">
+            {authorityUpdate ? <div className="leave-authority-update attention-focus" tabIndex={-1}>
+              <BadgeCheck size={20} />
+              <span><strong>Leave-signing access {authorityUpdate.enabled ? "updated" : "removed"}</strong>
+                <small>{authorityUpdate.effective ? "You can sign eligible leave requests now." : authorityUpdate.enabled ? "The approved access is not currently effective." : "A school administrator must restore access before you can sign."}</small>
+              </span>
+            </div> : null}
             {draftState === "success" ? (
               <div className="authorization-success" role="status">
                 <BadgeCheck size={30} />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, FileInput, LoaderCircle } from "lucide-react";
 import type { AttendanceContinuityWorkspace, TeacherClassSummary } from "../../features/operations/api";
@@ -24,23 +24,35 @@ function attendanceDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 
-export function AttendanceContinuityPanel({ data, classes, date, loading, error, onDecision }: {
+export function AttendanceContinuityPanel({ data, classes, date, loading, error, onDecision, initialCaseId }: {
   data?: AttendanceContinuityWorkspace;
   classes: TeacherClassSummary[];
   date: string;
   loading: boolean;
   error: Error | null;
   onDecision: (caseId: string, decision: "accept" | "reject", reason: string, expectedRevision: number) => Promise<void>;
+  initialCaseId?: string;
 }) {
   const [paperClass, setPaperClass] = useState(classes[0]?.class_section_id ?? "");
-  const [activeCase, setActiveCase] = useState<string | null>(null);
+  const [activeCase, setActiveCase] = useState<string | null>(initialCaseId ?? null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
   const [actionError, setActionError] = useState("");
   const selectedClass = classes.some((item) => item.class_section_id === paperClass) ? paperClass : classes[0]?.class_section_id ?? "";
   const workspace = !loading && !error ? data : undefined;
+  const linkedCase = initialCaseId ? workspace?.cases.find((item) => item.id === initialCaseId) : undefined;
+  const linkedCaseUnavailable = Boolean(initialCaseId && workspace && !linkedCase);
   // Open cases span all dates; processed totals belong only to data.date.
   const reviewCount = workspace ? Math.max(workspace.summary.quarantined, workspace.cases.length) : 0;
+  useEffect(()=>{
+    if(!initialCaseId)return;
+    const frame=window.requestAnimationFrame(()=>{
+      const target=document.getElementById(`attention-review-case-${initialCaseId}`);
+      target?.scrollIntoView?.({behavior:"smooth",block:"center"});
+      target?.focus({preventScroll:true});
+    });
+    return()=>window.cancelAnimationFrame(frame);
+  },[initialCaseId,workspace?.cases.length]);
 
   const decide = async (caseId: string, decision: "accept" | "reject", expectedRevision: number) => {
     if (reason.trim().length < 3 || busy) return;
@@ -64,10 +76,11 @@ export function AttendanceContinuityPanel({ data, classes, date, loading, error,
     </header>
     {loading ? <div className="attendance-continuity__state" role="status"><LoaderCircle className="spin" size={18} />Loading entries…</div> : null}
     {error ? <div className="attendance-continuity__state is-error" role="alert"><AlertTriangle size={18} />{error.message}</div> : null}
+    {linkedCaseUnavailable ? <div className="attendance-continuity__state is-error" role="alert"><CheckCircle2 size={18} />This attendance review is no longer pending. It was not replaced with another entry.</div> : null}
     {!loading && !error && !data ? <p className="attendance-continuity__state">Review status unavailable.</p> : null}
     {workspace && reviewCount === 0 ? <p className="attendance-continuity__empty"><CheckCircle2 size={20} />Nothing to review.</p> : null}
     {workspace && workspace.summary.pending > 0 ? <p className="attendance-continuity__state" role="status">{workspace.summary.pending} {workspace.summary.pending === 1 ? "entry awaiting" : "entries awaiting"} processing.</p> : null}
-    {workspace?.cases.length ? <div className="attendance-review-list">{workspace.cases.map((item) => <article key={item.id} className="attendance-review-card" aria-labelledby={`review-title-${item.id}`}>
+    {workspace?.cases.length ? <div className="attendance-review-list">{workspace.cases.map((item) => <article key={item.id} id={`attention-review-case-${item.id}`} tabIndex={item.id===initialCaseId?-1:undefined} className={`attendance-review-card${item.id===initialCaseId?" is-attention-target":""}`} aria-labelledby={`review-title-${item.id}`}>
       <div className="attendance-review-card__main"><div><h3 id={`review-title-${item.id}`}>{item.class_name}</h3><p>{attendanceDate(item.date)} · {sourceLabels[item.source]}</p>{item.reason_code !== "source_requires_review" ? <p className="attendance-review-card__reason">{reviewLabels[item.reason_code] ?? item.reason}</p> : null}</div><button type="button" disabled={Boolean(busy)} aria-expanded={activeCase === item.id} aria-controls={`review-decision-${item.id}`} onClick={() => { setActiveCase(activeCase === item.id ? null : item.id); setReason(""); setActionError(""); }}>{activeCase === item.id ? "Close" : "Review"}<ChevronDown size={16} aria-hidden="true" /></button></div>
       {activeCase === item.id ? <div className="attendance-review-card__decision" id={`review-decision-${item.id}`}>
         <p>{item.reason}</p>

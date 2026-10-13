@@ -58,6 +58,13 @@ describe("RestrictedCarePage", () => {
     await userEvent.setup().click(screen.getByRole('button',{name:'Go back'}));
     expect(await screen.findByRole('navigation',{name:'Restricted care sections'})).toBeVisible();
   });
+  it("opens and focuses the exact restricted-care case from an attention link", async () => {
+    renderPage("principal", "?section=cases&case=case-1");
+    const heading = await screen.findByRole("heading", { name: "Aarav Sharma", level: 2 });
+    expect(screen.getByRole("region", { name: "Aarav Sharma" })).toHaveClass("care-sheet--attention");
+    expect(api.getCareCase).toHaveBeenCalledWith("school-1", "case-1");
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
   it("keeps emergency action and assigned-case limits explicit", async () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "Student concerns", level: 1 })).toBeVisible();

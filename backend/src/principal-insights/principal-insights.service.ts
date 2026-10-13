@@ -3,10 +3,10 @@ import { sql } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
-import { engagementSignals, percentage, shiftDate, type AttendanceStudent } from "./insight-rules.js";
+import { engagementProjection, engagementSignals, percentage, shiftDate, type AttendanceStudent } from "./insight-rules.js";
 import { principalReviewInput } from '../analytics/agent-report-contracts.js';
 
-const input = z.object({date:z.iso.date().optional(),days:z.coerce.number().refine(v=>[14,28,56].includes(v)).default(28),class_section_id:z.uuid().optional(),threshold:z.coerce.number().int().min(1).max(99).default(50)});
+const input = z.object({date:z.iso.date().optional(),days:z.coerce.number().refine(v=>[14,28,56].includes(v)).default(28),class_section_id:z.uuid().optional(),student_id:z.uuid().optional(),threshold:z.coerce.number().int().min(1).max(99).default(50)});
 type Daily={date:string;expected:number;recorded:number;scored:number;points:number};
 type ClassRow={id:string;name:string;expected:number;recorded:number;scored:number;points:number};
 type FollowupRow={id:string;student_name:string;class_id:string;attendance_date:string;state:string;owner:string;overdue:boolean};
@@ -100,7 +100,7 @@ export class PrincipalInsightsService {
           COALESCE((SELECT json_agg(per_student) FROM per_student),'[]') AS students
       `.execute(db)).rows[0]!;
       const signals=engagementSignals(attendance.students);
-      const distinctSignals=[...new Map(signals.map(s=>[s.id,s])).values()];
+      const engagement=engagementProjection(signals,options.student_id);
       const totals=attendance.daily.reduce((a,r)=>({expected:a.expected+r.expected,recorded:a.recorded+r.recorded,scored:a.scored+r.scored,points:a.points+r.points}),{expected:0,recorded:0,scored:0,points:0});
       const followups=(await sql<{awaiting:number;review:number;resolved:number;overdue:number;details:FollowupRow[]}>`
         WITH scoped AS MATERIALIZED (
@@ -172,7 +172,7 @@ export class PrincipalInsightsService {
         attendance:{...totals,percentage:percentage(totals.points,totals.scored),completeness:percentage(totals.recorded,totals.expected),
           daily:attendance.daily.map(d=>({...d,percentage:percentage(d.points,d.scored)})),
           classes:attendance.classes.map(c=>({...c,percentage:percentage(c.points,c.scored),completeness:percentage(c.recorded,c.expected)}))},
-        engagement:{total:distinctSignals.length,combined:distinctSignals.filter(s=>s.combined).length,without_followup:distinctSignals.filter(s=>s.open_followups===0).length,students:distinctSignals.slice(0,50),without_followup_students:distinctSignals.filter(s=>s.open_followups===0).slice(0,50)},
+        engagement,
         followups,learning,schedule,deadlines,fees};
     });
   }

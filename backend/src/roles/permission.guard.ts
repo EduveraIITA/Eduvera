@@ -17,7 +17,7 @@ export class PermissionGuard implements CanActivate {
     if(context.getClass().name==='CoordinationController' && (query.context==='guardian' || body.context==='guardian')) return true;
     const supplied=params.schoolId || query.school_id || (typeof body.school_id==='string' ? body.school_id : undefined);
     const controller=context.getClass().name;
-    const resources: Array<[string|undefined,string]> = [[params.classSectionId || query.class_section_id || (typeof body.class_section_id==='string' ? body.class_section_id : undefined),'class_sections'],[params.studentId,'students'],[params.eventId,'campus_events'],[params.conversationId,'chat_conversations'],[params.reportId,'chat_message_reports']];
+    const resources: Array<[string|undefined,string]> = [[params.classSectionId || query.class_section_id || (typeof body.class_section_id==='string' ? body.class_section_id : undefined),'class_sections'],[params.studentId,'students'],[params.eventId,'campus_events'],[params.conversationId,'chat_conversations']];
     if(params.id && controller==='CoordinationController') resources.push([params.id,'attendance_followups']);
     if(params.id && controller==='NoticesController') resources.push([params.id,'school_notices']);
     if(params.id && controller==='DayPlanController') resources.push([params.id,context.getHandler().name==='respond' ? 'day_plan_periods':'day_plans']);
@@ -26,6 +26,17 @@ export class PermissionGuard implements CanActivate {
     for(const [id,table] of resources) {
       if(!id || !/^[0-9a-f-]{36}$/i.test(id)) continue;
       const found=await sql<{school_id:string}>`SELECT school_id FROM ${sql.id(table)} WHERE id=${id}::uuid`.execute(this.db);
+      if(found.rows[0]) { if(school && school!==found.rows[0].school_id) throw new ForbiddenException('School context does not match this record.'); school=found.rows[0].school_id; }
+    }
+    if(params.reportId && /^[0-9a-f-]{36}$/i.test(params.reportId)) {
+      const found=await sql<{school_id:string}>`
+        SELECT conversation.school_id
+        FROM chat_message_reports report
+        JOIN chat_messages message ON message.id=report.message_id
+        JOIN chat_conversations conversation ON conversation.id=message.conversation_id
+        WHERE report.id=${params.reportId}::uuid
+        LIMIT 1
+      `.execute(this.db);
       if(found.rows[0]) { if(school && school!==found.rows[0].school_id) throw new ForbiddenException('School context does not match this record.'); school=found.rows[0].school_id; }
     }
     if(!school) school=req.authUser.active_school_id ?? undefined;

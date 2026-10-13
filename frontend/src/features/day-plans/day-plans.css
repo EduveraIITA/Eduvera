@@ -5,6 +5,32 @@
   margin: 0 auto;
   color: var(--edura-ink);
 }
+.day-attention-target {
+  border-radius: var(--edura-radius-feature);
+  outline: 2px solid color-mix(in srgb, var(--edura-brand) 66%, transparent);
+  outline-offset: 4px;
+}
+.day-attention-target:focus { outline-color: var(--edura-brand); }
+.day-period.is-attention-target {
+  margin-inline: -.75rem;
+  padding-inline: .75rem;
+  border-radius: var(--edura-radius-control);
+  background: color-mix(in srgb, var(--edura-brand-soft) 62%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--edura-brand) 44%, transparent);
+  outline-offset: -2px;
+  scroll-margin-block: 96px;
+}
+.day-period.is-attention-target:focus { outline-color: var(--edura-brand); }
+.day-target-unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--edura-ink-secondary);
+}
+.day-target-unavailable > svg { flex: none; margin-top: 3px; color: var(--edura-warning); }
+.day-target-unavailable h2 { margin: 0; color: var(--edura-ink); font-size: 17px; }
+.day-target-unavailable p { margin: 5px 0 10px; line-height: 1.45; }
+.day-target-unavailable a { color: var(--edura-brand); font-weight: 700; text-decoration: none; }
 .day-page-actions {
   display: flex;
   align-items: center;

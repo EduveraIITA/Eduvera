@@ -241,14 +241,16 @@ describe("SchoolEventBridge", () => {
     expect(invalidate).not.toHaveBeenCalled();
 
     await act(() => vi.advanceTimersByTimeAsync(75));
-    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(5);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["analytics"], exact: undefined });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["school", "student", "attendance"], exact: undefined });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications", "user-1"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["requests"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attention"], exact: undefined });
 
     act(() => source.emit("attendance.updated", eventData("attendance.updated", ["student.attendance", "notifications"], "attendance-1")));
     await act(() => vi.advanceTimersByTimeAsync(75));
-    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(5);
   });
 
   it("refreshes notifications when a distinct notification event arrives", async () => {
@@ -257,8 +259,41 @@ describe("SchoolEventBridge", () => {
     act(() => source.emit("notification.created", eventData("notification.created", ["notifications"], "notification-42")));
     await act(() => vi.advanceTimersByTimeAsync(75));
 
-    expect(invalidate).toHaveBeenCalledOnce();
+    expect(invalidate).toHaveBeenCalledTimes(3);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications", "user-1"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["requests"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attention"], exact: undefined });
+  });
+
+  it("subscribes to every domain-specific attention producer", async () => {
+    const { source, invalidate } = renderBridge();
+    const domainEvent = (type: string, id: string) => JSON.stringify({
+      id,
+      type,
+      created_at: "2026-10-13T08:00:00.000Z",
+      payload: {},
+    });
+
+    act(() => {
+      source.emit("staff.leave.submitted", domainEvent("staff.leave.submitted", "staff-event-1"));
+      source.emit("governance.policy.published", domainEvent("governance.policy.published", "governance-event-1"));
+      source.emit("restricted_care.case.opened", domainEvent("restricted_care.case.opened", "care-event-1"));
+      source.emit("assessment.updated", domainEvent("assessment.updated", "assessment-event-1"));
+      source.emit("academic_report.updated", domainEvent("academic_report.updated", "report-event-1"));
+      source.emit("teacher_feedback.updated", domainEvent("teacher_feedback.updated", "feedback-event-1"));
+    });
+    await act(() => vi.advanceTimersByTimeAsync(75));
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["staff-operations"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["governance"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["restricted-care"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["assessments"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["assessment-detail"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["academic-reports"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["report-batch"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["teacher-feedback"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["requests"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attention"], exact: undefined });
   });
 
   it("relies on cursor replay after reconnect instead of creating a full-sync herd", async () => {

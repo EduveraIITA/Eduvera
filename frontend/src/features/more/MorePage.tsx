@@ -1,19 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronRight, Grid2X2, Info, List, LockKeyhole, Search, X } from "lucide-react";
+import { AlertCircle, ArrowRight, ChevronRight, Grid2X2, Info, List, LockKeyhole, Search, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { schoolDateToday } from "../../lib/schoolTime";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
-import { getCollectorDeparture } from "../departure/api";
-import { getPrincipalHome, getTeacherHome } from "../operations/api";
-import { getParentHome, getStudentHome } from "../school/api";
+import { AttentionBadge, attentionCount, attentionDestination, attentionLabel, combineAttentionCounts } from "../attention/AttentionBadge";
+import type { AttentionModule } from "../attention/api";
+import { useAttention } from "../attention/useAttention";
+import { getAccessibleStudents } from "../school/api";
 import { useOptionalAuth, type Portal } from "../auth/AuthContext";
 import { currentStaffMembership, teacherToolIsVisible } from "../auth/staffAccess";
 import { toolsFor, type Tool } from "./tools";
 import { groupTools, searchTools } from "./navigation";
 import { getActivation } from "../activation/api";
-import { getRequestsInbox } from "../requests/api";
 import "./more.css";
 
 type MoreLayout = "grid" | "list";
@@ -23,68 +22,50 @@ function savedLayout(userId: string): MoreLayout {
   catch { return "list"; }
 }
 
-function ToolTile({ tool, studentId, attention = 0 }: { tool: Tool; studentId?: string; attention?: number }) {
+function withStudentScope(path: string | undefined, studentId: string | undefined) {
+  if (!path || !studentId || !path.startsWith("/parent/")) return path;
+  const destination = new URL(path, window.location.origin);
+  if (!destination.searchParams.has("student_id")) destination.searchParams.set("student_id", studentId);
+  return `${destination.pathname}${destination.search}${destination.hash}`;
+}
+
+function ToolTile({ tool, studentId, attention }: { tool: Tool; studentId?: string; attention?: AttentionModule }) {
   const Icon = tool.icon;
   const location = useLocation();
-  const path = tool.path === "/account/security" ? `/account/security?from=${encodeURIComponent(location.pathname + location.search)}` : tool.path && studentId && tool.path.startsWith("/parent/")
+  const cataloguePath = tool.path === "/account/security" ? `/account/security?from=${encodeURIComponent(location.pathname + location.search)}` : tool.path && studentId && tool.path.startsWith("/parent/")
     ? `${tool.path}${tool.path.includes("?") ? "&" : "?"}student_id=${encodeURIComponent(studentId)}` : tool.path;
+  const pureNewSequence = Boolean(attention?.new)
+    && !attention?.action_required
+    && !attention?.exceptions;
+  // New-only modules can be reviewed progressively: open the oldest/highest
+  // priority exact record, clear it only after that record loads, then let the
+  // server expose the next unread record. Multi-action modules still open their
+  // queue so people can choose and prioritise rather than getting trapped on
+  // one unresolved task.
+  const exactAttentionPath = tool.id !== "requests"
+    && Boolean(attention?.first_item_href)
+    && (attentionCount(attention) === 1 || pureNewSequence);
+  const attentionPath = !exactAttentionPath
+    ? attention?.href || cataloguePath
+    : attention?.first_item_href ?? attentionDestination(attention, cataloguePath ?? "");
+  const path = withStudentScope(attentionPath || undefined, studentId);
+  const attentionState = attentionLabel(attention, tool.name.toLowerCase());
+  const actionLabel = exactAttentionPath
+    ? attention?.new && !attention.action_required && !attention.exceptions ? "Read" : "Review"
+    : "Open";
   const body = <>
     <span className="more-tile__icon" aria-hidden="true"><Icon size={21} /></span>
     <span className="more-tile__copy"><strong>{tool.name}</strong><small>{tool.description}</small></span>
     <span className="more-tile__end">
-      {attention > 0 && path ? <span className="more-attention" aria-hidden="true" /> : null}
+      {path ? <AttentionBadge counts={attention} subject={tool.name.toLowerCase()} /> : null}
       {!path ? <span className="more-status"><LockKeyhole size={11} />{tool.planned === "desktop" ? "Desktop" : "Planned"}</span> : null}
-      <span className="more-tile__open" aria-hidden="true">{path ? "Open" : tool.planned === "desktop" ? "Desktop only" : "Coming soon"}<ArrowRight size={14} /></span>
+      <span className="more-tile__open" aria-hidden="true">{path ? actionLabel : tool.planned === "desktop" ? "Desktop only" : "Coming soon"}<ArrowRight size={14} /></span>
       <ChevronRight className="more-tile__chevron" size={18} aria-hidden="true" />
     </span>
   </>;
   if (path) return <Link className={`more-tile more-tile--${tool.tone}`} to={path}
-    aria-label={`Open ${tool.name}${attention > 0 ? ", action needed" : ""}`}>{body}</Link>;
+    aria-label={`${actionLabel} ${tool.name}${attentionState ? `, ${attentionState}` : ""}`}>{body}</Link>;
   return <article className={`more-tile more-tile--${tool.tone} more-tile--planned`}>{body}</article>;
-}
-
-function useMoreAttention(portal: Portal, studentId: string | undefined) {
-  const auth = useOptionalAuth();
-  const member = currentStaffMembership(auth?.memberships ?? []);
-  const userId = auth?.user?.id ?? "anonymous";
-  const canReadTeacherHome = portal !== "teacher" || Boolean(member?.permissions?.includes("timetable.view"));
-  const home = useQuery<{ more_attention?: Record<string, number> }>({
-    queryKey: portal === "parent" ? ["school", "parent", "home", studentId ?? "default"]
-      : portal === "student" ? ["school", "student", "home"]
-      : [portal === "teacher" ? "teacher-home" : "principal-home", schoolDateToday()],
-    queryFn: async (): Promise<{ more_attention?: Record<string, number> }> => {
-      if (portal === "parent") return getParentHome(studentId);
-      if (portal === "student") return getStudentHome();
-      if (portal === "teacher") return getTeacherHome();
-      return getPrincipalHome();
-    },
-    enabled: auth?.status === "authenticated" && canReadTeacherHome,
-    staleTime: 20_000,
-    refetchOnMount: "always",
-    retry: false,
-  });
-  const collector = useQuery({
-    queryKey: ["departure", "collector",userId], queryFn: getCollectorDeparture,
-    enabled: auth?.status === "authenticated" && portal === "teacher",
-    staleTime: 15_000, refetchOnMount: "always", retry: false,
-  });
-  const requests = useQuery({
-    queryKey: ["requests", portal, studentId ?? "default", "more-count"],
-    queryFn: () => getRequestsInbox(portal as "parent" | "teacher" | "principal", studentId),
-    enabled: auth?.status === "authenticated" && portal !== "student",
-    staleTime: 20_000,
-    retry: false,
-  });
-  const counts = { ...(home.data?.more_attention ?? {}) };
-  if (requests.data?.summary.total) counts.requests = requests.data.summary.total;
-  if (portal === "teacher" && collector.data) {
-    const today = schoolDateToday();
-    const trips = collector.data.trips.filter((trip) => trip.assigned_collector_user_id === userId
-      && trip.service_date >= today && trip.state === "planned" && trip.collector_assignment_status === "pending");
-    const swaps = collector.data.swaps.filter((swap) => swap.target_user_id === userId && swap.status === "submitted" && swap.self_service_open === true);
-    if (trips.length + swaps.length) counts.transport = trips.length + swaps.length;
-  }
-  return counts;
 }
 
 /* The catalogue and layout choice are shared by parent, student and staff shells. */
@@ -95,7 +76,17 @@ export function MoreContent({ portal }: { portal: Portal }) {
   const layout = preference.userId === userId ? preference.layout : savedLayout(userId);
   const [params] = useSearchParams();
   const [search, setSearch] = useState("");
-  const studentId = portal === "parent" ? params.get("student_id") ?? undefined : undefined;
+  const requestedStudentId = portal === "parent" ? params.get("student_id") ?? undefined : undefined;
+  const students = useQuery({
+    queryKey: ["school", "accessible-students"],
+    queryFn: getAccessibleStudents,
+    enabled: auth?.status === "authenticated" && portal === "parent" && !requestedStudentId,
+    staleTime: 60_000,
+  });
+  const studentId = portal === "parent" ? requestedStudentId ?? students.data?.results[0]?.id : undefined;
+  const attentionScopeUnavailable = portal === "parent" && !studentId
+    && auth?.status === "authenticated"
+    && (students.isError || students.isSuccess);
   const member = currentStaffMembership(auth?.memberships ?? []);
   const tools = toolsFor(portal).filter((tool) => portal !== "teacher" || teacherToolIsVisible(member, tool.id));
   if (portal === "teacher" && member?.permissions?.includes("fees.manage")) tools.push({ id: "delegated-fees", name: "Fees & receipts", description: "Delegated fee and receipt access", icon: LockKeyhole, tone: "amber", path: "/teacher/fees" });
@@ -103,8 +94,54 @@ export function MoreContent({ portal }: { portal: Portal }) {
     { id: "delegated-people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: LockKeyhole, tone: "teal", path: "/teacher/students" },
     { id: "delegated-office", name: "Institute settings", description: "Delegated academic setup and history", icon: LockKeyhole, tone: "blue", path: "/teacher/administration" });
   if (portal === "teacher" && member?.permissions?.includes("members.invite")) tools.unshift({ id: "member-invitations", name: "Invite members", description: "Invite staff, students and guardians", icon: LockKeyhole, tone: "blue", path: `/${portal}/invitations` });
-  const attention = useMoreAttention(portal, studentId);
-  if(portal==="teacher"&&(attention.transport??0)>0&&!tools.some(tool=>tool.id==="transport")) {
+  const attention = useAttention(portal, studentId);
+  const modules: Record<string, AttentionModule | undefined> = { ...(attention.data?.modules ?? {}) };
+  // Delegated teacher tools use catalogue-specific ids, while attention keeps
+  // the domain id stable across portals. Bridge those names only after the
+  // permission-filtered tool is present so attention never reveals a hidden
+  // capability.
+  if (portal === "teacher" && tools.some((tool) => tool.id === "delegated-people") && modules.people) {
+    modules["delegated-people"] = modules.people;
+  }
+  if (portal === "teacher" && tools.some((tool) => tool.id === "delegated-fees") && modules.fees) {
+    modules["delegated-fees"] = modules.fees;
+  }
+  // Teachers reach both daily registers and attendance follow-ups through the
+  // single Registers tile. Combine the domain counts at that navigation edge
+  // so a follow-up cannot remain invisible merely because the catalogue uses
+  // a friendlier label than the shared attention read model.
+  if (portal === "teacher" && tools.some((tool) => tool.id === "registers")
+      && (modules.registers || modules.attendance)) {
+    const combined = combineAttentionCounts(modules.registers, modules.attendance)!;
+    const progressiveInformation = combined.new > 0
+      && combined.action_required === 0
+      && combined.exceptions === 0;
+    modules.registers = {
+      ...combined,
+      href: "/teacher/attendance",
+      first_item_href: combined.total === 1 || progressiveInformation
+        ? modules.registers?.first_item_href ?? modules.attendance?.first_item_href ?? null
+        : null,
+    };
+  }
+  // Principal navigation intentionally combines timetable and calendar into one
+  // human-facing destination. Preserve that information architecture while
+  // allowing a calendar change to light the combined tile and deep-link to the
+  // exact changed school day.
+  if (portal === "principal" && tools.some((tool) => tool.id === "weekly") && modules.calendar) {
+    const combined = combineAttentionCounts(modules.weekly, modules.calendar)!;
+    const progressiveInformation = combined.new > 0
+      && combined.action_required === 0
+      && combined.exceptions === 0;
+    modules.weekly = {
+      ...combined,
+      href: "/principal/timetable",
+      first_item_href: combined.total === 1 || progressiveInformation
+        ? modules.weekly?.first_item_href ?? modules.calendar.first_item_href
+        : null,
+    };
+  }
+  if(portal==="teacher"&&modules.transport&&!tools.some(tool=>tool.id==="transport")) {
     const invitationTool=toolsFor("teacher").find(tool=>tool.id==="transport");
     if(invitationTool)tools.push(invitationTool);
   }
@@ -129,11 +166,20 @@ export function MoreContent({ portal }: { portal: Portal }) {
         <button type="button" aria-label="List view" aria-pressed={layout === "list"} onClick={() => chooseLayout("list")}><List size={19} aria-hidden="true"/></button>
       </div>
     </div>
+    {attention.isError || attentionScopeUnavailable ? <div className="more-attention-error" role="alert">
+      <AlertCircle size={17} aria-hidden="true" /><span>{attentionScopeUnavailable && students.isSuccess
+        ? "No linked learner is available, so attention status cannot be shown."
+        : "Attention status is unavailable."}</span>
+      {students.isError || attention.isError ? <button type="button" onClick={() => {
+        if (attentionScopeUnavailable) void students.refetch();
+        else void attention.refetch();
+      }}>Retry</button> : null}
+    </div> : null}
     {!searching && portal === "principal" && activation.data && activation.data.institution.status !== "active" ? <Link className="more-setup-link" to="/principal/activation"><span><strong>Finish setup</strong><small>{activation.data.summary.completed} of {activation.data.summary.required} checks complete</small></span><ChevronRight size={18}/></Link> : null}
     {searching ? <p className="more-result-count" role="status">{results.length ? `${results.length} result${results.length === 1 ? "" : "s"}` : "No matching tools. Try a task such as leave, marks or messages."}</p> : null}
     {groups.filter(group => group.tools.length).map((group, index) => <section key={group.name} className="more-section" aria-labelledby={`more-group-${index}`}>
       <header><h2 id={`more-group-${index}`}>{group.name}</h2></header>
-      <div className={`more-grid more-grid--${searching ? "list more-search-results" : layout}`}>{group.tools.map((tool) => <ToolTile key={tool.id} tool={tool} studentId={studentId} attention={attention[tool.id] ?? 0} />)}</div>
+      <div className={`more-grid more-grid--${searching ? "list more-search-results" : layout}`}>{group.tools.map((tool) => <ToolTile key={tool.id} tool={tool} studentId={studentId} attention={modules[tool.id]} />)}</div>
     </section>)}
     {!searching && planned.length ? <section className="more-section" aria-labelledby="more-planned-title">
       <header><h2 id="more-planned-title">Coming to mobile</h2></header>

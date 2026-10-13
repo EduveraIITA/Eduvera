@@ -210,7 +210,7 @@ export function ParentHomePage({
         <DayPlanNotice plan={data.dayPlan} href={`/parent/timetable?student_id=${data.child.id}`}/>
 
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
-        <FollowupInbox context="guardian" studentId={data.child.id} hideWithoutOpenFollowups />
+        <FollowupInbox context="guardian" studentId={data.child.id} initialFollowupId={searchParams.get("followup") ?? undefined} hideWithoutOpenFollowups />
 
         <TodayActivities
           periods={todayActivities}

@@ -7,7 +7,7 @@ const groups: Record<Portal, Group[]> = {
   principal: [
     { name: "Needs attention", ids: ["requests"] },
     { name: "School overview", ids: ["analytics"] },
-    { name: "People", ids: ["people", "staff", "teacher-feedback"] },
+    { name: "People", ids: ["people", "staff", "leave", "teacher-feedback"] },
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
     { name: "Operations", ids: ["departure", "events", "notices", "messages", "fees", "safeguarding"] },
     { name: "Institute", ids: ["administration", "governance"] },

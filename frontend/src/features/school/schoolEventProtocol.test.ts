@@ -4,6 +4,8 @@ import {
   createInvalidationBatcher,
   FULL_SYNC_INVALIDATIONS,
   resolveSchoolEvent,
+  SCHOOL_EVENT_TYPES,
+  type SchoolEventType,
 } from "./schoolEventProtocol";
 
 function eventData(type: string, payload: Record<string, unknown>) {
@@ -18,6 +20,37 @@ function eventData(type: string, payload: Record<string, unknown>) {
 afterEach(() => vi.useRealTimers());
 
 describe("school event protocol", () => {
+  it("subscribes to every current attention-producing custom event name", () => {
+    expect(SCHOOL_EVENT_TYPES).toEqual(expect.arrayContaining([
+      "staff.responsibility.offered",
+      "staff.responsibility.active",
+      "staff.responsibility.accepted",
+      "staff.responsibility.declined",
+      "staff.leave.submitted",
+      "staff.leave.approved",
+      "staff.leave.rejected",
+      "staff.leave.withdrawn",
+      "staff.coverage.offered",
+      "staff.coverage.accepted",
+      "staff.coverage.declined",
+      "governance.policy.submitted",
+      "governance.policy.published",
+      "governance.policy.rejected",
+      "governance.policy.acknowledged",
+      "restricted_care.case.opened",
+      "restricted_care.case.reassigned",
+      "restricted_care.case.triage",
+      "restricted_care.case.active",
+      "restricted_care.case.closed",
+      "restricted_care.case.entry_added",
+      "restricted_care.reporting.assessed",
+      "restricted_care.external_report.recorded",
+      "assessment.updated",
+      "academic_report.updated",
+      "teacher_feedback.updated",
+    ]));
+  });
+
   it.each(["transport.updated","departure.updated"])("refreshes every departure view on %s without an unknown-event fallback",type=>{
     const result=resolveSchoolEvent(eventData(type,{refresh:["departure","parent.home","principal.home","teacher.home"]}),type,"guardian-1");
     expect(result.usedFallback).toBe(false);
@@ -27,7 +60,7 @@ describe("school event protocol", () => {
   it("refreshes enrollment and family lists on a people event", () => {
     const result=resolveSchoolEvent(eventData("people.updated",{student_id:"new-student",class_section_id:"class-7a"}),"people.updated","admin-1");
     expect(result.usedFallback).toBe(false);
-    expect(result.invalidations).toEqual(expect.arrayContaining([{queryKey:["school","people"]},{queryKey:["school","parent"]},{queryKey:["teacher-attendance","class-7a"]}]));
+    expect(result.invalidations).toEqual(expect.arrayContaining([{queryKey:["school","people"]},{queryKey:["school","parent"]},{queryKey:["teacher-attendance","class-7a"]},{queryKey:["attention"]}]));
   });
   it("maps allowlisted refresh hints to the affected student, parent, operations, and notification caches", () => {
     const result = resolveSchoolEvent(
@@ -126,6 +159,39 @@ describe("school event protocol", () => {
     ]));
   });
 
+  it.each<Array<[SchoolEventType, string]>>([
+    ["staff.leave.submitted", "staff-operations"],
+    ["governance.policy.published", "governance"],
+    ["restricted_care.case.opened", "restricted-care"],
+    ["assessment.updated", "assessments"],
+    ["academic_report.updated", "academic-reports"],
+    ["teacher_feedback.updated", "teacher-feedback"],
+    ["InstitutionActivated", "institution-activation"],
+  ])("accepts the %s producer contract and refreshes its canonical domain", (type, domainRoot) => {
+    const result = resolveSchoolEvent(eventData(type, {}), type, "user-1");
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: [domainRoot] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
+    ]));
+  });
+
+  it("accepts the staff leave producer's legacy refresh aliases without falling back", () => {
+    const result = resolveSchoolEvent(eventData("staff.leave.approved", {
+      refresh: ["principal.staff", "teacher.leave", "principal.timetable"],
+    }), "staff.leave.approved", "user-1");
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual([
+      { queryKey: ["staff-operations"] },
+      { queryKey: ["principal-timetable"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
+    ]);
+  });
+
   it("removes completed diary actions from linked family home caches", () => {
     const result = resolveSchoolEvent(
       eventData("diary.updated", { student_id: "student-1" }),
@@ -140,6 +206,8 @@ describe("school event protocol", () => {
       { queryKey: ["school", "parent", "home", "default"] },
       { queryKey: ["school", "parent", "diary", "student-1"] },
       { queryKey: ["school", "parent", "diary", "default"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
     ]);
   });
 
@@ -154,6 +222,8 @@ describe("school event protocol", () => {
       { queryKey: ["office", "administration"] },
       { queryKey: ["principal-timetable"] },
       { queryKey: ["analytics"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
     ]);
   });
 
@@ -196,7 +266,11 @@ describe("school event protocol", () => {
   it("refreshes the follow-up inbox without refreshing unrelated school screens", () => {
     const result = resolveSchoolEvent(eventData("coordination.updated", { student_id: "student-1", refresh: ["coordination"] }), "coordination.updated", "guardian-1");
     expect(result.usedFallback).toBe(false);
-    expect(result.invalidations).toEqual([{ queryKey: ["school", "coordination"] }]);
+    expect(result.invalidations).toEqual([
+      { queryKey: ["school", "coordination"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
+    ]);
   });
 
   it("refreshes event lists, details, registers and notifications for campus event updates", () => {
@@ -219,6 +293,45 @@ describe("school event protocol", () => {
       { queryKey: ["principal-home"] },
       { queryKey: ["principal-insights"] },
       { queryKey: ["notifications", "guardian-1"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
+    ]);
+  });
+
+  it("refreshes the exact notice, Requests, bell and shared attention projection", () => {
+    const result = resolveSchoolEvent(
+      eventData("notice.updated", {
+        student_id: "student-1",
+        refresh: ["notices", "requests", "notifications", "parent.home"],
+      }),
+      "notice.updated",
+      "guardian-1",
+    );
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["notices"] },
+      { queryKey: ["notice"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["notifications", "guardian-1"] },
+      { queryKey: ["school", "parent", "home", "student-1"] },
+      { queryKey: ["attention"] },
+    ]));
+  });
+
+  it("refreshes conversations, notifications and shared request projections for a chat update", () => {
+    const result = resolveSchoolEvent(
+      eventData("chat.updated", { refresh: ["messages", "notifications", "attention"] }),
+      "chat.updated",
+      "guardian-1",
+    );
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual([
+      { queryKey: ["chat"] },
+      { queryKey: ["notifications", "guardian-1"] },
+      { queryKey: ["attention"] },
+      { queryKey: ["requests"] },
     ]);
   });
 });

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { TeacherClassSummary } from "../../features/operations/api";
+import type { AttentionItem, AttentionResponse } from "../../features/attention/api";
 import { AttendanceWorkspacePage } from "./AttendanceWorkspacePage";
 
 vi.mock("./OperationsShell", () => ({ OperationsShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
@@ -18,6 +19,35 @@ function show(portal: "teacher" | "principal", classes: TeacherClassSummary[]) {
   const onDateChange = vi.fn();
   render(<MemoryRouter><AttendanceWorkspacePage portal={portal} classes={classes} date="2026-09-18" onDateChange={onDateChange} /></MemoryRouter>);
   return onDateChange;
+}
+
+const attentionItem = (patch: Partial<AttentionItem> = {}): AttentionItem => ({
+  id: "attention:attendance_register:7a",
+  source_kind: "attendance_register",
+  source_id: "7a",
+  module: "attendance",
+  state: "action_required",
+  signals: ["action_required"],
+  priority: "normal",
+  title: "Class 7A register is due",
+  status_label: "Not started",
+  subject_label: "Class 7A",
+  href: "/principal/attendance?class_section_id=7a&date=2026-09-18",
+  created_at: null,
+  due_at: "2026-09-18T09:45:00.000Z",
+  ...patch,
+});
+
+function attentionResponse(items: AttentionItem[]): AttentionResponse {
+  const actionRequired = items.filter((item) => item.state === "action_required").length;
+  const exceptions = items.filter((item) => item.state === "exception").length;
+  return {
+    portal: "principal",
+    generated_at: "2026-09-18T10:00:00.000Z",
+    summary: { total: items.length, new: 0, action_required: actionRequired, exceptions, urgent: exceptions },
+    modules: {},
+    items,
+  };
 }
 describe("attendance class workspace", () => {
   it("keeps a non-required register read-only and never offers attendance capture", () => {
@@ -82,5 +112,44 @@ describe("attendance class workspace", () => {
     await userEvent.click(screen.getByRole('button',{name:'51 entries need review'}));
     expect(screen.getByText('51 to review')).toBeVisible();
     expect(screen.queryByText('Nothing to review.')).not.toBeInTheDocument();
+  });
+  it('opens the review desk immediately for an exact attention link',()=>{
+    render(<MemoryRouter><AttendanceWorkspacePage portal="principal" classes={[row()]} date="2026-10-08" onDateChange={vi.fn()} initialReviewCaseId="case-1" continuity={{date:'2026-10-08',summary:{pending:0,quarantined:1,accepted:0,rejected:0},cases:[{id:'case-1',batch_id:'batch-1',reason_code:'source_requires_review',reason:'Paper register needs review.',details:{},state:'open',opened_at:'2026-10-08T04:00:00.000Z',date:'2026-10-08',source:'paper',source_reference:null,observed_at:'2026-10-08T03:30:00.000Z',received_at:'2026-10-08T04:00:00.000Z',roster_count:25,expected_register_revision:0,class_section_id:'7a',class_name:'Class 7A',recorded_by_name:'Meera Kapoor',current_revision:0,register_state:'draft'}]}} onContinuityDecision={vi.fn()}/></MemoryRouter>);
+    expect(screen.getByRole('button',{name:'Paper & offline entries, 1 to review'})).toHaveAttribute('aria-expanded','true');
+    expect(document.getElementById('attention-review-case-case-1')).toHaveClass('is-attention-target');
+    expect(screen.getByText('Paper register needs review.')).toBeVisible();
+  });
+  it("explains the navigation signal and marks only exact affected registers", async () => {
+    const user = userEvent.setup();
+    const items = [attentionItem()];
+    const view = render(<MemoryRouter><AttendanceWorkspacePage portal="principal" classes={[row(), row({ class_section_id: "8a", class_name: "Class 8A", grade: "8" })]} date="2026-09-18" onDateChange={vi.fn()} attention={{ data: attentionResponse(items), isError: false, isPending: false }} /></MemoryRouter>);
+
+    expect(screen.getByText("1 attendance item needs attention")).toBeVisible();
+    expect(screen.getByText("1 register on this date")).toBeVisible();
+    expect(view.container.querySelectorAll(".attendance-class-card__attention-mark")).toHaveLength(1);
+    expect(screen.getByRole("option", { name: "Needs attention · 1" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show affected" }));
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByText("Class 7A")).toBeVisible();
+    expect(screen.queryByText("Class 8A")).not.toBeInTheDocument();
+  });
+  it("routes an unplaced exception instead of scattering decorative dots", () => {
+    const exception = attentionItem({
+      id: "attention:attendance_reconciliation:case-1",
+      source_kind: "attendance_reconciliation",
+      source_id: "case-1",
+      state: "exception",
+      signals: ["exception"],
+      priority: "urgent",
+      status_label: "Reconciliation needed",
+      href: "/principal/attendance?review_case=case-1",
+    });
+    const view = render(<MemoryRouter><AttendanceWorkspacePage portal="principal" classes={[row()]} date="2026-09-18" onDateChange={vi.fn()} attention={{ data: attentionResponse([exception]), isError: false, isPending: false }} /></MemoryRouter>);
+
+    expect(screen.getByText("No affected register on this date · 1 other review")).toBeVisible();
+    expect(screen.getByRole("link", { name: /Review exception/ })).toHaveAttribute("href", "/principal/attendance?review_case=case-1");
+    expect(view.container.querySelector(".attendance-attention-summary.is-exception")).toBeInTheDocument();
+    expect(view.container.querySelector(".attendance-class-card__attention-mark")).not.toBeInTheDocument();
   });
 });

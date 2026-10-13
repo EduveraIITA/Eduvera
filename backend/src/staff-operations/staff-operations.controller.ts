@@ -1,4 +1,4 @@
-import { Controller, Get, GoneException, Param, Patch, Post, Req } from "@nestjs/common";
+import { Controller, Get, GoneException, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import { AccessRolesService } from "../roles/access-roles.service.js";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { StaffOperationsService } from "./staff-operations.service.js";
@@ -33,8 +33,8 @@ export class StaffOperationsController {
   }
 
   @Get("workspace/")
-  workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
-    return this.staff.workspace(req.authUser, schoolId);
+  workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("request_id") requestId?: string) {
+    return this.staff.workspace(req.authUser, schoolId, requestId);
   }
 
   @Post("profiles/")
@@ -97,6 +97,11 @@ export class StaffOperationsController {
   @Post("coverage-tasks/:taskId/response/")
   respondCoverage(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("taskId") taskId: string) {
     return this.staff.respondCoverage(req.authUser, schoolId, taskId, req.body);
+  }
+
+  @Patch("coverage-policy/")
+  saveCoveragePolicy(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.staff.saveCoveragePolicy(req.authUser, schoolId, req.body);
   }
 
   @Post("leave-requests/")

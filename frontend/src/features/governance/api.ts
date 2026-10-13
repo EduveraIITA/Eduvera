@@ -46,7 +46,7 @@ export interface AuthorityWorkspace {
 
 export interface PublishedPolicy {
   id: string; code: string; category: string; title: string; summary: string; body_markdown: string;
-  audience_roles: string[]; requires_acknowledgement: boolean; version: number; effective_on: string;
+  audience_roles: string[]; requires_acknowledgement: boolean; version: number; revision?: number; effective_on: string;
   review_due_on: string | null; source_note: string; source_references: Array<{ label: string; url: string }>;
   acknowledgement_id: string | null; acknowledged_at: string | null; guidance: string;
 }

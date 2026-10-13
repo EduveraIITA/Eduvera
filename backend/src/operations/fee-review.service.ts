@@ -18,6 +18,14 @@ export const feeDecisionSchema = z.object({ outcome: z.enum(["verified", "reject
 const settingsSchema = z.object({ payee_name: z.string().trim().max(120), upi_id: z.string().trim().max(160).refine(value => !value || /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/.test(value), "Enter a valid UPI ID"), instructions: z.string().trim().max(2000), expected_revision: z.number().int().min(0) }).refine(value => !value.upi_id || value.payee_name.length >= 2, "Payee name is required for UPI");
 interface Invoice { id: string; student_id: string; amount_paise: number }
 interface Review { id: string; invoice_id: string; kind: "payment" | "charge"; amount_paise: number | null; method: string | null; reference: string | null; submitted_by: string; request_hash: string }
+interface GatewayPaymentReview {
+  id: string;
+  invoice_id: string;
+  amount_paise: number;
+  state: "review_required";
+  provider_payment_id: string;
+  payment_id: null;
+}
 
 @Injectable()
 export class FeeReviewService {
@@ -36,7 +44,7 @@ export class FeeReviewService {
     const [settings, reviews, gatewayPayments] = await Promise.all([
       sql`SELECT payee_name,upi_id,instructions,revision FROM school_fee_payment_settings WHERE school_id=${schoolId}::uuid`.execute(this.db),
       sql`SELECT r.id,r.invoice_id,r.kind,r.amount_paise,r.method,r.reference,r.note,r.created_at,
-        coalesce(d.outcome,'pending') AS status,d.response,d.payment_id,d.created_at AS reviewed_at
+        coalesce(d.outcome,'pending') AS status,d.id AS decision_id,d.response,d.payment_id,d.created_at AS reviewed_at
         FROM fee_review_requests r JOIN fee_invoices i ON i.id=r.invoice_id AND i.school_id=r.school_id
         LEFT JOIN fee_review_decisions d ON d.request_id=r.id AND d.school_id=r.school_id
         WHERE r.school_id=${schoolId}::uuid AND (${studentId ?? null}::uuid IS NULL OR i.student_id=${studentId ?? null}::uuid)
@@ -47,6 +55,23 @@ export class FeeReviewService {
         ORDER BY g.created_at DESC LIMIT 100`.execute(this.db),
     ]);
     return { ...ledger, gateway_payments: gatewayPayments.rows, online_payments_enabled: config().RAZORPAY_ENABLED, payment_mode: config().RAZORPAY_ENABLED ? "sandbox" : null, reviews: reviews.rows, payment_settings: settings.rows[0] ?? { payee_name: "", upi_id: "", instructions: "", revision: 0 }, can_submit: studentId ? await this.guardian(this.db, user, schoolId, studentId) : false };
+  }
+
+  async gatewayPaymentReview(user: AuthUser, schoolId: string, orderId: string) {
+    uuid.parse(schoolId);
+    uuid.parse(orderId);
+    await this.operations.authorize(user, schoolId, "fees.manage");
+    const result = await sql<GatewayPaymentReview>`
+      SELECT gateway.id,gateway.invoice_id,gateway.amount_paise,gateway.state,
+        gateway.provider_payment_id,gateway.payment_id
+      FROM fee_gateway_orders gateway
+      JOIN fee_invoices invoice ON invoice.id=gateway.invoice_id
+        AND invoice.school_id=gateway.school_id
+      WHERE gateway.school_id=${schoolId}::uuid AND gateway.id=${orderId}::uuid
+        AND gateway.state='review_required'
+    `.execute(this.db);
+    if (!result.rows[0]) throw new NotFoundException("Payment review not found.");
+    return result.rows[0];
   }
 
   async settings(user: AuthUser, schoolId: string, body: unknown) {
@@ -121,7 +146,7 @@ export class FeeReviewService {
       const request = (await sql<Review>`SELECT * FROM fee_review_requests WHERE school_id=${schoolId}::uuid AND id=${requestId}::uuid`.execute(db)).rows[0];
       if (!request) throw new NotFoundException("Review request not found.");
       if (request.submitted_by === user.id) throw new ForbiddenException("Another fee reviewer must verify your own submission.");
-      const previous = (await sql<{ outcome: string; response: string; payment_id: string | null }>`SELECT outcome,response,payment_id FROM fee_review_decisions WHERE school_id=${schoolId}::uuid AND request_id=${requestId}::uuid`.execute(db)).rows[0];
+      const previous = (await sql<{ id: string; outcome: string; response: string; payment_id: string | null }>`SELECT id,outcome,response,payment_id FROM fee_review_decisions WHERE school_id=${schoolId}::uuid AND request_id=${requestId}::uuid`.execute(db)).rows[0];
       if (previous) {
         if (previous.outcome !== data.outcome || previous.response !== data.response) throw new ConflictException("This request was already reviewed. Refresh to see the decision.");
         return previous;
@@ -137,10 +162,16 @@ export class FeeReviewService {
         paymentId = (await sql<{ id: string }>`INSERT INTO fee_payments(school_id,invoice_id,amount_paise,method,reference,idempotency_key,recorded_by)
           VALUES(${schoolId}::uuid,${invoice.id}::uuid,${request.amount_paise},${request.method},${request.reference},${requestId}::uuid,${user.id}::uuid) RETURNING id`.execute(db)).rows[0]!.id;
       }
-      await sql`INSERT INTO fee_review_decisions(school_id,request_id,outcome,response,payment_id,reviewed_by)
-        VALUES(${schoolId}::uuid,${requestId}::uuid,${data.outcome},${data.response},${paymentId}::uuid,${user.id}::uuid)`.execute(db);
+      const decision = (await sql<{ id: string }>`INSERT INTO fee_review_decisions(school_id,request_id,outcome,response,payment_id,reviewed_by)
+        VALUES(${schoolId}::uuid,${requestId}::uuid,${data.outcome},${data.response},${paymentId}::uuid,${user.id}::uuid)
+        RETURNING id`.execute(db)).rows[0]!;
       await this.audit(db, user, schoolId, requestId, `fee.review_${data.outcome}`);
-      await this.event(db, schoolId, invoice, requestId, "reviewed");
+      await this.event(db, schoolId, invoice, requestId, "reviewed", {
+        id: decision.id,
+        recipientId: request.submitted_by,
+        outcome: data.outcome,
+        response: data.response,
+      });
       return { outcome: data.outcome, payment_id: paymentId };
     });
   }
@@ -149,12 +180,35 @@ export class FeeReviewService {
     await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id) VALUES(${schoolId}::uuid,${user.id}::uuid,${action},${targetId}::uuid)`.execute(db);
   }
 
-  private async event(db: Transaction<Database>, schoolId: string, invoice: Invoice, id: string, action: string) {
-    const payload = { student_id: invoice.student_id, invoice_id: invoice.id, review_id: id };
+  private async event(
+    db: Transaction<Database>, schoolId: string, invoice: Invoice, id: string, action: string,
+    decision?: { id: string; recipientId: string; outcome: string; response: string },
+  ) {
+    const payload = {
+      student_id: invoice.student_id,
+      invoice_id: invoice.id,
+      review_id: id,
+      ...(decision ? { decision_id: decision.id, outcome: decision.outcome } : {}),
+      refresh: ["fees", "student.home", "parent.home", "principal.home", "notifications", "attention"],
+    };
     const audience = await sql<{ user_id: string }>`SELECT DISTINCT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND is_active
       AND event_user_is_authorized(${schoolId}::uuid,'fees.updated',${JSON.stringify(payload)}::jsonb,user_id)`.execute(db);
     await db.insertInto("event_outbox").values({ school_id: schoolId, event_type: "fees.updated", aggregate_type: "fee_review", aggregate_id: id,
       audience_user_ids: audience.rows.map(row => row.user_id), payload, idempotency_key: `fee-review:${id}:${action}`,
-      notification_user_ids: [], notification_payload: null }).execute();
+      notification_user_ids: decision ? [decision.recipientId] : [],
+      notification_payload: (decision ? {
+        kind: "general",
+        title: "Fee review completed",
+        body: decision.response,
+        parent_link: `/parent/fees?student_id=${invoice.student_id}&view=reviews&review=${id}&decision=${decision.id}`,
+        attention_eligible: true,
+        attention_portal: "parent",
+        attention_module: "fees",
+        attention_source_kind: "fee_review_decision",
+        attention_source_id: decision.id,
+        attention_source_revision: 1,
+        attention_topic_key: `fee-review:${id}`,
+        attention_student_id: invoice.student_id,
+      } : null) as any }).execute();
   }
 }

@@ -1,5 +1,37 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
+const STAFF_OPERATION_EVENT_TYPES = [
+  "staff.responsibility.offered",
+  "staff.responsibility.active",
+  "staff.responsibility.accepted",
+  "staff.responsibility.declined",
+  "staff.leave.submitted",
+  "staff.leave.approved",
+  "staff.leave.rejected",
+  "staff.leave.withdrawn",
+  "staff.coverage.offered",
+  "staff.coverage.accepted",
+  "staff.coverage.declined",
+] as const;
+
+const GOVERNANCE_EVENT_TYPES = [
+  "governance.policy.submitted",
+  "governance.policy.published",
+  "governance.policy.rejected",
+  "governance.policy.acknowledged",
+] as const;
+
+const RESTRICTED_CARE_EVENT_TYPES = [
+  "restricted_care.case.opened",
+  "restricted_care.case.reassigned",
+  "restricted_care.case.triage",
+  "restricted_care.case.active",
+  "restricted_care.case.closed",
+  "restricted_care.case.entry_added",
+  "restricted_care.reporting.assessed",
+  "restricted_care.external_report.recorded",
+] as const;
+
 export const SCHOOL_EVENT_TYPES = [
   "departure.updated",
   "transport.updated",
@@ -22,6 +54,15 @@ export const SCHOOL_EVENT_TYPES = [
   "administration.updated",
   "campus_event.updated",
   "fees.updated",
+  "assessment.updated",
+  "academic_report.updated",
+  "teacher_feedback.updated",
+  "notice.updated",
+  "chat.updated",
+  ...STAFF_OPERATION_EVENT_TYPES,
+  ...GOVERNANCE_EVENT_TYPES,
+  ...RESTRICTED_CARE_EVENT_TYPES,
+  "InstitutionActivated",
 ] as const;
 
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
@@ -29,6 +70,15 @@ export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
 export const REFRESH_TARGETS = [
   "departure",
   "staff.access",
+  "staff-operations",
+  "principal.staff",
+  "teacher.leave",
+  "governance",
+  "restricted-care",
+  "institution-activation",
+  "assessments",
+  "academic-reports",
+  "teacher-feedback",
   "day-plans",
   "people",
   "coordination",
@@ -54,6 +104,10 @@ export const REFRESH_TARGETS = [
   "notifications",
   "campus-events",
   "fees",
+  "notices",
+  "requests",
+  "attention",
+  "messages",
 ] as const;
 
 export type RefreshTarget = (typeof REFRESH_TARGETS)[number];
@@ -85,7 +139,14 @@ interface EventResolution {
 
 const targetSet = new Set<string>(REFRESH_TARGETS);
 
-const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
+function eventDefaults<T extends readonly SchoolEventType[]>(
+  types: T,
+  targets: readonly RefreshTarget[],
+): Record<T[number], readonly RefreshTarget[]> {
+  return Object.fromEntries(types.map((type) => [type, targets])) as Record<T[number], readonly RefreshTarget[]>;
+}
+
+const defaultsByType = {
   "departure.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "transport.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "staff.access.updated": ["staff.access","teacher.home","teacher.attendance","principal.home"],
@@ -127,12 +188,30 @@ const defaultsByType: Record<SchoolEventType, readonly RefreshTarget[]> = {
   "administration.updated": ["principal.administration", "principal.timetable", "principal.home", "teacher.home", "student.home", "student.timetable", "parent.home", "parent.timetable"],
   "campus_event.updated": ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications"],
   "fees.updated": ["fees", "campus-events"],
-};
+  "assessment.updated": ["assessments", "teacher.home", "principal.home"],
+  "academic_report.updated": ["academic-reports", "teacher.home", "principal.home"],
+  "teacher_feedback.updated": ["teacher-feedback", "principal.home"],
+  "notice.updated": ["notices", "requests", "notifications", "parent.home", "teacher.home", "principal.home", "attention"],
+  "chat.updated": ["messages", "notifications", "attention"],
+  ...eventDefaults(STAFF_OPERATION_EVENT_TYPES, ["staff-operations", "teacher.home", "principal.home"]),
+  ...eventDefaults(GOVERNANCE_EVENT_TYPES, ["governance"]),
+  ...eventDefaults(RESTRICTED_CARE_EVENT_TYPES, ["restricted-care"]),
+  InstitutionActivated: ["institution-activation", "principal.home"],
+} satisfies Record<SchoolEventType, readonly RefreshTarget[]>;
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["departure"] },
   { queryKey: ["analytics"] },
   { queryKey: ["staff-operations"] },
+  { queryKey: ["governance"] },
+  { queryKey: ["restricted-care"] },
+  { queryKey: ["institution-activation"] },
+  { queryKey: ["assessments"] },
+  { queryKey: ["assessment-detail"] },
+  { queryKey: ["academic-reports"] },
+  { queryKey: ["grading-scheme"] },
+  { queryKey: ["report-batch"] },
+  { queryKey: ["teacher-feedback"] },
   { queryKey: ["school"] },
   { queryKey: ["teacher-home"] },
   { queryKey: ["teacher-attendance"] },
@@ -150,6 +229,11 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["campus-event"] },
   { queryKey: ["campus-event-register"] },
   { queryKey: ["campus-event-finance"] },
+  { queryKey: ["notices"] },
+  { queryKey: ["notice"] },
+  { queryKey: ["requests"] },
+  { queryKey: ["attention"] },
+  { queryKey: ["chat"] },
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -221,6 +305,15 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
   switch (target) {
     case "departure": return [{ queryKey: ["departure"] }];
     case "staff.access": return [{queryKey:["staff-operations"]},{queryKey:["roles"]},{queryKey:["assessments"]},{queryKey:["academic-reports"]}];
+    case "staff-operations":
+    case "principal.staff":
+    case "teacher.leave": return [{ queryKey: ["staff-operations"] }];
+    case "governance": return [{ queryKey: ["governance"] }];
+    case "restricted-care": return [{ queryKey: ["restricted-care"] }];
+    case "institution-activation": return [{ queryKey: ["institution-activation"] }];
+    case "assessments": return [{ queryKey: ["assessments"] }, { queryKey: ["assessment-detail"] }];
+    case "academic-reports": return [{ queryKey: ["academic-reports"] }, { queryKey: ["grading-scheme"] }, { queryKey: ["report-batch"] }];
+    case "teacher-feedback": return [{ queryKey: ["teacher-feedback"] }];
     case "day-plans": return [{ queryKey: ["school", "day-plans"] }];
     case "people": return [{ queryKey: ["school", "people"] }, { queryKey: ["school", "parent"] }];
     case "coordination": return [{ queryKey: ["school", "coordination"] }];
@@ -246,6 +339,10 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "calendar": return [{ queryKey: ["calendar"] }];
     case "notifications": return [{ queryKey: userId ? ["notifications", userId] : ["notifications"] }];
     case "campus-events": return [{ queryKey: ["campus-events"] }, { queryKey: ["campus-event"] }, { queryKey: ["campus-event-register"] }, { queryKey: ["campus-event-finance"] }];
+    case "notices": return [{ queryKey: ["notices"] }, { queryKey: ["notice"] }];
+    case "requests": return [{ queryKey: ["requests"] }];
+    case "attention": return [{ queryKey: ["attention"] }];
+    case "messages": return [{ queryKey: ["chat"] }];
   }
 }
 
@@ -272,6 +369,11 @@ export function resolveSchoolEvent(
   if (expectedType.startsWith("attendance.") || ["staff.access.updated", "people.updated", "administration.updated", "timetable.updated"].includes(expectedType)) {
     invalidations.push({ queryKey: ["analytics"] });
   }
+  // Requests and Attention are server-owned projections over many domains. Any
+  // accepted school event may complete, create, or reprioritise an exact item.
+  // Refresh both so an already-open queue and its navigation badges cannot drift.
+  invalidations.push({ queryKey: ["requests"] });
+  invalidations.push({ queryKey: ["attention"] });
   return { envelope, invalidations: deduplicateInvalidations(invalidations), usedFallback: false };
 }
 

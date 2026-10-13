@@ -72,8 +72,12 @@ export function ModerationDialog({
   pending,
   error,
   loadError,
+  selectedReport,
+  selectedLoading,
+  selectedLoadError,
   onClose,
   onRefresh,
+  onRefreshSelected,
   onUpdate,
   standalone = false,
   staffView = false,
@@ -84,8 +88,12 @@ export function ModerationDialog({
   pending: boolean;
   error?: string;
   loadError?: string;
+  selectedReport?: ChatReport;
+  selectedLoading?: boolean;
+  selectedLoadError?: boolean;
   onClose?: () => void;
   onRefresh: () => void;
+  onRefreshSelected?: () => void;
   onUpdate: (reportId: string, input: ChatReportUpdate) => void;
   standalone?: boolean;
   staffView?: boolean;
@@ -115,7 +123,15 @@ export function ModerationDialog({
   }, [filter, queue?.results]);
   // A selected report remains open after its status changes. Never silently open
   // a different case when the requested report is missing or no longer visible.
-  const selected = queue?.results.find((item) => item.id === selectedId);
+  const hasSelectedQuery = selectedLoading !== undefined
+    || selectedLoadError !== undefined
+    || onRefreshSelected !== undefined;
+  const selected = hasSelectedQuery
+    ? (!selectedLoadError && selectedReport?.id === selectedId ? selectedReport : undefined)
+    : queue?.results.find((item) => item.id === selectedId);
+  const detailLoading = hasSelectedQuery ? Boolean(selectedLoading) : loading;
+  const detailLoadError = hasSelectedQuery ? Boolean(selectedLoadError) : Boolean(loadError);
+  const refreshSelected = onRefreshSelected ?? onRefresh;
   useEffect(() => {
     setAssignee(selected?.assigned_to ?? "");
     setNote("");
@@ -176,9 +192,11 @@ export function ModerationDialog({
           </section> : <section ref={detailRef} tabIndex={-1} className="chat-moderation__detail" aria-label="Report details">
             {!selected ? (
               <div className="chat-moderation__placeholder">
-                <strong>{loading ? "Loading report…" : loadError ? "Report could not be loaded" : "Report unavailable"}</strong>
-                <span>{loadError || (!loading ? "It may no longer be assigned to you. Return to the report list or refresh." : "")}</span>
-                {!loading ? <button type="button" onClick={onRefresh}>Refresh</button> : null}
+                <strong>{detailLoading ? "Loading report…" : "Report unavailable"}</strong>
+                <span>{!detailLoading ? (detailLoadError
+                  ? "This report could not be opened. It may no longer be assigned to you, or the connection was interrupted."
+                  : "It may no longer be assigned to you. Return to the report list or refresh.") : ""}</span>
+                {!detailLoading ? <button type="button" onClick={refreshSelected}>Try again</button> : null}
               </div>
             ) : (
               <>

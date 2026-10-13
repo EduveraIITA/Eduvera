@@ -85,13 +85,91 @@ export class DepartureCoordinationService {
     return result.rows.map(r=>r.user_id);
   }
 
+  private async guardianAudience(db:Db,schoolId:string,studentId:string) {
+    const result=await sql<{user_id:string}>`SELECT DISTINCT parent.user_id
+      FROM guardian_relationships relationship
+      JOIN parents parent ON parent.id=relationship.guardian_id
+      JOIN users account ON account.id=parent.user_id AND account.is_active AND account.role='parent'
+      JOIN school_memberships membership ON membership.school_id=relationship.school_id
+        AND membership.user_id=parent.user_id AND membership.role='guardian' AND membership.is_active
+      WHERE relationship.school_id=${schoolId}::uuid AND relationship.student_id=${studentId}::uuid
+        AND parent.user_id IS NOT NULL`.execute(db);
+    return result.rows.map(row=>row.user_id);
+  }
+
+  private async requestGuardianAudience(db:Db,request:{
+    school_id:string;student_id:string;requester_user_id:string|null;requester_person_id:string|null;
+  }) {
+    const result=await sql<{user_id:string}>`SELECT DISTINCT parent.user_id
+      FROM guardian_relationships relationship
+      JOIN parents parent ON parent.id=relationship.guardian_id
+      LEFT JOIN guardian_school_profiles profile ON profile.school_id=relationship.school_id
+        AND profile.guardian_id=relationship.guardian_id
+      JOIN users account ON account.id=parent.user_id AND account.is_active AND account.role='parent'
+      JOIN school_memberships membership ON membership.school_id=relationship.school_id
+        AND membership.user_id=parent.user_id AND membership.role='guardian' AND membership.is_active
+      WHERE relationship.school_id=${request.school_id}::uuid
+        AND relationship.student_id=${request.student_id}::uuid
+        AND parent.user_id IS NOT NULL
+        AND (parent.user_id=${request.requester_user_id}::uuid OR profile.person_id=${request.requester_person_id}::uuid)`
+      .execute(db);
+    return result.rows.map(row=>row.user_id);
+  }
+
+  private async enqueueParentAttention(db:Db,input:{
+    schoolId:string;studentId:string;recipientUserIds:string[];
+    eventType:"departure.updated"|"transport.updated";
+    aggregateType:"departure_request"|"transport_trip"|"departure_plan";
+    aggregateId:string;sourceKind:"departure_request_decision"|"transport_trip_cancellation"|
+      "transport_rider_exception"|"departure_handover_exception"|"departure_plan_exception";
+    sourceId:string;sourceRevision:number;topicKey:string;title:string;body:string;link:string;action:string;
+  }) {
+    const recipients=[...new Set(input.recipientUserIds)];
+    if(!recipients.length)return;
+    await this.events.enqueueUserEvent(db,{
+      schoolId:input.schoolId,eventType:input.eventType,aggregateType:input.aggregateType,
+      aggregateId:input.aggregateId,audienceUserIds:recipients,notificationUserIds:recipients,
+      payload:{student_id:input.studentId,revision:input.sourceRevision,action:input.action,
+        refresh:["departure","parent.home","notifications","attention"]},
+      idempotencyKey:`attention:${input.sourceKind}:${input.sourceId}:${input.studentId}:${input.sourceRevision}`,
+      notificationPayload:{kind:"general",title:input.title,body:input.body,parent_link:input.link,
+        attention_eligible:true,attention_portal:"parent",attention_module:"departure",
+        attention_source_kind:input.sourceKind,attention_source_id:input.sourceId,
+        attention_source_revision:input.sourceRevision,attention_topic_key:input.topicKey,
+        attention_student_id:input.studentId},
+    });
+  }
+
+  private async enqueueTransportStaffAttention(db:Db,input:{
+    schoolId:string;recipientUserIds:string[];portal:"teacher"|"principal";
+    sourceKind:"transport_swap"|"transport_swap_approval"|"transport_swap_response"|"transport_swap_decision";
+    sourceId:string;sourceRevision:number;title:string;body:string;link:string;action:string;
+  }) {
+    const recipients=[...new Set(input.recipientUserIds)];
+    if(!recipients.length)return;
+    const linkKey=input.portal==="teacher"?"staff_link":"admin_link";
+    await this.events.enqueueUserEvent(db,{
+      schoolId:input.schoolId,eventType:"transport.updated",aggregateType:"transport_duty_swap",
+      aggregateId:input.sourceId,audienceUserIds:recipients,notificationUserIds:recipients,
+      payload:{revision:input.sourceRevision,action:input.action,
+        refresh:["departure","teacher.home","principal.home","notifications","attention"]},
+      idempotencyKey:`attention:${input.sourceKind}:${input.sourceId}:${input.sourceRevision}:${input.portal}`,
+      notificationPayload:{kind:"general",title:input.title,body:input.body,[linkKey]:input.link,
+        attention_eligible:true,attention_portal:input.portal,
+        attention_module:input.portal==="teacher"?"transport":"departure",
+        attention_source_kind:input.sourceKind,attention_source_id:input.sourceId,
+        attention_source_revision:input.sourceRevision,
+        attention_topic_key:`transport-duty-swap:${input.sourceId}`},
+    });
+  }
+
   private async emit(db:Db,schoolId:string,type:"departure.updated"|"transport.updated",targetType:string,targetId:string,studentId?:string,extra:Record<string,unknown>={}) {
     const riderIds=targetType==="transport_trip"&&!studentId?(await db.selectFrom("transport_trip_roster").select("student_id").where("trip_id","=",targetId).execute()).map(row=>row.student_id):studentId?[studentId]:[];
     const audience=[...new Set([...(await this.schoolAudience(db,schoolId)),...(await Promise.all(riderIds.map(id=>this.familyAudience(db,id)))).flat()])];
     const candidate=extra.revision??extra.action;
     const action=typeof extra.action==="string"?extra.action:"updated";
     const eventVersion=typeof candidate==="string"||typeof candidate==="number"||typeof candidate==="boolean"?candidate:Date.now();
-    await this.events.enqueueUserEvent(db,{schoolId,eventType:type,aggregateType:targetType,aggregateId:targetId,audienceUserIds:audience,payload:{...extra,refresh:["departure","parent.home","principal.home","teacher.home"]},idempotencyKey:`${type}:${targetType}:${targetId}:${studentId??"trip"}:${action}:${eventVersion}`});
+    await this.events.enqueueUserEvent(db,{schoolId,eventType:type,aggregateType:targetType,aggregateId:targetId,audienceUserIds:audience,payload:{...extra,refresh:["departure","parent.home","principal.home","teacher.home","attention"]},idempotencyKey:`${type}:${targetType}:${targetId}:${studentId??"trip"}:${action}:${eventVersion}`});
   }
 
   private async familyStudent(user:AuthUser,requested?:string,db:Db=this.db,learner=false) {
@@ -114,7 +192,8 @@ export class DepartureCoordinationService {
     return {selected,children:rows};
   }
 
-  async family(user:AuthUser,studentId?:string,serviceDate?:string,learner=false) {
+  async family(user:AuthUser,studentId?:string,serviceDate?:string,learner=false,focusRequestId?:string) {
+    if(focusRequestId)uuid.parse(focusRequestId);
     const {selected,children}=await this.familyStudent(user,studentId,this.db,learner);
     const localDate=await this.localDate(this.db,selected.school_id);
     const selectedDate=serviceDate?date.parse(serviceDate):localDate;
@@ -127,7 +206,7 @@ export class DepartureCoordinationService {
     `.execute(this.db);
     const journeys=(await sql<any>`SELECT t.id,t.state,t.revision,t.service_date,t.direction,t.scheduled_departure_time,t.departed_at,t.completed_at,
       route.name route_name,route.code route_code,route.vehicle_label,route.provider_name,
-      rider.state rider_state,rider.boarded_at,rider.dropped_at,stop.name stop_name,stop.planned_time,
+      rider.state rider_state,rider.revision rider_revision,rider.boarded_at,rider.dropped_at,stop.name stop_name,stop.planned_time,
       point.latitude,point.longitude,point.accuracy_metres,point.observed_at,
       COALESCE(point.observed_at>=now()-make_interval(secs=>COALESCE(policy.location_stale_seconds,90)),false) location_fresh
       FROM transport_trip_roster rider JOIN transport_trips t ON t.id=rider.trip_id JOIN transport_routes route ON route.id=t.route_id
@@ -141,6 +220,10 @@ export class DepartureCoordinationService {
       WHERE rider.student_id=${selected.id}::uuid AND t.school_id=${selected.school_id}::uuid AND t.service_date=${selectedDate}::date
       ORDER BY t.scheduled_departure_time,t.id`.execute(this.db)).rows;
     const requests=learner?[]:await this.db.selectFrom("departure_change_requests").select(["id","service_date","status","requested_mode","reason","decision_note","revision","requester_user_id","created_at"]).where("school_id","=",selected.school_id).where("student_id","=",selected.id).orderBy("created_at","desc").limit(20).execute();
+    if(!learner&&focusRequestId&&!requests.some(request=>request.id===focusRequestId)) {
+      const exact=await this.db.selectFrom("departure_change_requests").select(["id","service_date","status","requested_mode","reason","decision_note","revision","requester_user_id","created_at"]).where("school_id","=",selected.school_id).where("student_id","=",selected.id).where("id","=",focusRequestId).executeTakeFirst();
+      if(exact)requests.unshift(exact);
+    }
     const authorities=learner?[]:(await sql<any>`SELECT a.id,a.valid_from,a.valid_until,CASE WHEN a.guardian_relationship_id IS NULL THEN 'collector' ELSE 'guardian' END kind,
       concat_ws(' ',person.first_name,person.last_name) name,right(person.contact_phone,4) phone_last4
       FROM departure_collection_authorities a LEFT JOIN guardian_relationships gr ON gr.id=a.guardian_relationship_id
@@ -153,8 +236,10 @@ export class DepartureCoordinationService {
       policy:policy??{enabled:true,enabled_modes:["guardian_pickup","authorized_collector","school_transport","external_transport"],change_cutoff:"13:00"},map:{tile_url:process.env.MAP_TILE_URL||"https://tile.openstreetmap.org/{z}/{x}/{y}.png",attribution:"© OpenStreetMap contributors"}};
   }
 
-  async workspace(user:AuthUser,schoolId:string) {
+  async workspace(user:AuthUser,schoolId:string,focusedPlanId?:string,focusedTripId?:string) {
     await this.membership(user,schoolId,true);
+    const planId=focusedPlanId?uuid.parse(focusedPlanId):null;
+    const tripId=focusedTripId?uuid.parse(focusedTripId):null;
     const school=await this.db.selectFrom("schools").select(["id","name","timezone","institution_kind"]).where("id","=",schoolId).executeTakeFirstOrThrow();
     const [policy,routes,trips,patterns,swaps,requests,students,collectors,authorities,guardianLinks,plans]=await Promise.all([
       this.db.selectFrom("departure_policies").selectAll().where("school_id","=",schoolId).executeTakeFirst(),
@@ -166,7 +251,7 @@ export class DepartureCoordinationService {
         FROM transport_trips t JOIN transport_routes r ON r.id=t.route_id JOIN users u ON u.id=t.assigned_collector_user_id
         LEFT JOIN users backup ON backup.id=t.backup_collector_user_id LEFT JOIN transport_service_patterns pattern ON pattern.id=t.service_pattern_id
         LEFT JOIN transport_trip_roster roster ON roster.trip_id=t.id
-        WHERE t.school_id=${schoolId}::uuid AND t.service_date BETWEEN current_date-7 AND current_date+90
+        WHERE t.school_id=${schoolId}::uuid AND (t.service_date BETWEEN current_date-7 AND current_date+90 OR t.id=${tripId}::uuid)
         GROUP BY t.id,r.id,u.id,backup.id,pattern.id ORDER BY t.service_date,t.scheduled_departure_time,t.created_at`.execute(this.db),
       sql<any>`SELECT pattern.*,route.name route_name,route.code route_code,route.vehicle_label,
         concat(primary_user.first_name,' ',primary_user.last_name) primary_collector_name,
@@ -192,7 +277,7 @@ export class DepartureCoordinationService {
         ORDER BY u.first_name,u.last_name`.execute(this.db),
       sql<any>`SELECT a.*,concat(person.first_name,' ',person.last_name) collector_name FROM departure_collection_authorities a LEFT JOIN guardian_relationships gr ON gr.id=a.guardian_relationship_id LEFT JOIN guardian_school_profiles gp ON gp.school_id=a.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people person ON person.id=COALESCE(a.collector_person_id,gp.person_id) WHERE a.school_id=${schoolId}::uuid AND a.status='active' ORDER BY a.created_at DESC`.execute(this.db),
       sql<any>`SELECT gr.id,gr.student_id,person.id person_id,concat(person.first_name,' ',person.last_name) guardian_name,gr.relationship FROM guardian_relationships gr JOIN guardian_school_profiles gp ON gp.school_id=gr.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people person ON person.id=gp.person_id WHERE gr.school_id=${schoolId}::uuid ORDER BY person.first_name,person.last_name`.execute(this.db),
-      sql<any>`SELECT p.*,concat(person.first_name,' ',person.last_name) student_name,a.collector_name FROM departure_plans p JOIN students s ON s.id=p.student_id JOIN school_people person ON person.id=s.person_id LEFT JOIN LATERAL (SELECT concat(cp.first_name,' ',cp.last_name) collector_name FROM departure_collection_authorities ca LEFT JOIN guardian_relationships gr ON gr.id=ca.guardian_relationship_id LEFT JOIN guardian_school_profiles gp ON gp.school_id=ca.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people cp ON cp.id=COALESCE(ca.collector_person_id,gp.person_id) WHERE ca.id=p.authority_id) a ON true WHERE p.school_id=${schoolId}::uuid AND p.is_current AND p.service_date BETWEEN current_date AND current_date+7 ORDER BY p.service_date,person.first_name`.execute(this.db),
+      sql<any>`SELECT p.*,concat(person.first_name,' ',person.last_name) student_name,a.collector_name FROM departure_plans p JOIN students s ON s.id=p.student_id JOIN school_people person ON person.id=s.person_id LEFT JOIN LATERAL (SELECT concat(cp.first_name,' ',cp.last_name) collector_name FROM departure_collection_authorities ca LEFT JOIN guardian_relationships gr ON gr.id=ca.guardian_relationship_id LEFT JOIN guardian_school_profiles gp ON gp.school_id=ca.school_id AND gp.guardian_id=gr.guardian_id JOIN school_people cp ON cp.id=COALESCE(ca.collector_person_id,gp.person_id) WHERE ca.id=p.authority_id) a ON true WHERE p.school_id=${schoolId}::uuid AND p.is_current AND (p.service_date BETWEEN current_date AND current_date+7 OR p.id=${planId}::uuid) ORDER BY p.service_date,person.first_name`.execute(this.db),
     ]);
     return {school,policy:policy??{school_id:schoolId,enabled:true,enabled_modes:["guardian_pickup","authorized_collector","independent_departure","school_transport","external_transport"],change_cutoff:"13:00",location_retention_hours:24,location_stale_seconds:90,minimum_location_interval_seconds:10,maximum_location_accuracy_metres:250,revision:0},routes:routes.rows,trips:trips.rows,patterns:patterns.rows,swaps:swaps.rows,requests:requests.rows,students:students.rows,collectors:collectors.rows,authorities:authorities.rows,guardian_links:guardianLinks.rows,plans:plans.rows,map:{tile_url:process.env.MAP_TILE_URL||"https://tile.openstreetmap.org/{z}/{x}/{y}.png",attribution:"© OpenStreetMap contributors"}};
   }
@@ -279,10 +364,12 @@ export class DepartureCoordinationService {
       }
     }
     const assignedIds=new Set(assigned.map(item=>item.student_id));
+    const riderExceptions:Array<{student_id:string;revision:number}>=[];
     for(const rider of existing.filter(item=>!assignedIds.has(item.student_id)&&item.state==="expected")) {
-      await tx.updateTable("transport_trip_roster").set({state:"exception",revision:sql<number>`revision+1`,recorded_by:user.id,outcome_note:"Route assignment changed. School review is required before travel.",updated_at:new Date()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).execute();
+      const updated=await tx.updateTable("transport_trip_roster").set({state:"exception",revision:sql<number>`revision+1`,recorded_by:user.id,outcome_note:"Route assignment changed. School review is required before travel.",updated_at:new Date()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).returning(["student_id","revision"]).executeTakeFirstOrThrow();
+      riderExceptions.push(updated);
     }
-    return {roster_count:new Set([...existingIds,...assignedIds]).size,added_count:assigned.filter(item=>!existingIds.has(item.student_id)).length,retained_exception_count:existing.filter(item=>!assignedIds.has(item.student_id)).length};
+    return {summary:{roster_count:new Set([...existingIds,...assignedIds]).size,added_count:assigned.filter(item=>!existingIds.has(item.student_id)).length,retained_exception_count:riderExceptions.length},riderExceptions};
   }
 
   async createTrip(user:AuthUser,schoolId:string,body:unknown) {
@@ -297,7 +384,7 @@ export class DepartureCoordinationService {
       const scheduled=input.scheduled_departure_time??stopTime?.time?.slice(0,5)??(input.direction==="to_institution"?"07:30":"15:30");
       await this.assertNoTripDutyConflict(tx,schoolId,input.assigned_collector_user_id,input.service_date,scheduled);
       const trip=await tx.insertInto("transport_trips").values({school_id:schoolId,route_id:input.route_id,service_date:input.service_date,direction:input.direction,scheduled_departure_time:scheduled,assigned_collector_user_id:input.assigned_collector_user_id,backup_collector_user_id:input.backup_collector_user_id??null,collector_assignment_status:"pending",assignment_accepted_at:null,assignment_declined_at:null,created_by:user.id}).returningAll().executeTakeFirstOrThrow();
-      const prepared=await this.prepareTripRoster(tx,user,trip);
+      const {summary:prepared}=await this.prepareTripRoster(tx,user,trip);
       await this.audit(tx,schoolId,user.id,"trip.created","transport_trip",trip.id,{...prepared,assigned_collector_user_id:input.assigned_collector_user_id}); await this.emit(tx,schoolId,"transport.updated","transport_trip",trip.id,undefined,{revision:trip.revision}); return {...trip,...prepared};
     });
   }
@@ -344,7 +431,7 @@ export class DepartureCoordinationService {
           if(existing){existingCount+=1;continue;}
           await this.assertNoTripDutyConflict(tx,schoolId,pattern.primary_collector_user_id,day.date,pattern.departure_time);
           const trip=await tx.insertInto("transport_trips").values({school_id:schoolId,route_id:pattern.route_id,service_date:day.date,direction:pattern.direction,service_pattern_id:pattern.id,scheduled_departure_time:pattern.departure_time,assigned_collector_user_id:pattern.primary_collector_user_id,backup_collector_user_id:pattern.backup_collector_user_id,collector_assignment_status:"pending",assignment_accepted_at:null,assignment_declined_at:null,created_by:user.id}).returningAll().executeTakeFirstOrThrow();
-          const prepared=await this.prepareTripRoster(tx,user,trip); created.push({id:trip.id,service_date:day.date,pattern_id:pattern.id,roster_count:prepared.roster_count});
+          const {summary:prepared}=await this.prepareTripRoster(tx,user,trip); created.push({id:trip.id,service_date:day.date,pattern_id:pattern.id,roster_count:prepared.roster_count});
           await this.audit(tx,schoolId,user.id,"trip.generated","transport_trip",trip.id,{pattern_id:pattern.id,roster_count:prepared.roster_count});
           await this.emit(tx,schoolId,"transport.updated","transport_trip",trip.id,undefined,{revision:trip.revision,action:"generated"});
         }
@@ -358,8 +445,19 @@ export class DepartureCoordinationService {
     return this.db.transaction().execute(async tx=>{
       await this.managedWrite(tx,user,schoolId);
       const trip=await tx.selectFrom("transport_trips").selectAll().where("school_id","=",schoolId).where("id","=",tripId).forUpdate().executeTakeFirst(); if(!trip) throw new NotFoundException("Trip not found."); if(trip.revision!==input.expected_revision) throw new ConflictException("Trip changed. Reload before refreshing its roster.");
-      const prepared=await this.prepareTripRoster(tx,user,trip); const row=await tx.updateTable("transport_trips").set({revision:trip.revision+1,updated_at:new Date()}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,schoolId,user.id,"roster.refreshed","transport_trip",trip.id,prepared); await this.emit(tx,schoolId,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action:"roster_refreshed"}); return {...row,...prepared};
+      const {summary:prepared,riderExceptions}=await this.prepareTripRoster(tx,user,trip); const row=await tx.updateTable("transport_trips").set({revision:trip.revision+1,updated_at:new Date()}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
+      await this.audit(tx,schoolId,user.id,"roster.refreshed","transport_trip",trip.id,prepared);
+      await this.emit(tx,schoolId,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action:"roster_refreshed"});
+      for(const rider of riderExceptions) await this.enqueueParentAttention(tx,{
+        schoolId,studentId:rider.student_id,recipientUserIds:await this.guardianAudience(tx,schoolId,rider.student_id),
+        eventType:"transport.updated",aggregateType:"transport_trip",aggregateId:trip.id,
+        sourceKind:"transport_rider_exception",sourceId:trip.id,sourceRevision:rider.revision,
+        topicKey:`transport-rider:${trip.id}:${rider.student_id}`,title:"School journey needs attention",
+        body:"The route assignment changed and school staff must review this learner's journey before travel.",
+        link:`/parent/departure?student_id=${rider.student_id}&date=${trip.service_date}&trip_id=${trip.id}&rider_revision=${rider.revision}`,
+        action:"roster_assignment_removed",
+      });
+      return {...row,...prepared};
     });
   }
 
@@ -387,7 +485,12 @@ export class DepartureCoordinationService {
         await this.assertDutyChangeWindow(tx,input.target_trip_id);
       }else if(input.target_trip_id) throw new BadRequestException("A cover request does not exchange another trip.");
       const row=await tx.insertInto("transport_duty_swap_requests").values({school_id:trip.school_id,request_type:input.request_type,requester_trip_id:trip.id,target_trip_id:input.request_type==="exchange"?input.target_trip_id??null:null,requester_user_id:user.id,target_user_id:input.target_user_id,requester_trip_revision:trip.revision,target_trip_revision:targetRevision,reason:input.reason}).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,trip.school_id,user.id,"duty_swap.requested","transport_duty_swap",row.id,{request_type:row.request_type,requester_trip_id:trip.id,target_trip_id:row.target_trip_id}); await this.emit(tx,trip.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:"requested"}); return row;
+      await this.audit(tx,trip.school_id,user.id,"duty_swap.requested","transport_duty_swap",row.id,{request_type:row.request_type,requester_trip_id:trip.id,target_trip_id:row.target_trip_id});
+      await this.enqueueTransportStaffAttention(tx,{schoolId:trip.school_id,recipientUserIds:[row.target_user_id],portal:"teacher",
+        sourceKind:"transport_swap",sourceId:row.id,sourceRevision:row.revision,title:"Duty change needs your response",
+        body:row.request_type==="exchange"?"A colleague requested a journey exchange.":"A colleague asked you to cover a journey.",
+        link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:"requested"});
+      await this.emit(tx,trip.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:"requested"}); return row;
     });
   }
 
@@ -402,7 +505,21 @@ export class DepartureCoordinationService {
       await this.assertDutyChangeWindow(tx,swap.requester_trip_id);
       if(swap.target_trip_id) await this.assertDutyChangeWindow(tx,swap.target_trip_id);
       const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,response_note:input.note,target_responded_at:new Date(),revision:swap.revision+1,updated_at:new Date()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,swap.school_id,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{request_type:row.request_type}); await this.emit(tx,swap.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision}); return row;
+      await this.audit(tx,swap.school_id,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{request_type:row.request_type});
+      await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:[row.requester_user_id],portal:"teacher",
+        sourceKind:"transport_swap_response",sourceId:row.id,sourceRevision:row.revision,
+        title:`Duty change ${input.decision}`,body:input.note||`Your colleague ${input.decision} the duty change request.`,
+        link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
+      if(input.decision==="accepted") {
+        const admins=(await sql<{user_id:string}>`SELECT membership.user_id FROM school_memberships membership
+          JOIN users account ON account.id=membership.user_id AND account.is_active AND account.role='admin'
+          WHERE membership.school_id=${swap.school_id}::uuid AND membership.role='admin' AND membership.is_active`.execute(tx)).rows;
+        await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:admins.map(item=>item.user_id),portal:"principal",
+          sourceKind:"transport_swap_approval",sourceId:row.id,sourceRevision:row.revision,
+          title:"Duty change needs approval",body:"Two staff members agreed a transport duty change. Review it before the journey.",
+          link:`/principal/departure?section=roster&swap=${row.id}&swap_revision=${row.revision}`,action:"accepted"});
+      }
+      await this.emit(tx,swap.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision}); return row;
     });
   }
 
@@ -425,7 +542,12 @@ export class DepartureCoordinationService {
         if(targetTrip) await tx.updateTable("transport_trips").set({assigned_collector_user_id:swap.requester_user_id,collector_assignment_status:"accepted",assignment_accepted_at:new Date(),assignment_declined_at:null,assignment_note:`Approved exchange request ${swap.id}`,revision:targetTrip.revision+1,updated_at:new Date()}).where("id","=",targetTrip.id).execute();
       }
       const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,decided_by:user.id,decided_at:new Date(),decision_note:input.note,revision:swap.revision+1,updated_at:new Date()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,schoolId,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{requester_trip_id:row.requester_trip_id,target_trip_id:row.target_trip_id}); await this.emit(tx,schoolId,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision}); return row;
+      await this.audit(tx,schoolId,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{requester_trip_id:row.requester_trip_id,target_trip_id:row.target_trip_id});
+      await this.enqueueTransportStaffAttention(tx,{schoolId,recipientUserIds:[row.requester_user_id,row.target_user_id],portal:"teacher",
+        sourceKind:"transport_swap_decision",sourceId:row.id,sourceRevision:row.revision,
+        title:`Duty change ${input.decision==="approved"?"approved":"declined"}`,body:input.note,
+        link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
+      await this.emit(tx,schoolId,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision}); return row;
     });
   }
 
@@ -452,9 +574,18 @@ export class DepartureCoordinationService {
       if(!current) throw new NotFoundException("Collection authority not found.");
       if(current.status!=="active"||current.revision!==input.expected_revision) throw new ConflictException("Collection authority changed. Reload before revoking it.");
       const row=await tx.updateTable("departure_collection_authorities").set({status:"revoked",revision:current.revision+1,revoked_by:user.id,revoked_at:new Date(),revocation_reason:input.reason}).where("id","=",authorityId).returningAll().executeTakeFirstOrThrow();
-      await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:new Date()}).where("school_id","=",schoolId).where("authority_id","=",authorityId).where("is_current","=",true).where("service_date",">=",sql<string>`current_date`).where("state","in",["planned","ready","change_pending"]).execute();
+      const affectedPlans=await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:new Date()}).where("school_id","=",schoolId).where("authority_id","=",authorityId).where("is_current","=",true).where("service_date",">=",sql<string>`current_date`).where("state","in",["planned","ready","change_pending"]).returning(["id","student_id","service_date","revision"]).execute();
       await this.audit(tx,schoolId,user.id,"authority.revoked","departure_authority",row.id,{student_id:row.student_id,reason:input.reason});
       await this.emit(tx,schoolId,"departure.updated","departure_authority",row.id,row.student_id,{revision:row.revision});
+      for(const plan of affectedPlans) await this.enqueueParentAttention(tx,{
+        schoolId,studentId:plan.student_id,recipientUserIds:await this.guardianAudience(tx,schoolId,plan.student_id),
+        eventType:"departure.updated",aggregateType:"departure_plan",aggregateId:plan.id,
+        sourceKind:"departure_plan_exception",sourceId:plan.id,sourceRevision:plan.revision,
+        topicKey:`departure-plan:${plan.id}`,title:"Departure plan needs attention",
+        body:"An approved collector is no longer authorised. Review the departure arrangement before collection.",
+        link:`/parent/departure?student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${plan.revision}`,
+        action:"collection_authority_revoked",
+      });
       return row;
     });
   }
@@ -511,11 +642,23 @@ export class DepartureCoordinationService {
       if(input.decision==="approved") await this.upsertPlan(tx,user,schoolId,{student_id:req.student_id,service_date:req.service_date,mode:req.requested_mode,authority_id:req.requested_authority_id,trip_id:req.requested_trip_id,stop_id:req.requested_stop_id,external_arrangement:req.external_arrangement,source:req.channel==="app"?"guardian_request":"office_assisted",source_reference_id:req.id});
       else if(req.current_plan_id) await tx.updateTable("departure_plans").set({state:"planned",revision:sql<number>`revision+1`,updated_at:new Date()}).where("id","=",req.current_plan_id).where("is_current","=",true).where("state","=","change_pending").execute();
       const row=await tx.updateTable("departure_change_requests").set({status:input.decision,revision:req.revision+1,decided_by:user.id,decided_at:new Date(),decision_note:input.note,updated_at:new Date()}).where("id","=",req.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,schoolId,user.id,`request.${input.decision}`,"departure_request",row.id,{student_id:row.student_id}); await this.emit(tx,schoolId,"departure.updated","departure_request",row.id,row.student_id,{revision:row.revision}); return row;
+      await this.audit(tx,schoolId,user.id,`request.${input.decision}`,"departure_request",row.id,{student_id:row.student_id});
+      await this.emit(tx,schoolId,"departure.updated","departure_request",row.id,row.student_id,{revision:row.revision});
+      await this.enqueueParentAttention(tx,{
+        schoolId,studentId:row.student_id,recipientUserIds:await this.requestGuardianAudience(tx,row),
+        eventType:"departure.updated",aggregateType:"departure_request",aggregateId:row.id,
+        sourceKind:"departure_request_decision",sourceId:row.id,sourceRevision:row.revision,
+        topicKey:`departure-request:${row.id}`,title:`Departure request ${input.decision}`,
+        body:`Your departure request for ${row.service_date} was ${input.decision}.`,
+        link:`/parent/departure?student_id=${row.student_id}&date=${row.service_date}&request_id=${row.id}&request_revision=${row.revision}`,
+        action:input.decision,
+      });
+      return row;
     });
   }
 
-  async collectorWorkspace(user:AuthUser) {
+  async collectorWorkspace(user:AuthUser,focusedSwapId?:string) {
+    if(focusedSwapId)uuid.parse(focusedSwapId);
     const staff=await this.db.selectFrom("school_memberships").innerJoin("users","users.id","school_memberships.user_id").select("school_memberships.school_id").where("school_memberships.user_id","=",user.id).where("school_memberships.is_active","=",true).where("users.is_active","=",true).where("school_memberships.role","in",["staff","admin"]).execute();
     if(!staff.length) throw new ForbiddenException("Active staff membership is required to read transport duties.");
     const trips=(await sql<any>`SELECT t.*,r.name route_name,r.code route_code,r.vehicle_label,r.provider_name,s.name school_name,
@@ -542,7 +685,9 @@ export class DepartureCoordinationService {
       FROM transport_duty_swap_requests swap JOIN transport_trips request_trip ON request_trip.id=swap.requester_trip_id
       JOIN transport_routes request_route ON request_route.id=request_trip.route_id LEFT JOIN transport_trips target_trip ON target_trip.id=swap.target_trip_id
       LEFT JOIN transport_routes target_route ON target_route.id=target_trip.route_id JOIN users requester ON requester.id=swap.requester_user_id JOIN users target ON target.id=swap.target_user_id
-      WHERE (swap.requester_user_id=${user.id}::uuid OR swap.target_user_id=${user.id}::uuid) AND swap.school_id=ANY(${staff.map(member=>member.school_id)}::uuid[]) AND swap.created_at>=now()-interval '30 days'
+      WHERE (swap.requester_user_id=${user.id}::uuid OR swap.target_user_id=${user.id}::uuid)
+        AND swap.school_id=ANY(${staff.map(member=>member.school_id)}::uuid[])
+        AND (swap.created_at>=now()-interval '30 days' OR swap.id=${focusedSwapId??null}::uuid)
       ORDER BY swap.created_at DESC`.execute(this.db)).rows;
     const visible=[];
     for(const trip of trips) {
@@ -602,12 +747,36 @@ export class DepartureCoordinationService {
       const next=action==="boarding"?"boarding":action==="start"?"in_progress":action==="complete"?"completed":"cancelled";
       const riders=await tx.selectFrom("transport_trip_roster").select("state").where("trip_id","=",tripId).execute();
       assertTripTransition(trip,action,riders,input.note);
+      let affectedPlans:Array<{id:string;student_id:string;service_date:string;revision:number}>=[];
       if(action==="cancel") {
-        await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:new Date()}).where("trip_id","=",tripId).where("is_current","=",true).where("state","not in",["completed","cancelled"]).execute();
+        affectedPlans=await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:new Date()}).where("trip_id","=",tripId).where("is_current","=",true).where("state","not in",["completed","cancelled"]).returning(["id","student_id","service_date","revision"]).execute();
         await tx.deleteFrom("transport_location_samples").where("trip_id","=",tripId).execute();
       }
       const now=new Date(); const row=await tx.updateTable("transport_trips").set({state:next,revision:trip.revision+1,roster_frozen_at:action==="boarding"||action==="start"?(trip.roster_frozen_at??now):trip.roster_frozen_at,departed_at:action==="start"?now:trip.departed_at,location_started_at:action==="start"?now:trip.location_started_at,completed_at:action==="complete"?now:trip.completed_at,location_ended_at:action==="complete"?now:trip.location_ended_at,cancelled_at:action==="cancel"?now:trip.cancelled_at,cancellation_reason:action==="cancel"?input.note:trip.cancellation_reason,updated_at:now}).where("id","=",tripId).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,trip.school_id,user.id,`trip.${action}`,"transport_trip",trip.id,{from:trip.state,to:next,note:input.note,school_reconciliation:Boolean(managementSchoolId)}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action}); return row;
+      await this.audit(tx,trip.school_id,user.id,`trip.${action}`,"transport_trip",trip.id,{from:trip.state,to:next,note:input.note,school_reconciliation:Boolean(managementSchoolId)}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action});
+      if(action==="cancel") {
+        const affectedPlanStudents=new Set(affectedPlans.map(plan=>plan.student_id));
+        const students=(await tx.selectFrom("transport_trip_roster").select("student_id").where("trip_id","=",trip.id).execute()).map(item=>item.student_id);
+        for(const studentId of [...new Set(students)].filter(id=>!affectedPlanStudents.has(id))) await this.enqueueParentAttention(tx,{
+          schoolId:trip.school_id,studentId,recipientUserIds:await this.guardianAudience(tx,trip.school_id,studentId),
+          eventType:"transport.updated",aggregateType:"transport_trip",aggregateId:trip.id,
+          sourceKind:"transport_trip_cancellation",sourceId:trip.id,sourceRevision:row.revision,
+          topicKey:`transport-trip:${trip.id}:${studentId}`,title:"School bus journey cancelled",
+          body:`The school bus journey on ${trip.service_date} was cancelled. Review the departure arrangement.`,
+          link:`/parent/departure?student_id=${studentId}&date=${trip.service_date}&trip_id=${trip.id}&trip_revision=${row.revision}`,
+          action:"cancelled",
+        });
+        for(const plan of affectedPlans) await this.enqueueParentAttention(tx,{
+          schoolId:trip.school_id,studentId:plan.student_id,recipientUserIds:await this.guardianAudience(tx,trip.school_id,plan.student_id),
+          eventType:"departure.updated",aggregateType:"departure_plan",aggregateId:plan.id,
+          sourceKind:"departure_plan_exception",sourceId:plan.id,sourceRevision:plan.revision,
+          topicKey:`departure-plan:${plan.id}`,title:"Departure plan needs attention",
+          body:"The assigned school bus journey was cancelled. Review the departure arrangement before dismissal.",
+          link:`/parent/departure?student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${plan.revision}`,
+          action:"transport_trip_cancelled",
+        });
+      }
+      return row;
     });
   }
 
@@ -643,7 +812,17 @@ export class DepartureCoordinationService {
       const planState=input.state==="dropped"?"completed":input.state==="boarded"?"ready":"exception";
       if(plan) await tx.updateTable("departure_plans").set({state:planState,revision:plan.revision+1,updated_at:now}).where("id","=",plan.id).execute();
       if(plan&&input.state==="dropped") await tx.insertInto("departure_handovers").values({school_id:trip.school_id,plan_id:plan.id,student_id:studentId,outcome:"transport_dropped",authority_id:null,authority_snapshot:{trip_id:trip.id,rider_revision:row.revision},evidence_method:"transport_roster",note:input.note,occurred_at:now,recorded_by:user.id}).onConflict(conflict=>conflict.column("plan_id").doNothing()).execute();
-      await this.audit(tx,trip.school_id,user.id,`rider.${input.state}`,"transport_trip",trip.id,{student_id:studentId,from:rider.state,to:input.state,note:input.note,rider_revision:row.revision,school_reconciliation:Boolean(managementSchoolId)}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,studentId,{revision:row.revision,action:input.state}); return row;
+      await this.audit(tx,trip.school_id,user.id,`rider.${input.state}`,"transport_trip",trip.id,{student_id:studentId,from:rider.state,to:input.state,note:input.note,rider_revision:row.revision,school_reconciliation:Boolean(managementSchoolId)}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,studentId,{revision:row.revision,action:input.state});
+      if(input.state==="exception") await this.enqueueParentAttention(tx,{
+        schoolId:trip.school_id,studentId,recipientUserIds:await this.guardianAudience(tx,trip.school_id,studentId),
+        eventType:"transport.updated",aggregateType:"transport_trip",aggregateId:trip.id,
+        sourceKind:"transport_rider_exception",sourceId:trip.id,sourceRevision:row.revision,
+        topicKey:`transport-rider:${trip.id}:${studentId}`,title:"School journey needs attention",
+        body:"School staff recorded a concern with this journey. Open the journey for the current status.",
+        link:`/parent/departure?student_id=${studentId}&date=${trip.service_date}&trip_id=${trip.id}&rider_revision=${row.revision}`,
+        action:"rider_exception",
+      });
+      return row;
     });
   }
 
@@ -661,7 +840,18 @@ export class DepartureCoordinationService {
       if(["guardian_pickup","authorized_collector"].includes(plan.mode)) { if(!authorityId) throw new BadRequestException("A current collection authority is required."); const authority=await tx.selectFrom("departure_collection_authorities").selectAll().where("school_id","=",schoolId).where("id","=",authorityId).where("student_id","=",plan.student_id).where("status","=","active").where("valid_from","<=",plan.service_date).where(eb=>eb.or([eb("valid_until","is",null),eb("valid_until",">=",plan.service_date)])).executeTakeFirst(); if(!authority) throw new ForbiddenException("Collection authority is no longer current."); snapshot={authority_id:authority.id,revision:authority.revision,verification_method:authority.verification_method}; }
       if(plan.mode==="independent_departure"&&input.outcome==="handed_over") throw new BadRequestException("Independent departure requires its matching factual outcome.");
       const terminal=["handed_over","departed_independently"].includes(input.outcome); const row=await tx.insertInto("departure_handovers").values({school_id:schoolId,plan_id:plan.id,student_id:plan.student_id,outcome:input.outcome,authority_id:authorityId??null,authority_snapshot:snapshot,evidence_method:input.evidence_method,note:input.note,occurred_at:new Date(input.occurred_at),recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
-      await tx.updateTable("departure_plans").set({state:terminal?"completed":"exception",revision:plan.revision+1,updated_at:new Date()}).where("id","=",plan.id).execute(); await this.audit(tx,schoolId,user.id,`handover.${input.outcome}`,"departure_plan",plan.id,{student_id:plan.student_id}); await this.emit(tx,schoolId,"departure.updated","departure_plan",plan.id,plan.student_id,{revision:plan.revision+1,action:input.outcome}); return row;
+      const nextRevision=plan.revision+1;
+      await tx.updateTable("departure_plans").set({state:terminal?"completed":"exception",revision:nextRevision,updated_at:new Date()}).where("id","=",plan.id).execute(); await this.audit(tx,schoolId,user.id,`handover.${input.outcome}`,"departure_plan",plan.id,{student_id:plan.student_id}); await this.emit(tx,schoolId,"departure.updated","departure_plan",plan.id,plan.student_id,{revision:nextRevision,action:input.outcome});
+      if(!terminal) await this.enqueueParentAttention(tx,{
+        schoolId,studentId:plan.student_id,recipientUserIds:await this.guardianAudience(tx,schoolId,plan.student_id),
+        eventType:"departure.updated",aggregateType:"departure_plan",aggregateId:plan.id,
+        sourceKind:"departure_handover_exception",sourceId:plan.id,sourceRevision:nextRevision,
+        topicKey:`departure-plan:${plan.id}`,title:"Departure handover needs attention",
+        body:"School staff recorded a handover concern. Open the departure plan for the current status.",
+        link:`/parent/departure?student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${nextRevision}`,
+        action:input.outcome,
+      });
+      return row;
     });
   }
 

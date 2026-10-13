@@ -1,0 +1,60 @@
+.attention-indicator {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.attention-indicator--module {
+  min-width: 9px;
+  height: 9px;
+  color: #fff;
+  background: #0b57c9;
+  box-shadow: 0 0 0 3px var(--edura-surface);
+}
+
+.attention-indicator--module.attention-indicator--counted {
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  font-size: 10px;
+  box-shadow: none;
+}
+
+.attention-indicator--nav {
+  width: 7px;
+  height: 7px;
+  background: #0b57c9;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .96);
+}
+
+.attention-indicator--action { background: #a45b00; }
+.attention-indicator--exception { background: #b42332; }
+.attention-indicator--unavailable {
+  border: 2px solid #a45b00;
+  background: transparent;
+}
+
+.attention-target-status {
+  margin: 12px 0;
+  padding: 11px 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, #a45b00 28%, transparent);
+  border-radius: var(--edura-radius-control, 14px);
+  color: #6f4200;
+  background: color-mix(in srgb, #fff2cc 62%, white);
+  font-size: .86rem;
+  line-height: 1.4;
+}
+
+.attention-target-status svg { flex: none; margin-top: 1px; }
+
+@media (forced-colors: active) {
+  .attention-indicator { border: 2px solid ButtonText; }
+}

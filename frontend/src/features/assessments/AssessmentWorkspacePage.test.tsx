@@ -64,6 +64,19 @@ describe("published family results",()=>{
     expect(page.queryByText("Term 1 report")).not.toBeInTheDocument();
   });
 
+  it("opens and highlights the exact published assessment named by an attention link",()=>{
+    const view=render(<MemoryRouter initialEntries={["/student/results?assessment_id=assessment-2&publication_id=publication-2"]}><FamilyResultsPage portal="student" children={[]} onSelect={()=>undefined} data={{student:{id:"student-1",first_name:"Aarav",last_name:"Sharma",admission_number:"A-1",class_name:"Class 7A"},results:[
+      {id:"assessment-1",title:"Current English result",assessment_kind:"exam",maximum_marks:"80.00",scheduled_at:"2026-10-12T03:30:00.000Z",subject_name:"English",color:"#2563eb",icon:"book",cycle_name:"Term 1 examinations",term_name:"Term 1",academic_year:"2026-27",publication_id:"publication-1",sequence:1,published_at:"2026-10-20T03:30:00.000Z",outcome:"scored",marks:"66.00",grade:"A",feedback:"Clear written work"},
+      {id:"assessment-2",title:"Earlier Mathematics result",assessment_kind:"class_test",maximum_marks:"40.00",scheduled_at:"2025-09-12T03:30:00.000Z",subject_name:"Mathematics",color:"#0f766e",icon:"calculator",cycle_name:"Unit tests",term_name:"Term 2",academic_year:"2025-26",publication_id:"publication-2",sequence:1,published_at:"2025-09-20T03:30:00.000Z",outcome:"scored",marks:"35.00",grade:"A",feedback:"Accurate work"}
+    ]}}/></MemoryRouter>);
+
+    expect(within(view.container).getByLabelText("Academic year")).toHaveValue("2025-26");
+    expect(within(view.container).getByRole("tab",{name:"Assessments"})).toHaveAttribute("aria-selected","true");
+    expect(view.container.querySelector("#attention-assessment-assessment-2")).toHaveClass("attention-focus");
+    expect(within(view.container).getByText("Earlier Mathematics result")).toBeInTheDocument();
+    expect(within(view.container).queryByText("Current English result")).not.toBeInTheDocument();
+  });
+
   it("renders a clear unpublished empty state",()=>{
     render(<MemoryRouter><FamilyResultsPage portal="student" children={[]} onSelect={()=>undefined} data={{student:{id:"student-1",first_name:"Aarav",last_name:"Sharma",admission_number:"A-1",class_name:"Class 7A"},results:[]}}/></MemoryRouter>);
     expect(screen.getByText("No published results")).toBeInTheDocument();

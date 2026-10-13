@@ -224,6 +224,7 @@ export class CampusEventFinanceService {
     changeKind: "participant_withdrawn" | "refund_recorded",
     key: string,
     studentId: string,
+    source: { kind: "event_withdrawal" | "event_refund"; id: string },
     notification: { title: string; body: string },
   ) {
     const audience = await this.audience(db, event);
@@ -248,7 +249,7 @@ export class CampusEventFinanceService {
         event_id: event.id,
         revision: event.revision,
         change_kind: changeKind,
-        refresh: ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications"],
+        refresh: ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications", "attention"],
       },
       notificationUserIds: familyUsers,
       notificationPayload: {
@@ -257,11 +258,19 @@ export class CampusEventFinanceService {
         body: notification.body,
         link: `/events/${event.id}`,
         student_link: `/student/events/${event.id}`,
-        parent_link: `/parent/events/${event.id}?student_id=${studentId}`,
+        parent_link: `/parent/events/${event.id}?student_id=${studentId}&focus=payment&${source.kind === "event_withdrawal" ? "withdrawal_id" : "refund_id"}=${source.id}`,
         staff_link: `/teacher/events/${event.id}`,
         admin_link: `/principal/events/${event.id}`,
         event_id: event.id,
         student_id: studentId,
+        attention_eligible: true,
+        attention_portal: "parent",
+        attention_module: "events",
+        attention_source_kind: source.kind,
+        attention_source_id: source.id,
+        attention_source_revision: 1,
+        attention_topic_key: `${source.kind}:${source.id}`,
+        attention_student_id: studentId,
       },
     });
   }
@@ -352,6 +361,7 @@ export class CampusEventFinanceService {
         admission_number: row.admission_number,
         avatar_url: row.avatar_url,
         participation_state: row.withdrawal_id ? "withdrawn" : row.rsvp_status,
+        withdrawal_id: row.withdrawal_id,
         withdrawn_at: iso(row.withdrawn_at),
         can_withdraw: isGuardian && event.status === "published" && event.payment_required
           && event.participation_requirement === "optional" && row.rsvp_status === "accepted"
@@ -467,6 +477,7 @@ export class CampusEventFinanceService {
         "participant_withdrawn",
         `campus-event:${event.id}:withdraw:${input.student_id}:${input.idempotency_key}`,
         input.student_id,
+        { kind: "event_withdrawal", id: withdrawal.id },
         { title: `${event.title} place withdrawn`, body: "The event invoice was credited. Any amount already paid is now pending manual refund reconciliation by the school office." },
       );
       const result = await this.readFinance(db, event, access, input.student_id);
@@ -510,7 +521,7 @@ export class CampusEventFinanceService {
       const adjusted = Math.max(invoice.invoice_amount_paise - totals.credited_paise, 0);
       const due = Math.max(totals.paid_paise - adjusted - totals.refunded_paise, 0);
       if (input.amount_paise > due) throw new ConflictException("Refund amount exceeds the remaining manual refund due.");
-      await sql`
+      const refund = (await sql<{ id: string }>`
         INSERT INTO fee_refunds(
           school_id,invoice_id,credit_id,event_id,student_id,amount_paise,method,reference,reason,
           idempotency_key,request_hash,recorded_by
@@ -518,8 +529,8 @@ export class CampusEventFinanceService {
           ${event.school_id}::uuid,${invoice.invoice_id}::uuid,${totals.credit_id}::uuid,${event.id}::uuid,
           ${input.student_id}::uuid,${input.amount_paise},${input.method},${input.reference},${input.reason},
           ${input.idempotency_key}::uuid,${hash},${req.authUser.id}::uuid
-        )
-      `.execute(db);
+        ) RETURNING id
+      `.execute(db)).rows[0]!;
       await this.audit(db, req, "campus_event.refund_recorded", event, input.student_id, {
         invoice_id: invoice.invoice_id,
         amount_paise: input.amount_paise,
@@ -533,6 +544,7 @@ export class CampusEventFinanceService {
         "refund_recorded",
         `campus-event:${event.id}:refund:${input.student_id}:${input.idempotency_key}`,
         input.student_id,
+        { kind: "event_refund", id: refund.id },
         { title: `${event.title} refund recorded`, body: "The school office recorded a manual refund against the event fee. No online gateway refund was initiated by this app." },
       );
       const result = await this.readFinance(db, event, access, input.student_id);

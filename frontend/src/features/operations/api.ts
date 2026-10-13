@@ -277,7 +277,13 @@ export function saveTeacherAttendance(classSectionId: string, date: string, inpu
 }
 
 export function saveAttendanceContinuityBatch(classSectionId: string, date: string, input: TeacherAttendanceSaveInput) {
-  if (!input.roster_fingerprint || !input.roster_expires_at || !input.observed_at) {
+  if (
+    !input.roster_fingerprint ||
+    !input.roster_captured_at ||
+    !input.roster_expires_at ||
+    !input.snapshot_token ||
+    !input.observed_at
+  ) {
     throw new TypeError("Attendance continuity metadata is required.");
   }
   return apiFetch<AttendanceContinuityResult>("/api/v1/attendance-continuity/batches/", {
@@ -295,13 +301,15 @@ export function saveAttendanceContinuityBatch(classSectionId: string, date: stri
       device_id: input.device_id ?? null,
       observed_at: input.observed_at,
       roster_fingerprint: input.roster_fingerprint,
+      roster_captured_at: input.roster_captured_at,
       roster_expires_at: input.roster_expires_at,
+      snapshot_token: input.snapshot_token,
     }),
   });
 }
 
-export function getAttendanceContinuityWorkspace(date = schoolDateToday()) {
-  return apiFetch<AttendanceContinuityWorkspace>(query("/api/v1/screens/principal/attendance/continuity/", { date }));
+export function getAttendanceContinuityWorkspace(date = schoolDateToday(), caseId?: string) {
+  return apiFetch<AttendanceContinuityWorkspace>(query("/api/v1/screens/principal/attendance/continuity/", { date, case_id: caseId }));
 }
 
 export function decideAttendanceReconciliation(caseId: string, input: { decision: "accept" | "reject"; reason: string; expected_revision: number }) {

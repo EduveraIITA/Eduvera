@@ -42,6 +42,34 @@ describe("focused message reports",()=>{
     expect(screen.queryByRole('button',{name:'Resolve report'})).not.toBeInTheDocument();
   });
 
+  it("renders an authorised exact report even when it is outside the bounded queue",()=>{
+    const older={...report,id:'report-101',sender_name:'Older exact sender',message_body:'Exact report outside the first 100'};
+    mount('&report=report-101',{
+      selectedReport:older,
+      selectedLoading:false,
+      selectedLoadError:false,
+      onRefreshSelected:vi.fn(),
+    });
+    expect(screen.getByText('Older exact sender')).toBeVisible();
+    expect(screen.getByText(/Exact report outside the first 100/)).toBeVisible();
+    expect(screen.queryByText('Aarav Sharma')).not.toBeInTheDocument();
+  });
+
+  it("fails closed and retries the exact report without falling back to a stale queue row",()=>{
+    const onRefreshSelected=vi.fn();
+    mount('&report=report-1',{
+      selectedReport:report,
+      selectedLoading:false,
+      selectedLoadError:true,
+      onRefreshSelected,
+    });
+    expect(screen.getByText('Report unavailable')).toBeVisible();
+    expect(screen.getByText(/may no longer be assigned to you/)).toBeVisible();
+    expect(screen.queryByText('Reported message content')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Try again'}));
+    expect(onRefreshSelected).toHaveBeenCalledOnce();
+  });
+
   it("preserves staff assignment restrictions and sends only the selected report's action",()=>{
     const {onUpdate}=mount('&report=report-1',{staffView:true,queue:{...queue,results:[{...report,can_assign:false,reviewer_role:'staff'}]}});
     expect(screen.queryByRole('combobox',{name:'Assigned pastoral reviewer'})).not.toBeInTheDocument();

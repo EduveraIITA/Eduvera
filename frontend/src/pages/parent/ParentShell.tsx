@@ -13,6 +13,8 @@ import {
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useProFeatures } from "../../features/auth/useProFeatures";
+import { AttentionBadge, AttentionUnavailableBadge, attentionLabel } from "../../features/attention/AttentionBadge";
+import { useAttention } from "../../features/attention/useAttention";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { getAccessibleStudents } from "../../features/school/api";
@@ -147,7 +149,16 @@ export function ParentShell({
   const selectableChildren = accessibleChildren?.length
     ? accessibleChildren
     : childOptions?.length ? childOptions : [child];
-  const currentChildId = selectedChildId ?? selectedStudentId ?? child.id;
+  const currentChildId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id ?? childOptions?.[0]?.id ?? child.id;
+  const attentionStudentId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id
+    ?? (child.id !== demoParentChild.id ? child.id : undefined);
+  const attention = useAttention("parent", attentionStudentId);
+  // A failed child-scope lookup must never look like a clean attention state.
+  // When a route already supplies a real child id, the attention request can
+  // still establish its own scope and remains authoritative.
+  const attentionScopeUnavailable = !attentionStudentId
+    && auth?.status === "authenticated"
+    && (studentsQuery.isError || studentsQuery.isSuccess);
   const currentChildIndex = selectableChildren.findIndex((option) => option.id === currentChildId);
   const activeTheme = childTheme(currentChildIndex, selectableChildren.length);
   const orderedChildren = currentChildIndex < 0 ? selectableChildren : [
@@ -240,15 +251,24 @@ export function ParentShell({
         {parentRoutes.filter((item) => ["home", "attendance", "diary", "more"].includes(item.id)).map((item, index) => {
           const Icon = item.icon;
           const isActive = !assistantActive && mobileActive === item.id;
+          const itemAttention = item.id === "more" ? attention.data?.summary
+            : item.id === "attendance" ? attention.data?.modules.attendance
+              : item.id === "diary" ? attention.data?.modules.diary
+                : undefined;
+          const itemAttentionLabel = attentionLabel(itemAttention);
+          const attentionUnavailable = (attention.isError || attentionScopeUnavailable)
+            && ["more", "attendance", "diary"].includes(item.id);
           return (
             <Fragment key={item.id}>
             {assistantEnabled && index === 2 ? <AssistantTab chat={chat} className="parent-nav-item" /> : null}
             <NavLink
               className={isActive ? "parent-nav-item is-active" : "parent-nav-item"}
-              to={selectedStudentId ? `${item.path}?student_id=${encodeURIComponent(selectedStudentId)}` : item.path}
+              to={attentionStudentId ? `${item.path}?student_id=${encodeURIComponent(attentionStudentId)}` : item.path}
               aria-current={assistantActive ? false : isActive ? "page" : undefined}
+              aria-label={`${item.label}${attentionUnavailable ? ", attention status unavailable" : itemAttentionLabel ? `, ${itemAttentionLabel}` : ""}`}
             >
               <Icon size={21} strokeWidth={isActive ? 2.25 : 1.8} />
+              {attentionUnavailable ? <AttentionUnavailableBadge /> : <AttentionBadge counts={itemAttention} variant="nav" />}
               <span>{item.label}</span>
             </NavLink>
             </Fragment>

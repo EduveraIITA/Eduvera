@@ -25,6 +25,7 @@ const date = (value: string | null) => value ? new Intl.DateTimeFormat("en-IN", 
 
 export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data, refresh }: { portal: "principal" | "teacher"; schoolId: string; schoolName?: string; data: AcademicReportWorkspace; refresh: () => Promise<void> }) {
   const [params,setParams] = useSearchParams();
+  const detailRef = useRef<HTMLElement>(null);
   const activeList = data.mode!=="admin" || params.get("view") !== "schemes" ? "releases" : "schemes";
   const selectedBatch = params.get("batch");
   const selectedScheme = data.mode === "admin" && !selectedBatch ? params.get("scheme") : null;
@@ -38,6 +39,15 @@ export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data
   const statuses = ["all", "draft", "reviewed", "published", "cancelled"] as const;
   const status = statuses.find(value => value === params.get("status")) ?? "all";
   const batches = data.batches.filter(item => status === "all" || item.status === status);
+
+  useEffect(() => {
+    if (!selectedBatch || !batch.data) return;
+    const frame = window.requestAnimationFrame(() => {
+      detailRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      detailRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedBatch, batch.data]);
 
   async function refreshAll() {
     await Promise.all([refresh(), ...(selectedScheme?[scheme.refetch()]:[]), ...(selectedBatch?[batch.refetch()]:[])]);
@@ -67,9 +77,9 @@ export function AcademicReportWorkspacePage({ portal, schoolId, schoolName, data
             {activeList === "schemes" ? data.schemes.length ? data.schemes.map((item) => <button key={item.id} onClick={() => openRecord("scheme",item.id)}><span><strong>{item.name}</strong><small>{item.class_name} · {item.term_name}</small></span><i className={`report-status report-status--${item.status}`}>{nice(item.status)}</i><ChevronRight size={17} /></button>) : <p className="report-empty">No grading schemes</p>
               : batches.length ? batches.map((item) => <button key={item.id} onClick={() => openRecord("batch",item.id)}><span><strong>{item.scheme_name}</strong><small>{item.class_name} · Release {item.sequence}</small></span><i className={`report-status report-status--${item.status}`}>{nice(item.status)}</i><ChevronRight size={17} /></button>) : <p className="report-empty" role="status">{data.batches.length?"No releases with this status":"No report releases"}</p>}
           </div>
-        </article>:<article className="report-panel report-detail">
-          {selectedBatch ? batch.isPending ? <p className="report-empty">Opening reports…</p> : batch.error ? <p className="report-error">{batch.error.message}</p> : batch.data ? <BatchPanel portal={portal} schoolId={schoolId} detail={batch.data} refresh={refreshAll} /> : null
-            : selectedScheme && data.mode === "admin" ? scheme.isPending ? <p className="report-empty">Opening scheme…</p> : scheme.error ? <p className="report-error">{scheme.error.message}</p> : scheme.data ? <SchemePanel schoolId={schoolId} detail={scheme.data} reportCount={data.schemes.find((item) => item.id === selectedScheme)?.report_count ?? 0} onAddSubject={() => setDialog("subject")} refresh={refreshAll} /> : null
+        </article>:<article ref={detailRef} id={selectedBatch ? `attention-${selectedBatch}` : undefined} tabIndex={selectedBatch ? -1 : undefined} className={`report-panel report-detail${selectedBatch ? " attention-focus" : ""}`}>
+          {selectedBatch ? batch.isPending ? <p className="report-empty">Opening reports…</p> : batch.error ? <div className="report-detail-recovery" role="alert"><strong>Couldn’t open this report release</strong><p>{batch.error.message}</p><button type="button" disabled={batch.isFetching} onClick={() => void batch.refetch()}>{batch.isFetching ? "Trying again…" : "Try again"}</button></div> : batch.data ? <BatchPanel portal={portal} schoolId={schoolId} detail={batch.data} refresh={refreshAll} /> : null
+            : selectedScheme && data.mode === "admin" ? scheme.isPending ? <p className="report-empty">Opening scheme…</p> : scheme.error ? <div className="report-detail-recovery" role="alert"><strong>Couldn’t open this grading scheme</strong><p>{scheme.error.message}</p><button type="button" disabled={scheme.isFetching} onClick={() => void scheme.refetch()}>{scheme.isFetching ? "Trying again…" : "Try again"}</button></div> : scheme.data ? <SchemePanel schoolId={schoolId} detail={scheme.data} reportCount={data.schemes.find((item) => item.id === selectedScheme)?.report_count ?? 0} onAddSubject={() => setDialog("subject")} refresh={refreshAll} /> : null
               : <p className="report-empty">Choose a grading scheme or report release.</p>}
         </article>}
       </section>

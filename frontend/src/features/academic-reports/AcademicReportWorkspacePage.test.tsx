@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -79,6 +79,14 @@ describe("published report cards", () => {
 
     view.unmount();
     vi.mocked(getReportBatch).mockClear();
+    const direct = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/principal/report-cards?batch=batch-1"]}><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)}/></MemoryRouter></QueryClientProvider>);
+    expect(await within(direct.container).findByText("Ananya Iyer")).toBeVisible();
+    expect(getReportBatch).toHaveBeenCalledWith("school-1", "batch-1");
+    const target = direct.container.querySelector("#attention-batch-1");
+    expect(target).toHaveClass("attention-focus");
+    await waitFor(() => expect(target).toHaveFocus());
+    direct.unmount();
+    vi.mocked(getReportBatch).mockClear();
     vi.mocked(getGradingScheme).mockImplementation(() => new Promise(() => {}));
     const grading = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/principal/report-cards?view=schemes"]}><AcademicReportWorkspacePage portal="principal" schoolId="school-1" data={data} refresh={vi.fn().mockResolvedValue(undefined)}/></MemoryRouter></QueryClientProvider>);
     expect(within(grading.container).getByRole("button", { name: /Schemes 1/ })).toHaveAttribute("aria-pressed", "true");
@@ -87,5 +95,19 @@ describe("published report cards", () => {
     expect(getGradingScheme).toHaveBeenCalledWith("school-1", "scheme-1");
     expect(getReportBatch).not.toHaveBeenCalled();
     grading.unmount();
+  });
+
+  it("offers a working retry when a report release cannot be opened", async () => {
+    vi.mocked(getReportBatch).mockReset()
+      .mockRejectedValueOnce(new Error("The report service is temporarily unavailable."))
+      .mockRejectedValueOnce(new Error("The report service is still unavailable."));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/teacher/report-cards?batch=batch-1"]}><AcademicReportWorkspacePage portal="teacher" schoolId="school-1" data={{ mode: "staff", schemes: [], batches: [] }} refresh={vi.fn()} /></MemoryRouter></QueryClientProvider>);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t open this report release");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("still unavailable"));
+    expect(getReportBatch).toHaveBeenCalledTimes(2);
   });
 });

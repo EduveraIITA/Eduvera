@@ -84,7 +84,33 @@ export interface DiaryItemTable { id: Generated<string>; school_id: string; clas
 export interface DiaryAcknowledgementTable { id: Generated<string>; item_id: string; student_id: string; acknowledged_by: string; acknowledged_at: Timestamp }
 export interface HomeworkCompletionTable { item_id: string; student_id: string; completed_by: string; completed_at: Timestamp }
 export interface DiaryNoteTable { id: Generated<string>; item_id: string; student_id: string; author_id: string; body: string; created_at: Timestamp }
-export interface NotificationTable { id: Generated<string>; recipient_id: string; kind: "attendance" | "leave" | "diary" | "general"; title: string; body: string; link: Generated<string>; metadata: Json; dedupe_key: Generated<string | null>; read_at: NullableTimestamp; created_at: Timestamp }
+export interface NotificationTable {
+  id: Generated<string>; recipient_id: string; kind: "attendance" | "leave" | "diary" | "general";
+  title: string; body: string; link: Generated<string>; metadata: Json;
+  dedupe_key: Generated<string | null>; read_at: NullableTimestamp; created_at: Timestamp;
+  attention_eligible: Generated<boolean>; attention_school_id: Generated<string | null>;
+  attention_student_id: Generated<string | null>; attention_class_section_id: Generated<string | null>;
+  attention_portal: Generated<"parent" | "teacher" | "principal" | null>;
+  attention_module: Generated<
+    "leave" | "results" | "calendar" | "timetable" | "attendance" |
+    "events" | "fees" | "safeguarding" | "policies" | "departure" |
+    "staff" | "responsibilities" | "transport" | null
+  >;
+  attention_source_kind: Generated<
+    "student_leave_decision" | "staff_leave_decision" | "assessment_publication" |
+    "report_publication" | "day_plan_publication" | "timetable_publication" | "calendar_change" |
+    "attendance_outcome" | "event_cancellation" | "event_withdrawal" | "event_refund" |
+    "fee_review_decision" | "guardian_leave_authority" | "restricted_care_update" |
+    "policy_publication" | "departure_request_decision" | "transport_trip_cancellation" |
+    "transport_rider_exception" | "departure_handover_exception" | "departure_plan_exception" |
+    "responsibility_offer" | "responsibility_response" | "responsibility_revocation" |
+    "coverage_offer" | "coverage_response" | "staff_leave_review" |
+    "transport_swap" | "transport_swap_approval" | "transport_swap_response" |
+    "transport_swap_decision" | null
+  >;
+  attention_source_id: Generated<string | null>; attention_source_revision: Generated<number | null>;
+  attention_topic_key: Generated<string | null>;
+}
 export interface SchoolContactTable { id: Generated<string>; school_id: string; label: string; name: string; phone: Generated<string>; email: Generated<string>; availability: Generated<string>; priority: Generated<number> }
 export interface StaffProfileTable {
   id: Generated<string>; school_id: string; user_id: string | null; staff_code: string;
@@ -169,15 +195,24 @@ export interface StaffCoverageTaskTable {
   source_schedule_id: string | null; class_section_id: string | null; subject_id: string | null;
   duty_date: DateOnly; period_number: number | null; starts_at: TimeOnly | null; ends_at: TimeOnly | null;
   title: string; location: Generated<string>;
-  status: Generated<"open" | "offered" | "accepted" | "declined" | "completed" | "cancelled">;
+  status: Generated<"open" | "offered" | "accepted" | "declined" | "completed" | "cancelled" | "fallback_applied" | "expired_unconfirmed">;
   handover_note: Generated<string>; assigned_by: string | null; offered_at: NullableTimestamp;
   responded_at: NullableTimestamp; response_note: Generated<string>; revision: Generated<number>;
+  fallback_kind: Generated<string | null>; fallback_label: Generated<string>;
+  fallback_supervisor_staff_profile_id: Generated<string | null>; resolution_policy_revision: Generated<number | null>;
+  resolved_at: Generated<Date | null>;
   created_at: Timestamp; updated_at: Timestamp;
 }
 export interface StaffCoverageTaskAuditTable {
   id: Generated<string>; school_id: string; task_id: string; actor_id: string;
-  action: "created" | "offered" | "accepted" | "declined" | "reassigned" | "completed" | "cancelled";
-  from_status: string | null; to_status: string; note: Generated<string>; created_at: Timestamp;
+  action: "created" | "offered" | "accepted" | "declined" | "reassigned" | "completed" | "cancelled" | "fallback_applied" | "expired_unconfirmed";
+  from_status: string | null; to_status: string; note: Generated<string>; automated: Generated<boolean>; created_at: Timestamp;
+}
+export interface StaffCoveragePolicyTable {
+  school_id: string; enabled: Generated<boolean>; deadline_minutes_before: Generated<number>;
+  fallback_kind: Generated<"independent_study" | "physical_activity" | "library_period" | "merge_class" | "cancelled_period">;
+  fallback_label: Generated<string>; supervisor_staff_profile_id: string | null;
+  revision: Generated<number>; updated_by: string; created_at: Timestamp; updated_at: Timestamp;
 }
 export interface InstitutionRegulatoryProfileTable {
   school_id: string;
@@ -487,6 +522,17 @@ export interface GradingReportSubjectTable { id: Generated<string>; school_id: s
 export interface GradingReportComponentTable { id: Generated<string>; school_id: string; batch_id: string; report_subject_id: string; component_id: string; component_name: string; weight_percentage: string; outcome: "complete"|"incomplete"|"exempt"; percentage: string|null; weighted_points: string|null; source_assessment_count: number }
 export interface GradingReportAssessmentSourceTable { school_id: string; batch_id: string; report_component_id: string; assessment_id: string; publication_id: string; student_id: string; outcome: "scored"|"absent"|"exempt"|"withheld"|"not_evaluated"; marks: string|null; maximum_marks: string; normalized_percentage: string|null }
 export interface GradingReportAuditTable { id: Generated<number>; school_id: string; scheme_id: string|null; batch_id: string|null; actor_id: string; action: string; from_status: string|null; to_status: string|null; metadata: Json; created_at: Timestamp }
+export interface SchoolNoticeRecipientTable {
+  id: Generated<string>; school_id: string; notice_id: string; recipient_key: string;
+  recipient_role: "guardian"|"staff"|"admin"; user_id: string|null; guardian_id: string|null;
+  student_id: string|null; recipient_name: string; contact_phone: Generated<string>;
+  contact_email: Generated<string>; opened_at: NullableTimestamp; responded_at: NullableTimestamp;
+  response_value: string|null; response_note: Generated<string>;
+  response_channel: "app"|"sms"|"paper"|"phone"|"in_person"|null;
+  response_observed_at: NullableTimestamp; response_recorded_by: string|null;
+  last_seen_notice_revision: Generated<number>; revision: Generated<number>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
 export type DepartureMode = "guardian_pickup"|"authorized_collector"|"independent_departure"|"school_transport"|"external_transport";
 export interface DeparturePolicyTable { school_id:string; enabled:Generated<boolean>; enabled_modes:Generated<string[]>; change_cutoff:Generated<string>; location_retention_hours:Generated<number>; location_stale_seconds:Generated<number>; minimum_location_interval_seconds:Generated<number>; maximum_location_accuracy_metres:Generated<number>; revision:Generated<number>; updated_by:string|null; updated_at:Timestamp }
 export interface DepartureCollectionAuthorityTable { id:Generated<string>; school_id:string; student_id:string; guardian_relationship_id:string|null; collector_person_id:string|null; valid_from:DateOnly; valid_until:DateOnly|null; status:Generated<"active"|"revoked">; verification_method:"school_record"|"in_person"|"document"|"guardian_confirmed"; verification_note:Generated<string>; revision:Generated<number>; granted_by:string; granted_at:Timestamp; revoked_by:string|null; revoked_at:NullableTimestamp; revocation_reason:string|null; created_at:Timestamp }
@@ -551,6 +597,7 @@ export interface Database {
   staff_responsibility_audits: StaffResponsibilityAuditTable;
   staff_coverage_tasks: StaffCoverageTaskTable;
   staff_coverage_task_audits: StaffCoverageTaskAuditTable;
+  staff_coverage_policies: StaffCoveragePolicyTable;
   institution_regulatory_profiles: InstitutionRegulatoryProfileTable;
   institution_policy_families: InstitutionPolicyFamilyTable;
   institution_policy_versions: InstitutionPolicyVersionTable;
@@ -629,6 +676,7 @@ export interface Database {
   grading_report_components: GradingReportComponentTable;
   grading_report_assessment_sources: GradingReportAssessmentSourceTable;
   grading_report_audits: GradingReportAuditTable;
+  school_notice_recipients: SchoolNoticeRecipientTable;
   departure_policies: DeparturePolicyTable;
   departure_collection_authorities: DepartureCollectionAuthorityTable;
   transport_routes: TransportRouteTable;

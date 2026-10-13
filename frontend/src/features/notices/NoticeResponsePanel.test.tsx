@@ -13,7 +13,8 @@ vi.mock("./api", async (importOriginal) => {
 const recipient: NoticeRecipient = {
   id: "recipient-1", recipient_role: "guardian", user_id: "parent-1", guardian_id: "guardian-1", student_id: "student-1",
   recipient_name: "Pooja Sharma", contact_phone: "", contact_email: "", opened_at: null, responded_at: null,
-  response_value: null, response_note: "", response_channel: null, response_observed_at: null, revision: 3, deliveries: [],
+  response_value: null, response_note: "", response_channel: null, response_observed_at: null, revision: 3,
+  last_seen_notice_revision: 0, deliveries: [],
 };
 const notice: NoticeDetail = {
   id: "notice-1", title: "Trip timing", body: "Choose the suitable time.", response_mode: "choice", response_options: ["8:00 AM", "8:30 AM"],

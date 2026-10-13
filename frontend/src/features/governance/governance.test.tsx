@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { GovernanceAdminPage } from "./GovernanceAdminPage";
 import { PolicyLibraryPage } from "./PolicyLibraryPage";
 import type { GovernanceWorkspace, PolicyFamily, PublishedPolicy } from "./api";
@@ -33,7 +33,8 @@ const workspace: GovernanceWorkspace = {
   },
 };
 
-function shell(children: React.ReactNode) { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>{children}</MemoryRouter></QueryClientProvider>); }
+function LocationProbe() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
+function shell(children: React.ReactNode, entry = "/") { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[entry]}><LocationProbe />{children}</MemoryRouter></QueryClientProvider>); }
 afterEach(cleanup);
 
 describe("governance policy centre", () => {
@@ -79,5 +80,42 @@ describe("governance policy centre", () => {
     expect(screen.getByText("Action needed")).toBeVisible();
     await userEvent.setup().click(screen.getByText(family.title));
     expect(screen.getByRole("button", { name: "Acknowledge this version" })).toBeVisible();
+  });
+
+  it("clears an exact attention target when returning to the policy list", async () => {
+    const published: PublishedPolicy = { id: "version-1", code: family.code, category: family.category, title: family.title, summary: "How our institution protects children.", body_markdown: family.work_body_markdown!, audience_roles: ["staff"], requires_acknowledgement: true, version: 1, revision: 4, effective_on: "2026-10-04", review_due_on: "2027-10-04", source_note: "Reviewed against the safety plan.", source_references: family.source_references, acknowledgement_id: null, acknowledged_at: null, guidance: family.guidance };
+    shell(
+      <PolicyLibraryPage portal="teacher" schoolId="school-1" data={{ policies: [published], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />,
+      "/teacher/policies?policy=version-1&policy_revision=4&attention_notification_id=10000000-0000-4000-a000-000000000001&from=requests",
+    );
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Go back" }));
+
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/teacher/policies?from=requests"));
+    const policyLink = screen.getByRole("link", { name: /Child protection and mandatory reporting/ });
+    expect(policyLink.getAttribute("href")).not.toContain("policy_revision");
+    expect(policyLink.getAttribute("href")).not.toContain("attention_notification_id");
+  });
+
+  it("opens a scheduled policy directly from its publication attention", () => {
+    const scheduled: PublishedPolicy = {
+      id: "version-scheduled", code: family.code, category: family.category,
+      title: "Safeguarding policy for next term", summary: "Read before the new term begins.",
+      body_markdown: family.work_body_markdown!, audience_roles: ["staff"],
+      requires_acknowledgement: true, version: 2, revision: 1,
+      effective_on: "2027-04-01", review_due_on: "2028-03-31",
+      source_note: "Approved in advance for the next academic year.",
+      source_references: family.source_references, acknowledgement_id: null,
+      acknowledged_at: null, guidance: family.guidance,
+    };
+    shell(
+      <PolicyLibraryPage portal="teacher" schoolId="school-1" data={{ policies: [scheduled], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />,
+      "/teacher/policies?policy=version-scheduled&policy_revision=1&attention_notification_id=10000000-0000-4000-a000-000000000001",
+    );
+
+    expect(screen.getByRole("heading", { name: "Safeguarding policy for next term" })).toBeVisible();
+    expect(screen.getByText(/effective 1 Apr 2027/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Acknowledge this version" })).toBeVisible();
+    expect(screen.queryByText(/no longer published/i)).not.toBeInTheDocument();
   });
 });

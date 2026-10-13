@@ -15,6 +15,7 @@ import {
 import { AttendanceWorkspacePage } from "../../pages/operations/AttendanceWorkspacePage";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../auth/AuthContext";
+import { useAttention } from "../attention/useAttention";
 import { ScopedStaffHomePage } from "../auth/ScopedStaffHomePage";
 import { currentStaffMembership, hasStaffPermission } from "../auth/staffAccess";
 import {
@@ -177,6 +178,7 @@ export function TeacherTimetableRoute() {
 
 export function TeacherAttendanceRoute() {
   const auth = useAuth();
+  const attention = useAttention("teacher");
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
@@ -202,7 +204,7 @@ export function TeacherAttendanceRoute() {
   if (!classId && home.isPending) return <Loading />;
   if (!classId && home.error) return <Failure error={home.error} />;
   if (!classId && home.data) {
-    return <AttendanceWorkspacePage portal="teacher" classes={home.data.classes} date={date} onDateChange={setDate} />;
+    return <AttendanceWorkspacePage portal="teacher" classes={home.data.classes} date={date} onDateChange={setDate} attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }} />;
   }
   if (query.isPending) return <Loading />;
   if (query.error) return <Failure error={query.error} />;
@@ -218,6 +220,7 @@ export function TeacherAttendanceRoute() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
       queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
+      queryClient.invalidateQueries({ queryKey: ["attention"] }),
     ]);
     return updated;
   };
@@ -245,10 +248,12 @@ export function PrincipalHomeRoute() {
 
 export function PrincipalAttendanceRoute() {
   const auth = useAuth();
+  const attention = useAttention("principal");
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
   const classId = params.get("class_section_id");
+  const reviewCaseId = params.get("review_case") ?? undefined;
   const registerKey = ["principal-register", classId, date] as const;
   const historyKey = ["principal-register-history", classId, date] as const;
   const home = useQuery({
@@ -257,8 +262,8 @@ export function PrincipalAttendanceRoute() {
     enabled: !classId,
   });
   const continuity = useQuery({
-    queryKey: ["attendance-continuity", date],
-    queryFn: () => getAttendanceContinuityWorkspace(date),
+    queryKey: ["attendance-continuity", date, reviewCaseId ?? "queue"],
+    queryFn: () => getAttendanceContinuityWorkspace(date, reviewCaseId),
     enabled: !classId,
   });
   const roster = useQuery({
@@ -288,6 +293,7 @@ export function PrincipalAttendanceRoute() {
         queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
         queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
         queryClient.invalidateQueries({ queryKey: historyKey }),
+        queryClient.invalidateQueries({ queryKey: ["attention"] }),
       ]);
       return updated;
     };
@@ -320,16 +326,19 @@ export function PrincipalAttendanceRoute() {
     classes={home.data.classes}
     date={date}
     onDateChange={setDate}
+    attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }}
+    initialReviewCaseId={reviewCaseId}
     continuity={continuity.data}
     continuityLoading={continuity.isPending}
     continuityError={continuity.error ?? null}
     onContinuityDecision={async (caseId, decision, reason, expectedRevision) => {
       const updated = await decideAttendanceReconciliation(caseId, { decision, reason, expected_revision: expectedRevision });
-      queryClient.setQueryData(["attendance-continuity", date], updated);
+      queryClient.setQueryData(["attendance-continuity", date, reviewCaseId ?? "queue"], updated);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
         queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
         queryClient.invalidateQueries({ queryKey: ["principal-register"] }),
+        queryClient.invalidateQueries({ queryKey: ["attention"] }),
       ]);
     }}
   />;

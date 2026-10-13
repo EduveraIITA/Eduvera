@@ -9,7 +9,7 @@ export interface FamilyDeparture {
   children:Array<{id:string;first_name:string;last_name:string;avatar_url:string;grade:string|null;section:string|null}>;
   plan:null|{id:string;service_date:string;revision:number;mode:DepartureMode;state:string;authority_id:string|null;trip_id:string|null;stop_id:string|null;external_arrangement:string};
   request:null|{id:string;status:string;requested_mode:DepartureMode;reason:string;created_at:string};
-  trip:null|{id:string;state:string;revision:number;route_name:string;route_code:string;vehicle_label:string;provider_name:string;rider_state:string;stop_name:string;planned_time:string|null;latitude:string|null;longitude:string|null;accuracy_metres:string|null;observed_at:string|null;location_fresh:boolean};
+  trip:null|{id:string;state:string;revision:number;route_name:string;route_code:string;vehicle_label:string;provider_name:string;rider_state:string;rider_revision:number;stop_name:string;planned_time:string|null;latitude:string|null;longitude:string|null;accuracy_metres:string|null;observed_at:string|null;location_fresh:boolean};
   authorities:Array<{id:string;kind:"guardian"|"collector";name:string;phone_last4:string;valid_from:string;valid_until:string|null}>; policy:{enabled:boolean;enabled_modes:DepartureMode[];change_cutoff:string};map:MapConfig;
 }
 export interface FamilyJourney extends NonNullable<FamilyDeparture["trip"]> {service_date:string;direction:"to_institution"|"from_institution";scheduled_departure_time:string;boarded_at:string|null;dropped_at:string|null}
@@ -27,7 +27,7 @@ export interface CollectorTrip extends Omit<TransportTrip,"collector_name"|"rost
 export interface CollectorDeparture {trips:CollectorTrip[];colleagues:Array<{school_id:string;id:string;name:string}>;swap_candidates:Array<{id:string;school_id:string;service_date:string;scheduled_departure_time:string;direction:string;assigned_collector_user_id:string;route_name:string;collector_name:string}>;swaps:DutySwap[];map:MapConfig;tracking:{foreground_only:boolean;min_interval_seconds:number}}
 
 const root="/api/v1/departure";
-export const getFamilyDeparture=(studentId?:string,date?:string)=>apiFetch<FamilyDeparture>(`${root}/family/?${new URLSearchParams({...studentId?{student_id:studentId}:{},...date?{date}:{}})}`);
+export const getFamilyDeparture=(studentId?:string,date?:string,requestId?:string)=>apiFetch<FamilyDeparture>(`${root}/family/?${new URLSearchParams({...studentId?{student_id:studentId}:{},...date?{date}:{},...requestId?{request_id:requestId}:{}})}`);
 export const getStudentDeparture=(date?:string)=>apiFetch<FamilyDeparture>(`${root}/student/${date?`?date=${encodeURIComponent(date)}`:""}`);
 export const withdrawDepartureRequest=(id:string,revision:number)=>apiFetch(`${root}/family/requests/${id}/withdraw/`,{method:"POST",body:JSON.stringify({expected_revision:revision})});
 export interface JourneyDetail {trip:TransportTrip;roster:Rider[];history:Array<{id:string;action:string;metadata:Record<string,unknown>;created_at:string}>;location:LocationPoint|null;location_fresh:boolean;map:MapConfig}
@@ -35,7 +35,12 @@ export const getJourneyDetail=(schoolId:string,tripId:string)=>apiFetch<JourneyD
 export const reconcileJourneyRider=(schoolId:string,tripId:string,studentId:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/trips/${tripId}/reconcile/${studentId}/`,{method:"POST",body:JSON.stringify(input)});
 export const closeManagedJourney=(schoolId:string,tripId:string,action:"complete"|"cancel",input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/trips/${tripId}/close/${action}/`,{method:"POST",body:JSON.stringify(input)});
 export const requestDepartureChange=(input:Record<string,unknown>)=>apiFetch(`${root}/family/requests/`,{method:"POST",body:JSON.stringify(input)});
-export const getDepartureWorkspace=(schoolId:string)=>apiFetch<AdminDeparture>(`${root}/schools/${schoolId}/workspace/`);
+export const getDepartureWorkspace=(schoolId:string,focusPlanId?:string,focusTripId?:string)=>{
+  const query=new URLSearchParams();
+  if(focusPlanId)query.set("plan_id",focusPlanId);
+  if(focusTripId)query.set("trip_id",focusTripId);
+  return apiFetch<AdminDeparture>(`${root}/schools/${schoolId}/workspace/${query.size?`?${query}`:""}`);
+};
 export const saveDeparturePolicy=(schoolId:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/policy/`,{method:"PATCH",body:JSON.stringify(input)});
 export const createTransportRoute=(schoolId:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/routes/`,{method:"POST",body:JSON.stringify(input)});
 export const assignTransportStudent=(schoolId:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/assignments/`,{method:"POST",body:JSON.stringify(input)});
@@ -52,7 +57,7 @@ export const departurePlanAction=(schoolId:string,id:string,action:"ready"|"canc
 export const recordOfficeDepartureRequest=(schoolId:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/requests/`,{method:"POST",body:JSON.stringify(input)});
 export const recordDepartureHandover=(schoolId:string,id:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/plans/${id}/handover/`,{method:"POST",body:JSON.stringify(input)});
 export const decideDepartureRequest=(schoolId:string,id:string,input:Record<string,unknown>)=>apiFetch(`${root}/schools/${schoolId}/requests/${id}/decision/`,{method:"POST",body:JSON.stringify(input)});
-export const getCollectorDeparture=()=>apiFetch<CollectorDeparture>(`${root}/collector/`);
+export const getCollectorDeparture=(swapId?:string)=>apiFetch<CollectorDeparture>(`${root}/collector/${swapId?`?swap=${encodeURIComponent(swapId)}`:""}`);
 export const requestDutySwap=(input:Record<string,unknown>)=>apiFetch(`${root}/collector/duty-swaps/`,{method:"POST",body:JSON.stringify(input)});
 export const respondDutySwap=(swapId:string,input:Record<string,unknown>)=>apiFetch(`${root}/collector/duty-swaps/${swapId}/respond/`,{method:"POST",body:JSON.stringify(input)});
 export const tripAction=(id:string,action:string,revision:number,note="")=>apiFetch(`${root}/trips/${id}/actions/${action}/`,{method:"POST",body:JSON.stringify({expected_revision:revision,note})});

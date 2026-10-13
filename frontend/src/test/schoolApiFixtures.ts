@@ -185,6 +185,16 @@ const timetable = {
 };
 
 export function schoolApiFixture(path: string): unknown {
+  if (path.startsWith("/api/v1/attention?")) {
+    const portal = new URL(path, "http://localhost").searchParams.get("portal");
+    return {
+      portal,
+      generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 0, new: 0, action_required: 0, exceptions: 0, urgent: 0 },
+      modules: {},
+      items: [],
+    };
+  }
   if (/^\/api\/v1\/screens\/(student|parent)\/timetable-summary\//.test(path)) {
     const params = new URL(path, "http://localhost").searchParams;
     return {
@@ -193,7 +203,7 @@ export function schoolApiFixture(path: string): unknown {
       totals: { periods: 1, classes: 1, pending: 0, accepted: 0, declined: 0, cancelled: 0 },
     };
   }
-  if (path === "/api/v1/notifications/") return { results: [] };
+  if (path.startsWith("/api/v1/notifications/")) return { results: [], unread_count: 0, next_cursor: null };
   if (path === "/api/v1/students/") return { results: [student] };
   if (path.startsWith("/api/v1/screens/parent/home/")) return home;
   if (path.startsWith("/api/v1/screens/parent/attendance/")) {

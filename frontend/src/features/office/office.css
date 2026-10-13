@@ -1636,6 +1636,7 @@
 
 .office-family-fee-actions { margin-top: 1rem; }
 .office-fee-detail { border-top: 1px solid var(--border-color, #e4e7ec); margin-top: 1rem; padding-top: 1rem; display: grid; gap: .75rem; min-width: 0; }
+.office-fee-detail.attention-focus { margin-inline: -.5rem; padding: 1rem .5rem 0; border-color: color-mix(in srgb,var(--edura-brand) 50%,var(--edura-border)); border-radius: var(--edura-radius-control,10px); background: color-mix(in srgb,var(--edura-brand-soft) 58%,transparent); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb,var(--edura-brand) 10%,transparent); }
 .office-fee-detail h3 { margin: 0; font-size: 1rem; }
 .office-fee-breakdown { margin: 0; display: grid; gap: .5rem; }
 .office-fee-breakdown > div { display: flex; justify-content: space-between; gap: 1rem; }
@@ -1666,3 +1667,11 @@
 .office-page--fees .office-invoices > li + li {border-top:1px solid var(--edura-border);}
 .office-page--fees .office-invoice-amounts {display:flex;flex-wrap:wrap;gap:12px 24px;}
 .office-page--fees .office-invoice-amounts > div {background:transparent;padding:0;}
+.office-gateway-review { display:flex; align-items:flex-start; gap:.75rem; padding:1rem; border:1px solid color-mix(in srgb,var(--edura-warning) 24%,var(--edura-border)); border-radius:var(--edura-radius-control); background:var(--edura-warning-soft); scroll-margin-block:96px; }
+.office-gateway-review > svg { flex:none; margin-top:.15rem; color:var(--edura-warning); }
+.office-gateway-review > div { min-width:0; display:grid; gap:.25rem; }
+.office-gateway-review p,.office-gateway-review small { margin:0; overflow-wrap:anywhere; line-height:1.45; }
+.office-gateway-review small { color:var(--edura-ink-secondary); }
+.office-gateway-review.is-attention-target { outline:3px solid color-mix(in srgb,var(--edura-warning) 38%,transparent); outline-offset:2px; }
+.office-gateway-review.is-attention-target:focus { outline-color:var(--edura-warning); }
+.office-gateway-review--unavailable { background:var(--edura-surface); }

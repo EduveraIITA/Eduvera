@@ -5,10 +5,17 @@ export interface AttendanceStudent {
   missing_homework: number; open_followups: number;
 }
 
+export interface EngagementSignal extends AttendanceStudent {
+  current: number;
+  previous: number;
+  change: number;
+  combined: boolean;
+}
+
 export const percentage = (points: number, denominator: number): number | null =>
   denominator > 0 ? Math.round(points * 1000 / denominator) / 10 : null;
 
-export function engagementSignals(students: AttendanceStudent[]) {
+export function engagementSignals(students: AttendanceStudent[]): EngagementSignal[] {
   return students.flatMap((student) => {
     const current = percentage(student.points, student.scored);
     const previous = percentage(student.previous_points, student.previous_scored);
@@ -21,6 +28,25 @@ export function engagementSignals(students: AttendanceStudent[]) {
     return [{ ...student, current, previous, change: Math.round((current - previous) * 10) / 10,
       combined: student.missing_homework >= 2 }];
   }).sort((a, b) => Number(b.combined) - Number(a.combined) || a.change - b.change || a.name.localeCompare(b.name));
+}
+
+export function engagementProjection(
+  signals: readonly EngagementSignal[],
+  focusedStudentId?: string | null,
+  limit = 50,
+) {
+  const distinct = [...new Map(signals.map((signal) => [signal.id, signal])).values()];
+  const withoutFollowup = distinct.filter((signal) => signal.open_followups === 0);
+  return {
+    total: distinct.length,
+    combined: distinct.filter((signal) => signal.combined).length,
+    without_followup: withoutFollowup.length,
+    students: distinct.slice(0, limit),
+    without_followup_students: withoutFollowup.slice(0, limit),
+    focused_student: focusedStudentId
+      ? distinct.find((signal) => signal.id === focusedStudentId) ?? null
+      : null,
+  };
 }
 
 export function shiftDate(date: string, days: number) {

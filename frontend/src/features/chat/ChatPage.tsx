@@ -29,6 +29,7 @@ import {
   createChatConversation,
   createChatGroup,
   editChatMessage,
+  getChatConversation,
   getChatConversations,
   getChatMessages,
   getChatPolicy,
@@ -37,6 +38,7 @@ import {
   reportChatMessage,
   sendChatMessage,
   updateChatPolicy,
+  type ChatConversation,
   type ChatGroupType,
   type ChatMessage,
   type ChatPolicy,
@@ -120,19 +122,23 @@ const groupNames: Record<ChatGroupType, string> = {
 };
 function GovernanceDialog({ recipients, portal, onClose, onCreate, pending }: {
   recipients: ChatRecipient[]; portal: Portal; onClose: () => void;
-  onCreate: (input: { title: string; group_type: ChatGroupType; member_ids: string[]; school_id?: string }) => void; pending: boolean;
+  onCreate: (input: { title: string; group_type: ChatGroupType; member_ids: string[]; school_id: string }) => void; pending: boolean;
 }) {
   const [title,setTitle]=useState(""); const [kind,setKind]=useState<ChatGroupType>("student_group"); const [ids,setIds]=useState<string[]>([]);
   const kinds: ChatGroupType[] = portal==="principal" ? ["student_group","parent_group","activity","staff","announcement"] : ["student_group","parent_group","activity"];
   const roles: Record<string,string[]> = {student_group:["student","staff","admin"],parent_group:["guardian","staff","admin"],activity:["student","guardian","staff","admin"],staff:["staff","admin"],announcement:["student","guardian","staff","admin"]};
   const eligible=recipients.filter((r)=>roles[kind]?.includes(r.membership_role));
+  const selectedSchoolId = eligible.find((recipient) => ids.includes(recipient.id))?.school_id;
+  const visibleEligible = selectedSchoolId
+    ? eligible.filter((recipient) => recipient.school_id === selectedSchoolId)
+    : eligible;
   return <div className="chat-picker-backdrop" role="presentation" onMouseDown={(e)=>{if(e.target===e.currentTarget)onClose();}}>
-    <form className="chat-picker chat-group-form" onSubmit={(e)=>{e.preventDefault();if(title.trim().length>=3&&ids.length)onCreate({title:title.trim(),group_type:kind,member_ids:ids,school_id:eligible.find(r=>ids.includes(r.id))?.school_id});}}>
+    <form className="chat-picker chat-group-form" onSubmit={(e)=>{e.preventDefault();if(title.trim().length>=3&&ids.length&&selectedSchoolId)onCreate({title:title.trim(),group_type:kind,member_ids:ids,school_id:selectedSchoolId});}}>
       <header><span><strong>Create governed group</strong><small>Only eligible school members can be selected</small></span><button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button></header>
       <label className="chat-form-field"><span>Group name</span><input value={title} onChange={(e)=>setTitle(e.target.value)} minLength={3} maxLength={180} autoFocus /></label>
       <label className="chat-form-field"><span>Group type</span><select value={kind} onChange={(e)=>{setKind(e.target.value as ChatGroupType);setIds([]);}}>{kinds.map((k)=><option key={k} value={k}>{groupNames[k]}</option>)}</select></label>
-      <div className="chat-member-list">{eligible.map((r)=><label className="chat-member-option" key={r.id}><input type="checkbox" checked={ids.includes(r.id)} onChange={()=>setIds(ids.includes(r.id)?ids.filter(x=>x!==r.id):[...ids,r.id])}/><span>{r.name}</span><small>{r.detail}</small></label>)}</div>
-      <footer className="chat-dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={pending||title.trim().length<3||!ids.length}>{pending?"Creating…":"Create group"}</button></footer>
+      <div className="chat-member-list">{visibleEligible.map((r)=><label className="chat-member-option" key={`${r.school_id}-${r.id}`}><input type="checkbox" checked={ids.includes(r.id)} onChange={()=>setIds(ids.includes(r.id)?ids.filter(x=>x!==r.id):[...ids,r.id])}/><span>{r.name}</span><small>{r.detail}</small></label>)}</div>
+      <footer className="chat-dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={pending||title.trim().length<3||!ids.length||!selectedSchoolId}>{pending?"Creating…":"Create group"}</button></footer>
     </form>
   </div>;
 }
@@ -323,7 +329,17 @@ function Bubble({
     </article>
   );
 }
-function ChatExperience({ portal }: { portal: Portal }) {
+export function mergeSelectedConversation(
+  conversations: readonly ChatConversation[],
+  selected?: ChatConversation,
+): ChatConversation[] {
+  if (!selected) return [...conversations];
+  const existingIndex = conversations.findIndex((conversation) => conversation.id === selected.id);
+  if (existingIndex === -1) return [selected, ...conversations];
+  return conversations.map((conversation, index) => index === existingIndex ? selected : conversation);
+}
+
+export function ChatExperience({ portal }: { portal: Portal }) {
   const auth = useOptionalAuth();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -348,6 +364,15 @@ function ChatExperience({ portal }: { portal: Portal }) {
     refetchInterval: 10_000,
     staleTime: 5_000,
   });
+  const selectedConversationQuery = useQuery({
+    queryKey: ["chat", "conversation", selectedId, portal === "parent" ? studentId ?? "all" : "all"],
+    queryFn: () => getChatConversation(selectedId, portal === "parent" ? studentId : undefined),
+    enabled: Boolean(selectedId),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+    retry: false,
+  });
+  const selected = selectedConversationQuery.isError ? undefined : selectedConversationQuery.data;
   const recipientsQuery = useQuery({
     queryKey: ["chat", "recipients", studentId ?? "all"],
     queryFn: () => getChatRecipients(studentId),
@@ -358,18 +383,20 @@ function ChatExperience({ portal }: { portal: Portal }) {
   const messagesQuery = useQuery({
     queryKey: ["chat", "messages", selectedId],
     queryFn: () => getChatMessages(selectedId),
-    enabled: Boolean(selectedId),
+    enabled: Boolean(selectedId && selected),
     refetchInterval: 4_000,
   });
 
-  const selected = conversationsQuery.data?.results.find((item) => item.id === selectedId);
   const conversations = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const all = conversationsQuery.data?.results ?? [];
-    return term
-      ? all.filter((item) => `${item.title} ${item.student_name ?? ""} ${item.last_message ?? ""}`.toLowerCase().includes(term))
+    const all = mergeSelectedConversation(conversationsQuery.data?.results ?? [], selected);
+    const scoped = portal === "parent" && studentId
+      ? all.filter((item) => item.context_student_id === null || item.context_student_id === studentId)
       : all;
-  }, [conversationsQuery.data, search]);
+    return term
+      ? scoped.filter((item) => `${item.title} ${item.student_name ?? ""} ${item.last_message ?? ""}`.toLowerCase().includes(term))
+      : scoped;
+  }, [conversationsQuery.data, portal, search, selected, studentId]);
 
   const chooseConversation = (id: string) => {
     const next = new URLSearchParams(params);
@@ -382,14 +409,18 @@ function ChatExperience({ portal }: { portal: Portal }) {
     setParams(next);
   };
   const createMutation = useMutation({
-    mutationFn: (recipient: ChatRecipient) => createChatConversation(recipient.id, studentId),
+    mutationFn: (recipient: ChatRecipient) => createChatConversation(
+      recipient.id,
+      recipient.school_id,
+      studentId ?? recipient.student_id ?? undefined,
+    ),
     onSuccess: async (result) => {
       setPickerOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
       chooseConversation(result.id);
     },
   });
-  const groupMutation = useMutation({ mutationFn: (input: { title:string; group_type:ChatGroupType; member_ids:string[]; school_id?:string }) => createChatGroup(input), onSuccess: async (r) => { setGroupOpen(false); await queryClient.invalidateQueries({queryKey:["chat","conversations"]}); chooseConversation(r.id); } });
+  const groupMutation = useMutation({ mutationFn: (input: { title:string; group_type:ChatGroupType; member_ids:string[]; school_id:string }) => createChatGroup(input), onSuccess: async (r) => { setGroupOpen(false); await queryClient.invalidateQueries({queryKey:["chat","conversations"]}); chooseConversation(r.id); } });
   const policyMutation = useMutation({ mutationFn: (input: Parameters<typeof updateChatPolicy>[0]) => updateChatPolicy(input), onSuccess: async () => { await queryClient.invalidateQueries({queryKey:["chat","policy"]}); setPrivacyOpen(false); } });
   const sendMutation = useMutation({
     mutationFn: () => sendChatMessage(selectedId, {
@@ -407,6 +438,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
       setAttachment(undefined);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedId] }),
+        queryClient.invalidateQueries({ queryKey: ["chat", "conversation", selectedId] }),
         queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] }),
         queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ]);
@@ -433,7 +465,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
     mutationFn: () => editChatMessage(selectedId, editingMessageId, draft),
     onSuccess: async () => {
       setEditingMessageId(""); setDraft("");
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedId] }), queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] })]);
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedId] }), queryClient.invalidateQueries({ queryKey: ["chat", "conversation", selectedId] }), queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] })]);
     },
   });
   const messages = messagesQuery.data?.results ?? [];
@@ -442,6 +474,7 @@ function ChatExperience({ portal }: { portal: Portal }) {
     if (!selectedId || !newestMessage || readRef.current === `${selectedId}:${newestMessage}`) return;
     readRef.current = `${selectedId}:${newestMessage}`;
     void markChatRead(selectedId).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ["chat", "conversation", selectedId] });
       void queryClient.invalidateQueries({ queryKey: ["chat", "conversations"] });
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
     });
@@ -483,9 +516,9 @@ function ChatExperience({ portal }: { portal: Portal }) {
             <input aria-label="Search conversations" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" />
           </label>
           <div className="chat-conversation-list">
-            {conversationsQuery.isPending ? (
+            {conversationsQuery.isPending && !conversations.length ? (
               <div className="chat-state"><LoaderCircle className="chat-spin" size={20} /><span>Loading conversations…</span></div>
-            ) : conversationsQuery.isError ? (
+            ) : conversationsQuery.isError && !conversations.length ? (
               <div className="chat-state is-error"><span>Messages could not be loaded.</span><button type="button" onClick={() => void conversationsQuery.refetch()}>Try again</button></div>
             ) : conversations.length ? conversations.map((conversation) => (
               <button
@@ -521,6 +554,29 @@ function ChatExperience({ portal }: { portal: Portal }) {
               <p>Select a conversation or start a new message. Personal contact details stay private.</p>
               <button type="button" onClick={() => setPickerOpen(true)}><UserRoundPlus size={17} /> New message</button>
             </div>
+          ) : selectedConversationQuery.isPending ? (
+            <>
+              <header className="chat-thread__header">
+                <button className="chat-back" type="button" onClick={closeConversation} aria-label="Back to conversations"><ArrowLeft size={19} /></button>
+                <span className="chat-avatar"><LoaderCircle className="chat-spin" size={18} /></span>
+                <span><strong>Loading conversation…</strong><small>Checking access and messaging settings</small></span>
+              </header>
+              <div className="chat-thread-empty" role="status"><LoaderCircle className="chat-spin" size={24} /><p>Loading the selected conversation…</p></div>
+            </>
+          ) : selectedConversationQuery.isError || !selected ? (
+            <>
+              <header className="chat-thread__header">
+                <button className="chat-back" type="button" onClick={closeConversation} aria-label="Back to conversations"><ArrowLeft size={19} /></button>
+                <span className="chat-avatar"><MessageCircle size={18} /></span>
+                <span><strong>Conversation unavailable</strong><small>Access or child context could not be verified</small></span>
+              </header>
+              <div className="chat-thread-empty" role="alert">
+                <span><MessageCircle size={30} /></span>
+                <h2>Conversation could not be opened</h2>
+                <p>It may no longer be available for the selected school or child.</p>
+                <button type="button" onClick={() => void selectedConversationQuery.refetch()}>Try again</button>
+              </div>
+            </>
           ) : (
             <>
               <header className="chat-thread__header">

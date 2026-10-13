@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -19,11 +19,35 @@ import {
 } from "./api";
 import { TimetableNavigator, timetableSummaryRange, readTimetableView, type TimetableView } from "../timetable/TimetableNavigator";
 import { CoverageResponse } from "./CoverageResponse";
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import "./day-plans.css";
+
+interface TeacherTimetableAttentionTarget {
+  notificationId: string | null;
+  dayPlanId: string | null;
+  dayPlanRevision: number | null;
+  scheduleId: string | null;
+  scheduleRevision: number | null;
+}
+
+function positiveRevision(value: string | null) {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export default function TeacherDayPage() {
   const [params, setParams] = useSearchParams();
   const date = params.get("date") || schoolDateToday();
   const view = readTimetableView(params.get("view"));
+  const attentionTarget: TeacherTimetableAttentionTarget = {
+    notificationId: params.get("attention_notification_id"),
+    dayPlanId: params.get("day_plan_id"),
+    dayPlanRevision: positiveRevision(params.get("day_plan_revision")),
+    scheduleId: params.get("schedule_id"),
+    scheduleRevision: positiveRevision(params.get("schedule_revision")),
+  };
   const setDate = (nextDate: string) => {
     const next = new URLSearchParams(params);
     next.set("date", nextDate);
@@ -49,7 +73,7 @@ export default function TeacherDayPage() {
       contentHasHeading
     >
       <div className="day-workspace">
-        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} onNavigate={setSelection} />
+        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} onNavigate={setSelection} attentionTarget={attentionTarget} />
       </div>
     </OperationsShell>
   );
@@ -61,6 +85,7 @@ export function TeacherDayPanel({
   onViewChange,
   onNavigate,
   compact = false,
+  attentionTarget,
 }: {
   date: string;
   view?: TimetableView;
@@ -68,6 +93,7 @@ export function TeacherDayPanel({
   onViewChange?: (view: TimetableView) => void;
   onNavigate?: (date: string, view: TimetableView) => void;
   compact?: boolean;
+  attentionTarget?: TeacherTimetableAttentionTarget;
 }) {
   const auth = useAuth(),
     client = useQueryClient();
@@ -75,6 +101,7 @@ export function TeacherDayPanel({
   const [selected, setSelected] = useState("");
   const schoolId = selected || schools[0]?.school_id || "";
   const [responding, setResponding] = useState<DayPeriod | null>(null);
+  const attentionRef = useRef<HTMLElement>(null);
   const query = useQuery({
     queryKey: ["school", "day-plans", "teacher", schoolId, date],
     queryFn: () => getTeacherDay(schoolId, date),
@@ -84,6 +111,34 @@ export function TeacherDayPanel({
     await client.invalidateQueries({ queryKey: ["school", "day-plans"] });
   };
   const rows = query.data?.periods ?? [];
+  const exactDayPlanTarget = Boolean(
+    attentionTarget?.dayPlanId
+    && !attentionTarget.scheduleId
+    && attentionTarget.dayPlanRevision
+    && rows.some((period) => period.day_plan_id === attentionTarget.dayPlanId
+      && period.plan_version === attentionTarget.dayPlanRevision),
+  );
+  const exactScheduleSource = attentionTarget?.scheduleId && !attentionTarget.dayPlanId
+    ? query.data?.schedule_sources?.find((source) => source.id === attentionTarget.scheduleId
+      && source.revision === attentionTarget.scheduleRevision)
+    : undefined;
+  const exactScheduleTarget = Boolean(exactScheduleSource);
+  const exactAttentionTarget = exactDayPlanTarget || exactScheduleTarget;
+  const sourceRequested = Boolean(attentionTarget?.dayPlanId || attentionTarget?.scheduleId);
+  const staleAttentionTarget = Boolean(
+    !compact
+    && query.isSuccess
+    && attentionTarget?.notificationId
+    && (!sourceRequested || !exactAttentionTarget),
+  );
+  useEffect(() => {
+    if (compact || !exactAttentionTarget) return;
+    const frame = window.requestAnimationFrame(() => {
+      attentionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      attentionRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [compact, exactAttentionTarget, attentionTarget?.dayPlanId, attentionTarget?.scheduleId]);
   const visible = compact
     ? rows.filter(
         (p) =>
@@ -100,6 +155,7 @@ export function TeacherDayPanel({
   ) : undefined;
   return (
     <>
+      {!compact && attentionTarget?.notificationId && exactAttentionTarget ? <AttentionOpenAcknowledgement /> : null}
       {!compact && onDateChange && onViewChange ? (
         <TeacherDateNavigator
           date={date}
@@ -111,7 +167,12 @@ export function TeacherDayPanel({
           onNavigate={onNavigate}
         />
       ) : null}
-      {view !== "year" || compact ? <section className="day-panel">
+      {view !== "year" || compact ? <section
+        ref={!compact && exactAttentionTarget ? attentionRef : undefined}
+        id={!compact && exactAttentionTarget ? `attention-timetable-source-${attentionTarget?.dayPlanId ?? attentionTarget?.scheduleId}` : undefined}
+        tabIndex={!compact && exactAttentionTarget ? -1 : undefined}
+        className={`day-panel${!compact && exactAttentionTarget ? " day-attention-target" : ""}`}
+      >
         <header className="day-heading">
           <div>
             <span className="day-eyebrow">{dateLabel(date)}</span>
@@ -129,6 +190,9 @@ export function TeacherDayPanel({
           ) : null}
         </header>
         {compact ? schoolControl : null}
+        {staleAttentionTarget ? (
+          <AttentionTargetUnavailable message="This timetable update no longer matches the published source and revision. It was not marked as opened." />
+        ) : null}
         {query.isPending ? (
           <div
             className="day-skeleton"

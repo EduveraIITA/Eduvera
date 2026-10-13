@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, FileText, Printer, ReceiptIndianRupee, Wallet } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { useAuth } from "../auth/AuthContext";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
-import { getFeeLedger, getFeeStudents, invoiceStatusLabel, personName, postInvoice, recordPayment, rupees, type Invoice } from "./api";
+import { getFeeLedger, getFeeStudents, getGatewayPaymentReview, invoiceStatusLabel, personName, postInvoice, recordPayment, rupees, type Invoice } from "./api";
 import { FeePaymentSettings } from "./FeePaymentSettings";
 import { FeeReviewHistory } from "./FeeReviewHistory";
 import { FeeReviewQueue } from "./FeeReviewQueue";
@@ -29,26 +29,54 @@ export default function FeeLedgerPage() {
   const portal=auth.hasPortal("principal")?"principal":"teacher";
   const schools = auth.memberships.filter((membership) => (membership.role === "admin" || (membership.role === "staff" && membership.permissions?.includes("fees.manage"))));
   const currentSchoolId = schools.find(school=>school.school_id===params.get("school"))?.school_id || schools[0]?.school_id || "";
-  const changeSchool=(id:string)=>{setError("");setParams(current=>{const next=new URLSearchParams(current);next.set("school",id);next.delete("student_id");next.delete("mode");next.delete("invoice");return next;});};
+  const changeSchool=(id:string)=>{setError("");setParams(current=>{const next=new URLSearchParams(current);next.set("school",id);next.delete("student_id");next.delete("mode");next.delete("invoice");next.delete("review");next.delete("order");return next;});};
   const studentId=params.get("student_id")??"";
-  const changeStudent=(id:string)=>{setError("");setParams(current=>{const next=new URLSearchParams(current);if(id)next.set("student_id",id);else next.delete("student_id");next.delete("mode");next.delete("invoice");return next;});};
+  const changeStudent=(id:string)=>{setError("");setParams(current=>{const next=new URLSearchParams(current);if(id)next.set("student_id",id);else next.delete("student_id");next.delete("mode");next.delete("invoice");next.delete("review");next.delete("order");return next;});};
+  const focusReviewId=params.get("review");
+  const focusOrderId=params.get("order");
+  const focusInvoiceId=params.get("invoice");
   const requestedView=params.get("view");
-  const view=requestedView==="receipts"||requestedView==="review"||(requestedView==="settings"&&portal==="principal")?requestedView:"invoices";
+  const view=focusReviewId||focusOrderId?"review":requestedView==="receipts"||requestedView==="review"||(requestedView==="settings"&&portal==="principal")?requestedView:"invoices";
   const mode=params.get("mode")==="invoice"?"invoice":params.get("mode")==="payment"?"payment":"none";
-  const setView=(value:string)=>setParams(current=>{const next=new URLSearchParams(current);next.set("school",currentSchoolId);next.set("view",value);next.delete("mode");next.delete("invoice");return next;});
+  const setView=(value:string)=>setParams(current=>{const next=new URLSearchParams(current);next.set("school",currentSchoolId);next.set("view",value);next.delete("mode");next.delete("invoice");next.delete("review");next.delete("order");return next;});
   const [paymentKey, setPaymentKey] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const students = useQuery({ queryKey: ["office", "fee-students", currentSchoolId], queryFn: () => getFeeStudents(currentSchoolId), enabled: Boolean(currentSchoolId) });
   const ledger = useQuery({ queryKey: ["office", "fees", currentSchoolId, studentId], queryFn: () => getFeeLedger(currentSchoolId, studentId || undefined), enabled: Boolean(currentSchoolId) });
+  const exactGatewayReview = useQuery({
+    queryKey: ["office", "fee-gateway-review", currentSchoolId, focusOrderId],
+    queryFn: () => getGatewayPaymentReview(currentSchoolId, focusOrderId!),
+    enabled: Boolean(currentSchoolId && focusOrderId),
+    retry: false,
+    staleTime: 5_000,
+  });
   const invoices = ledger.data?.invoices ?? [];
   const selected=invoices.find(item=>item.id===params.get("invoice"));
+  const listedGatewayReviews=ledger.data?.gateway_payments?.filter(item=>item.state==="review_required")??[];
+  const focusedGatewayReview=focusOrderId&&focusInvoiceId&&exactGatewayReview.data?.id===focusOrderId&&exactGatewayReview.data.invoice_id===focusInvoiceId&&exactGatewayReview.data.state==="review_required"?exactGatewayReview.data:undefined;
+  const gatewayReviews=focusOrderId
+    ? [...(focusedGatewayReview?[focusedGatewayReview]:[]),...listedGatewayReviews.filter(item=>item.id!==focusOrderId)]
+    : listedGatewayReviews;
+  const gatewayTargetLoading=Boolean(focusOrderId&&exactGatewayReview.isPending);
+  const gatewayTargetUnavailable=Boolean(focusOrderId&&!exactGatewayReview.isPending&&(exactGatewayReview.isError||!focusedGatewayReview));
+  const focusedFeeReview=focusReviewId?ledger.data?.reviews?.find(item=>item.id===focusReviewId):undefined;
+  const feeReviewTargetUnavailable=Boolean(focusReviewId&&ledger.isSuccess&&!focusedFeeReview);
+  const gatewayTargetRef=useRef<HTMLElement>(null);
+  useEffect(()=>{
+    if(!focusedGatewayReview)return;
+    const frame=window.requestAnimationFrame(()=>{
+      gatewayTargetRef.current?.scrollIntoView?.({behavior:"smooth",block:"center"});
+      gatewayTargetRef.current?.focus({preventScroll:true});
+    });
+    return()=>window.cancelAnimationFrame(frame);
+  },[focusedGatewayReview]);
   const payments = ledger.data?.payments ?? [];
   const summary = invoices.reduce((totals, item) => ({ billed: totals.billed + item.adjusted_amount_paise, received: totals.received + item.paid_paise, outstanding: totals.outstanding + item.balance_paise, refunds: totals.refunds + item.refund_due_paise }), { billed: 0, received: 0, outstanding: 0, refunds: 0 });
   const openInvoices = invoices.filter((item) => item.collection_state === "collectible" && item.balance_paise > 0).length;
-  const reset = () => { setParams(current=>{const next=new URLSearchParams(current);next.delete("mode");next.delete("invoice");return next;}); setError(""); };
+  const reset = () => { setParams(current=>{const next=new URLSearchParams(current);next.delete("mode");next.delete("invoice");next.delete("review");next.delete("order");return next;}); setError(""); };
   const openForm=(form:"invoice"|"payment",invoice?:Invoice)=>{setError("");setPaymentKey(crypto.randomUUID());setParams(current=>{const next=new URLSearchParams(current);next.set("school",currentSchoolId);next.set("mode",form);if(invoice)next.set("invoice",invoice.id);else next.delete("invoice");return next;});};
-  const listParams=new URLSearchParams(params);listParams.delete("mode");listParams.delete("invoice");
+  const listParams=new URLSearchParams(params);listParams.delete("mode");listParams.delete("invoice");listParams.delete("review");listParams.delete("order");
   const listPath=`/${portal}/fees${listParams.size?`?${listParams}`:""}`;
   const rootParams=new URLSearchParams(listParams);rootParams.delete("view");
   const rootPath=`/${portal}/fees${rootParams.size?`?${rootParams}`:""}`;
@@ -91,7 +119,7 @@ export default function FeeLedgerPage() {
         {mode === "payment" && selected ? <section className="office-panel office-panel--selected"><div className="office-panel-heading"><span className="office-panel-icon"><Wallet size={19} /></span><div><h2>Record payment</h2><p>{selected.reference}, {personName(selected)}</p></div><b>{rupees(selected.balance_paise)}</b></div><form className="office-form" onSubmit={(event) => void submitPayment(event)}><label className="office-field">Amount received (₹)<input name="amount" type="number" min="0.01" max={(selected.balance_paise / 100).toFixed(2)} step="0.01" inputMode="decimal" required defaultValue={(selected.balance_paise / 100).toFixed(2)} /></label><label className="office-field">Method<select name="method"><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select></label><label className="office-field">Receipt, bank or cheque reference<input name="reference" maxLength={120} required /></label><label className="office-check"><input type="checkbox" required /> Funds have been received and verified. Any cheque has cleared.</label>{error ? <p className="office-alert" role="alert">{error}</p> : null}<div className="office-actions"><button type="button" className="office-secondary" onClick={reset}>Cancel</button><button className="office-primary" disabled={busy}>{busy ? "Recording…" : "Confirm receipt"}</button></div></form></section> : null}
         {mode==="payment" && !selected ? <p role="alert">This invoice is not available in the current ledger. <Link to={listPath}>Return to records</Link></p> : null}
         {mode==="none" && view==="settings" && portal==="principal" ? <FeePaymentSettings key={currentSchoolId} schoolId={currentSchoolId} settings={ledger.data?.payment_settings} onSaved={ledger.refetch} defaultOpen /> : null}
-        {mode==="none" && view==="review" ? <>{ledger.data?.gateway_payments?.filter(item => item.state === "review_required").map(item => <p className="office-alert" key={item.id}>Sandbox payment {item.provider_payment_id} · {rupees(item.amount_paise)} · {invoices.find(invoice => invoice.id === item.invoice_id)?.reference}. Captured after the balance changed; reconcile in Razorpay before collecting again.</p>)}<FeeReviewQueue schoolId={currentSchoolId} reviews={ledger.data?.reviews ?? []} invoices={invoices} onSaved={ledger.refetch} /><FeeReviewHistory reviews={(ledger.data?.reviews ?? []).filter((item) => item.status !== "pending")} invoices={invoices} /></> : null}
+        {mode==="none" && view==="review" ? <>{gatewayTargetLoading?<section className="office-gateway-review office-gateway-review--unavailable" role="status"><CircleAlert size={18}/><div><strong>Opening payment review…</strong><p>Checking the current school record.</p></div></section>:null}{gatewayTargetUnavailable?<section className="office-gateway-review office-gateway-review--unavailable" role="alert"><CircleAlert size={18}/><div><strong>Payment review unavailable</strong><p>This captured payment no longer needs review, is outside your current school access, or does not match the linked invoice.</p><button className="office-secondary" type="button" onClick={()=>void exactGatewayReview.refetch()}>Try again</button></div></section>:null}{feeReviewTargetUnavailable?<section className="office-gateway-review office-gateway-review--unavailable" role="alert"><CircleAlert size={18}/><div><strong>Fee review unavailable</strong><p>This review no longer belongs to the current school ledger.</p></div></section>:null}{gatewayReviews.map(item=>{const invoice=invoices.find(candidate=>candidate.id===item.invoice_id);const focused=item.id===focusedGatewayReview?.id;return <article ref={focused?gatewayTargetRef:undefined} id={focused?`attention-payment-order-${item.id}`:undefined} tabIndex={focused?-1:undefined} className={`office-gateway-review${focused?" is-attention-target":""}`} key={item.id}><CircleAlert size={18}/><div><strong>Captured payment needs reconciliation</strong><p>{rupees(item.amount_paise)} · {invoice?.reference??"Invoice unavailable"}{item.provider_payment_id?` · ${item.provider_payment_id}`:""}</p><small>Captured after the balance changed. Verify the provider record before collecting again.</small></div></article>;})}<FeeReviewQueue schoolId={currentSchoolId} reviews={ledger.data?.reviews ?? []} invoices={invoices} onSaved={ledger.refetch} focusReviewId={focusedFeeReview?.status==="pending"?focusReviewId:null} /><FeeReviewHistory reviews={(ledger.data?.reviews ?? []).filter((item) => item.status !== "pending")} invoices={invoices} focusReviewId={focusedFeeReview?.status!=="pending"?focusReviewId??undefined:undefined}/></> : null}
         {mode==="none" && (view==="invoices"||view==="receipts") ? <>
         <nav className="office-tabs office-ledger-tabs" aria-label="Ledger records"><button type="button" className={view === "invoices" ? "is-active" : ""} aria-current={view === "invoices" ? "page" : undefined} onClick={() => setView("invoices")}><FileText size={16} />Invoices <span>{invoices.length}</span></button><button type="button" className={view === "receipts" ? "is-active" : ""} aria-current={view === "receipts" ? "page" : undefined} onClick={() => setView("receipts")}><ReceiptIndianRupee size={16} />Receipts <span>{payments.length}</span></button></nav>
         {view === "invoices" ? <section className="office-panel office-ledger-panel"><h2 className="sr-only">Invoices</h2>{invoices.length ? <ul className="office-invoices">{invoices.map((item) => { const status = invoiceStatusLabel(item); return <li key={item.id}><div className="office-invoice-top"><div><strong>{item.reference}</strong><span>{personName(item)}, {item.admission_number}</span></div><span className={`office-status office-status--${statusClass(status)}`}>{status}</span></div><p>{item.description}</p><div className="office-invoice-amounts"><div><span>Balance</span><strong>{rupees(item.balance_paise)}</strong></div><div><span>Billed</span><strong>{rupees(item.amount_paise)}</strong></div><div><span>Due</span><strong>{formatLedgerDate(item.due_on)}</strong></div></div>{item.collection_state === "collectible" && item.balance_paise > 0 ? <button type="button" className="office-secondary office-record-payment" onClick={() => openForm("payment",item)}>Record payment</button> : <p className="office-settled"><CircleCheck size={15} /> No payment action required</p>}</li>; })}</ul> : <p className="office-empty">No invoices have been issued. This does not mean all fees are cleared.</p>}</section> : <section className="office-panel office-ledger-panel"><h2 className="sr-only">Receipt register</h2>{payments.length ? <ul className="office-receipts">{payments.map((payment) => <li key={payment.id}><span className="office-receipt-icon"><ReceiptIndianRupee size={18} /></span><div><strong>{payment.reference}</strong><span>{invoices.find((invoice) => invoice.id === payment.invoice_id)?.reference ?? "Invoice"}, {payment.method.replaceAll("_", " ")}</span><small>{formatLedgerDate(payment.created_at)}</small></div><b>{rupees(payment.amount_paise)}</b></li>)}</ul> : <p className="office-empty">No receipts recorded.</p>}</section>}

@@ -150,6 +150,10 @@ export function getChatReports(status?: ChatReportStatus) {
   );
 }
 
+export function getChatReport(reportId: string) {
+  return apiFetch<ChatReport>(`/api/v1/chat/reports/${encodeURIComponent(reportId)}/`);
+}
+
 export function getChatReportReviewers() {
   return apiFetch<{ results: ChatReportReviewer[] }>("/api/v1/chat/reports/reviewers/");
 }
@@ -165,16 +169,22 @@ export function getChatConversations() {
   return apiFetch<{ results: ChatConversation[] }>("/api/v1/chat/conversations/");
 }
 
+export function getChatConversation(conversationId: string, studentId?: string) {
+  return apiFetch<ChatConversation>(
+    withQuery(`/api/v1/chat/conversations/${conversationId}/`, { student_id: studentId }),
+  );
+}
+
 export function getChatRecipients(studentId?: string) {
   return apiFetch<{ results: ChatRecipient[] }>(
     withQuery("/api/v1/chat/recipients/", { student_id: studentId }),
   );
 }
 
-export function createChatConversation(recipientId: string, studentId?: string) {
+export function createChatConversation(recipientId: string, schoolId: string, studentId?: string) {
   return apiFetch<{ id: string; created: boolean }>("/api/v1/chat/conversations/", {
     method: "POST",
-    body: JSON.stringify({ recipient_id: recipientId, student_id: studentId }),
+    body: JSON.stringify({ school_id: schoolId, recipient_id: recipientId, student_id: studentId }),
   });
 }
 
@@ -218,7 +228,7 @@ export function reportChatMessage(conversationId: string, messageId: string, rea
   );
 }
 
-export function createChatGroup(input: { title: string; group_type: ChatGroupType; member_ids: string[]; school_id?: string; student_id?: string }) {
+export function createChatGroup(input: { title: string; group_type: ChatGroupType; member_ids: string[]; school_id: string; student_id?: string }) {
   return apiFetch<{ id: string }>("/api/v1/chat/groups/", { method: "POST", body: JSON.stringify(input) });
 }
 export function getChatPolicy() { return apiFetch<ChatPolicy>("/api/v1/chat/policy/"); }

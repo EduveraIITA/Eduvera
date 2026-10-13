@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ConsentAuthorityDialog } from "./ConsentAuthorityDialog";
@@ -25,6 +25,7 @@ type EventAction = "publish" | "complete" | "discard";
 interface OperationsEventDetailProps {
   portal: "teacher" | "principal";
   schoolId: string;
+  viewerUserId?: string;
   event: CampusEventDto;
   finance?: EventFinanceResponse;
   financeError?: unknown;
@@ -34,7 +35,7 @@ interface OperationsEventDetailProps {
   onRecordRefund?: (studentId: string, input: { amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; reason: string; idempotency_key: string }) => Promise<void>;
 }
 
-export function OperationsEventDetailPage({ portal, schoolId, event, finance, financeError, onAction, onCancel, onAuthorityChanged, onRecordRefund }: OperationsEventDetailProps) {
+export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, event, finance, financeError, onAction, onCancel, onAuthorityChanged, onRecordRefund }: OperationsEventDetailProps) {
   const [pending, setPending] = useState<EventAction | "cancel" | null>(null);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
@@ -44,11 +45,46 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
   const [authorityStudent, setAuthorityStudent] = useState<EventViewerParticipant | null>(null);
   const prefix = portal === "principal" ? "/principal" : "/teacher";
   const [params] = useSearchParams();
+  const assignedDuty = event.staff.find((staff) => staff.user_id === viewerUserId);
+  const dutyFocusRequested = params.get("focus") === "duty";
+  const dutyRef = useRef<HTMLElement>(null);
+  const refundFocusRequested = params.get("focus") === "refunds";
+  const refundRef = useRef<HTMLDivElement>(null);
+  const expectedEventRevision = Number(params.get("event_revision"));
+  const cancellationFocusRequested = params.get("focus") === "status"
+    && event.status === "cancelled"
+    && Number.isSafeInteger(expectedEventRevision)
+    && expectedEventRevision === event.revision;
+  const cancellationRef = useRef<HTMLElement>(null);
   const canSeeFinance = event.permissions.can_view_finance_details && event.payment_required;
   const view = params.get('view') === 'participants' ? 'participants' : params.get('view') === 'finance' && canSeeFinance ? 'finance' : 'sessions';
   const sectionPath = (nextView: string) => { const next=new URLSearchParams(params);next.set('view',nextView);return `${prefix}/events/${event.id}?${next}`; };
   const tracked = event.sessions.filter((session) => session.attendance_mode !== "none");
   const locked = tracked.filter((session) => session.state === "locked").length;
+  useEffect(() => {
+    if (!dutyFocusRequested) return;
+    const frame = window.requestAnimationFrame(() => {
+      dutyRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      dutyRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [dutyFocusRequested, assignedDuty?.role]);
+  useEffect(() => {
+    if (!refundFocusRequested || view !== "finance" || (!finance && !financeError)) return;
+    const frame = window.requestAnimationFrame(() => {
+      refundRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      refundRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [finance, financeError, refundFocusRequested, view]);
+  useEffect(() => {
+    if (!cancellationFocusRequested) return;
+    const frame = window.requestAnimationFrame(() => {
+      cancellationRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      cancellationRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [cancellationFocusRequested]);
 
   const act = async (action: EventAction) => {
     if (!onAction) return;
@@ -105,8 +141,25 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
             </div></details>
           ) : null}
         </section>
+        {assignedDuty || dutyFocusRequested ? (
+          <section ref={dutyRef} id="event-assigned-duty" tabIndex={dutyFocusRequested ? -1 : undefined} className={`campus-event-duty-card${dutyFocusRequested ? " is-attention-target" : ""}`} aria-label="Your event duty">
+            <ShieldCheck size={20} aria-hidden="true" />
+            <div>
+              <span>Your assignment</span>
+              <h2>{assignedDuty ? assignedDuty.role === "organizer" ? "Organizer" : assignedDuty.role === "attendance_taker" ? "Attendance taker" : "Duty staff" : "Assignment changed"}</h2>
+              <p>{assignedDuty ? assignedDuty.role === "organizer" ? "Coordinate this event and keep its operational record current." : assignedDuty.role === "attendance_taker" ? "Record attendance in the event session registers." : "Support the event team and participant readiness." : "This event duty is no longer assigned to your account."}</p>
+            </div>
+          </section>
+        ) : null}
         {message ? <p className={`campus-event-action-message${messageTone === "error" ? " is-error" : ""}`} role={messageTone === "error" ? "alert" : "status"}>{message}</p> : null}
-        {event.status === "cancelled" ? <section className="campus-event-cancelled"><AlertTriangle size={19} /><div><strong>This event was cancelled</strong><p><b>Family notice:</b> {event.cancellation_reason || "No family notice was recorded."}</p>{event.cancellation_internal_reason ? <p><b>Internal reason:</b> {event.cancellation_internal_reason}</p> : null}{event.permissions.can_view_finance_details && (finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) > 0 ? <p><b>{finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required} fee {(finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) === 1 ? "record requires" : "records require"} a manual refund.</b> Invoice credits are already retained in the authoritative finance ledger.</p> : null}</div></section> : null}
+        {event.status === "cancelled" ? <section
+          ref={cancellationRef}
+          id="event-cancellation-status"
+          tabIndex={cancellationFocusRequested ? -1 : undefined}
+          className={`campus-event-cancelled${cancellationFocusRequested ? " is-attention-target" : ""}`}
+          role={cancellationFocusRequested ? "region" : undefined}
+          aria-label={cancellationFocusRequested ? "Event cancellation" : undefined}
+        ><AlertTriangle size={19} /><div><strong>This event was cancelled</strong><p><b>Family notice:</b> {event.cancellation_reason || "No family notice was recorded."}</p>{event.cancellation_internal_reason ? <p><b>Internal reason:</b> {event.cancellation_internal_reason}</p> : null}{event.permissions.can_view_finance_details && (finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) > 0 ? <p><b>{finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required} fee {(finance?.counts.reconciliation_required ?? event.counts.finance_reconciliation_required) === 1 ? "record requires" : "records require"} a manual refund.</b> Invoice credits are already retained in the authoritative finance ledger.</p> : null}</div></section> : null}
 
         <nav className="workspace-sections" aria-label="Event sections"><Link to={sectionPath('sessions')} aria-current={view==='sessions'?'page':undefined}>Sessions <b>{event.sessions.length}</b></Link><Link to={sectionPath('participants')} aria-current={view==='participants'?'page':undefined}>Participants <b>{event.counts.participants}</b></Link>{canSeeFinance?<Link to={sectionPath('finance')} aria-current={view==='finance'?'page':undefined}>Fees{(finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required)>0?<b>{finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required}</b>:null}</Link>:null}</nav>
 
@@ -134,10 +187,20 @@ export function OperationsEventDetailPage({ portal, schoolId, event, finance, fi
             onReviewAuthority={portal === "principal" ? setAuthorityStudent : undefined}
           />
         ) : <p className="campus-event-inline-empty">No participants are visible in your assigned scope.</p>}</>:null}
-        {financeError && event.payment_required ? <p className="campus-event-form-error" role="alert">Finance reconciliation could not be loaded. Do not record an offline refund until the live ledger is available.</p> : null}
+        {view!=='finance' && financeError && event.payment_required ? <p className="campus-event-form-error" role="alert">Finance reconciliation could not be loaded. Do not record an offline refund until the live ledger is available.</p> : null}
         {!canSeeFinance&&(finance?.counts.reconciliation_required??0)>0?<p className="campus-event-policy-note">Finance follow-up pending</p>:null}
+        {view==='finance' ? <div
+          ref={refundFocusRequested ? refundRef : undefined}
+          id="event-refund-reconciliation"
+          tabIndex={refundFocusRequested ? -1 : undefined}
+          className={refundFocusRequested ? "campus-event-finance-target is-attention-target" : "campus-event-finance-target"}
+          role={refundFocusRequested ? "region" : undefined}
+          aria-label={refundFocusRequested ? "Refund reconciliation" : undefined}
+        >
+        {financeError && event.payment_required ? <p className="campus-event-form-error" role="alert">Finance reconciliation could not be loaded. Do not record an offline refund until the live ledger is available.</p> : null}
         {view==='finance'&&finance ? <OperationsEventFinancePanel finance={finance} onRecordRefund={onRecordRefund} /> : null}
         {view==='finance'&&!finance&&!financeError?<p role="status">Loading fee records…</p>:null}
+        </div> : null}
         <p className="campus-event-policy-note"><ShieldCheck size={15} />Event participation and session attendance are separate records. This event has no direct impact on the academic attendance aggregate.</p>
       </div>
 

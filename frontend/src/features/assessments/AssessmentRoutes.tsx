@@ -6,6 +6,8 @@ import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import { getFamilyReportCards } from "../academic-reports/api";
 import { AssessmentWorkspacePage, FamilyResultsPage } from "./AssessmentWorkspacePage";
 import { getAssessmentWorkspace, getFamilyResults } from "./api";
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 
 export function StaffAssessmentsRoute({portal}:{portal:"principal"|"teacher"}){
   const auth=useAuth(); const role=portal==="principal"?"admin":"staff"; const membership=auth.memberships.find((item)=>item.role===role); const schoolId=membership?.school_id??"";
@@ -21,9 +23,35 @@ export function FamilyResultsRoute({portal}:{portal:"parent"|"student"}){
   const studentId=params.get("student_id")??students.data?.results[0]?.id??"";
   const results=useQuery({queryKey:["assessments","family",schoolId,studentId],queryFn:()=>getFamilyResults(schoolId,studentId),enabled:Boolean(schoolId&&studentId)});
   const reports=useQuery({queryKey:["academic-reports","family",schoolId,studentId],queryFn:()=>getFamilyReportCards(schoolId,studentId),enabled:Boolean(schoolId&&studentId)});
-  if(students.isPending||(!studentId&&students.isFetching)||results.isPending||reports.isPending)return <ScreenLoading/>;
-  if(students.error||results.error||reports.error||!results.data||!reports.data)return <LiveRouteError error={students.error??results.error??reports.error??new Error("Results are unavailable.")} onRetry={async()=>{await students.refetch();await results.refetch();await reports.refetch();}}/>;
-  return <FamilyResultsPage portal={portal} data={results.data} reportCards={reports.data} children={students.data?.results??[]} onSelect={(id)=>{const next=new URLSearchParams(params);next.set("student_id",id);setParams(next);}}/>;
+  const assessmentId=params.get("assessment_id");
+  const publicationId=params.get("publication_id");
+  const reportBatchId=params.get("report_batch_id");
+  const assessmentTarget=Boolean(assessmentId||publicationId);
+  const reportTarget=Boolean(reportBatchId);
+  const requiredPending=students.isPending||(!studentId&&students.isFetching)
+    ||(assessmentTarget?results.isPending:reportTarget?reports.isPending:results.isPending&&reports.isPending);
+  if(requiredPending)return <ScreenLoading/>;
+  const requiredError=students.error
+    ??(assessmentTarget?results.error:reportTarget?reports.error:results.error&&reports.error?results.error:null);
+  if(requiredError)return <LiveRouteError error={requiredError} onRetry={async()=>{await students.refetch();await results.refetch();await reports.refetch();}}/>;
+  const resultData=results.data??(reports.data?{student:reports.data.student,results:[]}:undefined);
+  if(!resultData)return <LiveRouteError error={new Error("Results are unavailable.")} onRetry={async()=>{await results.refetch();await reports.refetch();}}/>;
+  const assessmentLoaded=Boolean(assessmentId&&publicationId&&results.data?.results.some((result)=>result.id===assessmentId&&result.publication_id===publicationId));
+  const reportLoaded=Boolean(reportBatchId&&reports.data?.reports.some((report)=>report.batch_id===reportBatchId));
+  const staleAttention=Boolean(params.get("attention_notification_id")&&(assessmentId||reportBatchId)&&!assessmentLoaded&&!reportLoaded);
+  return <>
+    {assessmentLoaded||reportLoaded?<AttentionOpenAcknowledgement/>:null}
+    {staleAttention?<AttentionTargetUnavailable message="This published result no longer matches an available record. It was not marked as opened."/>:null}
+    <FamilyResultsPage key={`${studentId}:${assessmentId??""}:${publicationId??""}:${reportBatchId??""}`} portal={portal} data={resultData} reportCards={reports.data} children={students.data?.results??[]} onSelect={(id)=>{
+      const next=new URLSearchParams(params);
+      next.set("student_id",id);
+      next.delete("assessment_id");
+      next.delete("publication_id");
+      next.delete("report_batch_id");
+      next.delete("attention_notification_id");
+      setParams(next);
+    }}/>
+  </>;
 }
 
 export function PrincipalAssessmentsRoute(){return <StaffAssessmentsRoute portal="principal"/>;}

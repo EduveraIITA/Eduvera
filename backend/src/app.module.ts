@@ -34,6 +34,7 @@ import { AcademicReportsModule } from "./academic-reports/academic-reports.modul
 import { DepartureCoordinationModule } from "./departure-coordination/departure-coordination.module.js";
 import { RequestsModule } from "./requests/requests.module.js";
 import { NoticesModule } from "./notices/notices.module.js";
+import { AttentionModule } from "./attention/attention.module.js";
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { NoticesModule } from "./notices/notices.module.js";
     DepartureCoordinationModule,
     RequestsModule,
     NoticesModule,
+    AttentionModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

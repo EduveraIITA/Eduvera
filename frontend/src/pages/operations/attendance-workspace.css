@@ -17,6 +17,19 @@
 .attendance-workspace__search { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 14px; border: 1px solid var(--edura-border); border-radius: 12px; background: var(--edura-surface); color: var(--edura-muted); }
 .attendance-workspace__search input { flex: 1; min-width: 0; border: 0; outline: 0; padding: 12px 0; background: none; font: inherit; font-size: 13px; color: var(--edura-ink); }
 .attendance-workspace__search:focus-within { outline: 2px solid var(--edura-brand); outline-offset: 2px; }
+.attendance-attention-summary { display: flex; align-items: center; gap: 11px; min-height: 54px; margin-top: 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, #a45b00 20%, var(--edura-border)); border-radius: var(--edura-radius-control); background: color-mix(in srgb, var(--edura-warning-soft) 58%, var(--edura-surface)); }
+.attendance-attention-summary__mark { width: 8px; height: 8px; flex: none; border-radius: 999px; background: #a45b00; box-shadow: 0 0 0 4px color-mix(in srgb, #a45b00 11%, transparent); }
+.attendance-attention-summary > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; flex: 1; }
+.attendance-attention-summary strong { color: var(--edura-ink); font-size: 12px; line-height: 1.35; }
+.attendance-attention-summary small { color: var(--edura-muted); font-size: 11px; line-height: 1.4; }
+.attendance-attention-summary button, .attendance-attention-summary a { display: inline-flex; min-height: 36px; flex: none; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 10px; padding: 7px 9px; background: transparent; color: var(--edura-brand); font: inherit; font-size: 11px; font-weight: 750; text-decoration: none; cursor: pointer; }
+.attendance-attention-summary button:focus-visible, .attendance-attention-summary a:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: 2px; }
+.attendance-attention-summary.is-exception { border-color: color-mix(in srgb, var(--edura-danger) 22%, var(--edura-border)); background: color-mix(in srgb, var(--edura-danger-soft) 54%, var(--edura-surface)); }
+.attendance-attention-summary.is-exception .attendance-attention-summary__mark { background: var(--edura-danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--edura-danger) 11%, transparent); }
+.attendance-attention-summary.is-new { border-color: color-mix(in srgb, var(--edura-brand) 20%, var(--edura-border)); background: color-mix(in srgb, var(--edura-brand-soft) 52%, var(--edura-surface)); }
+.attendance-attention-summary.is-new .attendance-attention-summary__mark { background: var(--edura-brand); box-shadow: 0 0 0 4px color-mix(in srgb, var(--edura-brand) 11%, transparent); }
+.attendance-attention-summary.is-unavailable { border-style: dashed; background: var(--edura-surface); }
+.attendance-attention-summary.is-unavailable .attendance-attention-summary__mark { border: 2px solid #a45b00; background: transparent; box-shadow: none; }
 .attendance-workspace__filters { display: flex; gap: 8px; overflow-x: auto; padding: 14px 1px 16px; scrollbar-width: thin; }
 .attendance-workspace__filters button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 9px 15px; border: 1px solid var(--edura-border); border-radius: 24px; background: var(--edura-surface); color: var(--edura-muted); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .attendance-workspace__filters button[aria-pressed="true"] { background: var(--edura-brand); border-color: var(--edura-brand); color: #fff; }
@@ -26,6 +39,9 @@
 .attendance-class-card__top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .attendance-class-card__monogram { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; background: var(--edura-surface-strong); color: var(--edura-brand); font-size: 16px; font-weight: 800; }
 .attendance-class-card__top h3 { margin: 0 0 5px; font-size: 18px; letter-spacing: -.04em; }
+.attendance-class-card__attention-mark { display: inline-block; width: 7px; height: 7px; margin-left: 8px; border-radius: 999px; vertical-align: 3px; background: #a45b00; box-shadow: 0 0 0 3px color-mix(in srgb, #a45b00 9%, transparent); }
+.attendance-class-card__attention-mark.is-exception { background: var(--edura-danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--edura-danger) 9%, transparent); }
+.attendance-class-card__attention-mark.is-new { background: var(--edura-brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--edura-brand) 9%, transparent); }
 .attendance-class-card__top p { margin: 0; font-size: 11px; color: var(--edura-muted); }
 .attendance-class-card__status { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border-radius: 20px; padding: 7px 9px; font-size: 10px; font-weight: 750; color: var(--edura-muted); background: var(--edura-surface-soft); white-space: nowrap; }
 .attendance-class-card__status.is-submitted { color: var(--edura-positive); background: var(--edura-positive-soft); }
@@ -59,7 +75,9 @@
 .roll-call-review-mode button:disabled { opacity: .5; cursor: not-allowed; }
 .roll-call-submit-bar .roll-call-review-return { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--edura-brand); font-size: 13px; font-weight: 700; text-decoration: none; }
 @media (max-width: 760px) { .attendance-workspace__cards { grid-template-columns: minmax(0,1fr); } }
-@media (max-width: 440px) { .attendance-workspace__hero { padding: 18px; } .attendance-workspace__heading { gap: 10px; } .attendance-workspace__heading h1 { font-size: 24px; } .attendance-workspace__heading label { min-height: 38px; padding-inline: 9px; } .attendance-workspace__heading input { width: 105px; } .attendance-workspace__totals div { padding-inline: 12px; } .attendance-workspace__totals strong { font-size: 25px; } .attendance-class-card { padding: 16px; } .attendance-workspace__filters button { padding-inline: 12px; gap: 6px; } .attendance-class-card__top { gap: 9px; } .attendance-class-card__monogram { width: 40px; height: 40px; } .attendance-class-card__top h3 { font-size: 17px; } .roll-call-review-mode { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 440px) { .attendance-workspace__hero { padding: 18px; } .attendance-workspace__heading { gap: 10px; } .attendance-workspace__heading h1 { font-size: 24px; } .attendance-workspace__heading label { min-height: 38px; padding-inline: 9px; } .attendance-workspace__heading input { width: 105px; } .attendance-workspace__totals div { padding-inline: 12px; } .attendance-workspace__totals strong { font-size: 25px; } .attendance-attention-summary { align-items: flex-start; } .attendance-attention-summary__mark { margin-top: 5px; } .attendance-attention-summary button, .attendance-attention-summary a { min-height: 32px; padding-inline: 5px; } .attendance-class-card { padding: 16px; } .attendance-workspace__filters button { padding-inline: 12px; gap: 6px; } .attendance-class-card__top { gap: 9px; } .attendance-class-card__monogram { width: 40px; height: 40px; } .attendance-class-card__top h3 { font-size: 17px; } .roll-call-review-mode { align-items: flex-start; flex-direction: column; } }
+
+@media (forced-colors: active) { .attendance-attention-summary__mark, .attendance-class-card__attention-mark { border: 2px solid ButtonText; } }
 
 .attendance-continuity { padding: 20px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-surface); }
 .attendance-continuity__header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
@@ -73,6 +91,7 @@
 .attendance-continuity svg { flex-shrink: 0; }
 .attendance-review-list { margin-top: 16px; }
 .attendance-review-card { border-top: 1px solid var(--edura-border); }
+.attendance-review-card.is-attention-target { outline: 3px solid color-mix(in srgb, var(--edura-brand) 24%, transparent); outline-offset: -3px; }
 .attendance-review-card__main { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; padding-block: 16px; }
 .attendance-review-card h3 { margin: 0; font-size: 16px; line-height: 1.5; }
 .attendance-review-card p { margin: 4px 0 0; color: var(--edura-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }

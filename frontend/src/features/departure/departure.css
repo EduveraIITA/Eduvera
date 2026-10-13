@@ -401,6 +401,50 @@
 .departure-plan-list article:last-child {
   border: 0;
 }
+
+.departure-request-list article.is-attention-target,
+.departure-swap-queue article.is-attention-target,
+.departure-plan-list article.is-attention-target,
+.departure-duty-card.is-attention-target,
+.departure-panel.is-attention-target,
+.ride-card.is-attention-target,
+.ride-arrangement.is-attention-target {
+  outline: 3px solid color-mix(in srgb, var(--edura-brand) 24%, transparent);
+  outline-offset: -3px;
+  scroll-margin-block: 96px;
+}
+.departure-request-list article.is-attention-target:focus,
+.departure-swap-queue article.is-attention-target:focus,
+.departure-plan-list article.is-attention-target:focus,
+.departure-duty-card.is-attention-target:focus {
+  outline-color: var(--edura-brand, #164ed0);
+}
+.departure-attention-state {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--edura-warning, #b54708) 28%, #d7deea);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--edura-warning-soft, #fff4e5) 78%, white);
+}
+.departure-attention-state.is-resolved {
+  border-color: #d7deea;
+  background: #f7f9fc;
+}
+.departure-attention-state p,
+.departure-attention-resolution {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.departure-attention-state a {
+  width: fit-content;
+  color: var(--edura-brand, #164ed0);
+  font-size: 12px;
+  font-weight: 700;
+}
 .departure-request-list article > div:first-child,
 .departure-trip-list article > div:nth-child(2),
 .departure-plan-list article > div:first-child {

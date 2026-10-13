@@ -6,10 +6,25 @@ import { MoreContent } from "./MorePage";
 import type { Portal } from "../auth/AuthContext";
 
 const session = vi.hoisted<{ value: unknown; active: boolean }>(() => ({ value: null, active: true }));
+const getAttentionMock = vi.hoisted(() => vi.fn());
+const getAccessibleStudentsMock = vi.hoisted(() => vi.fn());
 vi.mock("../auth/AuthContext", () => ({ useOptionalAuth: () => session.value }));
-vi.mock("../operations/api", () => ({ getPrincipalHome: () => Promise.resolve({ more_attention: { events: 1 } }), getTeacherHome: () => Promise.resolve({}) }));
+vi.mock("../attention/api", () => ({ getAttention: getAttentionMock }));
+vi.mock("../school/api", () => ({ getAccessibleStudents: getAccessibleStudentsMock }));
 vi.mock("../activation/api", () => ({ getActivation: () => Promise.resolve({ institution: { status: session.active ? "active" : "draft" }, summary: { completed: 2, required: 5 } }) }));
-beforeEach(() => { window.localStorage.clear(); session.value = null; session.active = true; });
+beforeEach(() => {
+  window.localStorage.clear();
+  session.value = null;
+  session.active = true;
+  getAttentionMock.mockReset();
+  getAccessibleStudentsMock.mockReset();
+  getAccessibleStudentsMock.mockResolvedValue({ results: [] });
+  getAttentionMock.mockResolvedValue({
+    portal: "principal", generated_at: "2026-10-13T08:00:00.000Z",
+    summary: { total: 0, new: 0, action_required: 0, exceptions: 0, urgent: 0 },
+    modules: {}, items: [],
+  });
+});
 afterEach(cleanup);
 function show(portal: Portal, path = `/${portal}/more`) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[path]}><MoreContent portal={portal}/></MemoryRouter></QueryClientProvider>);
@@ -60,9 +75,197 @@ describe("settings-style More", () => {
   it.each([true, false])("shows Finish setup only for incomplete institutions (active=%s)", async active => {
     session.active = active;
     session.value = { status: "authenticated", user: { id: "admin" }, memberships: [{ role: "admin", school_id: "school" }] };
+    getAttentionMock.mockResolvedValue({
+      portal: "principal", generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 },
+      modules: { events: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/principal/events", first_item_href: "/principal/events/event-1" } },
+      items: [],
+    });
     show("principal");
-    expect(await screen.findByRole("link", { name: "Open Events & activities, action needed" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Review Events & activities, 1 action required" }))
+      .toHaveAttribute("href", "/principal/events/event-1");
     if (active) expect(screen.queryByText("Finish setup")).not.toBeInTheDocument();
     else expect(await screen.findByText("Finish setup")).toBeVisible();
+  });
+
+  it("shows scoped Requests and Notices attention from the shared read model", async () => {
+    session.value = { status: "authenticated", user: { id: "guardian" }, memberships: [{ role: "guardian", school_id: "school" }] };
+    getAttentionMock.mockResolvedValue({
+      portal: "parent", generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 5, new: 2, action_required: 3, exceptions: 0, urgent: 0 },
+      modules: {
+        requests: { total: 3, new: 0, action_required: 3, exceptions: 0, urgent: 0, href: "/parent/requests?student_id=child-2", first_item_href: "/parent/requests/request-1?student_id=child-2" },
+        notices: { total: 2, new: 2, action_required: 0, exceptions: 0, urgent: 0, href: "/parent/notices?student_id=child-2", first_item_href: "/parent/notices/notice-1?student_id=child-2" },
+      },
+      items: [],
+    });
+    show("parent", "/parent/more?student_id=child-2");
+
+    expect(await screen.findByRole("link", { name: "Open Requests, 3 actions required" })).toHaveAttribute("href", "/parent/requests?student_id=child-2");
+    expect(screen.getByRole("link", { name: "Read Notices, 2 new notices" })).toHaveAttribute("href", "/parent/notices/notice-1?student_id=child-2");
+    expect(getAttentionMock).toHaveBeenCalledWith("parent", "child-2");
+  });
+
+  it("exposes principal student-leave attention in its owning module", async () => {
+    session.value = { status: "authenticated", user: { id: "admin" }, memberships: [{ role: "admin", school_id: "school" }] };
+    getAttentionMock.mockResolvedValue({
+      portal: "principal", generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 },
+      modules: {
+        leave: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/principal/student-leave", first_item_href: "/principal/student-leave?request=leave-1" },
+      },
+      items: [],
+    });
+
+    show("principal");
+
+    expect(await screen.findByRole("link", { name: "Review Student leave, 1 action required" }))
+      .toHaveAttribute("href", "/principal/student-leave?request=leave-1");
+  });
+
+  it("surfaces an exact principal calendar change on the combined timetable tile", async () => {
+    session.value = { status: "authenticated", user: { id: "admin" }, memberships: [{ role: "admin", school_id: "school" }] };
+    getAttentionMock.mockResolvedValue({
+      portal: "principal", generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 1, new: 1, action_required: 0, exceptions: 0, urgent: 0 },
+      modules: {
+        calendar: {
+          total: 1, new: 1, action_required: 0, exceptions: 0, urgent: 0,
+          href: "/principal/calendar",
+          first_item_href: "/principal/calendar?date=2026-10-14&calendar_change_id=calendar-1&attention_notification_id=notification-1",
+        },
+      },
+      items: [],
+    });
+
+    show("principal");
+
+    expect(await screen.findByRole("link", { name: "Read Timetable & calendar, 1 new timetable & calendar" }))
+      .toHaveAttribute("href", "/principal/calendar?date=2026-10-14&calendar_change_id=calendar-1&attention_notification_id=notification-1");
+  });
+
+  it("opens the next exact calendar item when the combined tile contains only new information", async () => {
+    session.value = { status: "authenticated", user: { id: "admin" }, memberships: [{ role: "admin", school_id: "school" }] };
+    getAttentionMock.mockResolvedValue({
+      portal: "principal", generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 2, new: 2, action_required: 0, exceptions: 0, urgent: 0 },
+      modules: {
+        calendar: {
+          total: 2, new: 2, action_required: 0, exceptions: 0, urgent: 0,
+          href: "/principal/calendar",
+          first_item_href: "/principal/calendar?date=2026-10-14&calendar_change_id=calendar-1&attention_notification_id=notification-1",
+        },
+      },
+      items: [],
+    });
+
+    show("principal");
+
+    expect(await screen.findByRole("link", { name: "Read Timetable & calendar, 2 new timetable & calendar" }))
+      .toHaveAttribute("href", "/principal/calendar?date=2026-10-14&calendar_change_id=calendar-1&attention_notification_id=notification-1");
+  });
+
+  it("shows authorized teacher attention on delegated module tiles", async () => {
+    getAttentionMock.mockResolvedValue({
+      portal: "teacher",
+      generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 },
+      modules: {
+        people: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/teacher/students", first_item_href: "/teacher/students/import?import=import-1" },
+      },
+      items: [],
+    });
+    session.value = {
+      status: "authenticated",
+      user: { id: "teacher" },
+      memberships: [{ role: "staff", school_id: "school-1", school_name: "School", permissions: ["sis.manage"] }],
+    };
+
+    show("teacher", "/teacher/more");
+
+    expect(await screen.findByRole("link", { name: "Review Students & guardians, 1 action required" }))
+      .toHaveAttribute("href", "/teacher/students/import?import=import-1");
+  });
+
+  it("combines teacher register and attendance follow-up attention on the Registers tile", async () => {
+    getAttentionMock.mockResolvedValue({
+      portal: "teacher",
+      generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 2, new: 0, action_required: 2, exceptions: 0, urgent: 0 },
+      modules: {
+        registers: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/teacher/attendance", first_item_href: "/teacher/attendance?class_section_id=class-1" },
+        attendance: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/teacher/followups", first_item_href: "/teacher/followups?followup=followup-1" },
+      },
+      items: [],
+    });
+    session.value = {
+      status: "authenticated",
+      user: { id: "teacher" },
+      memberships: [{ role: "staff", school_id: "school-1", school_name: "School", permissions: ["attendance.view"] }],
+    };
+
+    show("teacher", "/teacher/more");
+
+    expect(await screen.findByRole("link", { name: "Open Registers, 2 actions required" }))
+      .toHaveAttribute("href", "/teacher/attendance");
+  });
+
+  it("keeps an exact single parent target scoped to the selected child", async () => {
+    session.value = { status: "authenticated", user: { id: "guardian" }, memberships: [{ role: "guardian", school_id: "school" }] };
+    getAttentionMock.mockResolvedValue({
+      portal: "parent", generated_at: "2026-10-13T08:00:00.000Z",
+      summary: { total: 1, new: 1, action_required: 0, exceptions: 0, urgent: 0 },
+      modules: {
+        messages: { total: 1, new: 1, action_required: 0, exceptions: 0, urgent: 0, href: "/parent/messages", first_item_href: "/parent/messages?conversation=room-101" },
+      },
+      items: [],
+    });
+
+    show("parent", "/parent/more?student_id=child-2");
+
+    expect(await screen.findByRole("link", { name: "Read Messages, 1 new messages" }))
+      .toHaveAttribute("href", "/parent/messages?conversation=room-101&student_id=child-2");
+  });
+
+  it("does not request the adult attention inbox for a student", () => {
+    session.value = { status: "authenticated", user: { id: "student" }, memberships: [{ role: "student", school_id: "school" }] };
+    show("student");
+    expect(getAttentionMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a compact retry state when shared attention cannot be loaded", async () => {
+    session.value = { status: "authenticated", user: { id: "admin" }, memberships: [{ role: "admin", school_id: "school" }] };
+    getAttentionMock.mockRejectedValue(new Error("offline"));
+
+    show("principal");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Attention status is unavailable.");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+  });
+
+  it("shows an unavailable state when parent child scope cannot be established", async () => {
+    session.value = { status: "authenticated", user: { id: "guardian" }, memberships: [{ role: "guardian", school_id: "school" }] };
+    getAccessibleStudentsMock.mockRejectedValue(new Error("offline"));
+
+    show("parent");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Attention status is unavailable.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(getAccessibleStudentsMock).toHaveBeenCalledTimes(2);
+    expect(getAttentionMock).not.toHaveBeenCalled();
+  });
+
+  it("does not present a false all-clear when an authenticated guardian has no linked learner", async () => {
+    session.value = { status: "authenticated", user: { id: "guardian" }, memberships: [{ role: "guardian", school_id: "school" }] };
+    getAccessibleStudentsMock.mockResolvedValue({ results: [] });
+
+    show("parent");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("No linked learner is available");
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(getAttentionMock).not.toHaveBeenCalled();
   });
 });

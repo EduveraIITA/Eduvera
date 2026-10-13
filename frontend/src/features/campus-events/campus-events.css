@@ -228,6 +228,13 @@
 .family-event-response__state.is-withdrawn { color: #68532b; background: var(--edura-warning-soft); }
 .campus-event-status.is-draft { color: var(--edura-warning); background: var(--edura-warning-soft); }
 
+.family-event-detail .is-attention-target {
+  outline: 3px solid color-mix(in srgb, var(--edura-brand) 24%, transparent);
+  outline-offset: 2px;
+  scroll-margin-block: 96px;
+}
+.family-event-action-frame > .family-event-panel { height: 100%; }
+
 .campus-event-empty { display: grid; min-height: 220px; place-content: center; justify-items: center; text-align: center; }
 .campus-event-empty > span { display: grid; width: 48px; height: 48px; margin-bottom: 12px; place-items: center; border-radius: 14px; color: var(--edura-brand); background: var(--edura-brand-soft); }
 .campus-event-empty h2 { font-size: 17px; }
@@ -268,6 +275,15 @@
 .campus-event-detail-actions .campus-event-secondary { color: #fff; background: rgba(255, 255, 255, 0.15); }
 .campus-event-detail-actions .campus-event-primary { color: var(--edura-brand); background: #fff; box-shadow: none; }
 .campus-event-detail-actions .campus-event-danger-link { color: #fff; }
+
+.campus-event-duty-card { display: flex; padding: 16px 18px; align-items: flex-start; gap: 12px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); color: var(--edura-ink); background: #fff; scroll-margin-block: 96px; }
+.campus-event-duty-card > svg { flex: 0 0 auto; margin-top: 2px; color: var(--edura-brand); }
+.campus-event-duty-card > div { display: grid; gap: 3px; }
+.campus-event-duty-card span { color: var(--edura-brand); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.campus-event-duty-card h2 { margin: 0; font-size: 17px; line-height: 1.25; }
+.campus-event-duty-card p { margin: 0; color: var(--edura-ink-secondary); font-size: 12px; line-height: 1.5; }
+.campus-event-duty-card.is-attention-target { outline: 3px solid color-mix(in srgb, var(--edura-brand) 24%, transparent); outline-offset: 2px; }
+.campus-event-finance-target.is-attention-target { border-radius: var(--edura-radius-feature); outline: 3px solid color-mix(in srgb, var(--edura-brand) 24%, transparent); outline-offset: 2px; }
 
 .campus-event-action-message,
 .campus-event-form-error { padding: 12px 14px; border: 1px solid #b8d9d4; border-radius: var(--edura-radius-control); color: var(--edura-positive); background: var(--edura-positive-soft); font-size: 12px; font-weight: 700; }

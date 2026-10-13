@@ -14,4 +14,5 @@
 .family-schedule-agenda button:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: 2px; }
 .timetable-page .timetable-intro h1 { font-size: 18px; }
 .timetable-page .timetable-intro header > div > p { margin-top: 4px; }
+.timetable-page .is-attention-target { outline: 2px solid color-mix(in srgb, var(--edura-brand) 58%, transparent); outline-offset: 3px; }
 @media (max-width: 359px) { .family-schedule-agenda button { grid-template-columns: 64px minmax(0, 1fr) 16px; gap: 8px; } }

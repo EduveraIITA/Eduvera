@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AssessmentsService } from "../src/assessments/assessments.service.js";
 import type { AuthUser } from "../src/common/request.js";
 import { DatabaseService } from "../src/database/database.service.js";
+import { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 
 const isolated=process.env.TEST_DATABASE_ISOLATED==="true";
@@ -17,7 +18,7 @@ suite("offline assessment and result lifecycle",()=>{
   const user=(row:any):AuthUser=>({...row,is_active:true,active_school_id:schoolId});
 
   beforeAll(async()=>{
-    database=new DatabaseService();service=new AssessmentsService(database);const suffix=randomUUID();
+    database=new DatabaseService();service=new AssessmentsService(database,new SchoolEventService(database));const suffix=randomUUID();
     await pool.query(`INSERT INTO institution_capability_packs(code,label,description,institution_kinds,cohort_label,learner_label,default_subject_names,requires_staff)
       VALUES('india_school_core','Indian school core','Test capability pack',ARRAY['school'],'Class','Student',ARRAY['English'],true) ON CONFLICT DO NOTHING`);
     const users=(await pool.query(`INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES
@@ -49,6 +50,7 @@ suite("offline assessment and result lifecycle",()=>{
     if(schoolId){
       const userIds=[admin?.id,examiner?.id,moderator?.id,guardian?.id].filter(Boolean);
       await pool.query("DELETE FROM notifications WHERE recipient_id=ANY($1::uuid[])",[userIds]);
+      await pool.query("DELETE FROM event_outbox WHERE school_id=$1",[schoolId]);
       for(const table of ["assessment_publication_results","assessment_publications","assessment_evidence","assessment_result_revisions","assessment_results","assessment_staff_assignments","assessment_audits","assessments","assessment_cycles"]){
         await pool.query(`DELETE FROM ${table} WHERE school_id=$1`,[schoolId]);
       }
@@ -92,6 +94,19 @@ suite("offline assessment and result lifecycle",()=>{
     await service.action(admin,schoolId,assessmentId,"publish",{expected_revision:state.revision,note:"Corrected moderated release"});
     const corrected=await service.familyResults(guardian,schoolId,studentId);expect(corrected.results[0]).toMatchObject({marks:"66.00",sequence:2});
     const publications=await pool.query("SELECT sequence FROM assessment_publications WHERE assessment_id=$1 ORDER BY sequence",[assessmentId]);expect(publications.rows.map((row)=>row.sequence)).toEqual([1,2]);
+    const events=await pool.query<{event_type:string;audience_user_ids:string[];payload:{action:string;status:string;revision:number}}>("SELECT event_type,audience_user_ids,payload FROM event_outbox WHERE aggregate_type='assessment' AND aggregate_id=$1 ORDER BY sequence",[assessmentId]);
+    expect(events.rows.map((row)=>row.event_type)).toEqual(Array(10).fill("assessment.updated"));
+    expect(events.rows.map((row)=>row.payload.action)).toEqual(["schedule","open-marking","results-recorded","submit","approve","publish","correction-started","submit","approve","publish"]);
+    expect(events.rows[1]!.audience_user_ids).toEqual(expect.arrayContaining([admin.id,examiner.id,moderator.id]));
+    expect(events.rows[1]!.audience_user_ids).not.toContain(guardian.id);
+    expect(events.rows.at(-1)!.audience_user_ids).toEqual(expect.arrayContaining([admin.id,examiner.id,moderator.id,guardian.id]));
+    const runtimeAuthorization=await pool.query<{examiner_before_publish:boolean;guardian_before_publish:boolean;guardian_on_publish:boolean}>(`SELECT
+      event_user_is_authorized($1,'assessment.updated',$2::jsonb,$3) AS examiner_before_publish,
+      event_user_is_authorized($1,'assessment.updated',$2::jsonb,$4) AS guardian_before_publish,
+      event_user_is_authorized($1,'assessment.updated',$5::jsonb,$4) AS guardian_on_publish`,[
+      schoolId,JSON.stringify(events.rows[1]!.payload),examiner.id,guardian.id,JSON.stringify(events.rows.at(-1)!.payload),
+    ]);
+    expect(runtimeAuthorization.rows[0]).toEqual({examiner_before_publish:true,guardian_before_publish:false,guardian_on_publish:true});
   });
 
   it("does not expose another institution's learner",async()=>{

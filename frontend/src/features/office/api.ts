@@ -20,7 +20,8 @@ export interface Invoice extends FeeStudent {
   refund_due_paise: number; collection_state: "collectible" | "paid" | "credited" | "refund_due" | "partially_refunded" | "refunded";
 }
 export interface Payment { id: string; invoice_id: string; amount_paise: number; method: string; reference: string; created_at: string }
-export interface FeeLedger { currency: "INR"; invoices: Invoice[]; payments: Payment[]; online_payments_enabled: boolean; gateway_payments?: Array<{ id: string; invoice_id: string; amount_paise: number; state: string; provider_payment_id: string | null; payment_id: string | null }>; reviews?: FeeReview[]; payment_settings?: FeePaymentSettings; can_submit?: boolean }
+export interface GatewayPaymentReview { id: string; invoice_id: string; amount_paise: number; state: string; provider_payment_id: string | null; payment_id: string | null }
+export interface FeeLedger { currency: "INR"; invoices: Invoice[]; payments: Payment[]; online_payments_enabled: boolean; gateway_payments?: GatewayPaymentReview[]; reviews?: FeeReview[]; payment_settings?: FeePaymentSettings; can_submit?: boolean }
 
 const schoolPath = (schoolId: string, path: string) => `/api/v1/schools/${encodeURIComponent(schoolId)}/${path}/`;
 export const getAdministration = (schoolId: string) => apiFetch<Administration>(schoolPath(schoolId, "administration"));
@@ -35,6 +36,7 @@ export const selectActiveSchool = (schoolId: string) => apiFetch("/api/v1/auth/a
 export const promoteClass = (schoolId: string, values: { source_term_id: string; target_term_id: string; mappings: Array<{ from_class_id: string; to_class_id: string }>; confirm: boolean }) => apiFetch<{ count: number; confirmed: boolean }>(schoolPath(schoolId, "rollover"), { method: "POST", body: JSON.stringify(values) });
 export const getFeeStudents = (schoolId: string) => apiFetch<{ results: FeeStudent[] }>(schoolPath(schoolId, "fees/students"));
 export const getFeeLedger = (schoolId: string, studentId?: string) => apiFetch<FeeLedger>(`${schoolPath(schoolId, "fees/workspace")}${studentId ? `?student_id=${encodeURIComponent(studentId)}` : ""}`);
+export const getGatewayPaymentReview = (schoolId: string, orderId: string) => apiFetch<GatewayPaymentReview>(schoolPath(schoolId, `fees/gateway-orders/${encodeURIComponent(orderId)}`));
 export const postInvoice = (schoolId: string, values: object) => apiFetch(schoolPath(schoolId, "fees/invoices"), { method: "POST", body: JSON.stringify(values) });
 export const recordPayment = (schoolId: string, invoiceId: string, values: object) => apiFetch(schoolPath(schoolId, `fees/invoices/${invoiceId}/payments`), { method: "POST", body: JSON.stringify(values) });
 export const rupees = (paise: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(paise / 100);
@@ -49,7 +51,7 @@ export function invoiceStatusLabel(invoice: Invoice) {
   return invoice.due_on < today ? "Overdue" : "Open";
 }
 
-export interface FeeReview { id: string; invoice_id: string; kind: "payment" | "charge"; amount_paise: number | null; method: string | null; reference: string | null; note: string; created_at: string; status: "pending" | "verified" | "rejected" | "answered"; response: string | null; payment_id: string | null; reviewed_at: string | null }
+export interface FeeReview { id: string; invoice_id: string; kind: "payment" | "charge"; amount_paise: number | null; method: string | null; reference: string | null; note: string; created_at: string; status: "pending" | "verified" | "rejected" | "answered"; decision_id?: string | null; response: string | null; payment_id: string | null; reviewed_at: string | null }
 export interface FeePaymentSettings { payee_name: string; upi_id: string; instructions: string; revision: number }
 export const submitFeeReview = (schoolId: string, invoiceId: string, values: object) => apiFetch(schoolPath(schoolId, `fees/invoices/${invoiceId}/reviews`), { method: "POST", body: JSON.stringify(values) });
 export const decideFeeReview = (schoolId: string, id: string, values: object) => apiFetch(schoolPath(schoolId, `fees/reviews/${id}/decision`), { method: "POST", body: JSON.stringify(values) });

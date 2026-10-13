@@ -12,6 +12,7 @@
 .followup-empty strong { color: var(--edura-ink); font-size: .9375rem; }
 .followup-empty p, .followup-meta { font-size: .875rem; line-height: 1.6; color: var(--edura-ink-muted); margin: .375rem 0; }
 .followup-list > article + article { border-top: 1px solid var(--edura-border); }
+.followup-list > article.is-attention-target { margin-inline: -.75rem; padding-inline: .75rem; border-radius: var(--edura-radius-control); background: var(--edura-brand-soft); box-shadow: inset 3px 0 0 var(--edura-brand); }
 .followup-row { display: flex; justify-content: space-between; gap: 1rem; text-align: left; width: 100%; border: 0; background: transparent; padding: 1rem 0; color: inherit; }
 .followup-row > span:first-child { display: grid; gap: .375rem; min-width: 0; overflow-wrap: anywhere; }
 .followup-row small { color: var(--edura-ink-muted); line-height: 1.5; }
@@ -36,6 +37,9 @@
 .followup-primary { border: 0; background: var(--edura-brand); color: white; justify-self: start; }
 .followup-secondary, .followup-more { background: var(--edura-surface-soft); color: var(--edura-brand); border: 1px solid var(--edura-border); }
 .followup-error { color: var(--edura-danger); line-height: 1.6; }
+.followup-error--target { margin: .25rem 0; padding: .875rem 1rem; border-radius: var(--edura-radius-control); background: var(--edura-danger-soft); }
+.followup-error--target strong { color: var(--edura-danger); }
+.followup-error--target p { margin: .25rem 0; color: var(--edura-ink-secondary); }
 .followup-error button { background: transparent; color: var(--edura-brand); border: 0; text-decoration: underline; min-height: 44px; }
 .followup-confirmation { color: var(--edura-positive); line-height: 1.6; }
 .followup-panel :is(button,input,select,textarea):focus-visible { outline: 3px solid var(--edura-brand-bright); outline-offset: 3px; }

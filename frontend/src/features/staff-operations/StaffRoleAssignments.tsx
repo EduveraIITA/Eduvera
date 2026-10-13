@@ -10,14 +10,14 @@ import "./access-roles.css";
 
 const formText=(form:FormData,key:string)=>{const value=form.get(key);return typeof value==="string"?value:"";};
 
-export function StaffRoleAssignments({schoolId,profile,data,refresh}: {schoolId:string;profile:StaffProfile;data:AdminStaffWorkspace;refresh:()=>Promise<void>}) {
+export function StaffRoleAssignments({schoolId,profile,data,refresh,focusAssignmentId}: {schoolId:string;profile:StaffProfile;data:AdminStaffWorkspace;refresh:()=>Promise<void>;focusAssignmentId?:string}) {
   const [adding,setAdding]=useState<string|null>(null);
   const [editing,setEditing]=useState<RoleAssignment|null>(null);
   const assignments=(data.role_assignments ?? []).filter((item)=>item.staff_profile_id===profile.id);
   const canAssign=Boolean(profile.user_id && profile.status==="active");
   return <section className="staff-role-assignments">
     <header><h3>Roles & assignments</h3><button className="staff-secondary" disabled={!canAssign} onClick={()=>setAdding("")}><Plus size={15}/> Assign role</button></header>
-    <StaffAssignmentOverview key={profile.id} assignments={assignments} roles={data.access_roles ?? []} options={data.role_options} canAssign={canAssign} onAssign={(role)=>setAdding(role.id)} onManage={setEditing}/>
+    <StaffAssignmentOverview key={profile.id} assignments={assignments} roles={data.access_roles ?? []} options={data.role_options} canAssign={canAssign} onAssign={(role)=>setAdding(role.id)} onManage={setEditing} focusAssignmentId={focusAssignmentId}/>
     <nav className="staff-assignment-links" aria-label="Assign operational work"><Link to="/principal/events">Event staffing</Link><Link to="/principal/assessments">Exam staffing</Link><Link to="/principal/departure">Journey roster</Link></nav>
     {adding!==null ? <AssignRoleDialog schoolId={schoolId} profile={profile} data={data} initialRoleId={adding} onClose={()=>setAdding(null)} onSaved={async()=>{await refresh();setAdding(null);}}/> : null}
     {editing ? <ManageAssignment schoolId={schoolId} assignment={editing} data={data} onClose={()=>setEditing(null)} onSaved={async()=>{await refresh();setEditing(null);}}/> : null}

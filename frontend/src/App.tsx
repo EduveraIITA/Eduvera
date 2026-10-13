@@ -154,6 +154,7 @@ const JourneyDetailPage = lazy(() => import("./features/departure/JourneyDetailP
 const ParentRequestsRoute = lazy(async () => ({ default: (await import("./features/requests/RequestInboxPage")).ParentRequestsRoute }));
 const TeacherRequestsRoute = lazy(async () => ({ default: (await import("./features/requests/RequestInboxPage")).TeacherRequestsRoute }));
 const PrincipalRequestsRoute = lazy(async () => ({ default: (await import("./features/requests/RequestInboxPage")).PrincipalRequestsRoute }));
+const PrincipalStudentLeavePage = lazy(() => import("./features/student-leave/PrincipalStudentLeavePage"));
 const ParentNoticesRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).ParentNoticesRoute }));
 const ParentNoticeDetailRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).ParentNoticeDetailRoute }));
 const TeacherNoticesRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).TeacherNoticesRoute }));
@@ -335,6 +336,7 @@ export function App() {
               <Route path="/principal/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="principal"><PrincipalEventRegisterRoute /></PortalOnly>} />
               <Route path="/principal/more" element={<PortalOnly portal="principal"><PrincipalMoreRoute /></PortalOnly>} />
               <Route path="/principal/requests" element={<PortalOnly portal="principal"><PrincipalRequestsRoute /></PortalOnly>} />
+              <Route path="/principal/student-leave" element={<PortalOnly portal="principal"><PrincipalStudentLeavePage /></PortalOnly>} />
               <Route path="/principal/notices" element={<PortalOnly portal="principal"><PrincipalNoticesRoute /></PortalOnly>} />
               <Route path="/principal/notices/new" element={<PortalOnly portal="principal"><PrincipalNoticeCreateRoute /></PortalOnly>} />
               <Route path="/principal/notices/:noticeId" element={<PortalOnly portal="principal"><PrincipalNoticeDetailRoute /></PortalOnly>} />

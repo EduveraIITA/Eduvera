@@ -70,4 +70,17 @@ describe("assessment directory",()=>{
     fireEvent.click(screen.getByRole('button',{name:'Cancel'}));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it("recovers an assessment detail after a failed request", async () => {
+    vi.mocked(getAssessmentDetail).mockReset()
+      .mockRejectedValueOnce(new Error("The register service is temporarily unavailable."))
+      .mockResolvedValueOnce({ assessment: { ...assessment, term_id: "term-1" }, results: [], publications: [], viewer_role: "moderator" });
+    mount("teacher", "?assessment=test-1");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t open this assessment");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("heading", { name: "English class test" })).toBeVisible();
+    expect(getAssessmentDetail).toHaveBeenCalledTimes(2);
+  });
 });

@@ -1,38 +1,57 @@
-import { useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { CheckCheck, ChevronDown, MessageSquare } from "lucide-react";
 import { useOptionalAuth } from "../auth/AuthContext";
-import { getFollowups, type FollowupContext } from "./api";
+import { getFollowup, getFollowups, type FollowupContext } from "./api";
 import { FollowupThread } from "./FollowupThread";
 import "./followups.css";
 
-export function FollowupInbox(props: { context: FollowupContext; studentId?: string; hideWithoutOpenFollowups?: boolean; showHeading?: boolean }) {
+export function FollowupInbox(props: { context: FollowupContext; studentId?: string; hideWithoutOpenFollowups?: boolean; showHeading?: boolean; initialFollowupId?: string }) {
   const auth = useOptionalAuth();
   if (auth?.status !== "authenticated") return null;
-  return <Inbox key={`${auth.user?.id}:${props.studentId ?? "all"}`} {...props} userId={auth.user!.id} />;
+  return <Inbox key={`${auth.user?.id}:${props.studentId ?? "all"}:${props.initialFollowupId ?? "none"}`} {...props} userId={auth.user!.id} />;
 }
 
-function Inbox({ context, studentId, userId, hideWithoutOpenFollowups = false, showHeading = true }: { context: FollowupContext; studentId?: string; userId: string; hideWithoutOpenFollowups?: boolean; showHeading?: boolean }) {
+function Inbox({ context, studentId, userId, hideWithoutOpenFollowups = false, showHeading = true, initialFollowupId }: { context: FollowupContext; studentId?: string; userId: string; hideWithoutOpenFollowups?: boolean; showHeading?: boolean; initialFollowupId?: string }) {
   const [filter, setFilter] = useState<"open" | "resolved">("open");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialFollowupId ?? null);
   const query = useInfiniteQuery({
     queryKey: ["school", "coordination", context, userId, studentId ?? "all", filter],
     queryFn: ({ pageParam }) => getFollowups(context, filter, studentId, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
-  const records = query.data?.pages.flatMap((page) => page.results) ?? [];
-  if (hideWithoutOpenFollowups && filter === "open" && (query.isPending || query.isError || records.length === 0)) return null;
+  const selectedQuery = useQuery({
+    queryKey: ["school", "coordination", "detail", context, initialFollowupId],
+    queryFn: () => getFollowup(initialFollowupId!, context),
+    enabled: Boolean(initialFollowupId),
+  });
+  const records = useMemo(() => {
+    const pageRecords = query.data?.pages.flatMap((page) => page.results) ?? [];
+    if (!selectedQuery.data || pageRecords.some((item) => item.id === selectedQuery.data.id)) return pageRecords;
+    return [selectedQuery.data, ...pageRecords];
+  }, [query.data, selectedQuery.data]);
+  const exactTargetVisible = Boolean(initialFollowupId && records.some((item) => item.id === initialFollowupId));
+  const exactTargetLoading = Boolean(initialFollowupId && selectedQuery.isPending && !exactTargetVisible);
+  const exactTargetError = Boolean(initialFollowupId && selectedQuery.isError && !exactTargetVisible);
+  useEffect(() => {
+    if (!initialFollowupId || !records.some((item) => item.id === initialFollowupId)) return;
+    const target = document.getElementById(`attention-followup-${initialFollowupId}`);
+    target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    target?.querySelector<HTMLButtonElement>(".followup-row")?.focus({ preventScroll: true });
+  }, [initialFollowupId, records]);
+  if (!initialFollowupId && hideWithoutOpenFollowups && filter === "open" && (query.isPending || query.isError || records.length === 0)) return null;
   return <section className="followup-panel" id="attendance-followups" aria-label="Attendance follow-ups">
     <header className="followup-panel__heading">{showHeading ? <div><span className="followup-eyebrow">School & home</span><h2><MessageSquare size={20} />Attendance follow-ups</h2></div> : null}
       <div className="followup-filters" aria-label="Follow-up status">
         {(["open", "resolved"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setSelected(null); }}>{value === "open" ? "Open" : "Resolved"}</button>)}
       </div>
     </header>
-    {query.isPending ? <p role="status">Loading follow-ups…</p> : null}
-    {query.isError ? <div className="followup-error" role="alert"><p>Follow-ups could not load.</p><button type="button" onClick={() => void query.refetch()}>Try again</button></div> : null}
-    {!query.isPending && !query.isError && records.length === 0 ? <div className="followup-empty"><CheckCheck size={22} /><div><strong>{filter === "open" ? "No open attendance follow-ups" : "No resolved follow-ups yet"}</strong><p>{context === "guardian" ? "Questions from your child’s teacher will appear here." : "Raise a follow-up from a student’s recorded attendance when clarification is needed."}</p></div></div> : null}
-    <div className="followup-list">{records.map((item) => <article key={item.id}>
+    {exactTargetLoading ? <p role="status">Opening the selected follow-up…</p> : query.isPending ? <p role="status">Loading follow-ups…</p> : null}
+    {exactTargetError ? <div className="followup-error followup-error--target" role="alert"><strong>This follow-up could not be opened.</strong><p>It may no longer be available to you, or the connection may have been interrupted.</p><button type="button" onClick={() => void selectedQuery.refetch()}>Try again</button></div>
+      : query.isError ? <div className="followup-error" role="alert"><p>Follow-ups could not load.</p><button type="button" onClick={() => void query.refetch()}>Try again</button></div> : null}
+    {!exactTargetLoading && !exactTargetError && !query.isPending && !query.isError && records.length === 0 ? <div className="followup-empty"><CheckCheck size={22} /><div><strong>{filter === "open" ? "No open attendance follow-ups" : "No resolved follow-ups yet"}</strong><p>{context === "guardian" ? "Questions from your child’s teacher will appear here." : "Raise a follow-up from a student’s recorded attendance when clarification is needed."}</p></div></div> : null}
+    <div className="followup-list">{records.map((item) => <article id={`attention-followup-${item.id}`} className={initialFollowupId === item.id ? "is-attention-target" : undefined} key={item.id}>
       <button className="followup-row" type="button" aria-expanded={selected === item.id} aria-controls={`followup-${item.id}`} onClick={() => setSelected(selected === item.id ? null : item.id)}>
         <span><strong>{item.student_name}</strong><small>{new Date(`${item.attendance_date}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {item.owner_name}</small><span>{item.question}</span></span>
         <span className="followup-row__state"><span className={`followup-chip is-${item.state}`}>{item.state === "awaiting_response" ? "Awaiting reply" : item.state === "in_review" ? "School review" : "Resolved"}</span>{item.overdue ? <small className="followup-overdue">Response overdue</small> : null}<ChevronDown size={18} /></span>

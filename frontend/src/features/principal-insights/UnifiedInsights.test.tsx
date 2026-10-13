@@ -177,6 +177,17 @@ describe("unified Insights", () => {
     expect(screen.queryByRole("heading", { name: "What changed" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Existing follow-ups" })).not.toBeInTheDocument();
   });
+  it("loads an exact attendance attention target even when it is beyond the overview cap", async () => {
+    const focused={...reviewFixture.engagement.students[0],id:"student-51",name:"Zoya Exact"};
+    vi.mocked(getPrincipalInsights).mockResolvedValue({
+      ...reviewFixture,
+      engagement:{...reviewFixture.engagement,students:[],without_followup_students:[],focused_student:focused},
+    });
+    mount("/principal/insights/review/student-51?date=2026-10-07&class=class-7");
+    expect(await screen.findByRole("heading",{name:"Zoya Exact"})).toBeVisible();
+    expect(screen.getByRole("heading",{name:"What changed"})).toBeVisible();
+    expect(getPrincipalInsights).toHaveBeenCalledWith("school-1","2026-10-07",28,"class-7",50,"student-51");
+  });
   it("avoids an all-clear claim when no decline qualifies", async () => {
     vi.mocked(getPrincipalInsights).mockResolvedValue({ ...reviewFixture, engagement: { total: 0, combined: 0, without_followup: 0, students: [], without_followup_students: [] } });
     mount("/principal/insights/review");

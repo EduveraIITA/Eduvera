@@ -15,6 +15,8 @@ import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
+import { SchoolEventService } from "../school/school-event.service.js";
+import { safeguardingReportAttentionHref } from "./chat-links.js";
 
 export interface ChatUpload {
   filename: string;
@@ -24,10 +26,11 @@ export interface ChatUpload {
 
 const uuid = z.string().uuid();
 const createConversationSchema = z.object({
+  school_id: uuid,
   recipient_id: uuid,
   student_id: uuid.optional(),
   title: z.string().trim().max(180).optional().default(""),
-});
+}).strict();
 const messageSchema = z.object({
   body: z.string().trim().max(4000).optional().default(""),
   client_id: uuid.optional(),
@@ -49,8 +52,11 @@ const groupSchema = z.object({
   title: z.string().trim().min(3).max(180),
   group_type: z.enum(["student_group", "parent_group", "activity", "staff", "child_support", "announcement"]),
   member_ids: z.array(uuid).min(1).max(200),
-  school_id: uuid.optional(),
+  school_id: uuid,
   student_id: uuid.optional(),
+}).strict().refine((input) => new Set(input.member_ids).size === input.member_ids.length, {
+  message: "Choose each group member once.",
+  path: ["member_ids"],
 });
 const policySchema = z.object({
   student_teacher_direct_enabled: z.boolean().optional(),
@@ -83,9 +89,126 @@ function displayName(user: Pick<AuthUser, "first_name" | "last_name">): string {
   return `${user.first_name} ${user.last_name}`.trim();
 }
 
+function conversationLink(role: AuthUser["role"], conversationId: string, studentId?: string | null): string {
+  const base = `/${portalForRole(role)}/messages?conversation=${encodeURIComponent(conversationId)}`;
+  return role === "parent" && studentId
+    ? `${base}&student_id=${encodeURIComponent(studentId)}`
+    : base;
+}
+
+export type ChatConversationProjectionMode = "list" | "attention" | "detail";
+
+export interface ChatConversationProjectionScope {
+  conversationId?: string;
+  studentId?: string;
+}
+
+/**
+ * Keep the user-facing inbox bounded, while making the attention projection
+ * complete. Attention asks PostgreSQL only for unread conversations and does
+ * not cap that obligation set; a busy user's older unread thread must not
+ * disappear behind the 100 most recently active conversations.
+ */
+export function chatConversationProjectionQuery(
+  userId: string,
+  mode: ChatConversationProjectionMode,
+  scope: ChatConversationProjectionScope = {},
+) {
+  const unreadOnly = mode === "attention"
+    ? sql`AND EXISTS (
+        SELECT 1
+        FROM chat_messages unread_filter
+        WHERE unread_filter.conversation_id=c.id
+          AND unread_filter.sender_id<>${userId}::uuid
+          AND unread_filter.created_at>COALESCE(cp.last_read_at, cp.joined_at)
+    )`
+    : sql``;
+  const resultLimit = mode === "list" ? sql`LIMIT 100` : sql``;
+  const selectedConversation = mode === "detail"
+    ? sql`AND c.id=${scope.conversationId ?? null}::uuid`
+    : sql``;
+  const selectedStudent = mode === "detail" && scope.studentId
+    ? sql`AND (c.context_student_id IS NULL OR c.context_student_id=${scope.studentId}::uuid)`
+    : sql``;
+
+  return sql<any>`
+    SELECT c.id, c.school_id, c.kind, c.context_student_id, c.group_type, c.posting_mode, c.created_at, c.updated_at,
+      cp.participant_role,
+      COALESCE(NULLIF(c.title, ''), (
+        SELECT concat_ws(' ', other_user.first_name, other_user.last_name)
+        FROM chat_participants other_participant
+        JOIN users other_user ON other_user.id=other_participant.user_id
+        WHERE other_participant.conversation_id=c.id
+          AND other_participant.user_id<>${userId}::uuid
+          AND other_participant.is_active
+        ORDER BY other_participant.joined_at
+        LIMIT 1
+      ), 'Conversation') AS title,
+      COALESCE((
+        SELECT other_user.role
+        FROM chat_participants other_participant
+        JOIN users other_user ON other_user.id=other_participant.user_id
+        WHERE other_participant.conversation_id=c.id
+          AND other_participant.user_id<>${userId}::uuid
+          AND other_participant.is_active
+        ORDER BY other_participant.joined_at
+        LIMIT 1
+      ), 'staff') AS other_role,
+      COALESCE((
+        SELECT COALESCE(NULLIF(st.avatar_url,''),NULLIF(other_user.avatar_url,''))
+        FROM chat_participants other_participant
+        JOIN users other_user ON other_user.id=other_participant.user_id
+        LEFT JOIN students st ON st.user_id=other_participant.user_id
+        WHERE other_participant.conversation_id=c.id
+          AND other_participant.user_id<>${userId}::uuid
+          AND other_participant.is_active
+        LIMIT 1
+      ), '') AS avatar_url,
+      CASE WHEN c.context_student_id IS NULL THEN NULL ELSE (
+        SELECT concat_ws(' ', student_user.first_name, student_user.last_name)
+        FROM students context_student JOIN users student_user ON student_user.id=context_student.user_id
+        WHERE context_student.id=c.context_student_id
+      ) END AS student_name,
+      last_message.id AS last_message_id,
+      CASE WHEN last_message.is_deleted THEN 'Message deleted'
+        WHEN COALESCE(last_message.body, '') <> '' THEN last_message.body
+        ELSE COALESCE(last_attachment.original_name, 'Attachment') END AS last_message,
+      COALESCE(last_message.created_at, c.created_at) AS last_message_at,
+      COALESCE((
+        SELECT count(*)::int
+        FROM chat_messages unread
+        WHERE unread.conversation_id=c.id
+          AND unread.sender_id<>${userId}::uuid
+          AND unread.created_at>COALESCE(cp.last_read_at, cp.joined_at)
+      ), 0)::int AS unread_count,
+      (SELECT count(*)::int FROM chat_participants members WHERE members.conversation_id=c.id AND members.is_active) AS member_count,
+      CASE WHEN c.posting_mode='moderators' THEN EXISTS (
+        SELECT 1 FROM chat_participants moderator WHERE moderator.conversation_id=c.id
+          AND moderator.user_id=${userId}::uuid AND moderator.participant_role='moderator' AND moderator.is_active
+      ) ELSE true END AS can_post
+    FROM chat_conversations c
+    JOIN chat_participants cp ON cp.conversation_id=c.id
+      AND cp.user_id=${userId}::uuid AND cp.is_active
+    JOIN school_memberships membership ON membership.school_id=c.school_id
+      AND membership.user_id=${userId}::uuid AND membership.is_active
+    LEFT JOIN LATERAL (
+      SELECT message.* FROM chat_messages message
+      WHERE message.conversation_id=c.id
+      ORDER BY message.created_at DESC, message.id DESC LIMIT 1
+    ) last_message ON true
+    LEFT JOIN chat_attachments last_attachment ON last_attachment.message_id=last_message.id
+    WHERE chat_actor_is_current_participant(c.school_id,${userId}::uuid,'messages.view',c.id)
+      ${unreadOnly}
+      ${selectedConversation}
+      ${selectedStudent}
+    ORDER BY COALESCE(last_message.created_at, c.created_at) DESC
+    ${resultLimit}
+  `;
+}
+
 @Injectable()
 export class ChatService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   private async conversationForUser(user: AuthUser, conversationId: string, action = "messages.view") {
     if (!uuid.safeParse(conversationId).success) throw new NotFoundException("Conversation not found.");
@@ -96,12 +219,25 @@ export class ChatService {
       JOIN school_memberships membership ON membership.school_id=c.school_id
         AND membership.user_id=${user.id}::uuid AND membership.is_active
       WHERE c.id=${conversationId}::uuid AND cp.user_id=${user.id}::uuid AND cp.is_active
-        AND (membership.role<>'staff' OR staff_has_conversation_permission(c.school_id,${user.id}::uuid,${action},c.id))
+        AND chat_actor_is_current_participant(c.school_id,${user.id}::uuid,${action},c.id)
       LIMIT 1
     `.execute(this.db);
     const conversation = result.rows[0];
     if (!conversation) throw new NotFoundException("Conversation not found.");
     return conversation;
+  }
+
+  private async assertStudentScope(
+    db: DatabaseService,
+    schoolId: string,
+    actorId: string,
+    action: "messages.view" | "messages.send" | "groups.create",
+    studentId: string,
+  ) {
+    const allowed = (await sql<{ allowed: boolean }>`SELECT chat_actor_has_student_scope(
+      ${schoolId}::uuid,${actorId}::uuid,${action},${studentId}::uuid
+    ) AS allowed`.execute(db)).rows[0]?.allowed;
+    if (!allowed) throw new ForbiddenException("This learner is outside the current school relationship.");
   }
 
   private async ensureClassGroups(user: AuthUser) {
@@ -152,75 +288,27 @@ export class ChatService {
 
   async conversations(user: AuthUser) {
     await this.ensureClassGroups(user);
-    const result = await sql<any>`
-      SELECT c.id, c.school_id, c.kind, c.context_student_id, c.group_type, c.posting_mode, c.created_at, c.updated_at,
-        COALESCE(NULLIF(c.title, ''), (
-          SELECT concat_ws(' ', other_user.first_name, other_user.last_name)
-          FROM chat_participants other_participant
-          JOIN users other_user ON other_user.id=other_participant.user_id
-          WHERE other_participant.conversation_id=c.id
-            AND other_participant.user_id<>${user.id}::uuid
-            AND other_participant.is_active
-          ORDER BY other_participant.joined_at
-          LIMIT 1
-        ), 'Conversation') AS title,
-        COALESCE((
-          SELECT other_user.role
-          FROM chat_participants other_participant
-          JOIN users other_user ON other_user.id=other_participant.user_id
-          WHERE other_participant.conversation_id=c.id
-            AND other_participant.user_id<>${user.id}::uuid
-            AND other_participant.is_active
-          ORDER BY other_participant.joined_at
-          LIMIT 1
-        ), 'staff') AS other_role,
-        COALESCE((
-          SELECT COALESCE(NULLIF(st.avatar_url,''),NULLIF(other_user.avatar_url,''))
-          FROM chat_participants other_participant
-          JOIN users other_user ON other_user.id=other_participant.user_id
-          LEFT JOIN students st ON st.user_id=other_participant.user_id
-          WHERE other_participant.conversation_id=c.id
-            AND other_participant.user_id<>${user.id}::uuid
-            AND other_participant.is_active
-          LIMIT 1
-        ), '') AS avatar_url,
-        CASE WHEN c.context_student_id IS NULL THEN NULL ELSE (
-          SELECT concat_ws(' ', student_user.first_name, student_user.last_name)
-          FROM students context_student JOIN users student_user ON student_user.id=context_student.user_id
-          WHERE context_student.id=c.context_student_id
-        ) END AS student_name,
-        last_message.id AS last_message_id,
-        CASE WHEN last_message.is_deleted THEN 'Message deleted'
-          WHEN COALESCE(last_message.body, '') <> '' THEN last_message.body
-          ELSE COALESCE(last_attachment.original_name, 'Attachment') END AS last_message,
-        COALESCE(last_message.created_at, c.created_at) AS last_message_at,
-        COALESCE((
-          SELECT count(*)::int
-          FROM chat_messages unread
-          WHERE unread.conversation_id=c.id
-            AND unread.sender_id<>${user.id}::uuid
-            AND unread.created_at>COALESCE(cp.last_read_at, cp.joined_at)
-        ), 0)::int AS unread_count,
-        (SELECT count(*)::int FROM chat_participants members WHERE members.conversation_id=c.id AND members.is_active) AS member_count,
-        CASE WHEN c.posting_mode='moderators' THEN EXISTS (
-          SELECT 1 FROM chat_participants moderator WHERE moderator.conversation_id=c.id
-            AND moderator.user_id=${user.id}::uuid AND moderator.participant_role='moderator' AND moderator.is_active
-        ) ELSE true END AS can_post
-      FROM chat_conversations c
-      JOIN chat_participants cp ON cp.conversation_id=c.id
-        AND cp.user_id=${user.id}::uuid AND cp.is_active
-      JOIN school_memberships membership ON membership.school_id=c.school_id
-        AND membership.user_id=${user.id}::uuid AND membership.is_active
-      LEFT JOIN LATERAL (
-        SELECT message.* FROM chat_messages message
-        WHERE message.conversation_id=c.id
-        ORDER BY message.created_at DESC, message.id DESC LIMIT 1
-      ) last_message ON true
-      LEFT JOIN chat_attachments last_attachment ON last_attachment.message_id=last_message.id
-      WHERE membership.role<>'staff' OR staff_has_conversation_permission(c.school_id,${user.id}::uuid,'messages.view',c.id)
-      ORDER BY COALESCE(last_message.created_at, c.created_at) DESC
-      LIMIT 100
-    `.execute(this.db);
+    const result = await chatConversationProjectionQuery(user.id, "list").execute(this.db);
+    return { results: result.rows };
+  }
+
+  async conversation(user: AuthUser, conversationId: string, selectedStudentId?: string) {
+    if (!uuid.safeParse(conversationId).success) throw new NotFoundException("Conversation not found.");
+    if (selectedStudentId && !uuid.safeParse(selectedStudentId).success) {
+      throw new NotFoundException("Conversation not found.");
+    }
+    const result = await chatConversationProjectionQuery(user.id, "detail", {
+      conversationId,
+      ...(selectedStudentId ? { studentId: selectedStudentId } : {}),
+    }).execute(this.db);
+    const conversation = result.rows[0];
+    if (!conversation) throw new NotFoundException("Conversation not found.");
+    return conversation;
+  }
+
+  /** Complete read-only unread projection used by composed attention endpoints. */
+  async attentionConversations(user: AuthUser) {
+    const result = await chatConversationProjectionQuery(user.id, "attention").execute(this.db);
     return { results: result.rows };
   }
 
@@ -366,14 +454,25 @@ export class ChatService {
   async createConversation(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
     const data = createConversationSchema.parse(body);
     if (data.recipient_id === user.id) throw new BadRequestException("You cannot start a conversation with yourself.");
+    const creatorMembership = await this.db.selectFrom("school_memberships")
+      .select("role")
+      .where("school_id", "=", data.school_id)
+      .where("user_id", "=", user.id)
+      .where("is_active", "=", true)
+      .executeTakeFirst();
+    if (!creatorMembership) throw new ForbiddenException("Choose a school where your membership is active.");
     const allowed = await this.recipients(user, data.student_id);
-    const recipient = allowed.results.find((item) => item.id === data.recipient_id);
+    const recipient = allowed.results.find((item) => item.id === data.recipient_id && item.school_id === data.school_id);
     if (!recipient) throw new ForbiddenException("This person is not available to message.");
+    if (data.student_id) {
+      await this.assertStudentScope(this.db, data.school_id, user.id, "messages.send", data.student_id);
+      await this.assertStudentScope(this.db, data.school_id, recipient.id, "messages.view", data.student_id);
+    }
 
     const existing = await sql<{ id: string }>`
       SELECT conversation.id
       FROM chat_conversations conversation
-      WHERE conversation.school_id=${recipient.school_id}::uuid
+      WHERE conversation.school_id=${data.school_id}::uuid
         AND conversation.kind='direct'
         AND conversation.context_student_id IS NOT DISTINCT FROM ${data.student_id ?? null}::uuid
         AND EXISTS (
@@ -395,8 +494,20 @@ export class ChatService {
     if (existing.rows[0]) return { id: existing.rows[0].id, created: false };
 
     const conversation = await this.db.transaction().execute(async (tx) => {
+      const activeMembers = (await sql<{ user_id: string }>`SELECT membership.user_id
+        FROM school_memberships membership
+        JOIN users account ON account.id=membership.user_id AND account.is_active
+        WHERE membership.school_id=${data.school_id}::uuid
+          AND membership.user_id=ANY(${[user.id, recipient.id]}::uuid[])
+          AND membership.is_active
+        GROUP BY membership.user_id`.execute(tx)).rows;
+      if (activeMembers.length !== 2) throw new ForbiddenException("Both participants must be active members of this school.");
+      if (data.student_id) {
+        await this.assertStudentScope(tx, data.school_id, user.id, "messages.send", data.student_id);
+        await this.assertStudentScope(tx, data.school_id, recipient.id, "messages.view", data.student_id);
+      }
       const created = await tx.insertInto("chat_conversations").values({
-        school_id: recipient.school_id,
+        school_id: data.school_id,
         kind: "direct",
         title: data.title,
         context_student_id: data.student_id ?? null,
@@ -406,12 +517,12 @@ export class ChatService {
         { conversation_id: created.id, user_id: user.id, participant_role: "member" },
         { conversation_id: created.id, user_id: recipient.id, participant_role: "member" },
       ]).execute();
-      const member=await tx.selectFrom("school_memberships").select("role").where("school_id","=",recipient.school_id).where("user_id","=",user.id).where("is_active","=",true).executeTakeFirst();
-      if(member?.role==='staff' && !(await sql<{allowed:boolean}>`SELECT staff_has_conversation_permission(${recipient.school_id}::uuid,${user.id}::uuid,'messages.send',${created.id}::uuid) AS allowed`.execute(tx)).rows[0]?.allowed)throw new ForbiddenException("This conversation is outside your assigned messaging access.");
+      const member=await tx.selectFrom("school_memberships").select("role").where("school_id","=",data.school_id).where("user_id","=",user.id).where("is_active","=",true).executeTakeFirst();
+      if(member?.role==='staff' && !(await sql<{allowed:boolean}>`SELECT staff_has_conversation_permission(${data.school_id}::uuid,${user.id}::uuid,'messages.send',${created.id}::uuid) AS allowed`.execute(tx)).rows[0]?.allowed)throw new ForbiddenException("This conversation is outside your assigned messaging access.");
       await tx.insertInto("audit_events").values({
         action: "chat.conversation.created",
         actor_id: user.id,
-        school_id: recipient.school_id,
+        school_id: data.school_id,
         target_type: "chat_conversation",
         target_id: created.id,
         request_id: request.requestId,
@@ -574,6 +685,9 @@ export class ChatService {
           .where("participant.conversation_id", "=", conversationId)
           .where("participant.user_id", "!=", user.id)
           .where("participant.is_active", "=", true)
+          .where(sql<boolean>`chat_actor_is_current_participant(
+            ${conversation.school_id}::uuid,target.id,'messages.view',${conversationId}::uuid
+          )`)
           .execute();
         if (targets.length) {
           await tx.insertInto("notifications").values(targets.map((target) => ({
@@ -581,10 +695,27 @@ export class ChatService {
             kind: "general" as const,
             title: `New message from ${displayName(user)}`,
             body: data.body ? data.body.slice(0, 180) : `Attachment: ${basename(upload?.filename ?? "File")}`,
-            link: `/${portalForRole(target.role)}/messages?conversation=${conversationId}`,
-            metadata: { conversation_id: conversationId, student_id: conversation.context_student_id },
+            link: conversationLink(target.role, conversationId, conversation.context_student_id),
+            metadata: {
+              conversation_id: conversationId,
+              student_id: conversation.context_student_id,
+              notification_scope: "chat_conversation",
+            },
           }))).execute();
         }
+        await this.events.enqueueUserEvent(tx, {
+          schoolId: conversation.school_id,
+          eventType: "chat.updated",
+          aggregateType: "chat_conversation",
+          aggregateId: conversationId,
+          audienceUserIds: [user.id, ...targets.map((target) => target.id)],
+          payload: {
+            conversation_id: conversationId,
+            change_kind: "message_sent",
+            refresh: ["messages", "notifications", "attention"],
+          },
+          idempotencyKey: `chat:message:${message.id}`,
+        });
         await tx.insertInto("audit_events").values({
           action: "chat.message.sent",
           actor_id: user.id,
@@ -604,8 +735,8 @@ export class ChatService {
     }
   }
 
-  async markRead(user: AuthUser, conversationId: string) {
-    await this.conversationForUser(user, conversationId);
+  async markRead(user: AuthUser, conversationId: string, request?: AuthenticatedRequest) {
+    const conversation = await this.conversationForUser(user, conversationId);
     const readAt = new Date();
     await this.db.transaction().execute(async (tx) => {
       await tx.updateTable("chat_participants").set({ last_read_at: readAt })
@@ -617,6 +748,19 @@ export class ChatService {
         WHERE recipient_id=${user.id}::uuid AND read_at IS NULL
           AND metadata->>'conversation_id'=${conversationId}
       `.execute(tx);
+      await this.events.enqueueUserEvent(tx, {
+        schoolId: conversation.school_id,
+        eventType: "chat.updated",
+        aggregateType: "chat_conversation",
+        aggregateId: conversationId,
+        audienceUserIds: [user.id],
+        payload: {
+          conversation_id: conversationId,
+          change_kind: "read",
+          refresh: ["messages", "notifications", "attention"],
+        },
+        idempotencyKey: `chat:read:${request?.requestId ?? randomUUID()}:${conversationId}:${user.id}`,
+      });
     });
     return { conversation_id: conversationId, read_at: readAt };
   }
@@ -673,8 +817,12 @@ export class ChatService {
           kind: "general" as const,
           title: "New reported chat message",
           body: "A message needs review in the safeguarding queue.",
-          link: "/principal/safeguarding",
-          metadata: { report_id: saved.id, conversation_id: conversationId },
+          link: safeguardingReportAttentionHref("principal", saved.id),
+          metadata: {
+            report_id: saved.id,
+            conversation_id: conversationId,
+            notification_scope: "chat_report_review",
+          },
         }))).execute();
       }
       await tx.insertInto("audit_events").values({
@@ -704,6 +852,7 @@ export class ChatService {
         report.assigned_to, report.reviewed_by, report.resolution_note, report.action_taken,
         report.created_at, report.updated_at, report.resolved_at,
         conversation.id AS conversation_id, conversation.title AS conversation_title,
+        conversation.context_student_id,
         conversation.kind AS conversation_kind, conversation.group_type,
         message.body AS message_body, message.created_at AS message_created_at,
         message.sender_id, concat_ws(' ', sender.first_name, sender.last_name) AS sender_name,
@@ -764,6 +913,61 @@ export class ChatService {
     };
   }
 
+  async report(user: AuthUser, reportId: string) {
+    if (user.role !== "admin" && user.role !== "staff") {
+      throw new ForbiddenException("Only authorised school staff can access message reports.");
+    }
+    if (!uuid.safeParse(reportId).success) throw new NotFoundException("Report not found.");
+    const result = await sql<any>`
+      SELECT report.id, report.message_id, report.reported_by, report.reason, report.status,
+        report.assigned_to, report.reviewed_by, report.resolution_note, report.action_taken,
+        report.created_at, report.updated_at, report.resolved_at,
+        conversation.id AS conversation_id, conversation.title AS conversation_title,
+        conversation.context_student_id,
+        conversation.kind AS conversation_kind, conversation.group_type,
+        message.body AS message_body, message.created_at AS message_created_at,
+        message.sender_id, concat_ws(' ', sender.first_name, sender.last_name) AS sender_name,
+        concat_ws(' ', reporter.first_name, reporter.last_name) AS reporter_name,
+        concat_ws(' ', assignee.first_name, assignee.last_name) AS assignee_name,
+        current_membership.role AS reviewer_role,
+        COALESCE((
+          SELECT json_agg(context_row ORDER BY context_row.created_at)
+          FROM (
+            SELECT context_message.id, context_message.body, context_message.created_at,
+              concat_ws(' ', context_sender.first_name, context_sender.last_name) AS sender_name,
+              (context_message.id=message.id) AS is_flagged
+            FROM chat_messages context_message
+            JOIN users context_sender ON context_sender.id=context_message.sender_id
+            WHERE context_message.conversation_id=conversation.id
+              AND context_message.created_at<=message.created_at
+            ORDER BY context_message.created_at DESC, context_message.id DESC
+            LIMIT 5
+          ) context_row
+        ), '[]'::json) AS context_messages
+      FROM chat_message_reports report
+      JOIN chat_messages message ON message.id=report.message_id
+      JOIN chat_conversations conversation ON conversation.id=message.conversation_id
+      JOIN users sender ON sender.id=message.sender_id
+      JOIN users reporter ON reporter.id=report.reported_by
+      LEFT JOIN users assignee ON assignee.id=report.assigned_to
+      JOIN school_memberships current_membership ON current_membership.school_id=conversation.school_id
+        AND current_membership.user_id=${user.id}::uuid AND current_membership.is_active
+      WHERE report.id=${reportId}::uuid
+        AND (
+          current_membership.role='admin'
+          OR (current_membership.role='staff' AND report.assigned_to=${user.id}::uuid)
+        )
+      LIMIT 1
+    `.execute(this.db);
+    const row = result.rows[0];
+    if (!row) throw new NotFoundException("Report not found.");
+    return {
+      ...row,
+      can_assign: row.reviewer_role === "admin",
+      context_messages: Array.isArray(row.context_messages) ? row.context_messages : [],
+    };
+  }
+
   async reportReviewers(user: AuthUser) {
     if (user.role !== "admin") {
       throw new ForbiddenException("Only school administrators can assign message reports.");
@@ -777,6 +981,20 @@ export class ChatService {
       JOIN users target ON target.id=target_membership.user_id AND target.is_active
       WHERE current_membership.user_id=${user.id}::uuid
         AND current_membership.is_active AND current_membership.role='admin'
+        AND (
+          target_membership.role='admin'
+          OR EXISTS (
+            SELECT 1
+            FROM staff_role_bindings binding
+            WHERE binding.school_id=target_membership.school_id
+              AND binding.user_id=target_membership.user_id
+              AND binding.role_active
+              AND binding.status='active'
+              AND 'safeguarding.review'=ANY(binding.permissions)
+              AND binding.starts_on<=current_date
+              AND (binding.ends_on IS NULL OR binding.ends_on>=current_date)
+          )
+        )
       ORDER BY name
     `.execute(this.db);
     return { results: result.rows };
@@ -787,7 +1005,7 @@ export class ChatService {
     const data = moderationUpdateSchema.parse(body);
     const reportResult = await sql<any>`
       SELECT report.*, message.sender_id, message.conversation_id,
-        conversation.school_id, current_membership.role AS reviewer_role,
+        conversation.school_id, conversation.context_student_id, current_membership.role AS reviewer_role,
         sender_user.role AS sender_role, reporter_user.role AS reporter_role
       FROM chat_message_reports report
       JOIN chat_messages message ON message.id=report.message_id
@@ -817,15 +1035,32 @@ export class ChatService {
         if (assignee === report.sender_id || assignee === report.reported_by) {
           throw new BadRequestException("Choose an independent reviewer for this report.");
         }
-        const eligible = await this.db.selectFrom("school_memberships")
-          .innerJoin("users", "users.id", "school_memberships.user_id")
-          .select(["users.id", "users.role"])
-          .where("school_memberships.school_id", "=", report.school_id)
-          .where("school_memberships.user_id", "=", assignee)
-          .where("school_memberships.role", "in", ["admin", "staff"])
-          .where("school_memberships.is_active", "=", true)
-          .where("users.is_active", "=", true)
-          .executeTakeFirst();
+        const eligible = (await sql<{ id: string; role: "admin" | "staff" }>`
+          SELECT account.id, membership.role
+          FROM school_memberships membership
+          JOIN users account
+            ON account.id=membership.user_id
+            AND account.is_active
+          WHERE membership.school_id=${report.school_id}::uuid
+            AND membership.user_id=${assignee}::uuid
+            AND membership.role IN ('admin','staff')
+            AND membership.is_active
+            AND (
+              membership.role='admin'
+              OR EXISTS (
+                SELECT 1
+                FROM staff_role_bindings binding
+                WHERE binding.school_id=membership.school_id
+                  AND binding.user_id=membership.user_id
+                  AND binding.role_active
+                  AND binding.status='active'
+                  AND 'safeguarding.review'=ANY(binding.permissions)
+                  AND binding.starts_on<=current_date
+                  AND (binding.ends_on IS NULL OR binding.ends_on>=current_date)
+              )
+            )
+          LIMIT 1
+        `.execute(this.db)).rows[0];
         if (!eligible) throw new BadRequestException("Choose an authorised staff member.");
       }
     }
@@ -881,27 +1116,41 @@ export class ChatService {
       const notifications: Array<Record<string, unknown>> = [];
       if (assignee && assignee !== report.assigned_to && assignee !== user.id) {
         const target = await tx.selectFrom("users").select(["id", "role"]).where("id", "=", assignee).executeTakeFirst();
-        if (target) notifications.push({
+        const targetPortal = target?.role === "staff" ? "teacher"
+          : target?.role === "admin" ? "principal" : null;
+        if (target && targetPortal) notifications.push({
           recipient_id: target.id, kind: "general", title: "Chat report assigned",
           body: "A reported message has been assigned to you for review.",
-          link: `/${portalForRole(target.role)}/safeguarding`,
-          metadata: { report_id: reportId },
+          link: safeguardingReportAttentionHref(targetPortal, reportId),
+          metadata: {
+            report_id: reportId,
+            conversation_id: report.conversation_id,
+            notification_scope: "chat_report_review",
+          },
         });
       }
       if (requestedAction === "warning") {
         notifications.push({
           recipient_id: report.sender_id, kind: "general", title: "Messaging conduct warning",
           body: "School staff reviewed a message and issued a conduct warning.",
-          link: `/${portalForRole(report.sender_role)}/messages?conversation=${report.conversation_id}`,
-          metadata: { report_id: reportId, conversation_id: report.conversation_id },
+          link: conversationLink(report.sender_role, report.conversation_id, report.context_student_id),
+          metadata: {
+            report_id: reportId,
+            conversation_id: report.conversation_id,
+            notification_scope: "chat_conversation",
+          },
         });
       }
       if (requestedAction === "restrict") {
         notifications.push({
           recipient_id: report.sender_id, kind: "general", title: "Messaging temporarily restricted",
           body: `School staff restricted messaging for ${data.restriction_days ?? 7} day(s).`,
-          link: "",
-          metadata: { report_id: reportId },
+          link: conversationLink(report.sender_role, report.conversation_id, report.context_student_id),
+          metadata: {
+            report_id: reportId,
+            conversation_id: report.conversation_id,
+            notification_scope: "chat_conversation",
+          },
         });
       }
       if (requestedAction === "escalate") {
@@ -915,8 +1164,12 @@ export class ChatService {
         notifications.push(...administrators.map((administrator) => ({
           recipient_id: administrator.user_id, kind: "general", title: "Chat report escalated",
           body: "A safeguarding review has been escalated for administrator attention.",
-          link: "/principal/safeguarding",
-          metadata: { report_id: reportId },
+          link: safeguardingReportAttentionHref("principal", reportId),
+          metadata: {
+            report_id: reportId,
+            conversation_id: report.conversation_id,
+            notification_scope: "chat_report_review",
+          },
         })));
       }
       if (nextStatus === "resolved" || nextStatus === "dismissed") {
@@ -924,8 +1177,12 @@ export class ChatService {
           recipient_id: report.reported_by, kind: "general",
           title: nextStatus === "resolved" ? "Message report resolved" : "Message report reviewed",
           body: "Authorised school staff completed their review.",
-          link: `/${portalForRole(report.reporter_role)}/messages?conversation=${report.conversation_id}`,
-          metadata: { report_id: reportId, conversation_id: report.conversation_id },
+          link: conversationLink(report.reporter_role, report.conversation_id, report.context_student_id),
+          metadata: {
+            report_id: reportId,
+            conversation_id: report.conversation_id,
+            notification_scope: "chat_conversation",
+          },
         });
       }
       if (notifications.length) await tx.insertInto("notifications").values(notifications as any).execute();
@@ -966,17 +1223,54 @@ export class ChatService {
 
   async createGroup(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
     const data = groupSchema.parse(body);
-    const membership = await this.db.selectFrom("school_memberships").select(["school_id", "role"]).where("user_id", "=", user.id).where("is_active", "=", true).where("role", "in", ["staff", "admin"]).executeTakeFirst();
+    const membership = await this.db.selectFrom("school_memberships")
+      .select(["school_id", "role"])
+      .where("school_id", "=", data.school_id)
+      .where("user_id", "=", user.id)
+      .where("is_active", "=", true)
+      .where("role", "in", ["staff", "admin"])
+      .executeTakeFirst();
     if (!membership) throw new ForbiddenException("Only teachers and administrators can create groups.");
     if ((data.group_type === "staff" || data.group_type === "announcement") && membership.role !== "admin") throw new ForbiddenException("Only administrators can create this group type.");
-    const schoolId = data.school_id ?? membership.school_id;
-    if (schoolId !== membership.school_id) throw new ForbiddenException("You can only create groups in your school.");
-    const members = await this.db.selectFrom("school_memberships").select(["user_id", "role"]).where("school_id", "=", schoolId).where("user_id", "in", data.member_ids).where("is_active", "=", true).execute();
-    if (members.length !== data.member_ids.length) throw new ForbiddenException("Every group member must be an active member of the school.");
+    const schoolId = data.school_id;
+    const members = await sql<{ user_id: string; roles: string[] }>`
+      SELECT membership.user_id,array_agg(DISTINCT membership.role) AS roles
+      FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${schoolId}::uuid
+        AND membership.user_id=ANY(${data.member_ids}::uuid[])
+        AND membership.is_active
+      GROUP BY membership.user_id
+    `.execute(this.db);
+    if (members.rows.length !== data.member_ids.length) throw new ForbiddenException("Every group member must be an active member of the school.");
     const allowed: Record<string, string[]> = { student_group: ["student", "staff", "admin"], parent_group: ["guardian", "staff", "admin"], activity: ["student", "guardian", "staff", "admin"], staff: ["staff", "admin"], announcement: ["student", "guardian", "staff", "admin"], child_support: ["student", "guardian", "staff", "admin"] };
-    if (members.some((member) => !allowed[data.group_type].includes(member.role))) throw new ForbiddenException("One or more selected members are not eligible for this group type.");
+    if (members.rows.some((member) => !member.roles.some((role) => allowed[data.group_type].includes(role)))) throw new ForbiddenException("One or more selected members are not eligible for this group type.");
+    if (data.student_id) {
+      await this.assertStudentScope(this.db, schoolId, user.id, "groups.create", data.student_id);
+      for (const memberId of data.member_ids) {
+        await this.assertStudentScope(this.db, schoolId, memberId, "messages.view", data.student_id);
+      }
+    }
     const postingMode: "all" | "moderators" = data.group_type === "parent_group" || data.group_type === "announcement" ? "moderators" : "all";
     const created = await this.db.transaction().execute(async (tx) => {
+      const currentMembers = await sql<{ user_id: string }>`
+        SELECT membership.user_id
+        FROM school_memberships membership
+        JOIN users account ON account.id=membership.user_id AND account.is_active
+        WHERE membership.school_id=${schoolId}::uuid
+          AND membership.user_id=ANY(${[user.id, ...data.member_ids]}::uuid[])
+          AND membership.is_active
+        GROUP BY membership.user_id
+      `.execute(tx);
+      if (currentMembers.rows.length !== new Set([user.id, ...data.member_ids]).size) {
+        throw new ForbiddenException("Every group member must be an active member of the school.");
+      }
+      if (data.student_id) {
+        await this.assertStudentScope(tx, schoolId, user.id, "groups.create", data.student_id);
+        for (const memberId of data.member_ids) {
+          await this.assertStudentScope(tx, schoolId, memberId, "messages.view", data.student_id);
+        }
+      }
       const conversation = await tx.insertInto("chat_conversations").values({ school_id: schoolId, kind: data.group_type === "announcement" ? "announcement" : "group", title: data.title, context_student_id: data.student_id ?? null, created_by: user.id, group_type: data.group_type, posting_mode: postingMode }).returning("id").executeTakeFirstOrThrow();
       const rows = [{ conversation_id: conversation.id, user_id: user.id, participant_role: "moderator" as const }, ...data.member_ids.filter((id) => id !== user.id).map((id) => ({ conversation_id: conversation.id, user_id: id, participant_role: "member" as const }))];
       await tx.insertInto("chat_participants").values(rows).execute();

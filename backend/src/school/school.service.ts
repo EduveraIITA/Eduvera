@@ -40,6 +40,48 @@ interface EnrollmentContext {
   academic_year: string; term_name: string; starts_on: string; ends_on: string; attendance_threshold: string;
 }
 
+/**
+ * Typed informational attention is cleared only from the exact durable target
+ * encoded by the producer. The stable notification id is supplied by the
+ * client after navigation, while every producer-owned target parameter must
+ * match exactly. This deliberately rejects generic module links so a default
+ * child/date/item can never clear an unrelated update.
+ */
+export function notificationAttentionDestinationMatches(
+  notificationId: string,
+  destinationValue: string,
+  openedValue: unknown,
+): boolean {
+  if (
+    typeof openedValue !== "string" ||
+    !openedValue.startsWith("/") ||
+    openedValue.startsWith("//") ||
+    !destinationValue.startsWith("/") ||
+    destinationValue.startsWith("//")
+  ) return false;
+
+  try {
+    const opened = new URL(openedValue, "https://school.local");
+    const destination = new URL(destinationValue, "https://school.local");
+    if (opened.pathname !== destination.pathname) return false;
+
+    const openedIds = opened.searchParams.getAll("attention_notification_id");
+    if (openedIds.length !== 1 || openedIds[0] !== notificationId) return false;
+
+    const targetKeys = [...new Set(
+      [...destination.searchParams.keys()].filter((key) => key !== "attention_notification_id"),
+    )];
+    if (!targetKeys.length) return false;
+    return targetKeys.every((key) => {
+      const expected = destination.searchParams.getAll(key);
+      const actual = opened.searchParams.getAll(key);
+      return expected.length === actual.length && expected.every((value, index) => value === actual[index]);
+    });
+  } catch {
+    return false;
+  }
+}
+
 export type HomeActionPriority = "urgent" | "high" | "normal" | "info";
 export type HomeActionKind =
   | "event_rsvp"
@@ -638,7 +680,7 @@ export class SchoolService {
       .where("is_active", "=", true).executeTakeFirst();
     if (!membership) throw new ForbiddenException("An active school membership is required for this calendar.");
     return this.db.selectFrom("school_calendar_days").select([
-      "date", "is_instructional", "label", "kind", "reason", "revision",
+      "id", "date", "is_instructional", "label", "kind", "reason", "revision",
     ])
       .where("school_id", "=", input.school_id).where("date", ">=", input.from).where("date", "<=", input.to)
       .orderBy("date").execute();
@@ -869,6 +911,16 @@ export class SchoolService {
       WHERE d.class_section_id=${classId}::uuid AND d.date=${date}::date`.execute(this.db)).rows[0]??null;
   }
 
+  async scheduleSource(classId:string,termId:string,date:string){
+    return (await sql<{id:string;revision:number;starts_on:string;ends_on:string}>`
+      SELECT version.id,version.revision,version.starts_on,version.ends_on
+      FROM schedule_versions version
+      WHERE version.class_section_id=${classId}::uuid AND version.term_id=${termId}::uuid
+        AND version.state='published' AND ${date}::date BETWEEN version.starts_on AND version.ends_on
+      ORDER BY version.baseline ASC,version.starts_on DESC LIMIT 1
+    `.execute(this.db)).rows[0]??null;
+  }
+
   async diaryItems(studentId: string, enrollment: EnrollmentContext, dateFrom?: string, dateTo?: string) {
     const result = await sql<any>`
       SELECT di.*, s.id AS subject_join_id, s.name AS subject_name, s.short_name,
@@ -1025,9 +1077,41 @@ export class SchoolService {
     await db.insertInto("leave_audits").values({ leave_request_id: leaveId, actor_id: actorId, action, from_status: fromStatus, to_status: toStatus, note: note.slice(0, 500) }).execute();
   }
 
-  private async notify(db: Db, recipientId: string | null, input: { title: string; body: string; link: string; metadata: Record<string, unknown> }) {
+  private async notify(db: Db, recipientId: string | null, input: {
+    title: string;
+    body: string;
+    link: string;
+    metadata: Record<string, unknown>;
+    attention?: {
+      schoolId: string;
+      studentId: string;
+      sourceId: string;
+      sourceRevision: number;
+      topicKey: string;
+      portal: "parent";
+    };
+  }) {
     if (!recipientId) return; // A school person without an account cannot receive an app notification.
-    await db.insertInto("notifications").values({ recipient_id: recipientId, kind: "leave", title: input.title, body: input.body.slice(0, 500), link: input.link, metadata: input.metadata, read_at: null }).execute();
+    await db.insertInto("notifications").values({
+      recipient_id: recipientId,
+      kind: "leave",
+      title: input.title,
+      body: input.body.slice(0, 500),
+      link: input.link,
+      metadata: input.metadata,
+      read_at: null,
+      ...(input.attention ? {
+        attention_eligible: true,
+        attention_school_id: input.attention.schoolId,
+        attention_student_id: input.attention.studentId,
+        attention_portal: input.attention.portal,
+        attention_module: "leave" as const,
+        attention_source_kind: "student_leave_decision" as const,
+        attention_source_id: input.attention.sourceId,
+        attention_source_revision: input.attention.sourceRevision,
+        attention_topic_key: input.attention.topicKey,
+      } : {}),
+    }).execute();
   }
 
   private async leaveEventAudience(db: Db, student: StudentContext): Promise<string[]> {
@@ -1070,7 +1154,7 @@ export class SchoolService {
     const changedAttendanceDates = input.changedAttendanceDates ?? [];
     const refresh = [
       "student.leave", "student.home", "parent.leave", "parent.home",
-      "notifications", "teacher.home", "principal.home",
+      "notifications", "attention", "teacher.home", "principal.home",
       ...(changedAttendanceDates.length
         ? ["student.attendance", "parent.attendance", "teacher.attendance", "principal.attendance"]
         : []),
@@ -1340,7 +1424,7 @@ export class SchoolService {
         schoolId: input.schoolId, classSectionId: enrollment.class_section_id,
         termId: input.termId,
         date: day.date, requestId: input.requestId,
-        records: [{ student_id: input.studentId, status: "excused", previous_status: current?.status ?? null, revision: registerRevision }],
+        records: [{ id: saved.id, student_id: input.studentId, status: "excused", previous_status: current?.status ?? null, revision: registerRevision }],
         suppressNotifications: true,
       });
       changedDates.push(day.date);
@@ -1418,8 +1502,16 @@ export class SchoolService {
         };
         for (const recipientId of recipients) await this.notify(trx, recipientId, {
           ...notification,
-          link: recipientId === scoped.student.user_id ? `/student/leave?leave_id=${leaveId}` : `/parent/leave?leave_id=${leaveId}&student_id=${scoped.student.id}`,
+          link: recipientId === scoped.student.user_id ? `/student/leave?leave_id=${leaveId}` : `/parent/leave?leave_id=${leaveId}&student_id=${scoped.student.id}&tab=history`,
           metadata: { leave_request_id: leaveId, student_id: scoped.student.id, status: next, changed_attendance_dates: changedAttendanceDates },
+          ...(recipientId === scoped.student.user_id ? {} : { attention: {
+            schoolId: scoped.student.school_id,
+            studentId: scoped.student.id,
+            sourceId: leaveId,
+            sourceRevision: 1,
+            topicKey: `student-leave:${leaveId}`,
+            portal: "parent" as const,
+          } }),
         });
         await this.enqueueLeaveUpdate(trx, {
           student: scoped.student, leaveId, requestId,
@@ -1519,8 +1611,9 @@ export class SchoolService {
     const page = notificationPageSchema.parse(rawPage);
     const after = notificationCursor(page.cursor);
     let query = this.db.selectFrom("notifications")
-      .select(["id", "kind", "title", "body", "link", "metadata", "read_at", "created_at"])
-      .where("recipient_id", "=", user.id);
+      .select(["id", "kind", "title", "body", "link", "metadata", "read_at", "created_at", "attention_eligible"])
+      .where("recipient_id", "=", user.id)
+      .where(sql<boolean>`notification_is_currently_visible(id,${user.id}::uuid)`);
     if (after) {
       query = query.where((expression) => expression.or([
         expression("created_at", "<", after.createdAt),
@@ -1533,7 +1626,8 @@ export class SchoolService {
     const [rows, unread] = await Promise.all([
       query.orderBy("created_at", "desc").orderBy("id", "desc").limit(page.limit + 1).execute(),
       this.db.selectFrom("notifications").select(sql<string>`count(*)::text`.as("count"))
-        .where("recipient_id", "=", user.id).where("read_at", "is", null).executeTakeFirst(),
+        .where("recipient_id", "=", user.id).where("read_at", "is", null)
+        .where(sql<boolean>`notification_is_currently_visible(id,${user.id}::uuid)`).executeTakeFirst(),
     ]);
     const results = rows.slice(0, page.limit);
     return {
@@ -1545,11 +1639,62 @@ export class SchoolService {
     };
   }
 
-  async markNotificationRead(user: AuthUser, id: string) {
-    const row = await this.db.updateTable("notifications").set({ read_at: new Date() }).where("id", "=", id)
-      .where("recipient_id", "=", user.id).returning(["id", "read_at"]).executeTakeFirst();
-    if (!row) throw new NotFoundException("Notification not found.");
-    return row;
+  async markNotificationRead(user: AuthUser, id: string, openedTargetValue?: unknown) {
+    return this.db.transaction().execute(async (tx) => {
+      const target = await tx.selectFrom("notifications")
+        .select(["id", "link", "attention_eligible", "attention_school_id"])
+        .where("id", "=", id)
+        .where("recipient_id", "=", user.id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!target) throw new NotFoundException("Notification not found.");
+
+      // A frozen recipient id is never sufficient authorization. Re-check the
+      // producer's current source relationship for typed and legacy rows.
+      const currentAuthorization = await sql<{ allowed: boolean }>`
+        SELECT notification_is_currently_visible(
+          ${target.id}::uuid,
+          ${user.id}::uuid
+        ) AS allowed
+      `.execute(tx);
+      if (!currentAuthorization.rows[0]?.allowed) {
+        throw new NotFoundException("Notification not found.");
+      }
+
+      // Typed attention clears only after its owning screen has mounted. The
+      // full target proof prevents a copied notification id, wrong child/date,
+      // or default module screen from clearing an unrelated update. Legacy bell
+      // notifications retain their existing one-click read behaviour.
+      if (target.attention_eligible) {
+        if (!notificationAttentionDestinationMatches(target.id, target.link, openedTargetValue)) {
+          throw new BadRequestException("This update can only be cleared from its linked school screen.");
+        }
+      }
+
+      // Read acknowledgement is deliberately idempotent: retries retain the
+      // first viewed timestamp and the outbox key prevents duplicate refreshes.
+      const row = await tx.updateTable("notifications")
+        .set({ read_at: sql<Date>`COALESCE(read_at,clock_timestamp())` })
+        .where("id", "=", target.id)
+        .returning(["id", "read_at"])
+        .executeTakeFirstOrThrow();
+      if (target.attention_eligible && target.attention_school_id) {
+        await this.events.enqueueUserEvent(tx, {
+          schoolId: target.attention_school_id,
+          eventType: "notification.created",
+          aggregateType: "notification_read",
+          aggregateId: row.id,
+          audienceUserIds: [user.id],
+          payload: {
+            notification_id: row.id,
+            action: "read",
+            refresh: ["notifications", "attention"],
+          },
+          idempotencyKey: `notification-read:${row.id}:${user.id}`,
+        });
+      }
+      return { id: row.id, read_at: row.read_at };
+    });
   }
 
   async parentHome(user: AuthUser, studentId?: string) {
@@ -1563,7 +1708,9 @@ export class SchoolService {
       this.diaryItems(student.id, enrollment, schoolDate, schoolDate),
       this.contacts(student.school_id),
       this.accessibleStudentDtos(user),
-      this.db.selectFrom("notifications").select(sql<string>`count(*)::text`.as("count")).where("recipient_id", "=", user.id).where("read_at", "is", null).executeTakeFirst(),
+      this.db.selectFrom("notifications").select(sql<string>`count(*)::text`.as("count"))
+        .where("recipient_id", "=", user.id).where("read_at", "is", null)
+        .where(sql<boolean>`notification_is_currently_visible(id,${user.id}::uuid)`).executeTakeFirst(),
       this.db.selectFrom("leave_requests").select("id").where("student_id", "=", student.id).where("status", "=", "pending_guardian").orderBy("created_at", "desc").executeTakeFirst(),
       this.db.selectFrom("diary_items").select([
         sql<string>`count(*) FILTER (WHERE published_at >= now() - interval '30 days')::text`.as("recent"),
@@ -1619,7 +1766,7 @@ export class SchoolService {
         detail: diaryAcknowledgements[0]!.title,
         status_label: "Unread school note",
         action_label: "Open diary",
-        href: `/parent/diary?student_id=${encodeURIComponent(student.id)}`,
+        href: `/parent/diary?student_id=${encodeURIComponent(student.id)}&diary_item=${encodeURIComponent(diaryAcknowledgements[0]!.id)}`,
         source_id: diaryAcknowledgements[0]!.id,
         occurs_at: new Date(diaryAcknowledgements[0]!.published_at).toISOString(),
         due_at: diaryAcknowledgements[0]!.due_at ? new Date(diaryAcknowledgements[0]!.due_at).toISOString() : null,
@@ -1711,6 +1858,34 @@ export class SchoolService {
     };
   }
 
+  async parentLeaveAuthority(user: AuthUser, studentId?: string) {
+    const student = await this.studentForUser(user, studentId);
+    await this.requireRole(user, student, "guardian");
+    const authority = (await sql<{
+      relationship_id: string; revision: number; enabled: boolean; effective: boolean;
+      valid_from: string | null; valid_until: string | null; latest_change_id: string | null;
+    }>`
+      SELECT relationship.id AS relationship_id,relationship.authority_revision AS revision,
+        relationship.can_authorize_leave AS enabled,
+        guardian_may_sign_leave(relationship,(clock_timestamp() AT TIME ZONE school.timezone)::date) AS effective,
+        relationship.leave_valid_from::text AS valid_from,relationship.leave_valid_until::text AS valid_until,
+        latest.id AS latest_change_id
+      FROM guardian_relationships relationship
+      JOIN parents guardian ON guardian.id=relationship.guardian_id
+      JOIN schools school ON school.id=relationship.school_id
+      LEFT JOIN LATERAL (
+        SELECT command.id FROM guardian_leave_authority_commands command
+        WHERE command.school_id=relationship.school_id AND command.relationship_id=relationship.id
+        ORDER BY command.recorded_at DESC,command.id DESC LIMIT 1
+      ) latest ON true
+      WHERE relationship.school_id=${student.school_id}::uuid
+        AND relationship.student_id=${student.id}::uuid
+        AND guardian.user_id=${user.id}::uuid
+    `.execute(this.db)).rows[0];
+    if (!authority) throw new NotFoundException("Guardian relationship not found.");
+    return { student_id: student.id, ...authority };
+  }
+
   async studentAttendanceScreen(user: AuthUser, studentId?: string) {
     const student = await this.studentForUser(user, studentId);
     const [, enrollment] = await Promise.all([this.requireRole(user, student, "student"), this.enrollment(student.id)]);
@@ -1743,7 +1918,8 @@ export class SchoolService {
       this.db.selectFrom("leave_requests").select(sql<string>`count(*)::text`.as("count"))
         .where("student_id", "=", student.id).where("status", "in", ["pending_guardian", "authorized"]).executeTakeFirst(),
       this.db.selectFrom("notifications").select(sql<string>`count(*)::text`.as("count"))
-        .where("recipient_id", "=", user.id).where("read_at", "is", null).executeTakeFirst(),
+        .where("recipient_id", "=", user.id).where("read_at", "is", null)
+        .where(sql<boolean>`notification_is_currently_visible(id,${user.id}::uuid)`).executeTakeFirst(),
       this.familyHomeActions(user, student, "student"),
     ]);
     const allHomeActions: HomeAction[] = [
@@ -1812,13 +1988,19 @@ export class SchoolService {
     const enrollment = await this.enrollment(student.id, selectedDate);
     const monday=new Date(`${selectedDate}T00:00:00Z`);monday.setUTCDate(monday.getUTCDate()-((monday.getUTCDay()+6)%7));
     const dates=mode==='day'?[selectedDate]:Array.from({length:7},(_,i)=>{const d=new Date(monday);d.setUTCDate(d.getUTCDate()+i);return d.toISOString().slice(0,10);});
-    const slots=(await Promise.all(dates.map(d=>this.timetable(enrollment,undefined,d)))).flat();
+    const [slotsByDate,dayPlan,scheduleSource]=await Promise.all([
+      Promise.all(dates.map(d=>this.timetable(enrollment,undefined,d))),
+      this.dayPlanSummary(enrollment.class_section_id,selectedDate),
+      this.scheduleSource(enrollment.class_section_id,enrollment.term_id,selectedDate),
+    ]);
+    const slots=slotsByDate.flat();
     const grouped = new Map<number, any[]>();
     for (const slot of slots) grouped.set(slot.weekday, [...(grouped.get(slot.weekday) ?? []), slot]);
     return {
       student: await this.studentDto(student,enrollment), mode, selected_date: selectedDate,
       class_name: `Class ${enrollment.grade}${enrollment.section}`,
-      day_plan: await this.dayPlanSummary(enrollment.class_section_id,selectedDate),
+      day_plan: dayPlan,
+      schedule_source: scheduleSource,
       days: [...grouped.entries()].sort(([left], [right]) => left - right).map(([weekday, periods]) => ({ weekday, weekday_label: weekdayLabels[weekday], periods })),
     };
   }
@@ -2491,7 +2673,9 @@ export class SchoolService {
           termId: screen.class.term_id,
           date: data.date, requestId: request.requestId,
           records: changed.map((record) => ({
-            ...record, previous_status: previousByStudent.get(record.student_id)?.status ?? null,
+            ...record,
+            ...(persisted.get(record.student_id)?.id ? { id: persisted.get(record.student_id).id as string } : {}),
+            previous_status: previousByStudent.get(record.student_id)?.status ?? null,
             revision: effectiveRevision,
           })),
         });
@@ -2820,10 +3004,13 @@ export class SchoolService {
     return { status: "accepted" as const, batch: { ...batch, status: "accepted" as const, accepted_submission_id: submission.id }, review: null, register: acceptedResult };
   }
 
-  async attendanceContinuityWorkspace(user: AuthUser, selectedDateValue?: string) {
+  async attendanceContinuityWorkspace(user: AuthUser, selectedDateValue?: string, selectedCaseValue?: string) {
     const membership = await this.requireSchoolRole(user, ["admin"]);
     const selectedDate = selectedDateValue ?? await this.schoolLocalDate(membership.school_id);
     if (!datePattern.test(selectedDate)) throw new BadRequestException("Use ISO date format YYYY-MM-DD.");
+    const selectedCaseId = selectedCaseValue
+      ? z.string().uuid("case_id must be a valid UUID.").parse(selectedCaseValue)
+      : null;
     const [summary, cases] = await Promise.all([
       sql<{ pending: number; quarantined: number; accepted: number; rejected: number }>`
         SELECT count(*) FILTER (WHERE status='pending')::int AS pending,
@@ -2848,7 +3035,7 @@ export class SchoolService {
         LEFT JOIN attendance_registers register ON register.class_section_id=batch.class_section_id
           AND register.term_id=batch.term_id AND register.date=batch.date
         WHERE review.school_id=${membership.school_id}::uuid AND review.state='open'
-        ORDER BY review.opened_at, section.grade, section.section
+        ORDER BY (review.id=${selectedCaseId}::uuid) DESC, review.opened_at, section.grade, section.section
         LIMIT 50
       `.execute(this.db),
     ]);
@@ -3386,23 +3573,48 @@ export class SchoolService {
         WHERE membership.school_id=${membership.school_id}::uuid AND membership.is_active
       `.execute(tx)).rows.map((row) => row.user_id);
       const notify = data.kind === "emergency_closure" ? audience : [];
+      const attentionRevision = (await sql<{ revision: number }>`
+        INSERT INTO calendar_attention_topics (
+          school_id,date,revision,source_id,change_kind,record_revision,updated_at
+        ) VALUES (
+          ${membership.school_id}::uuid,${data.starts_on}::date,1,
+          ${rows[0]!.id}::uuid,'created',${rows[0]!.revision},clock_timestamp()
+        )
+        ON CONFLICT (school_id,date) DO UPDATE SET
+          revision=calendar_attention_topics.revision + 1,
+          source_id=EXCLUDED.source_id,
+          change_kind=EXCLUDED.change_kind,
+          record_revision=EXCLUDED.record_revision,
+          updated_at=clock_timestamp()
+        RETURNING revision
+      `.execute(tx)).rows[0]!.revision;
       await this.events.enqueueUserEvent(tx, {
         schoolId: membership.school_id, eventType: "calendar.updated",
         aggregateType: "school_calendar_range", aggregateId: rows[0]!.id,
         audienceUserIds: audience,
         payload: {
           action: "closure_created", starts_on: data.starts_on, ends_on: data.ends_on,
-          refresh: ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications"],
+          refresh: ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications", "attention"],
         },
         idempotencyKey: `calendar:${request.requestId}:created:${rows[0]!.id}`,
         notificationUserIds: notify,
         notificationPayload: notify.length ? {
           kind: "general", title: data.label,
           body: data.starts_on === data.ends_on ? `${data.reason} School is closed on ${data.starts_on}.` : `${data.reason} School is closed from ${data.starts_on} to ${data.ends_on}.`,
-          parent_link: `/parent/calendar?date=${data.starts_on}`,
-          student_link: `/student/calendar?date=${data.starts_on}`,
-          staff_link: `/teacher/calendar?date=${data.starts_on}`,
-          admin_link: `/principal/calendar?date=${data.starts_on}`,
+          parent_link: `/parent/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          student_link: `/student/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          staff_link: `/teacher/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          admin_link: `/principal/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          attention_eligible: true,
+          attention_module: "calendar",
+          attention_source_kind: "calendar_change",
+          attention_source_id: rows[0]!.id,
+          attention_source_revision: attentionRevision,
+          attention_topic_key: `calendar:${membership.school_id}:${data.starts_on}`,
+          calendar_change_kind: "created",
+          calendar_record_revision: rows[0]!.revision,
+          starts_on: data.starts_on,
+          ends_on: data.ends_on,
         } : null,
       });
       return { created: true as const, results: rows };
@@ -3445,23 +3657,47 @@ export class SchoolService {
         WHERE membership.school_id=${membership.school_id}::uuid AND membership.is_active
       `.execute(tx)).rows.map((row) => row.user_id);
       const notify = current.kind === "emergency_closure" ? audience : [];
+      const attentionRevision = (await sql<{ revision: number }>`
+        INSERT INTO calendar_attention_topics (
+          school_id,date,revision,source_id,change_kind,record_revision,updated_at
+        ) VALUES (
+          ${membership.school_id}::uuid,${date}::date,1,
+          ${current.id}::uuid,'removed',${current.revision},clock_timestamp()
+        )
+        ON CONFLICT (school_id,date) DO UPDATE SET
+          revision=calendar_attention_topics.revision + 1,
+          source_id=EXCLUDED.source_id,
+          change_kind=EXCLUDED.change_kind,
+          record_revision=EXCLUDED.record_revision,
+          updated_at=clock_timestamp()
+        RETURNING revision
+      `.execute(tx)).rows[0]!.revision;
       await this.events.enqueueUserEvent(tx, {
         schoolId: membership.school_id, eventType: "calendar.updated",
         aggregateType: "school_calendar_day", aggregateId: current.id,
         audienceUserIds: audience,
         payload: {
           action: "closure_removed", date,
-          refresh: ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications"],
+          refresh: ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications", "attention"],
         },
         idempotencyKey: `calendar:${request.requestId}:removed:${current.id}`,
         notificationUserIds: notify,
         notificationPayload: notify.length ? {
           kind: "general", title: `${current.label} cancelled`,
           body: `The closure on ${date} was removed. Check the timetable for the restored school day.`,
-          parent_link: `/parent/calendar?date=${date}`,
-          student_link: `/student/calendar?date=${date}`,
-          staff_link: `/teacher/calendar?date=${date}`,
-          admin_link: `/principal/calendar?date=${date}`,
+          parent_link: `/parent/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          student_link: `/student/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          staff_link: `/teacher/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          admin_link: `/principal/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          attention_eligible: true,
+          attention_module: "calendar",
+          attention_source_kind: "calendar_change",
+          attention_source_id: current.id,
+          attention_source_revision: attentionRevision,
+          attention_topic_key: `calendar:${membership.school_id}:${date}`,
+          calendar_change_kind: "removed",
+          calendar_record_revision: current.revision,
+          date,
         } : null,
       });
       return { deleted: true as const, date };

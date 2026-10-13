@@ -1,6 +1,6 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Clock3, FileWarning, Pencil, RefreshCw, Send, UsersRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   cancelNotice, getNotice, noticeCommandKey, openNotice, publishNotice,
@@ -24,22 +24,68 @@ function modeLabel(mode: string) {
 export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; noticeId: string }) {
   const [params] = useSearchParams();
   const studentId = portal === "parent" ? params.get("student_id") ?? undefined : undefined;
+  const focusAttention = portal === "principal" && params.get("focus") === "attention";
+  const [recipientFilter, setRecipientFilter] = useState<"attention" | "all">(() => focusAttention ? "attention" : "all");
+  const attentionSectionRef = useRef<HTMLElement>(null);
+  const focusedAttention = useRef("");
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["notice", portal, noticeId, studentId], queryFn: () => getNotice(portal, noticeId, studentId), staleTime: 10_000 });
+  const refetchNotice = query.refetch;
+  const refreshAll = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["notices"] }),
+      queryClient.invalidateQueries({ queryKey: ["requests"] }),
+      queryClient.invalidateQueries({ queryKey: ["attention"] }),
+      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    ]);
+    return refetchNotice();
+  }, [queryClient, refetchNotice]);
   const opened = useRef<string | null>(null); const publishKey = useRef(noticeCommandKey()); const cancelKey = useRef(noticeCommandKey());
   const [cancelReason, setCancelReason] = useState("");
-  const publishMutation = useMutation({ mutationFn: (revision: number) => publishNotice(noticeId, revision, publishKey.current), onSuccess: async () => { await query.refetch(); } });
-  const cancelMutation = useMutation({ mutationFn: (revision: number) => cancelNotice(noticeId, revision, cancelReason.trim(), cancelKey.current), onSuccess: async () => { await query.refetch(); } });
+  const publishMutation = useMutation({ mutationFn: (revision: number) => publishNotice(noticeId, revision, publishKey.current), onSuccess: refreshAll });
+  const cancelMutation = useMutation({ mutationFn: (revision: number) => cancelNotice(noticeId, revision, cancelReason.trim(), cancelKey.current), onSuccess: refreshAll });
   const data = query.data; const ownRecipient = data?.recipient ?? data?.self_recipient ?? undefined;
   useEffect(() => {
-    if (!data || !ownRecipient || ownRecipient.opened_at || opened.current === ownRecipient.id || data.status === "draft") return;
-    opened.current = ownRecipient.id;
-    void openNotice(data.id, studentId).then(() => query.refetch()).catch(() => { opened.current = null; });
-  }, [data, ownRecipient, query, studentId]);
+    if (!focusAttention || !data) return;
+    const focusKey = `${data.id}:${data.revision}`;
+    if (focusedAttention.current === focusKey) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = attentionSectionRef.current;
+      if (!target) return;
+      target.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      target.focus({ preventScroll: true });
+      focusedAttention.current = focusKey;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [data, focusAttention]);
+  useEffect(() => {
+    const revisionToken = data && ownRecipient ? `${ownRecipient.id}:${data.revision}` : null;
+    if (!data || !ownRecipient || ownRecipient.last_seen_notice_revision >= data.revision
+      || opened.current === revisionToken || data.status === "draft") return;
+    opened.current = revisionToken;
+    void openNotice(data.id, studentId).then(refreshAll).catch(() => { opened.current = null; });
+  }, [data, ownRecipient, refreshAll, studentId]);
   const backTo = `/${portal}/notices${studentId ? `?student_id=${encodeURIComponent(studentId)}` : ""}`;
   if (query.isPending) return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}><div className="notices-workspace"><div className="notice-loading" role="status"><span /><span /><span /></div></div></NoticeShell>;
   if (query.isError || !data) return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}><div className="notices-workspace"><section className="notice-state notice-state--error" role="alert"><AlertCircle size={24} /><strong>Notice is unavailable</strong><p>{query.error instanceof Error ? query.error.message : "It may no longer be available."}</p><button type="button" onClick={() => void query.refetch()}><RefreshCw size={16} />Try again</button></section></div></NoticeShell>;
   const actionError = publishMutation.error ?? cancelMutation.error;
-  const save = () => query.refetch();
+  const save = refreshAll;
+  const recipients = [...(data.recipients ?? [])].sort((left, right) => {
+    const score = (recipient: (typeof left)) => {
+      const latest = recipient.deliveries[0];
+      if (latest?.status === "failed") return 0;
+      if (!recipient.responded_at && data.response_mode !== "information" && data.due_at && new Date(data.due_at).getTime() < Date.now()) return 1;
+      if (!recipient.responded_at && data.response_mode !== "information") return 2;
+      if (!recipient.opened_at) return 3;
+      return 4;
+    };
+    return score(left) - score(right) || left.recipient_name.localeCompare(right.recipient_name);
+  });
+  const attentionRecipients = recipients.filter((recipient) => {
+    const latest = recipient.deliveries[0];
+    return latest?.status === "failed" || (!recipient.responded_at && data.response_mode !== "information");
+  });
+  const visibleRecipients = recipientFilter === "attention" ? attentionRecipients : recipients;
   return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}>
     <article className="notices-workspace notice-detail">
       <header className="notice-detail__header">
@@ -61,7 +107,14 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
           {data.response_mode !== "information" ? <div><Send size={18} /><strong>{data.metrics.responded}</strong><span>Responded</span></div> : null}
           {data.metrics.delivery_exceptions ? <div className="is-warning"><AlertCircle size={18} /><strong>{data.metrics.delivery_exceptions}</strong><span>Delivery issues</span></div> : null}
         </section> : null}
-        {data.recipients?.length ? <section className="notice-recipients" aria-labelledby="notice-recipients-title"><div className="notice-section-heading"><h2 id="notice-recipients-title">Recipients</h2><span>{data.recipients.length}</span></div>{data.recipients.map((recipient) => <NoticeRecipientRow key={recipient.id} notice={data} recipient={recipient} onSaved={save} />)}</section> : null}
+        {recipients.length ? <section ref={attentionSectionRef} id={focusAttention ? "notice-attention-recipients" : undefined}
+          tabIndex={focusAttention ? -1 : undefined}
+          className={`notice-recipients${focusAttention ? " is-attention-target" : ""}`}
+          aria-labelledby="notice-recipients-title">
+          <div className="notice-section-heading"><h2 id="notice-recipients-title">Recipients</h2><span>{recipients.length}</span></div>
+          {attentionRecipients.length ? <div className="notice-recipient-filters" role="group" aria-label="Filter recipients"><button type="button" aria-pressed={recipientFilter === "attention"} onClick={() => setRecipientFilter("attention")}>Needs follow-up {attentionRecipients.length}</button><button type="button" aria-pressed={recipientFilter === "all"} onClick={() => setRecipientFilter("all")}>All</button></div> : null}
+          {visibleRecipients.map((recipient, index) => <NoticeRecipientRow key={recipient.id} notice={data} recipient={recipient} onSaved={save} defaultOpen={recipientFilter === "attention" && index === 0} />)}
+        </section> : null}
         {data.status === "published" ? <details className="notice-cancel-control"><summary>Cancel notice</summary><div><label><span>Reason</span><textarea rows={3} minLength={3} maxLength={500} value={cancelReason} onChange={(event) => { setCancelReason(event.target.value); cancelKey.current = noticeCommandKey(); }} /></label><button type="button" disabled={cancelReason.trim().length < 3 || cancelMutation.isPending} onClick={() => cancelMutation.mutate(data.revision)}>{cancelMutation.isPending ? "Cancelling…" : "Cancel notice"}</button></div></details> : null}
       </> : null}
     </article>

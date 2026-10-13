@@ -6,6 +6,8 @@ import { getAccessibleStudents } from "../school/api";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import type { ParentChildSummary } from "../../pages/parent/parentTypes";
 import { ApiError } from "../../lib/api";
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import {
   cancelCampusEvent,
   changeEventRegisterLock,
@@ -29,10 +31,10 @@ import {
 import { ClassTestEditorPage } from "./ClassTestEditorPage";
 import { EventEditorPage } from "./EventEditorPage";
 import { EventRegisterPage } from "./EventRegisterPage";
-import { FamilyEventDetailPage, FamilyEventListPage } from "./FamilyEventPages";
+import { FamilyEventDetailPage, FamilyEventListPage, readFamilyEventActionFocus } from "./FamilyEventPages";
 import { OperationsEventDetailPage } from "./OperationsEventDetailPage";
 import { OperationsEventListPage, type EventView } from "./OperationsEventListPage";
-import type { CampusEventInput } from "./types";
+import type { CampusEventDto, CampusEventInput } from "./types";
 
 function useSchoolId(role: MembershipRole) {
   const auth = useOptionalAuth();
@@ -41,6 +43,36 @@ function useSchoolId(role: MembershipRole) {
 
 function RouteFailure({ error, retry }: { error: unknown; retry?: () => unknown }) {
   return <LiveRouteError error={error instanceof Error ? error : new Error("This event workspace is unavailable.")} onRetry={retry ?? (() => window.location.reload())} />;
+}
+
+export interface OperationsEventAttentionTarget {
+  notificationId: string | null;
+  focus: string | null;
+  eventRevision: number | null;
+}
+
+export function operationsEventAttentionResolution(
+  event: Pick<CampusEventDto, "status" | "revision">,
+  target: OperationsEventAttentionTarget,
+): "none" | "exact" | "stale" {
+  if (!target.notificationId) return "none";
+  if (target.focus !== "status" || !target.eventRevision) return "stale";
+  return event.status === "cancelled" && event.revision === target.eventRevision ? "exact" : "stale";
+}
+
+export function OperationsEventAttentionGate({
+  event,
+  target,
+}: {
+  event: Pick<CampusEventDto, "status" | "revision">;
+  target: OperationsEventAttentionTarget;
+}) {
+  const resolution = operationsEventAttentionResolution(event, target);
+  if (resolution === "exact") return <AttentionOpenAcknowledgement />;
+  if (resolution === "stale") {
+    return <AttentionTargetUnavailable message="This event cancellation no longer matches the current record. It was not marked as opened." />;
+  }
+  return null;
 }
 
 function useEventInvalidation() {
@@ -78,21 +110,29 @@ function OperationsListRoute({ portal }: { portal: "teacher" | "principal" }) {
 }
 
 function OperationsDetailRoute({ portal }: { portal: "teacher" | "principal" }) {
+  const auth = useOptionalAuth();
   const { eventId = "" } = useParams();
   const schoolId = useSchoolId(portal === "principal" ? "admin" : "staff");
   const refresh = useEventInvalidation();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const query = useQuery({ queryKey: ["campus-event", eventId, portal], queryFn: () => getCampusEvent(schoolId, eventId), enabled: Boolean(schoolId && eventId) });
   const finance = useQuery({ queryKey: ["campus-event-finance", eventId, portal], queryFn: () => getCampusEventFinance(schoolId, eventId), enabled: Boolean(schoolId && eventId) });
   if (!schoolId || !eventId) return <RouteFailure error={new Error("This event is not available in the active school workspace.")} />;
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <RouteFailure error={query.error} retry={query.refetch} />;
   const event = query.data;
-  return <OperationsEventDetailPage portal={portal} schoolId={schoolId} event={event} finance={finance.data} financeError={finance.isError ? finance.error : undefined} onRecordRefund={async (studentId, input) => { await recordCampusEventRefund(schoolId, event.id, studentId, input); await Promise.all([refresh(event.id), finance.refetch()]); }} onAuthorityChanged={async () => { await refresh(event.id); await query.refetch(); }} onAction={async (action) => {
+  const revisionValue = Number(params.get("event_revision"));
+  const attentionTarget: OperationsEventAttentionTarget = {
+    notificationId: params.get("attention_notification_id"),
+    focus: params.get("focus"),
+    eventRevision: Number.isSafeInteger(revisionValue) && revisionValue > 0 ? revisionValue : null,
+  };
+  return <><OperationsEventAttentionGate event={event} target={attentionTarget} /><OperationsEventDetailPage portal={portal} schoolId={schoolId} viewerUserId={auth?.user?.id} event={event} finance={finance.data} financeError={finance.isError ? finance.error : undefined} onRecordRefund={async (studentId, input) => { await recordCampusEventRefund(schoolId, event.id, studentId, input); await Promise.all([refresh(event.id), finance.refetch()]); }} onAuthorityChanged={async () => { await refresh(event.id); await query.refetch(); }} onAction={async (action) => {
     await transitionCampusEvent(schoolId, event.id, action, event.revision);
     await refresh(event.id);
     if (action === "discard") void navigate(`/${portal}/events`, { replace: true }); else await query.refetch();
-  }} onCancel={async (internalReason, audienceNotice) => { await cancelCampusEvent(schoolId, event.id, event.revision, internalReason, audienceNotice); await refresh(event.id); await query.refetch(); }} />;
+  }} onCancel={async (internalReason, audienceNotice) => { await cancelCampusEvent(schoolId, event.id, event.revision, internalReason, audienceNotice); await refresh(event.id); await query.refetch(); }} /></>;
 }
 
 function EventEditorRoute({ portal, createClassTest = false }: { portal: "teacher" | "principal"; createClassTest?: boolean }) {
@@ -205,6 +245,17 @@ function FamilyDetailRoute({ audience }: { audience: "parent" | "student" }) {
   const event = query.data;
   const participant = selectedId ? event.viewer_participants.find((item) => item.student_id === selectedId) : event.viewer_participants[0];
   const studentId = participant?.student_id ?? selectedId ?? "";
+  const expectedEventRevision = Number(params.get("event_revision"));
+  const withdrawalId = params.get("withdrawal_id");
+  const refundId = params.get("refund_id");
+  const exactAttentionTarget = audience === "parent" && (
+    (params.get("focus") === "status" && event.status === "cancelled" && event.revision === expectedEventRevision)
+    || (withdrawalId !== null && finance.data?.items.some((item) => item.student_id === studentId && item.withdrawal_id === withdrawalId))
+    || (refundId !== null && finance.data?.items.some((item) => item.student_id === studentId && item.refunds.some((refund) => refund.id === refundId)))
+  );
+  const hasTypedAttentionTarget=Boolean(params.get("attention_notification_id")&&(params.get("event_revision")||withdrawalId||refundId));
+  const attentionTargetSettled=params.get("focus")==="status"||!finance.isPending;
+  const staleAttentionTarget=audience==="parent"&&hasTypedAttentionTarget&&attentionTargetSettled&&!exactAttentionTarget;
   const selected = students.data?.results.find((student) => student.id === studentId);
   const withConflictRefresh = async (command: () => Promise<unknown>) => {
     try {
@@ -215,7 +266,7 @@ function FamilyDetailRoute({ audience }: { audience: "parent" | "student" }) {
       throw error;
     }
   };
-  return <FamilyEventDetailPage audience={audience} event={event} finance={finance.data?.items.find((item) => item.student_id === studentId)} financeError={finance.isError ? finance.error : undefined} child={selected ? toParentChild(selected) : undefined} selectedStudentId={studentId} onSelectChild={audience === "parent" ? (next) => { const updated = new URLSearchParams(params); updated.set("student_id", next); setParams(updated); } : undefined} onRsvp={(status) => withConflictRefresh(() => respondToCampusEvent(schoolId, event.id, studentId, status, participant?.rsvp_revision ?? 0))} onWithdraw={async (reason, idempotencyKey) => { await withdrawFromPaidCampusEvent(schoolId, event.id, studentId, reason, idempotencyKey); await refresh(); }} onConsent={(status, note) => withConflictRefresh(() => recordCampusEventConsent(schoolId, event.id, studentId, status, note, participant?.consent_revision ?? 0))} onChecklist={async (itemId, completed) => { await updateCampusEventChecklist(schoolId, event.id, itemId, studentId, completed); await refresh(); }} />;
+  return <>{exactAttentionTarget ? <AttentionOpenAcknowledgement /> : null}{staleAttentionTarget?<AttentionTargetUnavailable message="This event update no longer matches the current record. It was not marked as opened."/>:null}<FamilyEventDetailPage audience={audience} event={event} finance={finance.data?.items.find((item) => item.student_id === studentId)} financeError={finance.isError ? finance.error : undefined} child={selected ? toParentChild(selected) : undefined} selectedStudentId={studentId} focusAction={readFamilyEventActionFocus(params.get("focus"))} onSelectChild={audience === "parent" ? (next) => { const updated = new URLSearchParams(params); updated.set("student_id", next); setParams(updated); } : undefined} onRsvp={(status) => withConflictRefresh(() => respondToCampusEvent(schoolId, event.id, studentId, status, participant?.rsvp_revision ?? 0))} onWithdraw={async (reason, idempotencyKey) => { await withdrawFromPaidCampusEvent(schoolId, event.id, studentId, reason, idempotencyKey); await refresh(); }} onConsent={(status, note) => withConflictRefresh(() => recordCampusEventConsent(schoolId, event.id, studentId, status, note, participant?.consent_revision ?? 0))} onChecklist={async (itemId, completed) => { await updateCampusEventChecklist(schoolId, event.id, itemId, studentId, completed); await refresh(); }} /></>;
 }
 
 export const PrincipalEventsRoute = () => <OperationsListRoute portal="principal" />;

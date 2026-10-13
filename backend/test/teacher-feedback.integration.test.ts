@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthUser } from '../src/common/request.js';
 import { DatabaseService } from '../src/database/database.service.js';
+import { SchoolEventService } from '../src/school/school-event.service.js';
 import { TeacherFeedbackService } from '../src/teacher-feedback/teacher-feedback.service.js';
 import { requireIsolatedTestDatabaseUrl } from './test-database.js';
 const isolated=process.env.TEST_DATABASE_ISOLATED==='true';
@@ -14,9 +15,10 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
   const students:AuthUser[]=[];
   async function row(query:string,args:unknown[]=[]){return (await pool.query(query,args)).rows[0];}
   async function account(role:string):Promise<AuthUser>{const key=randomUUID();return {...await row("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Feedback',$3,$4) RETURNING *",[key,key+'@example.test',role,role]),active_school_id:school};}
+  async function eventAuthorized(candidate:string,id=campaignId){return (await row("SELECT event_user_is_authorized($1::uuid,'teacher_feedback.updated',jsonb_build_object('campaign_id',$2::text),$3::uuid) AS value",[school,id,candidate])).value as boolean;}
   const input=()=>({teacher_user_id:teacher.id,class_section_id:classId,title:'Teacher check-in',audience:'students',parameters:['Punctuality','Clarity'],closes_at:new Date(Date.now()+86400000).toISOString()});
   beforeAll(async()=>{
-    db=new DatabaseService();service=new TeacherFeedbackService(db);
+    db=new DatabaseService();service=new TeacherFeedbackService(db,new SchoolEventService(db));
     school=(await row("INSERT INTO schools(name,code) VALUES('Feedback School',$1) RETURNING id",[randomUUID().slice(0,20)])).id;
     otherSchool=(await row("INSERT INTO schools(name,code) VALUES('Other School',$1) RETURNING id",[randomUUID().slice(0,20)])).id;
     admin=await account('admin');teacher=await account('staff');outsider=await account('student');parent=await account('parent');
@@ -36,6 +38,22 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
     campaignId=(await service.create(admin,school,input())).id;
   });
   afterAll(async()=>{await db?.destroy();await pool.end();});
+  it('emits a content-free campaign event only to active administrators and eligible respondents',async()=>{
+    const event=await row("SELECT event_type,aggregate_type,aggregate_id,audience_user_ids,payload,notification_user_ids FROM event_outbox WHERE school_id=$1 AND idempotency_key=$2",[school,`teacher-feedback:${campaignId}:campaign-created`]);
+    expect(event).toMatchObject({event_type:'teacher_feedback.updated',aggregate_type:'teacher_feedback_campaign',aggregate_id:campaignId,notification_user_ids:[],payload:{campaign_id:campaignId,change_kind:'campaign_created'}});
+    expect(new Set(event.audience_user_ids)).toEqual(new Set([admin.id,...students.map(user=>user.id)]));
+    expect(event.audience_user_ids).not.toContain(teacher.id);
+    expect(event.audience_user_ids).not.toContain(outsider.id);
+    expect(event.audience_user_ids).not.toContain(parent.id);
+    expect(JSON.stringify(event.payload)).not.toMatch(/ratings|parameters|title/i);
+    await expect(eventAuthorized(admin.id)).resolves.toBe(true);
+    await expect(eventAuthorized(students[0]!.id)).resolves.toBe(true);
+    await expect(eventAuthorized(outsider.id)).resolves.toBe(false);
+    await expect(eventAuthorized(parent.id)).resolves.toBe(false);
+    await pool.query('UPDATE enrollments SET is_active=false WHERE student_id=$1',[studentId]);
+    try { await expect(eventAuthorized(students[0]!.id)).resolves.toBe(false); }
+    finally { await pool.query('UPDATE enrollments SET is_active=true WHERE student_id=$1',[studentId]); }
+  });
   it('restricts creation and results to active administrators in the selected institution',async()=>{
     await expect(service.create(teacher,school,input())).rejects.toThrow(/Principal/);
     await expect(service.results(students[0]!,school,campaignId)).rejects.toThrow(/Principal/);
@@ -55,8 +73,17 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
     const attempts=await Promise.allSettled([service.submit(students[0]!,school,campaignId,payload),service.submit(students[0]!,school,campaignId,payload)]);
     expect(attempts.filter(r=>r.status==='fulfilled')).toHaveLength(1);
     for(const user of students.slice(1,5))await service.submit(user,school,campaignId,{ratings:{Punctuality:'high',Clarity:'high'}});
+    const responseEvents=await pool.query("SELECT audience_user_ids,payload FROM event_outbox WHERE school_id=$1 AND aggregate_id=$2 AND event_type='teacher_feedback.updated' AND payload->>'change_kind'='response_submitted'",[school,campaignId]);
+    expect(responseEvents.rows).toHaveLength(5);
+    for(const respondent of students.slice(0,5))expect(responseEvents.rows).toContainEqual(expect.objectContaining({audience_user_ids:expect.arrayContaining([admin.id,respondent.id])}));
+    expect(responseEvents.rows.every(event=>event.audience_user_ids.length===2)).toBe(true);
+    expect(JSON.stringify(responseEvents.rows)).not.toMatch(/ratings|Punctuality|Clarity|low|high/i);
+    await expect(eventAuthorized(students[0]!.id)).resolves.toBe(true);
     expect(await service.results(admin,school,campaignId)).toMatchObject({available:false,response_count:5,parameters:[]});
     await service.close(admin,school,campaignId);
+    const closedEvent=await row("SELECT audience_user_ids,payload FROM event_outbox WHERE school_id=$1 AND idempotency_key=$2",[school,`teacher-feedback:${campaignId}:campaign-closed`]);
+    expect(closedEvent.payload).toMatchObject({campaign_id:campaignId,change_kind:'campaign_closed'});
+    expect(new Set(closedEvent.audience_user_ids)).toEqual(new Set([admin.id,students[5]!.id]));
     const results=await service.results(admin,school,campaignId);
     expect(results.available).toBe(true);expect(results.history).toEqual([]);expect(results.activity.reduce((sum,day)=>sum+day.count,0)).toBe(5);expect(results.parameters[0]).toMatchObject({counts:{low:1,high:4,okay:0,na:0},signal:'strength'});
     expect(results.parameters[1]).toMatchObject({counts:null,signal:'insufficient'});
@@ -66,11 +93,20 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
   });
   it('supports parent campaigns and rechecks current guardian relationships',async()=>{
     const id=(await service.create(admin,school,{...input(),audience:'parents'})).id;
+    const createdEvent=await row("SELECT audience_user_ids FROM event_outbox WHERE school_id=$1 AND idempotency_key=$2",[school,`teacher-feedback:${id}:campaign-created`]);
+    expect(new Set(createdEvent.audience_user_ids)).toEqual(new Set([admin.id,parent.id]));
+    await expect(eventAuthorized(parent.id,id)).resolves.toBe(true);
     expect((await service.pending(parent,school)).campaigns.map(c=>c.id)).toContain(id);
     await service.submit(parent,school,id,{ratings:{Punctuality:'na',Clarity:'okay'}});
-    await service.close(admin,school,id);expect(await service.results(admin,school,id)).toMatchObject({available:false,response_count:1});
+    const submittedEvent=await row("SELECT audience_user_ids,payload FROM event_outbox WHERE school_id=$1 AND aggregate_id=$2 AND payload->>'change_kind'='response_submitted'",[school,id]);
+    expect(new Set(submittedEvent.audience_user_ids)).toEqual(new Set([admin.id,parent.id]));
+    await service.close(admin,school,id);
+    const closedEvent=await row("SELECT audience_user_ids FROM event_outbox WHERE school_id=$1 AND idempotency_key=$2",[school,`teacher-feedback:${id}:campaign-closed`]);
+    expect(closedEvent.audience_user_ids).toEqual([admin.id]);
+    expect(await service.results(admin,school,id)).toMatchObject({available:false,response_count:1});
     const second=(await service.create(admin,school,{...input(),audience:'parents'})).id;
     await pool.query('DELETE FROM guardian_relationships WHERE student_id=$1',[studentId]);
+    await expect(eventAuthorized(parent.id,second)).resolves.toBe(false);
     await expect(service.submit(parent,school,second,{ratings:{Punctuality:'high',Clarity:'high'}})).rejects.toThrow(/not assigned/);
   });
   it('compares only complete closed rounds with the same teacher, class, audience and questions',async()=>{

@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CalendarView, type CalendarViewProps } from "./CalendarView";
+import { CalendarHolidayRow } from "./CalendarRoutes";
 
 beforeEach(() => {
   // Make the selected fixture day also Today, so date queries must distinguish
@@ -69,5 +70,27 @@ describe("CalendarView", () => {
     await userEvent.click(screen.getByText("Calendar key"));
     expect(screen.getByText("Event")).toBeVisible();
     expect(screen.getByText("Test")).toBeVisible();
+  });
+});
+
+describe("calendar change attention target", () => {
+  const closure = {
+    id: "calendar-day-1",
+    date: "2026-10-10",
+    is_instructional: false,
+    label: "Emergency closure",
+  };
+
+  it("focuses and highlights the exact active closure by source id", () => {
+    render(<CalendarHolidayRow days={[closure]} selected="2026-10-10" focusChangeId="calendar-day-1" resolved />);
+    const target = screen.getByText("Emergency closure").closest(".cal-row");
+    expect(target).toHaveAttribute("id", "calendar-change-calendar-day-1");
+    expect(target).toHaveClass("cal-row--attention");
+  });
+
+  it("shows a clear exact-target state after that closure is no longer active", () => {
+    render(<CalendarHolidayRow days={[]} selected="2026-10-10" focusChangeId="calendar-day-1" resolved />);
+    expect(screen.getByRole("status")).toHaveAttribute("id", "calendar-change-calendar-day-1");
+    expect(screen.getByText("Calendar update no longer active")).toBeVisible();
   });
 });

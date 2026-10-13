@@ -64,6 +64,22 @@ function panel(props: Partial<ComponentProps<typeof AttendanceContinuityPanel>> 
 }
 
 describe("attendance continuity review", () => {
+  it("opens and focuses the exact review case from attention navigation", async () => {
+    render(panel({ initialCaseId: "case-1" }));
+
+    const card = screen.getByRole("article");
+    expect(card).toHaveClass("is-attention-target");
+    expect(within(card).getByRole("button", { name: "Close" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(card).getByText(workspace.cases[0]!.reason)).toBeVisible();
+    await waitFor(() => expect(card).toHaveFocus());
+  });
+
+  it("does not substitute another case when the linked review is resolved", () => {
+    render(panel({ initialCaseId: "resolved-case" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("no longer pending");
+    expect(screen.getByRole("article")).not.toHaveClass("is-attention-target");
+  });
+
   it("routes paper capture into a class register and applies reviewed evidence with a note", async () => {
     const interact = userEvent.setup();
     const onDecision = vi.fn(() => Promise.resolve());

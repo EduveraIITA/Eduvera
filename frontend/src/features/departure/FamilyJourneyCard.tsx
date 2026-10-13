@@ -12,13 +12,13 @@ export function journeyMessage(journey:FamilyJourney) {
   return journey.state==="in_progress"?"Journey in progress. Your boarding has not been recorded.":journey.state==="boarding"?"Boarding is open. Waiting for your boarding record.":"Journey scheduled. Boarding has not started.";
 }
 
-export function FamilyJourneyCard({journey,map}:{journey:FamilyJourney;map:MapConfig}) {
+export function FamilyJourneyCard({journey,map,focused=false}:{journey:FamilyJourney;map:MapConfig;focused?:boolean}) {
   const visible=journey.state==="in_progress"&&journey.rider_state==="boarded"&&journey.latitude!==null&&journey.longitude!==null;
   const inbound=journey.direction==="to_institution";
   const time=(value:string|null)=>value?new Date(value).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"Not recorded";
   const status=journey.state==="cancelled"?"Cancelled":journey.rider_state==="exception"?"Needs attention":journey.rider_state==="not_riding"?"Not riding":journey.rider_state==="dropped"?(inbound?"Arrived":"Handed over"):journey.rider_state==="boarded"?(journey.state==="in_progress"?"On the way":"On board"):"Scheduled";
   const state=journey.state==="cancelled"?"cancelled":journey.rider_state;
-  return <section className="ride-card" aria-label={`${inbound?"To school":"From school"} journey`}>
+  return <section id={`attention-family-journey-${journey.id}`} tabIndex={focused?-1:undefined} className={`ride-card${focused?" is-attention-target":""}`} aria-label={`${inbound?"To school":"From school"} journey`}>
     {visible?<RideMapPanel location={{latitude:journey.latitude!,longitude:journey.longitude!,accuracy_metres:journey.accuracy_metres??"0",observed_at:journey.observed_at!}} map={map} fresh={journey.location_fresh}/>:null}
     <div className="ride-information">
       <div className="ride-heading"><span className="ride-icon"><Bus size={23}/></span><div><h2>{journey.route_name}</h2><p>{journey.vehicle_label||journey.provider_name||journey.route_code}</p></div><span className={`departure-state departure-state--${state}`}>{status}</span></div>

@@ -18,7 +18,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
@@ -28,6 +28,7 @@ import {
   decideStaffLeave,
   respondCoverage,
   respondResponsibility,
+  saveCoveragePolicy,
   saveLeavePolicy,
   submitStaffLeave,
   updateStaffOnboarding,
@@ -43,6 +44,8 @@ import {
 } from "./api";
 import { AccessRolesPanel } from "./AccessRolesPanel";
 import { MyRoleAssignments, StaffRoleAssignments } from "./StaffRoleAssignments";
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import "./staff-operations.css";
 
 type PrincipalSection = "directory" | "roles" | "leave" | "policies";
@@ -62,6 +65,22 @@ const formValue = (form: FormData, key: string) => {
 };
 const staffName = (profile: Pick<StaffProfile, "first_name" | "last_name">) =>
   `${profile.first_name} ${profile.last_name}`.trim();
+const expectedRevision = (value: string | null) => {
+  const revision = Number(value);
+  return Number.isInteger(revision) && revision > 0 ? revision : null;
+};
+
+function useAttentionFocus(sourceId: string | null) {
+  useEffect(() => {
+    if (!sourceId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`attention-${sourceId}`);
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [sourceId]);
+}
 
 export function StaffOperationsPage({
   portal,
@@ -128,7 +147,12 @@ function PrincipalStaffPage({
   refresh: () => Promise<void>;
 }) {
   const [params, setParams] = useSearchParams();
-  const requestedSection = params.get("section") === "work-types" ? "roles" : params.get("section");
+  const focusRequestId = params.get("request");
+  const focusCoverageId = params.get("coverage");
+  const attentionNotificationId = params.get("attention_notification_id");
+  const requestRevision = expectedRevision(params.get("request_revision"));
+  const coverageRevision = expectedRevision(params.get("coverage_revision"));
+  const requestedSection = focusRequestId || focusCoverageId ? "leave" : params.get("section") === "work-types" ? "roles" : params.get("section");
   const section: PrincipalSection = [
     "directory",
     "roles",
@@ -140,7 +164,14 @@ function PrincipalStaffPage({
   const pending = data.requests.filter(
     (request) => request.status === "submitted",
   );
-  const coverGaps = data.coverage_tasks.filter(task => ["open", "declined"].includes(task.status)).length;
+  useAttentionFocus(focusRequestId ?? focusCoverageId);
+  const coverGaps = data.coverage_tasks.filter(task => ["open", "offered", "declined"].includes(task.status)).length;
+  const exactRequestAttention = Boolean(attentionNotificationId && focusRequestId && requestRevision && data.requests.some((request) =>
+    request.id === focusRequestId && request.revision === requestRevision && request.status === "submitted"));
+  const exactCoverageAttention = Boolean(attentionNotificationId && focusCoverageId && coverageRevision && data.coverage_tasks.some((task) =>
+    task.id === focusCoverageId && task.revision === coverageRevision && ["accepted", "declined"].includes(task.status)));
+  const hasFocusedAttention = Boolean(attentionNotificationId && (focusRequestId || focusCoverageId));
+  const exactFocusedAttention = exactRequestAttention || exactCoverageAttention;
   return (
     <OperationsShell
       portal="principal"
@@ -149,6 +180,10 @@ function PrincipalStaffPage({
       schoolName={schoolName}
       backTo="/principal/more"
     >
+      {exactFocusedAttention ? <AttentionOpenAcknowledgement /> : null}
+      {hasFocusedAttention && !exactFocusedAttention ? (
+        <AttentionTargetUnavailable message="This staff request changed after the alert was created. It was not marked as opened." />
+      ) : null}
       <div className="staff-page">
         <nav className="staff-tabs" aria-label="Staff management sections">
           {(
@@ -180,8 +215,8 @@ function PrincipalStaffPage({
           <AccessRolesPanel schoolId={schoolId} data={data} refresh={refresh} />
         ) : section === "leave" ? (
           <div className="staff-leave-layout">
-            <LeaveReview schoolId={schoolId} data={data} refresh={refresh} />
-            <CoverageBoard schoolId={schoolId} data={data} refresh={refresh} />
+            <LeaveReview schoolId={schoolId} data={data} refresh={refresh} focusRequestId={focusRequestId} />
+            <CoverageBoard schoolId={schoolId} data={data} refresh={refresh} focusCoverageId={focusCoverageId} />
           </div>
         ) : (
           <PolicySettings schoolId={schoolId} data={data} refresh={refresh} />
@@ -302,7 +337,14 @@ function PrincipalStaffDetailPage({
   profileId: string;
   refresh: () => Promise<void>;
 }) {
+  const [params] = useSearchParams();
   const profile = data.profiles.find((item) => item.id === profileId);
+  const focusAssignmentId = params.get("assignment") ?? undefined;
+  const assignmentRevision = expectedRevision(params.get("assignment_revision"));
+  const attentionNotificationId = params.get("attention_notification_id");
+  const exactAssignmentAttention = Boolean(attentionNotificationId && focusAssignmentId && assignmentRevision && profile && data.assignments.some((item) =>
+    item.id === focusAssignmentId && item.staff_profile_id === profile.id && item.revision === assignmentRevision
+      && ["active", "declined"].includes(item.status)));
 
   return (
     <OperationsShell
@@ -312,6 +354,10 @@ function PrincipalStaffDetailPage({
       schoolName={schoolName}
       backTo="/principal/staff?section=directory"
     >
+      {exactAssignmentAttention ? <AttentionOpenAcknowledgement /> : null}
+      {attentionNotificationId && focusAssignmentId && !exactAssignmentAttention ? (
+        <AttentionTargetUnavailable message="This assignment response changed after the alert was created. It was not marked as opened." />
+      ) : null}
       <div className="staff-page staff-page--profile">
         {profile ? (
           <StaffDetail
@@ -326,6 +372,7 @@ function PrincipalStaffDetailPage({
             balances={data.balances.filter(
               (balance) => balance.staff_profile_id === profile.id,
             )}
+            focusAssignmentId={focusAssignmentId}
             refresh={refresh}
           />
         ) : (
@@ -364,6 +411,7 @@ function StaffDetail({
   items,
   policies,
   balances,
+  focusAssignmentId,
   refresh,
 }: {
   schoolId: string;
@@ -372,6 +420,7 @@ function StaffDetail({
   items: AdminStaffWorkspace["onboarding_items"];
   policies: LeavePolicy[];
   balances: AdminStaffWorkspace["balances"];
+  focusAssignmentId?: string;
   refresh: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState("");
@@ -443,7 +492,7 @@ function StaffDetail({
           <strong>{profile.email}</strong>
         </span>
       </div>
-      <StaffRoleAssignments schoolId={schoolId} profile={profile} data={workspace} refresh={refresh}/>
+      <StaffRoleAssignments schoolId={schoolId} profile={profile} data={workspace} refresh={refresh} focusAssignmentId={focusAssignmentId}/>
       <StaffOnboardingChecklist
         items={items}
         busy={Boolean(busy)}
@@ -781,10 +830,12 @@ function CoverageBoard({
   schoolId,
   data,
   refresh,
+  focusCoverageId,
 }: {
   schoolId: string;
   data: AdminStaffWorkspace;
   refresh: () => Promise<void>;
+  focusCoverageId?: string | null;
 }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -794,6 +845,13 @@ function CoverageBoard({
   const offeredCover = data.coverage_tasks.filter(
     (task) => task.status === "offered",
   );
+  const focusedCover = focusCoverageId
+    ? data.coverage_tasks.find((task) => task.id === focusCoverageId)
+    : undefined;
+  const visibleCover = [...gaps, ...offeredCover];
+  if (focusedCover && ["open", "offered", "declined"].includes(focusedCover.status) && !visibleCover.some((task) => task.id === focusedCover.id)) {
+    visibleCover.unshift(focusedCover);
+  }
   async function cover(task: CoverageTask, profileId: string) {
     if (!profileId) return;
     setBusy(task.id);
@@ -820,18 +878,18 @@ function CoverageBoard({
       ) : null}
       <section className="staff-panel staff-cover-board">
         <header>
-          <div>
-            <span>LEAVE COVER</span>
-            <h2>
-              {gaps.length ? "Coverage needed" : "Coverage is under control"}
-            </h2>
-            <p>Only approved leave creates these tasks.</p>
-          </div>
+          <h2>Leave coverage</h2>
           <b>{gaps.length + offeredCover.length} open</b>
         </header>
+        {focusCoverageId && (!focusedCover || !["open", "offered", "declined"].includes(focusedCover.status)) ? (
+          <section className="staff-assignment-attention-state" role="alert">
+            <strong>Cover duty resolved</strong>
+            <p>This item is no longer in the live queue.</p>
+          </section>
+        ) : null}
         <div className="staff-cover-list">
-          {[...gaps, ...offeredCover].map((task) => (
-            <article key={task.id}>
+          {visibleCover.map((task) => (
+            <article id={`attention-${task.id}`} tabIndex={-1} className={task.id === focusCoverageId ? "attention-focus" : undefined} key={task.id}>
               <span
                 className={`staff-duty-icon staff-duty-icon--${task.status}`}
               >
@@ -856,7 +914,7 @@ function CoverageBoard({
                     {task.replacement_first_name} {task.replacement_last_name}
                   </strong>
                 </span>
-              ) : (
+              ) : ["open", "declined"].includes(task.status) ? (
                 <label>
                   <span className="sr-only">
                     Cover teacher for {task.title}
@@ -882,10 +940,14 @@ function CoverageBoard({
                       ))}
                   </select>
                 </label>
+              ) : (
+                <span className={`staff-status staff-status--${task.status}`}>
+                  {task.status}
+                </span>
               )}
             </article>
           ))}
-          {!gaps.length && !offeredCover.length ? (
+          {!visibleCover.length ? (
             <p className="staff-empty">
               <Check size={18} /> No uncovered classes or shifts.
             </p>
@@ -902,17 +964,17 @@ function LeaveReview({
   schoolId,
   data,
   refresh,
+  focusRequestId,
 }: {
   schoolId: string;
   data: AdminStaffWorkspace;
   refresh: () => Promise<void>;
+  focusRequestId?: string | null;
 }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const ordered = [...data.requests].sort(
-    (a, b) =>
-      Number(a.status !== "submitted") - Number(b.status !== "submitted"),
-  );
+  const pending = data.requests.filter((request) => request.status === "submitted");
+  const decided = data.requests.filter((request) => request.status !== "submitted");
   async function decide(
     request: StaffLeaveRequest,
     decision: "approved" | "rejected",
@@ -936,14 +998,8 @@ function LeaveReview({
   return (
     <section className="staff-panel staff-leave-queue">
       <header>
-        <div>
-          <span>APPROVAL QUEUE</span>
-          <h2>Leave requests</h2>
-          <p>Balance and timetable impact together.</p>
-        </div>
-        <b>
-          {ordered.filter((item) => item.status === "submitted").length} pending
-        </b>
+        <h2>Leave requests</h2>
+        <b>{pending.length} pending</b>
       </header>
       {error ? (
         <p className="staff-error" role="alert">
@@ -951,7 +1007,7 @@ function LeaveReview({
         </p>
       ) : null}
       <div className="staff-request-list">
-        {ordered.map((request) => (
+        {pending.map((request) => (
           <LeaveRequestCard
             key={request.id}
             request={request}
@@ -961,12 +1017,22 @@ function LeaveReview({
                 balance.policy_id === request.policy_id,
             )}
             busy={busy === request.id}
+            focused={request.id === focusRequestId}
             onDecide={decide}
           />
         ))}
-        {!ordered.length ? (
-          <p className="staff-empty">No leave requests yet.</p>
+        {!pending.length ? (
+          <p className="staff-empty staff-empty--compact">
+            <Check size={17} /> No requests need review.
+          </p>
         ) : null}
+        {decided.map((request) => (
+          <DecidedLeaveRequest
+            key={request.id}
+            request={request}
+            focused={request.id === focusRequestId}
+          />
+        ))}
       </div>
     </section>
   );
@@ -976,11 +1042,13 @@ function LeaveRequestCard({
   request,
   balance,
   busy,
+  focused = false,
   onDecide,
 }: {
   request: StaffLeaveRequest;
   balance?: AdminStaffWorkspace["balances"][number];
   busy: boolean;
+  focused?: boolean;
   onDecide: (
     request: StaffLeaveRequest,
     decision: "approved" | "rejected",
@@ -993,8 +1061,17 @@ function LeaveRequestCard({
       number(balance.adjustments) -
       number(balance.used)
     : 0;
+  const coverageDecision = request.status !== "approved"
+    ? "need coverage if approved"
+    : (request.coverage_open ?? 0) > 0
+      ? `${request.coverage_open} still need cover`
+      : (request.coverage_fallback ?? 0) > 0
+        ? `Fallback · ${request.coverage_fallback_labels || "School policy"}`
+        : (request.coverage_filled ?? 0) > 0
+          ? `${request.coverage_filled} covered`
+          : "No cover required";
   return (
-    <article className={`staff-request staff-request--${request.status}`}>
+    <article id={`attention-${request.id}`} tabIndex={-1} className={`staff-request staff-request--${request.status}${focused ? " attention-focus" : ""}`}>
       <header>
         <span className="staff-request__avatar">
           {request.first_name.charAt(0)}
@@ -1009,7 +1086,7 @@ function LeaveRequestCard({
           </small>
         </div>
         <em className={`staff-status staff-status--${request.status}`}>
-          {request.status}
+          {request.status === "submitted" ? "Pending" : request.status}
         </em>
       </header>
       <div className="staff-request__dates">
@@ -1039,9 +1116,7 @@ function LeaveRequestCard({
               : request.affected_periods}{" "}
             classes or shifts
           </strong>{" "}
-          {request.status === "approved"
-            ? `${request.coverage_open ?? 0} still need cover`
-            : "need coverage if approved"}
+          {coverageDecision}
         </span>
         <span>
           <Scale size={17} />
@@ -1088,6 +1163,62 @@ function LeaveRequestCard({
   );
 }
 
+function DecidedLeaveRequest({
+  request,
+  focused = false,
+}: {
+  request: StaffLeaveRequest;
+  focused?: boolean;
+}) {
+  const coverageDecision = request.status === "approved"
+    ? (request.coverage_open ?? 0) > 0
+      ? `${request.coverage_open} still need cover`
+      : (request.coverage_fallback ?? 0) > 0
+        ? `Fallback · ${request.coverage_fallback_labels || "School policy"}`
+        : (request.coverage_filled ?? 0) > 0
+          ? `${request.coverage_filled} covered`
+          : "No cover required"
+    : null;
+  return (
+    <details
+      id={`attention-${request.id}`}
+      tabIndex={-1}
+      className={`staff-request staff-request--decided staff-request--${request.status}${focused ? " attention-focus" : ""}`}
+      open={focused || undefined}
+    >
+      <summary>
+        <span className="staff-request__avatar">
+          {request.first_name.charAt(0)}
+          {request.last_name.charAt(0)}
+        </span>
+        <span className="staff-request__summary-copy">
+          <strong>{request.first_name} {request.last_name}</strong>
+          <small>
+            {displayDate(request.starts_on)}
+            {request.ends_on !== request.starts_on ? ` – ${displayDate(request.ends_on)}` : ""}
+            {` · ${request.policy_name}`}
+          </small>
+        </span>
+        <em className={`staff-status staff-status--${request.status}`}>{request.status}</em>
+        <ChevronRight size={18} aria-hidden="true" />
+      </summary>
+      <div className="staff-request__decision-details">
+        <div className="staff-impact">
+          <span>
+            <CalendarClock size={17} />
+            <strong>{request.coverage_tasks ?? request.affected_periods} classes or shifts</strong>
+            {coverageDecision ? ` ${coverageDecision}` : ""}
+          </span>
+        </div>
+        <p>{request.reason}</p>
+        {request.decision_note ? (
+          <small className="staff-handover">Decision: {request.decision_note}</small>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
 function PolicySettings({
   schoolId,
   data,
@@ -1099,7 +1230,19 @@ function PolicySettings({
 }) {
   const [editing, setEditing] = useState<LeavePolicy | null>(null);
   const [creating, setCreating] = useState(false);
+  const [savingCoverage, setSavingCoverage] = useState(false);
   const [error, setError] = useState("");
+  const coveragePolicy = data.coverage_policy ?? {
+    school_id: schoolId,
+    enabled: false,
+    deadline_minutes_before: 30,
+    fallback_kind: "independent_study" as const,
+    fallback_label: "Independent study",
+    supervisor_staff_profile_id: null,
+    supervisor_first_name: null,
+    supervisor_last_name: null,
+    revision: 0,
+  };
   const save = async (input: Record<string, unknown>, id?: string) => {
     setError("");
     try {
@@ -1109,6 +1252,27 @@ function PolicySettings({
       await refresh();
     } catch (cause) {
       setError((cause as Error).message);
+    }
+  };
+  const saveFallback = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingCoverage(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      await saveCoveragePolicy(schoolId, {
+        enabled: form.has("enabled"),
+        deadline_minutes_before: Number(formValue(form, "deadline_minutes_before")),
+        fallback_kind: formValue(form, "fallback_kind") as typeof coveragePolicy.fallback_kind,
+        fallback_label: formValue(form, "fallback_label"),
+        supervisor_staff_profile_id: formValue(form, "supervisor_staff_profile_id") || null,
+        expected_revision: coveragePolicy.revision,
+      });
+      await refresh();
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setSavingCoverage(false);
     }
   };
   return (
@@ -1131,6 +1295,60 @@ function PolicySettings({
           Add policy
         </button>
       </header>
+      <form className="staff-cover-policy" onSubmit={(event) => void saveFallback(event)}>
+        <header>
+          <div>
+            <span>AUTOMATIC COVER</span>
+            <h3>Deadline fallback</h3>
+            <p>Use a planned alternative if cover is still unfilled near the period.</p>
+          </div>
+          <label className="staff-cover-policy__toggle">
+            <input name="enabled" type="checkbox" defaultChecked={coveragePolicy.enabled} />
+            Enabled
+          </label>
+        </header>
+        <div className="staff-cover-policy__fields">
+          <label>
+            Apply before class
+            <select name="deadline_minutes_before" defaultValue={coveragePolicy.deadline_minutes_before}>
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="120">2 hours</option>
+              <option value="1440">1 day</option>
+            </select>
+          </label>
+          <label>
+            Fallback
+            <select name="fallback_kind" defaultValue={coveragePolicy.fallback_kind}>
+              <option value="independent_study">Independent study</option>
+              <option value="physical_activity">Games / physical activity</option>
+              <option value="library_period">Library period</option>
+              <option value="merge_class">Merge with another class</option>
+              <option value="cancelled_period">Cancel period</option>
+            </select>
+          </label>
+          <label>
+            Name shown to staff
+            <input name="fallback_label" defaultValue={coveragePolicy.fallback_label} required minLength={3} maxLength={120} />
+          </label>
+          <label>
+            Responsible staff (optional)
+            <select name="supervisor_staff_profile_id" defaultValue={coveragePolicy.supervisor_staff_profile_id ?? ""}>
+              <option value="">School duty team</option>
+              {data.profiles.filter((profile) => profile.status === "active" && profile.user_id).map((profile) => (
+                <option value={profile.id} key={profile.id}>{staffName(profile)} · {profile.designation}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <footer>
+          <p>This records the fallback decision; it does not claim the activity happened.</p>
+          <button className="staff-primary staff-compact" disabled={savingCoverage}>
+            {savingCoverage ? "Saving…" : "Save fallback"}
+          </button>
+        </footer>
+      </form>
       <div className="staff-policy-list">
         {data.policies.map((policy) => (
           <button
@@ -1339,11 +1557,32 @@ function TeacherResponsibilitiesPage({
   data: TeacherStaffWorkspace;
   refresh: () => Promise<void>;
 }) {
+  const [params] = useSearchParams();
+  const focusAssignmentId = params.get("assignment");
+  const focusCoverageId = params.get("coverage");
+  const attentionNotificationId = params.get("attention_notification_id");
+  const assignmentRevision = expectedRevision(params.get("assignment_revision"));
+  const coverageRevision = expectedRevision(params.get("coverage_revision"));
+  useAttentionFocus(focusAssignmentId ?? focusCoverageId);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const assignments = data.assignments.filter((item) =>
     ["offered", "active"].includes(item.status),
   );
+  const focusedAssignment = focusAssignmentId
+    ? data.assignments.find((item) => item.id === focusAssignmentId)
+    : undefined;
+  const resolvedFocusedAssignment = focusedAssignment && !assignments.some((item) => item.id === focusedAssignment.id)
+    ? focusedAssignment
+    : undefined;
+  const exactAssignmentAttention = Boolean(attentionNotificationId && focusedAssignment && assignmentRevision
+    && focusedAssignment.revision === assignmentRevision && ["offered", "revoked"].includes(focusedAssignment.status));
+  const focusedCoverage = focusCoverageId ? data.coverage_tasks.find((item) => item.id === focusCoverageId) : undefined;
+  const exactCoverageAttention = Boolean(attentionNotificationId && focusedCoverage && coverageRevision
+    && focusedCoverage.revision === coverageRevision && focusedCoverage.status === "offered"
+    && focusedCoverage.replacement_staff_profile_id === data.profile.id);
+  const hasFocusedAttention = Boolean(attentionNotificationId && (focusAssignmentId || focusCoverageId));
+  const exactFocusedAttention = exactAssignmentAttention || exactCoverageAttention;
   const roleAssignments = data.role_assignments ?? [];
   const activeRoleAssignments = roleAssignments.filter((item) => ["active","scheduled"].includes(item.display_status));
   const projectedIds = new Set(activeRoleAssignments.filter((item) => item.source_kind === "assignment").map((item) => item.source_id));
@@ -1404,6 +1643,10 @@ function TeacherResponsibilitiesPage({
       schoolName={schoolName}
       backTo="/teacher/more"
     >
+      {exactFocusedAttention ? <AttentionOpenAcknowledgement /> : null}
+      {hasFocusedAttention && !exactFocusedAttention ? (
+        <AttentionTargetUnavailable message="This work item changed after the alert was created. It was not marked as opened." />
+      ) : null}
       <div className="staff-page staff-page--teacher">
         <div className="staff-inline-summary">
             <span>
@@ -1421,6 +1664,29 @@ function TeacherResponsibilitiesPage({
           <p className="staff-error" role="alert">
             {error}
           </p>
+        ) : null}
+        {focusAssignmentId && !focusedAssignment ? (
+          <section className="staff-assignment-attention-state" role="alert">
+            <strong>Assignment unavailable</strong>
+            <p>This assignment no longer belongs to your current staff profile.</p>
+          </section>
+        ) : null}
+        {resolvedFocusedAssignment ? (
+          <section className="staff-panel staff-my-duties">
+            <div className="staff-response-list">
+              <article id={`attention-${resolvedFocusedAssignment.id}`} tabIndex={-1} className="attention-focus">
+                <span className={`staff-duty-icon staff-duty-icon--${resolvedFocusedAssignment.status}`}>
+                  <Handshake size={18} />
+                </span>
+                <div>
+                  <strong>{resolvedFocusedAssignment.type_name}</strong>
+                  <small>{assignmentScope(resolvedFocusedAssignment)} · {displayDate(resolvedFocusedAssignment.starts_on)}</small>
+                  <p>{resolvedFocusedAssignment.revocation_reason || resolvedFocusedAssignment.response_note || `This assignment is ${resolvedFocusedAssignment.status}.`}</p>
+                  <em className={`staff-status staff-status--${resolvedFocusedAssignment.status}`}>{resolvedFocusedAssignment.status}</em>
+                </div>
+              </article>
+            </div>
+          </section>
         ) : null}
         {needsReply ? (
           <section className="staff-panel staff-my-duties">
@@ -1442,6 +1708,8 @@ function TeacherResponsibilitiesPage({
                     subtitle={`${assignmentScope(item)} · ${displayDate(item.starts_on)}`}
                     detail={item.notes || item.access_summary}
                     busy={busy === item.id}
+                    sourceId={item.id}
+                    focused={item.id === focusAssignmentId}
                     onAnswer={(decision, note) =>
                       answerAssignment(item, decision, note)
                     }
@@ -1456,6 +1724,8 @@ function TeacherResponsibilitiesPage({
                     subtitle={`${displayDate(item.duty_date)} · ${timeWindow(item.starts_at, item.ends_at)}${item.class_name ? ` · ${item.class_name}` : ""}`}
                     detail={`${item.absent_first_name} ${item.absent_last_name} is away${item.handover_note ? ` · ${item.handover_note}` : ""}`}
                     busy={busy === item.id}
+                    sourceId={item.id}
+                    focused={item.id === focusCoverageId}
                     onAnswer={(decision, note) =>
                       answerCover(item, decision, note)
                     }
@@ -1568,17 +1838,21 @@ function TeacherDutyResponse({
   subtitle,
   detail,
   busy,
+  sourceId,
+  focused = false,
   onAnswer,
 }: {
   title: string;
   subtitle: string;
   detail: string;
   busy: boolean;
+  sourceId: string;
+  focused?: boolean;
   onAnswer: (decision: "accepted" | "declined", note: string) => Promise<void>;
 }) {
   const [note, setNote] = useState("");
   return (
-    <article>
+    <article id={`attention-${sourceId}`} tabIndex={-1} className={focused ? "attention-focus" : undefined}>
       <span className="staff-duty-icon staff-duty-icon--offered">
         <CalendarClock size={18} />
       </span>
@@ -1628,6 +1902,9 @@ function TeacherLeavePage({
   refresh: () => Promise<void>;
 }) {
   const [params,setParams]=useSearchParams();
+  const focusRequestId=params.get('request');
+  const requestRevision=expectedRevision(params.get('request_revision'));
+  const attentionNotificationId=params.get('attention_notification_id');
   const open=params.get('create')==='leave';
   const view=params.get('view')==='balances'?'balances':'requests';
   const setOpen=(next:boolean)=>setParams(current=>{if(next)current.set('create','leave');else current.delete('create');return current;});
@@ -1636,6 +1913,9 @@ function TeacherLeavePage({
   const sectionPath=(next:string)=>{const query=new URLSearchParams(listParams);query.set('view',next);return `/teacher/leave?${query}`;};
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  useAttentionFocus(focusRequestId);
+  const exactRequestAttention=Boolean(attentionNotificationId&&focusRequestId&&requestRevision&&data.requests.some((request)=>
+    request.id===focusRequestId&&request.revision===requestRevision&&["approved","rejected"].includes(request.status)));
   const available = useMemo(
     () =>
       data.balances.reduce(
@@ -1690,6 +1970,8 @@ function TeacherLeavePage({
       schoolName={schoolName}
       backTo={open?listPath:'/teacher/more'}
     >
+      {exactRequestAttention ? <AttentionOpenAcknowledgement /> : null}
+      {attentionNotificationId&&focusRequestId&&!exactRequestAttention?<AttentionTargetUnavailable message="This leave decision changed after the alert was created. It was not marked as opened."/>:null}
       <div className="staff-page staff-page--teacher">
         {!open?<><div className="staff-inline-summary">
           <span>{days(available)} days available · {data.academic_year || "Current year"}</span>
@@ -1813,7 +2095,9 @@ function TeacherLeavePage({
             <div className="staff-request-list">
               {data.requests.map((request) => (
                 <article
-                  className={`staff-request staff-request--${request.status}`}
+                  id={`attention-${request.id}`}
+                  tabIndex={-1}
+                  className={`staff-request staff-request--${request.status}${request.id === focusRequestId ? " attention-focus" : ""}`}
                   key={request.id}
                 >
                   <header>
@@ -1851,7 +2135,7 @@ function TeacherLeavePage({
                   <p>{request.reason}</p>
                   {request.decision_note ? (
                     <small className="staff-handover">
-                      Decision: {request.decision_note}
+                      Decision: <span>{request.decision_note}</span>
                     </small>
                   ) : null}
                   {request.status === "submitted" ? (

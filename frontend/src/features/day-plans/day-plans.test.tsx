@@ -472,7 +472,7 @@ describe("Daily plan workflow UI", () => {
     ).toHaveAttribute("href", "/parent/timetable");
     expect(screen.queryByText(/acknowledged/i)).not.toBeInTheDocument();
   });
-  it("invalidates the daily plan and affected schedule caches, not attendance on a draft update", () => {
+  it("invalidates the daily plan and shared attention projection, not attendance on a draft update", () => {
     const event = resolveSchoolEvent(
       JSON.stringify({
         id: "e",
@@ -485,6 +485,8 @@ describe("Daily plan workflow UI", () => {
     expect(event.usedFallback).toBe(false);
     expect(event.invalidations).toEqual([
       { queryKey: ["school", "day-plans"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
     ]);
   });
 });

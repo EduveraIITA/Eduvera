@@ -43,6 +43,15 @@ export class ChatController {
     return this.chat.reportReviewers(request.authUser);
   }
 
+  @Get("reports/:reportId/")
+  @RequirePermission("safeguarding.review")
+  reportDetail(
+    @Req() request: AuthenticatedRequest,
+    @Param("reportId") reportId: string,
+  ) {
+    return this.chat.report(request.authUser, reportId);
+  }
+
   @Patch("reports/:reportId/")
   @HttpCode(200)
   @RequirePermission("safeguarding.review")
@@ -58,6 +67,16 @@ export class ChatController {
   @RequirePermission("messages.view")
   conversations(@Req() request: AuthenticatedRequest) {
     return this.chat.conversations(request.authUser);
+  }
+
+  @Get("conversations/:conversationId/")
+  @RequirePermission("messages.view")
+  conversation(
+    @Req() request: AuthenticatedRequest,
+    @Param("conversationId") conversationId: string,
+    @Query("student_id") studentId?: string,
+  ) {
+    return this.chat.conversation(request.authUser, conversationId, studentId);
   }
 
   @Get("recipients/")
@@ -113,7 +132,7 @@ export class ChatController {
   @HttpCode(200)
   @RequirePermission("messages.view")
   read(@Req() request: AuthenticatedRequest, @Param("conversationId") conversationId: string) {
-    return this.chat.markRead(request.authUser, conversationId);
+    return this.chat.markRead(request.authUser, conversationId, request);
   }
 
   @Patch("conversations/:conversationId/messages/:messageId/")

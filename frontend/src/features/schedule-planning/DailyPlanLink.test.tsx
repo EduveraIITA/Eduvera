@@ -7,7 +7,7 @@ import { ScheduleSettingsRoute } from './ScheduleSettingsRoute';
 import PrincipalDayPlanPage from '../day-plans/PrincipalDayPlanPage';
 import { startDayPlan } from '../day-plans/api';
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children,title}:{children:React.ReactNode;title:string})=><main><h1>{title}</h1>{children}</main>}));
-vi.mock('../auth/AuthContext',()=>({useAuth:()=>({memberships:[{role:'admin',school_id:'s1'}]})}));
+vi.mock('../auth/AuthContext',()=>({useAuth:()=>({memberships:[{role:'admin',school_id:'s1'}]}),useOptionalAuth:()=>null}));
 vi.mock('../timetable/TimetableNavigator',async original=>({...await original<typeof import('../timetable/TimetableNavigator')>(),TimetableNavigator:()=>null}));
 vi.mock('./api',()=>({getScheduleSettings:()=>Promise.resolve({school_id:'s1',school_date:'2026-10-08',selected_term_id:'t1',terms:[{id:'t1',name:'Term 1',academic_year:'2026-27',starts_on:'2026-04-01',ends_on:'2027-03-31'}],classes:[{id:'c1',name:'Class 7A'}],versions:[],slots:[],calendar_exceptions:[],subjects:[],coverage:[]})}));
 vi.mock('../day-plans/api',()=>({getPlanOptions:()=>Promise.resolve({classes:[{id:'c1',name:'Class 7A',plan_id:null}],context:{today:'2026-10-08',is_instructional:true},schedule:[],teachers:[],subjects:[]}),getAdminSummary:()=>Promise.resolve({days:[]}),getDayPlan:vi.fn(),sharedDayPeriods:()=>[],startDayPlan:vi.fn().mockRejectedValue(new Error('Test retry'))}));

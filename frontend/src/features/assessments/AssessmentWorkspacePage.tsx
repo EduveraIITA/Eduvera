@@ -36,7 +36,7 @@ export function AssessmentWorkspacePage({portal,schoolId,schoolName,data,refresh
         {data.mode==="admin"?<details className="workspace-add-menu"><summary aria-label="Create assessment or cycle"><Plus size={20}/><span>New</span></summary><div><button type="button" onClick={event=>{event.currentTarget.closest("details")?.removeAttribute("open");setCreateMode("assessment");}} disabled={!data.cycles.length}>New assessment</button><button type="button" onClick={event=>{event.currentTarget.closest("details")?.removeAttribute("open");setCreateMode("cycle");}}>New cycle</button>{!data.cycles.length?<small>Create a cycle first.</small>:null}</div></details>:null}
       </div>:null}
       <div className="assessment-layout">{!selected?<section className="assessment-panel assessment-list assessment-list--compact" aria-label="Assessments">{visible.length?<div>{visible.map((item)=><button type="button" key={item.id} onClick={()=>setSelected(item.id)}><span className="assessment-subject-dot" style={{background:item.color}}/><span><strong>{item.title}</strong><small>{item.class_name} · {item.subject_name}</small><em>{dateTime(item.scheduled_at)}</em><i className={`assessment-status assessment-status--${item.status}`}>{nice(item.status)}</i></span><ChevronRight size={17}/></button>)}</div>:<p className="assessment-empty" role="status">{data.assessments.length?"No assessments with this status":"No assessments"}</p>}</section>:
-      <section className="assessment-panel assessment-detail">{detail.isPending?<p className="assessment-empty" role="status">Opening register…</p>:detail.error?<p className="assessment-error" role="alert">{detail.error.message}</p>:detail.data?<AssessmentDetailPanel key={selected} portal={portal} schoolId={schoolId} detail={detail.data} refresh={async()=>{await detail.refetch();await refresh();}}/>:null}</section>}</div>
+      <section className="assessment-panel assessment-detail">{detail.isPending?<p className="assessment-empty" role="status">Opening register…</p>:detail.error?<div className="assessment-detail-recovery" role="alert"><strong>Couldn’t open this assessment</strong><p>{detail.error.message}</p><button type="button" disabled={detail.isFetching} onClick={()=>void detail.refetch()}>{detail.isFetching?"Trying again…":"Try again"}</button></div>:detail.data?<AssessmentDetailPanel key={selected} portal={portal} schoolId={schoolId} detail={detail.data} refresh={async()=>{await detail.refetch();await refresh();}}/>:null}</section>}</div>
       {createMode&&data.mode==="admin"?<CreateDialog mode={createMode} schoolId={schoolId} data={data} onClose={()=>setCreateMode(null)} onSaved={async()=>{setCreateMode(null);await refresh();}}/>:null}
     </div>
   </OperationsShell>;
@@ -92,9 +92,16 @@ function AssessmentMarksheet({result,data,printing,onPrint}:{result:FamilyResult
 }
 
 export function FamilyResultsPage({portal,data,reportCards,children,onSelect}:{portal:"parent"|"student";data:FamilyResults;reportCards?:FamilyReportCards;children:Array<{id:string;user:{display_name:string};current_enrollment:{grade:string;section:string};avatar_url:string}>;onSelect:(id:string)=>void}){
+  const [params]=useSearchParams();
+  const assessmentTarget=params.get("assessment_id");
+  const publicationTarget=params.get("publication_id");
+  const reportTarget=params.get("report_batch_id");
+  const targetAssessment=data.results.find((result)=>result.id===assessmentTarget&&(!publicationTarget||result.publication_id===publicationTarget));
+  const targetReport=reportCards?.reports.find((report)=>report.batch_id===reportTarget);
+  const targetKey=targetReport?`report-${targetReport.batch_id}`:targetAssessment?`assessment-${targetAssessment.id}`:null;
   const [query,setQuery]=useState("");
-  const [year,setYear]=useState("");
-  const [kind,setKind]=useState<"all"|"term"|"assessment">("all");
+  const [year,setYear]=useState(targetReport?.academic_year??targetAssessment?.academic_year??"");
+  const [kind,setKind]=useState<"all"|"term"|"assessment">(targetReport?"term":targetAssessment?"assessment":"all");
   const [printTarget,setPrintTarget]=useState<string|null>(null);
   const [activeSlide,setActiveSlide]=useState(0);
   const [activeSlideContext,setActiveSlideContext]=useState("");
@@ -113,6 +120,7 @@ export function FamilyResultsPage({portal,data,reportCards,children,onSelect}:{p
   const visibleCount=slides.length;
   const galleryContext=`${data.student.id}:${effectiveYear}:${kind}:${query}`;
   const currentSlide=activeSlideContext===galleryContext?Math.min(activeSlide,Math.max(slides.length-1,0)):0;
+  const targetSlideIndex=targetKey?slides.findIndex((slide)=>slide.key===targetKey):-1;
   useEffect(()=>{
     if(!printTarget)return;
     const finish=()=>setPrintTarget(null);
@@ -140,9 +148,26 @@ export function FamilyResultsPage({portal,data,reportCards,children,onSelect}:{p
     setActiveSlide(closest.index);
     setActiveSlideContext(galleryContext);
   }
+  useEffect(()=>{
+    if(!targetKey||targetSlideIndex<0)return;
+    const frame=window.requestAnimationFrame(()=>{
+      const gallery=galleryRef.current;
+      const slide=gallery?.children.item(targetSlideIndex) as HTMLElement|null;
+      if(gallery&&slide){
+        const left=slide.offsetLeft-gallery.offsetLeft;
+        if(typeof gallery.scrollTo==="function")gallery.scrollTo({left,behavior:"smooth"});
+        else gallery.scrollLeft=left;
+      }
+      setActiveSlide(targetSlideIndex);
+      setActiveSlideContext(galleryContext);
+      const target=document.getElementById(`attention-${targetKey}`);
+      target?.focus({preventScroll:true});
+    });
+    return()=>window.cancelAnimationFrame(frame);
+  },[galleryContext,targetKey,targetSlideIndex]);
   const content=<div className={`family-results-page${printTarget?" is-printing":""}`}>
     <section className="results-library" aria-labelledby="results-library-heading"><header><div><span>PUBLISHED RECORDS</span><h2 id="results-library-heading">Marksheets</h2></div><b>{visibleCount}</b></header><div className="results-library__filters"><label className="results-library__search"><Search size={18}/><span className="sr-only">Search marksheets</span><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search subject or assessment"/></label><label className="results-library__year"><span className="sr-only">Academic year</span><select value={effectiveYear} onChange={(event)=>setYear(event.target.value)}><option value="all">All years</option>{years.map((item)=><option key={item} value={item}>{item}</option>)}</select></label></div><div className="results-library__tabs" role="tablist" aria-label="Result type">{([['all','All'],['term','Term reports'],['assessment','Assessments']] as const).map(([value,label])=><button key={value} type="button" role="tab" aria-selected={kind===value} className={kind===value?"is-active":""} onClick={()=>setKind(value)}>{label}</button>)}</div></section>
-    {slides.length?<section className="result-gallery" aria-label="Published marksheet gallery"><nav className="result-gallery__navigator" aria-label="Choose marksheet"><span>{currentSlide+1} of {slides.length}</span><div>{slides.map((slide,index)=><button key={slide.key} type="button" className={currentSlide===index?"is-active":""} aria-label={`Show marksheet ${index+1} of ${slides.length}`} aria-current={currentSlide===index?"true":undefined} onClick={()=>selectSlide(index)}/>)}</div></nav><div key={galleryContext} ref={galleryRef} className="result-gallery__track" onScroll={updateActiveSlide}>{slides.map((slide,index)=><div className={`result-gallery__slide${printTarget===slide.key?" is-print-target":""}`} role="group" aria-label={`Marksheet ${index+1} of ${slides.length}`} key={slide.key}>{slide.type==="report"&&reportCards?<FamilyReportMarksheet data={reportCards} report={slide.report} showPrintAction printing={printTarget===slide.key} onPrint={()=>setPrintTarget(slide.key)}/>:slide.type==="assessment"?<AssessmentMarksheet result={slide.result} data={data} printing={printTarget===slide.key} onPrint={()=>setPrintTarget(slide.key)}/>:null}</div>)}</div></section>:null}
+    {slides.length?<section className="result-gallery" aria-label="Published marksheet gallery"><nav className="result-gallery__navigator" aria-label="Choose marksheet"><span>{currentSlide+1} of {slides.length}</span><div>{slides.map((slide,index)=><button key={slide.key} type="button" className={currentSlide===index?"is-active":""} aria-label={`Show marksheet ${index+1} of ${slides.length}`} aria-current={currentSlide===index?"true":undefined} onClick={()=>selectSlide(index)}/>)}</div></nav><div key={galleryContext} ref={galleryRef} className="result-gallery__track" onScroll={updateActiveSlide}>{slides.map((slide,index)=><div id={`attention-${slide.key}`} tabIndex={-1} className={`result-gallery__slide${printTarget===slide.key?" is-print-target":""}${targetKey===slide.key?" attention-focus":""}`} role="group" aria-label={`Marksheet ${index+1} of ${slides.length}`} key={slide.key}>{slide.type==="report"&&reportCards?<FamilyReportMarksheet data={reportCards} report={slide.report} showPrintAction printing={printTarget===slide.key} onPrint={()=>setPrintTarget(slide.key)}/>:slide.type==="assessment"?<AssessmentMarksheet result={slide.result} data={data} printing={printTarget===slide.key} onPrint={()=>setPrintTarget(slide.key)}/>:null}</div>)}</div></section>:null}
     {!visibleCount?<section className="assessment-panel assessment-empty"><Award size={28}/><strong>{data.results.length||reportCards?.reports.length?"No matching marksheets":"No published results"}</strong></section>:null}
   </div>;
   if(portal==="parent")return <ParentShell active="more" pageLabel="Results" child={child} selectedChildId={data.student.id} childOptions={children.map((item)=>({id:item.id,name:item.user.display_name,grade:`Grade ${item.current_enrollment.grade}`,section:item.current_enrollment.section,avatarUrl:item.avatar_url}))} onSelectChild={onSelect} backTo="/parent/more">{content}</ParentShell>;

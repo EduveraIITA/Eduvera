@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { StaffOperationsPage } from "./StaffOperationsPage";
-import type { AdminStaffWorkspace, ResponsibilityAssignment, StaffLeaveRequest, StaffProfile, TeacherStaffWorkspace } from "./api";
+import { saveCoveragePolicy, type AdminStaffWorkspace, type CoverageTask, type ResponsibilityAssignment, type StaffLeaveRequest, type StaffProfile, type TeacherStaffWorkspace } from "./api";
 import { saveAccessRole, assignAccessRole, type AccessRole, type RoleOptions, type RoleAssignment } from "./access-api";
 vi.mock("./access-api", async (original) => ({...(await original<typeof import("./access-api")>()),saveAccessRole:vi.fn(),assignAccessRole:vi.fn()}));
+vi.mock("./api", async (original) => ({...(await original<typeof import("./api")>()),saveCoveragePolicy:vi.fn()}));
+vi.mock("../attention/AttentionOpenAcknowledgement",()=>({AttentionOpenAcknowledgement:()=> <output data-testid="attention-opened"/>}));
 
 vi.mock("../roles/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../roles/api")>()), getRoles: vi.fn(), assignProfiles: vi.fn() }));
 
@@ -24,9 +26,10 @@ const accessRole:AccessRole={id:"class-role",name:"Class teacher",description:""
 const roleOptions:RoleOptions={contexts:[{code:"class",label:"Class",permissions:["attendance.view","attendance.record"]},{code:"event",label:"Event",permissions:["events.view"]}],permissions:[{code:"attendance.view",group:"Attendance",label:"View assigned registers",description:""},{code:"attendance.record",group:"Attendance",label:"Record attendance",description:""},{code:"events.view",group:"Events",label:"View assigned events",description:""}],prerequisites:{"attendance.record":["attendance.view"]}};
 const roleAssignment:RoleAssignment={source_id:"event-1",source_kind:"event_assignment",staff_profile_id:profile.id,user_id:"teacher-1",role_id:"event-role",role_name:"Event judge",context_kind:"event",scope_id:"event-1",scope_label:"Inter-house debate",subject_name:null,permissions:["events.view"],starts_on:"2026-10-01",ends_on:null,status:"active",display_status:"active",revision:1};
 const assignment: ResponsibilityAssignment = { id: "assignment-1", responsibility_type_id: responsibilityType.id, staff_profile_id: profile.id, type_code: responsibilityType.code, type_name: responsibilityType.name, category: responsibilityType.category, scope_kind: responsibilityType.scope_kind, first_name: profile.first_name, last_name: profile.last_name, staff_code: profile.staff_code, designation: profile.designation, user_id: profile.user_id, class_section_id: null, subject_id: null, event_id: "event-1", class_name: null, subject_name: null, event_title: "Inter-house debate", scope_label: "", location: "Auditorium", starts_on: "2026-10-10", ends_on: "2026-10-10", starts_at: null, ends_at: null, status: "offered", notes: "Use the published rubric.", response_note: "", access_summary: responsibilityType.access_summary, restricted: true, revision: 1 };
+const coverage: CoverageTask = { id: "coverage-1", leave_request_id: request.id, absent_staff_profile_id: profile.id, replacement_staff_profile_id: null, absent_first_name: profile.first_name, absent_last_name: profile.last_name, absent_designation: profile.designation, replacement_first_name: null, replacement_last_name: null, replacement_user_id: null, class_name: "Class 7A", subject_name: "Mathematics", duty_date: "2026-10-05", period_number: 2, starts_at: "09:50", ends_at: "10:35", title: "Period 2 mathematics", location: "Room 204", status: "open", handover_note: "Continue fractions", response_note: "", revision: 1 };
 
-function renderPage(data: AdminStaffWorkspace | TeacherStaffWorkspace, portal: "principal" | "teacher", staffProfileId?: string) {
-  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><StaffOperationsPage portal={portal} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
+function renderPage(data: AdminStaffWorkspace | TeacherStaffWorkspace, portal: "principal" | "teacher", staffProfileId?: string, path = "/") {
+  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
 }
 
 beforeEach(() => undefined);
@@ -65,6 +68,10 @@ describe("StaffOperationsPage", () => {
     expect(screen.getByText("2 classes or shifts")).toBeVisible();
     expect(screen.getByText(/need coverage if approved/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Leave requests" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Leave coverage" })).toBeVisible();
+    expect(screen.queryByText("APPROVAL QUEUE")).not.toBeInTheDocument();
+    expect(screen.queryByText("LEAVE COVER")).not.toBeInTheDocument();
 
     cleanup();
     renderPage(data, "principal", profile.id);
@@ -112,6 +119,132 @@ describe("StaffOperationsPage", () => {
     await userEvent.setup().click(screen.getByLabelText("Event judge, 1 assignment"));
     expect(screen.getByText("Inter-house debate")).toBeVisible();
     expect(screen.getByRole("link",{name:"Open work: Inter-house debate"})).toHaveAttribute("href","/principal/events/event-1");
+  });
+
+  it("consumes an assignment link on the selected staff profile", async () => {
+    const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] }, access_roles: [accessRole], role_options: roleOptions, role_assignments: [roleAssignment] };
+    renderPage(principal,"principal",profile.id,"/principal/staff/profile-1?assignment=event-1");
+    const target=document.getElementById("attention-staff-assignment-event-1");
+    expect(target).toHaveClass("is-attention-target");
+    expect(screen.getByText("Inter-house debate")).toBeVisible();
+    await waitFor(()=>expect(target).toHaveFocus());
+  });
+
+  it("opens the leave workspace and focuses the exact cover gap", async () => {
+    const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [policy], balances: [balance], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [coverage], references: { classes: [], subjects: [], events: [] } };
+    renderPage(principal, "principal", undefined, "/principal/staff?coverage=coverage-1");
+    expect(screen.getByRole("heading", { name: "Leave coverage" })).toBeVisible();
+    expect(screen.getByLabelText("Cover teacher for Period 2 mathematics")).toBeVisible();
+    const target = document.getElementById("attention-coverage-1");
+    expect(target).toHaveClass("attention-focus");
+    await waitFor(() => expect(target).toHaveFocus());
+  });
+
+  it("configures a bounded automatic cover fallback", async () => {
+    vi.mocked(saveCoveragePolicy).mockResolvedValue({
+      school_id:"school-1",enabled:true,deadline_minutes_before:30,fallback_kind:"physical_activity",
+      fallback_label:"Games period",supervisor_staff_profile_id:profile.id,supervisor_first_name:"Kavita",supervisor_last_name:"Mehta",revision:2,
+    });
+    const principal: AdminStaffWorkspace = {
+      mode:"admin",academic_year:"2026-27",profiles:[profile],onboarding_items:[],policies:[policy],balances:[balance],requests:[],
+      work_types:[],responsibility_types:[],assignments:[],coverage_tasks:[],references:{classes:[],subjects:[],events:[]},
+      coverage_policy:{school_id:"school-1",enabled:false,deadline_minutes_before:30,fallback_kind:"independent_study",fallback_label:"Independent study",supervisor_staff_profile_id:null,supervisor_first_name:null,supervisor_last_name:null,revision:1},
+    };
+    renderPage(principal,"principal",undefined,"/principal/staff?section=policies");
+    const user=userEvent.setup();
+    expect(screen.getByRole("heading",{name:"Deadline fallback"})).toBeVisible();
+    await user.click(screen.getByLabelText("Enabled"));
+    await user.selectOptions(screen.getByLabelText("Fallback"),"physical_activity");
+    await user.clear(screen.getByLabelText("Name shown to staff"));
+    await user.type(screen.getByLabelText("Name shown to staff"),"Games period");
+    await user.selectOptions(screen.getByLabelText("Responsible staff (optional)"),profile.id);
+    await user.click(screen.getByRole("button",{name:"Save fallback"}));
+    await waitFor(()=>expect(saveCoveragePolicy).toHaveBeenCalledWith("school-1",expect.objectContaining({
+      enabled:true,deadline_minutes_before:30,fallback_kind:"physical_activity",fallback_label:"Games period",
+      supervisor_staff_profile_id:profile.id,expected_revision:1,
+    })));
+  });
+
+  it("keeps past resolved cover out of the live queue", () => {
+    const expired: CoverageTask={...coverage,status:"expired_unconfirmed",revision:2,fallback_kind:"unconfirmed",fallback_label:"Period ended without a recorded cover outcome",resolved_at:"2026-10-05T11:00:00Z"};
+    const principal: AdminStaffWorkspace={mode:"admin",academic_year:"2026-27",profiles:[profile],onboarding_items:[],policies:[policy],balances:[balance],requests:[],work_types:[],responsibility_types:[],assignments:[],coverage_tasks:[expired],references:{classes:[],subjects:[],events:[]}};
+    renderPage(principal,"principal",undefined,"/principal/staff?section=leave");
+    expect(screen.getByRole("heading",{name:"Leave coverage"})).toBeVisible();
+    expect(screen.getByText("0 open")).toBeVisible();
+    expect(screen.queryByText("Recent automatic outcomes")).not.toBeInTheDocument();
+    expect(screen.queryByText("No outcome recorded")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Cover teacher for Period 2 mathematics")).not.toBeInTheDocument();
+  });
+
+  it("keeps decided leave compact until its decision is opened", async () => {
+    const decided: StaffLeaveRequest={
+      ...request,status:"approved",revision:2,coverage_tasks:6,coverage_open:0,
+      coverage_fallback:6,coverage_filled:0,coverage_expired:0,
+      coverage_fallback_labels:"Independent study",
+    };
+    const principal: AdminStaffWorkspace={mode:"admin",academic_year:"2026-27",profiles:[profile],onboarding_items:[],policies:[policy],balances:[balance],requests:[decided],work_types:[],responsibility_types:[],assignments:[],coverage_tasks:[],references:{classes:[],subjects:[],events:[]}};
+    renderPage(principal,"principal",undefined,"/principal/staff?section=leave");
+    expect(screen.getByText("0 pending")).toBeVisible();
+    expect(screen.getByText("Fallback · Independent study")).not.toBeVisible();
+    const summary=screen.getByText("Kavita Mehta").closest("summary");
+    expect(summary).not.toBeNull();
+    await userEvent.setup().click(summary!);
+    expect(screen.getByText("Fallback · Independent study")).toBeVisible();
+    expect(screen.queryByText(/still need cover/i)).not.toBeInTheDocument();
+  });
+
+  it("acknowledges a responsibility alert only at its exact authoritative revision", () => {
+    const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [], balances: [], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [assignment], coverage_tasks: [] };
+    renderPage(teacher,"teacher",undefined,"/teacher/responsibilities?assignment=assignment-1&assignment_revision=1&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
+    expect(screen.queryByText(/changed after the alert/i)).not.toBeInTheDocument();
+
+    cleanup();
+    renderPage(teacher,"teacher",undefined,"/teacher/responsibilities?assignment=assignment-1&assignment_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.queryByTestId("attention-opened")).not.toBeInTheDocument();
+    expect(screen.getByText(/changed after the alert/i)).toBeVisible();
+  });
+
+  it("keeps revoked work exact and removes completed cover decisions from the live queue", () => {
+    const revoked={...assignment,status:"revoked" as const,revision:2,revocation_reason:"Event staffing changed."};
+    const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [], balances: [], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [revoked], coverage_tasks: [] };
+    renderPage(teacher,"teacher",undefined,"/teacher/responsibilities?assignment=assignment-1&assignment_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
+    expect(screen.getByText("Event staffing changed.")).toBeVisible();
+
+    cleanup();
+    const decidedCoverage={...coverage,status:"accepted" as const,revision:2,replacement_staff_profile_id:profile.id,replacement_user_id:profile.user_id,replacement_first_name:profile.first_name,replacement_last_name:profile.last_name};
+    const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [decidedCoverage], references: { classes: [], subjects: [], events: [] } };
+    renderPage(principal,"principal",undefined,"/principal/staff?section=leave&coverage=coverage-1&coverage_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
+    expect(screen.getByText("Cover duty resolved")).toBeVisible();
+    expect(screen.queryByText("accepted")).not.toBeInTheDocument();
+  });
+
+  it("acknowledges the principal's exact responsibility response", () => {
+    const accepted={...assignment,status:"active" as const,revision:2,response_note:"Confirmed"};
+    const projected:RoleAssignment={...roleAssignment,source_id:assignment.id,source_kind:"assignment",role_id:responsibilityType.id,role_name:responsibilityType.name,revision:2};
+    const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [], balances: [], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [accepted], coverage_tasks: [], references: { classes: [], subjects: [], events: [] }, role_assignments:[projected], access_roles:[accessRole], role_options:roleOptions };
+    renderPage(principal,"principal",profile.id,"/principal/staff/profile-1?assignment=assignment-1&assignment_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
+  });
+
+  it("acknowledges an exact leave-review alert but not a later revision", () => {
+    const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    renderPage(principal,"principal",undefined,"/principal/staff?section=leave&request=request-1&request_revision=1&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
+    cleanup();
+    renderPage(principal,"principal",undefined,"/principal/staff?section=leave&request=request-1&request_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.queryByTestId("attention-opened")).not.toBeInTheDocument();
+    expect(screen.getByText(/changed after the alert/i)).toBeVisible();
+  });
+
+  it("acknowledges the staff member's exact leave decision", () => {
+    const decided={...request,status:"approved" as const,revision:2,decision_note:"Approved with cover."};
+    const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [decided], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [] };
+    renderPage(teacher,"teacher",undefined,"/teacher/leave?request=request-1&request_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
+    expect(screen.getByText("Approved with cover.")).toBeVisible();
   });
 
   it("assigns a role directly to a class and directs exam and journey staffing to their planning screens", async () => {

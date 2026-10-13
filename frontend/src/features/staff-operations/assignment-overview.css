@@ -28,6 +28,10 @@
 .staff-group-actions summary { min-height: 44px; align-content: center; color: var(--edura-brand); cursor: pointer; }
 .staff-group-actions ul { margin: 0 0 12px; padding-left: 20px; line-height: 1.7; }
 .staff-assignment-scope { padding: 12px 0 4px; border-top: 1px solid var(--edura-border); }
+.staff-assignment-scope.is-attention-target { margin-inline:-8px; padding-inline:8px; border-radius:var(--edura-radius-control); outline:3px solid color-mix(in srgb,var(--edura-brand) 24%,transparent); outline-offset:1px; scroll-margin-block:96px; }
+.staff-assignment-scope.is-attention-target:focus { outline-color:var(--edura-brand); }
+.staff-assignment-attention-state { margin-bottom:12px; padding:12px 14px; border:1px solid color-mix(in srgb,var(--edura-warning) 28%,var(--edura-border)); border-radius:var(--edura-radius-control); background:var(--edura-warning-soft); }
+.staff-assignment-attention-state p { margin:4px 0 0; color:var(--edura-ink-secondary); font-size:12px; line-height:1.5; }
 .staff-assignment-scope header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; }
 .staff-assignment-scope h4 { flex: 1 1 140px; min-width: 0; margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .staff-assignment-scope .staff-status { max-width: 100%; white-space: normal; }

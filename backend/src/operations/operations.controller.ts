@@ -13,6 +13,10 @@ export class OperationsController {
   @RequirePermission("fees.manage")
   feeWorkspace(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query("student_id") student?: string) { return this.feeReviews.workspace(req.authUser, school, student); }
 
+  @Get("schools/:schoolId/fees/gateway-orders/:orderId/")
+  @RequirePermission("fees.manage")
+  feeGatewayOrder(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("orderId") orderId: string) { return this.feeReviews.gatewayPaymentReview(req.authUser, school, orderId); }
+
   @Post("schools/:schoolId/fees/settings/")
   @RequirePermission("fees.manage")
   feeSettings(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.feeReviews.settings(req.authUser, school, req.body); }

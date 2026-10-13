@@ -1,10 +1,10 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventEditorPage } from "./EventEditorPage";
 import { EventRegisterPage } from "./EventRegisterPage";
-import { FamilyEventDetailPage, FamilyEventListPage } from "./FamilyEventPages";
+import { FamilyEventDetailPage, FamilyEventListPage, readFamilyEventActionFocus } from "./FamilyEventPages";
 import { OperationsEventDetailPage } from "./OperationsEventDetailPage";
 import { OperationsEventListPage } from "./OperationsEventListPage";
 import type { CampusEventDto, EventCatalogResponse, EventFinanceResponse, EventRegisterInput, EventRegisterResponse } from "./types";
@@ -96,6 +96,43 @@ const catalog: EventCatalogResponse = {
 };
 
 describe("campus event family workflows", () => {
+  it.each(["rsvp", "consent", "payment", "checklist"] as const)(
+    "focuses the exact %s action reached from Requests",
+    async (focusAction) => {
+      const base = eventFixture();
+      const event = eventFixture({
+        participation_requirement: "optional",
+        requires_rsvp: true,
+        requires_guardian_consent: true,
+        payment_required: true,
+        payment_amount_paise: 50_000,
+        viewer_participants: [{
+          ...base.viewer_participants[0]!,
+          participation_requirement: "optional",
+          rsvp_status: "accepted",
+          consent_status: "pending",
+          consent_readiness: "ready",
+          payment_status: "pending",
+          payment_amount_paise: 50_000,
+          fee_invoice_status: "pending",
+        }],
+        permissions: { ...base.permissions, can_consent: true, can_rsvp: true },
+      });
+
+      render(<MemoryRouter><FamilyEventDetailPage audience="parent" event={event} selectedStudentId="student-1" focusAction={focusAction} onRsvp={vi.fn()} onWithdraw={vi.fn()} onConsent={vi.fn()} onChecklist={vi.fn()} /></MemoryRouter>);
+
+      const target = document.getElementById(`event-action-${focusAction}`);
+      expect(target).toHaveClass("is-attention-target");
+      await waitFor(() => expect(target).toHaveFocus());
+    },
+  );
+
+  it("accepts only supported event action focus values", () => {
+    expect(readFamilyEventActionFocus("payment")).toBe("payment");
+    expect(readFamilyEventActionFocus("unknown")).toBeUndefined();
+    expect(readFamilyEventActionFocus(null)).toBeUndefined();
+  });
+
   it("does not treat mandatory no-RSVP events as pending family actions", () => {
     render(<MemoryRouter><FamilyEventListPage audience="student" events={[eventFixture()]} /></MemoryRouter>);
 
@@ -391,6 +428,44 @@ describe("campus event planning", () => {
     expect(onCancel).toHaveBeenCalledWith("Transport vendor breach", "The visit is cancelled because transport is unavailable.");
   });
 
+  it("focuses the signed-in staff member's exact event duty from Requests", async () => {
+    const event = eventFixture({ staff: [{ user_id: "staff-1", name: "Kavita Mehta", role: "attendance_taker" }] });
+    render(<MemoryRouter initialEntries={["/teacher/events/event-1?focus=duty"]}><OperationsEventDetailPage portal="teacher" schoolId="school-1" viewerUserId="staff-1" event={event} /></MemoryRouter>);
+
+    const target = screen.getByRole("region", { name: "Your event duty" });
+    expect(target).toHaveClass("is-attention-target");
+    expect(screen.getByRole("heading", { name: "Attendance taker" })).toBeVisible();
+    await waitFor(() => expect(target).toHaveFocus());
+  });
+
+  it("focuses only the exact cancelled event revision opened from attention", async () => {
+    const event = eventFixture({
+      status: "cancelled",
+      revision: 4,
+      cancelled_at: "2026-10-13T10:00:00.000Z",
+      cancellation_reason: "Transport is unavailable.",
+      cancellation_internal_reason: "The assigned operator withdrew.",
+    });
+    const view = render(
+      <MemoryRouter initialEntries={["/teacher/events/event-1?focus=status&event_revision=4"]}>
+        <OperationsEventDetailPage portal="teacher" schoolId="school-1" event={event} />
+      </MemoryRouter>,
+    );
+
+    const target = screen.getByRole("region", { name: "Event cancellation" });
+    expect(target).toHaveClass("is-attention-target");
+    await waitFor(() => expect(target).toHaveFocus());
+
+    view.unmount();
+    render(
+      <MemoryRouter initialEntries={["/teacher/events/event-1?focus=status&event_revision=3"]}>
+        <OperationsEventDetailPage portal="teacher" schoolId="school-1" event={event} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("region", { name: "Event cancellation" })).not.toBeInTheDocument();
+    expect(screen.getByText("This event was cancelled").closest("section")).not.toHaveClass("is-attention-target");
+  });
+
   it("does not expose fee amounts to ordinary assigned staff", async () => {
     const base = eventFixture();
     const event = eventFixture({
@@ -515,9 +590,11 @@ describe("campus event planning", () => {
       permissions: { can_view_finance_details: true, can_record_refund: true },
     };
     const user = userEvent.setup();
-    render(<MemoryRouter><OperationsEventDetailPage portal="principal" schoolId="school-1" event={event} finance={finance} onRecordRefund={onRecordRefund} /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/principal/events/event-1?view=finance&focus=refunds"]}><OperationsEventDetailPage portal="principal" schoolId="school-1" event={event} finance={finance} onRecordRefund={onRecordRefund} /></MemoryRouter>);
 
-    await user.click(screen.getByRole('link',{name:/Fees/}));
+    const target = screen.getByRole("region", { name: "Refund reconciliation" });
+    expect(target).toHaveClass("is-attention-target");
+    await waitFor(() => expect(target).toHaveFocus());
     await user.click(screen.getByRole("button", { name: "Record refund" }));
     const dialog = screen.getByRole("dialog", { name: "Record manual refund" });
     await user.clear(within(dialog).getByLabelText("Amount (INR)"));

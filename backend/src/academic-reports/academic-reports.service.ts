@@ -6,6 +6,7 @@ import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { hasScopedSchoolPermission, schoolPermission } from "../roles/authorization.js";
+import { SchoolEventService } from "../school/school-event.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 const uuid = z.string().uuid();
@@ -54,9 +55,42 @@ interface PublishedSource {
   results: Map<string, { outcome: "scored" | "absent" | "exempt" | "withheld" | "not_evaluated"; marks: number | null }>;
 }
 
+interface AcademicReportEventContractInput {
+  schoolId: string;
+  batchId: string;
+  schemeId: string;
+  classSectionId: string;
+  action: string;
+  status: string;
+  revision: number;
+  audienceUserIds: string[];
+}
+
+export function academicReportUpdatedEvent(input: AcademicReportEventContractInput) {
+  const refresh = ["academic-reports", "teacher.home", "principal.home"];
+  if (input.action === "publish") refresh.push("notifications", "attention");
+  return {
+    schoolId: input.schoolId,
+    eventType: "academic_report.updated" as const,
+    aggregateType: "grading_report_batch",
+    aggregateId: input.batchId,
+    audienceUserIds: input.audienceUserIds,
+    payload: {
+      report_batch_id: input.batchId,
+      scheme_id: input.schemeId,
+      class_section_id: input.classSectionId,
+      action: input.action,
+      status: input.status,
+      revision: input.revision,
+      refresh,
+    },
+    idempotencyKey: `academic-report:${input.batchId}:${input.action}:${input.revision}`,
+  };
+}
+
 @Injectable()
 export class AcademicReportsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   private async principal(user: AuthUser, schoolId: string, db: Db = this.db) {
     uuid.parse(schoolId);
@@ -75,6 +109,61 @@ export class AcademicReportsService {
 
   private async audit(db: Db, user: AuthUser, schoolId: string, schemeId: string | null, batchId: string | null, action: string, fromStatus: string | null, toStatus: string | null, metadata: Record<string, unknown> = {}) {
     await db.insertInto("grading_report_audits").values({ school_id: schoolId, scheme_id: schemeId, batch_id: batchId, actor_id: user.id, action, from_status: fromStatus, to_status: toStatus, metadata }).execute();
+  }
+
+  private async eventAudience(db: Db, schoolId: string, classSectionId: string, batchId: string, includeFamily: boolean) {
+    const staff = (await sql<{ user_id: string }>`
+      SELECT membership.user_id FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${schoolId}::uuid AND membership.role='admin' AND membership.is_active
+      UNION
+      SELECT binding.user_id FROM staff_role_bindings binding
+      JOIN school_memberships membership ON membership.school_id=binding.school_id
+        AND membership.user_id=binding.user_id AND membership.role='staff' AND membership.is_active
+      JOIN users account ON account.id=binding.user_id AND account.is_active
+      WHERE binding.school_id=${schoolId}::uuid AND binding.context_kind='class'
+        AND binding.scope_id=${classSectionId}::uuid AND binding.role_active AND binding.status='active'
+        AND 'reports.comment'=ANY(binding.permissions) AND binding.starts_on<=CURRENT_DATE
+        AND (binding.ends_on IS NULL OR binding.ends_on>=CURRENT_DATE)
+    `.execute(db)).rows.map((row) => row.user_id);
+    if (!includeFamily) return staff;
+    const family = (await sql<{ user_id: string }>`
+      SELECT student.user_id FROM grading_report_students report
+      JOIN students student ON student.id=report.student_id AND student.user_id IS NOT NULL
+      JOIN school_memberships membership ON membership.school_id=report.school_id
+        AND membership.user_id=student.user_id AND membership.role='student' AND membership.is_active
+      JOIN users account ON account.id=student.user_id AND account.is_active
+      WHERE report.school_id=${schoolId}::uuid AND report.batch_id=${batchId}::uuid
+      UNION
+      SELECT parent.user_id FROM grading_report_students report
+      JOIN guardian_relationships relationship ON relationship.school_id=report.school_id AND relationship.student_id=report.student_id
+      JOIN parents parent ON parent.id=relationship.guardian_id AND parent.user_id IS NOT NULL
+      JOIN school_memberships membership ON membership.school_id=report.school_id
+        AND membership.user_id=parent.user_id AND membership.role='guardian' AND membership.is_active
+      JOIN users account ON account.id=parent.user_id AND account.is_active
+      WHERE report.school_id=${schoolId}::uuid AND report.batch_id=${batchId}::uuid
+    `.execute(db)).rows.map((row) => row.user_id);
+    return [...new Set([...staff, ...family])];
+  }
+
+  private async emitUpdated(
+    db: Db,
+    batch: { id: string; school_id: string; scheme_id: string; status: string; revision: number },
+    classSectionId: string,
+    action: string,
+    includeFamily = false,
+  ) {
+    const audienceUserIds = await this.eventAudience(db,batch.school_id,classSectionId,batch.id,includeFamily);
+    await this.events.enqueueUserEvent(db, academicReportUpdatedEvent({
+      schoolId: batch.school_id,
+      batchId: batch.id,
+      schemeId: batch.scheme_id,
+      classSectionId,
+      action,
+      status: batch.status,
+      revision: batch.revision,
+      audienceUserIds,
+    }));
   }
 
   private validateBands(bands: Array<z.infer<typeof bandInput>>) {
@@ -298,6 +387,7 @@ export class AcademicReportsService {
         }
       }
       await this.audit(db, user, schoolId, schemeId, batch.id, sequence === 1 ? "report.generated" : "report.correction.generated", null, "draft", { sequence, learners: roster.rows.length, source_fingerprint: fingerprint });
+      await this.emitUpdated(db,batch,scheme.class_section_id,"generated");
       return batch;
     });
   }
@@ -357,9 +447,46 @@ export class AcademicReportsService {
       if (action === "publish") {
         if (batch.status !== "reviewed") throw new ConflictException("Review the report batch before publication.");
         next = "published"; Object.assign(update, { published_by: user.id, published_at: new Date(), publication_note: data.note });
-        const recipients = await sql<{ user_id: string; link: string }>`SELECT DISTINCT student.user_id,'/student/results'::text AS link FROM grading_report_students report JOIN students student ON student.id=report.student_id WHERE report.batch_id=${batchId}::uuid AND student.user_id IS NOT NULL
-          UNION SELECT DISTINCT parent.user_id,'/parent/results'::text AS link FROM grading_report_students report JOIN guardian_relationships relationship ON relationship.student_id=report.student_id JOIN parents parent ON parent.id=relationship.guardian_id WHERE report.batch_id=${batchId}::uuid AND parent.user_id IS NOT NULL`.execute(db);
-        for (const recipient of recipients.rows) await db.insertInto("notifications").values({ recipient_id: recipient.user_id, kind: "general", title: "A report card has been published", body: scheme.name, link: recipient.link, metadata: { report_batch_id: batchId, scheme_id: scheme.id }, dedupe_key: `report:${batchId}:${recipient.user_id}` }).onConflict((conflict) => conflict.doNothing()).execute();
+        const recipients = await sql<{ user_id: string; student_id: string; link: string; portal: "parent" | "student" }>`
+          SELECT DISTINCT audience.user_id,audience.student_id,audience.link,audience.portal FROM (
+            SELECT student.user_id,report.student_id,'/student/results'::text AS link,'student'::text AS portal
+            FROM grading_report_students report JOIN students student ON student.id=report.student_id
+            WHERE report.batch_id=${batchId}::uuid AND student.user_id IS NOT NULL
+            UNION ALL
+            SELECT parent.user_id,report.student_id,'/parent/results'::text AS link,'parent'::text AS portal
+            FROM grading_report_students report
+            JOIN guardian_relationships relationship ON relationship.student_id=report.student_id AND relationship.school_id=${schoolId}::uuid
+            JOIN parents parent ON parent.id=relationship.guardian_id
+            WHERE report.batch_id=${batchId}::uuid AND parent.user_id IS NOT NULL
+          ) audience
+          JOIN users account ON account.id=audience.user_id AND account.is_active
+          JOIN school_memberships membership ON membership.user_id=audience.user_id
+            AND membership.school_id=${schoolId}::uuid AND membership.is_active
+            AND membership.role=CASE audience.portal WHEN 'parent' THEN 'guardian' ELSE 'student' END
+        `.execute(db);
+        for (const recipient of recipients.rows) await db.insertInto("notifications").values({
+          recipient_id: recipient.user_id,
+          kind: "general",
+          title: "A report card has been published",
+          body: scheme.name,
+          link: recipient.portal === "parent"
+            ? `/parent/results?student_id=${recipient.student_id}&report_batch_id=${batchId}`
+            : recipient.link,
+          metadata: { report_batch_id: batchId, scheme_id: scheme.id, student_id: recipient.student_id },
+          dedupe_key: `report:${batchId}:${recipient.user_id}:${recipient.student_id}`,
+          ...(recipient.portal === "parent" ? {
+            attention_eligible: true,
+            attention_school_id: schoolId,
+            attention_student_id: recipient.student_id,
+            attention_class_section_id: scheme.class_section_id,
+            attention_portal: "parent" as const,
+            attention_module: "results" as const,
+            attention_source_kind: "report_publication" as const,
+            attention_source_id: batchId,
+            attention_source_revision: batch.sequence,
+            attention_topic_key: `report:${scheme.id}:student:${recipient.student_id}`,
+          } : {}),
+        }).onConflict((conflict) => conflict.doNothing()).execute();
       }
       if (action === "cancel") {
         if (!['draft', 'reviewed'].includes(batch.status)) throw new ConflictException("A published report batch cannot be cancelled.");
@@ -367,6 +494,7 @@ export class AcademicReportsService {
       }
       const updated = await db.updateTable("grading_report_batches").set({ ...update, status: next }).where("id", "=", batchId).returningAll().executeTakeFirstOrThrow();
       await this.audit(db, user, schoolId, batch.scheme_id, batchId, `report.${action}`, batch.status, next, { note: data.note });
+      await this.emitUpdated(db,updated,scheme.class_section_id,action,action === "publish");
       return updated;
     });
   }

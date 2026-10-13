@@ -86,6 +86,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },
     { id: "report-cards", name: "Report cards", description: "Grading schemes and term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },
     { id: "staff", name: "Staff", description: "People, roles, assignments and leave", icon: UserRoundCheck, tone: "teal", path: "/principal/staff" },
+    { id: "leave", name: "Student leave", description: "Review guardian-authorised student leave", icon: CalendarX2, tone: "violet", path: "/principal/student-leave" },
     { id: "governance", name: "Policies & governance", description: "Policies, authority and decision rules", icon: Scale, tone: "blue", path: "/principal/governance" },
     { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },
     { id: "events", name: "Events & activities", description: "Publish school activities, manage consent and event attendance", icon: CalendarDays, tone: "blue", path: "/principal/events" },

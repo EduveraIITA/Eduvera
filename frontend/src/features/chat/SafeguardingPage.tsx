@@ -1,9 +1,11 @@
 /* eslint-disable */
 // @ts-nocheck
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { RestrictedCarePage } from "../restricted-care/RestrictedCarePage";
 import {
+  getChatReport,
   getChatReportReviewers,
   getChatReports,
   updateChatReport,
@@ -17,11 +19,21 @@ type StaffPortal = "teacher" | "principal";
 function SafeguardingRoute({ portal }: { portal: StaffPortal }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
+  const [params] = useSearchParams();
+  const reportId = params.get("section") === "message_reports" ? params.get("report") : null;
   const membershipRole = portal === "principal" ? "admin" : "staff";
   const membership = auth.memberships.find((item) => item.role === membershipRole);
   const reportsQuery = useQuery({
     queryKey: ["chat", "reports"],
     queryFn: () => getChatReports(),
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+  });
+  const reportQuery = useQuery({
+    queryKey: ["chat", "reports", "detail", reportId],
+    queryFn: () => getChatReport(reportId!),
+    enabled: Boolean(reportId),
+    retry: false,
     refetchInterval: 15_000,
     staleTime: 5_000,
   });
@@ -60,6 +72,10 @@ function SafeguardingRoute({ portal }: { portal: StaffPortal }) {
         error={moderationMutation.isError ? moderationMutation.error.message : undefined}
         loadError={reportsQuery.isError ? reportsQuery.error.message : undefined}
         onRefresh={() => void reportsQuery.refetch()}
+        selectedReport={reportQuery.data}
+        selectedLoading={Boolean(reportId) && reportQuery.isPending}
+        selectedLoadError={Boolean(reportId) && reportQuery.isError}
+        onRefreshSelected={() => void reportQuery.refetch()}
         onUpdate={(reportId, input) => moderationMutation.mutate({ reportId, input })}
       />
       }

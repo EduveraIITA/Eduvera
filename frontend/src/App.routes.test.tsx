@@ -153,13 +153,18 @@ describe("implemented application routes", () => {
   it("shows transport actions without requesting a teaching home for transport-only staff", async () => {
     mockCustomStaffSession(["departure.collect"]);
     const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
-    apiFetchMock.mockImplementation((endpoint: string) => endpoint === "/api/v1/departure/collector/"
-      ? Promise.resolve({ trips: [{ assigned_collector_user_id: "user-1", service_date: "2099-01-01", state: "planned", collector_assignment_status: "pending" }],
-        swaps: [{ target_user_id: "user-1", status: "submitted" }] })
+    apiFetchMock.mockImplementation((endpoint: string) => endpoint.startsWith("/api/v1/attention?")
+      ? Promise.resolve({
+        portal: "teacher", generated_at: "2026-10-13T08:00:00.000Z",
+        summary: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 },
+        modules: { transport: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/teacher/departure", first_item_href: "/teacher/departure?journey=trip-1" } },
+        items: [],
+      })
       : original(endpoint));
     render(<MemoryRouter initialEntries={["/teacher/more"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("link", { name: "Open Transport journey, action needed" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Review Transport journey, 1 action required" })).toBeVisible();
     expect(screen.queryByText("Assessments & marking")).not.toBeInTheDocument();
+    expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/departure/collector/"))).toBe(false);
     expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
   });
 
@@ -676,15 +681,22 @@ describe("implemented application routes", () => {
     window.localStorage.removeItem("omnischool:more-layout:user-1");
     const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
     apiFetchMock.mockImplementation(async (endpoint: string) => {
-      const result = await original(endpoint);
-      if (endpoint.startsWith("/api/v1/screens/parent/home/")) {
-        return { ...(result as object), unread_notifications: 97, more_attention: { events: 3, diary: 1 } };
+      if (endpoint.startsWith("/api/v1/attention?")) {
+        return {
+          portal: "parent", generated_at: "2026-10-13T08:00:00.000Z",
+          summary: { total: 4, new: 1, action_required: 3, exceptions: 0, urgent: 0 },
+          modules: {
+            events: { total: 3, new: 0, action_required: 3, exceptions: 0, urgent: 0, href: "/parent/events", first_item_href: "/parent/events/event-1" },
+            diary: { total: 1, new: 1, action_required: 0, exceptions: 0, urgent: 0, href: "/parent/diary", first_item_href: "/parent/diary/item-1" },
+          },
+          items: [],
+        };
       }
-      return result;
+      return original(endpoint);
     });
     const view = render(<MemoryRouter initialEntries={["/parent/more"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("link", { name: "Open Events & activities, action needed" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open Diary, action needed" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Open Events & activities, 3 actions required" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Read Diary, 1 new diary" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Messages" })).toBeVisible();
     expect(view.container.querySelector(".more-grid--list")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Grid view" }));

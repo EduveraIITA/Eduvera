@@ -1,6 +1,6 @@
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowRight,
@@ -89,6 +89,7 @@ export function TeacherHomePage({
   date: string;
   onDateChange: (date: string) => void;
 }) {
+  const [searchParams] = useSearchParams();
   const dueClasses = data.classes.filter((item) =>
     item.can_mark !== false || item.submission_status === "submitted" || item.submission_status === "locked"
   );
@@ -221,7 +222,7 @@ export function TeacherHomePage({
             )}
           </div>
         </section> : null}
-        <FollowupInbox context="staff" hideWithoutOpenFollowups />
+        <FollowupInbox context="staff" initialFollowupId={searchParams.get("followup") ?? undefined} hideWithoutOpenFollowups />
       </div>
     </OperationsShell>
   );

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { MapPin, Pencil, UserRound, PackageCheck } from "lucide-react";
 import { timeLabel, type DayPeriod } from "./api";
 const statuses = {
@@ -11,17 +12,32 @@ export function DayPeriodList({
   periods,
   onEdit,
   showCoverage = true,
+  focusedPeriodId,
 }: {
   periods: DayPeriod[];
   onEdit?: (period: DayPeriod) => void;
   showCoverage?: boolean;
+  focusedPeriodId?: string;
 }) {
+  const focusRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (!focusedPeriodId || !periods.some((period) => period.id === focusedPeriodId)) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      focusRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedPeriodId, periods]);
   return (
     <ol className="day-period-list">
-      {periods.map((p) => (
-        <li
-          key={p.period_number}
-          className={p.cancelled ? "day-period is-cancelled" : "day-period"}
+      {periods.map((p) => {
+        const focused = p.id === focusedPeriodId;
+        return <li
+          key={p.id}
+          ref={focused ? focusRef : undefined}
+          id={focused ? `attention-day-period-${p.id}` : undefined}
+          tabIndex={focused ? -1 : undefined}
+          className={`${p.cancelled ? "day-period is-cancelled" : "day-period"}${focused ? " is-attention-target" : ""}`}
         >
           <div className="day-period-number">
             <span>P{p.period_number}</span>
@@ -73,8 +89,8 @@ export function DayPeriodList({
               <Pencil size={17} />
             </button>
           ) : null}
-        </li>
-      ))}
+        </li>;
+      })}
     </ol>
   );
 }

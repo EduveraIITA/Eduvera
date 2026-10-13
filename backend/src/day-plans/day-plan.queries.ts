@@ -83,6 +83,16 @@ export async function planOptions(
       db,
     )
   ).rows;
+  const scheduleSources = (
+    await sql<{ id:string; class_section_id:string; term_id:string; revision:number; starts_on:string; ends_on:string }>`
+      SELECT DISTINCT ON(version.class_section_id,version.term_id)
+        version.id,version.class_section_id,version.term_id,version.revision,version.starts_on,version.ends_on
+      FROM schedule_versions version
+      WHERE version.school_id=${schoolId}::uuid AND version.state='published'
+        AND ${date}::date BETWEEN version.starts_on AND version.ends_on
+      ORDER BY version.class_section_id,version.term_id,version.baseline ASC,version.starts_on DESC
+    `.execute(db)
+  ).rows;
   const subjects = await db
     .selectFrom("subjects")
     .select(["id", "name"])
@@ -94,6 +104,7 @@ export async function planOptions(
     teachers,
     subjects,
     schedule,
+    schedule_sources: scheduleSources,
     context: await dayContext(db, schoolId, date),
   };
 }
@@ -114,7 +125,19 @@ export async function teacherDay(
       db,
     )
   ).rows;
-  return { date, periods: rows, context: await dayContext(db, schoolId, date) };
+  const scheduleSources = (
+    await sql<{ id:string; class_section_id:string; term_id:string; revision:number; starts_on:string; ends_on:string }>`
+      SELECT DISTINCT ON(version.class_section_id,version.term_id)
+        version.id,version.class_section_id,version.term_id,version.revision,version.starts_on,version.ends_on
+      FROM schedule_versions version
+      JOIN schedule_periods period ON period.version_id=version.id
+      WHERE version.school_id=${schoolId}::uuid AND version.state='published'
+        AND ${date}::date BETWEEN version.starts_on AND version.ends_on
+        AND period.teacher_user_id=${user.id}::uuid
+      ORDER BY version.class_section_id,version.term_id,version.baseline ASC,version.starts_on DESC
+    `.execute(db)
+  ).rows;
+  return { date, periods: rows, schedule_sources: scheduleSources, context: await dayContext(db, schoolId, date) };
 }
 
 export async function teacherSummary(

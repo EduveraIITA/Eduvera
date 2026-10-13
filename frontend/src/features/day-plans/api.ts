@@ -47,6 +47,7 @@ export interface PlanOptions {
   teachers: Array<{ id: string; name: string }>;
   subjects: Array<{ id: string; name: string }>;
   schedule: Array<DayPeriod & { class_section_id: string }>;
+  schedule_sources?: Array<{ id: string; class_section_id: string; term_id: string; revision: number; starts_on: string; ends_on: string }>;
   context: DayContext;
 }
 export interface PlanVersion {
@@ -83,6 +84,14 @@ export interface DayPlan {
 export interface TeacherDay {
   date: string;
   context: DayContext;
+  schedule_sources?: Array<{
+    id: string;
+    class_section_id: string;
+    term_id: string;
+    revision: number;
+    starts_on: string;
+    ends_on: string;
+  }>;
   periods: Array<
     DayPeriod & {
       class_name: string;

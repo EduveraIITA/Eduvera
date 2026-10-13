@@ -130,6 +130,47 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     expect((await request(teacherCookies, staffPath(`leave-requests/${requestId}/withdraw`), { expected_revision: approved.data.revision })).status).toBe(409);
   });
 
+  it("records the configured fallback decision without claiming classroom delivery", async () => {
+    await pool.query("UPDATE schools SET timezone='UTC' WHERE id=$1",[schoolId]);
+    const tomorrow=new Date(Date.now()+86_400_000);
+    const dutyDate=tomorrow.toISOString().slice(0,10);
+    const startsAt="00:01:00";
+    const endsAt="00:45:00";
+    const historical=(await pool.query(`INSERT INTO staff_coverage_tasks(
+      school_id,leave_request_id,absent_staff_profile_id,duty_date,starts_at,ends_at,title,status
+    ) VALUES($1,$2,$3,current_date-1,'09:00','09:45','Historical mathematics','open') RETURNING id`,
+    [schoolId,requestId,profileId])).rows[0];
+    const upcoming=(await pool.query(`INSERT INTO staff_coverage_tasks(
+      school_id,leave_request_id,absent_staff_profile_id,duty_date,starts_at,ends_at,title,status
+    ) VALUES($1,$2,$3,$4,$5,$6,'Upcoming mathematics','open') RETURNING id`,
+    [schoolId,requestId,profileId,dutyDate,startsAt,endsAt])).rows[0];
+
+    const saved=await request(adminCookies,staffPath("coverage-policy"),{
+      enabled:true,deadline_minutes_before:1440,fallback_kind:"physical_activity",fallback_label:"Games period",
+      supervisor_staff_profile_id:replacementProfileId,expected_revision:0,
+    },"PATCH");
+    expect(saved.status).toBe(200);
+    expect(saved.data).toMatchObject({enabled:true,fallback_kind:"physical_activity",fallback_label:"Games period",revision:1});
+
+    const workspace=await request(adminCookies,staffPath("workspace"));
+    expect(workspace.data.coverage_policy).toMatchObject({enabled:true,deadline_minutes_before:1440,supervisor_staff_profile_id:replacementProfileId});
+    expect(workspace.data.coverage_tasks).toContainEqual(expect.objectContaining({
+      id:historical.id,status:"fallback_applied",fallback_kind:"physical_activity",fallback_label:"Games period",
+      fallback_supervisor_staff_profile_id:replacementProfileId,
+    }));
+    expect(workspace.data.coverage_tasks).toContainEqual(expect.objectContaining({
+      id:upcoming.id,status:"fallback_applied",fallback_kind:"physical_activity",fallback_label:"Games period",
+      fallback_supervisor_staff_profile_id:replacementProfileId,
+    }));
+    const audits=await pool.query("SELECT task_id,action,automated FROM staff_coverage_task_audits WHERE task_id=ANY($1::uuid[])",[ [historical.id,upcoming.id] ]);
+    expect(audits.rows).toEqual(expect.arrayContaining([
+      {task_id:historical.id,action:"fallback_applied",automated:true},
+      {task_id:upcoming.id,action:"fallback_applied",automated:true},
+    ]));
+    const decidedRequest=workspace.data.requests.find((item: {id:string})=>item.id===requestId);
+    expect(decidedRequest).toMatchObject({coverage_open:1,coverage_fallback:2,coverage_fallback_labels:"Games period"});
+  });
+
   it("offers scoped responsibilities and closes the leave coverage loop", async () => {
     const adminView = await request(adminCookies, staffPath("workspace"));
     const type = adminView.data.responsibility_types.find((item: { code: string }) => item.code === "school_duty");
@@ -142,7 +183,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const accepted = await request(teacherCookies, staffPath(`responsibilities/${offer.id}/response`), { decision: "accepted", note: "Confirmed", expected_revision: offer.revision });
     expect(accepted.data.status).toBe("active");
 
-    const task = adminView.data.coverage_tasks.find((item: { leave_request_id: string }) => item.leave_request_id === requestId);
+    const task = adminView.data.coverage_tasks.find((item: { leave_request_id: string; status:string }) => item.leave_request_id === requestId && item.status === "open");
     const offered = await request(adminCookies, staffPath(`coverage-tasks/${task.id}/assign`), { replacement_staff_profile_id: replacementProfileId, note: "Please cover period 1.", expected_revision: task.revision });
     expect(offered.data.status).toBe("offered");
     const replacementView = await request(replacementCookies, staffPath("workspace"));
@@ -150,6 +191,48 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     expect(coverOffer).toMatchObject({ status: "offered", title: "Mathematics" });
     const coverAccepted = await request(replacementCookies, staffPath(`coverage-tasks/${task.id}/response`), { decision: "accepted", note: "I have reviewed the handover.", expected_revision: coverOffer.revision });
     expect(coverAccepted.data.status).toBe("accepted");
+  });
+
+  it("withdraws offers when a linked profile leaves active service and preserves an exact revocation outcome", async () => {
+    const adminView = await request(adminCookies, staffPath("workspace"));
+    const type = adminView.data.responsibility_types.find((item: { code: string }) => item.code === "school_duty");
+    const created = await request(adminCookies, staffPath("responsibilities"), {
+      responsibility_type_id: type.id, staff_profile_id: profileId, class_section_id: null,
+      subject_id: null, event_id: null, scope_label: "Temporary gate review", location: "North gate",
+      starts_on: "2030-04-20", ends_on: "2030-04-20", starts_at: "08:00", ends_at: "08:30",
+      notes: "Transition-state authorization test.", backup_staff_profile_id: null,
+    });
+    expect(created.status).toBe(201);
+    const cover = (await pool.query(`INSERT INTO staff_coverage_tasks(
+      school_id,leave_request_id,absent_staff_profile_id,replacement_staff_profile_id,
+      duty_date,title,status,assigned_by,offered_at
+    ) VALUES($1,$2,$3,$4,'2030-04-20','Transition cover','offered',$5,now()) RETURNING id,revision`,
+    [schoolId,requestId,profileId,replacementProfileId,adminId])).rows[0];
+
+    await pool.query("UPDATE staff_profiles SET status='onboarding' WHERE id IN ($1,$2)",[profileId,replacementProfileId]);
+    const teacherWorkspace = await request(teacherCookies, staffPath("workspace"));
+    expect(teacherWorkspace.data.assignments.some((item:{id:string})=>item.id===created.data.id)).toBe(false);
+    const replacementWorkspace = await request(replacementCookies, staffPath("workspace"));
+    expect(replacementWorkspace.data.coverage_tasks.some((item:{id:string})=>item.id===cover.id)).toBe(false);
+    const teacherRequests = await request(teacherCookies, "requests/?portal=teacher");
+    expect(teacherRequests.data.items.some((item:{kind:string;source_id:string})=>item.kind==="responsibility_offer"&&item.source_id===created.data.id)).toBe(false);
+    const replacementRequests = await request(replacementCookies, "requests/?portal=teacher");
+    expect(replacementRequests.data.items.some((item:{kind:string;source_id:string})=>item.kind==="coverage_offer"&&item.source_id===cover.id)).toBe(false);
+    expect((await request(teacherCookies, staffPath(`responsibilities/${created.data.id}/response`), { decision:"accepted", note:"Confirmed", expected_revision:created.data.revision })).status).toBe(404);
+    expect((await request(replacementCookies, staffPath(`coverage-tasks/${cover.id}/response`), { decision:"accepted", note:"Confirmed cover", expected_revision:cover.revision })).status).toBe(404);
+
+    const revoked = await request(adminCookies, staffPath(`responsibilities/${created.data.id}/revoke`), { reason:"Profile moved back to onboarding.", expected_revision:created.data.revision });
+    expect(revoked.status).toBe(201);
+    const afterRevocation = await request(teacherCookies, staffPath("workspace"));
+    expect(afterRevocation.data.assignments).toContainEqual(expect.objectContaining({ id:created.data.id, status:"revoked", revocation_reason:"Profile moved back to onboarding." }));
+    const event = await pool.query("SELECT notification_payload FROM event_outbox WHERE aggregate_id=$1 AND event_type='staff.access.updated' ORDER BY created_at DESC LIMIT 1",[created.data.id]);
+    expect(event.rows[0]?.notification_payload).toMatchObject({
+      attention_source_kind:"responsibility_revocation", attention_source_revision:revoked.data.revision,
+      staff_link:`/teacher/responsibilities?assignment=${created.data.id}&assignment_revision=${revoked.data.revision}`,
+    });
+
+    await pool.query("UPDATE staff_profiles SET status='active' WHERE id IN ($1,$2)",[profileId,replacementProfileId]);
+    await pool.query("UPDATE staff_coverage_tasks SET status='cancelled' WHERE id=$1",[cover.id]);
   });
 
   it("writes leave state transitions to audit and the outbox", async () => {

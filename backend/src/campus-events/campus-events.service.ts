@@ -266,7 +266,12 @@ export class CampusEventsService {
     event: EventRow,
     changeKind: string,
     key: string,
-    notification?: { title: string; body: string; users: string[] },
+    notification?: {
+      title: string;
+      body: string;
+      users: string[];
+      metadata?: Record<string, unknown>;
+    },
     extra: Record<string, unknown> = {},
   ) {
     const audience = await this.audience(db, event.id, event.school_id);
@@ -280,7 +285,7 @@ export class CampusEventsService {
       payload: {
         event_id: event.id, revision: event.revision, change_kind: changeKind,
         ...extra,
-        refresh: ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications"],
+        refresh: ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications", "attention"],
       },
       notificationUserIds: notification?.users ?? [],
       notificationPayload: notification ? {
@@ -288,8 +293,59 @@ export class CampusEventsService {
         link: `/events/${event.id}`, student_link: `/student/events/${event.id}`,
         parent_link: `/parent/events/${event.id}`, staff_link: `/teacher/events/${event.id}`,
         admin_link: `/principal/events/${event.id}`, event_id: event.id,
+        ...notification.metadata,
       } : null,
     });
+  }
+
+  private async enqueueCancellationAttention(db: Db, event: EventRow, body: string): Promise<Set<string>> {
+    const recipients = (await sql<{ student_id: string; guardian_user_id: string }>`
+      SELECT DISTINCT participant.student_id,parent.user_id AS guardian_user_id
+      FROM campus_event_participants participant
+      JOIN guardian_relationships relationship ON relationship.school_id=participant.school_id
+        AND relationship.student_id=participant.student_id
+      JOIN parents parent ON parent.id=relationship.guardian_id
+      JOIN users account ON account.id=parent.user_id AND account.is_active
+      JOIN school_memberships membership ON membership.school_id=participant.school_id
+        AND membership.user_id=parent.user_id AND membership.role='guardian' AND membership.is_active
+      WHERE participant.school_id=${event.school_id}::uuid AND participant.event_id=${event.id}::uuid
+      ORDER BY participant.student_id,parent.user_id
+    `.execute(db)).rows;
+    for (const recipient of recipients) {
+      await this.events.enqueueUserEvent(db, {
+        schoolId: event.school_id,
+        eventType: "campus_event.updated",
+        aggregateType: "campus_event",
+        aggregateId: event.id,
+        audienceUserIds: [recipient.guardian_user_id],
+        idempotencyKey: `campus-event:${event.id}:cancelled:${event.revision}:${recipient.student_id}:${recipient.guardian_user_id}`,
+        payload: {
+          event_id: event.id,
+          student_id: recipient.student_id,
+          revision: event.revision,
+          change_kind: "cancelled",
+          refresh: ["campus-events", "parent.home", "notifications", "attention"],
+        },
+        notificationUserIds: [recipient.guardian_user_id],
+        notificationPayload: {
+          kind: "general",
+          title: `${event.title} cancelled`,
+          body,
+          parent_link: `/parent/events/${event.id}?student_id=${recipient.student_id}&focus=status&event_revision=${event.revision}`,
+          event_id: event.id,
+          student_id: recipient.student_id,
+          attention_eligible: true,
+          attention_portal: "parent",
+          attention_module: "events",
+          attention_source_kind: "event_cancellation",
+          attention_source_id: event.id,
+          attention_source_revision: event.revision,
+          attention_topic_key: `event-cancellation:${event.id}:${recipient.student_id}`,
+          attention_student_id: recipient.student_id,
+        },
+      });
+    }
+    return new Set(recipients.map((recipient) => recipient.guardian_user_id));
   }
 
   private async invalidateFutureConsentReadiness(
@@ -1255,10 +1311,25 @@ export class CampusEventsService {
       });
       const audience = await this.audience(db, event.id, event.school_id);
       const label = operation === "publish" ? "published" : operation === "cancel" ? "cancelled" : "completed";
+      const guardianCancellationRecipients = operation === "cancel"
+        ? await this.enqueueCancellationAttention(db, updated, (input as z.infer<typeof cancelEventSchema>).audience_notice)
+        : new Set<string>();
       await this.enqueue(db, updated, label, `campus-event:${event.id}:${label}:${updated.revision}`, {
-        users: audience, title: `${event.title} ${label}`, body: operation === "cancel"
+        users: audience.filter((userId) => !guardianCancellationRecipients.has(userId)), title: `${event.title} ${label}`, body: operation === "cancel"
           ? (input as z.infer<typeof cancelEventSchema>).audience_notice
           : `${event.title} has been ${label}.`,
+        ...(operation === "cancel" ? {
+          metadata: {
+            staff_link: `/teacher/events/${event.id}?focus=status&event_revision=${updated.revision}`,
+            admin_link: `/principal/events/${event.id}?focus=status&event_revision=${updated.revision}`,
+            attention_eligible: true,
+            attention_module: "events",
+            attention_source_kind: "event_cancellation",
+            attention_source_id: event.id,
+            attention_source_revision: updated.revision,
+            attention_topic_key: `event-cancellation:${event.id}`,
+          },
+        } : {}),
       });
       const result = await this.dto(db, req.authUser, updated, actor);
       await this.saveCommand(db, input.school_id, req.authUser.id, input.idempotency_key, operation, requestHash, result);

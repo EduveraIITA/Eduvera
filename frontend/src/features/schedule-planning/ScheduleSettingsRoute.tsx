@@ -18,10 +18,13 @@ export function ScheduleSettingsRoute() {
   const [calendar,setCalendar]=useState(false);
   const [subject,setSubject]=useState<string|null>(null);
   const termId=params.get('term')??undefined;
-  const section=params.get('settings')??'home';
+  const versionId=params.get('version')??undefined;
+  const periodId=params.get('period')??undefined;
+  const section=params.get('settings')??(periodId?'pattern':'home');
   const query=useQuery({queryKey:['principal-timetable','settings',termId],queryFn:()=>getScheduleSettings(termId)});
   const data=query.data;
-  const selectedClass=data?.classes.find(c=>c.id===params.get('class'))??data?.classes[0];
+  const requestedVersion=data?.versions.find(version=>version.id===versionId);
+  const selectedClass=data?.classes.find(c=>c.id===(requestedVersion?.class_section_id??params.get('class')))??data?.classes[0];
   const term=data?.terms.find(t=>t.id===data.selected_term_id);
   const targetSubject=data?.subjects.find(s=>s.id===subject);
   const targetCoverage=data?.coverage.find(c=>c.class_section_id===selectedClass?.id&&c.subject_id===subject);
@@ -50,7 +53,7 @@ export function ScheduleSettingsRoute() {
           </div>
           <h2>Class timetables</h2>
           <div className="schedule-settings__group">{data.classes.map(c=>{const draft=data.versions.find(v=>v.class_section_id===c.id&&v.state==='draft');const scheduled=data.versions.filter(v=>v.class_section_id===c.id&&v.state==='published'&&!v.baseline&&v.ends_on>=data.school_date);return <button key={c.id} className="schedule-settings__row" onClick={()=>{const p=new URLSearchParams(params);p.set('class',c.id);p.set('settings','pattern');setParams(p);window.scrollTo({top:0});}}><span><strong>{c.name}</strong><small>{draft?'Draft in progress':scheduled.length?`${scheduled.length} published arrangement${scheduled.length===1?'':'s'}`:data.slots.some(s=>s.class_section_id===c.id)?'Existing repeating timetable':'Not prepared'}</small></span><ChevronRight size={20}/></button>;})}{!data.classes.length?<p className="schedule-settings__hint">No classes in this year. Reuse classes when preparing a year, or add them in school records.</p>:null}</div>
-        </>:section==='coverage'?<><label className="schedule-settings__select">Class<select value={selectedClass?.id??''} onChange={e=>{const p=new URLSearchParams(params);p.set('class',e.target.value);setParams(p);setSubject(null);}}>{data.classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><TimetableCoverage rows={data.coverage.filter(c=>c.class_section_id===selectedClass?.id)} subjects={data.subjects} onSelect={setSubject}/></>:selectedClass&&term?<TimetableDraft key={`${term.id}:${selectedClass.id}`} data={data} selectedClass={selectedClass} refresh={refresh}/>:<p>No class selected.</p>}
+        </>:section==='coverage'?<><label className="schedule-settings__select">Class<select value={selectedClass?.id??''} onChange={e=>{const p=new URLSearchParams(params);p.set('class',e.target.value);p.delete('version');p.delete('period');setParams(p);setSubject(null);}}>{data.classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><TimetableCoverage rows={data.coverage.filter(c=>c.class_section_id===selectedClass?.id)} subjects={data.subjects} onSelect={setSubject}/></>:versionId&&!requestedVersion?<section className="timetable-builder__empty-page"><p role="alert">This timetable draft is no longer available.</p><Link to={home}>Open current schedules</Link></section>:selectedClass&&term?<TimetableDraft key={`${term.id}:${selectedClass.id}`} data={data} selectedClass={selectedClass} refresh={refresh} focusVersionId={versionId} focusPeriodId={periodId} focusDay={params.get('day')}/>:<section className="timetable-builder__empty-page"><p role={periodId?'alert':undefined}>{periodId?'This linked class or timetable period is no longer available.':'No class selected.'}</p>{periodId?<Link to={home}>Open current schedules</Link>:null}</section>}
         <Link className="schedule-settings__daily" to={`/principal/timetable?${dailyParams}`}>View day schedule <ChevronRight size={17}/></Link>
       </>}
       {calendar&&term?<SchoolCalendarSheet term={term} schoolDate={data.school_date} exceptions={data.calendar_exceptions} onClose={()=>setCalendar(false)} onCreate={async input=>{await createSchoolClosure(input);await refresh();}} onDelete={async(date,revision,reason)=>{await deleteSchoolClosure(date,revision,reason);await refresh();}}/>:null}

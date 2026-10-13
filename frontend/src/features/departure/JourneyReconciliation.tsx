@@ -1,18 +1,22 @@
 import { useMutation,useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect,useRef,useState } from "react";
 import { closeManagedJourney,reconcileJourneyRider,type JourneyDetail } from "./api";
 
-export function JourneyReconciliation({schoolId,data}:{schoolId:string;data:JourneyDetail}) {
-  const client=useQueryClient();const [open,setOpen]=useState(false);const [error,setError]=useState("");
+export function JourneyReconciliation({schoolId,data,focused=false}:{schoolId:string;data:JourneyDetail;focused?:boolean}) {
+  const client=useQueryClient();const [open,setOpen]=useState(focused);const [error,setError]=useState("");const panelRef=useRef<HTMLElement>(null);
   const {trip,roster}=data;const unresolved=roster.filter(rider=>["expected","boarded","exception"].includes(rider.state));
   const [studentId,setStudentId]=useState(unresolved[0]?.student_id??"");
   const [note,setNote]=useState("");
   const selected=unresolved.find(rider=>rider.student_id===studentId)??unresolved[0];
   const mutation=useMutation({mutationFn:async(action:()=>Promise<unknown>)=>action(),onSuccess:async()=>{setNote("");setError("");await client.invalidateQueries({queryKey:["departure"]});},onError:cause=>{setError(cause instanceof Error?cause.message:"The record could not be saved.");void client.invalidateQueries({queryKey:["departure"]});}});
-  if(["completed","cancelled"].includes(trip.state)) return null;
+  useEffect(()=>{if(!focused)return;const frame=window.requestAnimationFrame(()=>{panelRef.current?.scrollIntoView?.({behavior:"smooth",block:"center"});panelRef.current?.focus({preventScroll:true});});return()=>window.cancelAnimationFrame(frame);},[focused]);
+  if(["completed","cancelled"].includes(trip.state)) return focused ? <section ref={panelRef} id="attention-journey-reconciliation" aria-labelledby="journey-reconciliation-heading" tabIndex={-1} className="departure-panel is-attention-target">
+    <header><h2 id="journey-reconciliation-heading">School review</h2><span className={`departure-state departure-state--${trip.state}`}>{trip.state}</span></header>
+    <p className="departure-span">This journey is {trip.state}. No rider outcomes need review.</p>
+  </section> : null;
   const canCancel=["planned","boarding"].includes(trip.state)&&!roster.some(rider=>["boarded","exception"].includes(rider.state));
   const canClose=trip.state==="in_progress"&&!unresolved.length;
-  return <section className="departure-panel"><header><h2>School review</h2><button type="button" onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?"Close review":"Review outcomes"}</button></header>
+  return <section ref={panelRef} id="attention-journey-reconciliation" aria-labelledby="journey-reconciliation-heading" tabIndex={focused?-1:undefined} className={`departure-panel${focused?" is-attention-target":""}`}><header><h2 id="journey-reconciliation-heading">School review</h2><button type="button" onClick={()=>setOpen(value=>!value)} aria-expanded={open}>{open?"Close review":"Review outcomes"}</button></header>
     {open?<form className="departure-form" onSubmit={event=>{event.preventDefault();if(!selected)return;const form=new FormData(event.currentTarget);mutation.mutate(()=>reconcileJourneyRider(schoolId,trip.id,selected.student_id,{state:form.get("outcome"),expected_revision:selected.revision,note}));}}>
       <p className="departure-span">Confirm the facts with the attendant and school before correcting a missing outcome. This does not record new boarding or replace a completed handover.</p>
       {selected&&["boarding","in_progress"].includes(trip.state)?<>

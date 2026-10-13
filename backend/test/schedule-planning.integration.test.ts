@@ -92,7 +92,7 @@ describe('annual scheduling',()=>{
     expect(await assigned(date)).toBe(true);expect(await assigned(add(date,7))).toBe(false);
     await expect(pool.query("UPDATE schedule_periods SET title='Overwrite' WHERE version_id=$1",[v.id])).rejects.toThrow('Only draft');
     await expect(pool.query('DELETE FROM schedule_versions WHERE id=$1',[v.id])).rejects.toThrow();
-    expect((await pool.query("SELECT * FROM notifications WHERE dedupe_key=$1",[`schedule:${v.id}:${teacher}`])).rowCount).toBe(1);
+    expect((await pool.query("SELECT * FROM notifications WHERE dedupe_key=$1",[`schedule:${v.id}:${teacher}:teacher:school`])).rowCount).toBe(1);
   });
   it('prepares future terms/classes and reviewable drafts without copying enrollments',async()=>{
     const sourceYear=(await pool.query('SELECT academic_year FROM academic_terms WHERE id=$1',[term])).rows[0].academic_year;
@@ -105,7 +105,7 @@ describe('annual scheduling',()=>{
     expect((await pool.query('SELECT * FROM schedule_versions WHERE term_id=$1 AND state=\'published\'',[result.term_id])).rowCount).toBe(0);
   });
   it('projects assessment dates without marks and enforces family scope',async()=>{
-    const assessments=new AssessmentsService(db);
+    const assessments=new AssessmentsService(db,new SchoolEventService(db));
     const cycle=(await pool.query("INSERT INTO assessment_cycles(school_id,term_id,name,code,starts_on,ends_on,created_by,updated_by) VALUES($1,$2,'Calendar test',$3,$4,$5,$6,$6) RETURNING id",[school,term,randomUUID().slice(0,12),from,to,req.authUser.id])).rows[0].id;
     const subject=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,$2,'Calendar test subject','Calendar') RETURNING id",[school,'CAL-'+randomUUID().slice(0,8)])).rows[0].id;
     await pool.query("INSERT INTO assessments(school_id,cycle_id,class_section_id,subject_id,title,assessment_kind,maximum_marks,scheduled_at,status,created_by,updated_by) VALUES($1,$2,$3,$4,'Calendar test','exam',100,$5,'scheduled',$6,$6)",[school,cycle,classId,subject,from+'T12:00:00Z',req.authUser.id]);

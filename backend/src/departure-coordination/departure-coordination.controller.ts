@@ -8,7 +8,7 @@ export class DepartureCoordinationController {
   constructor(private readonly service: DepartureCoordinationService) {}
 
   @Get("family/")
-  family(@Req() req:AuthenticatedRequest,@Query("student_id") studentId?:string,@Query("date") date?:string) { return this.service.family(req.authUser,studentId,date); }
+  family(@Req() req:AuthenticatedRequest,@Query("student_id") studentId?:string,@Query("date") date?:string,@Query("request_id") requestId?:string) { return this.service.family(req.authUser,studentId,date,false,requestId); }
 
   @Get("student/")
   student(@Req() req:AuthenticatedRequest,@Query("date") date?:string) { return this.service.family(req.authUser,undefined,date,true); }
@@ -21,7 +21,7 @@ export class DepartureCoordinationController {
 
   @Get("schools/:schoolId/workspace/")
   @RequirePermission("departure.manage")
-  workspace(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string) { return this.service.workspace(req.authUser,schoolId); }
+  workspace(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Query("plan_id") planId?:string,@Query("trip_id") tripId?:string) { return this.service.workspace(req.authUser,schoolId,planId,tripId); }
 
   @Patch("schools/:schoolId/policy/")
   @RequirePermission("departure.manage")
@@ -102,7 +102,7 @@ export class DepartureCoordinationController {
   @Get("collector/")
   // This inbox also includes cover invitations for staff without a trip yet.
   // The service limits reads to active staff and writes retain resource checks.
-  collector(@Req() req:AuthenticatedRequest) { return this.service.collectorWorkspace(req.authUser); }
+  collector(@Req() req:AuthenticatedRequest,@Query("swap") swapId?:string) { return this.service.collectorWorkspace(req.authUser,swapId); }
 
   @Post("collector/duty-swaps/")
   @RequirePermission("departure.collect")

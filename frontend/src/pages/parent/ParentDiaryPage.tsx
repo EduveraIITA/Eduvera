@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Backpack,
   BookOpenCheck,
@@ -29,6 +29,7 @@ export interface ParentDiaryPageProps {
   onAcknowledge?: (dayId: string) => ParentPageAction;
   onSendNote?: (body: string) => ParentPageAction;
   onOpenAttachment?: (entryId: string) => ParentPageAction;
+  focusEntryId?: string;
 }
 
 type AsyncState = "idle" | "pending" | "success" | "error";
@@ -52,6 +53,7 @@ export function ParentDiaryPage({
   onAcknowledge,
   onSendNote,
   onOpenAttachment,
+  focusEntryId,
 }: ParentDiaryPageProps) {
   const packingStorageKey = `omnischool:packing:${data.child.id}:${data.selectedDayId}`;
   const [selectedDayId, setSelectedDayId] = useState(data.selectedDayId);
@@ -68,6 +70,15 @@ export function ParentDiaryPage({
   const [signatureState, setSignatureState] = useState<AsyncState>(data.isAcknowledged ? "success" : "idle");
   const [note, setNote] = useState("");
   const [noteState, setNoteState] = useState<AsyncState>("idle");
+  useEffect(() => {
+    if (!focusEntryId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`attention-diary-${focusEntryId}`);
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusEntryId, data.diaryEntries.length]);
 
   const packedCount = useMemo(() => Object.values(packed).filter(Boolean).length, [packed]);
   const preferredSchedulePreview = data.schedule.filter((period) => period.period === 4 || period.period === 7);
@@ -203,7 +214,7 @@ export function ParentDiaryPage({
           </div>
           <div className="teacher-note-list">
             {data.diaryEntries.length === 0 ? <div className="surface-card parent-empty-state"><BookOpenCheck size={21} /><div><strong>No diary entries</strong><span>Teachers have not published notes for this date.</span></div></div> : data.diaryEntries.map((entry) => (
-              <article className="surface-card teacher-note" key={entry.id}>
+              <article id={`attention-diary-${entry.id}`} tabIndex={entry.id === focusEntryId ? -1 : undefined} className={`surface-card teacher-note${entry.id === focusEntryId ? " is-attention-target" : ""}`} key={entry.id}>
                 <div className="teacher-note__title"><h3><i className={`note-dot note-dot--${entry.tone}`} />{entry.subject}</h3><span className={`note-kind note-kind--${entry.tone}`}>{entry.kind}</span></div>
                 <p>{entry.body}</p>
                 <div className="teacher-note__meta"><span><UserRound size={14} />{entry.author}{entry.timeLabel ? ` - ${entry.timeLabel}` : ""}</span>{entry.verified ? <strong><CheckCircle2 size={14} />Verified</strong> : null}</div>

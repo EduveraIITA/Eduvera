@@ -63,7 +63,7 @@
   gap: 7px;
 }
 
-.notification-panel__list > button {
+.notification-panel__list > .notification-panel__item {
   position: relative;
   display: grid;
   width: 100%;
@@ -79,15 +79,33 @@
   text-align: left;
 }
 
-.notification-panel__list > button:hover { background: var(--edura-surface-soft); }
-.notification-panel__list > button.is-unread { background: var(--edura-brand-soft); }
-.notification-panel__list > button.is-unread:hover { background: var(--edura-surface-strong); }
-.notification-panel__list > button:disabled { opacity: 0.65; }
-.notification-panel__list > button > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; }
+.notification-panel__list > .notification-panel__item:hover { background: var(--edura-surface-soft); }
+.notification-panel__list > .notification-panel__item.is-unread { background: var(--edura-brand-soft); }
+.notification-panel__list > .notification-panel__item.is-unread:hover { background: var(--edura-surface-strong); }
+.notification-panel__list > .notification-panel__item:disabled { opacity: 0.65; }
+.notification-panel__list > .notification-panel__item > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; }
 .notification-panel__list strong { color: var(--edura-ink); font-size: 11px; font-weight: 800; line-height: 1.35; }
 .notification-panel__list small { display: -webkit-box; margin-top: 2px; overflow: hidden; color: var(--edura-ink-muted); font-size: 11px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .notification-panel__list time { margin-top: 4px; color: var(--edura-ink-muted); font-size: 11px; font-weight: 600; }
-.notification-panel__list > button > i { position: absolute; top: 14px; right: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--edura-brand-bright); }
+.notification-panel__list > .notification-panel__item > i { position: absolute; top: 14px; right: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--edura-brand-bright); }
+
+.notification-panel__more {
+  display: inline-flex;
+  min-height: 38px;
+  margin: 1px 4px 3px;
+  padding: 8px 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--edura-radius-control);
+  color: var(--edura-brand);
+  background: var(--edura-surface-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+.notification-panel__more:hover { background: var(--edura-brand-soft); }
+.notification-panel__more:disabled { opacity: 0.62; }
+.notification-panel__more--error { color: var(--edura-danger); background: var(--edura-danger-soft); }
 
 .notification-panel__icon {
   display: grid;

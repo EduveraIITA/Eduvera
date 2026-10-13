@@ -10,9 +10,10 @@ const manualChannels: Array<{ id: Exclude<NoticeChannel, "app">; label: string }
   { id: "phone", label: "Phone" }, { id: "paper", label: "Paper" }, { id: "sms", label: "SMS" }, { id: "in_person", label: "In person" },
 ];
 
-export function NoticeRecipientRow({ notice, recipient, onSaved }: { notice: NoticeDetail; recipient: NoticeRecipient; onSaved: () => Promise<unknown> }) {
+export function NoticeRecipientRow({ notice, recipient, onSaved, defaultOpen = false }: { notice: NoticeDetail; recipient: NoticeRecipient; onSaved: () => Promise<unknown>; defaultOpen?: boolean }) {
   const [channel, setChannel] = useState<Exclude<NoticeChannel, "app">>("phone");
   const [choice, setChoice] = useState(""); const [note, setNote] = useState("");
+  const [renderedAt] = useState(Date.now);
   const responseKey = useRef(noticeCommandKey()); const deliveryKey = useRef(noticeCommandKey());
   const response = useMutation({ mutationFn: () => recordAssistedNoticeResponse(notice.id, {
     recipient_id: recipient.id, expected_revision: recipient.revision, response_value: notice.response_mode === "choice" ? choice : undefined,
@@ -22,11 +23,18 @@ export function NoticeRecipientRow({ notice, recipient, onSaved }: { notice: Not
     recipient_id: recipient.id, channel, status: "delivered", note: note.trim(), attempted_at: new Date().toISOString(),
   }, deliveryKey.current), onSuccess: async () => { await onSaved(); } });
   const latest = recipient.deliveries[0];
+  const overdue = !recipient.responded_at && notice.response_mode !== "information" && Boolean(notice.due_at && new Date(notice.due_at).getTime() < renderedAt);
+  const stateLabel = recipient.responded_at ? recipient.response_value
+    : latest?.status === "failed" ? "Delivery failed · follow up"
+      : overdue ? "Response overdue"
+        : notice.response_mode !== "information" ? "Awaiting response"
+          : !recipient.opened_at ? "Delivered · not opened"
+            : latest ? `${latest.channel} ${latest.status}` : "No delivery recorded";
   const mutationError = response.error ?? delivery.error;
-  return <details className="notice-recipient">
+  return <details className="notice-recipient" open={defaultOpen || undefined}>
     <summary>
       <span className={`notice-recipient__status ${recipient.responded_at ? "is-done" : latest?.status === "failed" ? "is-failed" : ""}`} aria-hidden="true">{recipient.responded_at ? <CheckCircle2 size={17} /> : latest?.status === "failed" ? <TriangleAlert size={17} /> : <span />}</span>
-      <span><strong>{recipient.recipient_name}</strong><small>{recipient.student_name ? `${recipient.student_name} · ` : ""}{recipient.responded_at ? recipient.response_value : latest ? `${latest.channel} ${latest.status}` : "No delivery recorded"}</small></span>
+      <span><strong>{recipient.recipient_name}</strong><small>{recipient.student_name ? `${recipient.student_name} · ` : ""}{stateLabel}</small></span>
       <ChevronDown size={17} aria-hidden="true" />
     </summary>
     <div className="notice-recipient__detail">

@@ -193,6 +193,13 @@
   scroll-snap-stop: always;
 }
 
+.result-gallery__slide.attention-focus > .marksheet,
+.result-gallery__slide.attention-focus > .assessment-marksheet {
+  border-color: color-mix(in srgb, var(--edura-brand) 48%, #d6e0ee);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--edura-brand) 10%, transparent), 0 10px 28px rgba(27, 59, 117, .07);
+}
+
 .result-gallery__slide:only-child {
   flex-basis: 100%;
 }

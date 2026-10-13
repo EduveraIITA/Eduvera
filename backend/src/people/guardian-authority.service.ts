@@ -13,7 +13,7 @@ const commandSchema = z.object({school_id:z.string().uuid(),expected_revision:z.
 }).strict().refine(v=>!v.enabled||Boolean(v.valid_from),"A grant needs a start date.")
   .refine(v=>!v.valid_until||!v.valid_from||v.valid_until>=v.valid_from,"End date must not precede the start date.")
   .refine(v=>v.enabled||(!v.valid_from&&!v.valid_until),"Revocation takes effect immediately; omit grant dates.");
-type AuthorityRow = {id:string;student_id:string;guardian_id:string;student_name:string;guardian_name:string;
+type AuthorityRow = {id:string;student_id:string;guardian_id:string;guardian_user_id:string;student_name:string;guardian_name:string;
   revision:number;enabled:boolean;valid_from:string|null;valid_until:string|null;effective:boolean;source:string;today:string};
 
 @Injectable()
@@ -28,12 +28,13 @@ export class GuardianAuthorityService {
   }
 
   private async row(db:Db,schoolId:string,id:string,lock=false){
-    const row=(await sql<AuthorityRow>`SELECT g.id,g.student_id,g.guardian_id,g.authority_revision AS revision,
+    const row=(await sql<AuthorityRow>`SELECT g.id,g.student_id,g.guardian_id,parent.user_id AS guardian_user_id,g.authority_revision AS revision,
       g.can_authorize_leave AS enabled,g.leave_valid_from::text AS valid_from,g.leave_valid_until::text AS valid_until,
       g.authority_source AS source,concat_ws(' ',sp.first_name,sp.last_name) AS student_name,
       concat_ws(' ',gp.first_name,gp.last_name) AS guardian_name,(clock_timestamp() AT TIME ZONE sc.timezone)::date::text AS today,
       guardian_may_sign_leave(g,(clock_timestamp() AT TIME ZONE sc.timezone)::date) AS effective
       FROM guardian_relationships g JOIN students s ON s.id=g.student_id JOIN schools sc ON sc.id=g.school_id
+      JOIN parents parent ON parent.id=g.guardian_id
       JOIN school_people sp ON sp.id=s.person_id
       JOIN guardian_school_profiles profile ON profile.school_id=g.school_id AND profile.guardian_id=g.guardian_id
       JOIN school_people gp ON gp.id=profile.person_id
@@ -87,7 +88,13 @@ export class GuardianAuthorityService {
           (m.role='student' AND EXISTS(SELECT 1 FROM students s WHERE s.id=${current.student_id}::uuid AND s.user_id=m.user_id)))`.execute(db)).rows.map(r=>r.user_id);
       await this.events.enqueueUserEvent(db,{schoolId:input.school_id,eventType:"people.updated",aggregateType:"student",aggregateId:current.student_id,
         audienceUserIds:audience,idempotencyKey:`guardian-authority:${command.id}`,payload:{student_id:current.student_id,revision:result.revision,
-          refresh:["people","parent.home","parent.leave","student.leave"]}});
+          authority_change_id:command.id,refresh:["people","parent.home","parent.leave","student.leave","notifications","attention"]},
+        notificationUserIds:[current.guardian_user_id],notificationPayload:{kind:"general",title:"Leave-signing access updated",
+          body:result.enabled?"Your leave-signing access has been updated.":"Your leave-signing access has been removed.",
+          parent_link:`/parent/leave?student_id=${current.student_id}&tab=apply&authority_change_id=${command.id}&authority_revision=${result.revision}`,
+          attention_eligible:true,attention_portal:"parent",attention_module:"leave",attention_source_kind:"guardian_leave_authority",
+          attention_source_id:command.id,attention_source_revision:result.revision,
+          attention_topic_key:`guardian-authority:${id}`,attention_student_id:current.student_id}});
       return receipt;
     });
   }

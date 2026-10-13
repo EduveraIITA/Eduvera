@@ -50,6 +50,7 @@ export interface ApiSubjectAttendance {
 
 export interface ApiAttendanceRecord {
   id: string;
+  revision: number;
   date: string;
   status: "present" | "absent" | "late" | "excused" | "half_day";
   check_in_at: string | null;
@@ -65,6 +66,7 @@ export interface ApiGateEvent {
 }
 
 export interface ApiSchoolCalendarDay {
+  id: string;
   date: string;
   is_instructional: boolean;
   label: string;
@@ -103,6 +105,8 @@ export interface ApiLeaveAudit {
   id: string;
   action: string;
   action_label: string;
+  from_status?: string;
+  to_status?: string;
   note: string;
   actor_name: string;
   created_at: string;
@@ -111,6 +115,16 @@ export interface ApiLeaveAudit {
 export interface ApiLeaveRequest {
   id: string;
   student_id: string;
+  term_id?: string;
+  student?: {
+    id: string;
+    name: string;
+    display_name: string;
+    admission_number: string;
+    avatar_url: string | null;
+    class_name: string | null;
+  };
+  class_name?: string | null;
   category: "medical" | "family" | "travel" | "personal";
   category_label: string;
   starts_on: string;
@@ -127,6 +141,8 @@ export interface ApiLeaveRequest {
   decided_at: string | null;
   documents: ApiLeaveDocument[];
   audit_log: ApiLeaveAudit[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ApiDiaryItem {
@@ -229,6 +245,17 @@ export interface ParentLeaveRouteResponse {
   constraints?: LeaveConstraints;
 }
 
+export interface ParentLeaveAuthorityResponse {
+  student_id: string;
+  relationship_id: string;
+  revision: number;
+  enabled: boolean;
+  effective: boolean;
+  valid_from: string | null;
+  valid_until: string | null;
+  latest_change_id: string | null;
+}
+
 export interface ApiAttendanceRanking {
   published: boolean;
   as_of: string;
@@ -280,6 +307,7 @@ export interface StudentEligibilityResponse {
 
 export interface StudentTimetableResponse {
   day_plan?:PublishedDayNotice|null;
+  schedule_source?: { id: string; revision: number; starts_on: string; ends_on: string } | null;
   student: ApiStudent;
   mode: "day" | "week";
   selected_date: string;
@@ -379,15 +407,23 @@ export function getParentDiary(date?: string, studentId?: string) {
 }
 
 export async function getParentLeave(leaveId?: string, studentId?: string): Promise<ParentLeaveRouteResponse> {
-  const [home, requests] = await Promise.all([
+  const [home, requests, exactRequest] = await Promise.all([
     getParentHome(studentId),
     apiFetch<{ results: ApiLeaveRequest[] }>(withQuery("/api/v1/leave-requests/", { student_id: studentId })),
+    leaveId ? getLeaveRequest(leaveId) : Promise.resolve(undefined),
   ]);
-  const pendingRequests = requests.results.filter((item) => item.status === "pending_guardian");
+  const scopedExact = exactRequest?.student_id === home.student.id ? exactRequest : undefined;
+  const allRequests = scopedExact && !requests.results.some((item) => item.id === scopedExact.id)
+    ? [scopedExact, ...requests.results]
+    : requests.results;
+  const pendingRequests = allRequests.filter((item) => item.status === "pending_guardian");
+  const requested = leaveId ? allRequests.find((item) => item.id === leaveId) : undefined;
   const pending = leaveId
-    ? pendingRequests.find((item) => item.id === leaveId)
+    ? requested?.status === "pending_guardian" ? requested : undefined
     : pendingRequests.find((item) => item.id === home.action_required?.id) ?? pendingRequests[0];
-  const history = requests.results.filter((item) => item.status !== "pending_guardian");
+  const history = allRequests
+    .filter((item) => item.status !== "pending_guardian")
+    .sort((left, right) => left.id === leaveId ? -1 : right.id === leaveId ? 1 : 0);
   if (!pending) {
     return {
       student: home.student,
@@ -404,11 +440,22 @@ export async function getParentLeave(leaveId?: string, studentId?: string): Prom
       student: screen.student,
       request: null,
       can_authorize: false,
-      history: requests.results.filter((item) => item.id !== screen.request.id),
+      history: allRequests.filter((item) => item.id !== screen.request.id),
       constraints: screen.constraints,
     };
   }
   return { ...screen, history };
+}
+
+export const getParentLeaveAuthority = (studentId?: string) =>
+  apiFetch<ParentLeaveAuthorityResponse>(withQuery("/api/v1/screens/parent/leave-authority/", { student_id: studentId }));
+
+export function getSchoolLeaveRequests(status?: string) {
+  return apiFetch<{ results: ApiLeaveRequest[] }>(withQuery("/api/v1/leave-requests/", { status }));
+}
+
+export function getLeaveRequest(leaveId: string) {
+  return apiFetch<ApiLeaveRequest>(`/api/v1/leave-requests/${encodeURIComponent(leaveId)}/`);
 }
 
 export function getStudentAttendance() {
@@ -593,7 +640,7 @@ export function getStudentLeaveApply() {
 
 export async function performLeaveAction(
   leaveId: string,
-  action: "authorize" | "clarify" | "decline" | "withdraw",
+  action: "authorize" | "clarify" | "decline" | "withdraw" | "approve" | "reject",
   note = "",
 ) {
   return apiFetch<ApiLeaveRequest>(`/api/v1/leave-requests/${leaveId}/${action}/`, {

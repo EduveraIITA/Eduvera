@@ -1,4 +1,5 @@
 .staff-page { display: grid; width: min(100%, 1100px); margin: 0 auto; gap: 18px; }
+.staff-leave-layout { display: grid; gap: 18px; }
 .staff-page button, .staff-page input, .staff-page select, .staff-page textarea { font: inherit; }
 .staff-hero { position: relative; isolation: isolate; overflow: hidden; display: flex; min-height: 190px; padding: 28px 30px; align-items: flex-end; justify-content: space-between; gap: 28px; border-radius: 30px; color: #fff; background: radial-gradient(circle at 90% -20%, rgba(104, 232, 217, .35), transparent 38%), linear-gradient(132deg, #0646c8, #2f70ee); box-shadow: 0 18px 44px rgba(20, 75, 190, .2); }
 .staff-hero::after { position: absolute; z-index: -1; right: -72px; bottom: -180px; width: 330px; height: 330px; border: 44px solid rgba(255,255,255,.07); border-radius: 50%; content: ""; }
@@ -121,6 +122,7 @@
 .staff-adjust-form button { grid-column: 1/-1; justify-self: start; }
 .staff-error { margin: 0 20px 18px; padding: 12px 14px; border-radius: 12px; color: #a62434; background: #ffe8e8; font-size: 12px; }
 .staff-empty { padding: 26px; color: #737d90; text-align: center; }
+.staff-empty--compact { display: flex; min-height: 52px; padding: 10px 4px; align-items: center; justify-content: center; gap: 7px; }
 .staff-modal { position: fixed; z-index: 80; inset: 0; display: grid; padding: 22px; place-items: center; overflow: auto; background: rgba(10,25,52,.58); backdrop-filter: blur(10px); }
 .staff-modal > section { width: min(100%, 650px); max-height: calc(100dvh - 44px); overflow: auto; border-radius: 25px; background: #fff; box-shadow: 0 30px 80px rgba(0,0,0,.25); }
 .staff-modal > section > header { display: flex; padding: 22px 24px; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e8ecf3; }
@@ -153,6 +155,18 @@
 .staff-decision { display: grid; margin-top: 14px; grid-template-columns: 1fr auto auto; gap: 8px; }
 .staff-decision input { min-height: 42px; }
 .staff-danger { color: #ad2737; }
+.staff-request--decided { overflow: hidden; padding: 0; background: #fbfcff; }
+.staff-request--decided > summary { display: grid; min-height: 72px; padding: 12px 14px; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 11px; cursor: pointer; list-style: none; }
+.staff-request--decided > summary::-webkit-details-marker { display: none; }
+.staff-request--decided > summary:focus-visible { outline: 3px solid rgba(37,99,220,.18); outline-offset: -3px; }
+.staff-request__summary-copy { min-width: 0; }
+.staff-request__summary-copy strong, .staff-request__summary-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.staff-request__summary-copy small { margin-top: 3px; color: #768093; font-size: 10px; }
+.staff-request--decided > summary > svg { color: #778195; transition: transform .18s ease; }
+.staff-request--decided[open] > summary > svg { transform: rotate(90deg); }
+.staff-request__decision-details { padding: 0 14px 15px 67px; border-top: 1px solid #edf0f5; }
+.staff-request__decision-details .staff-impact { margin-top: 12px; }
+.staff-request__decision-details > p { margin: 12px 0 0; color: #4e596c; font-size: 12px; }
 .staff-policy-list { display: grid; padding: 0 20px 20px; gap: 9px; }
 .staff-policy-list > button { display: grid; min-height: 74px; padding: 13px; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; border: 1px solid #e1e6f0; border-radius: 16px; color: inherit; background: #fff; text-align: left; cursor: pointer; }
 .staff-policy-list > button:hover { background: #f6f8fc; }
@@ -161,6 +175,18 @@
 .staff-policy-list small { color: #747e91; font-size: 10px; }
 .staff-policy-list b { color: #0d49ba; font-size: 18px; text-align: right; }
 .staff-policy-list b small { font-size: 8px; }
+.staff-cover-policy { display: grid; margin: 0 20px 18px; overflow: hidden; border: 1px solid #dce3ee; border-radius: 18px; background: #f8faff; }
+.staff-cover-policy > header { display: flex; padding: 16px; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e5eaf2; }
+.staff-cover-policy > header span { color: #0f6f64; font-size: 9px; font-weight: 800; letter-spacing: .06em; }
+.staff-cover-policy > header h3 { margin: 3px 0 0; font-size: 16px; }
+.staff-cover-policy > header p { margin: 4px 0 0; color: #657084; font-size: 10px; }
+.staff-cover-policy__toggle { display: inline-flex; min-height: 36px; padding: 0 11px; align-items: center; gap: 7px; border-radius: 11px; color: #075e54; background: #dff5ef; font-size: 10px; font-weight: 800; }
+.staff-cover-policy__toggle input { width: 17px; min-height: 17px; }
+.staff-cover-policy__fields { display: grid; padding: 14px 16px; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.staff-cover-policy__fields label { display: grid; gap: 6px; color: #586478; font-size: 9px; font-weight: 800; }
+.staff-cover-policy__fields input, .staff-cover-policy__fields select { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid #d8dfeb; border-radius: 11px; color: #142640; background: #fff; font: inherit; font-size: 11px; }
+.staff-cover-policy > footer { display: flex; padding: 0 16px 16px; align-items: center; justify-content: space-between; gap: 16px; }
+.staff-cover-policy > footer p { max-width: 440px; margin: 0; color: #6b7587; font-size: 9px; }
 .staff-scope-note { display: flex; margin: 0 20px 22px; padding: 14px; align-items: flex-start; gap: 10px; border-radius: 14px; color: #535e72; background: #f3f5fa; font-size: 11px; }
 .staff-scope-note svg { flex: 0 0 auto; color: #1452c4; }
 .staff-check-row { display: flex; flex-wrap: wrap; gap: 14px; }
@@ -194,6 +220,8 @@
 .staff-cover-person { min-width: 130px; padding: 9px 11px; border-radius: 11px; background: #eef3fb; }
 .staff-cover-person small { color: #6b7689; font-size: 8px; text-transform: uppercase; }
 .staff-cover-person strong { margin-top: 2px; font-size: 10px; }
+.staff-status--fallback_applied { color: #087064; background: #dff5ef; }
+.staff-status--expired_unconfirmed { color: #7b5360; background: #f4edf0; }
 .staff-duty-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; color: #1452c4; background: #e5edff; }
 .staff-duty-icon--event { color: #7a42b7; background: #f0e7ff; }
 .staff-duty-icon--examination, .staff-duty-icon--offered { color: #985900; background: #fff0c9; }
@@ -222,6 +250,7 @@
 .staff-end-duty .staff-secondary { min-height: 40px; padding-inline: 12px; font-size: 10px; }
 .staff-duty-hero { min-height: 200px; }
 .staff-response-list > article { display: grid; padding: 15px; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: 12px; border: 1px solid #ead9b5; border-radius: 17px; background: #fffcf5; }
+.staff-request.attention-focus, .staff-cover-list > article.attention-focus, .staff-response-list > article.attention-focus { border-color: color-mix(in srgb,var(--edura-brand) 52%,var(--edura-border)); box-shadow: 0 0 0 3px color-mix(in srgb,var(--edura-brand) 11%,transparent); outline: none; }
 .staff-response-list strong, .staff-response-list small { display: block; }
 .staff-response-list small { margin-top: 3px; color: #6d7789; font-size: 10px; }
 .staff-response-list p { margin: 8px 0; color: #4f5b6d; font-size: 11px; }
@@ -231,6 +260,7 @@
 
 @media (max-width: 760px) {
   .staff-page { gap: 14px; }
+  .staff-leave-layout { gap: 16px; }
   .staff-hero { min-height: 176px; padding: 23px 21px; border-radius: 24px; align-items: flex-start; flex-direction: column; }
   .staff-hero h1 { font-size: 28px; }
   .staff-hero__metrics { width: 100%; }
@@ -260,6 +290,11 @@
   .staff-modal > section { max-height: calc(100dvh - 24px); border-radius: 24px 24px 18px 18px; }
   .staff-modal .staff-form { padding: 18px; }
   .staff-policy-list, .staff-request-list { padding-inline: 13px; }
+  .staff-request__decision-details { padding-left: 14px; }
+  .staff-cover-policy { margin-inline: 13px; }
+  .staff-cover-policy__fields { grid-template-columns: 1fr; }
+  .staff-cover-policy > footer { align-items: stretch; flex-direction: column; }
+  .staff-cover-policy > footer button { justify-content: center; }
   .staff-policy-list > button { grid-template-columns: auto 1fr auto; }
   .staff-policy-list > button > svg { display: none; }
   .staff-cover-list, .staff-assignment-list, .staff-response-list { padding-inline: 13px; }

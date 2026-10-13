@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
+import { SchoolEventService } from "../school/school-event.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type MemberRole = "admin" | "staff" | "guardian" | "student";
@@ -50,7 +51,7 @@ const authorityDraftInput = z.object({
 
 @Injectable()
 export class GovernanceService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   private async memberships(user: AuthUser, schoolId: string, db: Db = this.db) {
     uuid.parse(schoolId);
@@ -72,7 +73,7 @@ export class GovernanceService {
   private async enqueue(db: Transaction<Database>, schoolId: string, eventType: string, versionId: string, revision: number, audience: string[], notification: Record<string, unknown> | null = null, idempotencySuffix = "") {
     await db.insertInto("event_outbox").values({
       school_id: schoolId, event_type: eventType, aggregate_type: "institution_policy_version", aggregate_id: versionId,
-      audience_user_ids: [...new Set(audience)], payload: { version_id: versionId, revision },
+      audience_user_ids: [...new Set(audience)], payload: { version_id: versionId, revision, refresh: ["governance", "policies", "notifications", "attention"] },
       idempotency_key: `${eventType}:${versionId}:${revision}${idempotencySuffix ? `:${idempotencySuffix}` : ""}`, notification_user_ids: [...new Set(audience)], notification_payload: notification as any,
     }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
   }
@@ -371,7 +372,11 @@ export class GovernanceService {
       if (!updated) throw new ConflictException("The policy draft changed. Reload and try again.");
       await this.audit(trx, user, schoolId, "governance.policy.submitted", "policy_version", versionId, { version: updated.version, revision: updated.revision });
       const admins = await trx.selectFrom("school_memberships").select("user_id").where("school_id", "=", schoolId).where("role", "=", "admin").where("is_active", "=", true).execute();
-      await this.enqueue(trx, schoolId, "governance.policy.submitted", versionId, updated.revision, admins.map((item) => item.user_id), { title: "Policy ready for review", body: updated.title });
+      await this.enqueue(trx, schoolId, "governance.policy.submitted", versionId, updated.revision, admins.map((item) => item.user_id), {
+        title: "Policy ready for review",
+        body: updated.title,
+        admin_link: `/principal/governance?section=register&policy=${current.family_id}`,
+      });
       return updated;
     });
   }
@@ -395,6 +400,16 @@ export class GovernanceService {
           .where("id", "=", versionId).where("revision", "=", input.expected_revision).returningAll().executeTakeFirst();
         if (!rejected) throw new ConflictException("The review changed. Reload and try again.");
         await this.audit(trx, user, schoolId, "governance.policy.rejected", "policy_version", versionId, { version: rejected.version, revision: rejected.revision, review_separation_met: separated });
+        const admins = await trx.selectFrom("school_memberships as membership")
+          .innerJoin("users as account", "account.id", "membership.user_id")
+          .select("membership.user_id")
+          .where("membership.school_id", "=", schoolId).where("membership.role", "=", "admin")
+          .where("membership.is_active", "=", true).where("account.is_active", "=", true).execute();
+        await this.events.enqueueUserEvent(trx, {
+          schoolId, eventType: "governance.policy.rejected", aggregateType: "institution_policy_version", aggregateId: versionId,
+          audienceUserIds: admins.map((item) => item.user_id), idempotencyKey: `governance.policy.rejected:${versionId}:${rejected.revision}`,
+          payload: { version_id: versionId, revision: rejected.revision, change_kind: "rejected", refresh: ["attention", "requests", "governance", "principal.home"] },
+        });
         return rejected;
       }
       await trx.updateTable("institution_policy_versions").set({ status: "retired", retired_at: new Date() }).where("family_id", "=", current.family_id).where("status", "=", "published").execute();
@@ -403,7 +418,14 @@ export class GovernanceService {
       if (!published) throw new ConflictException("The review changed. Reload and try again.");
       const audience = await trx.selectFrom("school_memberships").select("user_id").where("school_id", "=", schoolId).where("is_active", "=", true).where("role", "in", published.audience_roles as MemberRole[]).execute();
       await this.audit(trx, user, schoolId, "governance.policy.published", "policy_version", versionId, { family_code: current.code, version: published.version, revision: published.revision, review_separation_met: separated });
-      await this.enqueue(trx, schoolId, "governance.policy.published", versionId, published.revision, audience.map((item) => item.user_id), { title: "Institution policy updated", body: published.title });
+      await this.enqueue(trx, schoolId, "governance.policy.published", versionId, published.revision, audience.map((item) => item.user_id), {
+        kind: "general", title: "New institution policy", body: published.title,
+        parent_link: `/parent/policies?policy=${versionId}&policy_revision=${published.revision}`,
+        staff_link: `/teacher/policies?policy=${versionId}&policy_revision=${published.revision}`,
+        attention_eligible: true, attention_module: "policies", attention_source_kind: "policy_publication",
+        attention_source_id: versionId, attention_source_revision: published.revision,
+        attention_topic_key: `policy-family:${published.family_id}`,
+      });
       return published;
     });
   }
@@ -415,7 +437,7 @@ export class GovernanceService {
       FROM institution_policy_versions version JOIN institution_policy_families family ON family.id=version.family_id
       LEFT JOIN institution_policy_acknowledgements acknowledgement ON acknowledgement.policy_version_id=version.id AND acknowledgement.user_id=${user.id}::uuid
       WHERE version.school_id=${schoolId}::uuid AND version.status='published' AND version.audience_roles && ${memberRoles}::text[]
-        AND version.effective_on<=CURRENT_DATE ORDER BY family.sort_order,family.title`.execute(this.db);
+      ORDER BY family.sort_order,family.title`.execute(this.db);
     return { policies: result.rows, membership_roles: memberRoles };
   }
 

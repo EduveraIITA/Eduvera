@@ -63,6 +63,7 @@ interface RecipientRow {
   response_channel: "app" | "sms" | "paper" | "phone" | "in_person" | null;
   response_observed_at: Date | null;
   response_recorded_by: string | null;
+  last_seen_notice_revision: number;
   revision: number;
   created_at: Date;
   updated_at: Date;
@@ -80,6 +81,59 @@ interface NoticeMutationResult { id: string; revision: number; status: NoticeSta
 interface PublishResult extends NoticeMutationResult { recipient_count: number }
 interface ResponseResult { id: string; recipient_id: string; recipient_revision: number; response_value: string | null }
 interface DeliveryResult { id: string; recipient_id: string; delivery_attempt_id: string; status: string }
+
+export type NoticeAttentionReason = "unread" | "response_required" | "delivery_failed" | "response_overdue";
+export interface NoticeAttentionSummary { total: number; unread: number; action_required: number; exceptions: number }
+export interface NoticeAttentionItem {
+  id: string;
+  source_kind: "notice";
+  source_id: string;
+  source_revision: number;
+  module: "notices";
+  state: "new" | "action_required" | "exception";
+  attention_reasons: NoticeAttentionReason[];
+  priority: "urgent" | "high" | "normal";
+  title: string;
+  status_label: string;
+  subject_label: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  href: string;
+}
+
+interface NoticeListRow {
+  id: string;
+  title: string;
+  body: string;
+  response_mode: NoticeRow["response_mode"];
+  response_options: string[];
+  priority: NoticeRow["priority"];
+  due_at: Date | string | null;
+  status: NoticeStatus;
+  revision: number;
+  published_at: Date | string | null;
+  cancelled_at: Date | string | null;
+  cancellation_reason: string;
+  created_at: Date | string;
+  can_manage?: boolean;
+  recipient_id: string | null;
+  student_id?: string | null;
+  student_name?: string | null;
+  opened_at: Date | string | null;
+  responded_at: Date | string | null;
+  response_value: string | null;
+  response_channel: RecipientRow["response_channel"];
+  recipient_revision: number | null;
+  last_seen_notice_revision: number | null;
+  delivery_channel?: string | null;
+  delivery_status?: string | null;
+  recipient_count?: number;
+  response_count?: number;
+  unopened_count?: number;
+  pending_response_count?: number;
+  delivery_exception_count?: number;
+  attention_reasons?: NoticeAttentionReason[];
+}
 
 const listQuerySchema = z.object({
   portal: noticePortalSchema,
@@ -116,10 +170,55 @@ export class NoticesService {
   async list(user: AuthUser, rawQuery: Record<string, string | undefined>) {
     const query = listQuerySchema.parse(rawQuery);
     const scope = await this.actorScope(this.db, user, query.portal, query.school_id, query.student_id);
-    const rows = query.portal === "parent"
+    const rawRows = query.portal === "parent"
       ? await this.familyList(user, scope, query.status)
-      : await this.staffList(user, scope, query.portal, query.status);
-    return { portal: query.portal, school_id: scope.school_id, student_id: scope.student_id, results: rows };
+      : await this.staffList(user, scope, query.status);
+    const rows = this.withAttention(rawRows);
+    return {
+      portal: query.portal,
+      school_id: scope.school_id,
+      student_id: scope.student_id,
+      attention: this.attentionSummary(rows),
+      results: rows,
+    };
+  }
+
+  async attentionItems(user: AuthUser, rawQuery: Record<string, string | undefined>): Promise<{
+    summary: NoticeAttentionSummary;
+    items: NoticeAttentionItem[];
+  }> {
+    const result = await this.list(user, rawQuery);
+    const portal = result.portal;
+    const items = result.results.flatMap((row): NoticeAttentionItem[] => {
+      const reasons = row.attention_reasons ?? [];
+      if (!reasons.length) return [];
+      const exception = reasons.includes("delivery_failed") || reasons.includes("response_overdue");
+      const action = reasons.includes("response_required");
+      const statusLabel = reasons.includes("delivery_failed") ? "Delivery follow-up needed"
+        : reasons.includes("response_overdue") ? "Response deadline passed"
+          : reasons.includes("response_required")
+            ? row.response_mode === "acknowledgement" ? "Acknowledgement needed" : "Response needed"
+            : row.status === "cancelled" ? "Cancellation not viewed" : "New notice";
+      const studentSuffix = portal === "parent" && result.student_id
+        ? `?student_id=${encodeURIComponent(result.student_id)}` : "";
+      return [{
+        id: `notice:${row.id}:${row.recipient_id ?? "manager"}`,
+        source_kind: "notice",
+        source_id: row.id,
+        source_revision: row.revision,
+        module: "notices",
+        state: exception ? "exception" : action ? "action_required" : "new",
+        attention_reasons: reasons,
+        priority: exception ? "urgent" : row.priority,
+        title: row.title,
+        status_label: statusLabel,
+        subject_label: row.student_name ?? null,
+        due_at: this.iso(row.due_at),
+        created_at: this.iso(row.published_at ?? row.created_at),
+        href: `/${portal}/notices/${encodeURIComponent(row.id)}${studentSuffix}`,
+      }];
+    });
+    return { summary: result.attention, items };
   }
 
   async detail(user: AuthUser, idValue: string, rawQuery: Record<string, string | undefined>) {
@@ -127,7 +226,7 @@ export class NoticesService {
     const query = detailQuerySchema.parse(rawQuery);
     const notice = await this.notice(this.db, id);
     const scope = await this.actorScope(this.db, user, query.portal, notice.school_id, query.student_id);
-    const manager = query.portal === "principal" || (query.portal === "teacher" && notice.created_by === user.id);
+    const manager = await this.isCurrentManager(this.db, user, notice, "messages.view");
     if (manager) {
       const [audiences, recipients, audits] = await Promise.all([
         this.audiences(this.db, notice.id),
@@ -217,7 +316,7 @@ export class NoticesService {
       await this.createInitialDeliveries(db, updated, request.authUser.id);
       await this.createAppNotifications(db, updated);
       await this.recordAudit(db, request, updated, "published", "draft", "published", null, { recipient_count: count });
-      await this.emit(db, updated, "published", request.authUser.id);
+      await this.emitNotice(db, updated, "published", request.authUser.id);
       const result = { id: updated.id, revision: updated.revision, status: updated.status, recipient_count: count };
       await this.saveCommand(db, updated, request.authUser.id, input.idempotency_key, hash, "publish", result);
       return result;
@@ -240,8 +339,9 @@ export class NoticesService {
         WHERE id=${id}::uuid RETURNING *`.execute(db)).rows[0]!;
       await sql`UPDATE school_notice_delivery_attempts SET status='cancelled'
         WHERE notice_id=${id}::uuid AND status='queued'`.execute(db);
+      await this.createCancellationNotifications(db, updated);
       await this.recordAudit(db, request, updated, "cancelled", "published", "cancelled", null, { reason: input.reason });
-      await this.emit(db, updated, "cancelled", request.authUser.id);
+      await this.emitNotice(db, updated, "cancelled", request.authUser.id);
       const result = { id: updated.id, revision: updated.revision, status: updated.status };
       await this.saveCommand(db, updated, request.authUser.id, input.idempotency_key, hash, "cancel", result);
       return result;
@@ -257,11 +357,22 @@ export class NoticesService {
       const recipients = await this.accessibleRecipients(db, request.authUser, scope, id, true);
       if (!recipients.length) throw new NotFoundException("Notice not found.");
       const recipient = this.selectRecipient(recipients, scope.student_id);
-      if (recipient.opened_at) return { id: notice.id, recipient_id: recipient.id, revision: recipient.revision, opened_at: recipient.opened_at };
-      const updated = (await sql<RecipientRow>`UPDATE school_notice_recipients SET opened_at=now(),revision=revision+1,updated_at=now()
-        WHERE id=${recipient.id}::uuid RETURNING *`.execute(db)).rows[0]!;
-      await this.recordAudit(db, request, notice, "opened", "unopened", "opened", updated.id, {});
-      return { id: notice.id, recipient_id: updated.id, revision: updated.revision, opened_at: updated.opened_at };
+      const updated = (await sql<RecipientRow>`UPDATE school_notice_recipients
+        SET opened_at=COALESCE(opened_at,now()),last_seen_notice_revision=GREATEST(last_seen_notice_revision,${notice.revision}),
+          revision=revision+1,updated_at=now()
+        WHERE id=${recipient.id}::uuid
+          AND (opened_at IS NULL OR last_seen_notice_revision<${notice.revision})
+        RETURNING *`.execute(db)).rows[0];
+      await this.markLinkedNotificationsRead(db, request.authUser.id, notice.id, recipient);
+      if (updated) {
+        await this.recordAudit(db, request, notice, "opened",
+          recipient.opened_at ? "previous_revision" : "unopened", "opened", updated.id,
+          { notice_revision: notice.revision });
+        await this.emitRecipient(db, notice, updated, "opened", String(updated.revision));
+      }
+      const current = updated ?? recipient;
+      return { id: notice.id, recipient_id: current.id, revision: current.revision, opened_at: current.opened_at,
+        last_seen_notice_revision: current.last_seen_notice_revision };
     });
   }
 
@@ -279,9 +390,10 @@ export class NoticesService {
       if (prior) return prior;
       this.assertResponseAllowed(notice, recipient, input.expected_revision);
       const value = this.responseValue(notice, input.response_value);
-      const updated = await this.writeResponse(db, recipient, value, input.response_note, "app", new Date(), request.authUser.id);
+      const updated = await this.writeResponse(db, notice, recipient, value, input.response_note, "app", new Date(), request.authUser.id, true);
+      await this.markLinkedNotificationsRead(db, request.authUser.id, notice.id, updated);
       await this.recordAudit(db, request, notice, "responded", "pending", value, updated.id, { channel: "app" });
-      await this.emit(db, notice, "responded", request.authUser.id);
+      await this.emitRecipient(db, notice, updated, "responded", String(updated.revision));
       const result = { id: notice.id, recipient_id: updated.id, recipient_revision: updated.revision, response_value: updated.response_value };
       await this.saveCommand(db, notice, request.authUser.id, input.idempotency_key, hash, "respond", result);
       return result;
@@ -302,9 +414,9 @@ export class NoticesService {
       const observedAt = new Date(input.observed_at);
       this.validateObservedAt(notice, observedAt);
       const value = this.responseValue(notice, input.response_value);
-      const updated = await this.writeResponse(db, recipient, value, input.response_note, input.channel, observedAt, request.authUser.id);
+      const updated = await this.writeResponse(db, notice, recipient, value, input.response_note, input.channel, observedAt, request.authUser.id, false);
       await this.recordAudit(db, request, notice, "assisted_response", "pending", value, updated.id, { channel: input.channel, observed_at: observedAt.toISOString() });
-      await this.emit(db, notice, "responded", request.authUser.id);
+      await this.emitRecipient(db, notice, updated, "responded", String(updated.revision));
       const result = { id: notice.id, recipient_id: updated.id, recipient_revision: updated.revision, response_value: updated.response_value };
       await this.saveCommand(db, notice, request.authUser.id, input.idempotency_key, hash, "assisted_response", result);
       return result;
@@ -330,6 +442,7 @@ export class NoticesService {
           ${input.note},${input.provider_reference},${attemptedAt},${request.authUser.id}::uuid) RETURNING id`.execute(db)).rows[0]!;
       await this.recordAudit(db, request, notice, "delivery_recorded", null, input.status, recipient.id,
         { channel: input.channel, attempt_id: attempt.id, attempted_at: attemptedAt.toISOString() });
+      await this.emitRecipient(db, notice, recipient, "delivery_recorded", attempt.id);
       const result = { id: notice.id, recipient_id: recipient.id, delivery_attempt_id: attempt.id, status: input.status };
       await this.saveCommand(db, notice, request.authUser.id, input.idempotency_key, hash, "delivery", result);
       return result;
@@ -337,11 +450,12 @@ export class NoticesService {
   }
 
   private async familyList(user: AuthUser, scope: ActorScope, status?: NoticeStatus) {
-    return (await sql`
+    return (await sql<NoticeListRow>`
       SELECT notice.id,notice.title,notice.body,notice.response_mode,notice.response_options,notice.priority,
         notice.due_at,notice.status,notice.revision,notice.published_at,notice.cancelled_at,notice.cancellation_reason,
         notice.created_at,recipient.id AS recipient_id,recipient.student_id,recipient.opened_at,recipient.responded_at,
         recipient.response_value,recipient.response_channel,recipient.revision AS recipient_revision,
+        recipient.last_seen_notice_revision,
         concat_ws(' ',student_person.first_name,student_person.last_name) AS student_name,
         latest_delivery.channel AS delivery_channel,latest_delivery.status AS delivery_status
       FROM school_notice_recipients recipient
@@ -356,24 +470,84 @@ export class NoticesService {
     `.execute(this.db)).rows;
   }
 
-  private async staffList(user: AuthUser, scope: ActorScope, portal: NoticePortal, status?: NoticeStatus) {
-    return (await sql`
+  private async staffList(user: AuthUser, scope: ActorScope, status?: NoticeStatus) {
+    return (await sql<NoticeListRow>`
       SELECT notice.id,notice.title,notice.body,notice.response_mode,notice.response_options,notice.priority,
         notice.due_at,notice.status,notice.revision,notice.published_at,notice.cancelled_at,notice.cancellation_reason,
-        notice.created_at,(notice.created_by=${user.id}::uuid) AS can_manage,
+        notice.created_at,
+        notice_actor_is_current_manager(notice.school_id,notice.id,${user.id}::uuid,'messages.view') AS can_manage,
         recipient.id AS recipient_id,recipient.opened_at,recipient.responded_at,recipient.response_value,
-        recipient.response_channel,recipient.revision AS recipient_revision,
+        recipient.response_channel,recipient.revision AS recipient_revision,recipient.last_seen_notice_revision,
+        self_delivery.status AS delivery_status,
         count(DISTINCT all_recipient.id)::int AS recipient_count,
-        count(DISTINCT all_recipient.id) FILTER (WHERE all_recipient.responded_at IS NOT NULL)::int AS response_count
+        count(DISTINCT all_recipient.id) FILTER (WHERE all_recipient.responded_at IS NOT NULL)::int AS response_count,
+        count(DISTINCT all_recipient.id) FILTER (
+          WHERE all_recipient.last_seen_notice_revision<notice.revision
+        )::int AS unopened_count,
+        count(DISTINCT all_recipient.id) FILTER (
+          WHERE notice.status='published' AND notice.response_mode<>'information' AND all_recipient.responded_at IS NULL
+        )::int AS pending_response_count,
+        count(DISTINCT all_recipient.id) FILTER (WHERE all_delivery.status='failed')::int AS delivery_exception_count
       FROM school_notices notice
       LEFT JOIN school_notice_recipients recipient ON recipient.notice_id=notice.id AND recipient.user_id=${user.id}::uuid
+      LEFT JOIN LATERAL (SELECT attempt.status FROM school_notice_delivery_attempts attempt
+        WHERE attempt.recipient_id=recipient.id ORDER BY attempt.created_at DESC,attempt.id DESC LIMIT 1) self_delivery ON true
       LEFT JOIN school_notice_recipients all_recipient ON all_recipient.notice_id=notice.id
+      LEFT JOIN LATERAL (SELECT attempt.status FROM school_notice_delivery_attempts attempt
+        WHERE attempt.recipient_id=all_recipient.id ORDER BY attempt.created_at DESC,attempt.id DESC LIMIT 1) all_delivery ON true
       WHERE notice.school_id=${scope.school_id}::uuid
-        AND (${portal === "principal"}::boolean OR notice.created_by=${user.id}::uuid OR recipient.id IS NOT NULL)
+        AND (notice_actor_is_current_manager(notice.school_id,notice.id,${user.id}::uuid,'messages.view')
+          OR recipient.id IS NOT NULL)
         AND (${status ?? null}::text IS NULL OR notice.status=${status ?? null})
-      GROUP BY notice.id,recipient.id
+      GROUP BY notice.id,recipient.id,self_delivery.status
       ORDER BY notice.created_at DESC,notice.id
     `.execute(this.db)).rows;
+  }
+
+  private withAttention(rows: NoticeListRow[]): NoticeListRow[] {
+    const now = Date.now();
+    return rows.map((row) => {
+      const reasons = new Set<NoticeAttentionReason>();
+      const dueAt = row.due_at ? new Date(row.due_at).getTime() : null;
+      if (row.recipient_id) {
+        if ((row.last_seen_notice_revision ?? 0) < row.revision) reasons.add("unread");
+        if (row.status === "published" && row.response_mode !== "information" && !row.responded_at) {
+          reasons.add(dueAt !== null && dueAt < now ? "response_overdue" : "response_required");
+        }
+        if (row.delivery_status === "failed") reasons.add("delivery_failed");
+      }
+      if (row.can_manage) {
+        if (Number(row.delivery_exception_count ?? 0) > 0) reasons.add("delivery_failed");
+        if (row.status === "published" && row.response_mode !== "information"
+          && Number(row.pending_response_count ?? 0) > 0 && dueAt !== null && dueAt < now) {
+          reasons.add("response_overdue");
+        }
+      }
+      return {
+        ...row,
+        recipient_count: Number(row.recipient_count ?? 0),
+        response_count: Number(row.response_count ?? 0),
+        unopened_count: Number(row.unopened_count ?? 0),
+        pending_response_count: Number(row.pending_response_count ?? 0),
+        delivery_exception_count: Number(row.delivery_exception_count ?? 0),
+        attention_reasons: [...reasons],
+      };
+    });
+  }
+
+  private attentionSummary(rows: NoticeListRow[]): NoticeAttentionSummary {
+    const attention = rows.filter((row) => (row.attention_reasons?.length ?? 0) > 0);
+    return {
+      total: attention.length,
+      unread: attention.filter((row) => row.attention_reasons?.includes("unread")).length,
+      action_required: attention.filter((row) => row.attention_reasons?.includes("response_required")).length,
+      exceptions: attention.filter((row) => row.attention_reasons?.some((reason) => reason === "delivery_failed" || reason === "response_overdue")).length,
+    };
+  }
+
+  private iso(value: Date | string | null | undefined): string | null {
+    if (!value) return null;
+    return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
   }
 
   private async actorScope(db: Db, user: AuthUser, portal: NoticePortal, requestedSchool?: string, requestedStudent?: string): Promise<ActorScope> {
@@ -437,9 +611,25 @@ export class NoticesService {
     if (role !== "admin") throw new ForbiddenException("A school administrator must record an assisted response.");
   }
 
-  private async assertManager(db: Db, user: AuthUser, notice: NoticeRow): Promise<"staff" | "admin"> {
+  private async isCurrentManager(
+    db: Db,
+    user: AuthUser,
+    notice: NoticeRow,
+    action: "messages.view" | "messages.send",
+  ): Promise<boolean> {
+    return Boolean((await sql<{ allowed: boolean }>`SELECT notice_actor_is_current_manager(
+      ${notice.school_id}::uuid,${notice.id}::uuid,${user.id}::uuid,${action}
+    ) AS allowed`.execute(db)).rows[0]?.allowed);
+  }
+
+  private async assertManager(
+    db: Db,
+    user: AuthUser,
+    notice: NoticeRow,
+    action: "messages.view" | "messages.send" = "messages.send",
+  ): Promise<"staff" | "admin"> {
     const role = await this.manageRole(db, user, notice.school_id);
-    if (role === "staff" && notice.created_by !== user.id) throw new NotFoundException("Notice not found.");
+    if (!await this.isCurrentManager(db, user, notice, action)) throw new NotFoundException("Notice not found.");
     return role;
   }
 
@@ -541,9 +731,26 @@ export class NoticesService {
         CASE recipient.recipient_role WHEN 'guardian' THEN '/parent/notices/'||notice.id::text||'?student_id='||recipient.student_id::text
           WHEN 'admin' THEN '/principal/notices/'||notice.id::text
           ELSE '/teacher/notices/'||notice.id::text END,
-        jsonb_build_object('notice_id',notice.id,'response_mode',notice.response_mode,'student_id',recipient.student_id),
+        jsonb_build_object('notice_id',notice.id,'notice_recipient_id',recipient.id,'notice_revision',notice.revision,
+          'response_mode',notice.response_mode,'student_id',recipient.student_id,'notice_status',notice.status),
         'notice:'||notice.id::text||':recipient:'||recipient.id::text
       FROM school_notice_recipients recipient JOIN school_notices notice ON notice.id=recipient.notice_id
+      WHERE recipient.notice_id=${notice.id}::uuid AND recipient.user_id IS NOT NULL
+      ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`.execute(db);
+  }
+
+  private async createCancellationNotifications(db: Db, notice: NoticeRow) {
+    await sql`INSERT INTO notifications(recipient_id,kind,title,body,link,metadata,dedupe_key)
+      SELECT recipient.user_id,'general','Notice cancelled: '||${notice.title},left(${notice.cancellation_reason},500),
+        CASE recipient.recipient_role WHEN 'guardian' THEN '/parent/notices/'||notice.id::text||'?student_id='||recipient.student_id::text
+          WHEN 'admin' THEN '/principal/notices/'||notice.id::text
+          ELSE '/teacher/notices/'||notice.id::text END,
+        jsonb_build_object('notice_id',notice.id,'notice_recipient_id',recipient.id,'notice_revision',notice.revision,
+          'response_mode',notice.response_mode,'student_id',recipient.student_id,'notice_status','cancelled'),
+        'notice:'||notice.id::text||':cancelled:'||notice.revision::text||':recipient:'||recipient.id::text
+      FROM school_notice_recipients recipient
+      JOIN school_notices notice ON notice.id=recipient.notice_id
+      JOIN users account ON account.id=recipient.user_id AND account.is_active
       WHERE recipient.notice_id=${notice.id}::uuid AND recipient.user_id IS NOT NULL
       ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`.execute(db);
   }
@@ -590,11 +797,28 @@ export class NoticesService {
     return choice;
   }
 
-  private async writeResponse(db: Db, recipient: RecipientRow, value: string, note: string,
-    channel: "app" | "sms" | "paper" | "phone" | "in_person", observedAt: Date, actorId: string) {
-    return (await sql<RecipientRow>`UPDATE school_notice_recipients SET opened_at=COALESCE(opened_at,now()),responded_at=now(),
+  private async writeResponse(db: Db, notice: NoticeRow, recipient: RecipientRow, value: string, note: string,
+    channel: "app" | "sms" | "paper" | "phone" | "in_person", observedAt: Date, actorId: string, markOpened: boolean) {
+    return (await sql<RecipientRow>`UPDATE school_notice_recipients
+      SET opened_at=CASE WHEN ${markOpened}::boolean THEN COALESCE(opened_at,now()) ELSE opened_at END,
+      last_seen_notice_revision=CASE WHEN ${markOpened}::boolean
+        THEN GREATEST(last_seen_notice_revision,${notice.revision}) ELSE last_seen_notice_revision END,
+      responded_at=now(),
       response_value=${value},response_note=${note},response_channel=${channel},response_observed_at=${observedAt},
       response_recorded_by=${actorId}::uuid,revision=revision+1,updated_at=now() WHERE id=${recipient.id}::uuid RETURNING *`.execute(db)).rows[0]!;
+  }
+
+  private async markLinkedNotificationsRead(db: Db, userId: string, noticeId: string, recipient: RecipientRow) {
+    await sql`UPDATE notifications SET read_at=COALESCE(read_at,now())
+      WHERE recipient_id=${userId}::uuid AND read_at IS NULL
+        AND metadata->>'notice_id'=${noticeId}
+        AND (
+          metadata->>'notice_recipient_id'=${recipient.id}
+          OR (
+            NOT (metadata ? 'notice_recipient_id')
+            AND COALESCE(metadata->>'student_id','')=COALESCE(${recipient.student_id}::text,'')
+          )
+        )`.execute(db);
   }
 
   private validateObservedAt(notice: NoticeRow, observedAt: Date) {
@@ -694,7 +918,7 @@ export class NoticesService {
     }).execute();
   }
 
-  private async emit(db: Db, notice: NoticeRow, action: string, actorId: string) {
+  private async emitNotice(db: Db, notice: NoticeRow, action: string, actorId: string) {
     const users = (await sql<{ user_id: string }>`SELECT DISTINCT user_id FROM school_notice_recipients
       WHERE notice_id=${notice.id}::uuid AND user_id IS NOT NULL
       UNION SELECT ${notice.created_by}::uuid
@@ -703,8 +927,26 @@ export class NoticesService {
     await this.events.enqueueUserEvent(db, {
       schoolId: notice.school_id, eventType: "notice.updated", aggregateType: "school_notice", aggregateId: notice.id,
       audienceUserIds: users, idempotencyKey: `notice:${notice.id}:${action}:${notice.revision}:${actorId}`,
-      payload: { notice_id: notice.id, action, revision: notice.revision,
-        refresh: ["notices", "requests", "notifications", "parent.home", "teacher.home", "principal.home"] },
+      payload: { notice_id: notice.id, action, notice_revision: notice.revision,
+        refresh: ["attention", "notices", "requests", "notifications", "parent.home", "teacher.home", "principal.home"] },
+    });
+  }
+
+  private async emitRecipient(db: Db, notice: NoticeRow, recipient: RecipientRow, action: string, eventKey: string) {
+    const users = (await sql<{ user_id: string }>`
+      SELECT recipient.user_id FROM school_notice_recipients recipient
+        WHERE recipient.id=${recipient.id}::uuid AND recipient.user_id IS NOT NULL
+      UNION SELECT ${notice.created_by}::uuid
+      UNION SELECT membership.user_id FROM school_memberships membership
+        WHERE membership.school_id=${notice.school_id}::uuid AND membership.role='admin' AND membership.is_active
+    `.execute(db)).rows.map((row) => row.user_id);
+    await this.events.enqueueUserEvent(db, {
+      schoolId: notice.school_id, eventType: "notice.updated", aggregateType: "school_notice", aggregateId: notice.id,
+      audienceUserIds: users,
+      idempotencyKey: `notice:${notice.id}:${action}:recipient:${recipient.id}:${eventKey}`,
+      payload: { notice_id: notice.id, recipient_id: recipient.id, action,
+        notice_revision: notice.revision, recipient_revision: recipient.revision,
+        refresh: ["attention", "notices", "requests", "notifications", "parent.home", "teacher.home", "principal.home"] },
     });
   }
 }

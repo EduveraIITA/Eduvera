@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import { getStaffWorkspace } from "./api";
@@ -7,11 +7,13 @@ import { StaffOperationsPage } from "./StaffOperationsPage";
 
 function StaffOperationsRoute({ portal, teacherView }: { portal: "principal" | "teacher"; teacherView?: "leave" | "responsibilities" }) {
   const auth = useAuth();
+  const [searchParams] = useSearchParams();
   const { staffProfileId } = useParams<{ staffProfileId: string }>();
   const role = portal === "principal" ? "admin" : "staff";
   const membership = auth.memberships.find((item) => item.role === role);
   const schoolId = membership?.school_id ?? "";
-  const query = useQuery({ queryKey: ["staff-operations", schoolId], queryFn: () => getStaffWorkspace(schoolId), enabled: Boolean(schoolId) });
+  const focusedRequestId = searchParams.get("request") ?? undefined;
+  const query = useQuery({ queryKey: ["staff-operations", schoolId, focusedRequestId ?? "list"], queryFn: () => getStaffWorkspace(schoolId, focusedRequestId), enabled: Boolean(schoolId) });
   if (!schoolId) return <LiveRouteError error={new Error("Active school access is required.")} onRetry={() => auth.refresh()} />;
   if (query.isPending) return <ScreenLoading />;
   if (query.error) return <LiveRouteError error={query.error} onRetry={query.refetch} />;

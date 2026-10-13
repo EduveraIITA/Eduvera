@@ -6,7 +6,7 @@ import * as event from '../campus-events/contracts.js';
 import * as operations from '../operations/schemas.js';
 import { cycleInput, assessmentInput, resultsInput, actionInput } from '../assessments/assessments.service.js';
 import { schemeInput, subjectPlanInput, revisionInput, generateInput, commentInput } from '../academic-reports/academic-reports.service.js';
-import { profileInput, policyInput } from '../staff-operations/staff-operations.service.js';
+import { coveragePolicyInput, profileInput, policyInput } from '../staff-operations/staff-operations.service.js';
 import { feeRequestSchema, feeDecisionSchema } from '../operations/fee-review.service.js';
 import { createSchema as followupInput } from '../coordination/coordination.service.js';
 import type { ToolDefinition } from './providers.js';
@@ -173,7 +173,7 @@ write('reply_to_followup','Send a guardian reply to an attendance follow-up','fo
 read('conversations', 'School messages and conversation IDs', 'messages', all, empty, '/chat/conversations', 'messages', () => ({}), 'messages.view');
 read('message_recipients', 'Permitted recipients for a new school conversation', 'messages', all, empty, '/chat/recipients', 'messages', (_,s) => familyQuery(s), 'messages.view');
 read('conversation_messages', 'Read messages in a permitted conversation', 'messages', all, idInput, i => `/chat/conversations/${i.id}/messages`, (i,s) => screenPath(s, 'messages', { conversation: i.id }), () => ({}), 'messages.view');
-write('create_conversation', 'Start a school conversation with the selected recipient', 'messages', all, z.object({ recipient_id: uuid, title: z.string().max(180) }), '/chat/conversations', 'messages', { student: true, permission: 'messages.send' });
+write('create_conversation', 'Start a school conversation with the selected recipient', 'messages', all, z.object({ school_id: uuid, recipient_id: uuid, student_id: uuid.optional(), title: z.string().max(180) }), '/chat/conversations', 'messages', { student: true, permission: 'messages.send' });
 write('send_message', 'Send this exact message to the selected conversation', 'messages', all, z.object({ body: z.string().trim().min(1).max(4000), reply_to_id: uuid.optional() }), i => `/chat/conversations/${i.id}/messages`, (i,s) => screenPath(s, 'messages', { conversation: i.id }), { id: true, permission: 'messages.send' });
 write('edit_message','Edit my own message in a conversation','messages',all,z.object({conversation_id:uuid,body:z.string().trim().min(1).max(4000)}),i=>`/chat/conversations/${i.body.conversation_id}/messages/${i.id}`,(i,s)=>screenPath(s,'messages',{conversation:i.body.conversation_id}),{id:true,method:'PATCH',permission:'messages.send'});
 write('mark_conversation_read','Mark this conversation read','messages',all,empty,i=>`/chat/conversations/${i.id}/read`,(i,s)=>screenPath(s,'messages',{conversation:i.id}),{id:true,permission:'messages.view'});
@@ -229,6 +229,7 @@ write('decide_staff_leave','Review staff leave','staff',['principal'],z.object({
 write('withdraw_staff_leave','Withdraw my staff leave request','staff',['teacher'],z.object({expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/leave-requests/${i.id}/withdraw`),'leave',{id:true});
 write('respond_to_responsibility','Accept or decline an assigned responsibility','staff',['teacher'],z.object({decision:z.enum(['accepted','declined']),note:z.string().max(500),expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/responsibilities/${i.id}/response`),'responsibilities',{id:true});
 write('assign_cover','Assign a replacement for an open coverage task','staff',['principal'],z.object({replacement_staff_profile_id:uuid,note:z.string().max(500),expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/coverage-tasks/${i.id}/assign`),'staff',{id:true});
+write('set_cover_fallback_policy','Set the deadline and automatic fallback for unfilled leave cover','staff',['principal'],coveragePolicyInput,(_,s)=>schoolPath(s,'staff/coverage-policy'),(_,s)=>screenPath(s,'staff',{section:'policies'}),{method:'PATCH'});
 write('respond_to_coverage','Accept or decline a cover request','staff',['teacher'],z.object({decision:z.enum(['accepted','declined']),note:z.string().max(500),expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/coverage-tasks/${i.id}/response`),'responsibilities',{id:true});
 read('school_records', 'School terms, classes and subjects', 'records', staff, empty, (_,s) => schoolPath(s,'administration'), 'administration', () => ({}), 'sis.manage');
 read('find_students', 'Find students by name or admission number; use next_cursor for more. Basic identity/class by default. Use profile details only if the user specifically asks for birth date or guardian contacts.', 'records', staff, z.object({search:z.string().max(80).default(''),cursor:uuid.optional(),details:z.enum(['basic','profile']).default('basic')}).strict(), '/people/students', 'students', (i,s)=>({search:i.search,cursor:i.cursor,school_id:s.schoolId}), 'sis.manage');

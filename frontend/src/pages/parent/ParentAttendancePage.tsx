@@ -29,6 +29,7 @@ export interface ParentAttendancePageProps {
   onSelectDate?: (dateId: string) => ParentPageAction;
   onRequestLeave?: () => ParentPageAction;
   onMessageTeacher?: () => ParentPageAction;
+  focusDate?: string;
 }
 
 type MessageState = "idle" | "sending" | "sent" | "error";
@@ -39,11 +40,13 @@ export function ParentAttendancePage({
   onSelectDate,
   onRequestLeave,
   onMessageTeacher,
+  focusDate,
 }: ParentAttendancePageProps) {
   const hasAttendance = data.stats.totalDays > data.stats.excusedCount;
   const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState(
-    data.month.days.find((day) => day.id === schoolDateToday())?.id ??
+    data.month.days.find((day) => day.id === focusDate)?.id ??
+      data.month.days.find((day) => day.id === schoolDateToday())?.id ??
       [...data.month.days].reverse().find((day) => !["future", "weekend"].includes(day.status))?.id ??
       data.month.days[0]?.id ?? "",
   );
@@ -118,7 +121,7 @@ export function ParentAttendancePage({
             <h2 id="monthly-ledger-heading">Attendance calendar</h2>
             <span>{data.month.label}</span>
           </div>
-          <div className="surface-card calendar-card">
+          <div className={`surface-card calendar-card${focusDate ? " attention-focus" : ""}`}>
             <div className="calendar-summary">
               <span><i className="legend-dot legend-dot--present" />{data.month.summary.present} Present</span>
               <span><i className="legend-dot legend-dot--excused" />{data.month.summary.excused} Excused</span>

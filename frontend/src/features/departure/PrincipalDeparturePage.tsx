@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bus, CheckCircle2, ChevronRight, Clock3, MapPin, Route, ShieldCheck, UserRoundCheck } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { useAuth } from "../auth/AuthContext";
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import { assignTransportStudent, createDepartureAuthority, createDeparturePlan, createTransportRoute, createTransportTrip, decideDepartureRequest, departurePlanAction, getDepartureWorkspace, recordDepartureHandover, recordOfficeDepartureRequest, revokeDepartureAuthority, saveDeparturePolicy, type DepartureMode } from "./api";
 import { TransportDutyPlanner } from "./TransportDutyPlanner";
@@ -15,29 +17,67 @@ import "./departure.css";
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
 const value=(form:FormData,key:string)=>{const entry=form.get(key);return typeof entry==="string"?entry.trim():"";};
 const modeLabel=(mode:DepartureMode)=>({guardian_pickup:"Guardian pickup",authorized_collector:"Authorized collector",independent_departure:"Independent departure",school_transport:"School bus",external_transport:"External transport"}[mode]);
+const expectedRevision=(value:string|null)=>{const revision=Number(value);return Number.isInteger(revision)&&revision>0?revision:null;};
 
 export default function PrincipalDeparturePage(){
   const auth=useAuth(); const member=auth.memberships.find(item=>item.role==="admin"&&item.school_id===auth.user?.active_school_id)??auth.memberships.find(item=>item.role==="admin"); const schoolId=member?.school_id??""; const client=useQueryClient();
-  const query=useQuery({queryKey:["departure","admin",schoolId],queryFn:()=>getDepartureWorkspace(schoolId),enabled:Boolean(schoolId),refetchInterval:15_000});
   const [params,setParams]=useSearchParams();
+  const focusedRequestId=params.get("request");
+  const focusedSwapId=params.get("swap");
+  const focusedSwapRevision=expectedRevision(params.get("swap_revision"));
+  const attentionNotificationId=params.get("attention_notification_id");
+  const focusedTripId=params.get("trip");
+  const focusedPlanId=params.get("plan");
+  const focusedStudentId=params.get("student");
+  const focusedDate=params.get("date");
+  const query=useQuery({queryKey:["departure","admin",schoolId,focusedPlanId,focusedTripId],queryFn:()=>getDepartureWorkspace(schoolId,focusedPlanId??undefined,focusedTripId??undefined),enabled:Boolean(schoolId),refetchInterval:15_000});
   const sections=[{id:"requests",name:"Change requests",description:"Review family and assisted requests"},{id:"roster",name:"Bus rosters",description:"Dates, collectors and duty swaps"},{id:"trips",name:"Journeys",description:"Track current and recent trips"},{id:"pickup",name:"Pickup & receivers",description:"Dated handovers and authorised collectors"},{id:"settings",name:"Transport settings",description:"Routes, learners and departure rules"}];
   const section=sections.find(item=>item.id===params.get("section"));
   type Panel="policy"|"route"|"assign"|"trip"|"authority"|"plan"|"office";
   const edit=params.get("edit"); const panel=(["policy","route","assign","trip","authority","plan","office"].includes(edit??"")?edit:null) as Panel|null;
   const setPanel=(next:Panel|null)=>{const value=new URLSearchParams(params);if(next)value.set("edit",next);else value.delete("edit");setParams(value);};
-  const pageLink=(id?:string)=>{const next=new URLSearchParams(params);next.delete("edit");if(id)next.set("section",id);else next.delete("section");return `/principal/departure${next.size?`?${next}`:""}`;};
+  const pageLink=(id?:string)=>{const next=new URLSearchParams(params);for(const key of ["edit","request","swap","trip","plan","student","date"])next.delete(key);if(id)next.set("section",id);else next.delete("section");return `/principal/departure${next.size?`?${next}`:""}`;};
   const [error,setError]=useState("");
+  useEffect(()=>{
+    const targetId=focusedRequestId?`attention-departure-request-${focusedRequestId}`:focusedSwapId?`attention-duty-swap-${focusedSwapId}`:focusedPlanId?`attention-departure-plan-${focusedPlanId}`:null;
+    if(!targetId)return;
+    const frame=window.requestAnimationFrame(()=>{
+      const target=document.getElementById(targetId);
+      target?.scrollIntoView?.({behavior:"smooth",block:"center"});
+      target?.focus({preventScroll:true});
+    });
+    return()=>window.cancelAnimationFrame(frame);
+  },[focusedRequestId,focusedSwapId,focusedPlanId,query.data?.requests.length,query.data?.swaps.length,query.data?.plans.length]);
   const run=useMutation({mutationFn:async(fn:()=>Promise<unknown>)=>fn(),onSuccess:async()=>{setPanel(null);setError("");await client.invalidateQueries({queryKey:["departure"]});},onError:cause=>{setError(cause instanceof Error?cause.message:"The change could not be saved.");void client.invalidateQueries({queryKey:["departure"]});}});
   if(!schoolId)return <LiveRouteError error={new Error("Institution administrator access is required.")} onRetry={auth.refresh}/>; if(query.isPending)return <ScreenLoading/>; if(query.error||!query.data)return <LiveRouteError error={query.error??new Error("Departure operations are unavailable.")} onRetry={query.refetch}/>;
   const data=query.data; const activeTrips=data.trips.filter(item=>["boarding","in_progress"].includes(item.state));
+  const focusedPlan=focusedPlanId?data.plans.find(item=>item.id===focusedPlanId):undefined;
+  const planTargetMatches=Boolean(focusedPlan
+    && focusedPlan.student_id===focusedStudentId
+    && focusedPlan.service_date===focusedDate
+    && section?.id==="pickup");
+  const planTargetUnavailable=Boolean(focusedPlanId&&!planTargetMatches);
+  const tripTargetWrongSection=Boolean(focusedTripId&&section?.id!=="roster");
+  const requestTargetUnavailable=Boolean(focusedRequestId&&(section?.id!=="requests"||!data.requests.some(item=>item.id===focusedRequestId)));
+  const swapTargetUnavailable=Boolean(focusedSwapId&&(section?.id!=="roster"||!data.swaps.some(item=>item.id===focusedSwapId)));
+  const exactSwapAttention=Boolean(attentionNotificationId&&focusedSwapId&&focusedSwapRevision&&section?.id==="roster"
+    && data.swaps.some(item=>item.id===focusedSwapId&&item.status==="accepted"&&item.revision===focusedSwapRevision));
+  const staleSwapAttention=Boolean(attentionNotificationId&&focusedSwapId&&!exactSwapAttention);
   const submitRoute=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const f=new FormData(event.currentTarget);const names=value(f,"stops").split("\n").map(item=>item.trim()).filter(Boolean);run.mutate(()=>createTransportRoute(schoolId,{code:value(f,"code"),name:value(f,"name"),vehicle_label:value(f,"vehicle_label"),provider_name:value(f,"provider_name"),service_kind:value(f,"service_kind"),stops:names.map((name,index)=>({direction:value(f,"direction"),sequence:index+1,name}))}));};
-  return <OperationsShell portal="principal" active="more" title={panel?"Edit transport":section?.name??"Transport & pickup"} schoolName={data.school.name} backTo={panel?pageLink(section?.id):section?pageLink():"/principal/more"}><div className="departure-page departure-page--ops">
+  return <OperationsShell portal="principal" active="more" title={panel?"Edit transport":section?.name??"Transport & pickup"} schoolName={data.school.name} backTo={panel?pageLink(section?.id):section?pageLink():"/principal/more"}>
+    {exactSwapAttention?<AttentionOpenAcknowledgement/>:null}
+    {staleSwapAttention?<AttentionTargetUnavailable message="This duty change changed after the alert was created. It was not marked as opened."/>:null}
+    <div className="departure-page departure-page--ops">
+    {tripTargetWrongSection?<section className="departure-attention-state" role="alert"><strong>Transport duty unavailable</strong><p>This link no longer points to the duty-planning view. Open the current bus roster below.</p><Link to={pageLink("roster")}>Open bus rosters</Link></section>:null}
+    {planTargetUnavailable?<section className="departure-attention-state" role="alert"><strong>Departure plan unavailable</strong><p>This plan no longer matches the linked learner and date, or it is no longer current.</p><Link to={pageLink("pickup")}>Open current handovers</Link></section>:null}
+    {requestTargetUnavailable?<section className="departure-attention-state" role="alert"><strong>Departure request unavailable</strong><p>This request is no longer awaiting a school decision, or the link does not match this review queue.</p><Link to={pageLink("requests")}>Open current requests</Link></section>:null}
+    {swapTargetUnavailable?<section className="departure-attention-state" role="alert"><strong>Duty change unavailable</strong><p>This duty change is no longer awaiting school review, or the link does not match this roster.</p><Link to={pageLink("roster")}>Open bus rosters</Link></section>:null}
     {!section&&!panel?<><section className="departure-ops-summary"><div><span>Open</span><strong>{activeTrips.length}</strong><small>active trips</small></div><div><span>Review</span><strong>{data.requests.length}</strong><small>change requests</small></div><div><span>Plans</span><strong>{data.plans.length}</strong><small>next 7 days</small></div></section>
     <nav className="workspace-directory" aria-label="Transport sections">{sections.map(item=><Link key={item.id} to={pageLink(item.id)}><span><strong>{item.name}</strong><small>{item.description}</small></span>{item.id==="requests"&&data.requests.length?<b>{data.requests.length}</b>:null}<ChevronRight size={18}/></Link>)}</nav></>:null}
 
-    {section?.id==="requests"&&!panel?<section className="departure-panel"><div className="departure-request-list">{data.requests.length?data.requests.map(request=><article key={request.id}><div><strong>{request.student_name}</strong><span>{request.service_date} · {modeLabel(request.requested_mode)}</span><p>{request.reason}</p></div><DepartureRequestReview request={request} data={data} pending={run.isPending} onDecide={(decision,note)=>run.mutateAsync(()=>decideDepartureRequest(schoolId,request.id,{decision,expected_revision:request.revision,note}))}/></article>):<p className="departure-empty">No requests awaiting review.</p>}</div></section>:null}
+    {section?.id==="requests"&&!panel?<section className="departure-panel"><div className="departure-request-list">{data.requests.length?data.requests.map(request=>{const focused=request.id===focusedRequestId;return <article key={request.id} id={`attention-departure-request-${request.id}`} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><div><strong>{request.student_name}</strong><span>{request.service_date} · {modeLabel(request.requested_mode)}</span><p>{request.reason}</p></div><DepartureRequestReview request={request} data={data} pending={run.isPending} onDecide={(decision,note)=>run.mutateAsync(()=>decideDepartureRequest(schoolId,request.id,{decision,expected_revision:request.revision,note}))}/></article>}):<p className="departure-empty">No requests awaiting review.</p>}</div></section>:null}
 
-    {section?.id==="roster"&&!panel?<TransportDutyPlanner schoolId={schoolId} data={data}/>:null}
+    {section?.id==="roster"&&!panel&&!tripTargetWrongSection?<TransportDutyPlanner schoolId={schoolId} data={data} focusSwapId={focusedSwapId} focusTripId={focusedTripId}/>:null}
 
     {section?.id==="settings"&&!panel?<section className="departure-panel"><div className="departure-action-grid">
       <button onClick={()=>setPanel("policy")}><ShieldCheck/><span><strong>Departure policy</strong><small>Modes, cutoff and privacy</small></span><ChevronRight/></button>
@@ -62,7 +102,7 @@ export default function PrincipalDeparturePage(){
 
     {section?.id==="trips"&&!panel?<section className="departure-panel"><header><div><h2>Recent trips</h2></div><MapPin size={21}/></header>{data.trips.length?<div className="departure-trip-list">{data.trips.map(trip=><article key={trip.id}><span className={`departure-state departure-state--${trip.state}`}>{trip.state.replaceAll("_"," ")}</span><div><Link to={`/principal/departure/journeys/${trip.id}`}><strong>{trip.route_name}</strong><ChevronRight size={16}/></Link><small>{trip.service_date} · {trip.vehicle_label||trip.route_code} · {trip.collector_name}</small></div><div><strong>{trip.dropped_count}/{trip.roster_count}</strong><small>handovers recorded</small></div></article>)}</div>:<p className="departure-empty">No trips have been created.</p>}</section>:null}
 
-    {section?.id==="pickup"&&!panel?<><section className="departure-panel"><header><div><h2>Upcoming handovers</h2></div><CheckCircle2 size={21}/></header>{data.plans.length?<div className="departure-plan-list">{data.plans.map(plan=><article key={plan.id}><div><strong>{plan.student_name}</strong><small>{plan.service_date} · {modeLabel(plan.mode)}{plan.collector_name?` · ${plan.collector_name}`:""}</small></div><span className={`departure-state departure-state--${plan.state}`}>{plan.state}</span>{plan.mode!=="school_transport"&&plan.state==="planned"?<button onClick={()=>run.mutate(()=>departurePlanAction(schoolId,plan.id,"ready",plan.revision,"Departure checks complete"))}>Mark ready</button>:null}{plan.mode!=="school_transport"&&plan.state==="ready"?<HandoverForm plan={plan} pending={run.isPending} onSave={input=>run.mutateAsync(()=>recordDepartureHandover(schoolId,plan.id,input))}/>:null}</article>)}</div>:<p className="departure-empty">No dated plans in the next seven days.</p>}</section>
+    {section?.id==="pickup"&&!panel&&!planTargetUnavailable?<><section className="departure-panel"><header><div><h2>Upcoming handovers</h2></div><CheckCircle2 size={21}/></header>{data.plans.length?<div className="departure-plan-list">{data.plans.map(plan=>{const focused=plan.id===focusedPlanId&&planTargetMatches;return <article key={plan.id} id={focused?`attention-departure-plan-${plan.id}`:undefined} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><div><strong>{plan.student_name}</strong><small>{plan.service_date} · {modeLabel(plan.mode)}{plan.collector_name?` · ${plan.collector_name}`:""}</small>{focused&&plan.state!=="exception"?<p className="departure-attention-resolution">This exception is no longer pending.</p>:null}</div><span className={`departure-state departure-state--${plan.state}`}>{plan.state}</span>{plan.mode!=="school_transport"&&plan.state==="planned"?<button onClick={()=>run.mutate(()=>departurePlanAction(schoolId,plan.id,"ready",plan.revision,"Departure checks complete"))}>Mark ready</button>:null}{plan.mode!=="school_transport"&&plan.state==="ready"?<HandoverForm plan={plan} pending={run.isPending} onSave={input=>run.mutateAsync(()=>recordDepartureHandover(schoolId,plan.id,input))}/>:null}</article>;})}</div>:<p className="departure-empty">No dated plans in the next seven days.</p>}</section>
 
     <section className="departure-panel"><header><div><span>Collection authority</span><h2>Current receivers</h2></div><ShieldCheck size={21}/></header>{data.authorities.length?<div className="departure-plan-list">{data.authorities.map(authority=><article key={authority.id}><div><strong>{authority.collector_name}</strong><small>{data.students.find(item=>item.id===authority.student_id)?.name} · from {authority.valid_from}</small></div><button onClick={()=>{if(window.confirm(`Revoke ${authority.collector_name}'s collection authority?`))run.mutate(()=>revokeDepartureAuthority(schoolId,authority.id,{expected_revision:authority.revision,reason:"Revoked by institution operations"}));}}>Revoke</button></article>)}</div>:<p className="departure-empty">No verified receivers.</p>}</section>
     </>:null}

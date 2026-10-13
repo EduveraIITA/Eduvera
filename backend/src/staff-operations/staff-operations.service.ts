@@ -1,5 +1,5 @@
 import { issueInvitationCode } from '../common/invitation-code.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
@@ -52,11 +52,32 @@ const assignmentInput = z.object({
   notes: z.string().trim().max(1000).default(""),
   backup_staff_profile_id: uuid.nullable().default(null),
 });
-export { profileInput, policyInput, assignmentInput };
+const coveragePolicyInput = z.object({
+  enabled: z.boolean(),
+  deadline_minutes_before: z.number().int().min(0).max(1440),
+  fallback_kind: z.enum(["independent_study", "physical_activity", "library_period", "merge_class", "cancelled_period"]),
+  fallback_label: z.string().trim().min(3).max(120),
+  supervisor_staff_profile_id: uuid.nullable().default(null),
+  expected_revision: z.number().int().nonnegative(),
+});
+export { profileInput, policyInput, assignmentInput, coveragePolicyInput };
 
 @Injectable()
-export class StaffOperationsService {
+export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
+  private coverageTimer?: ReturnType<typeof setInterval>;
+
   constructor(private readonly db: DatabaseService) {}
+
+  onModuleInit() {
+    this.coverageTimer = setInterval(() => {
+      void this.reconcileCoverageDeadlines().catch(() => undefined);
+    }, 60_000);
+    this.coverageTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.coverageTimer) clearInterval(this.coverageTimer);
+  }
 
   private async membership(user: AuthUser, schoolId: string, roles: MembershipRole[], db: Db = this.db) {
     uuid.parse(schoolId);
@@ -84,6 +105,155 @@ export class StaffOperationsService {
       idempotency_key: `${event}:${requestId}:${revision}`,
       notification_user_ids: [...new Set(notificationUsers)], notification_payload: notification as any,
     }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
+  }
+
+  async reconcileCoverageDeadlines(schoolId?: string) {
+    if (schoolId) uuid.parse(schoolId);
+    return this.db.transaction().execute(async (db) => {
+      const candidates = await sql<{
+        id: string;
+        school_id: string;
+        title: string;
+        duty_date: string;
+        status: "open" | "offered" | "declined";
+        period_ended: boolean;
+        policy_enabled: boolean;
+        deadline_minutes_before: number;
+        fallback_kind: "independent_study" | "physical_activity" | "library_period" | "merge_class" | "cancelled_period";
+        fallback_label: string;
+        supervisor_staff_profile_id: string | null;
+        policy_revision: number;
+        policy_actor_id: string;
+      }>`
+        SELECT task.id,task.school_id,task.title,task.duty_date::text,task.status,
+          now() >= ((task.duty_date + COALESCE(task.ends_at,task.starts_at,time '23:59')) AT TIME ZONE school.timezone) AS period_ended,
+          COALESCE(policy.enabled,false) AS policy_enabled,
+          COALESCE(policy.deadline_minutes_before,30)::int AS deadline_minutes_before,
+          COALESCE(policy.fallback_kind,'independent_study') AS fallback_kind,
+          COALESCE(policy.fallback_label,'Independent study') AS fallback_label,
+          policy.supervisor_staff_profile_id,
+          COALESCE(policy.revision,0)::int AS policy_revision,
+          COALESCE(policy.updated_by,administrator.user_id) AS policy_actor_id
+        FROM staff_coverage_tasks task
+        JOIN schools school ON school.id=task.school_id
+        JOIN LATERAL (
+          SELECT membership.user_id FROM school_memberships membership
+          WHERE membership.school_id=task.school_id AND membership.role='admin' AND membership.is_active
+          ORDER BY membership.created_at,membership.id LIMIT 1
+        ) administrator ON true
+        LEFT JOIN staff_coverage_policies policy ON policy.school_id=task.school_id
+        WHERE task.status IN ('open','offered','declined')
+          AND (${schoolId ?? null}::uuid IS NULL OR task.school_id=${schoolId ?? null}::uuid)
+          AND (
+            now() >= ((task.duty_date + COALESCE(task.ends_at,task.starts_at,time '23:59')) AT TIME ZONE school.timezone)
+            OR (COALESCE(policy.enabled,false) AND now() >=
+              ((task.duty_date + COALESCE(task.starts_at,time '00:00')) AT TIME ZONE school.timezone)
+              - make_interval(mins=>policy.deadline_minutes_before))
+          )
+        ORDER BY task.duty_date,task.starts_at NULLS LAST,task.id
+        FOR UPDATE OF task SKIP LOCKED
+        LIMIT 250`.execute(db);
+
+      let resolved = 0;
+      for (const item of candidates.rows) {
+        const expired = item.period_ended;
+        // A configured fallback is the school's administrative decision. It is
+        // safe to record even when reconciliation runs late, provided we never
+        // describe it as proof that a teacher or activity actually took place.
+        const fallbackDecided = item.policy_enabled;
+        const nextStatus = fallbackDecided ? "fallback_applied" : "expired_unconfirmed";
+        const label = fallbackDecided
+          ? item.fallback_label
+          : "Period ended without a recorded cover decision";
+        const updated = await db.updateTable("staff_coverage_tasks").set({
+          status: nextStatus,
+          fallback_kind: fallbackDecided ? item.fallback_kind : "unconfirmed",
+          fallback_label: label,
+          fallback_supervisor_staff_profile_id: fallbackDecided ? item.supervisor_staff_profile_id : null,
+          resolution_policy_revision: fallbackDecided ? item.policy_revision : null,
+          resolved_at: new Date(),
+          updated_at: new Date(),
+        }).where("id", "=", item.id)
+          .where("status", "in", ["open", "offered", "declined"])
+          .returningAll().executeTakeFirst();
+        if (!updated) continue;
+        resolved += 1;
+        await db.insertInto("staff_coverage_task_audits").values({
+          school_id: item.school_id,
+          task_id: item.id,
+          actor_id: item.policy_actor_id,
+          action: nextStatus,
+          from_status: item.status,
+          to_status: nextStatus,
+          note: label,
+          automated: true,
+        }).execute();
+        const recipients = await sql<{ user_id: string }>`
+          SELECT membership.user_id FROM school_memberships membership
+          WHERE membership.school_id=${item.school_id}::uuid AND membership.role='admin' AND membership.is_active
+          UNION
+          SELECT profile.user_id FROM staff_profiles profile
+          WHERE profile.id=${fallbackDecided ? item.supervisor_staff_profile_id : null}::uuid
+            AND profile.status='active' AND profile.user_id IS NOT NULL`.execute(db);
+        const userIds = recipients.rows.map((row) => row.user_id);
+        await this.enqueue(db, item.school_id, item.id, `staff.coverage.${nextStatus}`, userIds, expired ? [] : userIds, expired ? null : {
+          kind: "general",
+          title: "Cover fallback decided",
+          body: `${item.title} will use ${label}.`,
+          admin_link: `/principal/staff?section=leave&coverage=${item.id}&coverage_revision=${updated.revision}`,
+        }, {
+          school_id: item.school_id,
+          status: nextStatus,
+          revision: updated.revision,
+          fallback_kind: updated.fallback_kind,
+          refresh: ["principal.staff", "teacher.responsibilities", "requests", "notifications", "attention"],
+        }, "staff_coverage_task");
+        await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
+          VALUES(${item.school_id}::uuid,${item.policy_actor_id}::uuid,${`staff.coverage.${nextStatus}`},${item.id}::uuid,
+          ${JSON.stringify({ automated: true, from_status: item.status, fallback_kind: updated.fallback_kind, policy_revision: updated.resolution_policy_revision })}::jsonb)`.execute(db);
+      }
+      return { resolved };
+    });
+  }
+
+  async saveCoveragePolicy(user: AuthUser, schoolId: string, body: unknown) {
+    const data = coveragePolicyInput.parse(body);
+    const saved = await this.db.transaction().execute(async (db) => {
+      await this.principal(user, schoolId, db);
+      const current = await db.selectFrom("staff_coverage_policies").selectAll()
+        .where("school_id", "=", schoolId).forUpdate().executeTakeFirst();
+      if ((current?.revision ?? 0) !== data.expected_revision) {
+        throw new ConflictException("The cover fallback policy changed. Refresh before saving.");
+      }
+      if (data.supervisor_staff_profile_id) {
+        const supervisor = await db.selectFrom("staff_profiles").select(["id", "user_id"])
+          .where("id", "=", data.supervisor_staff_profile_id).where("school_id", "=", schoolId)
+          .where("status", "=", "active").executeTakeFirst();
+        if (!supervisor?.user_id) throw new BadRequestException("Choose an active fallback supervisor with account access.");
+      }
+      const values = {
+        enabled: data.enabled,
+        deadline_minutes_before: data.deadline_minutes_before,
+        fallback_kind: data.fallback_kind,
+        fallback_label: data.fallback_label,
+        supervisor_staff_profile_id: data.supervisor_staff_profile_id,
+        updated_by: user.id,
+        updated_at: new Date(),
+      };
+      const policy = current
+        ? await db.updateTable("staff_coverage_policies").set(values).where("school_id", "=", schoolId).returningAll().executeTakeFirstOrThrow()
+        : await db.insertInto("staff_coverage_policies").values({ school_id: schoolId, ...values }).returningAll().executeTakeFirstOrThrow();
+      await this.audit(db, user, schoolId, "staff.coverage.policy.updated", schoolId, {
+        enabled: policy.enabled,
+        deadline_minutes_before: policy.deadline_minutes_before,
+        fallback_kind: policy.fallback_kind,
+        supervisor_staff_profile_id: policy.supervisor_staff_profile_id,
+        revision: policy.revision,
+      });
+      return policy;
+    });
+    await this.reconcileCoverageDeadlines(schoolId);
+    return saved;
   }
 
   private async createCoverageTasks(db: Transaction<Database>, user: AuthUser, schoolId: string, request: { id: string; staff_profile_id: string; starts_on: string; ends_on: string; portion: string; handover_note: string }, profile: { user_id: string | null }) {
@@ -117,8 +287,10 @@ export class StaffOperationsService {
     return ids.length;
   }
 
-  async workspace(user: AuthUser, schoolId: string) {
+  async workspace(user: AuthUser, schoolId: string, focusedRequestId?: string) {
+    if (focusedRequestId) uuid.parse(focusedRequestId);
     const member = await this.membership(user, schoolId, ["admin", "staff"]);
+    await this.reconcileCoverageDeadlines(schoolId);
     const [accessRoles, roleAssignments] = await Promise.all([
       member.role === "admin" ? accessRoleCatalogue(this.db, schoolId) : Promise.resolve([]),
       staffRoleAssignments(this.db, schoolId, member.role === "staff" ? user.id : undefined),
@@ -128,6 +300,22 @@ export class StaffOperationsService {
     const yearResult = await sql<{ academic_year: string }>`SELECT academic_year FROM academic_terms
       WHERE school_id=${schoolId}::uuid ORDER BY is_active DESC,(CURRENT_DATE BETWEEN starts_on AND ends_on) DESC,starts_on DESC LIMIT 1`.execute(this.db);
     const academicYear = yearResult.rows[0]?.academic_year ?? "";
+    const coveragePolicyResult = await sql`SELECT policy.*,
+        supervisor.first_name AS supervisor_first_name,supervisor.last_name AS supervisor_last_name
+      FROM staff_coverage_policies policy
+      LEFT JOIN staff_profiles supervisor ON supervisor.id=policy.supervisor_staff_profile_id
+      WHERE policy.school_id=${schoolId}::uuid`.execute(this.db);
+    const coveragePolicy = coveragePolicyResult.rows[0] ?? {
+      school_id: schoolId,
+      enabled: false,
+      deadline_minutes_before: 30,
+      fallback_kind: "independent_study",
+      fallback_label: "Independent study",
+      supervisor_staff_profile_id: null,
+      supervisor_first_name: null,
+      supervisor_last_name: null,
+      revision: 0,
+    };
     const policies = await sql`SELECT * FROM staff_leave_policies WHERE school_id=${schoolId}::uuid
       AND (${academicYear}='' OR academic_year=${academicYear}) ORDER BY is_active DESC,name`.execute(this.db);
     const requests = await sql`SELECT r.*,p.name AS policy_name,p.code AS policy_code,
@@ -136,12 +324,17 @@ export class StaffOperationsService {
           CROSS JOIN LATERAL effective_school_schedule(r.school_id,day::date) schedule
           WHERE schedule.teacher_user_id=profile.user_id AND schedule.slot_type='class'),0) AS affected_periods,
         COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id),0) AS coverage_tasks,
-        COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status IN ('open','declined')),0) AS coverage_open
+        COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status IN ('open','offered','declined')),0) AS coverage_open,
+        COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status='fallback_applied'),0) AS coverage_fallback,
+        COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status IN ('accepted','completed')),0) AS coverage_filled,
+        COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status='expired_unconfirmed'),0) AS coverage_expired,
+        COALESCE((SELECT string_agg(DISTINCT task.fallback_label, ', ' ORDER BY task.fallback_label)
+          FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status='fallback_applied' AND task.fallback_label<>''),'') AS coverage_fallback_labels
       FROM staff_leave_requests r JOIN staff_profiles profile ON profile.id=r.staff_profile_id
       JOIN staff_leave_policies p ON p.id=r.policy_id
       WHERE r.school_id=${schoolId}::uuid
         AND (${member.role}='admin' OR profile.user_id=${user.id}::uuid)
-      ORDER BY (r.status='submitted') DESC,r.starts_on DESC,r.created_at DESC LIMIT 100`.execute(this.db);
+      ORDER BY (r.id=${focusedRequestId ?? null}::uuid) DESC,(r.status='submitted') DESC,r.starts_on DESC,r.created_at DESC LIMIT 100`.execute(this.db);
 
     const responsibilityTypes = await sql`SELECT type.*,
         COALESCE((SELECT count(*)::int FROM staff_responsibility_assignments assignment
@@ -164,21 +357,29 @@ export class StaffOperationsService {
       LEFT JOIN subjects subject ON subject.id=assignment.subject_id
       LEFT JOIN campus_events event ON event.id=assignment.event_id
       WHERE assignment.school_id=${schoolId}::uuid
-        AND (${member.role}='admin' OR profile.user_id=${user.id}::uuid)
+        AND (${member.role}='admin' OR (
+          profile.user_id=${user.id}::uuid
+          AND (assignment.status<>'offered' OR profile.status='active')
+        ))
       ORDER BY (assignment.status='offered') DESC,(assignment.status='active') DESC,assignment.starts_on,assignment.created_at DESC`.execute(this.db);
     const coverageTasks = await sql`SELECT task.*,
         absent.first_name AS absent_first_name,absent.last_name AS absent_last_name,absent.designation AS absent_designation,
         replacement.first_name AS replacement_first_name,replacement.last_name AS replacement_last_name,replacement.user_id AS replacement_user_id,
+        fallback_supervisor.first_name AS fallback_supervisor_first_name,fallback_supervisor.last_name AS fallback_supervisor_last_name,
         CASE WHEN section.id IS NULL THEN '' ELSE 'Class ' || section.grade || section.section END AS class_name,
         subject.name AS subject_name,leave_request.reason AS leave_reason
       FROM staff_coverage_tasks task
       JOIN staff_profiles absent ON absent.id=task.absent_staff_profile_id
       LEFT JOIN staff_profiles replacement ON replacement.id=task.replacement_staff_profile_id
+      LEFT JOIN staff_profiles fallback_supervisor ON fallback_supervisor.id=task.fallback_supervisor_staff_profile_id
       LEFT JOIN class_sections section ON section.id=task.class_section_id
       LEFT JOIN subjects subject ON subject.id=task.subject_id
       JOIN staff_leave_requests leave_request ON leave_request.id=task.leave_request_id
       WHERE task.school_id=${schoolId}::uuid
-        AND (${member.role}='admin' OR absent.user_id=${user.id}::uuid OR replacement.user_id=${user.id}::uuid)
+        AND (${member.role}='admin' OR absent.user_id=${user.id}::uuid OR (
+          replacement.user_id=${user.id}::uuid
+          AND (task.status<>'offered' OR replacement.status='active')
+        ))
       ORDER BY task.duty_date,task.starts_at NULLS LAST,task.period_number NULLS LAST`.execute(this.db);
     if (member.role === "staff") {
       const profile = await sql`SELECT profile.*,u.avatar_url FROM staff_profiles profile LEFT JOIN users u ON u.id=profile.user_id
@@ -190,7 +391,7 @@ export class StaffOperationsService {
           COALESCE((SELECT sum(r.requested_days) FROM staff_leave_requests r WHERE r.staff_profile_id=${(profile.rows[0] as { id: string }).id}::uuid AND r.policy_id=p.id AND r.status='approved'),0) AS used,
           COALESCE((SELECT sum(r.requested_days) FROM staff_leave_requests r WHERE r.staff_profile_id=${(profile.rows[0] as { id: string }).id}::uuid AND r.policy_id=p.id AND r.status='submitted'),0) AS pending
         FROM staff_leave_policies p WHERE p.school_id=${schoolId}::uuid AND p.academic_year=${academicYear} AND p.is_active ORDER BY p.name`.execute(this.db);
-      return { ...access, mode: "staff", academic_year: academicYear, profile: profile.rows[0], policies: policies.rows, balances: balances.rows, requests: requests.rows, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows };
+      return { ...access, mode: "staff", academic_year: academicYear, profile: profile.rows[0], policies: policies.rows, balances: balances.rows, requests: requests.rows, coverage_policy: coveragePolicy, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows };
     }
 
     const profiles = await sql`SELECT profile.*,u.avatar_url,
@@ -210,7 +411,7 @@ export class StaffOperationsService {
     const classes = await sql`SELECT id,'Class ' || grade || section AS name FROM class_sections WHERE school_id=${schoolId}::uuid AND academic_year=${academicYear} ORDER BY grade,section`.execute(this.db);
     const subjects = await sql`SELECT id,name FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(this.db);
     const events = await sql`SELECT id,title,starts_at,ends_at FROM campus_events WHERE school_id=${schoolId}::uuid AND status IN ('draft','published') AND ends_at >= now() - interval '1 day' ORDER BY starts_at LIMIT 100`.execute(this.db);
-    return { ...access, mode: "admin", academic_year: academicYear, profiles: profiles.rows, onboarding_items: items.rows, policies: policies.rows, balances: balances.rows, requests: requests.rows, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows, references: { classes: classes.rows, subjects: subjects.rows, events: events.rows } };
+    return { ...access, mode: "admin", academic_year: academicYear, profiles: profiles.rows, onboarding_items: items.rows, policies: policies.rows, balances: balances.rows, requests: requests.rows, coverage_policy: coveragePolicy, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows, references: { classes: classes.rows, subjects: subjects.rows, events: events.rows } };
   }
 
 
@@ -316,7 +517,20 @@ export class StaffOperationsService {
       await db.insertInto("staff_responsibility_audits").values({ school_id: schoolId, assignment_id: assignment.id, actor_id: user.id, action: status === "active" ? "activated" : "offered", from_status: null, to_status: status }).execute();
       const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
       const audience = [...admins.rows.map((row) => row.user_id), ...(profile.user_id ? [profile.user_id] : [])];
-      await this.enqueue(db, schoolId, assignment.id, `staff.responsibility.${status}`, audience, status === "offered" && profile.user_id ? [profile.user_id] : [], status === "offered" ? { kind: "general", title: "New work assignment", body: `${type.name} needs your response.`, link: "/teacher/responsibilities" } : null, { school_id: schoolId, status, revision: assignment.revision, responsibility_type: type.code }, "staff_responsibility");
+      await this.enqueue(db, schoolId, assignment.id, `staff.responsibility.${status}`, audience, status === "offered" && profile.user_id ? [profile.user_id] : [], status === "offered" ? {
+        kind: "general",
+        title: "New work assignment",
+        body: `${type.name} needs your response.`,
+        staff_link: `/teacher/responsibilities?assignment=${assignment.id}&assignment_revision=${assignment.revision}`,
+        attention_eligible: true,
+        attention_portal: "teacher",
+        attention_module: "responsibilities",
+        attention_source_kind: "responsibility_offer",
+        attention_source_id: assignment.id,
+        attention_source_revision: assignment.revision,
+        attention_topic_key: `staff-responsibility:${assignment.id}`,
+        attention_subject_label: type.name,
+      } : null, { school_id: schoolId, status, revision: assignment.revision, responsibility_type: type.code }, "staff_responsibility");
       await this.audit(db, user, schoolId, `staff.responsibility.${status}`, assignment.id, { responsibility_type: type.code, staff_profile_id: profile.id });
       return assignment;
     });
@@ -330,7 +544,8 @@ export class StaffOperationsService {
       const result = await sql<any>`SELECT assignment.*,type.name AS type_name,type.code AS type_code,profile.user_id
         FROM staff_responsibility_assignments assignment JOIN staff_responsibility_types type ON type.id=assignment.responsibility_type_id
         JOIN staff_profiles profile ON profile.id=assignment.staff_profile_id
-        WHERE assignment.id=${assignmentId}::uuid AND assignment.school_id=${schoolId}::uuid AND profile.user_id=${user.id}::uuid FOR UPDATE`.execute(db);
+        WHERE assignment.id=${assignmentId}::uuid AND assignment.school_id=${schoolId}::uuid
+          AND profile.user_id=${user.id}::uuid AND profile.status='active' FOR UPDATE`.execute(db);
       const assignment = result.rows[0];
       if (!assignment) throw new NotFoundException();
       if (assignment.status !== "offered" || assignment.revision !== data.expected_revision) throw new ConflictException("This offer changed. Refresh before responding.");
@@ -339,7 +554,20 @@ export class StaffOperationsService {
       const updated = await db.updateTable("staff_responsibility_assignments").set({ status, responded_at: new Date(), response_note: data.note, updated_at: new Date() }).where("id", "=", assignmentId).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_responsibility_audits").values({ school_id: schoolId, assignment_id: assignmentId, actor_id: user.id, action: data.decision, from_status: "offered", to_status: status, note: data.note }).execute();
       const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      await this.enqueue(db, schoolId, assignmentId, `staff.responsibility.${data.decision}`, [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), { kind: "general", title: `Work assignment ${data.decision}`, body: `${assignment.type_name} was ${data.decision}.`, link: "/principal/staff" }, { school_id: schoolId, status, revision: updated.revision }, "staff_responsibility");
+      await this.enqueue(db, schoolId, assignmentId, `staff.responsibility.${data.decision}`, [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), {
+        kind: "general",
+        title: `Work assignment ${data.decision}`,
+        body: `${assignment.type_name} was ${data.decision}.`,
+        admin_link: `/principal/staff/${assignment.staff_profile_id}?assignment=${assignmentId}&assignment_revision=${updated.revision}`,
+        attention_eligible: true,
+        attention_portal: "principal",
+        attention_module: "staff",
+        attention_source_kind: "responsibility_response",
+        attention_source_id: assignmentId,
+        attention_source_revision: updated.revision,
+        attention_topic_key: `staff-responsibility:${assignmentId}`,
+        attention_subject_label: assignment.type_name,
+      }, { school_id: schoolId, status, revision: updated.revision }, "staff_responsibility");
       await this.audit(db, user, schoolId, `staff.responsibility.${data.decision}`, assignmentId, { note: data.note });
       return updated;
     });
@@ -356,8 +584,21 @@ export class StaffOperationsService {
       const updated = await db.updateTable("staff_responsibility_assignments").set({ status: "revoked", revoked_by: user.id, revoked_at: new Date(), revocation_reason: data.reason, updated_at: new Date() }).where("id", "=", assignmentId).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_responsibility_audits").values({ school_id: schoolId, assignment_id: assignmentId, actor_id: user.id, action: "revoked", from_status: assignment.status, to_status: "revoked", note: data.reason }).execute();
       await this.audit(db, user, schoolId, "staff.responsibility.revoked", assignmentId, { reason: data.reason });
-      const holder=await db.selectFrom("staff_profiles").select("user_id").where("id","=",assignment.staff_profile_id).executeTakeFirst();
-      await this.enqueue(db,schoolId,assignmentId,"staff.access.updated",[user.id,...(holder?.user_id?[holder.user_id]:[])],[],null,{school_id:schoolId,revision:updated.revision},"staff_access");
+      const holder=await db.selectFrom("staff_profiles").select(["user_id","first_name","last_name"]).where("id","=",assignment.staff_profile_id).executeTakeFirst();
+      await this.enqueue(db,schoolId,assignmentId,"staff.access.updated",[user.id,...(holder?.user_id?[holder.user_id]:[])],holder?.user_id?[holder.user_id]:[],holder?.user_id?{
+        kind:"general",
+        title:"Work assignment ended",
+        body:data.reason,
+        staff_link:`/teacher/responsibilities?assignment=${assignmentId}&assignment_revision=${updated.revision}`,
+        attention_eligible:true,
+        attention_portal:"teacher",
+        attention_module:"responsibilities",
+        attention_source_kind:"responsibility_revocation",
+        attention_source_id:assignmentId,
+        attention_source_revision:updated.revision,
+        attention_topic_key:`staff-responsibility:${assignmentId}`,
+        attention_subject_label:`${holder.first_name} ${holder.last_name}`.trim(),
+      }:null,{school_id:schoolId,revision:updated.revision,status:updated.status},"staff_responsibility");
       return updated;
     });
   }
@@ -435,7 +676,20 @@ export class StaffOperationsService {
       const request = await db.insertInto("staff_leave_requests").values({ school_id: schoolId, staff_profile_id: profile.id, policy_id: policy.id, starts_on: data.starts_on, ends_on: data.ends_on, portion: data.portion, requested_days: requestedDays.toFixed(2), reason: data.reason, handover_note: data.handover_note }).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_leave_request_audits").values({ school_id: schoolId, request_id: request.id, actor_id: user.id, action: "submitted", from_status: null, to_status: "submitted" }).execute();
       const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      await this.enqueue(db, schoolId, request.id, "staff.leave.submitted", [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), { kind: "leave", title: "Staff leave needs review", body: `${profile.first_name} ${profile.last_name} requested ${requestedDays} day${requestedDays === 1 ? "" : "s"}.`, admin_link: "/principal/staff?section=leave" }, { school_id: schoolId, status: request.status, revision: request.revision });
+      await this.enqueue(db, schoolId, request.id, "staff.leave.submitted", [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), {
+        kind: "leave",
+        title: "Staff leave needs review",
+        body: `${profile.first_name} ${profile.last_name} requested ${requestedDays} day${requestedDays === 1 ? "" : "s"}.`,
+        admin_link: `/principal/staff?section=leave&request=${request.id}&request_revision=${request.revision}`,
+        attention_eligible: true,
+        attention_portal: "principal",
+        attention_module: "staff",
+        attention_source_kind: "staff_leave_review",
+        attention_source_id: request.id,
+        attention_source_revision: request.revision,
+        attention_topic_key: `staff-leave-review:${request.id}`,
+        attention_subject_label: `${profile.first_name} ${profile.last_name}`.trim(),
+      }, { school_id: schoolId, status: request.status, revision: request.revision });
       await this.audit(db, user, schoolId, "staff.leave.submitted", request.id, { requested_days: requestedDays, policy_id: policy.id });
       return request;
     });
@@ -460,7 +714,7 @@ export class StaffOperationsService {
         const available = Number(policy.annual_allowance) + Number(totals.rows[0]!.adjustments) - Number(totals.rows[0]!.used);
         if (Number(request.requested_days) > available) throw new ConflictException("The leave balance changed and is no longer sufficient.");
       }
-      const updated = await db.updateTable("staff_leave_requests").set({ status: data.decision, decided_by: user.id, decided_at: new Date(), decision_note: data.note, updated_at: new Date() }).where("id", "=", request.id).returningAll().executeTakeFirstOrThrow();
+      const updated = await db.updateTable("staff_leave_requests").set({ status: data.decision, revision: request.revision + 1, decided_by: user.id, decided_at: new Date(), decision_note: data.note, updated_at: new Date() }).where("id", "=", request.id).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_leave_request_audits").values({ school_id: schoolId, request_id: request.id, actor_id: user.id, action: data.decision, from_status: request.status, to_status: data.decision, note: data.note }).execute();
       if (data.decision === "approved") await this.createCoverageTasks(db, user, schoolId, request, profile);
       const coverage = data.decision === "approved"
@@ -471,7 +725,26 @@ export class StaffOperationsService {
       const coverageCount = coverage.rows[0]?.affected ?? 0;
       const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
       const audience = [...admins.rows.map((row) => row.user_id), ...(profile.user_id ? [profile.user_id] : [])];
-      await this.enqueue(db, schoolId, request.id, `staff.leave.${data.decision}`, audience, profile.user_id ? [profile.user_id] : [], { kind: "leave", title: `Leave ${data.decision}`, body: data.decision === "approved" ? `${request.requested_days} day(s) approved. ${coverageCount} timetable period(s) need coverage.` : data.note, staff_link: "/teacher/leave" }, { school_id: schoolId, status: updated.status, revision: updated.revision, affected_periods: coverageCount, refresh: ["principal.staff", "teacher.leave", "principal.timetable"] });
+      await this.enqueue(db, schoolId, request.id, `staff.leave.${data.decision}`, audience, profile.user_id ? [profile.user_id] : [], {
+        kind: "leave",
+        title: `Leave ${data.decision}`,
+        body: data.decision === "approved" ? `${request.requested_days} day(s) approved. ${coverageCount} timetable period(s) need coverage.` : data.note,
+        staff_link: `/teacher/leave?request=${request.id}`,
+        attention_eligible: true,
+        attention_school_id: schoolId,
+        attention_portal: "teacher",
+        attention_module: "leave",
+        attention_source_kind: "staff_leave_decision",
+        attention_source_id: request.id,
+        attention_source_revision: updated.revision,
+        attention_topic_key: `staff-leave:${request.id}`,
+      }, {
+        school_id: schoolId,
+        status: updated.status,
+        revision: updated.revision,
+        affected_periods: coverageCount,
+        refresh: ["principal.staff", "teacher.leave", "principal.timetable", "notifications", "attention"],
+      });
       await this.audit(db, user, schoolId, `staff.leave.${data.decision}`, request.id, { requested_days: request.requested_days, affected_periods: coverageCount, note: data.note });
       return { ...updated, affected_periods: coverageCount };
     });
@@ -501,7 +774,20 @@ export class StaffOperationsService {
       const action = task.replacement_staff_profile_id ? "reassigned" : "offered";
       const updated = await db.updateTable("staff_coverage_tasks").set({ replacement_staff_profile_id: replacement.id, status: "offered", assigned_by: user.id, offered_at: new Date(), responded_at: null, response_note: data.note, updated_at: new Date() }).where("id", "=", task.id).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_coverage_task_audits").values({ school_id: schoolId, task_id: task.id, actor_id: user.id, action, from_status: task.status, to_status: "offered", note: data.note }).execute();
-      await this.enqueue(db, schoolId, task.id, "staff.coverage.offered", [user.id, replacement.user_id], [replacement.user_id], { kind: "general", title: "Cover duty offered", body: `${task.title} on ${task.duty_date} needs your response.`, link: "/teacher/responsibilities" }, { school_id: schoolId, status: "offered", revision: updated.revision, duty_date: task.duty_date }, "staff_coverage_task");
+      await this.enqueue(db, schoolId, task.id, "staff.coverage.offered", [user.id, replacement.user_id], [replacement.user_id], {
+        kind: "general",
+        title: "Cover duty offered",
+        body: `${task.title} on ${task.duty_date} needs your response.`,
+        staff_link: `/teacher/responsibilities?coverage=${task.id}&coverage_revision=${updated.revision}`,
+        attention_eligible: true,
+        attention_portal: "teacher",
+        attention_module: "responsibilities",
+        attention_source_kind: "coverage_offer",
+        attention_source_id: task.id,
+        attention_source_revision: updated.revision,
+        attention_topic_key: `staff-coverage:${task.id}`,
+        attention_subject_label: task.title,
+      }, { school_id: schoolId, status: "offered", revision: updated.revision, duty_date: task.duty_date }, "staff_coverage_task");
       await this.audit(db, user, schoolId, `staff.coverage.${action}`, task.id, { replacement_staff_profile_id: replacement.id });
       return updated;
     });
@@ -514,7 +800,8 @@ export class StaffOperationsService {
       await this.membership(user, schoolId, ["staff"], db);
       const result = await sql<any>`SELECT task.*,profile.user_id,profile.first_name,profile.last_name FROM staff_coverage_tasks task
         JOIN staff_profiles profile ON profile.id=task.replacement_staff_profile_id
-        WHERE task.id=${taskId}::uuid AND task.school_id=${schoolId}::uuid AND profile.user_id=${user.id}::uuid FOR UPDATE`.execute(db);
+        WHERE task.id=${taskId}::uuid AND task.school_id=${schoolId}::uuid
+          AND profile.user_id=${user.id}::uuid AND profile.status='active' FOR UPDATE`.execute(db);
       const task = result.rows[0];
       if (!task) throw new NotFoundException();
       if (task.status !== "offered" || task.revision !== data.expected_revision) throw new ConflictException("This cover offer changed. Refresh before responding.");
@@ -522,7 +809,20 @@ export class StaffOperationsService {
       const updated = await db.updateTable("staff_coverage_tasks").set({ status: data.decision, responded_at: new Date(), response_note: data.note, updated_at: new Date() }).where("id", "=", task.id).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_coverage_task_audits").values({ school_id: schoolId, task_id: task.id, actor_id: user.id, action: data.decision, from_status: "offered", to_status: data.decision, note: data.note }).execute();
       const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      await this.enqueue(db, schoolId, task.id, `staff.coverage.${data.decision}`, [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), { kind: "general", title: `Cover duty ${data.decision}`, body: `${task.first_name} ${task.last_name} ${data.decision} ${task.title}.`, link: "/principal/staff?section=leave" }, { school_id: schoolId, status: data.decision, revision: updated.revision }, "staff_coverage_task");
+      await this.enqueue(db, schoolId, task.id, `staff.coverage.${data.decision}`, [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), {
+        kind: "general",
+        title: `Cover duty ${data.decision}`,
+        body: `${task.first_name} ${task.last_name} ${data.decision} ${task.title}.`,
+        admin_link: `/principal/staff?section=leave&coverage=${task.id}&coverage_revision=${updated.revision}`,
+        attention_eligible: true,
+        attention_portal: "principal",
+        attention_module: "staff",
+        attention_source_kind: "coverage_response",
+        attention_source_id: task.id,
+        attention_source_revision: updated.revision,
+        attention_topic_key: `staff-coverage:${task.id}`,
+        attention_subject_label: `${task.first_name} ${task.last_name}`.trim(),
+      }, { school_id: schoolId, status: data.decision, revision: updated.revision }, "staff_coverage_task");
       await this.audit(db, user, schoolId, `staff.coverage.${data.decision}`, task.id, { note: data.note });
       return updated;
     });

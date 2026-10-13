@@ -10,6 +10,7 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { assertActiveSchoolStaffMember, hasScopedSchoolPermission, schoolPermission } from "../roles/authorization.js";
+import { SchoolEventService } from "../school/school-event.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 export interface AssessmentUpload { filename: string; mimetype: string; data: Buffer }
@@ -22,9 +23,41 @@ const resultsInput = z.object({ expected_assessment_revision: z.coerce.number().
 const actionInput = z.object({ expected_revision: z.coerce.number().int().positive(), note: z.string().trim().max(1000).default("") });
 export { cycleInput, assessmentInput, resultsInput, actionInput };
 
+interface AssessmentEventContractInput {
+  schoolId: string;
+  assessmentId: string;
+  classSectionId: string;
+  action: string;
+  status: string;
+  revision: number;
+  audienceUserIds: string[];
+}
+
+export function assessmentUpdatedEvent(input: AssessmentEventContractInput) {
+  const refresh = ["assessments", "teacher.home", "principal.home"];
+  if (["schedule", "cancel"].includes(input.action)) refresh.push("calendar");
+  if (input.action === "publish") refresh.push("notifications", "attention");
+  return {
+    schoolId: input.schoolId,
+    eventType: "assessment.updated" as const,
+    aggregateType: "assessment",
+    aggregateId: input.assessmentId,
+    audienceUserIds: input.audienceUserIds,
+    payload: {
+      assessment_id: input.assessmentId,
+      class_section_id: input.classSectionId,
+      action: input.action,
+      status: input.status,
+      revision: input.revision,
+      refresh,
+    },
+    idempotencyKey: `assessment:${input.assessmentId}:${input.action}:${input.revision}`,
+  };
+}
+
 @Injectable()
 export class AssessmentsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   private async principal(user: AuthUser, schoolId: string, db: Db = this.db) {
     uuid.parse(schoolId);
@@ -47,6 +80,57 @@ export class AssessmentsService {
 
   private async audit(db: Db, user: AuthUser, schoolId: string, assessmentId: string|null, action: string, fromStatus: string|null, toStatus: string|null, metadata: Record<string,unknown> = {}) {
     await db.insertInto("assessment_audits").values({ school_id: schoolId, assessment_id: assessmentId, actor_id: user.id, action, from_status: fromStatus, to_status: toStatus, metadata }).execute();
+  }
+
+  private async eventAudience(db: Db, schoolId: string, assessmentId: string, includeFamily: boolean) {
+    const staff = (await sql<{ user_id: string }>`
+      SELECT membership.user_id FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${schoolId}::uuid AND membership.role='admin' AND membership.is_active
+      UNION
+      SELECT assignment.user_id FROM assessment_staff_assignments assignment
+      JOIN school_memberships membership ON membership.school_id=assignment.school_id
+        AND membership.user_id=assignment.user_id AND membership.role='staff' AND membership.is_active
+      JOIN users account ON account.id=assignment.user_id AND account.is_active
+      WHERE assignment.school_id=${schoolId}::uuid AND assignment.assessment_id=${assessmentId}::uuid
+        AND staff_has_resource_permission(${schoolId}::uuid,assignment.user_id,'assessments.view','assessment',${assessmentId}::uuid)
+    `.execute(db)).rows.map((row) => row.user_id);
+    if (!includeFamily) return staff;
+    const family = (await sql<{ user_id: string }>`
+      SELECT student.user_id FROM assessment_results result
+      JOIN students student ON student.id=result.student_id AND student.user_id IS NOT NULL
+      JOIN school_memberships membership ON membership.school_id=result.school_id
+        AND membership.user_id=student.user_id AND membership.role='student' AND membership.is_active
+      JOIN users account ON account.id=student.user_id AND account.is_active
+      WHERE result.school_id=${schoolId}::uuid AND result.assessment_id=${assessmentId}::uuid
+      UNION
+      SELECT parent.user_id FROM assessment_results result
+      JOIN guardian_relationships relationship ON relationship.school_id=result.school_id AND relationship.student_id=result.student_id
+      JOIN parents parent ON parent.id=relationship.guardian_id AND parent.user_id IS NOT NULL
+      JOIN school_memberships membership ON membership.school_id=result.school_id
+        AND membership.user_id=parent.user_id AND membership.role='guardian' AND membership.is_active
+      JOIN users account ON account.id=parent.user_id AND account.is_active
+      WHERE result.school_id=${schoolId}::uuid AND result.assessment_id=${assessmentId}::uuid
+    `.execute(db)).rows.map((row) => row.user_id);
+    return [...new Set([...staff, ...family])];
+  }
+
+  private async emitUpdated(
+    db: Db,
+    assessment: { id: string; school_id: string; class_section_id: string; status: string; revision: number },
+    action: string,
+    includeFamily = false,
+  ) {
+    const audienceUserIds = await this.eventAudience(db, assessment.school_id, assessment.id, includeFamily);
+    await this.events.enqueueUserEvent(db, assessmentUpdatedEvent({
+      schoolId: assessment.school_id,
+      assessmentId: assessment.id,
+      classSectionId: assessment.class_section_id,
+      action,
+      status: assessment.status,
+      revision: assessment.revision,
+      audienceUserIds,
+    }));
   }
 
   async workspace(user: AuthUser, schoolId: string) {
@@ -194,8 +278,46 @@ export class AssessmentsService {
           SELECT ${schoolId}::uuid,${assessmentId}::uuid,COALESCE(max(sequence),0)+1,${current.revision},${data.note},${user.id}::uuid FROM assessment_publications WHERE assessment_id=${assessmentId}::uuid RETURNING id,sequence`.execute(db)).rows[0]!;
         await sql`INSERT INTO assessment_publication_results(school_id,publication_id,assessment_id,student_id,source_result_id,source_result_revision,outcome,marks,grade,feedback)
           SELECT school_id,${publication.id}::uuid,assessment_id,student_id,id,revision,outcome,marks,grade,feedback FROM assessment_results WHERE assessment_id=${assessmentId}::uuid`.execute(db);
-        const recipients=await sql<{user_id:string;link:string}>`SELECT DISTINCT user_id,'/student/results'::text AS link FROM students WHERE id IN(SELECT student_id FROM assessment_results WHERE assessment_id=${assessmentId}::uuid) AND user_id IS NOT NULL UNION SELECT DISTINCT parent.user_id,'/parent/results'::text AS link FROM parents parent JOIN guardian_relationships relationship ON relationship.guardian_id=parent.id WHERE relationship.student_id IN(SELECT student_id FROM assessment_results WHERE assessment_id=${assessmentId}::uuid) AND parent.user_id IS NOT NULL`.execute(db);
-        for(const recipient of recipients.rows) await db.insertInto("notifications").values({recipient_id:recipient.user_id,kind:"general",title:"A result has been published",body:current.title,link:recipient.link,metadata:{assessment_id:assessmentId,publication_id:publication.id},dedupe_key:`assessment:${assessmentId}:publication:${publication.sequence}:${recipient.user_id}`}).onConflict((conflict)=>conflict.doNothing()).execute();
+        const recipients=await sql<{user_id:string;student_id:string;link:string;portal:"parent"|"student"}>`
+          SELECT DISTINCT audience.user_id,audience.student_id,audience.link,audience.portal FROM (
+            SELECT student.user_id,student.id AS student_id,'/student/results'::text AS link,'student'::text AS portal
+            FROM assessment_results result JOIN students student ON student.id=result.student_id
+            WHERE result.assessment_id=${assessmentId}::uuid AND student.user_id IS NOT NULL
+            UNION ALL
+            SELECT parent.user_id,result.student_id,'/parent/results'::text AS link,'parent'::text AS portal
+            FROM assessment_results result
+            JOIN guardian_relationships relationship ON relationship.student_id=result.student_id AND relationship.school_id=${schoolId}::uuid
+            JOIN parents parent ON parent.id=relationship.guardian_id
+            WHERE result.assessment_id=${assessmentId}::uuid AND parent.user_id IS NOT NULL
+          ) audience
+          JOIN users account ON account.id=audience.user_id AND account.is_active
+          JOIN school_memberships membership ON membership.user_id=audience.user_id
+            AND membership.school_id=${schoolId}::uuid AND membership.is_active
+            AND membership.role=CASE audience.portal WHEN 'parent' THEN 'guardian' ELSE 'student' END
+        `.execute(db);
+        for(const recipient of recipients.rows) await db.insertInto("notifications").values({
+          recipient_id:recipient.user_id,
+          kind:"general",
+          title:"A result has been published",
+          body:current.title,
+          link:recipient.portal === "parent"
+            ? `/parent/results?student_id=${recipient.student_id}&assessment_id=${assessmentId}&publication_id=${publication.id}`
+            : recipient.link,
+          metadata:{assessment_id:assessmentId,publication_id:publication.id,student_id:recipient.student_id},
+          dedupe_key:`assessment:${assessmentId}:publication:${publication.sequence}:${recipient.user_id}:${recipient.student_id}`,
+          ...(recipient.portal === "parent" ? {
+            attention_eligible:true,
+            attention_school_id:schoolId,
+            attention_student_id:recipient.student_id,
+            attention_class_section_id:current.class_section_id,
+            attention_portal:"parent" as const,
+            attention_module:"results" as const,
+            attention_source_kind:"assessment_publication" as const,
+            attention_source_id:publication.id,
+            attention_source_revision:publication.sequence,
+            attention_topic_key:`assessment:${assessmentId}:student:${recipient.student_id}`,
+          } : {}),
+        }).onConflict((conflict)=>conflict.doNothing()).execute();
         next="published";
       }
       const update:any={status:next,revision:current.revision+1,updated_by:user.id,updated_at:new Date()};
@@ -205,6 +327,7 @@ export class AssessmentsService {
       if(action==="cancel"){update.cancelled_by=user.id;update.cancelled_at=new Date();update.cancellation_reason=data.note;}
       const updated=await db.updateTable("assessments").set(update).where("id","=",assessmentId).returningAll().executeTakeFirstOrThrow();
       await this.audit(db,user,schoolId,assessmentId,`assessment.${action}`,current.status,next,{note:data.note});
+      await this.emitUpdated(db,updated,action,action==="publish");
       return updated;
     });
   }
@@ -227,6 +350,7 @@ export class AssessmentsService {
       const wasPublished=assessment.status==="published";
       const updated=await db.updateTable("assessments").set({status:"marking",revision:assessment.revision+1,updated_by:user.id,updated_at:new Date(),submitted_by:null,submitted_at:null,moderated_by:null,moderated_at:null,moderation_note:wasPublished?"Correction requires moderation and republication.":assessment.moderation_note}).where("id","=",assessmentId).returningAll().executeTakeFirstOrThrow();
       await this.audit(db,user,schoolId,assessmentId,wasPublished?"assessment.correction.started":"assessment.results.recorded",assessment.status,"marking",{rows:data.results.length});
+      await this.emitUpdated(db,updated,wasPublished?"correction-started":"results-recorded");
       return updated;
     });
   }

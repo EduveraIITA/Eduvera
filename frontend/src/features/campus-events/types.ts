@@ -252,6 +252,7 @@ export interface EventFinanceParticipant {
   admission_number: string;
   avatar_url: string | null;
   participation_state: "pending" | "accepted" | "declined" | "withdrawn";
+  withdrawal_id?: string | null;
   withdrawn_at: string | null;
   can_withdraw: boolean;
   finance_state: EventFinanceState;

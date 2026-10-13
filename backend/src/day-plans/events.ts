@@ -30,11 +30,14 @@ export async function planEvent(
       : [];
   // Operational notice is persisted with publication; viewing it is not an acknowledgment.
   if (kind === "published") {
-    const recipients = new Map<string, { user_id: string; link: string }>();
+    const publishedRevision = plan.published_version ?? revision;
+    const recipients: Array<{ user_id: string; student_id: string | null; portal: "parent" | "student" | "teacher" | "principal"; link: string }> = [];
     for (const f of families)
-      recipients.set(f.user_id, {
+      recipients.push({
         user_id: f.user_id,
-        link: `/${f.role === "guardian" ? "parent" : "student"}/timetable?date=${plan.date}${f.role === "guardian" ? `&student=${f.student_id}` : ""}`,
+        student_id: f.student_id,
+        portal: f.role === "guardian" ? "parent" : "student",
+        link: `/${f.role === "guardian" ? "parent" : "student"}/timetable?date=${plan.date}${f.role === "guardian" ? `&student_id=${f.student_id}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}` : ""}`,
       });
     const administrators = new Set(
       (
@@ -45,16 +48,42 @@ export async function planEvent(
         )
       ).rows.map((r) => r.user_id),
     );
-    for (const id of staff)
-      if (!recipients.has(id))
-        recipients.set(id, {
+    for (const id of staff) {
+      const principal = administrators.has(id);
+      if (!recipients.some((recipient) => recipient.user_id === id && recipient.portal === (principal ? "principal" : "teacher")))
+        recipients.push({
           user_id: id,
-          link: administrators.has(id)
-            ? `/principal/timetable/day?school=${plan.school_id}&date=${plan.date}&class=${plan.class_section_id}`
-            : `/teacher/timetable?date=${plan.date}`,
+          student_id: null,
+          portal: principal ? "principal" : "teacher",
+          link: principal
+            ? `/principal/timetable/day?school=${plan.school_id}&date=${plan.date}&class=${plan.class_section_id}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}`
+            : `/teacher/timetable?date=${plan.date}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}`,
         });
-    if (recipients.size)
-      await sql`INSERT INTO notifications(recipient_id,kind,title,body,link,metadata,dedupe_key) SELECT r.user_id::uuid,'general','School day updated',${`The published schedule for ${plan.date} has changed. Open Timetable to review the latest plan.`},r.link,${JSON.stringify({ school_id: plan.school_id, day_plan_id: plan.id, date: plan.date, version: plan.published_version })}::jsonb,${`day-plan:${plan.id}:${plan.published_version}:`}||r.user_id FROM jsonb_to_recordset(${JSON.stringify([...recipients.values()])}::jsonb) AS r(user_id text,link text) ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`.execute(
+    }
+    if (recipients.length)
+      await sql`INSERT INTO notifications(
+        recipient_id,kind,title,body,link,metadata,dedupe_key,
+        attention_eligible,attention_school_id,attention_student_id,attention_class_section_id,
+        attention_portal,attention_module,attention_source_kind,attention_source_id,
+        attention_source_revision,attention_topic_key
+      ) SELECT r.user_id::uuid,'general','School day updated',
+        ${`The published schedule for ${plan.date} has changed. Open Timetable to review the latest plan.`},
+        r.link,
+        ${JSON.stringify({ school_id: plan.school_id, day_plan_id: plan.id, date: plan.date, version: plan.published_version })}::jsonb,
+        ${`day-plan:${plan.id}:${plan.published_version}:`}||r.user_id||':'||r.portal||':'||COALESCE(r.student_id,'school'),
+        r.portal<>'student',
+        CASE WHEN r.portal<>'student' THEN ${plan.school_id}::uuid END,
+        CASE WHEN r.portal<>'student' THEN NULLIF(r.student_id,'')::uuid END,
+        CASE WHEN r.portal<>'student' THEN ${plan.class_section_id}::uuid END,
+        CASE WHEN r.portal<>'student' THEN r.portal END,
+        CASE WHEN r.portal<>'student' THEN 'timetable' END,
+        CASE WHEN r.portal<>'student' THEN 'day_plan_publication' END,
+        CASE WHEN r.portal<>'student' THEN ${plan.id}::uuid END,
+        CASE WHEN r.portal<>'student' THEN ${publishedRevision} END,
+        CASE WHEN r.portal<>'student' THEN ${`day-plan:${plan.id}:`}||r.portal||':'||COALESCE(r.student_id,'school') END
+      FROM jsonb_to_recordset(${JSON.stringify(recipients)}::jsonb)
+        AS r(user_id text,student_id text,portal text,link text)
+      ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`.execute(
         db,
       );
   }
@@ -93,6 +122,7 @@ export async function planEvent(
                 "teacher.attendance",
                 "principal.home",
                 "notifications",
+                "attention",
               ],
     },
   });

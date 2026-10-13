@@ -122,6 +122,41 @@ describe.skipIf(!isolated)("fee payment claims and review", () => {
     await expect(service.settings(admin, school, settings)).rejects.toThrow(/changed/);
     expect((await service.workspace(parent, school, student)).payment_settings).toMatchObject({ upi_id: "school@bank", revision: 1 });
   });
+  it("loads an exact open gateway review beyond the 100-row workspace cap with current school access", async () => {
+    const invoiceId = await invoice();
+    const targetOrderId = randomUUID();
+    await pool.query(`
+      INSERT INTO fee_gateway_orders(
+        id,school_id,invoice_id,created_by,amount_paise,key_id,
+        provider_order_id,provider_payment_id,state,created_at,checked_at
+      )
+      SELECT CASE WHEN n=101 THEN $4::uuid ELSE gen_random_uuid() END,
+        $1::uuid,$2::uuid,$3::uuid,100,'rzp_test_exact_detail',
+        'order_'||gen_random_uuid()::text,'payment_'||gen_random_uuid()::text,
+        'review_required',now()-(n*interval '1 minute'),now()-(n*interval '1 minute')
+      FROM generate_series(1,101) AS generated(n)
+    `, [school, invoiceId, admin.id, targetOrderId]);
+
+    const workspace = await service.workspace(admin, school);
+    expect(workspace.gateway_payments).toHaveLength(100);
+    expect((workspace.gateway_payments as Array<{ id: string }>).some((item) => item.id === targetOrderId)).toBe(false);
+    await expect(service.gatewayPaymentReview(admin, school, targetOrderId)).resolves.toMatchObject({
+      id: targetOrderId,
+      invoice_id: invoiceId,
+      state: "review_required",
+    });
+
+    const temporaryAdmin = await user("admin");
+    await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'admin')", [school, temporaryAdmin.id]);
+    await expect(service.gatewayPaymentReview(temporaryAdmin, school, targetOrderId)).resolves.toMatchObject({ id: targetOrderId });
+    await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2", [school, temporaryAdmin.id]);
+    await expect(service.gatewayPaymentReview(temporaryAdmin, school, targetOrderId)).rejects.toThrow(/permission/);
+
+    const otherSchoolAdmin = await user("admin");
+    const otherSchool = (await pool.query("INSERT INTO schools(name,code) VALUES('Other Review School',$1) RETURNING id", [randomUUID().slice(0, 25)])).rows[0].id;
+    await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'admin')", [otherSchool, otherSchoolAdmin.id]);
+    await expect(service.gatewayPaymentReview(otherSchoolAdmin, otherSchool, targetOrderId)).rejects.toThrow(/not found/);
+  });
   it("revoked guardian links cannot read fee events or submit new claims", async () => {
     await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2", [school, parent.id]);
     const result = await pool.query("SELECT event_user_is_authorized($1,'fees.updated',$2::jsonb,$3) AS allowed", [school, JSON.stringify({ student_id: student }), parent.id]);

@@ -97,9 +97,21 @@ export class RestrictedCareService {
     const audience = [...new Set(recipients.map((item) => item.user_id))];
     await db.insertInto("event_outbox").values({
       school_id: schoolId, event_type: eventType, aggregate_type: "restricted_care_case", aggregate_id: caseId,
-      audience_user_ids: audience, payload: { case_id: caseId, revision },
+      audience_user_ids: audience, payload: { case_id: caseId, revision, refresh: ["safeguarding", "notifications", "attention"] },
       idempotency_key: `${eventType}:${caseId}:${revision}`, notification_user_ids: audience,
-      notification_payload: { title: "Protected care case updated", body: "Open the restricted care workspace for the latest authorized update." } as any,
+      notification_payload: {
+        kind: "general",
+        title: "Protected care case updated",
+        body: "Open the restricted care workspace for the latest authorized update.",
+        staff_link: `/teacher/safeguarding?section=cases&case=${caseId}&case_revision=${revision}`,
+        admin_link: `/principal/safeguarding?section=cases&case=${caseId}&case_revision=${revision}`,
+        attention_eligible: true,
+        attention_module: "safeguarding",
+        attention_source_kind: "restricted_care_update",
+        attention_source_id: caseId,
+        attention_source_revision: revision,
+        attention_topic_key: `restricted-care:${caseId}`,
+      } as any,
     }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
   }
 

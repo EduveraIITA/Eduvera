@@ -37,7 +37,9 @@ export function AttendanceChecks({ data }: { data: PrincipalInsights }) {
 }
 
 export function AttendanceStudentReview({ data, studentId }: { data: PrincipalInsights; studentId: string }) {
-  const student = [...data.engagement.students, ...data.engagement.without_followup_students].find(item => item.id === studentId);
+  const student = data.engagement.focused_student?.id === studentId
+    ? data.engagement.focused_student
+    : [...data.engagement.students, ...data.engagement.without_followup_students].find(item => item.id === studentId);
   if (!student) return <p className="analytics-empty">This student is not in the current review list. Go back and check the class or review period.</p>;
   const register = `/principal/attendance?class_section_id=${student.class_id}&date=${data.period.end}`;
   return <div className="attendance-review">

@@ -19,7 +19,7 @@ export function PrincipalFollowupsPage() {
   const [params] = useSearchParams();
   const date = selectedDate(params.get("date"));
   return <OperationsShell portal="principal" active="home" title="Attendance follow-ups" backTo={`/principal?date=${date}`}>
-    <div className="principal-home-detail"><FollowupInbox context="staff" showHeading={false} /></div>
+    <div className="principal-home-detail"><FollowupInbox context="staff" initialFollowupId={params.get("followup") ?? undefined} showHeading={false} /></div>
   </OperationsShell>;
 }
 

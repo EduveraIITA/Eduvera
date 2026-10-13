@@ -18,12 +18,14 @@ export function PlanEditor({
   subjects,
   onSaved,
   onDirty,
+  focusedPeriodId,
 }: {
   plan: DayPlan;
   teachers: PlanOptions["teachers"];
   subjects: PlanOptions["subjects"];
   onSaved: () => Promise<void>;
   onDirty?: (dirty: boolean) => void;
+  focusedPeriodId?: string;
 }) {
   const version = plan.versions.find((v) => v.version === plan.draft_version)!;
   const [rows, setRows] = useState(plan.periods);
@@ -210,6 +212,7 @@ export function PlanEditor({
           periods={rows}
           showCoverage={false}
           onEdit={setEditing}
+          focusedPeriodId={focusedPeriodId}
         />
         <button
           className="day-secondary"

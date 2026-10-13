@@ -79,6 +79,7 @@ interface StreamClient {
 }
 
 export interface AttendanceEventRecord {
+  id?: string;
   student_id: string;
   status: "present" | "absent" | "late" | "excused" | "half_day";
   remarks?: string;
@@ -109,7 +110,7 @@ interface RegisterEventInput {
 
 interface UserEventInput {
   schoolId: string;
-  eventType: "leave.updated" | "notification.created" | "timetable.updated" | "calendar.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated" | "diary.updated" | "departure.updated" | "transport.updated" | "notice.updated";
+  eventType: "leave.updated" | "notification.created" | "timetable.updated" | "calendar.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated" | "diary.updated" | "departure.updated" | "transport.updated" | "notice.updated" | "chat.updated" | "teacher_feedback.updated" | "governance.policy.rejected" | "assessment.updated" | "academic_report.updated";
   aggregateType: string;
   aggregateId: string;
   audienceUserIds: string[];
@@ -329,7 +330,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           status: record.status,
           previous_status: record.previous_status ?? null,
           revision: record.revision ?? null,
-          refresh: ["student.home", "student.attendance", "student.eligibility", "parent.home", "parent.attendance", "teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "notifications"],
+          refresh: ["student.home", "student.attendance", "student.eligibility", "parent.home", "parent.attendance", "teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "notifications", "attention"],
         },
         idempotency_key: `attendance:${input.requestId}:${input.date}:${record.student_id}`,
         notification_user_ids: material
@@ -340,9 +341,21 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           body: `${recipient.student_name}'s attendance for ${input.date} is ${record.status.replace("_", " ")}.`,
           student_id: record.student_id,
           student_link: "/student/attendance",
-          parent_link: `/parent/attendance?student_id=${record.student_id}`,
+          parent_link: record.id
+            ? `/parent/attendance?student_id=${record.student_id}&date=${input.date}&attendance_record_id=${record.id}&attendance_revision=${record.revision ?? 1}`
+            : `/parent/attendance?student_id=${record.student_id}`,
           status: record.status,
           previous_status: record.previous_status ?? null,
+          ...(record.id ? {
+            attention_eligible: true,
+            attention_portal: "parent",
+            attention_module: "attendance",
+            attention_source_kind: "attendance_outcome",
+            attention_source_id: record.id,
+            attention_source_revision: record.revision ?? 1,
+            attention_topic_key: `attendance:${record.student_id}:${input.date}`,
+            attention_student_id: record.student_id,
+          } : {}),
         } : null) as any,
       };
     });
@@ -415,7 +428,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
         action: input.state,
         revision: input.revision,
         actor_id: input.actorId,
-        refresh: ["teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history"],
+        refresh: ["teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "attention"],
       },
       idempotency_key: `attendance-register:${input.requestId}:${input.state}:${input.revision}`,
     }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
@@ -462,7 +475,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       audienceUserIds: audience.rows.map((row) => row.user_id),
       payload: {
         action: input.action, class_section_id: input.classSectionId, slot_id: input.slotId,
-        refresh: ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.timetable", "principal.home", "notifications", "calendar"],
+        refresh: ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.timetable", "principal.home", "notifications", "attention", "calendar"],
       },
       idempotencyKey: `timetable:${input.requestId}:${input.classSectionId}:${input.slotId}:${input.action}`,
     });
@@ -549,7 +562,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             'state', 'overdue',
             'refresh', jsonb_build_array(
               'teacher.home', 'teacher.attendance', 'principal.home',
-              'principal.attendance', 'notifications'
+              'principal.attendance', 'notifications', 'attention'
             )
           ),
           concat('attendance-register-overdue:', prepared.school_id, ':', prepared.class_section_id, ':', prepared.school_date),
@@ -976,7 +989,13 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           FROM numbered WHERE e.id=numbered.id
           RETURNING e.*
         ), inserted_notifications AS (
-          INSERT INTO notifications (recipient_id, kind, title, body, link, metadata, dedupe_key)
+          INSERT INTO notifications (
+            recipient_id, kind, title, body, link, metadata, dedupe_key,
+            attention_eligible, attention_school_id, attention_student_id,
+            attention_class_section_id, attention_portal, attention_module,
+            attention_source_kind, attention_source_id,
+            attention_source_revision, attention_topic_key
+          )
           SELECT recipients.recipient_id,
             CASE WHEN c.notification_payload->>'kind' IN ('attendance','leave','diary','general')
               THEN c.notification_payload->>'kind' ELSE 'general' END,
@@ -990,10 +1009,142 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               ELSE COALESCE(c.notification_payload->>'link', '/')
             END,
             COALESCE(c.notification_payload, '{}'::jsonb),
-            'event:' || c.id::text
+            'event:' || c.id::text,
+            attention_contract.eligible,
+            CASE WHEN attention_contract.eligible THEN c.school_id END,
+            CASE WHEN attention_contract.eligible
+              AND COALESCE(c.notification_payload->>'attention_student_id','')<>''
+              THEN (c.notification_payload->>'attention_student_id')::uuid END,
+            CASE WHEN attention_contract.eligible
+              AND COALESCE(c.notification_payload->>'attention_class_section_id','')<>''
+              THEN (c.notification_payload->>'attention_class_section_id')::uuid END,
+            CASE WHEN attention_contract.eligible THEN role_context.portal END,
+            CASE WHEN attention_contract.eligible THEN c.notification_payload->>'attention_module' END,
+            CASE WHEN attention_contract.eligible THEN c.notification_payload->>'attention_source_kind' END,
+            CASE WHEN attention_contract.eligible THEN (c.notification_payload->>'attention_source_id')::uuid END,
+            CASE WHEN attention_contract.eligible THEN (c.notification_payload->>'attention_source_revision')::integer END,
+            CASE WHEN attention_contract.eligible THEN c.notification_payload->>'attention_topic_key' END
           FROM claimed c
           CROSS JOIN LATERAL unnest(c.notification_user_ids) AS recipients(recipient_id)
           JOIN users u ON u.id=recipients.recipient_id AND u.is_active
+          CROSS JOIN LATERAL (
+            SELECT CASE u.role
+              WHEN 'parent' THEN 'parent'
+              WHEN 'student' THEN 'student'
+              WHEN 'staff' THEN 'teacher'
+              WHEN 'admin' THEN 'principal'
+            END AS portal
+          ) role_context
+          CROSS JOIN LATERAL (
+            SELECT COALESCE((
+              c.notification_payload->>'attention_eligible'='true'
+              AND role_context.portal IN ('parent','teacher','principal')
+              AND (
+                NOT (c.notification_payload ? 'attention_portal')
+                OR c.notification_payload->>'attention_portal'=role_context.portal
+              )
+              AND c.notification_payload->>'attention_module' IN (
+                'leave','results','calendar','timetable','attendance','events',
+                'fees','safeguarding','policies','departure','staff','responsibilities','transport'
+              )
+              AND c.notification_payload->>'attention_source_kind' IN (
+                'student_leave_decision','staff_leave_decision','assessment_publication',
+                'report_publication','day_plan_publication','timetable_publication','calendar_change',
+                'attendance_outcome','event_cancellation','event_withdrawal','event_refund',
+                'fee_review_decision','guardian_leave_authority','restricted_care_update',
+                'policy_publication','departure_request_decision','transport_trip_cancellation',
+                'transport_rider_exception','departure_handover_exception','departure_plan_exception',
+                'responsibility_offer','responsibility_response','responsibility_revocation',
+                'coverage_offer','coverage_response','staff_leave_review',
+                'transport_swap','transport_swap_approval','transport_swap_response','transport_swap_decision'
+              )
+              AND CASE c.notification_payload->>'attention_source_kind'
+                WHEN 'student_leave_decision' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='leave'
+                WHEN 'staff_leave_decision' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='leave'
+                WHEN 'assessment_publication' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='results'
+                WHEN 'report_publication' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='results'
+                WHEN 'day_plan_publication' THEN role_context.portal IN ('parent','teacher','principal')
+                  AND c.notification_payload->>'attention_module'='timetable'
+                WHEN 'timetable_publication' THEN role_context.portal IN ('parent','teacher','principal')
+                  AND c.notification_payload->>'attention_module'='timetable'
+                WHEN 'calendar_change' THEN role_context.portal IN ('parent','teacher','principal')
+                  AND c.notification_payload->>'attention_module'='calendar'
+                WHEN 'attendance_outcome' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='attendance'
+                WHEN 'event_cancellation' THEN role_context.portal IN ('parent','teacher','principal')
+                  AND c.notification_payload->>'attention_module'='events'
+                  AND (
+                    (role_context.portal='parent'
+                      AND COALESCE(c.notification_payload->>'attention_student_id','')<>'')
+                    OR (role_context.portal IN ('teacher','principal')
+                      AND COALESCE(c.notification_payload->>'attention_student_id','')='')
+                  )
+                WHEN 'event_withdrawal' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='events'
+                WHEN 'event_refund' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='events'
+                WHEN 'fee_review_decision' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='fees'
+                WHEN 'guardian_leave_authority' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='leave'
+                WHEN 'restricted_care_update' THEN role_context.portal IN ('teacher','principal')
+                  AND c.notification_payload->>'attention_module'='safeguarding'
+                WHEN 'policy_publication' THEN role_context.portal IN ('parent','teacher')
+                  AND c.notification_payload->>'attention_module'='policies'
+                WHEN 'departure_request_decision' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='departure'
+                WHEN 'transport_trip_cancellation' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='departure'
+                WHEN 'transport_rider_exception' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='departure'
+                WHEN 'departure_handover_exception' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='departure'
+                WHEN 'departure_plan_exception' THEN role_context.portal='parent'
+                  AND c.notification_payload->>'attention_module'='departure'
+                WHEN 'responsibility_offer' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='responsibilities'
+                WHEN 'responsibility_response' THEN role_context.portal='principal'
+                  AND c.notification_payload->>'attention_module'='staff'
+                WHEN 'responsibility_revocation' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='responsibilities'
+                WHEN 'coverage_offer' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='responsibilities'
+                WHEN 'coverage_response' THEN role_context.portal='principal'
+                  AND c.notification_payload->>'attention_module'='staff'
+                WHEN 'staff_leave_review' THEN role_context.portal='principal'
+                  AND c.notification_payload->>'attention_module'='staff'
+                WHEN 'transport_swap' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='transport'
+                WHEN 'transport_swap_approval' THEN role_context.portal='principal'
+                  AND c.notification_payload->>'attention_module'='departure'
+                WHEN 'transport_swap_response' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='transport'
+                WHEN 'transport_swap_decision' THEN role_context.portal='teacher'
+                  AND c.notification_payload->>'attention_module'='transport'
+                ELSE false
+              END
+              AND c.notification_payload->>'attention_source_id'
+                ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+              AND c.notification_payload->>'attention_source_revision' ~ '^[1-9][0-9]*$'
+              AND length(trim(COALESCE(c.notification_payload->>'attention_topic_key',''))) BETWEEN 1 AND 255
+              AND (
+                NOT (c.notification_payload ? 'attention_student_id')
+                OR COALESCE(c.notification_payload->>'attention_student_id','')=''
+                OR c.notification_payload->>'attention_student_id'
+                  ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+              )
+              AND (
+                NOT (c.notification_payload ? 'attention_class_section_id')
+                OR COALESCE(c.notification_payload->>'attention_class_section_id','')=''
+                OR c.notification_payload->>'attention_class_section_id'
+                  ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+              )
+            ), false) AS eligible
+          ) attention_contract
           WHERE event_user_is_authorized(c.school_id, c.event_type, c.payload, recipients.recipient_id)
           ON CONFLICT (recipient_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
           RETURNING id

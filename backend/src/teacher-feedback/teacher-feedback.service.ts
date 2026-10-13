@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import type { AuthUser } from '../common/request.js';
 import { DatabaseService } from '../database/database.service.js';
 import type { Database } from '../database/types.js';
+import { SchoolEventService } from '../school/school-event.service.js';
 import { campaignInput, DEFAULT_PARAMETERS, responseInput, feedbackReleasePolicy, summarizeRatings, validRatingKeys, type Ratings } from './feedback-rules.js';
 type Db = DatabaseService | Transaction<Database>;
 interface Campaign { id:string; school_id:string; teacher_user_id:string; class_section_id:string; title:string; audience:'students'|'parents'; parameters:string[]; closes_at:Date; closed_at:Date|null; teacher_name:string; class_name:string; is_closed:boolean; response_count:number; submitted?:boolean }
@@ -13,7 +14,7 @@ const projection = sql`c.id,c.school_id,c.teacher_user_id,c.class_section_id,c.t
   (c.closed_at IS NOT NULL OR c.closes_at<=now()) AS is_closed`;
 @Injectable()
 export class TeacherFeedbackService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
   private async member(db:Db,user:AuthUser,school:string,admin=false) {
     if (!z.uuid().safeParse(school).success) throw new BadRequestException('Invalid institution.');
     if (!user.is_active || (user.active_school_id && user.active_school_id!==school)) throw new ForbiddenException('Select the correct institution.');
@@ -43,6 +44,53 @@ export class TeacherFeedbackService {
   private async audit(db:Db,user:AuthUser,school:string,id:string,action:string) {
     await sql`INSERT INTO teacher_feedback_audits(school_id,campaign_id,actor_id,action) VALUES(${school}::uuid,${id}::uuid,${user.id}::uuid,${action})`.execute(db);
   }
+  private async administratorIds(db:Db,school:string) {
+    return (await sql<{user_id:string}>`SELECT DISTINCT membership.user_id
+      FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${school}::uuid AND membership.role='admin' AND membership.is_active`.execute(db)).rows.map(row=>row.user_id);
+  }
+  private async pendingRespondentIds(db:Db,school:string,id:string) {
+    return (await sql<{user_id:string}>`SELECT DISTINCT candidate.user_id FROM (
+      SELECT student.user_id
+      FROM teacher_feedback_campaigns campaign
+      JOIN schools school ON school.id=campaign.school_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=campaign.class_section_id AND enrollment.is_active
+      JOIN academic_terms term ON term.id=enrollment.term_id AND term.school_id=campaign.school_id
+      JOIN students student ON student.id=enrollment.student_id AND student.school_id=campaign.school_id
+      JOIN users account ON account.id=student.user_id AND account.is_active
+      JOIN school_memberships membership ON membership.school_id=campaign.school_id AND membership.user_id=student.user_id
+        AND membership.role='student' AND membership.is_active
+      WHERE campaign.school_id=${school}::uuid AND campaign.id=${id}::uuid AND campaign.audience='students'
+        AND campaign.teacher_user_id<>student.user_id
+        AND (now() AT TIME ZONE school.timezone)::date BETWEEN GREATEST(enrollment.enrolled_on,term.starts_on) AND term.ends_on
+        AND NOT EXISTS(SELECT 1 FROM teacher_feedback_responses response
+          WHERE response.campaign_id=campaign.id AND response.respondent_user_id=student.user_id)
+      UNION ALL
+      SELECT parent.user_id
+      FROM teacher_feedback_campaigns campaign
+      JOIN schools school ON school.id=campaign.school_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=campaign.class_section_id AND enrollment.is_active
+      JOIN academic_terms term ON term.id=enrollment.term_id AND term.school_id=campaign.school_id
+      JOIN students student ON student.id=enrollment.student_id AND student.school_id=campaign.school_id
+      JOIN guardian_relationships relationship ON relationship.school_id=campaign.school_id AND relationship.student_id=student.id
+      JOIN parents parent ON parent.id=relationship.guardian_id
+      JOIN users account ON account.id=parent.user_id AND account.is_active
+      JOIN school_memberships membership ON membership.school_id=campaign.school_id AND membership.user_id=parent.user_id
+        AND membership.role='guardian' AND membership.is_active
+      WHERE campaign.school_id=${school}::uuid AND campaign.id=${id}::uuid AND campaign.audience='parents'
+        AND campaign.teacher_user_id<>parent.user_id
+        AND (now() AT TIME ZONE school.timezone)::date BETWEEN GREATEST(enrollment.enrolled_on,term.starts_on) AND term.ends_on
+        AND NOT EXISTS(SELECT 1 FROM teacher_feedback_responses response
+          WHERE response.campaign_id=campaign.id AND response.respondent_user_id=parent.user_id)
+    ) candidate`.execute(db)).rows.map(row=>row.user_id);
+  }
+  private async emit(db:Db,school:string,id:string,changeKind:'campaign_created'|'campaign_closed'|'response_submitted',audience:string[],key:string) {
+    await this.events.enqueueUserEvent(db, {
+      schoolId:school,eventType:'teacher_feedback.updated',aggregateType:'teacher_feedback_campaign',aggregateId:id,
+      audienceUserIds:audience,idempotencyKey:key,payload:{campaign_id:id,change_kind:changeKind,
+        refresh:['attention','requests','teacher-feedback','parent.home','student.home','principal.home']},
+    });
+  }
   async workspace(user:AuthUser,school:string) {
     await this.member(this.db,user,school,true);
     const teachers=(await sql<{id:string;name:string}>`SELECT DISTINCT u.id,u.first_name||' '||u.last_name AS name FROM users u
@@ -65,13 +113,19 @@ export class TeacherFeedbackService {
       if(!teacher||!classroom) throw new BadRequestException('Teacher and class must belong to this institution.');
       const row=(await sql<{id:string}>`INSERT INTO teacher_feedback_campaigns(school_id,teacher_user_id,class_section_id,title,audience,parameters,closes_at,created_by)
         VALUES(${school}::uuid,${data.teacher_user_id}::uuid,${data.class_section_id}::uuid,${data.title},${data.audience},${JSON.stringify(data.parameters)}::jsonb,${data.closes_at}::timestamptz,${user.id}::uuid) RETURNING id`.execute(db)).rows[0]!;
-      await this.audit(db,user,school,row.id,'created'); return {id:row.id};
+      await this.audit(db,user,school,row.id,'created');
+      await this.emit(db,school,row.id,'campaign_created',[...await this.administratorIds(db,school),...await this.pendingRespondentIds(db,school,row.id)],`teacher-feedback:${row.id}:campaign-created`);
+      return {id:row.id};
     });
   }
   async close(user:AuthUser,school:string,id:string) {
     return this.db.transaction().execute(async db=>{
       await this.member(db,user,school,true);const campaign=await this.campaign(db,school,id,true);
-      if(!campaign.is_closed){await sql`UPDATE teacher_feedback_campaigns SET closed_at=clock_timestamp() WHERE id=${id}::uuid AND school_id=${school}::uuid`.execute(db);await this.audit(db,user,school,id,'closed');}
+      if(!campaign.is_closed){
+        await sql`UPDATE teacher_feedback_campaigns SET closed_at=clock_timestamp() WHERE id=${id}::uuid AND school_id=${school}::uuid`.execute(db);
+        await this.audit(db,user,school,id,'closed');
+        await this.emit(db,school,id,'campaign_closed',[...await this.administratorIds(db,school),...await this.pendingRespondentIds(db,school,id)],`teacher-feedback:${id}:campaign-closed`);
+      }
       return {id,closed:true};
     });
   }
@@ -141,7 +195,9 @@ export class TeacherFeedbackService {
       const inserted=(await sql<{id:string}>`INSERT INTO teacher_feedback_responses(school_id,campaign_id,respondent_user_id,ratings)
         VALUES(${school}::uuid,${id}::uuid,${user.id}::uuid,${JSON.stringify(parsed.data.ratings)}::jsonb) ON CONFLICT(campaign_id,respondent_user_id) DO NOTHING RETURNING id`.execute(db)).rows[0];
       if(!inserted) throw new ConflictException('You already submitted feedback for this request.');
-      await this.audit(db,user,school,id,'submitted');return {submitted:true};
+      await this.audit(db,user,school,id,'submitted');
+      await this.emit(db,school,id,'response_submitted',[...await this.administratorIds(db,school),user.id],`teacher-feedback:${id}:response:${inserted.id}`);
+      return {submitted:true};
     });
   }
 }

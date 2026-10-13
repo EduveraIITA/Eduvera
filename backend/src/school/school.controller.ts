@@ -133,7 +133,11 @@ export class SchoolController {
   @Post("notifications/:notificationId/read/")
   @HttpCode(200)
   async notificationRead(@Req() request: AuthenticatedRequest, @Param("notificationId") notificationId: string) {
-    return this.school.markNotificationRead(request.authUser, notificationId);
+    return this.school.markNotificationRead(
+      request.authUser,
+      notificationId,
+      (request.body as { opened_target?: unknown } | undefined)?.opened_target,
+    );
   }
 
   @Get("screens/parent/home/")
@@ -165,6 +169,11 @@ export class SchoolController {
   @Get("screens/parent/leave/:leaveId/")
   parentLeave(@Req() request: AuthenticatedRequest, @Param("leaveId") leaveId: string, @Query("student_id") studentId?: string) {
     return this.school.parentLeave(request.authUser, leaveId, studentId, request);
+  }
+
+  @Get("screens/parent/leave-authority/")
+  parentLeaveAuthority(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
+    return this.school.parentLeaveAuthority(request.authUser, studentId);
   }
 
   @Get("screens/parent/timetable/:mode/")
@@ -258,8 +267,12 @@ export class SchoolController {
   }
 
   @Get("screens/principal/attendance/continuity/")
-  attendanceContinuityWorkspace(@Req() request: AuthenticatedRequest, @Query("date") date?: string) {
-    return this.school.attendanceContinuityWorkspace(request.authUser, date);
+  attendanceContinuityWorkspace(
+    @Req() request: AuthenticatedRequest,
+    @Query("date") date?: string,
+    @Query("case_id") caseId?: string,
+  ) {
+    return this.school.attendanceContinuityWorkspace(request.authUser, date, caseId);
   }
 
   @Post("attendance-continuity/cases/:caseId/decision/")

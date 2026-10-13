@@ -60,6 +60,7 @@
   gap: 6px;
 }
 .operations-sidebar nav a {
+  position: relative;
   display: flex;
   min-height: 44px;
   padding: 0 13px;
@@ -75,6 +76,7 @@
     background var(--edura-motion),
     transform var(--edura-motion);
 }
+.operations-sidebar nav a > .attention-indicator { margin-left: auto; }
 .operations-sidebar nav a:hover {
   color: var(--op-blue);
   background: var(--edura-surface-soft);
@@ -1289,6 +1291,13 @@
     justify-content: center;
     padding: 0;
   }
+  .operations-sidebar nav a > .attention-indicator {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    display: inline-flex;
+    margin: 0;
+  }
   .operations-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1390,6 +1399,7 @@
     backdrop-filter: blur(16px);
   }
   .operations-mobile-nav a {
+    position: relative;
     display: grid;
     min-width: 0;
     place-items: center;
@@ -1410,6 +1420,16 @@
     font-size: 10px;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .operations-mobile-nav a > .attention-indicator {
+    position: absolute;
+    top: 10px;
+    left: calc(50% + 7px);
+    display: inline-flex;
+    max-width: none;
+    overflow: visible;
+    padding: 0;
+    font-size: 0;
   }
   .operations-hero {
     min-height: 0;

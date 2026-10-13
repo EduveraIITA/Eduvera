@@ -9,7 +9,7 @@ import {
   UserCheck,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import type { ParentChildSummary, ParentPageAction } from "../../pages/parent/parentTypes";
 import { StudentShell } from "../../pages/student/StudentShell";
@@ -23,6 +23,14 @@ import {
 import { FamilyEventFinancePanel } from "./EventFinancePanels";
 import type { CampusEventDto, ConsentStatus, EventFinanceParticipant, RsvpStatus } from "./types";
 import "./campus-events.css";
+
+export type FamilyEventActionFocus = "status" | "rsvp" | "consent" | "payment" | "checklist";
+
+export function readFamilyEventActionFocus(value: string | null): FamilyEventActionFocus | undefined {
+  return value === "status" || value === "rsvp" || value === "consent" || value === "payment" || value === "checklist"
+    ? value
+    : undefined;
+}
 
 function FamilyFrame({
   audience,
@@ -118,6 +126,7 @@ interface FamilyEventDetailProps {
   financeError?: unknown;
   child?: ParentChildSummary;
   selectedStudentId: string;
+  focusAction?: FamilyEventActionFocus;
   onSelectChild?: (id: string) => ParentPageAction;
   onRsvp: (status: Extract<RsvpStatus, "accepted" | "declined">) => Promise<void>;
   onWithdraw: (reason: string, idempotencyKey: string) => Promise<void>;
@@ -132,6 +141,7 @@ export function FamilyEventDetailPage({
   financeError,
   child,
   selectedStudentId,
+  focusAction,
   onSelectChild,
   onRsvp,
   onWithdraw,
@@ -148,6 +158,15 @@ export function FamilyEventDetailPage({
   const completedIds = new Set(participant?.checklist_completed_item_ids ?? []);
   const responseWindowOpen = event.status === "published" && new Date(event.starts_at).getTime() > now;
   const withdrawn = finance?.participation_state === "withdrawn";
+  useEffect(() => {
+    if (!focusAction) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`event-action-${focusAction}`);
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [event.id, focusAction, participant?.student_id]);
   const run = async (key: string, action: () => Promise<void>) => {
     setPending(key);
     setMessage("");
@@ -176,10 +195,10 @@ export function FamilyEventDetailPage({
           </dl>
         </section>
         {event.status === "cancelled" ? (
-          <section className="campus-event-cancelled"><X size={19} /><div><strong>Event cancelled</strong><p>{event.cancellation_reason || "The school cancelled this activity."}</p></div></section>
+          <section id="event-action-status" tabIndex={focusAction === "status" ? -1 : undefined} className={`campus-event-cancelled${focusAction === "status" ? " is-attention-target" : ""}`}><X size={19} /><div><strong>Event cancelled</strong><p>{event.cancellation_reason || "The school cancelled this activity."}</p></div></section>
         ) : null}
         {participant && event.status === "published" ? (
-          <section className="family-event-response">
+          <section id="event-action-rsvp" tabIndex={focusAction === "rsvp" ? -1 : undefined} className={`family-event-response${focusAction === "rsvp" ? " is-attention-target" : ""}`}>
             <header><div><span>Participation</span><h2>{participant.student_name}</h2></div><span className={`family-event-response__state is-${withdrawn ? "withdrawn" : event.requires_rsvp ? participant.rsvp_status : "included"}`}>{withdrawn ? "Withdrawn" : event.requires_rsvp ? participant.rsvp_status : event.participation_requirement === "mandatory" ? "Mandatory" : "Included"}</span></header>
             {withdrawn ? <p className="family-event-readonly"><RotateCcw size={17} />This optional event place has been withdrawn and removed from the participation roster.</p> : event.requires_rsvp && !(audience === "student" && event.payment_required && !event.permissions.can_rsvp) ? (
               <div className="family-event-response__buttons">
@@ -190,7 +209,7 @@ export function FamilyEventDetailPage({
               <p className="family-event-readonly"><UserCheck size={17} />{audience === "student" && event.payment_required && event.requires_rsvp ? "A linked guardian must accept or decline this paid event." : event.participation_requirement === "mandatory" ? "This activity is on the mandatory event roster." : "No RSVP is required for this activity."}</p>
             )}
             {event.requires_guardian_consent ? (
-              <div className="family-event-consent">
+              <div id="event-action-consent" tabIndex={focusAction === "consent" ? -1 : undefined} className={`family-event-consent${focusAction === "consent" ? " is-attention-target" : ""}`}>
                 <div><ShieldCheck size={18} /><span><strong>Guardian consent</strong><small>Current status: {participant.consent_status}</small></span></div>
                 {audience === "parent" && event.permissions.can_consent ? (
                   <div>
@@ -206,7 +225,7 @@ export function FamilyEventDetailPage({
         ) : null}
         {message ? <p className={`campus-event-action-message${messageTone === "error" ? " is-error" : ""}`} role={messageTone === "error" ? "alert" : "status"}>{message}</p> : null}
         {financeError ? <p className="campus-event-form-error" role="alert">The latest event-fee reconciliation could not be loaded. Retry before making a payment decision.</p> : null}
-        {event.payment_required && participant ? finance ? <FamilyEventFinancePanel finance={finance} onWithdraw={onWithdraw} /> : <EventPaymentPanel event={event} participant={participant} /> : null}
+        {event.payment_required && participant ? <div id="event-action-payment" tabIndex={focusAction === "payment" ? -1 : undefined} className={`family-event-action-frame${focusAction === "payment" ? " is-attention-target" : ""}`}>{finance ? <FamilyEventFinancePanel finance={finance} onWithdraw={onWithdraw} /> : <EventPaymentPanel event={event} participant={participant} />}</div> : null}
         <section className="family-event-panel">
           <header><div><span>Programme</span><h2>Event schedule</h2></div><CalendarDays size={19} /></header>
           <div className="family-event-session-list">
@@ -216,7 +235,7 @@ export function FamilyEventDetailPage({
           </div>
         </section>
         {event.checklist.length && participant ? (
-          <section className="family-event-panel">
+          <section id="event-action-checklist" tabIndex={focusAction === "checklist" ? -1 : undefined} className={`family-event-panel${focusAction === "checklist" ? " is-attention-target" : ""}`}>
             <header><div><span>Preparation</span><h2>What to bring</h2></div><b>{participant.checklist_completed}/{participant.checklist_total} marked packed</b></header>
             <div className="family-event-checklist">
               {event.checklist.map((item) => {

@@ -16,10 +16,12 @@ import {
   getParentDiary,
   getParentHome,
   getParentLeave,
+  getParentLeaveAuthority,
   getParentTimetable,
   getParentTimetableSummary,
   performLeaveAction,
   setHomeworkCompleted,
+  type StudentTimetableResponse,
 } from "./api";
 import {
   adaptParentAttendance,
@@ -30,6 +32,8 @@ import {
   adaptTimetable,
 } from "./adapters";
 import { LiveRouteError, ScreenLoading } from "./LiveRouteState";
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 
 function useRefreshSchoolData() {
   const queryClient = useQueryClient();
@@ -43,9 +47,52 @@ function useSelectedStudent() {
     const next = new URLSearchParams(searchParams);
     next.set("student_id", nextStudentId);
     next.delete("leave_id");
+    next.delete("diary_item");
     setSearchParams(next);
   };
   return { searchParams, studentId, selectStudent };
+}
+
+export function readParentDiaryAttentionTarget(params: URLSearchParams): { date?: string; itemId?: string } {
+  return {
+    date: params.get("date") ?? undefined,
+    itemId: params.get("diary_item") ?? undefined,
+  };
+}
+
+export function resolveParentTimetableAttention(
+  params: URLSearchParams,
+  response: StudentTimetableResponse,
+): "none" | "exact" | "stale" {
+  if (!params.get("attention_notification_id")) return "none";
+  const studentId = params.get("student_id");
+  const date = params.get("date");
+  const dayPlanId = params.get("day_plan_id");
+  const scheduleId = params.get("schedule_id");
+  const dayPlanRevision = Number(params.get("day_plan_revision"));
+  const scheduleRevision = Number(params.get("schedule_revision"));
+  const commonScopeMatches = Boolean(
+    studentId
+    && studentId === response.student.id
+    && date
+    && date === response.selected_date,
+  );
+  const exactDayPlan = Boolean(
+    commonScopeMatches
+    && dayPlanId && !scheduleId
+    && Number.isInteger(dayPlanRevision) && dayPlanRevision > 0
+    && response.day_plan?.id === dayPlanId
+    && response.day_plan.date === date
+    && response.day_plan.version === dayPlanRevision,
+  );
+  const exactSchedule = Boolean(
+    commonScopeMatches
+    && scheduleId && !dayPlanId
+    && Number.isInteger(scheduleRevision) && scheduleRevision > 0
+    && response.schedule_source?.id === scheduleId
+    && response.schedule_source.revision === scheduleRevision,
+  );
+  return exactDayPlan || exactSchedule ? "exact" : "stale";
 }
 
 function contactAction(contact?: { name: string; email?: string | null; phone?: string | null }) {
@@ -94,8 +141,11 @@ export function ParentHomeRoute() {
 }
 
 export function ParentAttendanceRoute() {
-  const { studentId, selectStudent } = useSelectedStudent();
+  const { searchParams, studentId, selectStudent } = useSelectedStudent();
   const navigate = useNavigate();
+  const focusDate = searchParams.get("date") ?? undefined;
+  const focusRecordId = searchParams.get("attendance_record_id");
+  const focusRevision = Number(searchParams.get("attendance_revision"));
   const query = useQuery({
     queryKey: ["school", "parent", "attendance", studentId ?? "default"],
     queryFn: () => getParentAttendance(studentId),
@@ -103,28 +153,49 @@ export function ParentAttendanceRoute() {
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   const teacher = query.data.contacts?.find((contact) => /teacher|advisor|homeroom/i.test(contact.label));
+  const exactRecord = focusRecordId
+    ? query.data.calendar.find((record) => record.id === focusRecordId
+      && record.date === focusDate && record.revision === focusRevision)
+    : undefined;
+  const staleAttentionRecord=Boolean(searchParams.get("attention_notification_id")&&focusRecordId&&!exactRecord);
   return (
+    <>
+    {exactRecord ? <AttentionOpenAcknowledgement /> : null}
+    {staleAttentionRecord ? <AttentionTargetUnavailable message="This attendance update no longer matches the current record. It was not marked as opened."/> : null}
     <ParentAttendancePage
       key={query.data.student.id}
-      data={adaptParentAttendance(query.data)}
+      data={adaptParentAttendance(query.data, focusDate)}
+      {...(exactRecord ? { focusDate: exactRecord.date } : {})}
       onSelectChild={selectStudent}
       onRequestLeave={() => navigate(studentId ? `/parent/leave?tab=apply&student_id=${encodeURIComponent(studentId)}` : "/parent/leave?tab=apply")}
       onMessageTeacher={contactAction(teacher)}
     />
+    </>
   );
 }
 
 export function ParentLeaveRoute() {
   const { searchParams, studentId, selectStudent } = useSelectedStudent();
   const leaveId = searchParams.get("leave_id") ?? undefined;
+  const authorityChangeId = searchParams.get("authority_change_id");
+  const authorityRevision = Number(searchParams.get("authority_revision"));
   const refresh = useRefreshSchoolData();
   const query = useQuery({
     queryKey: ["school", "parent", "leave", studentId ?? "default", leaveId ?? "pending"],
     queryFn: () => getParentLeave(leaveId, studentId),
   });
+  const authority = useQuery({
+    queryKey: ["school", "parent", "leave-authority", studentId ?? "default"],
+    queryFn: () => getParentLeaveAuthority(studentId),
+    enabled: Boolean(authorityChangeId),
+  });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   const response = query.data;
+  const openedTarget = !leaveId || response.request?.id === leaveId || response.history.some((item) => item.id === leaveId);
+  const exactAuthority = authorityChangeId && authority.data?.latest_change_id === authorityChangeId
+    && authority.data.revision === authorityRevision ? authority.data : undefined;
+  const staleAuthority=Boolean(searchParams.get("attention_notification_id")&&authorityChangeId&&!authority.isPending&&!exactAuthority);
   const createFromParent = async (draft: ParentLeaveDraft) => {
     await createLeave({
       category: draft.category === "other" ? "personal" : draft.category,
@@ -137,9 +208,14 @@ export function ParentLeaveRoute() {
     await refresh();
   };
   return (
+    <>
+    {authorityChangeId ? exactAuthority ? <AttentionOpenAcknowledgement /> : null : openedTarget ? <AttentionOpenAcknowledgement /> : null}
+    {staleAuthority?<AttentionTargetUnavailable message="This signing-access update no longer matches the current authority record. It was not marked as opened."/>:null}
     <ParentLeavePage
       key={`${response.student.id}-${response.request?.id ?? "empty"}`}
       data={adaptParentLeave(response)}
+      focusRequestId={leaveId}
+      {...(exactAuthority ? { authorityUpdate: { enabled: exactAuthority.enabled, effective: exactAuthority.effective, validFrom: exactAuthority.valid_from, validUntil: exactAuthority.valid_until } } : {})}
       onSelectChild={selectStudent}
       onAuthorize={async (requestId, note) => {
         await performLeaveAction(requestId, "authorize", note);
@@ -161,12 +237,15 @@ export function ParentLeaveRoute() {
         maxDocumentSizeBytes: response.constraints.max_document_size_bytes,
       } : undefined}
     />
+    </>
   );
 }
 
 export function ParentDiaryRoute() {
+  const [params] = useSearchParams();
   const { studentId, selectStudent } = useSelectedStudent();
-  const [selectedDate, setSelectedDate] = useState<string>();
+  const attentionTarget = readParentDiaryAttentionTarget(params);
+  const [selectedDate, setSelectedDate] = useState<string | undefined>(() => attentionTarget.date);
   const refresh = useRefreshSchoolData();
   const query = useQuery({
     queryKey: ["school", "parent", "diary", studentId ?? "default", selectedDate ?? "today"],
@@ -183,6 +262,7 @@ export function ParentDiaryRoute() {
     <ParentDiaryPage
       key={`${response.student.id}-${response.date}`}
       data={adaptParentDiary(response)}
+      focusEntryId={attentionTarget.itemId}
       onSelectChild={selectStudent}
       onSelectDay={(dayId) => setSelectedDate(dayId)}
       onAcknowledge={async () => {
@@ -219,9 +299,16 @@ export function ParentTimetableRoute() {
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
+  const attentionResolution = query.isPlaceholderData
+    ? "none"
+    : resolveParentTimetableAttention(params, query.data);
   return (
+    <>
+    {attentionResolution === "exact" ? <AttentionOpenAcknowledgement /> : null}
     <StudentTimetablePage
       audience="parent"
+      focusPublishedSource={attentionResolution === "exact"}
+      attentionStatus={attentionResolution === "stale" ? <AttentionTargetUnavailable message="This timetable update no longer matches the published source, revision, child and date. It was not marked as opened." /> : undefined}
       dayPlan={query.data.day_plan} selectedDate={anchor} scheduleLoading={query.isPlaceholderData} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next);}}
       view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next);}}
       onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next);}}
@@ -233,5 +320,6 @@ export function ParentTimetableRoute() {
       termLabel={`${query.data.student.current_enrollment.term.name} - ${query.data.student.current_enrollment.term.academic_year}`}
       days={adaptTimetable(query.data)}
     />
+    </>
   );
 }

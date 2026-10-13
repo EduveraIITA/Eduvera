@@ -145,6 +145,7 @@ export class SchedulePlanningService {
         await sql`UPDATE schedule_versions SET state='published',published_at=now() WHERE id=${frozen.id}::uuid`.execute(db);
       }
       await sql`UPDATE schedule_versions SET state='published',published_at=now(),revision=revision+1 WHERE id=${id}::uuid`.execute(db);
+      const publishedRevision=v.revision+1;
       // Validate actual dates, including other versions and existing daily plans.
       const conflict=(await sql<{date:string;period_number:number;type:string}>`
         WITH days AS (SELECT d::date AS date FROM generate_series(${v.starts_on}::date,${v.ends_on}::date,'1 day') d),
@@ -155,11 +156,60 @@ export class SchedulePlanningService {
       if(conflict)throw new ConflictException(`Resolve the ${conflict.type} clash on ${conflict.date}, period ${conflict.period_number}, before publishing.`);
       await this.audit(db,req,v.school_id,id,'published',{starts_on:v.starts_on,ends_on:v.ends_on,revision:v.revision+1});
       await this.events.enqueueTimetableUpdate(db,{schoolId:v.school_id,classSectionId:v.class_section_id,slotId:id,requestId:req.requestId,action:'updated'});
-      await sql`INSERT INTO notifications(recipient_id,kind,title,body,link,metadata,dedupe_key)
-        SELECT DISTINCT m.user_id,'general','Timetable updated',${`A new timetable applies from ${v.starts_on} to ${v.ends_on}.`},CASE m.role WHEN 'guardian' THEN '/parent/timetable' WHEN 'student' THEN '/student/timetable' WHEN 'admin' THEN '/principal/timetable' ELSE '/teacher/timetable' END,${JSON.stringify({school_id:v.school_id,class_section_id:v.class_section_id,schedule_id:id})}::jsonb,${`schedule:${id}:`}||m.user_id
-        FROM school_memberships m JOIN users u ON u.id=m.user_id AND u.is_active
-        WHERE m.school_id=${v.school_id}::uuid AND m.is_active AND (m.role='admin' OR (m.role='staff' AND EXISTS(SELECT 1 FROM schedule_periods p WHERE p.version_id=${id}::uuid AND p.teacher_user_id=m.user_id)) OR EXISTS(SELECT 1 FROM enrollments e JOIN students s ON s.id=e.student_id LEFT JOIN guardian_relationships g ON g.student_id=s.id AND g.school_id=m.school_id LEFT JOIN parents parent ON parent.id=g.guardian_id WHERE e.class_section_id=${v.class_section_id}::uuid AND e.term_id=${v.term_id}::uuid AND e.is_active AND ((m.role='student' AND s.user_id=m.user_id) OR (m.role='guardian' AND parent.user_id=m.user_id))))
-        ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`.execute(db);
+      await sql`
+        WITH recipients AS (
+          SELECT membership.user_id,'principal'::text AS portal,NULL::uuid AS student_id,
+            ${`/principal/timetable/day?school=${v.school_id}&date=${v.starts_on}&class=${v.class_section_id}&schedule_id=${id}&schedule_revision=${publishedRevision}`}::text AS link
+          FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+          WHERE membership.school_id=${v.school_id}::uuid AND membership.role='admin' AND membership.is_active
+          UNION ALL
+          SELECT membership.user_id,'teacher',NULL::uuid,${`/teacher/timetable?date=${v.starts_on}&schedule_id=${id}&schedule_revision=${publishedRevision}`}::text
+          FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+          WHERE membership.school_id=${v.school_id}::uuid AND membership.role='staff' AND membership.is_active
+            AND EXISTS(SELECT 1 FROM schedule_periods period WHERE period.version_id=${id}::uuid AND period.teacher_user_id=membership.user_id)
+          UNION ALL
+          SELECT student.user_id,'student',student.id,${`/student/timetable?date=${v.starts_on}`}::text
+          FROM enrollments enrollment JOIN students student ON student.id=enrollment.student_id
+          JOIN users account ON account.id=student.user_id AND account.is_active
+          JOIN school_memberships membership ON membership.user_id=student.user_id
+            AND membership.school_id=${v.school_id}::uuid AND membership.role='student' AND membership.is_active
+          WHERE enrollment.class_section_id=${v.class_section_id}::uuid AND enrollment.term_id=${v.term_id}::uuid AND enrollment.is_active
+          UNION ALL
+          SELECT parent.user_id,'parent',enrollment.student_id,
+            '/parent/timetable?date='||${v.starts_on}::text||'&student_id='||enrollment.student_id::text||
+              '&schedule_id='||${id}::text||'&schedule_revision='||${publishedRevision}::text
+          FROM enrollments enrollment
+          JOIN guardian_relationships relationship ON relationship.student_id=enrollment.student_id AND relationship.school_id=${v.school_id}::uuid
+          JOIN parents parent ON parent.id=relationship.guardian_id
+          JOIN users account ON account.id=parent.user_id AND account.is_active
+          JOIN school_memberships membership ON membership.user_id=parent.user_id
+            AND membership.school_id=${v.school_id}::uuid AND membership.role='guardian' AND membership.is_active
+          WHERE enrollment.class_section_id=${v.class_section_id}::uuid AND enrollment.term_id=${v.term_id}::uuid AND enrollment.is_active
+        )
+        INSERT INTO notifications(
+          recipient_id,kind,title,body,link,metadata,dedupe_key,
+          attention_eligible,attention_school_id,attention_student_id,attention_class_section_id,
+          attention_portal,attention_module,attention_source_kind,attention_source_id,
+          attention_source_revision,attention_topic_key
+        )
+        SELECT DISTINCT recipient.user_id,'general','Timetable updated',
+          ${`A new timetable applies from ${v.starts_on} to ${v.ends_on}.`},
+          recipient.link,
+          ${JSON.stringify({school_id:v.school_id,class_section_id:v.class_section_id,schedule_id:id,starts_on:v.starts_on,ends_on:v.ends_on})}::jsonb,
+          ${`schedule:${id}:`}||recipient.user_id||':'||recipient.portal||':'||COALESCE(recipient.student_id::text,'school'),
+          recipient.portal<>'student',
+          CASE WHEN recipient.portal<>'student' THEN ${v.school_id}::uuid END,
+          CASE WHEN recipient.portal<>'student' THEN recipient.student_id END,
+          CASE WHEN recipient.portal<>'student' THEN ${v.class_section_id}::uuid END,
+          CASE WHEN recipient.portal<>'student' THEN recipient.portal END,
+          CASE WHEN recipient.portal<>'student' THEN 'timetable' END,
+          CASE WHEN recipient.portal<>'student' THEN 'timetable_publication' END,
+          CASE WHEN recipient.portal<>'student' THEN ${id}::uuid END,
+          CASE WHEN recipient.portal<>'student' THEN ${publishedRevision} END,
+          CASE WHEN recipient.portal<>'student' THEN ${`timetable:${v.class_section_id}:`}||recipient.portal||':'||COALESCE(recipient.student_id::text,'school') END
+        FROM recipients recipient
+        ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
+      `.execute(db);
       return {id,revision:v.revision+1};
     });
   }

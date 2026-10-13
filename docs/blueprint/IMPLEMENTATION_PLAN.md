@@ -5314,3 +5314,174 @@ four profiles. The missing screen was a frontend redirect-order bug: a protected
 route's `next=` parameter won over the temporary review profile destination. Demo
 identities now always see Profile first after password login; ordinary accounts still
 honour `next=`. This changes navigation only, not authentication or authorization.
+
+### Cross-portal attention and exact-item navigation — 13 October 2026 (local)
+
+The parent, teacher and principal portals now use one authorized server projection
+for attention rather than unrelated page counters. It distinguishes unread/new,
+action-required and exception signals without collapsing them: opening an item clears
+only its unread state, while an outstanding response or operational exception remains.
+The notification bell remains a separate delivery feed. Parent projections are scoped
+to the selected child and school; staff projections retain the existing role and
+delegated-permission checks.
+
+The shared projection covers notices and unread conversations plus the actionable
+work already owned by attendance registers/follow-ups/reconciliation, diary
+acknowledgements, student and staff leave, event responses/checklists/payments/duties,
+teacher-feedback requests, report-card review, protected-care cases, responsibility
+and cover offers/gaps, transport duties/swaps/departure changes, fee and payment
+review, policy acknowledgement/review, assessment work/moderation and safeguarding
+reports. The canonical Requests queues are not arbitrarily truncated. More shows one
+quiet descendant indicator, each affected module shows the strongest relevant state,
+and Requests orders work as Urgent, Next and Later. Every row carries a stable URL to
+the owning record rather than ending at a generic dashboard.
+
+Destination pages consume those record identifiers and open, scroll to or focus the
+specific item. This includes follow-ups, registers, notice recipient state, diary,
+leave, events, feedback, report batches, care cases, assignments and cover, transport,
+fees, policies, assessments, attendance reconciliation and student concerns. A new
+principal student-leave review route supplies the previously missing exact decision
+surface. Shared school events invalidate both Requests and attention so an open queue
+cannot drift after a mutation.
+
+The exact-link audit now covers every emitted destination family, including later
+revisions and historical records. It corrected deep links for diary dates, event
+RSVP/consent/payment/checklist sections, notice exceptions, follow-ups outside the
+first page, attendance-reconciliation cases outside the first 50 rows, completed
+journey reconciliation and decided staff workflows. Bottom navigation shows the same
+owning-module state for Attendance, Timetable/Calendar, Diary, Messages and
+Safeguarding where those modules are directly reachable; More remains an aggregate,
+not a competing counter. Projection queries and exact-focus APIs do not impose UI
+page caps. If an attention query, child scope or exact target cannot be authorized and
+loaded, the interface shows a compact unavailable/retry state instead of a false
+all-clear and does not acknowledge the linked notification.
+
+Notice attention is revision-aware. Publishing, cancelling, opening and responding
+update the recipient projection and its linked bell notification; a cancellation or
+later notice revision becomes new even if the recipient opened an earlier revision.
+Delivery failure and overdue response remain exception/action signals. Migrations
+062–079 add revision/audit support, authorized realtime delivery, current-scope replay
+checks, cross-portal cancellation and exact safeguarding/departure/staff workflow
+links. The frozen audiences are narrow and replay re-checks current assignment,
+enrolment, guardian, active-profile and administrator authority so stale relationships
+cannot retain access. All 18 migration files have matching local ledger checksums and
+are applied to the local development database; migration 079 also passed against an
+isolated clone before that clone was removed. The repository still has unrelated
+pre-existing clean-replay blockers in older migrations, so a fresh full migration
+replay remains a release gate.
+
+Duplicate outcomes are suppressed at projection time: staff response rows replace
+their pending assignment/cover rows, and an event-owned invoice replaces the generic
+fee obligation for the same payment. A resolved source remains reachable for audit,
+but current authorization and the exact source revision must match before its delivery
+is acknowledged. Staff and transport producers emit typed, revisioned links rather
+than generic module alerts.
+
+Local verification includes backend typecheck/lint/build and **187 focused backend
+unit/contract/migration tests**; the complete frontend suite passes with **845 tests
+across 118 files**; canonical frontend source typecheck and lint pass; and a production
+Vite build succeeds. The repository-wide TypeScript wrapper still includes unrelated
+untracked duplicate `* 2.tsx` test files whose matcher declarations conflict, so that
+wrapper remains red while the canonical source check is green. Earlier authenticated
+read-only parent/teacher/principal API smoke checks passed. Full release CI, Stage
+deployment and physical phone validation of the complete drill-down chain remain
+acceptance gates; this section does not claim those gates have passed.
+
+### Staff-cover deadline and automatic fallback — 13 October 2026 (local)
+
+Approved staff leave no longer leaves past cover tasks indefinitely in the live queue.
+Migration 080 adds a school-scoped, revisioned cover policy with a bounded deadline and
+typed fallback choices: independent study, physical activity, library period, merged
+class or cancelled period. A school may optionally name an active staff profile as the
+responsible fallback contact. The principal can edit these settings under Staff →
+Settings, and the same capability is exposed through the reviewed agent tool contract.
+
+The application reconciles deadlines both in a background worker and before returning
+the staff workspace. Pending tasks are claimed with row locks. An enabled policy records
+`fallback_applied`, the exact policy revision and any named supervisor; this is explicitly
+an administrative fallback decision, not proof that the activity was delivered. Without
+an enabled policy, a period found after it ends is closed as `expired_unconfirmed` in the
+audit trail. Resolved and past tasks never reappear in the live cover queue, and historical
+cleanup does not create new unread notification badges. The approved leave record instead
+summarises the recorded decision (`covered`, or the named fallback) alongside its counts.
+
+The Cambridge review school now uses a 30-minute Independent study fallback. Its six
+7–8 October historical gaps retain their original unconfirmed audit entries and now also
+carry the explicit `Independent study` fallback decision requested for the demo. Migration
+081 records that transition, preserves the audit chain and marks the superseded unread
+alerts read. No historical classroom delivery was asserted. The policy can be changed to
+Games / physical activity or another supported fallback in the UI.
+
+Verified locally: migrations 080–081 executed transactionally and their ledger checksums
+match; backend typecheck/lint/build pass; 398 non-database backend tests and all 37
+agent-contract tests pass; the staff workflow passes 10/10 API/database integration
+tests on a disposable clone; the complete frontend suite passes 848/848 tests across
+118 files; canonical frontend source typecheck/lint and the production Vite build pass.
+The all-backend convenience command also selected 12 integration suites without the
+required disposable-database environment, and those suites correctly refused to run;
+this is not represented as a full integration pass. Stage deployment and physical
+mobile review remain release gates.
+
+### Staff leave queue hierarchy refinement — 13 October 2026 (local)
+
+The principal Staff → Leave workspace now treats submitted leave as the decision
+queue and decided leave as history. Only submitted requests render as expanded action
+cards. Approved, rejected and withdrawn requests render as compact, keyboard-accessible
+disclosures and expand on demand; an exact deep link opens the targeted decided record.
+The queue header has one heading (`Leave requests`) and its count refers only to pending
+work. The coverage panel likewise has one heading (`Leave coverage`); its open count and
+empty state communicate operational status without a second headline. An explicit
+responsive layout gap separates the leave inbox and coverage panels on mobile.
+
+Verified locally: the focused Staff Operations component suite passes 17/17,
+the complete frontend suite passes 848/848 across 118 files, canonical source
+typecheck and focused lint pass, and the production Vite build succeeds. Physical
+phone review remains required before treating the spacing as accepted.
+
+### Attendance attention provenance — 13 October 2026 (local)
+
+The Attendance navigation indicator and the register workspace now consume the
+same authorized attention projection. The workspace gives the signal one compact
+plain-language explanation, exposes a **Needs attention** filter, orders affected
+registers first and places one small, tone-matched marker beside each exact affected
+class. Routine cards do not acquire decorative dots. Exceptions remain red, action
+required remains amber and new information remains blue; text status remains the
+authoritative cue so meaning never depends on colour alone.
+
+Attention is deliberately narrower than the daily plan. An unsubmitted register is
+ordinary planned work until the institution's configured attendance submission
+cutoff; only then does it enter Requests/Attention. Saved schedule or assignment
+mismatches remain immediate exceptions. Reconciliation and follow-up items that do
+not belong to a visible class card are counted once in the compact summary and retain
+their exact workflow link rather than being copied onto unrelated cards.
+
+Submitting, locking, reopening or reconciling attendance invalidates the shared
+attention projection immediately and is also propagated through the transactional
+school event. Because the projection is recomputed from current register/review state,
+resolving the last underlying item removes its card marker, module indicator and
+aggregate More indicator; merely opening the page does not clear operational work.
+
+Verified locally: backend typecheck/build and focused Requests/Attention suites pass
+**97/97**; frontend Attendance/attention-navigation suites pass **22/22**, and the
+complete frontend suite passes **850/850 across 118 files**. Focused frontend/backend
+lint, canonical frontend source typecheck and the production Vite build pass. The
+repository-wide frontend wrapper remains blocked only by the already documented
+untracked duplicate `* 2.tsx` test files. Both local and Cloudflare readiness report
+database and events healthy. Physical phone validation of the hierarchy and density
+remains required.
+
+### Attendance submission transport repair — 13 October 2026 (local)
+
+The continuity client now preserves the complete server-issued roster proof when it
+submits a class register. `roster_captured_at` and `snapshot_token` were assembled by
+the route but omitted from the HTTP body, causing the backend schema to reject every
+otherwise complete register before the command reached attendance domain logic. The
+client-side contract now also refuses to send unless all five continuity fields are
+present: observation time, roster fingerprint, capture time, expiry and snapshot token.
+
+A focused transport regression test asserts the exact signed request body. The API and
+register component tests pass **17/17**, the complete frontend suite passes **851/851**
+across 118 files, focused lint passes and the Vite production build succeeds. The existing backend continuity integration case already exercises the
+same complete contract; a fresh isolated replay was attempted but the repository's
+current migration chain stops after migration 032 on an unrelated SQL syntax error, so
+that replay is not represented as passing in this evidence.

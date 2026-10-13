@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarDays, ClipboardCheck, ClipboardList, Landmark } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
@@ -16,6 +16,25 @@ import { CalendarView, DetailHead, Pill, type CalendarMode, type MarkTone } from
 import { clockLabel, datesBetween, isoOf, isoWeekday, parseYm, type MonthCell } from "./monthGrid";
 import { AssessmentCalendarRows, useAssessmentCalendar } from './AssessmentCalendar';
 import { useCalendarSchedule } from './useCalendarSchedule';
+import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
+import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+
+const calendarAttentionKeys = [
+  "calendar_change_id",
+  "calendar_change_kind",
+  "calendar_revision",
+  "calendar_record_revision",
+  "attention_notification_id",
+] as const;
+
+function clearCalendarAttention(parameters: URLSearchParams) {
+  for (const key of calendarAttentionKeys) parameters.delete(key);
+}
+
+function positiveInteger(value: string | null) {
+  if (!value || !/^[1-9][0-9]*$/.test(value)) return undefined;
+  return Number(value);
+}
 
 /* ---------- shared state: month + selected day, kept in the URL ---------- */
 function useCalendarState() {
@@ -24,14 +43,21 @@ function useCalendarState() {
   const selected = params.get("date") ?? today;
   const ym = parseYm(selected);
   const mode: CalendarMode = params.get("view") === "day" ? "day" : "month";
-  const select = (iso: string) => { const next = new URLSearchParams(params); next.set("date", iso); setParams(next); };
+  const select = (iso: string) => { const next = new URLSearchParams(params); next.set("date", iso); clearCalendarAttention(next); setParams(next); };
   return {
     year: ym[0], month0: ym[1], selected, select,
     mode,
     onModeChange: (view: CalendarMode) => { const next = new URLSearchParams(params); next.set("view", view); setParams(next); },
-    onToday: () => { const next = new URLSearchParams(params); next.set('date', today); next.set('view', 'day'); setParams(next); },
+    onToday: () => { const next = new URLSearchParams(params); next.set('date', today); next.set('view', 'day'); clearCalendarAttention(next); setParams(next); },
     studentId: params.get("student_id") ?? undefined,
-    selectStudent: (id: string) => { const next = new URLSearchParams(params); next.set("student_id", id); setParams(next); },
+    calendarChangeId: params.get("calendar_change_id") ?? undefined,
+    calendarChangeKind: params.get("calendar_change_kind") === "created" || params.get("calendar_change_kind") === "removed"
+      ? params.get("calendar_change_kind") as "created" | "removed"
+      : undefined,
+    calendarRevision: positiveInteger(params.get("calendar_revision")),
+    calendarRecordRevision: positiveInteger(params.get("calendar_record_revision")),
+    attentionNotificationId: params.get("attention_notification_id") ?? undefined,
+    selectStudent: (id: string) => { const next = new URLSearchParams(params); next.set("student_id", id); clearCalendarAttention(next); setParams(next); },
   };
 }
 
@@ -74,21 +100,14 @@ function useRoleCalendarEvents(role: MembershipRole, year: number, month0: numbe
   });
 }
 
-function useRoleCalendarDays(role: MembershipRole, year: number, month0: number) {
+export function useRoleCalendarDays(role: MembershipRole, year: number, month0: number) {
   const auth = useAuth();
   const schoolId = auth.memberships.find((membership) => membership.role === role)?.school_id ?? "";
   const from = isoOf(year, month0, 1);
   const to = isoOf(year, month0, new Date(year, month0 + 1, 0).getDate());
   return useQuery({
     queryKey: ["calendar", "school-days", schoolId, from, to],
-    queryFn: async () => {
-      try { return await getSchoolCalendarDays(schoolId, from, to); }
-      catch {
-        // The local review backend can trail additive read APIs by one release.
-        const seeded = { date: "2026-10-02", is_instructional: false, label: "Gandhi Jayanti" };
-        return { results: seeded.date >= from && seeded.date <= to ? [seeded] : [] };
-      }
-    },
+    queryFn: () => getSchoolCalendarDays(schoolId, from, to),
     enabled: Boolean(schoolId),
     staleTime: 5 * 60_000,
   });
@@ -99,18 +118,105 @@ function holidayMarks(days: ApiSchoolCalendarDay[]) {
 }
 const holidayOn = (days: ApiSchoolCalendarDay[], iso: string) => days.find((day) => day.date === iso && !day.is_instructional);
 
+export interface CalendarAttentionTarget {
+  selected: string;
+  notificationId?: string;
+  changeId?: string;
+  changeKind?: "created" | "removed";
+  changeRevision?: number;
+  recordRevision?: number;
+}
+
+export function calendarAttentionResolution(days: ApiSchoolCalendarDay[], target: CalendarAttentionTarget): "none" | "exact" | "stale" {
+  if (!target.notificationId && !target.changeId) return "none";
+  if (
+    !target.notificationId || !target.changeId || !target.changeKind ||
+    !target.changeRevision || !target.recordRevision
+  ) return "stale";
+  const selectedRecords = days.filter((day) => day.date === target.selected);
+  if (target.changeKind === "removed") return selectedRecords.length === 0 ? "exact" : "stale";
+  return selectedRecords.some((day) =>
+    day.id === target.changeId && !day.is_instructional && day.revision === target.recordRevision
+  ) ? "exact" : "stale";
+}
+
+function calendarAttentionTarget(calendar: ReturnType<typeof useCalendarState>): CalendarAttentionTarget {
+  return {
+    selected: calendar.selected,
+    notificationId: calendar.attentionNotificationId,
+    changeId: calendar.calendarChangeId,
+    changeKind: calendar.calendarChangeKind,
+    changeRevision: calendar.calendarRevision,
+    recordRevision: calendar.calendarRecordRevision,
+  };
+}
+
+export function CalendarAttentionGate({ target, days, loaded }: {
+  target: CalendarAttentionTarget;
+  days: ApiSchoolCalendarDay[];
+  loaded: boolean;
+}) {
+  if (!loaded) return null;
+  const resolution = calendarAttentionResolution(days, target);
+  if (resolution === "exact") return <AttentionOpenAcknowledgement />;
+  if (resolution === "stale") return <AttentionTargetUnavailable message="This calendar update no longer matches the school day. It was not marked as opened." />;
+  return null;
+}
+
+function calendarFocusChangeId(calendar: ReturnType<typeof useCalendarState>, days: ApiSchoolCalendarDay[]) {
+  return calendarAttentionResolution(days, calendarAttentionTarget(calendar)) === "exact" ? calendar.calendarChangeId : undefined;
+}
+
 function schoolDayPolicy(base: (cell: MonthCell) => boolean, days: ApiSchoolCalendarDay[]) {
   const overrides = new Map(days.map((day) => [day.date, day.is_instructional]));
   return (cell: MonthCell) => overrides.get(cell.iso) ?? base(cell);
 }
 
-function CalendarHolidayRow({ days, selected }: { days: ApiSchoolCalendarDay[]; selected: string }) {
+export function CalendarHolidayRow({ days, selected, focusChangeId, resolved = true }: {
+  days: ApiSchoolCalendarDay[];
+  selected: string;
+  focusChangeId?: string;
+  resolved?: boolean;
+}) {
+  const targetRef = useRef<HTMLDivElement>(null);
   const day = days.find((item) => item.date === selected && !item.is_instructional);
-  if (!day) return null;
-  return <><h4 className="cal-section-title">School calendar</h4><div className="cal-row cal-row--holiday">
-    <span className="cal-event-icon cal-event-icon--holiday"><Landmark size={18} /></span>
-    <span className="cal-row__body"><strong>{day.label || "No school"}</strong><small>School closed</small></span><Pill tone="neutral">Holiday</Pill>
-  </div></>;
+  const focusedDay = focusChangeId
+    ? days.find((item) => item.id === focusChangeId && item.date === selected && !item.is_instructional)
+    : undefined;
+  const targetResolved = Boolean(focusChangeId && resolved);
+  useEffect(() => {
+    if (!targetResolved) return;
+    const frame = window.requestAnimationFrame(() => {
+      targetRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      targetRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusChangeId, focusedDay, targetResolved]);
+  if (!day && !targetResolved) return null;
+  const focused = Boolean(focusedDay);
+  return <>
+    <h4 className="cal-section-title">School calendar</h4>
+    {targetResolved && !focusedDay ? <div
+      ref={targetRef}
+      id={`calendar-change-${focusChangeId}`}
+      className="cal-row cal-row--calendar-change cal-row--attention"
+      tabIndex={-1}
+      role="status"
+    >
+      <span className="cal-event-icon"><CalendarDays size={18} /></span>
+      <span className="cal-row__body"><strong>Calendar update no longer active</strong><small>The day above shows the current school calendar.</small></span>
+      <Pill tone="neutral">Updated</Pill>
+    </div> : null}
+    {day ? <div
+      ref={focused ? targetRef : undefined}
+      id={focused ? `calendar-change-${day.id}` : undefined}
+      className={`cal-row cal-row--holiday${focused ? " cal-row--attention" : ""}`}
+      tabIndex={focused ? -1 : undefined}
+    >
+      <span className="cal-event-icon cal-event-icon--holiday"><Landmark size={18} /></span>
+      <span className="cal-row__body"><strong>{day.label || "No school"}</strong><small>School closed</small></span><Pill tone="neutral">Holiday</Pill>
+    </div> : null}
+  </>;
 }
 
 function CalendarEventRows({ events, selected, portal, studentId, pending, error, retry }: {
@@ -173,6 +279,7 @@ export function ParentCalendarRoute() {
   const name = child?.name.split(" ")[0] ?? "your child";
   return (
     <ParentShell active="more" pageLabel="Calendar" child={child} onSelectChild={cal.selectStudent}>
+      <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && attendance.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(marks,assessments.marks)} isSchoolDay={isSchoolDay} subtitle={child ? `${child.name} · ${attendance.data?.term.name}` : undefined}
         legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }, { tone: "present", label: "Present" }, { tone: "late", label: "Late" }, { tone: "absent", label: "Absent" }, { tone: "leave", label: "Leave" }]}
@@ -180,7 +287,7 @@ export function ParentCalendarRoute() {
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : record?.check_in_at ? `Checked in ${new Date(record.check_in_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : undefined}
               pill={record ? <Pill tone={record.status === "late" || record.status === "half_day" ? "late" : record.status}>{record.status.replace("_", " ")}</Pill> : onLeave ? <Pill tone="leave">On leave</Pill> : cal.selected <= schoolDateToday() && isSchoolDay({ iso: cal.selected, day: 0, weekday: isoWeekday(cal.selected), inMonth: true, isToday: false }) ? <Pill tone="neutral">Not recorded</Pill> : null} />
-            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} />
+            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
             <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="parent" studentId={cal.studentId} pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
             {onLeave ? <div className="cal-row"><span><strong>Leave</strong><small>{onLeave.status_label}</small></span><span className="cal-row__body"><strong>{onLeave.category_label}</strong><small>{onLeave.reason}</small></span><Link className="cal-action" to={`/parent/leave${cal.studentId ? `?student_id=${cal.studentId}` : ""}`}><ArrowRight size={14} /></Link></div> : null}
@@ -218,7 +325,7 @@ export function StudentCalendarRoute() {
         detail={
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : timetable.data ? `${dayOf(timetable.data.days, cal.selected).length} periods` : undefined} pill={record ? <Pill tone={record.status === "late" || record.status === "half_day" ? "late" : record.status}>{record.status.replace("_", " ")}</Pill> : onLeave ? <Pill tone="leave">{onLeave.status_label}</Pill> : null} />
-            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} />
+            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
             <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="student" pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
             {onLeave ? <div className="cal-row"><span><strong>Leave</strong><small>{onLeave.duration_days} day{onLeave.duration_days === 1 ? "" : "s"}</small></span><span className="cal-row__body"><strong>{onLeave.category_label}</strong><small>{onLeave.reason}</small></span><Link className="cal-action" to="/student/leave"><ArrowRight size={14} /></Link></div> : null}
@@ -246,12 +353,13 @@ export function TeacherCalendarRoute() {
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
   return (
     <OperationsShell portal="teacher" active="more" title="Calendar" subtitle={home.data ? `${home.data.teacher.name} - Teaching calendar` : "Teaching calendar"}>
+      <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && home.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(eventMarks(events.data?.items ?? []), holidayMarks(calendarDays.data?.results ?? []),assessments.marks)} isSchoolDay={isSchoolDay} subtitle="Teaching days" legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }]}
         detail={
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : `${periods.length} period${periods.length === 1 ? "" : "s"} · ${home.data?.classes.length ?? 0} register${home.data?.classes.length === 1 ? "" : "s"}`} />
-            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} />
+            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
             <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="teacher" pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
             {!holiday && home.isPending ? <Loading>Loading your day…</Loading> : !holiday ? <>
@@ -289,12 +397,13 @@ export function PrincipalCalendarRoute() {
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
   return (
     <OperationsShell portal="principal" active="timetable" title="Calendar" subtitle="School calendar" backTo="/principal/timetable">
+      <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && timetable.isSuccess && home.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(eventMarks(events.data?.items ?? []), holidayMarks(calendarDays.data?.results ?? []),assessments.marks)} isSchoolDay={isSchoolDay} subtitle={timetable.data ? `${timetable.data.classes.length} classes` : undefined} legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }]}
         detail={
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : s ? `${s.classes_total} classes with registers due` : undefined} pill={!holiday && s && past && s.classes_total ? <Pill tone={open.length ? "late" : "present"}>{open.length ? `${open.length} open` : "All submitted"}</Pill> : null} />
-            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} />
+            <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
             <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="principal" pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
             {!holiday ? home.isPending ? <Loading>Loading the school day…</Loading> : s ? (
