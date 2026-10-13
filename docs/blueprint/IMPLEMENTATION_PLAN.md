@@ -5824,7 +5824,7 @@ provider-health monitoring, campus entry/exit writes, and the staff evidence-rev
 database/API contracts reserve these evidence types, but no hardware observation is accepted as a
 fact until those adapters and release checks exist.
 
-### Gemini-assisted camera attendance — 14 October 2026 (local verification; Stage release pending)
+### Gemini-assisted camera attendance — 14 October 2026 (Stage pilot deployed and verified)
 
 The user explicitly requested a Stage camera-attendance pilot after the blueprint baseline had kept
 biometric provider onboarding out of scope. This is a material, Stage-only deviation: reference face
@@ -5859,11 +5859,28 @@ against the original group image and returned 14 detections and 14 reviewed-pres
 liveness or production-readiness claim. Sidecar tests pass **15/15**, focused attendance UI tests pass
 **32/32**, focused backend photo/operating-rule tests pass **24/24**, backend build/typecheck, focused
 frontend lint, seed generation and eight release-contract tests pass. Stage deployment, authenticated
-profile enrollment and physical-phone acceptance remain pending.
+profile enrollment and physical-phone acceptance remained pending at that checkpoint.
 
 Stage release rehearsal exposed that Cloud Run reserves the standard `Authorization` header even on
 an otherwise public health endpoint. The inference contract now uses the dedicated
 `X-Edura-Inference-Token` header so the Secret Manager credential reaches the application unchanged;
 the public surface remains limited to `/api/health`. This correction passed the 15 sidecar tests and
-backend typecheck. Live Stage enrollment and analysis remain a release gate until the corrected image
-and main-service client are deployed together.
+backend typecheck. The first Stage enrollment then exposed a PostgreSQL-only nullable-parameter
+ambiguity in the provider roster query; the durable store now uses separate filtered and unfiltered
+queries instead of passing an untyped `NULL` parameter.
+
+Stage run [38462793920](https://github.com/EduveraIITA/Eduvera/actions/runs/38462793920)
+passed the complete backend, isolated-PostgreSQL, mobile (**926 tests**) and desktop gates and deployed
+release `75133ddd36d7269fe1015a00441160f2e33bd8ff`. The sidecar query correction was then built as the
+immutable image digest `sha256:ee450f5d2043d1468fb1379b528d3c0cfbbcdae878c9b841ee56c8746c98a231`
+and promoted to the bounded `eduvera-stage-photo` service. The internal token was rotated to a
+newline-free Secret Manager version after the original provisioning command was found to have stored
+its trailing newline; both services are pinned to the same corrected version.
+
+An authenticated principal Stage check enrolled the 14 user-approved Class 7A portraits and analyzed
+the original group fixture with Vertex `gemini-3.1-flash-lite`: 14 faces were detected, 13 learners
+were proposed present and 12 of the 25-learner roster remained for review (the 11 without reference
+profiles plus one uncertain enrolled learner). The analysis was saved as a seven-day review draft;
+**no attendance was submitted or finalized**. This verifies the live workflow and safety boundary,
+not identity accuracy, liveness, fairness or production readiness. Physical-phone visual acceptance
+remains required.

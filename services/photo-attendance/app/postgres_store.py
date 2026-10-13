@@ -85,9 +85,13 @@ class PostgresStore:
     def students(self,class_id,model_id=None):
         self.class_get(class_id)
         with self.db() as c:
+            if model_id is None:
+                return list(c.execute('''SELECT s.*,COUNT(t.id)::int sample_count FROM photo_inference_students s
+                    LEFT JOIN photo_inference_templates t ON s.id=t.student_id
+                    WHERE s.class_id=%s GROUP BY s.id ORDER BY length(s.roll_number),s.roll_number''',(class_id,)).fetchall())
             return list(c.execute('''SELECT s.*,COUNT(t.id)::int sample_count FROM photo_inference_students s
-                LEFT JOIN photo_inference_templates t ON s.id=t.student_id AND (%s IS NULL OR t.model_id=%s)
-                WHERE s.class_id=%s GROUP BY s.id ORDER BY length(s.roll_number),s.roll_number''',(model_id,model_id,class_id)).fetchall())
+                LEFT JOIN photo_inference_templates t ON s.id=t.student_id AND t.model_id=%s
+                WHERE s.class_id=%s GROUP BY s.id ORDER BY length(s.roll_number),s.roll_number''',(model_id,class_id)).fetchall())
 
     def student_get(self,student_id):
         with self.db() as c: row=c.execute('SELECT * FROM photo_inference_students WHERE id=%s',(student_id,)).fetchone()
