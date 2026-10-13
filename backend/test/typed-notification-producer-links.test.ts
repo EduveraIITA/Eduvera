@@ -29,7 +29,8 @@ describe("typed notification producer links", () => {
     for (const parameter of ["school=", "date=", "class=", "schedule_id=", "schedule_revision="]) {
       expect(schedules).toContain(parameter);
     }
-    expect(schedules).toContain("CASE WHEN recipient.portal<>'student' THEN ${publishedRevision} END");
+    expect(dayPlans).toContain("CASE WHEN r.portal<>'student' THEN ${publishedRevision}::integer END");
+    expect(schedules).toContain("CASE WHEN recipient.portal<>'student' THEN ${publishedRevision}::integer END");
   });
 
   it("persists exact attendance, leave and calendar outcome targets", () => {
