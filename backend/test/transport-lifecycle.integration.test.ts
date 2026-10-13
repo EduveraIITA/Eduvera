@@ -247,17 +247,17 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     expect(focused.swaps).toContainEqual(expect.objectContaining({id:request.id,status:"submitted",self_service_open:true}));
   });
 
-  it("opens controls only in the 30-minute window and closes self-service duty changes",async()=>{
+  it("opens controls only in the configured window and closes self-service duty changes",async()=>{
     const f=await fixture();await departureIn(f.trip.id,31);
     await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     const early=(await service.collectorWorkspace(f.collector)).trips.find(trip=>trip.id===f.trip.id)!;
     expect(early.controls_available).toBe(false);expect(early.duty_change_available).toBe(true);
-    await expect(service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:2})).rejects.toThrow(/30 minutes/);
-    await expect(service.tripAction(f.collector,f.trip.id,"cancel",{expected_revision:2,note:"Cannot operate today"})).rejects.toThrow(/30 minutes/);
+    await expect(service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:2})).rejects.toThrow(/configured lead time/);
+    await expect(service.tripAction(f.collector,f.trip.id,"cancel",{expected_revision:2,note:"Cannot operate today"})).rejects.toThrow(/configured lead time/);
     await departureIn(f.trip.id,30);
     const openWindow=(await service.collectorWorkspace(f.collector)).trips.find(trip=>trip.id===f.trip.id)!;
     expect(openWindow.controls_available).toBe(true);expect(openWindow.duty_change_available).toBe(false);
-    await expect(service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Last minute cover"})).rejects.toThrow(/30 minutes/);
+    await expect(service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Last minute cover"})).rejects.toThrow(/institution's journey operating window/);
     expect((await service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:2})).state).toBe("boarding");
   });
 
@@ -266,7 +266,7 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague cover"});
     await departureIn(f.trip.id,29);
     expect((await service.collectorWorkspace(f.admin)).swaps.find(swap=>swap.id===request.id)?.self_service_open).toBe(false);
-    await expect(service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1})).rejects.toThrow(/30 minutes/);
+    await expect(service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1})).rejects.toThrow(/institution's journey operating window/);
     expect((await pool.query("SELECT assigned_collector_user_id FROM transport_trips WHERE id=$1",[f.trip.id])).rows[0].assigned_collector_user_id).toBe(f.collector.id);
   });
 
@@ -274,7 +274,7 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     const f=await fixture();await departureIn(f.trip.id,60);await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague cover"});
     await service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1});await departureIn(f.trip.id,29);
-    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Late approval"})).rejects.toThrow(/30 minutes/);
+    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Late approval"})).rejects.toThrow(/institution's journey operating window/);
     expect((await service.assignTripCollector(f.admin,f.school,f.trip.id,{collector_user_id:f.admin.id,expected_revision:2,note:"Urgent cover verified by school"})).assigned_collector_user_id).toBe(f.admin.id);
   });
 
