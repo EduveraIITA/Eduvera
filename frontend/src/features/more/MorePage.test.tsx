@@ -187,7 +187,7 @@ describe("settings-style More", () => {
       .toHaveAttribute("href", "/teacher/students/import?import=import-1");
   });
 
-  it("combines teacher register and attendance follow-up attention on the Registers tile", async () => {
+  it("keeps primary attendance attention out of More instead of duplicating the Attendance tab", async () => {
     getAttentionMock.mockResolvedValue({
       portal: "teacher",
       generated_at: "2026-10-13T08:00:00.000Z",
@@ -206,8 +206,9 @@ describe("settings-style More", () => {
 
     show("teacher", "/teacher/more");
 
-    expect(await screen.findByRole("link", { name: "Open Registers, 2 actions required" }))
-      .toHaveAttribute("href", "/teacher/attendance");
+    expect(await screen.findByRole("link", { name: "Open Requests" }))
+      .toHaveAttribute("href", "/teacher/requests");
+    expect(screen.queryByRole("link", { name: /Registers/ })).not.toBeInTheDocument();
   });
 
   it("keeps an exact single parent target scoped to the selected child", async () => {

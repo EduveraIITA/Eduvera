@@ -109,24 +109,6 @@ export function MoreContent({ portal }: { portal: Portal }) {
   if (portal === "teacher" && tools.some((tool) => tool.id === "delegated-fees") && modules.fees) {
     modules["delegated-fees"] = modules.fees;
   }
-  // Teachers reach both daily registers and attendance follow-ups through the
-  // single Registers tile. Combine the domain counts at that navigation edge
-  // so a follow-up cannot remain invisible merely because the catalogue uses
-  // a friendlier label than the shared attention read model.
-  if (portal === "teacher" && tools.some((tool) => tool.id === "registers")
-      && (modules.registers || modules.attendance)) {
-    const combined = combineAttentionCounts(modules.registers, modules.attendance)!;
-    const progressiveInformation = combined.new > 0
-      && combined.action_required === 0
-      && combined.exceptions === 0;
-    modules.registers = {
-      ...combined,
-      href: "/teacher/attendance",
-      first_item_href: combined.total === 1 || progressiveInformation
-        ? modules.registers?.first_item_href ?? modules.attendance?.first_item_href ?? null
-        : null,
-    };
-  }
   // Principal navigation intentionally combines timetable and calendar into one
   // human-facing destination. Preserve that information architecture while
   // allowing a calendar change to light the combined tile and deep-link to the
