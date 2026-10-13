@@ -119,7 +119,7 @@ def client(tmp_path):
     )
     with TestClient(
         create_app(settings, SyntheticBackend()),
-        headers={"Authorization": "Bearer " + TOKEN},
+        headers={"X-Edura-Inference-Token": TOKEN},
     ) as test_client:
         yield test_client
 
@@ -133,7 +133,7 @@ def llm_client(tmp_path):
     )
     with TestClient(
         create_app(settings, SyntheticBackend(), SyntheticVisionLlm()),
-        headers={"Authorization": "Bearer " + TOKEN},
+        headers={"X-Edura-Inference-Token": TOKEN},
     ) as test_client:
         yield test_client
 
@@ -147,7 +147,7 @@ def non_vision_llm_client(tmp_path):
     )
     with TestClient(
         create_app(settings, SyntheticBackend(), SyntheticNonVisionLlm()),
-        headers={"Authorization": "Bearer " + TOKEN},
+        headers={"X-Edura-Inference-Token": TOKEN},
     ) as test_client:
         yield test_client
 
@@ -161,7 +161,7 @@ def failing_llm_client(tmp_path):
     )
     with TestClient(
         create_app(settings, SyntheticBackend(), SyntheticFailingVisionLlm()),
-        headers={"Authorization": "Bearer " + TOKEN},
+        headers={"X-Edura-Inference-Token": TOKEN},
     ) as test_client:
         yield test_client
 

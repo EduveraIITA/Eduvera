@@ -5845,7 +5845,7 @@ Scheduled-subject registers now carry their exact session ID through setup, refe
 analysis, review and submission. Accepted camera evidence is attached to the immutable subject
 submission and student-entry revisions; unmatched or manually changed rows retain staff-roll-call
 provenance. The sidecar uses keyless Vertex credentials, encrypted Cloud SQL fields for templates and
-analysis results, bearer-authenticated private endpoints, one concurrent CPU worker, seven-day
+analysis results, shared-secret authenticated private endpoints, one concurrent CPU worker, seven-day
 analysis retention and non-refundable request reservations capped at 60/day and 1,000/31 days. No
 GPU is provisioned. The Stage pipeline builds and deploys the sidecar separately, runs migrations
 first, verifies its public health-only endpoint, then injects only its URL and Secret Manager token
@@ -5860,3 +5860,10 @@ liveness or production-readiness claim. Sidecar tests pass **15/15**, focused at
 **32/32**, focused backend photo/operating-rule tests pass **24/24**, backend build/typecheck, focused
 frontend lint, seed generation and eight release-contract tests pass. Stage deployment, authenticated
 profile enrollment and physical-phone acceptance remain pending.
+
+Stage release rehearsal exposed that Cloud Run reserves the standard `Authorization` header even on
+an otherwise public health endpoint. The inference contract now uses the dedicated
+`X-Edura-Inference-Token` header so the Secret Manager credential reaches the application unchanged;
+the public surface remains limited to `/api/health`. This correction passed the 15 sidecar tests and
+backend typecheck. Live Stage enrollment and analysis remain a release gate until the corrected image
+and main-service client are deployed together.

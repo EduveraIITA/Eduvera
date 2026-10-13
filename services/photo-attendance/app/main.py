@@ -72,8 +72,10 @@ def create_app(settings: Settings | None = None, backend=None, llm_client=None) 
     @app.middleware("http")
     async def protect(request: Request, call_next):
         if request.url.path != "/api/health":
-            supplied = request.headers.get("authorization", "")
-            expected = "Bearer " + store.token
+            # Cloud Run may consume Authorization before forwarding a request.
+            # Keep service authentication in a dedicated application header.
+            supplied = request.headers.get("x-edura-inference-token", "")
+            expected = store.token
             if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
                 return JSONResponse(
                     {"detail": "Inference service credentials were not accepted."},

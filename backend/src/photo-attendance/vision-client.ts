@@ -11,7 +11,10 @@ export class PhotoAttendanceVisionClient {
       throw new ServiceUnavailableException("Photo attendance is not enabled for this environment.");
     }
     const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${this.settings.PHOTO_ATTENDANCE_API_TOKEN}`);
+    // Cloud Run reserves the Authorization header for its own identity layer.
+    // Use an application-specific header so the shared secret reaches the
+    // inference service unchanged on both public and IAM-protected revisions.
+    headers.set("X-Edura-Inference-Token", this.settings.PHOTO_ATTENDANCE_API_TOKEN);
     if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
     let response: Response;
     try {

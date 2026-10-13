@@ -8,7 +8,7 @@ def test_health_does_not_make_an_accuracy_claim(client):
 
 
 def test_private_routes_require_service_authentication(client):
-    response = client.get("/api/classes", headers={"Authorization": ""})
+    response = client.get("/api/classes", headers={"X-Edura-Inference-Token": ""})
     assert response.status_code == 401
     assert response.headers["cache-control"] == "no-store"
 
@@ -57,7 +57,7 @@ def test_zero_faces_leaves_every_student_for_review(client, seeded):
 def test_wrong_service_token_is_rejected(client):
     response = client.get(
         "/api/classes",
-        headers={"Authorization": "Bearer wrong-token-which-is-long-enough"},
+        headers={"X-Edura-Inference-Token": "wrong-token-which-is-long-enough"},
     )
     assert response.status_code == 401
     assert TOKEN not in response.text
