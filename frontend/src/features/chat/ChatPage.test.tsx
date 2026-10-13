@@ -79,7 +79,10 @@ function show() {
 
 beforeEach(() => {
   vi.mocked(getChatConversations).mockResolvedValue({
-    results: Array.from({ length: 100 }, (_, index) => conversation(index)),
+    // The selected thread is intentionally absent, which is the behavior this
+    // test needs. A small capped projection avoids spending the CI timeout on
+    // accessibility-tree traversal through 100 otherwise identical rows.
+    results: Array.from({ length: 8 }, (_, index) => conversation(index)),
   });
   vi.mocked(getChatMessages).mockResolvedValue({ results: [], has_more: false });
   vi.mocked(getChatPolicy).mockResolvedValue({
