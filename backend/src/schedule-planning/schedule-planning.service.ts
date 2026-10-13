@@ -205,7 +205,7 @@ export class SchedulePlanningService {
           CASE WHEN recipient.portal<>'student' THEN 'timetable' END,
           CASE WHEN recipient.portal<>'student' THEN 'timetable_publication' END,
           CASE WHEN recipient.portal<>'student' THEN ${id}::uuid END,
-          CASE WHEN recipient.portal<>'student' THEN ${publishedRevision} END,
+          CASE WHEN recipient.portal<>'student' THEN ${publishedRevision}::integer END,
           CASE WHEN recipient.portal<>'student' THEN ${`timetable:${v.class_section_id}:`}||recipient.portal||':'||COALESCE(recipient.student_id::text,'school') END
         FROM recipients recipient
         ON CONFLICT(recipient_id,dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING

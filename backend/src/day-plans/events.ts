@@ -79,7 +79,7 @@ export async function planEvent(
         CASE WHEN r.portal<>'student' THEN 'timetable' END,
         CASE WHEN r.portal<>'student' THEN 'day_plan_publication' END,
         CASE WHEN r.portal<>'student' THEN ${plan.id}::uuid END,
-        CASE WHEN r.portal<>'student' THEN ${publishedRevision} END,
+        CASE WHEN r.portal<>'student' THEN ${publishedRevision}::integer END,
         CASE WHEN r.portal<>'student' THEN ${`day-plan:${plan.id}:`}||r.portal||':'||COALESCE(r.student_id,'school') END
       FROM jsonb_to_recordset(${JSON.stringify(recipients)}::jsonb)
         AS r(user_id text,student_id text,portal text,link text)

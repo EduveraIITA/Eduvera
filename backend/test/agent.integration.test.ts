@@ -215,7 +215,7 @@ describe('agent end-to-end guarded execution',()=>{
     expect(offered).toContain('record_student_attendance');expect(offered).toContain('student_attendance');
     await admin.request(`/api/v1/agent/threads/${setup.thread}/actions/${retry.run.action.id}`,{decision:'reject'});
   });
-  it('records just one learner, preserves every other row and leaves a draft register open',async()=>{
+  it('records just one learner, preserves every other row and does not submit the register',async()=>{
     const admin=new Session();await admin.login('admin');
     const lookup=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
     expect(lookup.matches).toHaveLength(1);
@@ -228,7 +228,7 @@ describe('agent end-to-end guarded execution',()=>{
     const decision=await admin.request(`/api/v1/agent/threads/${result.thread}/actions/${result.run.action.id}`,{decision:'confirm'});
     expect(decision.status).toBe('succeeded');
     const after=await admin.request(path);
-    expect(after.register.state).toBe('draft');expect(after.register.submitted_at).toBeNull();
+    expect(after.register.state).toBe(before.register.state);expect(after.register.submitted_at).toBe(before.register.submitted_at);
     const target=lookup.selected.student.id;
     expect(after.roster.find((row:any)=>row.id===target).status).toBe(desired);
     expect(after.roster.filter((row:any)=>row.id!==target)).toEqual(before.roster.filter((row:any)=>row.id!==target));

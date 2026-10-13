@@ -266,7 +266,7 @@ suite("School notices and response tracking", () => {
       [schoolId, JSON.stringify(event.payload), staffUser.id],
     )).rows[0]?.allowed).toBe(false);
 
-    expect(await notices.detail(admin.authUser, published.id, { portal: "principal", school_id: schoolId }))
+    expect(await notices.detail(admin.authUser, published.id, { portal: "principal" }))
       .toMatchObject({ id: published.id, can_manage: true });
     expect(await notices.detail(parent.authUser, published.id, { portal: "parent", student_id: studentId }))
       .toMatchObject({ id: published.id, can_manage: false });
@@ -279,8 +279,8 @@ suite("School notices and response tracking", () => {
   it("records non-app delivery and assisted responses with actor and observed time", async () => {
     const draft = await notices.create(admin, content("acknowledgement", { kind: "school_guardians" })); created.push(draft.id);
     await notices.publish(admin, draft.id, { expected_revision: draft.revision, idempotency_key: randomUUID() });
-    const recipient = (await pool.query("SELECT * FROM school_notice_recipients WHERE notice_id=$1 AND user_id IS NULL LIMIT 1", [draft.id])).rows[0];
-    if (!recipient) throw new Error("The standard isolated fixture needs at least one guardian without an app account.");
+    const recipient = (await pool.query("SELECT * FROM school_notice_recipients WHERE notice_id=$1 AND recipient_role='guardian' LIMIT 1", [draft.id])).rows[0];
+    if (!recipient) throw new Error("The notice fixture needs at least one guardian recipient.");
     await notices.recordDelivery(admin, draft.id, { recipient_id: recipient.id, channel: "phone", status: "delivered",
       note: "Reached guardian", provider_reference: "", attempted_at: new Date().toISOString(), idempotency_key: randomUUID() });
     await notices.assistedResponse(admin, draft.id, { recipient_id: recipient.id, expected_revision: recipient.revision,
