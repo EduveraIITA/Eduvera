@@ -17,7 +17,7 @@ describe("principal Insights navigation",()=>{
     const mobile=within(container.querySelector<HTMLElement>(".operations-mobile-nav")!);
     // JSDOM does not apply responsive media queries; browser QA checks visibility.
     expect(mobile.getAllByRole("link",{hidden:true}).map(link=>link.textContent)).toEqual(["Overview","Attendance","Insights","More"]);
-    expect(mobile.queryByRole("button",{name:"Chat",hidden:true})).not.toBeInTheDocument();
+    expect(mobile.queryByRole("button",{name:"Assistant",hidden:true})).not.toBeInTheDocument();
     expect([...container.querySelector(".operations-mobile-nav")!.children].map(item=>item.textContent)).toEqual(["Overview","Attendance","Insights","More"]);
     expect(mobile.getByRole("link",{name:"Insights",hidden:true})).toHaveAttribute("aria-current","page");
     expect(within(container.querySelector<HTMLElement>(".operations-sidebar")!).getByRole("link",{name:"Timetable"})).toHaveAttribute("href","/principal/timetable");

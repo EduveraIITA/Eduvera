@@ -5,6 +5,7 @@ import { useOptionalAuth } from "../auth/AuthContext";
 import { createFollowup } from "./api";
 import "./followups.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 interface Props { students: Array<{ id: string; name: string; attendance_id: string | null; status: string | null }>; date: string }
 export function CreateAttendanceFollowup(props: Props) {
   const auth = useOptionalAuth();
@@ -41,7 +42,7 @@ function CreateForm({ students, date }: Props) {
     {saved ? <p role="status" className="followup-confirmation">Follow-up opened. You are the responsible owner; it is available in Attendance follow-ups on your home page.</p> : null}
     {open ? <form className="followup-form" onSubmit={(event) => void submit(event)}>
       <div className="followup-form__grid"><label>Student<select required value={studentId} onChange={(event) => setStudentId(event.target.value)}><option value="">Select student</option>{eligible.map((student) => <option key={student.id} value={student.id}>{student.name} · {student.status?.replace("_", " ")}</option>)}</select></label>
-      <label>Response due<input required type="datetime-local" value={due} onChange={(event) => setDue(event.target.value)} /></label></div>
+      <label>Response due<TemporalInput required type="datetime-local" value={due} onChange={(event) => setDue(event.target.value)} /></label></div>
       <label>Question for the guardian<textarea required minLength={3} maxLength={1000} rows={3} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Please help us understand the recorded absence." /></label>
       <p className="followup-meta">This opens a follow-up. The recorded attendance stays unchanged.</p>
       {error ? <p className="followup-error" role="alert">{error}</p> : null}<button className="followup-primary" type="submit" disabled={busy}>{busy ? "Opening…" : "Open follow-up"}</button>

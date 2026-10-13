@@ -21,6 +21,7 @@ import {
 import { StudentShell, type StudentRouteMap } from "./StudentShell";
 import "./student-pages.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export type LeaveCategory = "medical" | "family" | "travel" | "urgent";
 
 export interface StudentLeaveDraft {
@@ -216,8 +217,8 @@ export function StudentLeaveNewPage({
         <section className="student-card leave-timeline" aria-labelledby="leave-timeline-heading">
           <header className="form-section__heading"><h2 id="leave-timeline-heading">Leave Timeline</h2><span>{context?.termLabel ?? "Academic term"}</span></header>
           <div className="leave-date-grid">
-            <label><small>From Date</small><span><CalendarDays size={18} /><strong>{formatLeaveDate(startDate)}</strong></span><input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); if (event.target.value > endDate) setEndDate(event.target.value); }} required /><em>Session 1 (Morning)</em></label>
-            <label><small>To Date</small><span><CalendarDays size={18} /><strong>{formatLeaveDate(endDate)}</strong></span><input type="date" min={startDate} value={endDate} onChange={(event) => setEndDate(event.target.value)} required /><em>Session 2 (End of Day)</em></label>
+            <label><small>From Date</small><span><CalendarDays size={18} /><strong>{formatLeaveDate(startDate)}</strong></span><TemporalInput type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); if (event.target.value > endDate) setEndDate(event.target.value); }} required /><em>Session 1 (Morning)</em></label>
+            <label><small>To Date</small><span><CalendarDays size={18} /><strong>{formatLeaveDate(endDate)}</strong></span><TemporalInput type="date" min={startDate} value={endDate} onChange={(event) => setEndDate(event.target.value)} required /><em>Session 2 (End of Day)</em></label>
           </div>
           <div className="duration-row"><span><Clock3 size={18} /><strong>Total Duration</strong></span><span><b>{duration} Calendar {duration === 1 ? "Day" : "Days"}</b><small>School days are confirmed during review</small></span></div>
           <div className="conflict-alert"><CheckCircle2 size={18} /><span><strong>Schedule review included</strong><small>The school verifies classes and assessments before final approval.</small></span></div>

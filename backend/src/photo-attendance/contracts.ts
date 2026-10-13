@@ -16,6 +16,7 @@ export interface VisionLlmStatus {
   installed: boolean;
   supports_images?: boolean;
   model: string;
+  provider?: "ollama" | "vertex" | "disabled";
   detail?: string;
 }
 
@@ -59,13 +60,13 @@ export interface VisionSession {
   confirmed: number;
   result: {
     model_id: string;
-    analysis_mode: "face_embeddings" | "local_llm";
+    analysis_mode: "face_embeddings" | "local_llm" | "vertex_gemini";
     roster: VisionStudent[];
     faces: VisionFace[];
     automatic_assignments: Array<{
       face_id: string;
       student_id: string;
-      source: "face_embeddings" | "local_llm";
+      source: "face_embeddings" | "local_llm" | "vertex_gemini";
       confidence?: number;
     }>;
     summary: {
@@ -88,7 +89,7 @@ export interface PhotoAttendanceAnalysis {
   observed_at: string;
   expires_at: string;
   model: { id: string; accuracy_validated: false };
-  analysis_mode: "face_embeddings" | "local_llm";
+  analysis_mode: "face_embeddings" | "local_llm" | "vertex_gemini";
   summary: {
     roster: number;
     enrolled: number;

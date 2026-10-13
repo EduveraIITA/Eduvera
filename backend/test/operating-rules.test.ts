@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rulesSchema } from "../src/operating-rules/rules.js";
 
-const rules = { event_entry_hours_before: 2, event_staff_hours_after: 24, journey_lead_minutes: 30, message_edit_minutes: 2, message_attachment_mb: 10, attendance_submission_cutoff: "10:30" };
+const rules = { attendance_academic_mode: "scheduled_session", attendance_campus_mode: "none", attendance_academic_channels: ["staff_roll_call"], attendance_campus_channels: ["staff_entry"], attendance_self_check_in_mode: "staff_review", attendance_session_open_before_minutes: 10, attendance_session_close_after_minutes: 30, attendance_finalization_mode: "automatic", attendance_auto_finalize_minutes: 30, event_entry_hours_before: 2, event_staff_hours_after: 24, journey_lead_minutes: 30, message_edit_minutes: 2, message_attachment_mb: 10, attendance_submission_cutoff: "10:30" };
 describe("institution operating rule contract", () => {
   it("accepts current defaults and disabled editing", () => {
     expect(rulesSchema.parse(rules)).toEqual(rules);
@@ -13,6 +13,12 @@ describe("institution operating rule contract", () => {
     ["message_edit_minutes", 61], ["message_attachment_mb", 11],
     ["message_attachment_mb", 0], ["attendance_submission_cutoff", "24:00"],
     ["attendance_submission_cutoff", "10:61"], ["journey_lead_minutes", 1.5],
+    ["attendance_finalization_mode", "silent"], ["attendance_auto_finalize_minutes", -1],
+    ["attendance_auto_finalize_minutes", 1441],
+    ["attendance_academic_mode", "subject-ish"], ["attendance_campus_mode", "maybe"],
+    ["attendance_academic_channels", []], ["attendance_academic_channels", ["face_magic"]],
+    ["attendance_campus_channels", []], ["attendance_self_check_in_mode", "unrestricted"],
+    ["attendance_session_open_before_minutes", 241], ["attendance_session_close_after_minutes", 1441],
   ])("rejects invalid %s value %s", (key, value) => {
     expect(rulesSchema.safeParse({ ...rules, [key]: value }).success).toBe(false);
   });

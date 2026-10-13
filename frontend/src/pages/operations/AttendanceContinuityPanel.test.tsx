@@ -119,7 +119,7 @@ describe("attendance continuity review", () => {
     ));
   });
 
-  it("does not allow a locked register to be applied", async () => {
+  it("does not allow a final register to be applied", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter><AttendanceContinuityPanel
       data={{ ...workspace, cases: [{ ...workspace.cases[0]!, register_state: "locked" }] }}
@@ -131,7 +131,7 @@ describe("attendance continuity review", () => {
     /></MemoryRouter>);
     await interact.click(screen.getByRole("button", { name: "Review" }));
     await interact.type(screen.getByRole("textbox", { name: "Review note" }), "Verified against signed register");
-    expect(screen.getByText(/Unlock this register/)).toBeVisible();
+    expect(screen.getByText(/Reopen this final register/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Apply to register" })).toBeDisabled();
   });
 

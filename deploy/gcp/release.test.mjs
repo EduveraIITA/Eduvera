@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guard, assertRuntime, verify } from './release.mjs';
+import { guard, assertRuntime, verify, verifyPhoto } from './release.mjs';
 
 const now = Date.parse('2026-10-09T00:00:00Z');
-const env = { GITHUB_REPOSITORY: 'EduveraIITA/Eduvera', GITHUB_REF: 'refs/heads/Stage', GITHUB_SHA: 'a'.repeat(40), GCP_PROJECT_ID: 'eduera-511111', GCP_REGION: 'asia-south1', GCP_SERVICE: 'eduvera-stage', GCP_MIGRATION_JOB: 'eduvera-stage-migrate', GCP_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web', GCP_TRIAL_DEPLOY_UNTIL: '2026-11-08T00:00:00Z' };
+const env = { GITHUB_REPOSITORY: 'EduveraIITA/Eduvera', GITHUB_REF: 'refs/heads/Stage', GITHUB_SHA: 'a'.repeat(40), GCP_PROJECT_ID: 'eduera-511111', GCP_REGION: 'asia-south1', GCP_SERVICE: 'eduvera-stage', GCP_PHOTO_SERVICE: 'eduvera-stage-photo', GCP_MIGRATION_JOB: 'eduvera-stage-migrate', GCP_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web', GCP_PHOTO_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance', GCP_TRIAL_DEPLOY_UNTIL: '2026-11-08T00:00:00Z' };
 test('only the exact trusted Stage target is accepted', () => {
   guard(env, now);
-  for (const [key, value] of Object.entries({ GITHUB_REPOSITORY: 'attacker/Eduvera', GITHUB_REF: 'refs/pull/1/merge', GITHUB_SHA: 'latest', GCP_PROJECT_ID: 'other', GCP_REGION: 'us-central1', GCP_SERVICE: 'production', GCP_MIGRATION_JOB: 'wrong', GCP_IMAGE: 'other/image' })) assert.throws(() => guard({ ...env, [key]: value }, now));
+  for (const [key, value] of Object.entries({ GITHUB_REPOSITORY: 'attacker/Eduvera', GITHUB_REF: 'refs/pull/1/merge', GITHUB_SHA: 'latest', GCP_PROJECT_ID: 'other', GCP_REGION: 'us-central1', GCP_SERVICE: 'production', GCP_PHOTO_SERVICE: 'production-photo', GCP_MIGRATION_JOB: 'wrong', GCP_IMAGE: 'other/image', GCP_PHOTO_IMAGE: 'other/photo' })) assert.throws(() => guard({ ...env, [key]: value }, now));
 });
 test('unapproved, expired and unbounded deployment windows fail closed', () => {
   for (const value of ['', 'invalid', '2026-10-08', '2027-10-09']) assert.throws(() => guard({ ...env, GCP_TRIAL_DEPLOY_UNTIL: value }, now));
@@ -43,6 +43,10 @@ test('ephemeral files, plaintext secrets, GPUs and unsafe jobs fail', () => {
 test('smoke check rejects a stale release and unexpected origins', async () => {
   await assert.rejects(verify('https://untrusted.example', env.GITHUB_SHA));
   await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, async () => new Response(JSON.stringify({ release_sha: 'wrong', environment: 'stage' }))));
+});
+test('photo smoke check requires models and explicit unvalidated status', async () => {
+  await verifyPhoto('https://camera.run.app', async () => new Response(JSON.stringify({ model_files_present:true, accuracy_validated:false, single_operator:true })));
+  await assert.rejects(verifyPhoto('https://camera.run.app', async () => new Response(JSON.stringify({ model_files_present:false, accuracy_validated:false, single_operator:true }))));
 });
 test('rejects a costly migrator and a wrong canonical origin', () => {
   const { service, job } = fixture();

@@ -2,6 +2,7 @@ import { useRef,useState,type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { commitEnrollment,reviewEnrollment,type EnrollmentInput,type EnrollmentOption,type EnrollmentReview } from "./api";
 import { GuardianPicker } from "./GuardianPicker";
+import { TemporalInput } from "../../components/forms/TemporalInput";
 const readable=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
 export function EnrollmentForm({schoolId,options,onCancel,onSaved}:{schoolId:string;options:EnrollmentOption[];onCancel:()=>void;onSaved:(name:string)=>void}) {
   const first=options[0]!; const cache=useQueryClient(); const heading=useRef<HTMLHeadingElement>(null);
@@ -23,10 +24,10 @@ export function EnrollmentForm({schoolId,options,onCancel,onSaved}:{schoolId:str
       <label>Student first name<input required maxLength={150} value={input.first_name} onChange={e=>setInput({...input,first_name:e.target.value})}/></label>
       <label>Student last name<input maxLength={150} value={input.last_name} onChange={e=>setInput({...input,last_name:e.target.value})}/></label>
       <label>Admission number<input required minLength={2} maxLength={64} pattern="[A-Za-z0-9/\-]+" value={input.admission_number} onChange={e=>setInput({...input,admission_number:e.target.value})}/></label>
-      <label>Date of birth<input required type="date" min="1900-01-01" max={option.today} value={input.date_of_birth} onChange={e=>setInput({...input,date_of_birth:e.target.value})}/></label>
+      <label>Date of birth<TemporalInput required type="date" min="1900-01-01" max={option.today} value={input.date_of_birth} onChange={e=>setInput({...input,date_of_birth:e.target.value})}/></label>
       <label>Class and term<select value={`${input.class_section_id}:${input.term_id}`} onChange={e=>{const next=options.find(o=>`${o.class_section_id}:${o.term_id}`===e.target.value)!;setInput({...input,class_section_id:next.class_section_id,term_id:next.term_id,roll_number:next.next_roll});}}>{options.map(o=><option key={`${o.class_section_id}:${o.term_id}`} value={`${o.class_section_id}:${o.term_id}`}>{o.class_name} · {o.term_name}</option>)}</select></label>
       <label>Roll number<input required type="number" min={1} max={32767} value={input.roll_number} onChange={e=>setInput({...input,roll_number:Number(e.target.value)})}/></label>
-      <label>Enrolled from<input required type="date" min={option.starts_on} max={option.ends_on} value={input.enrolled_on} onChange={e=>setInput({...input,enrolled_on:e.target.value})}/></label>
+      <label>Enrolled from<TemporalInput required type="date" min={option.starts_on} max={option.ends_on} value={input.enrolled_on} onChange={e=>setInput({...input,enrolled_on:e.target.value})}/></label>
     </div></fieldset>
     <GuardianPicker schoolId={schoolId} value={input.guardian} onChange={guardian=>setInput({...input,guardian})}/>
     <label>Relationship to student<select value={input.relationship} onChange={e=>setInput({...input,relationship:e.target.value as EnrollmentInput["relationship"]})}><option value="guardian">Guardian</option><option value="mother">Mother</option><option value="father">Father</option></select></label>

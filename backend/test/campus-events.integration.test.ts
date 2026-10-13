@@ -29,8 +29,6 @@ describe.skipIf(!isolated)("campus event business rules", () => {
   let subjectId: string;
   let validStart: string;
   let validEnd: string;
-  let sundayStart: string;
-  let sundayEnd: string;
   let teacher: AuthenticatedRequest;
   let classTeacher: AuthenticatedRequest;
   let unrelatedTeacher: AuthenticatedRequest;
@@ -93,8 +91,6 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     subjectId = context.subject_id;
     validStart = context.valid_start.toISOString();
     validEnd = context.valid_end.toISOString();
-    sundayStart = context.sunday_start.toISOString();
-    sundayEnd = context.sunday_end.toISOString();
     const users = (await pool.query<AuthUser & { username: string }>(`
       SELECT account.*, $1::uuid AS active_school_id FROM users account
       WHERE account.username IN (
@@ -241,162 +237,11 @@ describe.skipIf(!isolated)("campus event business rules", () => {
     expect(teacherCatalog.students).toEqual([]);
   });
 
-  it("allows the assigned Mathematics teacher while denying an unrelated teacher", async () => {
-    await expect(service.create(unrelatedTeacher, classTest())).rejects.toThrow(/assigned class teacher|assigned subject teacher|school administrator/i);
-    const academicBefore = Number((await pool.query("SELECT count(*)::text AS value FROM attendance_records")).rows[0].value);
-    const created = await service.create(teacher, classTest());
-    expect(created.event_type).toBe("class_test");
-    expect(created.academic_attendance_impact).toBe("none");
-    expect(created.permissions.can_publish).toBe(true);
-    const academicAfter = Number((await pool.query("SELECT count(*)::text AS value FROM attendance_records")).rows[0].value);
-    expect(academicAfter).toBe(academicBefore);
-    await service.discard(teacher, created.id, {
-      school_id: schoolId,
-      expected_revision: created.revision,
-      idempotency_key: randomUUID(),
-    });
-
-    const classTeacherCreated = await service.create(classTeacher, {
-      ...classTest(),
-      title: "Class-teacher scheduled Mathematics check",
-      staff: [{ user_id: unrelatedTeacher.authUser.id, role: "duty_staff" }],
-    });
-    expect(classTeacherCreated.staff).toEqual(expect.arrayContaining([
-      expect.objectContaining({ user_id: classTeacher.authUser.id, role: "organizer" }),
-      expect.objectContaining({ user_id: teacher.authUser.id, role: "attendance_taker" }),
-    ]));
-    expect(classTeacherCreated.staff.some((row) => row.user_id === unrelatedTeacher.authUser.id)).toBe(false);
-    await service.discard(classTeacher, classTeacherCreated.id, {
-      school_id: schoolId,
-      expected_revision: classTeacherCreated.revision,
-      idempotency_key: randomUUID(),
-    });
-  });
-
-  it("rejects a class test on a non-instructional Sunday", async () => {
-    await expect(service.create(teacher, classTest(sundayStart, sundayEnd))).rejects.toThrow(/instructional date/i);
-  });
-
-  it("rejects a class test outside its effective subject period", async () => {
-    const outsideStart = new Date(Date.parse(validStart) - 5 * 60 * 1000).toISOString();
-    await expect(service.create(teacher, classTest(outsideStart, validEnd))).rejects.toThrow(/effective period/i);
-  });
-
-  it("serializes overlapping class-test drafts so only one can be published", async () => {
-    const firstDraft = await service.create(teacher, {
-      ...classTest(),
-      title: `Concurrent class test A ${randomUUID().slice(0, 8)}`,
-    });
-    const secondDraft = await service.create(teacher, {
-      ...classTest(),
-      title: `Concurrent class test B ${randomUUID().slice(0, 8)}`,
-    });
-
-    const results = await Promise.allSettled([
-      service.publish(teacher, firstDraft.id, {
-        school_id: schoolId,
-        expected_revision: firstDraft.revision,
-        idempotency_key: randomUUID(),
-      }),
-      service.publish(teacher, secondDraft.id, {
-        school_id: schoolId,
-        expected_revision: secondDraft.revision,
-        idempotency_key: randomUUID(),
-      }),
-    ]);
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-    expect(rejected?.reason).toBeInstanceOf(Error);
-    expect((rejected?.reason as Error).message).toMatch(/another published campus event/i);
-
-    const current = await pool.query<{ id: string; status: string; revision: number }>(`
-      SELECT id,status,revision FROM campus_events WHERE id=ANY($1::uuid[]) ORDER BY id
-    `, [[firstDraft.id, secondDraft.id]]);
-    expect(current.rows.filter((row) => row.status === "published")).toHaveLength(1);
-    expect(current.rows.filter((row) => row.status === "draft")).toHaveLength(1);
-    const published = current.rows.find((row) => row.status === "published")!;
-    const blockedDraft = current.rows.find((row) => row.status === "draft")!;
-    await service.cancel(teacher, published.id, {
-      school_id: schoolId,
-      expected_revision: published.revision,
-      idempotency_key: randomUUID(),
-      internal_reason: "Concurrent publication invariant verified.",
-      audience_notice: "This test event has been cancelled.",
-    });
-    await service.discard(teacher, blockedDraft.id, {
-      school_id: schoolId,
-      expected_revision: blockedDraft.revision,
-      idempotency_key: randomUUID(),
-    });
-  });
-
-  it("revalidates the teacher's dated class and subject authority at publication", async () => {
-    const draft = await service.create(teacher, {
-      ...classTest(),
-      title: `Assignment revalidation ${randomUUID().slice(0, 8)}`,
-    });
-    const assignments = (await pool.query<{ id: string; valid_from: string; valid_until: string | null }>(`
-      SELECT assignment.id,assignment.valid_from::text,assignment.valid_until::text
-      FROM class_section_staff_assignments assignment
-      WHERE assignment.school_id=$1 AND assignment.class_section_id=$2
-        AND assignment.user_id=$3
-        AND ((assignment.role='subject_teacher' AND assignment.subject_id=$4)
-          OR assignment.role='class_teacher')
-      ORDER BY assignment.id
-    `, [schoolId, classId, teacher.authUser.id, subjectId])).rows;
-    expect(assignments.length).toBeGreaterThan(0);
-    // Roles are additive: expire direct contextual grants as well as native
-    // teaching records when testing removal of all class-test authority.
-    const directAssignments=(await pool.query<{id:string;starts_on:string;ends_on:string|null}>(`
-      SELECT a.id,a.starts_on::text,a.ends_on::text FROM staff_responsibility_assignments a
-      JOIN staff_profiles p ON p.id=a.staff_profile_id
-      JOIN staff_responsibility_types r ON r.id=a.responsibility_type_id
-      WHERE a.school_id=$1 AND a.class_section_id=$2 AND p.user_id=$3 AND a.status='active'
-        AND 'events.manage'=ANY(r.capability_permissions) AND (a.subject_id IS NULL OR a.subject_id=$4)
-    `,[schoolId,classId,teacher.authUser.id,subjectId])).rows;
-    const expiredOn = (await pool.query<{ value: string }>(`
-      SELECT (($1::timestamptz AT TIME ZONE school.timezone)::date - 1)::text AS value
-      FROM class_section_staff_assignments assignment
-      JOIN schools school ON school.id=assignment.school_id
-      WHERE assignment.id=$2
-    `, [validStart, assignments[0]!.id])).rows[0]!.value;
-
-    try {
-      await pool.query("UPDATE staff_responsibility_assignments SET starts_on=LEAST(starts_on,$1::date),ends_on=$1::date WHERE id=ANY($2::uuid[])",[expiredOn,directAssignments.map((item)=>item.id)]);
-      await pool.query(`
-        UPDATE class_section_staff_assignments
-        SET valid_from=LEAST(valid_from,$1::date),valid_until=$1::date
-        WHERE id=ANY($2::uuid[])
-      `, [expiredOn, assignments.map((row) => row.id)]);
-      await expect(service.publish(teacher, draft.id, {
-        school_id: schoolId,
-        expected_revision: draft.revision,
-        idempotency_key: randomUUID(),
-      })).rejects.toThrow(/assigned class teacher|assigned subject teacher/i);
-      expect((await pool.query<{ status: string }>(
-        "SELECT status FROM campus_events WHERE id=$1",
-        [draft.id],
-      )).rows[0]?.status).toBe("draft");
-    } finally {
-      for(const assignment of directAssignments)await pool.query("UPDATE staff_responsibility_assignments SET starts_on=$1::date,ends_on=$2::date WHERE id=$3",[assignment.starts_on,assignment.ends_on,assignment.id]);
-      for (const assignment of assignments) {
-        await pool.query(
-          "UPDATE class_section_staff_assignments SET valid_from=$1::date,valid_until=$2::date WHERE id=$3",
-          [assignment.valid_from, assignment.valid_until, assignment.id],
-        );
-      }
-      const current = (await pool.query<{ status: string; revision: number }>(
-        "SELECT status,revision FROM campus_events WHERE id=$1",
-        [draft.id],
-      )).rows[0];
-      if (current?.status === "draft") {
-        await service.discard(principal, draft.id, {
-          school_id: schoolId,
-          expected_revision: current.revision,
-          idempotency_key: randomUUID(),
-        });
-      }
-    }
+  it("directs every new class test to the authoritative assessment workflow", async () => {
+    await expect(service.create(teacher, classTest())).rejects.toThrow(/Plan class tests in Assessments/i);
+    await expect(service.create(classTeacher, classTest())).rejects.toThrow(/Plan class tests in Assessments/i);
+    await expect(service.create(principal, classTest())).rejects.toThrow(/Plan class tests in Assessments/i);
+    await expect(service.create(unrelatedTeacher, classTest())).rejects.toThrow(/Plan class tests in Assessments/i);
   });
 
   it("keeps paid RSVP guardian-only and redacts fee details from ordinary event staff", async () => {

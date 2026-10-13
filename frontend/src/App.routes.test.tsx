@@ -97,7 +97,7 @@ const implementedScreenRoutes: RouteSmokeCase[] = [
   { path: "/parent/attendance", heading: "Attendance calendar" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
-  { path: "/student", heading: "Aarav Sharma" },
+  { path: "/student", heading: "Home" },
   { path: "/student/attendance", heading: "Attendance" },
   { path: "/student/attendance/eligibility", heading: "Attendance eligibility" },
   { path: "/student/leave/new", heading: "Apply leave" },
@@ -109,14 +109,14 @@ const implementedScreenRoutes: RouteSmokeCase[] = [
 describe("implemented application routes", () => {
   it.each(["teacher", "principal", "parent", "student"] as const)("hides only the bottom navigation in the %s full chat", portal => {
     const content = <span>Full conversation</span>;
-    const shell = portal === "parent" ? <ParentShell active="chat" pageLabel="Chat">{content}</ParentShell>
-      : portal === "student" ? <StudentShell activeNav="chat" pageTitle="Chat">{content}</StudentShell>
-      : <OperationsShell portal={portal} active="chat" title="Chat">{content}</OperationsShell>;
+    const shell = portal === "parent" ? <ParentShell active="chat" pageLabel="Assistant">{content}</ParentShell>
+      : portal === "student" ? <StudentShell activeNav="chat" pageTitle="Assistant">{content}</StudentShell>
+      : <OperationsShell portal={portal} active="chat" title="Assistant">{content}</OperationsShell>;
     const client=new QueryClient();
     client.setQueryData(proFeaturesKey(),{enabled:true,preview:true});
     const { container } = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${portal}/assistant`]}>{shell}</MemoryRouter></QueryClientProvider>);
     expect(container.querySelector(".student-bottom-nav, .parent-bottom-nav, .operations-mobile-nav")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Chat" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Assistant" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Go back" })).toBeVisible();
     expect(container.querySelector(".assistant-dock")).toBeNull();
     if (portal === "teacher" || portal === "principal") expect(container.querySelector(".operations-sidebar")).toBeInTheDocument();
@@ -127,7 +127,7 @@ describe("implemented application routes", () => {
     const { container } = render(<MemoryRouter initialEntries={["/teacher"]}><App /></MemoryRouter>);
 
     expect(await screen.findByRole("heading", { name: "Today’s assigned work" })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Transport journey/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Transport & departure/ })).toBeVisible();
     expect(screen.getByRole("link", { name: /My work/ })).toBeVisible();
     expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
     expect(container.querySelectorAll(".operations-mobile-nav a")).toHaveLength(2);
@@ -139,7 +139,7 @@ describe("implemented application routes", () => {
     render(<MemoryRouter initialEntries={["/teacher/more"]}><App /></MemoryRouter>);
 
     expect(await screen.findByRole("heading", { name: "My work" })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Transport journey/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Transport & departure/ })).toBeVisible();
     expect(screen.queryByText("Assessments & marking")).not.toBeInTheDocument();
     expect(screen.queryByText("Report remarks")).not.toBeInTheDocument();
 
@@ -162,7 +162,7 @@ describe("implemented application routes", () => {
       })
       : original(endpoint));
     render(<MemoryRouter initialEntries={["/teacher/more"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("link", { name: "Review Transport journey, 1 action required" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Review Transport & departure, 1 action required" })).toBeVisible();
     expect(screen.queryByText("Assessments & marking")).not.toBeInTheDocument();
     expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/departure/collector/"))).toBe(false);
     expect(apiFetchMock.mock.calls.some(([path]) => String(path).startsWith("/api/v1/screens/teacher/home/"))).toBe(false);
@@ -203,20 +203,20 @@ describe("implemented application routes", () => {
     wrap(<StudentShell activeNav="home"><span /></StudentShell>);
     expect(document.querySelectorAll(".student-bottom-nav a")).toHaveLength(4);
     expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Timetable", "More"]);
-    expect(screen.queryByRole("button",{name:"Chat"})).not.toBeInTheDocument();
+    expect(screen.queryByRole("button",{name:"Assistant"})).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
     cleanup();
     wrap(<ParentShell active="home" pageLabel="Home"><span /></ParentShell>);
     expect(document.querySelectorAll(".parent-bottom-nav a")).toHaveLength(4);
     expect([...document.querySelector(".parent-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Diary", "More"]);
-    expect(screen.queryByRole("button",{name:"Chat"})).not.toBeInTheDocument();
+    expect(screen.queryByRole("button",{name:"Assistant"})).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
     cleanup();
     for (const portal of ["teacher", "principal"] as const) {
       wrap(<OperationsShell portal={portal} active="home" title="Today" subtitle="School"><span /></OperationsShell>);
       expect(document.querySelectorAll(".operations-mobile-nav a")).toHaveLength(4);
       expect(document.querySelectorAll(".operations-mobile-nav > *")).toHaveLength(4);
-      expect(screen.queryByRole("button",{name:"Chat"})).not.toBeInTheDocument();
+      expect(screen.queryByRole("button",{name:"Assistant"})).not.toBeInTheDocument();
       expect(screen.queryByRole("link", { name: "More tools" })).not.toBeInTheDocument();
       cleanup();
     }
@@ -226,14 +226,14 @@ describe("implemented application routes", () => {
     const client=new QueryClient();
     client.setQueryData(proFeaturesKey(),{enabled:true,preview:true});
     render(<QueryClientProvider client={client}><MemoryRouter><StudentShell activeNav="home"><span /></StudentShell></MemoryRouter></QueryClientProvider>);
-    expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Chat", "Timetable", "More"]);
-    expect(screen.getByRole("button",{name:"Chat"})).toBeVisible();
+    expect([...document.querySelector(".student-bottom-nav")!.children].map(item => item.textContent)).toEqual(["Home", "Attendance", "Assistant", "Timetable", "More"]);
+    expect(screen.getByRole("button",{name:"Assistant"})).toBeVisible();
   });
 
   it("redirects direct assistant URLs without loading agent data when Pro features are off", async () => {
     render(<MemoryRouter initialEntries={["/student/assistant"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading",{name:"Aarav Sharma"})).toBeVisible();
-    expect(screen.queryByRole("heading",{name:"Chat"})).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading",{name:"Home"})).toBeVisible();
+    expect(screen.queryByRole("heading",{name:"Assistant"})).not.toBeInTheDocument();
     expect(apiFetchMock.mock.calls.some(([path])=>String(path).startsWith("/api/v1/agent/"))).toBe(false);
   });
 
@@ -288,7 +288,8 @@ describe("implemented application routes", () => {
   it("renders a real launcher instead of silently changing portals", async () => {
     render(<MemoryRouter initialEntries={["/student/apps"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "More" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open Attendance" })).toHaveAttribute("href", "/student/attendance");
+    expect(screen.getByRole("link", { name: "Attendance" })).toHaveAttribute("href", "/student/attendance");
+    expect(screen.queryByRole("link", { name: "Open Attendance" })).not.toBeInTheDocument();
   });
 
   it("keeps one established primary navigation destination selected on every event portal", async () => {
@@ -332,7 +333,7 @@ describe("implemented application routes", () => {
   it("keeps student home distinct and routes Attendance from its navigation", async () => {
     // This route test checks click outcomes; pointer traversal is not part of this assertion.
     render(<MemoryRouter initialEntries={["/student"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
     expect(screen.queryByText("Overall Aggregate")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open digital student ID for Aarav Sharma" }));
     expect(screen.getByRole("dialog", { name: "Aarav Sharma" })).toBeVisible();
@@ -855,13 +856,13 @@ describe("authentication and route authorization", () => {
   it("redirects a student away from parent-only records", async () => {
     mockSession(["student"]);
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
     expect(screen.getByText("Today's presence")).toBeVisible();
   });
   it("redirects students away from principal insights without fetching school aggregates", async () => {
     mockSession(["student"]);
     render(<MemoryRouter initialEntries={["/principal/insights"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Aarav Sharma" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
     expect(apiFetchMock.mock.calls.some(([path])=>String(path).includes("principal-insights"))).toBe(false);
   });
 

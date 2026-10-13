@@ -49,6 +49,7 @@ import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowle
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import "./staff-operations.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 type PrincipalSection = "directory" | "roles" | "leave" | "policies";
 const displayDate = (value: string) =>
   new Intl.DateTimeFormat("en-IN", {
@@ -790,7 +791,7 @@ function NewStaffDialog({
               </label>
               <label>
                 Joining date
-                <input name="joined_on" type="date" required />
+                <TemporalInput name="joined_on" type="date" required />
               </label>
             </div>
             {error ? (
@@ -1939,11 +1940,11 @@ function TeacherLeavePage({
                 </label>
                 <label>
                   From
-                  <input name="starts_on" type="date" required />
+                  <TemporalInput name="starts_on" type="date" required />
                 </label>
                 <label>
                   To
-                  <input name="ends_on" type="date" required />
+                  <TemporalInput name="ends_on" type="date" required />
                 </label>
                 <label className="staff-span">
                   Reason

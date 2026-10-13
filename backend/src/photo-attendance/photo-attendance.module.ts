@@ -1,11 +1,12 @@
 import { Module } from "@nestjs/common";
 import { SchoolModule } from "../school/school.module.js";
+import { AttendanceModelModule } from "../attendance-model/attendance-model.module.js";
 import { PhotoAttendanceController } from "./photo-attendance.controller.js";
 import { PhotoAttendanceService } from "./photo-attendance.service.js";
 import { PhotoAttendanceVisionClient } from "./vision-client.js";
 
 @Module({
-  imports: [SchoolModule],
+  imports: [SchoolModule, AttendanceModelModule],
   controllers: [PhotoAttendanceController],
   providers: [PhotoAttendanceService, PhotoAttendanceVisionClient],
   exports: [PhotoAttendanceService],

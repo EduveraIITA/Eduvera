@@ -24,7 +24,7 @@ export function ActionReviewNotice({action,to,state,onOpen,onClose}:{action:Agen
     <div className="assistant-approval__bar">
       <span className="assistant-approval__icon" aria-hidden="true"><ShieldAlert size={18}/></span>
       <strong>Review needed</strong>
-      <button type="button" aria-label="Close chat" onClick={onClose}><X size={18} aria-hidden="true"/></button>
+      <button type="button" aria-label="Close Assistant" onClick={onClose}><X size={18} aria-hidden="true"/></button>
     </div>
     <Link className="assistant-approval__link" to={to} state={state} onClick={onOpen}>
       <span><strong id={`agent-action-${action.id}-notice-title`}>{action.title}</strong>{target?<small>{target}</small>:null}</span>

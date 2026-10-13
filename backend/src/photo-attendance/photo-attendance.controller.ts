@@ -39,8 +39,9 @@ export class PhotoAttendanceController {
     @Req() request: AuthenticatedRequest,
     @Param("classSectionId") classSectionId: string,
     @Query("date") date: string,
+    @Query("session_id") sessionId?: string,
   ) {
-    return this.photoAttendance.setup(request.authUser, classSectionId, date);
+    return this.photoAttendance.setup(request.authUser, classSectionId, date, sessionId);
   }
 
   @Post("students/:studentId/samples/")

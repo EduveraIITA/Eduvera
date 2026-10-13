@@ -12,6 +12,7 @@ import { shortDate } from "./InsightCharts";
 import "../analytics/analytics.css";
 import "./unified-insights.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export type PrincipalInsightTopic = "review" | "recording" | "followups" | "learning-review" | "operations" | "finance";
 const titles: Record<PrincipalInsightTopic, string> = {
   review: "Attendance review", recording: "Missing records", followups: "Family follow-ups", "learning-review": "Learning review", operations: "Coverage & deadlines", finance: "Fee balances",
@@ -38,7 +39,7 @@ export function PrincipalInsightsPage({ topic = "review" }: { topic?: PrincipalI
       </div> : null}
       {review && !studentId ? <div id="insight-review-filters" className="insight-review-filters" hidden={compactFilters && !filtersOpen}>
         <label>Review window<select value={query.days} onChange={event => change("insight_days", event.target.value)}><option value="14">Last 14 days</option><option value="28">Last 28 days</option><option value="56">Last 56 days</option></select></label>
-        <label>Ending on<input type="date" value={query.date} max={schoolDateToday()} onChange={event => { if (event.target.value) change("date", event.target.value); }} /></label>
+        <label>Ending on<TemporalInput type="date" value={query.date} max={schoolDateToday()} onChange={event => { if (event.target.value) change("date", event.target.value); }} /></label>
         {topic === "learning-review" ? <label>Review marks below<select value={query.threshold} onChange={event => change("insight_threshold", event.target.value)}>{[...new Set([40,50,60,query.threshold])].sort((a,b) => a-b).map(value => <option key={value} value={value}>{value}%</option>)}</select></label> : null}
       </div> : null}
       {!query.allowed ? <p role="alert">Institution administrator access is required.</p> : query.isPending ? <div className="insight-loading" role="status" aria-label="Loading insights"><span /><span /><span /></div>

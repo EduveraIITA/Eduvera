@@ -48,7 +48,7 @@ export function AccountProfilePage() {
     {preference.isPending?<p className="account-profile-status" role="status">Loading preference…</p>:null}
     {preference.isError?<p className="security-alert" role="alert">Could not load your preference. <button type="button" onClick={()=>void preference.refetch()}>Try again</button></p>:null}
     {error?<p className="security-alert" role="alert">{error}</p>:null}
-    <AssistantMemorySettings userId={auth.user?.id}/>
+    {preference.enabled ? <AssistantMemorySettings userId={auth.user?.id}/> : null}
     <Link className="account-profile-security" to={`/account/security?from=${encodeURIComponent(profileHref)}`} state={{accountReturnTo:profileHref,accountCanPop:true}}><ShieldCheck size={18}/> Account security <span aria-hidden="true">›</span></Link>
   </main>;
 }

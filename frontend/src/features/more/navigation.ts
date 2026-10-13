@@ -1,6 +1,6 @@
 import type { Portal } from "../auth/AuthContext";
 import type { Tool } from "./tools";
-import { ClipboardCheck } from "lucide-react";
+import { CalendarDays, ClipboardCheck } from "lucide-react";
 
 type Group = { name: string; ids: string[] };
 const groups: Record<Portal, Group[]> = {
@@ -15,8 +15,8 @@ const groups: Record<Portal, Group[]> = {
   ],
   teacher: [
     { name: "Needs attention", ids: ["requests"] },
-    { name: "My work", ids: ["analytics", "responsibilities", "classes", "registers", "transport", "assessments", "report-cards"] },
-    { name: "Schedule & activities", ids: ["weekly", "calendar", "events"] },
+    { name: "My work", ids: ["analytics", "responsibilities", "classes", "transport", "assessments", "report-cards"] },
+    { name: "Schedule & activities", ids: ["calendar", "events"] },
     { name: "Communication & care", ids: ["notices", "messages", "safeguarding"] },
     { name: "Administration", ids: ["delegated-people", "delegated-office", "delegated-fees", "member-invitations"] },
     { name: "Staff services", ids: ["leave", "policies"] },
@@ -32,7 +32,7 @@ const groups: Record<Portal, Group[]> = {
   ],
   student: [
     { name: "Learning", ids: ["analytics", "results", "diary", "teacher-feedback"] },
-    { name: "Schedule & attendance", ids: ["timetable", "calendar", "attendance", "leave", "copilot"] },
+    { name: "Schedule & attendance", ids: ["calendar", "leave"] },
     { name: "School life", ids: ["departure", "events", "messages"] },
     { name: "Payments & policies", ids: ["fees", "policies"] },
     { name: "Account", ids: ["security"] },
@@ -83,7 +83,8 @@ export function searchTools(portal: Portal, visible: Tool[], query: string): Too
   const grouped = groupTools(portal, visible);
   const entries = grouped.flatMap(group => group.tools.map(tool => ({ ...tool, description: group.name, keywords: `${tool.description} ${aliases[tool.id] ?? ""}` })));
   // Primary-tab destinations remain searchable without duplicating their rows in More.
-  if (portal === "principal" || portal === "parent") entries.push({ id: "attendance", name: "Attendance", path: `/${portal}/attendance`, icon: ClipboardCheck, tone: "teal", description: "Attendance tab", keywords: "attendance presence absent registers" });
+  entries.push({ id: "attendance", name: "Attendance", path: `/${portal}/attendance`, icon: ClipboardCheck, tone: "teal", description: "Attendance tab", keywords: "attendance presence absent registers" });
+  if (portal === "student" || portal === "teacher") entries.push({ id: "timetable", name: "Timetable", path: `/${portal}/timetable`, icon: CalendarDays, tone: "violet", description: "Timetable tab", keywords: "schedule weekly periods classes" });
   const shortcuts = portal === "principal" ? adminShortcuts.flatMap(shortcut => {
     const owner = visible.find(tool => tool.id === shortcut.owner);
     const group = grouped.find(item => item.tools.some(tool => tool.id === shortcut.owner));

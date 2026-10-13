@@ -4,8 +4,9 @@ import { pathToFileURL } from 'node:url';
 
 export function guard(env, now = Date.now()) {
   if (env.GITHUB_REPOSITORY !== 'EduveraIITA/Eduvera' || env.GITHUB_REF !== 'refs/heads/Stage') throw new Error('Only the trusted Stage branch can deploy');
-  if (env.GCP_PROJECT_ID !== 'eduera-511111' || env.GCP_REGION !== 'asia-south1' || env.GCP_SERVICE !== 'eduvera-stage' || env.GCP_MIGRATION_JOB !== 'eduvera-stage-migrate') throw new Error('Unexpected deployment target');
+  if (env.GCP_PROJECT_ID !== 'eduera-511111' || env.GCP_REGION !== 'asia-south1' || env.GCP_SERVICE !== 'eduvera-stage' || env.GCP_PHOTO_SERVICE !== 'eduvera-stage-photo' || env.GCP_MIGRATION_JOB !== 'eduvera-stage-migrate') throw new Error('Unexpected deployment target');
   if (env.GCP_IMAGE !== 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web') throw new Error('Unexpected image repository');
+  if (env.GCP_PHOTO_IMAGE !== 'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance') throw new Error('Unexpected photo image repository');
   if (!/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? '')) throw new Error('A full release SHA is required');
   const expiry = Date.parse(env.GCP_TRIAL_DEPLOY_UNTIL ?? '');
   if (!Number.isFinite(expiry) || expiry <= now || expiry - now > 90 * 86400000) throw new Error('Trial deployment window is missing, expired or exceeds 90 days; review remaining credit before renewing');
@@ -67,6 +68,15 @@ export async function verify(origin, sha, request = fetch) {
   if ((await request(`${origin}/metrics`, { signal: AbortSignal.timeout(20000), redirect: 'error' })).status !== 401) throw new Error('Metrics must reject anonymous access');
 }
 
+export async function verifyPhoto(origin, request = fetch) {
+  const base = new URL(origin);
+  if (base.protocol !== 'https:' || !base.hostname.endsWith('.run.app') || base.origin !== origin) throw new Error('Expected a Cloud Run photo-service origin');
+  const response = await request(`${origin}/api/health`, { signal: AbortSignal.timeout(20000), redirect: 'error' });
+  if (!response.ok) throw new Error(`Photo-service health failed (${response.status})`);
+  const health = await response.json();
+  if (!health.model_files_present || health.accuracy_validated !== false || health.single_operator !== true) throw new Error('Photo-service safety or model health is not ready');
+}
+
 async function deploy(env) {
   if (env.GCP_STAGE_DEPLOY_ENABLED !== 'true') throw new Error('Deployment has not been enabled');
   const flags = [`--project=${env.GCP_PROJECT_ID}`, `--region=${env.GCP_REGION}`, '--quiet'];
@@ -78,12 +88,29 @@ async function deploy(env) {
   const imageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));
   const image = imageInfo[0]?.RepoDigests?.find(digest => digest.startsWith(`${env.GCP_IMAGE}@sha256:`));
   if (!image) throw new Error('Cannot find the pushed immutable image digest');
+  const photoImageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_PHOTO_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));
+  const photoImage = photoImageInfo[0]?.RepoDigests?.find(digest => digest.startsWith(`${env.GCP_PHOTO_IMAGE}@sha256:`));
+  if (!photoImage) throw new Error('Cannot find the pushed immutable photo image digest');
   gcloud(['run', 'jobs', 'update', env.GCP_MIGRATION_JOB, ...flags, `--image=${image}`]);
   gcloud(['run', 'jobs', 'execute', env.GCP_MIGRATION_JOB, ...flags, '--wait']);
+  gcloud([
+    'run', 'deploy', env.GCP_PHOTO_SERVICE, ...flags,
+    `--image=${photoImage}`,
+    '--service-account=stage-runtime@eduera-511111.iam.gserviceaccount.com',
+    '--cpu=1', '--memory=1Gi', '--concurrency=1', '--timeout=300', '--min=0', '--max=1',
+    '--cpu-throttling', '--no-cpu-boost', '--ingress=all', '--allow-unauthenticated',
+    '--add-cloudsql-instances=eduera-511111:asia-south1:eduera-db',
+    '--set-env-vars=MULTIMODAL_PROVIDER=vertex,GEMINI_PROJECT=eduera-511111,GEMINI_LOCATION=global,GEMINI_MODEL=gemini-3.1-flash-lite,GEMINI_TIMEOUT_SECONDS=90,MULTIMODAL_DAILY_LIMIT=60,MULTIMODAL_MONTHLY_LIMIT=1000,SESSION_RETENTION_DAYS=7,FACE_BACKEND=opencv,ALLOWED_HOSTS=*.run.app',
+    '--set-secrets=DATABASE_URL=stage-database-url:latest,ATTENDANCE_API_TOKEN=stage-photo-token:latest,ATTENDANCE_ENCRYPTION_KEY=stage-photo-encryption-key:latest',
+  ]);
+  const photoService = describe('services', env.GCP_PHOTO_SERVICE);
+  const photoUrl = photoService.status?.url;
+  if (!photoUrl) throw new Error('Photo-service URL is missing');
+  await verifyPhoto(photoUrl);
   const tag = `check-${env.GITHUB_SHA.slice(0, 12)}`;
   let promoted = false;
   try {
-    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},DEMO_PROFILE_SWITCHER_ENABLED=true`, '--no-traffic', `--tag=${tag}`]);
+    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},DEMO_PROFILE_SWITCHER_ENABLED=true,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest', '--no-traffic', `--tag=${tag}`]);
     const updated = describe('services', env.GCP_SERVICE);
     const candidate = updated.status?.traffic?.find(item => item.tag === tag);
     if (!candidate?.url || !candidate.revisionName) throw new Error('Candidate URL/revision is missing');
@@ -93,7 +120,7 @@ async function deploy(env) {
     promoted = true;
     gcloud(['run', 'services', 'update-traffic', env.GCP_SERVICE, ...flags, `--to-revisions=${candidate.revisionName}=100`]);
     await verify(publicUrl, env.GITHUB_SHA);
-    if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `### Google Cloud Stage deployed\n\nRelease: ${env.GITHUB_SHA}\n\n${publicUrl}\n\nMigrations, candidate health, both apps and public revision verified.\n`);
+    if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `### Google Cloud Stage deployed\n\nRelease: ${env.GITHUB_SHA}\n\n${publicUrl}\n\nMigrations, camera service, candidate health, both apps and public revision verified.\n`);
     console.log(`Verified Stage ${env.GITHUB_SHA} at ${publicUrl}`);
   } catch (error) {
     if (promoted) {

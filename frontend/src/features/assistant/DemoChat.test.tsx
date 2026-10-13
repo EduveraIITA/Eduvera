@@ -1,4 +1,4 @@
-import { act,cleanup,fireEvent,render,screen } from '@testing-library/react';
+import { act,cleanup,fireEvent,render,screen,within } from '@testing-library/react';
 import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import { Link,MemoryRouter } from 'react-router-dom';
 import { AssistantPanel,AssistantTab } from './DemoChat';
@@ -11,7 +11,7 @@ vi.mock('./useAgentConversation',()=>({useAgentConversation:()=>state}));
 const context={portal:'teacher' as const,pageTitle:'Today'};
 function Harness({scope='teacher-1'}:{scope?:string}){const chat=useDemoChat(scope);return <><h1>Today</h1><Link to="/teacher/more">Elsewhere</Link><AssistantPanel chat={chat} context={context}/><AssistantTab chat={chat}/></>;}
 const run=(answer:string):AgentRun=>({id:answer,question:'Question',answer,status:'completed',progress:'Complete',provider:'ollama',model:'qwen3:8b',created_at:new Date().toISOString(),action:null,evidence:[]});
-const open=()=>fireEvent.click(screen.getByRole('button',{name:'Chat',exact:true}));
+const open=()=>fireEvent.click(screen.getByRole('button',{name:'Assistant',exact:true}));
 beforeEach(()=>{state.runs=[];state.pending=false;state.awaiting=false;state.error='';state.send.mockResolvedValue(true);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 describe('connected compact assistant',()=>{
@@ -21,10 +21,10 @@ describe('connected compact assistant',()=>{
     const view=render(<MemoryRouter><Harness/></MemoryRouter>);open();
     const chartNode=screen.getByRole('region',{name:'Subject attendance'}),composer=screen.getByRole('textbox');
     expect(chartNode.compareDocumentPosition(composer)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByText('Assistant')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region',{name:'Assistant'})).queryByText('Assistant')).not.toBeInTheDocument();
     expect(screen.queryByText('Local')).not.toBeInTheDocument();
     expect(screen.getByRole('link',{name:'View attendance'})).toHaveAttribute('href','/teacher/insights/attendance');
-    expect(screen.getByRole('link',{name:'Open full chat'})).toBeVisible();
+    expect(screen.getByRole('link',{name:'Open Assistant'})).toBeVisible();
     state.runs=[run('Next reply without a chart')];view.rerender(<MemoryRouter><Harness/></MemoryRouter>);
     expect(screen.queryByRole('region',{name:'Subject attendance'})).not.toBeInTheDocument();
   });
@@ -40,7 +40,7 @@ describe('connected compact assistant',()=>{
   it('can expand a running server request without blocking navigation',()=>{
     state.pending=true;state.runs=[{...run(''),status:'running',progress:'Reading attendance'}];
     render(<MemoryRouter><Harness/></MemoryRouter>);open();
-    expect(screen.getByRole('link',{name:'Open full chat'})).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('link',{name:'Open Assistant'})).not.toHaveAttribute('aria-disabled');
     expect(screen.getByRole('button',{name:'Stop request'})).toBeVisible();
     fireEvent.click(screen.getByRole('button',{name:'Stop request'}));expect(state.cancel).toHaveBeenCalledOnce();
   });
@@ -56,10 +56,10 @@ describe('connected compact assistant',()=>{
   });
   it('closes on Escape and isolates the active child/navigation',()=>{
     const view=render(<MemoryRouter><Harness/></MemoryRouter>);open();fireEvent.keyDown(document,{key:'Escape'});
-    expect(screen.queryByRole('region',{name:'AI chat'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('region',{name:'Assistant'})).not.toBeInTheDocument();
     open();view.rerender(<MemoryRouter><Harness scope="child-2"/></MemoryRouter>);
-    expect(screen.queryByRole('region',{name:'AI chat'})).not.toBeInTheDocument();open();
-    fireEvent.click(screen.getByRole('link',{name:'Elsewhere'}));expect(screen.queryByRole('region',{name:'AI chat'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('region',{name:'Assistant'})).not.toBeInTheDocument();open();
+    fireEvent.click(screen.getByRole('link',{name:'Elsewhere'}));expect(screen.queryByRole('region',{name:'Assistant'})).not.toBeInTheDocument();
   });
 });
 describe('assistant composer',()=>{

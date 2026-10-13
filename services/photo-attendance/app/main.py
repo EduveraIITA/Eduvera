@@ -18,7 +18,7 @@ from .config import Settings
 from .middleware import BoundedBodyMiddleware
 from .schemas import ClassCreate, MatchConfig, StudentCreate
 from .service import AttendanceService, BusyError
-from .store import ConflictError, Store
+from .store import ConflictError, create_store
 
 
 def parse_config(raw: str) -> MatchConfig:
@@ -40,7 +40,7 @@ async def image_bytes(file: UploadFile, limit: int) -> bytes:
 
 def create_app(settings: Settings | None = None, backend=None, llm_client=None) -> FastAPI:
     cfg = settings or Settings()
-    store = Store(cfg)
+    store = create_store(cfg)
     service = AttendanceService(cfg, store, backend, llm_client)
 
     async def expiry_loop():

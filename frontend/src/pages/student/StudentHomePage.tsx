@@ -184,7 +184,7 @@ export function StudentHomePage({ data, proFeaturesEnabled = false }: { data: St
     <StudentShell activeNav="home" section="Home" className={data.className} notificationCount={data.unreadNotifications}>
       <div className="student-page-stack student-home-page family-home">
         <div className="student-home-anchor">
-          <StudentIdentityCard identity={data} eyebrow={greeting()} />
+          <StudentIdentityCard identity={data} eyebrow={greeting()} primaryHeading={false} />
           {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
         </div>
         <FeedbackNudge portal="student"/>

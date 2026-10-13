@@ -3,6 +3,7 @@ import { cleanPeriod, scheduleCommand, type ScheduleScreen } from './api';
 import { PatternEditor } from './PatternEditor';
 import type { PrincipalTimetableResponse } from '../operations/api';
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export function TimetableDraft({data,selectedClass,refresh,focusVersionId,focusPeriodId,focusDay}:{data:ScheduleScreen;selectedClass:PrincipalTimetableResponse['classes'][number];refresh:()=>Promise<void>;focusVersionId?:string;focusPeriodId?:string;focusDay?:string|null}) {
   const term=data.terms.find(t=>t.id===data.selected_term_id)!;
   const tomorrow=new Date(`${data.school_date}T12:00:00Z`);tomorrow.setUTCDate(tomorrow.getUTCDate()+1);
@@ -43,7 +44,7 @@ export function TimetableDraft({data,selectedClass,refresh,focusVersionId,focusP
         <h3>{draft?'Draft timetable':'Prepare timetable'}</h3>
         {!draft&&data.versions.some(v=>v.state==='published'&&!v.baseline&&v.class_section_id!==selectedClass.id)?<label>Start with<select value={source} onChange={e=>setSource(e.target.value)}><option value="">This class’s current pattern</option>{data.versions.filter(v=>v.state==='published'&&!v.baseline&&v.class_section_id!==selectedClass.id).map(v=><option key={v.id} value={v.id}>{data.classes.find(c=>c.id===v.class_section_id)?.name} · {v.starts_on}</option>)}</select></label>:null}
         <label>Applies<select value={mode} onChange={e=>{setMode(e.target.value);if(e.target.value==='ongoing')setTo(term.ends_on);}}><option value="ongoing">From a date onward</option><option value="range">For a date range</option></select></label>
-        <div className="schedule-settings__dates"><label>Starts<input type="date" min={minDate} max={term.ends_on} required value={from} onChange={e=>setFrom(e.target.value)}/></label>{mode==='range'?<label>Ends<input type="date" min={from} max={term.ends_on} required value={to} onChange={e=>setTo(e.target.value)}/></label>:null}</div>
+        <div className="schedule-settings__dates"><label>Starts<TemporalInput type="date" min={minDate} max={term.ends_on} required value={from} onChange={e=>setFrom(e.target.value)}/></label>{mode==='range'?<label>Ends<TemporalInput type="date" min={from} max={term.ends_on} required value={to} onChange={e=>setTo(e.target.value)}/></label>:null}</div>
         <p>{mode==='range'?'The previous repeating timetable resumes after this range.':`Repeats until ${term.ends_on}. Earlier dates stay unchanged.`}</p>
         {!draft||datesDirty?<button type="submit" disabled={busy||minDate>term.ends_on}>{busy?'Saving…':draft?'Save dates':'Prepare draft'}</button>:null}
         {!draft?<p>Starts with the existing pattern. Nothing becomes live until you publish.</p>:null}

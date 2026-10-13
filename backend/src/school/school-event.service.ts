@@ -162,9 +162,13 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     this.heartbeatTimer.unref();
     this.cleanupTimer = setInterval(() => { void this.cleanupExpiredEvents(); }, CLEANUP_MS);
     this.cleanupTimer.unref();
-    this.overdueRegisterTimer = setInterval(() => { void this.enqueueOverdueRegisters(); }, OVERDUE_REGISTER_CHECK_MS);
+    this.overdueRegisterTimer = setInterval(() => {
+      void this.enqueueOverdueRegisters();
+      void this.finalizeDueAttendanceRegisters();
+    }, OVERDUE_REGISTER_CHECK_MS);
     this.overdueRegisterTimer.unref();
     void this.enqueueOverdueRegisters();
+    void this.finalizeDueAttendanceRegisters();
     void this.cleanupExpiredEvents();
     void this.publishPending();
   }
@@ -581,6 +585,114 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       `.execute(this.db);
     } catch (error) {
       this.logger.warn(`Overdue attendance register scan failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async finalizeDueAttendanceRegisters(batchSize = 100): Promise<number> {
+    const limit = Math.max(1, Math.min(500, Math.trunc(batchSize)));
+    try {
+      return await this.db.transaction().execute(async (db) => {
+        const claim = await sql<{ task_name: string }>`
+          UPDATE event_maintenance_leases lease
+          SET last_claimed_at=clock_timestamp()
+          WHERE lease.task_name='attendance_register_auto_finalize'
+            AND (lease.last_claimed_at IS NULL
+              OR lease.last_claimed_at <= clock_timestamp() - interval '30 seconds')
+          RETURNING lease.task_name
+        `.execute(db);
+        if (!claim.rows.length) return 0;
+        const due = await sql<{
+          id: string; school_id: string; class_section_id: string; term_id: string;
+          date: string; revision: number; submitted_by: string;
+          auto_finalize_at: Date; finalization_policy_revision: number | null;
+        }>`
+          SELECT register.id,register.school_id,register.class_section_id,register.term_id,
+            register.date::text,register.revision,register.submitted_by,
+            register.auto_finalize_at,register.finalization_policy_revision
+          FROM attendance_registers register
+          WHERE register.state='submitted'
+            AND register.submitted_by IS NOT NULL
+            AND register.auto_finalize_at IS NOT NULL
+            AND register.auto_finalize_at<=clock_timestamp()
+          ORDER BY register.auto_finalize_at,register.id
+          FOR UPDATE OF register SKIP LOCKED
+          LIMIT ${limit}
+        `.execute(db);
+        for (const register of due.rows) {
+          const revision = Number(register.revision) + 1;
+          const finalizedAt = new Date();
+          const requestId = randomUUID();
+          await db.updateTable("attendance_registers").set({
+            state: "locked", revision, locked_by: register.submitted_by,
+            locked_at: finalizedAt, auto_finalize_at: null,
+            finalization_source: "automatic", updated_at: finalizedAt,
+          }).where("id", "=", register.id).where("state", "=", "submitted").execute();
+          await db.insertInto("audit_events").values({
+            action: "attendance.register.finalized_automatically",
+            actor_id: register.submitted_by, school_id: register.school_id,
+            target_type: "attendance_register", target_id: register.id,
+            request_id: requestId, ip_hash: null,
+            metadata: {
+              class_section_id: register.class_section_id, date: register.date,
+              revision, scheduled_at: register.auto_finalize_at,
+              finalization_policy_revision: register.finalization_policy_revision,
+              automated: true,
+            },
+          }).execute();
+          await this.enqueueRegisterEvent(db, {
+            schoolId: register.school_id, classSectionId: register.class_section_id,
+            termId: register.term_id, date: register.date, requestId,
+            state: "locked", revision, actorId: register.submitted_by,
+          });
+        }
+        const sessionLimit = Math.max(0, limit - due.rows.length);
+        const dueSessions = sessionLimit ? await sql<{
+          id: string; school_id: string; class_section_id: string; subject_id: string;
+          session_date: string; period_number: number; revision: number; submitted_by: string;
+          auto_finalize_at: Date; finalization_policy_revision: number | null;
+        }>`
+          SELECT register.id,register.school_id,register.class_section_id,register.subject_id,
+            register.session_date::text,register.period_number,register.revision,register.submitted_by,
+            register.auto_finalize_at,register.finalization_policy_revision
+          FROM attendance_session_registers register
+          WHERE register.state='submitted'
+            AND register.submitted_by IS NOT NULL
+            AND register.auto_finalize_at IS NOT NULL
+            AND register.auto_finalize_at<=clock_timestamp()
+          ORDER BY register.auto_finalize_at,register.id
+          FOR UPDATE OF register SKIP LOCKED
+          LIMIT ${sessionLimit}
+        `.execute(db) : { rows: [] };
+        for (const register of dueSessions.rows) {
+          const revision = Number(register.revision) + 1;
+          const finalizedAt = new Date();
+          const requestId = randomUUID();
+          await sql`UPDATE attendance_session_registers SET state='locked',revision=${revision},
+            locked_by=${register.submitted_by}::uuid,locked_at=${finalizedAt},auto_finalize_at=NULL,
+            finalization_source='automatic',updated_at=${finalizedAt}
+            WHERE id=${register.id}::uuid AND state='submitted'`.execute(db);
+          await sql`INSERT INTO attendance_session_audits(school_id,session_id,actor_id,action,metadata)
+            VALUES(${register.school_id}::uuid,${register.id}::uuid,${register.submitted_by}::uuid,'register.finalized_automatically',
+              ${JSON.stringify({ class_section_id: register.class_section_id, subject_id: register.subject_id, session_date: register.session_date, period_number: register.period_number, revision, scheduled_at: register.auto_finalize_at, finalization_policy_revision: register.finalization_policy_revision, request_id: requestId })}::jsonb)`.execute(db);
+          await db.insertInto("audit_events").values({
+            action: "attendance.session.finalized_automatically",
+            actor_id: register.submitted_by, school_id: register.school_id,
+            target_type: "attendance_session_register", target_id: register.id,
+            request_id: requestId, ip_hash: null,
+            metadata: {
+              class_section_id: register.class_section_id, subject_id: register.subject_id,
+              date: register.session_date, period_number: register.period_number,
+              revision, scheduled_at: register.auto_finalize_at,
+              finalization_policy_revision: register.finalization_policy_revision,
+              automated: true,
+            },
+          }).execute();
+        }
+        return due.rows.length + dueSessions.rows.length;
+      });
+    } catch (error) {
+      this.logger.warn(`Attendance register auto-finalization failed: ${error instanceof Error ? error.message : String(error)}`);
+      return 0;
     }
   }
 

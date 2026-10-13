@@ -11,6 +11,7 @@ import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavaila
 import { searchForStudentContext } from "../navigation/studentContextSearch";
 import "./departure.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export default function ParentDeparturePage({student=false}:{student?:boolean}) {
   const auth=useAuth();const [params,setParams]=useSearchParams();const studentId=params.get("student_id")??undefined;const date=params.get("date")??undefined;
   const attentionNotificationId=params.get("attention_notification_id");
@@ -31,7 +32,7 @@ export default function ParentDeparturePage({student=false}:{student?:boolean}) 
   const focus=exactRequest&&requestId?{requestId}:exactTrip&&tripId?{tripId}:exactPlan&&planId?{planId}:undefined;
   const child={id:data.student.id,name:[data.student.first_name,data.student.last_name].join(" ").trim(),grade:data.student.grade??"",section:data.student.section??"",board:"",rollNumber:"",avatarUrl:data.student.avatar_url};
   const content=<div className="departure-page">
-    <label className="departure-date">Service date<input type="date" value={data.service_date} onChange={event=>{if(!event.target.value)return;const next=new URLSearchParams(params);next.set("date",event.target.value);setParams(next,{replace:true});}}/></label>
+    <label className="departure-date">Service date<TemporalInput type="date" value={data.service_date} onChange={event=>{if(!event.target.value)return;const next=new URLSearchParams(params);next.set("date",event.target.value);setParams(next,{replace:true});}}/></label>
     {staleAttentionTarget?<AttentionTargetUnavailable message="This update no longer matches the current departure record. It was not marked as opened."/>:null}
     {exactAttentionTarget?<AttentionOpenAcknowledgement/>:null}
     <FamilyDepartureContent key={data.student.id+":"+data.service_date} data={data} actorId={auth.user?.id??""} {...focus?{focus}:{}}/>

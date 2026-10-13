@@ -10,6 +10,7 @@ import { useAttention } from "../attention/useAttention";
 import { getAccessibleStudents } from "../school/api";
 import { useOptionalAuth, type Portal } from "../auth/AuthContext";
 import { currentStaffMembership, teacherToolIsVisible } from "../auth/staffAccess";
+import { useProFeatures } from "../auth/useProFeatures";
 import { toolsFor, type Tool } from "./tools";
 import { groupTools, searchTools } from "./navigation";
 import { getActivation } from "../activation/api";
@@ -88,7 +89,9 @@ export function MoreContent({ portal }: { portal: Portal }) {
     && auth?.status === "authenticated"
     && (students.isError || students.isSuccess);
   const member = currentStaffMembership(auth?.memberships ?? []);
-  const tools = toolsFor(portal).filter((tool) => portal !== "teacher" || teacherToolIsVisible(member, tool.id));
+  const proFeatures = useProFeatures();
+  const tools = toolsFor(portal).filter((tool) => (portal !== "teacher" || teacherToolIsVisible(member, tool.id))
+    && (tool.id !== "copilot" || proFeatures.enabled));
   if (portal === "teacher" && member?.permissions?.includes("fees.manage")) tools.push({ id: "delegated-fees", name: "Fees & receipts", description: "Delegated fee and receipt access", icon: LockKeyhole, tone: "amber", path: "/teacher/fees" });
   if (portal === "teacher" && member?.permissions?.includes("sis.manage")) tools.push(
     { id: "delegated-people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: LockKeyhole, tone: "teal", path: "/teacher/students" },

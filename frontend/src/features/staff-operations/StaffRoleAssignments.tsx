@@ -8,6 +8,7 @@ import { StaffAssignmentOverview } from "./StaffAssignmentOverview";
 import { assignmentLink, assignmentStatus, assignmentWhen } from "./assignment-overview";
 import "./access-roles.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 const formText=(form:FormData,key:string)=>{const value=form.get(key);return typeof value==="string"?value:"";};
 
 export function StaffRoleAssignments({schoolId,profile,data,refresh,focusAssignmentId}: {schoolId:string;profile:StaffProfile;data:AdminStaffWorkspace;refresh:()=>Promise<void>;focusAssignmentId?:string}) {
@@ -38,7 +39,7 @@ function AssignRoleDialog({schoolId,profile,data,initialRoleId,onClose,onSaved}:
   return <AccessDialog title={`Assign role · ${profile.first_name}`} onClose={onClose}><form className="staff-form" onSubmit={(event)=>void submit(event)}>
     <label>Role<select value={roleId} onChange={(event)=>setRoleId(event.target.value)} required>{roles.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     {role?.context_kind==="class" ? <><label>Class<select name="class" required defaultValue=""><option value="" disabled>Choose class</option>{data.references.classes.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Subject<select name="subject" defaultValue=""><option value="">All subjects</option>{data.references.subjects.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label></> : <p className="staff-inline-note">Applies to this institution.</p>}
-    <div className="staff-form-grid"><label>Starts<input type="date" name="starts" defaultValue={new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date())} required/></label><label>Ends (optional)<input type="date" name="ends"/></label></div>
+    <div className="staff-form-grid"><label>Starts<TemporalInput type="date" name="starts" defaultValue={new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date())} required/></label><label>Ends (optional)<TemporalInput type="date" name="ends"/></label></div>
     <details><summary>Allowed actions</summary><ul>{role?.permissions.map((code)=><li key={code}>{data.role_options?.permissions.find((p)=>p.code===code)?.label ?? code}</li>)}</ul></details>
     <p className="staff-inline-note">For an exam, event or journey, select the person in that planning screen. It appears here automatically.</p>
     {error ? <p className="staff-error" role="alert">{error}</p> : null}

@@ -7,6 +7,7 @@ import { eventDetailHref, eventListHref } from "./eventNavigation";
 import type { CampusEventDto, CampusEventInput, EventCatalogResponse } from "./types";
 import "./campus-events.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 function localDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 16);
@@ -171,8 +172,8 @@ export function EventEditorPage({
             <label className="is-wide">Event name<input required value={input.title} onChange={(e) => setInput({ ...input, title: e.target.value })} placeholder="Class 7 educational excursion" /></label>
             {canManagePolicy ? <label>Event type<select value={input.event_type} onChange={(e) => setInput({ ...input, event_type: e.target.value as CampusEventInput["event_type"] })}>{Object.entries(eventTypeLabels).filter(([value]) => value !== "class_test").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <div className="campus-event-readonly-field"><span>Event type</span><strong>{eventTypeLabels[input.event_type]}</strong></div>}
             <label>Venue<input required value={input.venue} onChange={(e) => updateEventField("venue", e.target.value)} placeholder="School auditorium" /></label>
-            <label>Starts<input required type="datetime-local" value={input.starts_at} onChange={(e) => updateEventField("starts_at", e.target.value)} /></label>
-            <label>Ends<input required type="datetime-local" value={input.ends_at} onChange={(e) => updateEventField("ends_at", e.target.value)} /></label>
+            <label>Starts<TemporalInput required type="datetime-local" value={input.starts_at} onChange={(e) => updateEventField("starts_at", e.target.value)} /></label>
+            <label>Ends<TemporalInput required type="datetime-local" value={input.ends_at} onChange={(e) => updateEventField("ends_at", e.target.value)} /></label>
             <label className="is-wide">Description<textarea required rows={4} value={input.description} onChange={(e) => setInput({ ...input, description: e.target.value })} placeholder="Purpose, programme and what participants should expect." /></label>
           </div>
         </section>
@@ -185,7 +186,7 @@ export function EventEditorPage({
             <label className="campus-event-check"><input type="checkbox" checked={input.requires_guardian_consent} onChange={(e) => setInput({ ...input, requires_guardian_consent: e.target.checked })} /><span><strong>Guardian consent</strong><small>Use for excursions, off-site or higher-risk activities.</small></span></label>
             <label className="campus-event-check"><input type="checkbox" checked={input.payment_required} onChange={(e) => setInput({ ...input, payment_required: e.target.checked, payment_amount_paise: e.target.checked ? input.payment_amount_paise ?? 50_000 : null, payment_due_on: e.target.checked ? input.payment_due_on ?? input.starts_at.slice(0, 10) : null, requires_rsvp: e.target.checked && input.participation_requirement === "optional" ? true : input.requires_rsvp })} /><span><strong>Paid participation</strong><small>Publishes a linked fee obligation; payment is reconciled through the finance ledger.</small></span></label>
           </div>
-          {input.payment_required ? <div className="campus-event-payment-fields"><label>Amount (INR)<input required type="number" min="1" step="0.01" value={(input.payment_amount_paise ?? 0) / 100} onChange={(e) => setInput({ ...input, payment_amount_paise: Math.round(Number(e.target.value) * 100) })} /></label><label>Payment due date<input required type="date" max={input.starts_at.slice(0, 10)} value={input.payment_due_on ?? ""} onChange={(e) => setInput({ ...input, payment_due_on: e.target.value })} /></label><p>{input.participation_requirement === "optional" ? "An invoice is created only after the family accepts the invitation." : "An invoice is created when the mandatory event is published."} No online payment action is shown here.</p></div> : null}
+          {input.payment_required ? <div className="campus-event-payment-fields"><label>Amount (INR)<input required type="number" min="1" step="0.01" value={(input.payment_amount_paise ?? 0) / 100} onChange={(e) => setInput({ ...input, payment_amount_paise: Math.round(Number(e.target.value) * 100) })} /></label><label>Payment due date<TemporalInput required type="date" max={input.starts_at.slice(0, 10)} value={input.payment_due_on ?? ""} onChange={(e) => setInput({ ...input, payment_due_on: e.target.value })} /></label><p>{input.participation_requirement === "optional" ? "An invoice is created only after the family accepts the invitation." : "An invoice is created when the mandatory event is published."} No online payment action is shown here.</p></div> : null}
           </> : <div className="campus-event-protected-policy"><ShieldCheck size={18} /><div><strong>Administrator-controlled policy</strong><p>{input.participation_requirement === "optional" ? "Optional participation with RSVP" : "Mandatory participation"}{input.requires_guardian_consent ? " · Guardian consent required" : ""}{input.payment_required ? ` · Paid event at ₹${((input.payment_amount_paise ?? 0) / 100).toLocaleString("en-IN")}` : " · Free event"}</p><small>You can update delivery details and programme sessions. An administrator must change participation, consent or payment policy.</small></div></div>}
           <p className="campus-event-policy-note"><ShieldCheck size={15} />Academic attendance impact is locked to none. Any school-day reconciliation requires a separate approved attendance workflow.</p>
         </section>
@@ -256,8 +257,8 @@ function EventSessionEditor({ input, catalog, onChange }: { input: CampusEventIn
           <div className="campus-event-form-grid">
             <label>Session name<input required value={session.title} onChange={(event) => update(index, { title: event.target.value })} /></label>
             <label>Session type<select value={session.session_type} onChange={(event) => update(index, { session_type: event.target.value as typeof session.session_type })}><option value="general">General</option><option value="rehearsal">Rehearsal</option><option value="departure">Departure</option><option value="activity">Activity</option><option value="return">Return</option></select></label>
-            <label>Starts<input required type="datetime-local" value={session.starts_at} onChange={(event) => update(index, { starts_at: event.target.value })} /></label>
-            <label>Ends<input required type="datetime-local" value={session.ends_at} onChange={(event) => update(index, { ends_at: event.target.value })} /></label>
+            <label>Starts<TemporalInput required type="datetime-local" value={session.starts_at} onChange={(event) => update(index, { starts_at: event.target.value })} /></label>
+            <label>Ends<TemporalInput required type="datetime-local" value={session.ends_at} onChange={(event) => update(index, { ends_at: event.target.value })} /></label>
             <label>Venue<input required value={session.venue} onChange={(event) => update(index, { venue: event.target.value })} /></label>
             <label>Event attendance<select value={session.attendance_mode} onChange={(event) => update(index, { attendance_mode: event.target.value as typeof session.attendance_mode })}><option value="none">No register</option><option value="check_in">Check-in only</option><option value="check_in_out">Check-in and check-out</option></select></label>
           </div>

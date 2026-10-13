@@ -35,5 +35,12 @@ describe("More hierarchy", () => {
     expect(searchTools("student", toolsFor("student"), "password")[0]?.path).toBe("/account/security");
     expect(searchTools("parent", toolsFor("parent"), "invite staff")).toEqual([]);
     expect(searchTools("parent", toolsFor("parent"), "attendance")).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/parent/attendance" })]));
+    expect(searchTools("student", toolsFor("student"), "attendance")).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/student/attendance" })]));
+    expect(searchTools("teacher", toolsFor("teacher"), "weekly timetable")).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/teacher/timetable" })]));
+  });
+
+  it("keeps primary navigation destinations out of the More catalogue", () => {
+    expect(toolsFor("student").some(tool => ["attendance", "timetable", "copilot"].includes(tool.id))).toBe(false);
+    expect(toolsFor("teacher").some(tool => ["registers", "weekly"].includes(tool.id))).toBe(false);
   });
 });

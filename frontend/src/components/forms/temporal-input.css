@@ -1,0 +1,42 @@
+/* iOS WebKit paints temporal controls as menu-list buttons and can force
+   content-box sizing after the cascade. With width: 100%, the field's padding
+   then sits outside its container. Removing only the native paint prevents
+   that sizing override; the input type still opens the platform picker. */
+.temporal-input,
+input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  text-align: start;
+}
+
+.temporal-input::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: inherit;
+}
+
+.temporal-input::-webkit-datetime-edit,
+.temporal-input::-webkit-datetime-edit-fields-wrapper,
+.temporal-input::-webkit-datetime-edit-text,
+.temporal-input::-webkit-datetime-edit-minute-field,
+.temporal-input::-webkit-datetime-edit-hour-field,
+.temporal-input::-webkit-datetime-edit-meridiem-field,
+.temporal-input::-webkit-datetime-edit-day-field,
+.temporal-input::-webkit-datetime-edit-month-field,
+.temporal-input::-webkit-datetime-edit-year-field {
+  padding: 0;
+}
+
+.temporal-input::-webkit-calendar-picker-indicator {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+
+.temporal-input::-webkit-inner-spin-button {
+  height: auto;
+}

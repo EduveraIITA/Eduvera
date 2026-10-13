@@ -131,6 +131,13 @@
   font-size: 12px;
 }
 
+.coverage-rule__success {
+  margin: 12px 18px 0;
+  color: #147253;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .coverage-rule__save {
   justify-self: end;
   min-height: 48px;
@@ -167,3 +174,25 @@
   .rule-switch__track span,
   .coverage-rule__save { transition: none; }
 }
+
+.operating-category__switches {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #e1e6ee;
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+
+.operating-category__switches label {
+  display: flex;
+  min-height: 50px;
+  padding: 0 14px;
+  align-items: center;
+  gap: 12px;
+  color: var(--edura-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.operating-category__switches label + label { border-top: 1px solid #e4e8ef; }
+.operating-category__switches input { width: 18px; height: 18px; accent-color: var(--edura-brand); }

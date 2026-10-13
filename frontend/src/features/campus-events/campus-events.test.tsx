@@ -394,7 +394,7 @@ describe("campus event planning", () => {
     expect(within(row).getByText("City Science Museum")).toBeVisible();
     expect(within(row).getByText("1 open register")).toBeVisible();
     expect(screen.queryByText("View details")).not.toBeInTheDocument();
-    expect(screen.getByRole("link",{name:"Schedule class test"})).toHaveAttribute("href","/teacher/events/new");
+    expect(screen.getByRole("link",{name:"Plan class test"})).toHaveAttribute("href","/teacher/assessments?create=class-test");
   });
 
   it("preserves a non-default list view through event drill-down and creation", () => {
@@ -664,7 +664,7 @@ describe("event attendance register", () => {
     expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-back-to", "/teacher/events/event-1?list_view=past");
   });
 
-  it("keeps progress concise and reveals the irreversible lock step only when requested", async () => {
+  it("keeps progress concise and reveals finalization only when requested", async () => {
     const onLock = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<MemoryRouter><EventRegisterPage portal="teacher" register={register} onSave={vi.fn()} onLock={onLock} onReopen={vi.fn()} onHistory={vi.fn().mockResolvedValue({ event: register.event, session: { id: register.session.id, title: register.session.title }, items: [] })} /></MemoryRouter>);
@@ -672,11 +672,11 @@ describe("event attendance register", () => {
     expect(screen.getByLabelText("1 of 1 attendance decisions recorded")).toHaveTextContent("All decisions recorded");
     expect(screen.getByRole("heading", { name: "Participants" })).toBeVisible();
     expect(screen.queryByText("Review every attendance decision")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Lock register" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Finalize register" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Lock register" }));
-    expect(screen.getByRole("heading", { name: "Lock register" })).toBeVisible();
-    const confirm = screen.getByRole("button", { name: "Confirm lock" });
+    await user.click(screen.getByRole("button", { name: "Finalize register" }));
+    expect(screen.getByRole("heading", { name: "Finalize register" })).toBeVisible();
+    const confirm = screen.getByRole("button", { name: "Confirm final" });
     expect(confirm).toBeDisabled();
     await user.type(screen.getByLabelText("Reason"), "Session completed");
     await user.click(confirm);
@@ -694,9 +694,9 @@ describe("event attendance register", () => {
     expect(status).not.toHaveTextContent("Checked out");
     await user.selectOptions(status, "excused");
     expect(screen.getByLabelText("Correction reason")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save correction" })).toBeDisabled();
     await user.type(screen.getByLabelText("Correction reason"), "Verified with trip lead");
-    await user.click(screen.getByRole("button", { name: "Save register" }));
+    await user.click(screen.getByRole("button", { name: "Save correction" }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ reason: "Verified with trip lead", records: [expect.objectContaining({ student_id: "student-1", status: "excused", observed_at: null })] }));
   });
 
@@ -740,7 +740,7 @@ describe("event attendance register", () => {
     const observed = screen.getByLabelText("Observed at for Aarav Sharma");
     expect(observed).toBeRequired();
     expect((observed as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-    await user.click(screen.getByRole("button", { name: "Save register" }));
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const saved = onSave.mock.calls[0]?.[0] as EventRegisterInput | undefined;
     expect(saved?.records[0]?.status).toBe("present");
@@ -757,11 +757,11 @@ describe("event attendance register", () => {
     render(<MemoryRouter><EventRegisterPage portal="principal" register={past} onSave={onSave} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn()} /></MemoryRouter>);
     await user.click(screen.getByRole("button", { name: "Mark remaining present" }));
     expect(screen.getByLabelText("Attendance status for Aarav Sharma")).toHaveValue("excused");
-    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Observed time"), { target: { value: "2020-09-19T11:00" } });
-    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Observed time"), { target: { value: "2020-09-18T11:00" } });
-    await user.click(screen.getByRole("button", { name: "Save register" }));
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ records: [expect.objectContaining({ student_id: "student-2", status: "present", observed_at: new Date("2020-09-18T11:00").toISOString() })] }));
   });
 
@@ -786,10 +786,10 @@ describe("event attendance register", () => {
     expect(screen.getByLabelText("Attendance status for Aarav Sharma")).toHaveValue("present");
     expect(blockedStatus).toHaveValue("not_recorded");
     await user.selectOptions(blockedStatus, "present");
-    expect(screen.getByRole("button", { name: "Save register" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
     await user.type(screen.getByLabelText("Observed attendance explanation for Riddhi Kaur"), "Teacher verified arrival at the gate");
     fireEvent.change(screen.getByLabelText("Observed time"), { target: { value: "2020-09-18T11:00" } });
-    await user.click(screen.getByRole("button", { name: "Save register" }));
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const saved = onSave.mock.calls[0]?.[0] as EventRegisterInput | undefined;
     expect(saved?.records).toContainEqual(expect.objectContaining({

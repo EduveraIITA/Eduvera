@@ -233,6 +233,11 @@ describe("OmniSchool API", () => {
       WHERE task_name='attendance_register_overdue_scan'
     `);
     expect(lease.rows).toEqual([{ task_name: "attendance_register_overdue_scan" }]);
+    const finalizationLease = await pool.query<{ task_name: string }>(`
+      SELECT task_name FROM event_maintenance_leases
+      WHERE task_name='attendance_register_auto_finalize'
+    `);
+    expect(finalizationLease.rows).toEqual([{ task_name: "attendance_register_auto_finalize" }]);
     const retentionLease = await pool.query<{ task_name: string }>(`
       SELECT task_name FROM event_maintenance_leases
       WHERE task_name='event_retention_cleanup'
@@ -1431,7 +1436,12 @@ describe("OmniSchool API", () => {
     expect(response.status).toBe(200);
     const saved = await json(response);
     expect(saved.roster.every((student: any) => student.status)).toBe(true);
-    expect(saved.register).toMatchObject({ state: "submitted", revision: expect.any(Number) });
+    expect(saved.register).toMatchObject({
+      state: "submitted", revision: expect.any(Number),
+      auto_finalize_at: expect.any(String),
+      finalization_policy_revision: expect.any(Number),
+      finalization_source: null,
+    });
     const refreshed = await json(await browser.request(`/api/v1/screens/teacher/home/?date=${home.date}`));
     expect(refreshed.classes.find((row: any) => row.class_section_id === classId)).toMatchObject({ submission_status: "submitted", submitted_by_name: "Kavita Mehta", submission_authorized: true });
     const principal = new BrowserSession();
@@ -2054,6 +2064,108 @@ describe("OmniSchool API", () => {
       await pool.query("DELETE FROM students WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM guardian_school_profiles WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM school_people WHERE school_id=$1", [schoolId]);
+      await pool.query("DELETE FROM schools WHERE id=$1", [schoolId]);
+      await eventDatabase.destroy();
+    }
+  });
+
+  it("automatically finalizes a due submitted register with policy and audit traceability", async () => {
+    const schoolId = randomUUID();
+    const termId = randomUUID();
+    const classSectionId = randomUUID();
+    const registerId = randomUUID();
+    const code = `AUTO-FINAL-${randomUUID().slice(0, 8)}`;
+    const eventDatabase = new DatabaseService();
+    const scanner = new SchoolEventService(eventDatabase);
+    let actorId = "";
+    try {
+      const actor = await pool.query<{ id: string }>("SELECT id FROM users WHERE username='kavita.staff'");
+      actorId = actor.rows[0]!.id;
+      await pool.query(`
+        INSERT INTO schools (id, name, code, timezone, attendance_submission_cutoff)
+        VALUES ($1, 'Automatic Finalization Integration School', $2, 'Asia/Kolkata', '10:30')
+      `, [schoolId, code]);
+      await pool.query(`
+        INSERT INTO academic_terms (
+          id, school_id, academic_year, name, starts_on, ends_on,
+          attendance_threshold, is_active
+        ) VALUES ($1, $2, '2099-00', 'Integration term', '2099-01-01', '2099-12-31', 85, true)
+      `, [termId, schoolId]);
+      await pool.query(`
+        INSERT INTO class_sections (
+          id, school_id, academic_year, grade, section, board, room_number
+        ) VALUES ($1, $2, '2099-00', 'IT', 'F', 'Integration', 'Lab')
+      `, [classSectionId, schoolId]);
+      await pool.query(`
+        INSERT INTO school_memberships (user_id, school_id, role, is_active)
+        VALUES ($1, $2, 'staff', true)
+      `, [actorId, schoolId]);
+      await pool.query(`
+        INSERT INTO attendance_registers (
+          id, school_id, class_section_id, term_id, date, state, revision,
+          submitted_by, submitted_at, auto_finalize_at, finalization_policy_revision,
+          finalization_source, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, '2099-03-10', 'submitted', 7,
+          $5, now() - interval '2 minutes', now() - interval '1 minute', 12,
+          NULL, now(), now()
+        )
+      `, [registerId, schoolId, classSectionId, termId, actorId]);
+      await pool.query(`
+        UPDATE event_maintenance_leases SET last_claimed_at=NULL
+        WHERE task_name='attendance_register_auto_finalize'
+      `);
+
+      const finalized = await (scanner as unknown as {
+        finalizeDueAttendanceRegisters(): Promise<number>;
+      }).finalizeDueAttendanceRegisters();
+      expect(finalized).toBe(1);
+
+      const register = await pool.query<{
+        state: string; revision: number; auto_finalize_at: Date | null;
+        finalization_policy_revision: number; finalization_source: string;
+        locked_by: string; locked_at: Date;
+      }>(`
+        SELECT state, revision, auto_finalize_at, finalization_policy_revision,
+          finalization_source, locked_by, locked_at
+        FROM attendance_registers WHERE id=$1
+      `, [registerId]);
+      expect(register.rows[0]).toMatchObject({
+        state: "locked", revision: 8, auto_finalize_at: null,
+        finalization_policy_revision: 12, finalization_source: "automatic",
+        locked_by: actorId,
+      });
+      expect(register.rows[0]!.locked_at).toBeInstanceOf(Date);
+
+      const audit = await pool.query<{ action: string; metadata: any }>(`
+        SELECT action, metadata FROM audit_events
+        WHERE target_type='attendance_register' AND target_id=$1
+      `, [registerId]);
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0]).toMatchObject({
+        action: "attendance.register.finalized_automatically",
+        metadata: { revision: 8, finalization_policy_revision: 12, automated: true },
+      });
+      const event = await pool.query<{ event_type: string; payload: any }>(`
+        SELECT event_type, payload FROM event_outbox
+        WHERE school_id=$1 AND aggregate_id=$2
+      `, [schoolId, classSectionId]);
+      expect(event.rows).toHaveLength(1);
+      expect(event.rows[0]).toMatchObject({
+        event_type: "attendance.register.locked",
+        payload: { state: "locked", action: "locked", revision: 8 },
+      });
+
+      await pool.query(`
+        UPDATE event_maintenance_leases SET last_claimed_at=NULL
+        WHERE task_name='attendance_register_auto_finalize'
+      `);
+      expect(await (scanner as unknown as {
+        finalizeDueAttendanceRegisters(): Promise<number>;
+      }).finalizeDueAttendanceRegisters()).toBe(0);
+    } finally {
+      await pool.query("DELETE FROM event_outbox WHERE school_id=$1", [schoolId]);
+      await pool.query("DELETE FROM audit_events WHERE school_id=$1", [schoolId]);
       await pool.query("DELETE FROM schools WHERE id=$1", [schoolId]);
       await eventDatabase.destroy();
     }

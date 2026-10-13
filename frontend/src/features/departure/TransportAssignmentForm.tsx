@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AdminDeparture } from "./api";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export function TransportAssignmentForm({data,pending,onSubmit}:{data:AdminDeparture;pending:boolean;onSubmit:(input:Record<string,unknown>)=>void}) {
   const [routeId,setRouteId]=useState(data.routes.find(route=>route.status==="active")?.id??"");
   const [direction,setDirection]=useState("from_institution");
@@ -11,7 +12,7 @@ export function TransportAssignmentForm({data,pending,onSubmit}:{data:AdminDepar
     <label>Route<select value={routeId} onChange={event=>setRouteId(event.target.value)} required>{data.routes.filter(route=>route.status==="active").map(route=><option key={route.id} value={route.id}>{route.name}</option>)}</select></label>
     <label>Direction<select value={direction} onChange={event=>setDirection(event.target.value)}><option value="from_institution">From school</option><option value="to_institution">To school</option></select></label>
     <label>Stop<select key={`${routeId}:${direction}`} name="stop_id" required defaultValue=""><option value="">Choose stop</option>{stops.map(stop=><option key={stop.id} value={stop.id}>{stop.sequence}. {stop.name}</option>)}</select>{!stops.length?<small>Add stops for this route direction first.</small>:null}</label>
-    <label>Starts<input name="valid_from" type="date" min={localDate} defaultValue={localDate} required/></label><label>Ends (optional)<input name="valid_until" type="date" min={localDate}/></label>
+    <label>Starts<TemporalInput name="valid_from" type="date" min={localDate} defaultValue={localDate} required/></label><label>Ends (optional)<TemporalInput name="valid_until" type="date" min={localDate}/></label>
     <p className="departure-span">Prepared trips keep their roster. Refresh each affected planned trip and review any retained riders before boarding.</p>
     <button className="departure-primary" disabled={pending||!stops.length}>{pending?"Saving…":"Assign learner"}</button>
   </form>;

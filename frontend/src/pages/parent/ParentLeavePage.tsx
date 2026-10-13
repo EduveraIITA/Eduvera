@@ -21,6 +21,7 @@ import { ParentShell } from "./ParentShell";
 import type { ParentLeaveData, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export interface ParentLeaveDraft {
   category: "medical" | "family" | "travel" | "other";
   fromDate: string;
@@ -339,8 +340,8 @@ export function ParentLeavePage({
                   <option value="other">Urgent Work</option>
                 </select>
                 <div className="parent-leave-form__dates">
-                  <label htmlFor="parent-leave-from">From date<input id="parent-leave-from" type="date" value={draft.fromDate} onChange={(event) => setDraft((current) => ({ ...current, fromDate: event.target.value }))} /></label>
-                  <label htmlFor="parent-leave-to">To date<input id="parent-leave-to" type="date" value={draft.toDate} min={draft.fromDate} onChange={(event) => setDraft((current) => ({ ...current, toDate: event.target.value }))} /></label>
+                  <label htmlFor="parent-leave-from">From date<TemporalInput id="parent-leave-from" type="date" value={draft.fromDate} onChange={(event) => setDraft((current) => ({ ...current, fromDate: event.target.value }))} /></label>
+                  <label htmlFor="parent-leave-to">To date<TemporalInput id="parent-leave-to" type="date" value={draft.toDate} min={draft.fromDate} onChange={(event) => setDraft((current) => ({ ...current, toDate: event.target.value }))} /></label>
                 </div>
                 <label htmlFor="parent-leave-reason">Reason or symptoms</label>
                 <textarea id="parent-leave-reason" rows={4} maxLength={300} value={draft.reason} onChange={(event) => setDraft((current) => ({ ...current, reason: event.target.value }))} placeholder="Add details for the school attendance record..." />

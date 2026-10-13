@@ -249,7 +249,7 @@ export function FamilyEventDetailPage({
           <header><div><span>Programme</span><h2>Event schedule</h2></div><CalendarDays size={19} /></header>
           <div className="family-event-session-list">
             {event.sessions.map((session) => (
-              <article key={session.id}><span>{new Date(session.starts_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</span><div><strong>{session.title}</strong><small>{session.venue} · {session.session_type}{session.state === "locked" ? " · Register locked" : ""}</small></div><FamilySessionAttendance session={session} studentId={selectedStudentId} /></article>
+              <article key={session.id}><span>{new Date(session.starts_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</span><div><strong>{session.title}</strong><small>{session.venue} · {session.session_type}{session.state === "locked" ? " · Register final" : ""}</small></div><FamilySessionAttendance session={session} studentId={selectedStudentId} /></article>
             ))}
           </div>
         </section>

@@ -3,6 +3,7 @@
 import { operatingRules } from "../operating-rules/rules.js";
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -69,6 +70,7 @@ const policySchema = z.object({
   communication_start: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   communication_end: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   retention_days: z.number().int().min(30).max(3650).optional(),
+  expected_revision: z.number().int().positive().optional(),
 });
 const allowedAttachments = new Set([
   "image/jpeg",
@@ -1221,9 +1223,15 @@ export class ChatService {
     const membership = await this.db.selectFrom("school_memberships").select(["school_id", "role"]).where("user_id", "=", user.id).where("is_active", "=", true).executeTakeFirst();
     if (!membership || membership.role !== "admin") throw new ForbiddenException("Only school administrators can change chat policy.");
     const data = policySchema.parse(body);
-    const updated = await this.db.updateTable("chat_policies").set({ ...data, updated_by: user.id, updated_at: new Date() }).where("school_id", "=", membership.school_id).returningAll().executeTakeFirstOrThrow();
-    await this.db.insertInto("audit_events").values({ action: "chat.policy.updated", actor_id: user.id, school_id: membership.school_id, target_type: "chat_policy", target_id: membership.school_id, request_id: request.requestId, ip_hash: null, metadata: data }).execute();
-    return { ...updated, can_manage: true };
+    return this.db.transaction().execute(async (tx) => {
+      const current = await tx.selectFrom("chat_policies").selectAll().where("school_id", "=", membership.school_id).forUpdate().executeTakeFirstOrThrow();
+      if (data.expected_revision !== undefined && current.revision !== data.expected_revision) throw new ConflictException("Messaging rules changed. Reload before saving.");
+      const { expected_revision, ...changes } = data;
+      void expected_revision;
+      const updated = await tx.updateTable("chat_policies").set({ ...changes, revision: current.revision + 1, updated_by: user.id, updated_at: new Date() }).where("school_id", "=", membership.school_id).returningAll().executeTakeFirstOrThrow();
+      await tx.insertInto("audit_events").values({ action: "chat.policy.updated", actor_id: user.id, school_id: membership.school_id, target_type: "chat_policy", target_id: membership.school_id, request_id: request.requestId, ip_hash: null, metadata: changes }).execute();
+      return { ...updated, can_manage: true };
+    });
   }
 
   async createGroup(user: AuthUser, body: unknown, request: AuthenticatedRequest) {

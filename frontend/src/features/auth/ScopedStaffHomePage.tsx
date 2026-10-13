@@ -6,7 +6,7 @@ import { hasStaffPermission } from "./staffAccess";
 import "./scoped-staff-home.css";
 
 const capabilityLinks = [
-  { permission: "departure.collect", label: "Transport journey", detail: "Assigned trip, riders and handovers", path: "/teacher/transport", icon: Bus },
+  { permission: "departure.collect", label: "Transport & departure", detail: "Assigned trip, riders and handovers", path: "/teacher/transport", icon: Bus },
   { permission: "attendance.view", label: "Registers", detail: "Assigned attendance registers", path: "/teacher/attendance", icon: ClipboardCheck },
   { permission: "timetable.view", label: "Timetable", detail: "Published teaching schedule", path: "/teacher/timetable", icon: CalendarDays },
   { permission: "messages.view", label: "Messages", detail: "Permitted school conversations", path: "/teacher/messages", icon: MessageCircle },

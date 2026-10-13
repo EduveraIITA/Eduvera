@@ -122,7 +122,7 @@ export async function attendanceWorkspace(
       CASE WHEN reg.state IN ('submitted','locked') THEN reg.state
         WHEN COALESCE(r.marked_count,0)>0 THEN 'in_progress' ELSE 'not_started' END AS submission_status,
       CASE WHEN actor.id IS NOT NULL THEN trim(concat_ws(' ',actor.first_name,actor.last_name)) END AS submitted_by_name,
-      reg.submitted_at,
+      reg.submitted_at,reg.auto_finalize_at,reg.finalization_policy_revision,reg.finalization_source,
       CASE
         WHEN reg.submitted_by IS NULL THEN true
         WHEN EXISTS (

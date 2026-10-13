@@ -60,6 +60,13 @@ const coveragePolicyInput = z.object({
   supervisor_staff_profile_id: uuid.nullable().default(null),
   expected_revision: z.number().int().nonnegative(),
 });
+const coverageFallbackLabels: Record<z.infer<typeof coveragePolicyInput>["fallback_kind"], string> = {
+  independent_study: "Independent study",
+  physical_activity: "Games / physical activity",
+  library_period: "Library period",
+  merge_class: "Merge with another class",
+  cancelled_period: "Cancelled period",
+};
 export { profileInput, policyInput, assignmentInput, coveragePolicyInput };
 
 @Injectable()
@@ -235,7 +242,10 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         enabled: data.enabled,
         deadline_minutes_before: data.deadline_minutes_before,
         fallback_kind: data.fallback_kind,
-        fallback_label: data.fallback_label,
+        // The selected operating outcome is authoritative. Derive its human
+        // label server-side so old or external clients cannot persist a
+        // contradictory combination such as physical activity / independent study.
+        fallback_label: coverageFallbackLabels[data.fallback_kind],
         supervisor_staff_profile_id: data.supervisor_staff_profile_id,
         updated_by: user.id,
         updated_at: new Date(),

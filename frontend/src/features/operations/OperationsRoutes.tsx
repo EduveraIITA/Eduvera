@@ -36,14 +36,20 @@ import {
   deleteTimetableSlot,
   getAttendanceContinuityWorkspace,
   getAttendanceRegisterHistory,
+  getAttendanceModelWorkspace,
   getPrincipalHome,
   getPrincipalTimetable,
   getTeacherAttendance,
+  getSessionAttendance,
+  getSessionAttendanceHistory,
   getTeacherHome,
+  lockSessionAttendance,
   lockAttendanceRegister,
   saveAttendanceContinuityBatch,
+  saveSessionAttendance,
   saveCurriculumTarget,
   unlockAttendanceRegister,
+  unlockSessionAttendance,
   updateTimetableSlot,
   type NewTimetableSlot,
   type CurriculumTargetInput,
@@ -183,51 +189,61 @@ export function TeacherAttendanceRoute() {
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
   const classId = params.get("class_section_id");
-  const attendanceKey = ["teacher-attendance", classId, date] as const;
+  const sessionId = params.get("session_id");
+  const detailOpen = Boolean(classId || sessionId);
+  const attendanceKey = ["teacher-attendance", sessionId ? "session" : "daily", sessionId ?? classId, date] as const;
+  const model = useQuery({
+    queryKey: ["attendance-model", date],
+    queryFn: () => getAttendanceModelWorkspace(date),
+    enabled: !detailOpen,
+  });
   const home = useQuery({
     queryKey: ["teacher-home", date],
     queryFn: () => getTeacherHome(date),
-    enabled: !classId,
+    enabled: !detailOpen,
   });
 
   const query = useQuery({
     queryKey: attendanceKey,
-    queryFn: () => attendanceWithOfflineFallback(auth.user!.id, classId!, date),
-    enabled: Boolean(classId),
+    queryFn: () => sessionId ? getSessionAttendance(sessionId) : attendanceWithOfflineFallback(auth.user!.id, classId!, date),
+    enabled: detailOpen,
   });
   const setDate = (next: string) => {
     const updated = new URLSearchParams(params);
     updated.set("date", next);
+    if (sessionId) updated.delete("session_id");
     setParams(updated, { replace: true });
   };
 
-  if (!classId && home.isPending) return <Loading />;
-  if (!classId && home.error) return <Failure error={home.error} />;
-  if (!classId && home.data) {
-    return <AttendanceWorkspacePage portal="teacher" classes={home.data.classes} date={date} onDateChange={setDate} attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }} />;
+  if (!detailOpen && (home.isPending || model.isPending)) return <Loading />;
+  if (!detailOpen && (home.error || model.error)) return <Failure error={(home.error ?? model.error)!} />;
+  if (!detailOpen && home.data && model.data) {
+    const classes = model.data.mode === "scheduled_session" ? model.data.registers : model.data.mode === "none" ? [] : home.data.classes;
+    return <AttendanceWorkspacePage portal="teacher" classes={classes} date={date} onDateChange={setDate} attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }} />;
   }
   if (query.isPending) return <Loading />;
   if (query.error) return <Failure error={query.error} />;
 
   const refresh = async () => {
-    const latest = await attendanceWithOfflineFallback(auth.user!.id, classId!, date);
+    const latest = sessionId ? await getSessionAttendance(sessionId) : await attendanceWithOfflineFallback(auth.user!.id, classId!, date);
     queryClient.setQueryData(attendanceKey, latest);
     return latest;
   };
   const save = async (input: TeacherAttendanceSaveInput) => {
-    const updated = await submitAttendanceWithContinuity(auth.user!.id, query.data, classId!, date, input);
+    const updated = sessionId ? await saveSessionAttendance(sessionId, input) : await submitAttendanceWithContinuity(auth.user!.id, query.data, classId!, date, input);
     queryClient.setQueryData(attendanceKey, updated);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
       queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
       queryClient.invalidateQueries({ queryKey: ["attention"] }),
+      queryClient.invalidateQueries({ queryKey: ["attendance-model"] }),
     ]);
     return updated;
   };
 
   return (
     <TeacherAttendancePage
-      key={`${query.data.class.id}-${date}-${params.get('student_id')??''}`}
+      key={`${query.data.session?.id ?? query.data.class.id}-${date}-${params.get('student_id')??''}`}
       initialStudentId={params.get('student_id')??undefined}
       data={query.data}
       date={date}
@@ -253,36 +269,44 @@ export function PrincipalAttendanceRoute() {
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
   const classId = params.get("class_section_id");
+  const sessionId = params.get("session_id");
+  const detailOpen = Boolean(classId || sessionId);
   const reviewCaseId = params.get("review_case") ?? undefined;
-  const registerKey = ["principal-register", classId, date] as const;
-  const historyKey = ["principal-register-history", classId, date] as const;
+  const registerKey = ["principal-register", sessionId ? "session" : "daily", sessionId ?? classId, date] as const;
+  const historyKey = ["principal-register-history", sessionId ? "session" : "daily", sessionId ?? classId, date] as const;
+  const model = useQuery({
+    queryKey: ["attendance-model", date],
+    queryFn: () => getAttendanceModelWorkspace(date),
+    enabled: !detailOpen,
+  });
   const home = useQuery({
     queryKey: ["principal-home", date],
     queryFn: () => getPrincipalHome(date),
-    enabled: !classId,
+    enabled: !detailOpen,
   });
   const continuity = useQuery({
     queryKey: ["attendance-continuity", date, reviewCaseId ?? "queue"],
     queryFn: () => getAttendanceContinuityWorkspace(date, reviewCaseId),
-    enabled: !classId,
+    enabled: !detailOpen,
   });
   const roster = useQuery({
     queryKey: registerKey,
-    queryFn: () => attendanceWithOfflineFallback(auth.user!.id, classId!, date),
-    enabled: Boolean(classId),
+    queryFn: () => sessionId ? getSessionAttendance(sessionId) : attendanceWithOfflineFallback(auth.user!.id, classId!, date),
+    enabled: detailOpen,
   });
   const loadHistory = useCallback(() => queryClient.fetchQuery({
     queryKey: ["principal-register-history", classId, date],
-    queryFn: () => getAttendanceRegisterHistory(classId!, date),
+    queryFn: () => sessionId ? getSessionAttendanceHistory(sessionId) : getAttendanceRegisterHistory(classId!, date),
     staleTime: 0,
-  }), [classId, date, queryClient]);
+  }), [classId, date, queryClient, sessionId]);
   const setDate = (next: string) => {
     const updated = new URLSearchParams(params);
     updated.set("date", next);
+    if (sessionId) updated.delete("session_id");
     setParams(updated, { replace: true });
   };
 
-  if (classId) {
+  if (detailOpen) {
     if (roster.isPending) return <Loading />;
     if (roster.error) return <Failure error={roster.error} />;
 
@@ -294,13 +318,14 @@ export function PrincipalAttendanceRoute() {
         queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
         queryClient.invalidateQueries({ queryKey: historyKey }),
         queryClient.invalidateQueries({ queryKey: ["attention"] }),
+        queryClient.invalidateQueries({ queryKey: ["attendance-model"] }),
       ]);
       return updated;
     };
 
     return (
       <TeacherAttendancePage
-        key={`${roster.data.class.id}-${date}-${params.get('student_id')??''}`}
+        key={`${roster.data.session?.id ?? roster.data.class.id}-${date}-${params.get('student_id')??''}`}
         initialStudentId={params.get('student_id')??undefined}
         portal="principal"
         initialCaptureSource={params.get("source") === "paper" ? "paper" : "live_app"}
@@ -308,22 +333,23 @@ export function PrincipalAttendanceRoute() {
         date={date}
         onDateChange={setDate}
         onRefresh={async () => {
-          const latest = await attendanceWithOfflineFallback(auth.user!.id, classId, date);
+          const latest = sessionId ? await getSessionAttendance(sessionId) : await attendanceWithOfflineFallback(auth.user!.id, classId!, date);
           queryClient.setQueryData(registerKey, latest);
           return latest;
         }}
-        onSave={(input) => storeResult(submitAttendanceWithContinuity(auth.user!.id, roster.data, classId, date, input))}
-        onLock={() => storeResult(lockAttendanceRegister(classId, date))}
-        onUnlock={(reason) => storeResult(unlockAttendanceRegister(classId, date, reason))}
+        onSave={(input) => storeResult(sessionId ? saveSessionAttendance(sessionId,input) : submitAttendanceWithContinuity(auth.user!.id, roster.data, classId!, date, input))}
+        onLock={() => storeResult(sessionId ? lockSessionAttendance(sessionId) : lockAttendanceRegister(classId!, date))}
+        onUnlock={(reason) => storeResult(sessionId ? unlockSessionAttendance(sessionId, reason) : unlockAttendanceRegister(classId!, date, reason))}
         onLoadHistory={loadHistory}
       />
     );
   }
-  if (home.isPending) return <Loading />;
-  if (home.error) return <Failure error={home.error} />;
+  if (home.isPending || model.isPending) return <Loading />;
+  if (home.error || model.error) return <Failure error={(home.error ?? model.error)!} />;
+  const classes = model.data?.mode === "scheduled_session" ? model.data.registers : model.data?.mode === "none" ? [] : home.data.classes;
   return <AttendanceWorkspacePage
     portal="principal"
-    classes={home.data.classes}
+    classes={classes}
     date={date}
     onDateChange={setDate}
     attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }}

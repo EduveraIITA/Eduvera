@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type RefObject } from "rea
 import { CalendarOff, Check, Copy, LoaderCircle, Save, Trash2, X } from "lucide-react";
 import type { CopyTimetableDayInput, CurriculumTargetInput, NewTimetableSlot, PrincipalTimetableResponse, SchoolClosureInput } from "../../features/operations/api";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 function useSheetFocus(closeRef: RefObject<HTMLButtonElement | null>, onClose: () => void, busy: boolean) {
   const current = useRef({ onClose, busy });
   useEffect(() => { current.current = { onClose, busy }; }, [onClose, busy]);
@@ -106,8 +107,8 @@ export function SlotEditorSheet({ data, selectedClass, initial, editingId, onClo
         <div className="timetable-sheet__compact-grid">
           <label>Period<input type="number" min="1" max="20" required value={slot.period_number} onChange={(event) => setSlot({ ...slot, period_number: Number(event.target.value) })} /></label>
           <label>Type<select value={slot.slot_type} onChange={(event) => setSlot({ ...slot, slot_type: event.target.value as NewTimetableSlot["slot_type"] })}><option value="class">Class</option><option value="break">Break</option><option value="activity">Activity</option></select></label>
-          <label>Starts<input type="time" required value={slot.starts_at} onChange={(event) => setSlot({ ...slot, starts_at: event.target.value })} /></label>
-          <label>Ends<input type="time" required value={slot.ends_at} onChange={(event) => setSlot({ ...slot, ends_at: event.target.value })} /></label>
+          <label>Starts<TemporalInput type="time" required value={slot.starts_at} onChange={(event) => setSlot({ ...slot, starts_at: event.target.value })} /></label>
+          <label>Ends<TemporalInput type="time" required value={slot.ends_at} onChange={(event) => setSlot({ ...slot, ends_at: event.target.value })} /></label>
         </div>
         {slot.slot_type === "class" ? <>
           <label>Subject<select required value={slot.subject_id ?? ""} onChange={(event) => setSlot({ ...slot, subject_id: event.target.value || null })}><option value="" disabled>Choose subject</option>{data.subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -281,8 +282,8 @@ export function SchoolCalendarSheet({ term, schoolDate, exceptions, onClose, onC
       <form onSubmit={(event) => void submit(event)}>
         <label>Type<select value={input.kind} onChange={(event) => setInput({ ...input, kind: event.target.value as SchoolClosureInput["kind"] })}>{Object.entries(closureKindLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <div className="timetable-sheet__compact-grid">
-          <label>Starts<input type="date" min={earliestDate} max={term.ends_on} required value={input.starts_on} onChange={(event) => setInput({ ...input, starts_on: event.target.value, ends_on: event.target.value > input.ends_on ? event.target.value : input.ends_on })} /></label>
-          <label>Ends<input type="date" min={input.starts_on} max={term.ends_on} required value={input.ends_on} onChange={(event) => setInput({ ...input, ends_on: event.target.value })} /></label>
+          <label>Starts<TemporalInput type="date" min={earliestDate} max={term.ends_on} required value={input.starts_on} onChange={(event) => setInput({ ...input, starts_on: event.target.value, ends_on: event.target.value > input.ends_on ? event.target.value : input.ends_on })} /></label>
+          <label>Ends<TemporalInput type="date" min={input.starts_on} max={term.ends_on} required value={input.ends_on} onChange={(event) => setInput({ ...input, ends_on: event.target.value })} /></label>
         </div>
         <label>Name<input required minLength={3} maxLength={160} value={input.label} placeholder={input.kind === "emergency_closure" ? "Campus closure" : "Holiday name"} onChange={(event) => setInput({ ...input, label: event.target.value })} /></label>
         <label>Reason<textarea rows={2} required minLength={3} maxLength={500} value={input.reason} placeholder="Reason shown in the school record" onChange={(event) => setInput({ ...input, reason: event.target.value })} /></label>

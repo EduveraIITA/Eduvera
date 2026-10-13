@@ -18,6 +18,7 @@ import { schoolDateToday, shiftSchoolDate } from "../../lib/schoolTime";
 import { AttendanceCopilotSheet, type AttendanceCopilotHandler } from "./AttendanceCopilotSheet";
 import "./student-pages.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export interface AbsenceDocumentPayload {
   startDate: string;
   endDate: string;
@@ -221,8 +222,8 @@ export function StudentEligibilityPage({
             <form onSubmit={submitDocument}>
               <fieldset className="date-range-fields">
                 <legend>Absence Period</legend>
-                <label><span>From</span><input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setFormError(""); }} required /></label>
-                <label><span>To</span><input type="date" value={endDate} min={startDate} onChange={(event) => { setEndDate(event.target.value); setFormError(""); }} required /></label>
+                <label><span>From</span><TemporalInput type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setFormError(""); }} required /></label>
+                <label><span>To</span><TemporalInput type="date" value={endDate} min={startDate} onChange={(event) => { setEndDate(event.target.value); setFormError(""); }} required /></label>
               </fieldset>
               <label className="file-dropzone" htmlFor={fileInputId} aria-describedby={formError ? formErrorId : undefined}>
                 <input id={fileInputId} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={pickFile} aria-invalid={Boolean(formError)} />

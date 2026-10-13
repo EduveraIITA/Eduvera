@@ -46,7 +46,7 @@ decisions cannot be replaced by synthetic software tests.
 | B0: Reproducible preview | Compiled bundles existed; previous runtime had manual patches and stopped | Restore locked dependencies, compile source, managed local restart, readiness and restart drill |
 | B1: People and authority | School-scoped account-optional people; individual and reviewed bulk enrollment; dated guardian leave-signing permission | Other purpose-specific grants, account invitations, transfer/withdrawal; no merge by phone/name |
 | B2: Daily plan | Weekly baseline plus dated, versioned daily plans; notices/materials; coverage responses; shared family schedule; conflict checks and outbox updates | Local UI acceptance and school-operating validation; resource catalogue/advanced authoring remains later timetable scope |
-| B3: Attendance | Full-roster commands, revision checks, idempotency, correction history, calendar, leave; immutable source-rich observations; encrypted account-scoped offline queue with expiry/quarantine; reviewed paper and office capture | Print/export reconciliation, physical offline/device drill and school-operating acceptance; retain unrecorded/unknown states |
+| B3: Attendance | Daily full-roster commands plus configurable scheduled-subject registers linked to the effective timetable; independent campus-presence mode; revision checks, idempotency, correction history, calendar, leave; immutable source-rich observations; encrypted account-scoped offline queue with expiry/quarantine; reviewed paper and office capture; time-bounded QR self check-in contract | Staff review UI for QR/device evidence; registered camera/biometric adapters and provider health; campus capture command; print/export reconciliation, physical offline/device drill and school-operating acceptance; retain unrecorded/unknown states |
 | B4: Attendance follow-up | Attendance facts and parent/teacher screens | First local slice implemented below: explicit owner/deadline, guardian reply, assisted response, outcome, event update |
 | B5: Communication/actions | Per-user notification inbox, diary acknowledgments and notes; role-aware Requests inbox; locally implemented scoped notices with immutable recipients, distinct delivery/open/response state and assisted non-app capture | Physical role-by-role acceptance; external SMS provider delivery; operating-policy sign-off; broader conversation acceptance |
 | B6: Pilot readiness | Scoped documents, auth/CSRF, event replay and tests | Scoped object storage, malware scanning, non-owner RLS runtime roles/context, privileged auth, recovery drill, accessibility/device validation, release evidence |
@@ -61,6 +61,127 @@ decisions cannot be replaced by synthetic software tests.
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
+
+## Active delivery: cross-app behaviour consolidation — 13 October 2026
+
+The first two locally implemented slices of the cross-app consistency audit reduce overlapping
+navigation concepts without changing domain authority. The AI destination is now named
+**Assistant** in navigation, compact controls, the full-page header and history controls;
+person-to-person communication remains **Messages**. Student and teacher More catalogues no
+longer repeat their primary Attendance and Timetable destinations, while those destinations remain
+directly available in bottom navigation and searchable from More. Parent, student, teacher and
+principal transport catalogue labels now use the stable domain name **Transport & departure**.
+
+Pro-off presentation now hides Assistant memory as well as assistant navigation and direct routes.
+The Student More catalogue no longer exposes a separate Attendance Copilot tile; contextual
+attendance help remains inside Attendance when Pro is enabled. Duplicate page-level H1s were
+removed from student Home, notice detail and teacher-feedback content so the shared portal app bar
+is the single page-title owner.
+
+The leave-cover operating rule now has one fallback meaning rather than an independently editable
+type and label. The UI sends the canonical display label for the chosen fallback and the service
+derives it again before persistence, preventing contradictory combinations from old or external
+clients. The form now reports successful persistence. Focused frontend coverage passes 38 tests
+across Assistant, More, account profile, transport and staff operating rules; the changed frontend
+files pass ESLint. Backend typecheck, build and targeted lint pass. Full frontend typecheck/build
+remain blocked by preserved, untracked duplicate `* 2.tsx` files that TypeScript includes; this is
+pre-existing workspace state and those files were not removed or edited. Phone review and cloud
+deployment remain pending.
+
+The authoritative class-test ownership slice is now locally implemented. New class tests are
+planned in Assessments, not Campus events: an assigned subject teacher may create only a draft
+class test for the same class, subject and effective assignment dates; the teacher remains the
+examiner, an active school administrator is selected as the independent reviewer, and principal
+scheduling remains the release gate. That scheduling transaction serializes the class boundary and
+rechecks the future instructional day, effective subject period, same-day duration and conflicts
+with already scheduled assessments or published events. The Events screen links to this workflow, its teacher-facing
+name is now Events & activities, and the campus-event API rejects every new `class_test` creation.
+Existing event-based class-test records remain readable and editable in their existing draft path
+so audit history is not rewritten. The focused frontend assessment, event and More-navigation pass
+covers 54 tests. Backend typecheck, build, targeted lint and four
+assessment event-contract tests pass. Full frontend typecheck/build remain blocked only by the
+preserved untracked duplicate test files already recorded above. Physical phone review remains open.
+
+Dirty-navigation protection is now wired through every operating-rule editor. A changed value
+guards in-app links, browser Back/swipe and refresh/close; the guard remains active after a failed
+save and clears only after that section saves successfully. The parent category owns the guard so
+categories with more than one stored rule source do not show duplicate prompts. Focused operating
+rules/navigation/staff tests pass 24 tests and the changed files pass ESLint. Physical phone review
+remains open.
+
+The one-save operating-rule transaction slice is now implemented locally. Event attendance,
+Departure & transport and Messaging each render as one category editor with one save action. The
+category command locks the institution, checks both the shared workflow revision and domain-rule
+revision, writes both records in one PostgreSQL transaction, and creates one before/after audit event.
+Coverage and Daily attendance were already single-record editors. Messaging rules now carry their
+own optimistic revision (`084_chat_policy_revision.sql`), including the existing standalone chat-policy
+write path. The rollback-only database verification covers all three category commands, stale revisions,
+tenant/admin authorization and atomic audit; focused frontend coverage passes 25 tests. Backend
+typecheck/build/targeted lint and changed frontend lint pass. The local database received migration 084
+directly for preview compatibility because the migration runner stops on a pre-existing checksum drift in
+applied migration 047; that migration-ledger discrepancy must be reconciled before a normal deployment.
+Physical phone review remains open.
+
+The shared register lifecycle terminology slice is now implemented locally. Class attendance and event
+attendance keep their existing domain-specific storage states and command contracts, but every user-facing
+surface now uses the same lifecycle language: **Draft** while work is editable, **Submitted** when a class
+register awaits principal review, **Final** when the authoritative register is immutable, and **Correction**
+when an authorized user reopens or changes recorded decisions. The shared mapping is consumed by class
+queues, class register details, event registers, event details, family schedules and paper/offline
+reconciliation. User actions now say **Finalize register** and **Reopen for correction**; event changes are
+saved explicitly as a draft or correction. Backend `open`, `submitted` and `locked` values remain unchanged,
+avoiding an unsafe data migration or a generic cross-domain status enum.
+
+This matches the blueprint's requirement for explicit state machines while keeping an unsubmitted register
+as a staff task rather than an inferred student absence. Focused lifecycle, class attendance, continuity and
+campus-event coverage passes **78/78** tests, and focused lint passes. The repository-wide frontend typecheck
+continues to be blocked only by the preserved untracked duplicate `* 2.tsx` test files documented above.
+Physical phone review remains open.
+
+The configurable class-register finalization slice is now implemented locally. A full-roster submission
+remains the durable audit boundary, but it no longer always creates a second principal task. The
+institution-wide **Daily attendance** operating rule chooses one of two explicit paths: **Finalize
+automatically** after a 0–1,440 minute delay, or **Require principal review**. Each new submission
+snapshots the operating-rule revision and, for automatic mode, its exact due time. Previously submitted
+registers are intentionally not rescheduled by a later rule change.
+
+A leased background worker claims due submitted registers with row locks, makes them final exactly once,
+records automatic versus manual provenance, writes an audit event and emits the existing register refresh
+event. Principal attendance separates scheduled automatic work from the review queue, while the teacher
+register shows the scheduled finalization time and removes the redundant Finalize action. Reopening a
+final register remains an explicit correction workflow. Migration
+`085_attendance_register_finalization_policy.sql` is applied to the local preview database; it was also
+applied directly to the disposable integration database because those local databases retain the previously
+documented migration-ledger drift.
+
+Verified locally: backend typecheck/build and focused lint pass; operating-rule validation passes **15/15**;
+the automatic-finalization database integration passes with state, revision, policy snapshot, audit and
+outbox assertions; focused operating-rule and class-attendance UI coverage passes **36/36** with focused
+lint clean. Repository-wide frontend typecheck remains blocked only by the preserved untracked duplicate
+`* 2.tsx` tests documented above. Authenticated phone review and cloud deployment remain pending.
+
+The shared temporal-input containment slice is now implemented locally. All **77** date, time and
+date-time controls across **39** application files use one ref-forwarding `TemporalInput` component.
+It preserves the browser and operating system's native picker, keyboard, locale, validation and form
+semantics while enforcing `width`, `min-width`, `max-width` and `border-box` containment. A defensive
+selector applies the same constraint to temporal inputs rendered by older or external composition.
+Physical iPhone review exposed WebKit bug 301648: iOS repaints temporal controls as menu-list buttons
+and can restore `content-box` sizing after the cascade, placing horizontal padding outside a 100%-wide
+field. The component now applies prefixed and standard `appearance: none`, after which WebKit honors
+the bounded border-box; internal date/time parts have normalized padding and alignment. The native
+picker remains attached to the input type, so this fixes the overflow without a custom calendar.
+
+The component has attribute, ref, class-composition and submitted-value coverage. A source-level
+regression test fails if a new raw date/time input bypasses the component, and asserts the required
+iOS appearance opt-out cannot be removed accidentally. Focused component, date-navigation and
+operating-rule coverage passes **12/12**; all 39 consuming files pass ESLint and
+the Vite production bundle succeeds. The broader frontend run passes **920/921** tests; the remaining
+More-page attention-count expectation fails independently of these form-control changes and is retained
+as an existing active-worktree issue. Repository-wide TypeScript checking remains blocked only by the
+preserved duplicate `* 2.tsx` test files documented above. Physical iPhone review remains pending.
+
+Remaining consolidation slices are attention/escalation operating rules; and shared loading, empty, error,
+unauthorized and stale-state components.
 
 ## Active delivery: role-aware Requests inbox — 13 October 2026
 
@@ -5617,3 +5738,125 @@ pass **21/21**, focused lint passes and the production Vite bundle succeeds. The
 TypeScript build remains blocked by the already documented untracked duplicate
 `* 2.tsx` test files; no Stage deployment was requested. Physical phone review remains
 required before treating the new spacing as accepted.
+
+## Configurable attendance models — 14 October 2026 (local, not deployed)
+
+The attendance foundation now separates three concerns that were previously conflated:
+
+1. **Academic register scope** is configured as one class register per day, one register per
+   scheduled subject/session, or no academic register.
+2. **Campus presence** is independently configured as unused, entry only, or entry and exit.
+   A gate or biometric event never silently becomes evidence for every subject lesson.
+3. **Evidence channels** are configured independently for academic and campus attendance.
+   Academic channels include staff roll call, learner QR, camera-assisted review, registered
+   biometric-device assertions and paper/offline capture. Campus channels include staff entry,
+   QR, camera-assisted and biometric-device assertions.
+
+This implements the blueprint's capability-profile direction rather than choosing a permanent
+institution-type shortcut. The research basis includes the Ministry of Education's ordinary
+student roll-call model and mobile/offline implementation, the Government BACALS example of
+twice-daily biometric presence, UGC/college rules that measure lecture/tutorial/practical
+attendance, and institution examples that record attendance after each lecture or separately by
+subject. The privacy boundary follows the DPDP child-data consent requirements; Aadhaar biometric
+storage or matching is deliberately not part of this implementation.
+
+`086_configurable_attendance_models.sql` adds institution operating-rule fields, timetable-linked
+session registers, per-learner entries, idempotent submissions, immutable revisions, evidence,
+short-lived hashed QR challenges and an audit journal. Scheduled-subject mode materializes one
+register from each effective published class period and snapshots the subject, period, room and
+scheduled teacher. The Attendance list uses the subject as its primary label with class, period and
+teacher context. The existing daily tables remain intact for institutions choosing daily mode and
+for historical records.
+
+`087_attendance_session_lifecycle.sql` brings subject registers under the same configurable
+finalization contract as daily registers. Automatic mode is processed by the shared leased
+background worker; principal-review mode exposes authorized finalize and reasoned-reopen commands.
+Both paths preserve the acting user, timestamp, policy revision and audit event. Session submission
+stores its idempotent response inside the same database transaction, and an automatically accepted
+learner QR assertion creates an immutable entry revision rather than only changing the current row.
+Principals can inspect that change history from the existing register review surface.
+
+Full-roster session submission rechecks active membership, exact scheduled/explicit attendance
+authority and the current roster inside the write transaction. It applies optimistic revision and
+idempotency checks, records changes and their reasons, snapshots automatic-finalization settings,
+and recomputes subject-attendance totals from submitted/final session facts. Learner QR check-in
+uses a short-lived random token stored only as a SHA-256 hash, verifies current enrollment and the
+institution's configured before/after window, and either records presence or creates pending
+evidence according to the configured resolution rule. Existing staff decisions are never silently
+overwritten by learner QR.
+
+Verified locally: migrations 086–087 were applied directly because the repository's migration runner
+still stops on the previously documented checksum drift in applied migration 047. Backend build
+and focused lint plus all **23 operating-rule tests** pass; the rollback-only database checks exercised a 25-learner
+subject-register submission and automatic QR self check-in without retaining test changes.
+Disposable local records also verified manual finalize/reopen and leased automatic finalization,
+including lifecycle state, revision, source and lock timestamp; those records and their audits were
+removed after verification.
+Focused operating-rule, attendance-list and register UI coverage passes **32/32**. The local
+workspace returns **40** scheduled-subject registers for 14 October and a 25-learner Hindi session
+for Class 6A. The principal's scheduled-session workspace now presents that volume as a compact
+register navigator rather than forty full cards: search is persistently available, periods and
+classes are alternate grouping dimensions, one relevant group is disclosed at a time, and each
+row retains subject, class/period, teacher, completion and exact-register navigation. Attention is
+placed only on its exact session when the attention link carries `session_id`; daily-register
+attention remains class scoped. Teacher and daily-register presentation is unchanged.
+
+Future-date navigator summaries now follow the register's authoritative `date_open` state. A future
+collection is labelled `Upcoming`; its groups report scheduled sessions and its rows report roster size,
+so zero completed submissions cannot be mistaken for submitted attendance. Submission and marked-count
+language appears only after the selected date is open.
+
+Open-date summaries are action-oriented rather than denominator-oriented: the collection and each
+group report the remaining `Pending` count, and untouched subject rows use the same `Pending` label.
+`Submitted` is reserved for collections, groups and rows that contain completed submissions, removing
+the previous `0/8 submitted` versus `Not submitted` wording conflict.
+
+The focused workspace suite passes **15/15**, the seven attendance regression files pass **60/60**,
+and focused lint passes. Responsive browser review at
+390 × 844 confirms the 40-register period and class views remain within the viewport, with one
+expanded group and compact rows. The complete frontend TypeScript/build wrapper remains blocked
+only by the already documented duplicate `AgentChart.test 2.tsx` and
+`AccountProfilePage.test 2.tsx` files; the unrelated `WorkflowRules.test.tsx` lint issue also remains.
+Physical iPhone review remains required.
+
+Not yet represented as complete: camera/biometric provider onboarding, signed device identities,
+provider-health monitoring, campus entry/exit writes, and the staff evidence-review screen. The
+database/API contracts reserve these evidence types, but no hardware observation is accepted as a
+fact until those adapters and release checks exist.
+
+### Gemini-assisted camera attendance — 14 October 2026 (local verification; Stage release pending)
+
+The user explicitly requested a Stage camera-attendance pilot after the blueprint baseline had kept
+biometric provider onboarding out of scope. This is a material, Stage-only deviation: reference face
+embeddings and encrypted thumbnails are processed for an authorized demo class, and a labelled
+comparison sheet is sent to Vertex AI. It must not be represented as a production child-biometric
+rollout. Production use still needs the institution's documented purpose, appropriate guardian/data
+authority, retention/deletion procedure, provider review and a non-biometric path.
+
+The implemented workflow is deliberately assistive rather than authoritative. OpenCV YuNet/SFace
+detects and embeds faces locally inside the private inference service; Vertex
+`gemini-3.1-flash-lite` receives one labelled comparison sheet and returns schema-constrained match
+proposals. The model cannot mark absence, submit/finalize a register or override an existing staff
+decision. Every learner remains visible in the ordinary register and every proposal must be reviewed
+before the existing audited submission command accepts it. Model/provider failure falls back to the
+manual/embedding register instead of blocking attendance.
+
+Scheduled-subject registers now carry their exact session ID through setup, reference enrollment,
+analysis, review and submission. Accepted camera evidence is attached to the immutable subject
+submission and student-entry revisions; unmatched or manually changed rows retain staff-roll-call
+provenance. The sidecar uses keyless Vertex credentials, encrypted Cloud SQL fields for templates and
+analysis results, bearer-authenticated private endpoints, one concurrent CPU worker, seven-day
+analysis retention and non-refundable request reservations capped at 60/day and 1,000/31 days. No
+GPU is provisioned. The Stage pipeline builds and deploys the sidecar separately, runs migrations
+first, verifies its public health-only endpoint, then injects only its URL and Secret Manager token
+into the main candidate revision.
+
+The user-supplied group image contains 14 detectable adults. The user approved an identity-preserving
+headshot contact sheet; its 14 portraits are assigned to the first 14 Class 7A demo learners while the
+remaining 11 learners exercise manual review. A live local Vertex smoke used those approved portraits
+against the original group image and returned 14 detections and 14 reviewed-present proposals from
+`gemini-3.1-flash-lite`. This is a fixture connectivity/contract result, not an accuracy, fairness,
+liveness or production-readiness claim. Sidecar tests pass **15/15**, focused attendance UI tests pass
+**32/32**, focused backend photo/operating-rule tests pass **24/24**, backend build/typecheck, focused
+frontend lint, seed generation and eight release-contract tests pass. Stage deployment, authenticated
+profile enrollment and physical-phone acceptance remain pending.

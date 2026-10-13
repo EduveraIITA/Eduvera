@@ -28,6 +28,8 @@ it('loads an off preference and enables the preview from Profile',async()=>{
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/account/profile?from=%2Fstudent%2Fattendance']}><AccountProfilePage/></MemoryRouter></QueryClientProvider>);
   const toggle=await screen.findByRole('switch',{name:'Pro features'});
   await waitFor(()=>expect(toggle).toHaveAttribute('aria-checked','false'));
+  expect(screen.queryByText('Assistant memory')).not.toBeInTheDocument();
+  expect(apiFetchMock).not.toHaveBeenCalledWith('/api/v1/agent/memories');
   await userEvent.click(toggle);
   await waitFor(()=>expect(toggle).toHaveAttribute('aria-checked','true'));
   expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/auth/pro-features/',{method:'POST',body:JSON.stringify({enabled:true})});
@@ -38,7 +40,8 @@ it('shows remembered preferences and requires a second step before clearing them
   apiFetchMock.mockImplementation((path:string,init?:RequestInit)=>{
     if(path==='/api/v1/agent/memories'&&init?.method==='DELETE')return Promise.resolve({cleared:true,count:1});
     if(path==='/api/v1/agent/memories')return Promise.resolve({items:[{id:'memory-1',portal:'student',category:'communication_preference',topic:'response_length',content:'Concise answers with evidence first.',expires_at:'2027-10-10T00:00:00Z'}],budget:{used_tokens:14,max_tokens:1200,used_items:1,max_items:32},contract:'2026-10-10.1'});
-    return Promise.resolve({enabled:false,preview:true});
+    if(path==='/api/v1/auth/demo-profiles/')return Promise.resolve({enabled:false,profiles:[]});
+    return Promise.resolve({enabled:true,preview:true});
   });
   const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
   render(<QueryClientProvider client={client}><MemoryRouter><AccountProfilePage/></MemoryRouter></QueryClientProvider>);

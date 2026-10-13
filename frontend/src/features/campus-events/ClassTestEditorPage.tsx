@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import "./campus-events.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 function localValue(value: string) {
   const date = new Date(value);
   const offset = date.getTimezoneOffset() * 60_000;
@@ -285,7 +286,7 @@ export function ClassTestEditorPage({
             </label>
             <label>
               Starts
-              <input
+              <TemporalInput
                 required
                 type="datetime-local"
                 value={input.starts_at}
@@ -296,7 +297,7 @@ export function ClassTestEditorPage({
             </label>
             <label>
               Ends
-              <input
+              <TemporalInput
                 required
                 type="datetime-local"
                 value={input.ends_at}

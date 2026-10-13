@@ -26,6 +26,7 @@ export interface PhotoAttendanceSetup {
     preview_enabled?: boolean;
     available: boolean;
     model: string | null;
+    provider?: "ollama" | "vertex" | "disabled" | null;
     unavailable_reason: string | null;
   };
   boundaries: {
@@ -45,7 +46,7 @@ export interface PhotoAttendanceAnalysis {
   observed_at: string;
   expires_at: string;
   model: { id: string; accuracy_validated: false };
-  analysis_mode: "face_embeddings" | "local_llm";
+  analysis_mode: "face_embeddings" | "local_llm" | "vertex_gemini";
   summary: {
     roster: number;
     enrolled: number;
@@ -78,8 +79,9 @@ export interface PhotoAttendanceAnalysis {
   }>;
 }
 
-export function getPhotoAttendanceSetup(classSectionId: string, date: string) {
+export function getPhotoAttendanceSetup(classSectionId: string, date: string, sessionId?: string) {
   const query = new URLSearchParams({ date });
+  if (sessionId) query.set("session_id", sessionId);
   return apiFetch<PhotoAttendanceSetup>(`/api/v1/photo-attendance/classes/${encodeURIComponent(classSectionId)}/setup/?${query}`);
 }
 
@@ -89,6 +91,7 @@ export function enrollPhotoAttendanceSample(input: {
   date: string;
   authorizationReference: string;
   file: File;
+  sessionId?: string;
 }) {
   const body = new FormData();
   body.set("file", input.file);
@@ -96,6 +99,7 @@ export function enrollPhotoAttendanceSample(input: {
   body.set("date", input.date);
   body.set("authorization_reference", input.authorizationReference);
   body.set("confirmed_authority", "true");
+  if (input.sessionId) body.set("session_id", input.sessionId);
   return apiFetch<{ student_id: string; added: number; sample_count: number; model_id: string }>(
     `/api/v1/photo-attendance/students/${encodeURIComponent(input.studentId)}/samples/`,
     { method: "POST", body },
@@ -109,6 +113,7 @@ export function analyzeAttendancePhoto(input: {
   authorizationReference: string;
   file: File;
   useLocalAi: boolean;
+  sessionId?: string;
 }) {
   const body = new FormData();
   body.set("file", input.file);
@@ -116,7 +121,8 @@ export function analyzeAttendancePhoto(input: {
   body.set("period", input.period);
   body.set("authorization_reference", input.authorizationReference);
   body.set("confirmed_authority", "true");
-  body.set("analysis_mode", input.useLocalAi ? "local_llm" : "face_embeddings");
+  body.set("analysis_mode", input.useLocalAi ? "multimodal" : "face_embeddings");
+  if (input.sessionId) body.set("session_id", input.sessionId);
   return apiFetch<PhotoAttendanceAnalysis>(
     `/api/v1/photo-attendance/classes/${encodeURIComponent(input.classSectionId)}/analyze/`,
     { method: "POST", body },

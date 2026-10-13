@@ -35,6 +35,7 @@ export interface ChatPolicy {
   communication_end: string;
   retention_days: number;
   privacy_notice_version: string;
+  revision: number;
   can_manage: boolean;
 }
 
@@ -233,7 +234,7 @@ export function createChatGroup(input: { title: string; group_type: ChatGroupTyp
   return apiFetch<{ id: string }>("/api/v1/chat/groups/", { method: "POST", body: JSON.stringify(input) });
 }
 export function getChatPolicy() { return apiFetch<ChatPolicy>("/api/v1/chat/policy/"); }
-export function updateChatPolicy(input: Partial<Omit<ChatPolicy, "school_id" | "can_manage" | "privacy_notice_version">>) {
+export function updateChatPolicy(input: Partial<Omit<ChatPolicy, "school_id" | "can_manage" | "privacy_notice_version" | "revision">> & { expected_revision?: number }) {
   return apiFetch<ChatPolicy>("/api/v1/chat/policy/", { method: "PATCH", body: JSON.stringify(input) });
 }
 

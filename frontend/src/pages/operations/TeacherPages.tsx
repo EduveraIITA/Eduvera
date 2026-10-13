@@ -41,10 +41,12 @@ import { CreateAttendanceFollowup } from "../../features/coordination/CreateAtte
 import { AttendanceStudentRow } from "./AttendanceStudentRow";
 import { PhotoAttendanceDialog } from "./PhotoAttendanceDialog";
 import { AttendanceDateControl } from '../../features/attendance/AttendanceDateControl';
+import { registerLifecycleLabel } from "../../features/attendance/registerLifecycle";
 import { useUnsavedChangesGuard } from "../../features/navigation/useUnsavedChangesGuard";
 import "./attendance-register.css";
 import "./attendance-workspace.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 function time(value: string | null) {
   if (!value) return "No lesson";
   const [hour = "0", minute = "00"] = value.split(":");
@@ -132,7 +134,7 @@ export function TeacherHomePage({
             <label>
               <span className="sr-only">Choose date</span>
               <CalendarDays size={18} aria-hidden="true" />
-            <input
+            <TemporalInput
               type="date"
               aria-label="Choose date"
               value={date}
@@ -410,6 +412,7 @@ export function TeacherAttendancePage({
   const allMarked =
     data.roster.length > 0 && markedCount === data.roster.length;
   const isLocked = activeBaseline.register.state === "locked";
+  const awaitingAutomaticFinalization = activeBaseline.register.state === "submitted" && Boolean(activeBaseline.register.auto_finalize_at);
   const unavailable = data.availability?.can_mark === false;
   const capturePending = data.latest_capture?.status === "pending";
   const captureNeedsReview = data.latest_capture?.status === "quarantined";
@@ -420,7 +423,8 @@ export function TeacherAttendancePage({
   // only apply the client-side restriction once that projection is present.
   const hasCalculatedAccess=Array.isArray(roleMember?.permissions);
   const roleReadOnly=portal==='teacher' && hasCalculatedAccess && !roleMember.permissions?.includes('attendance.record');
-  const canUsePhoto=portal==='principal' || !hasCalculatedAccess || roleMember.permissions?.includes('photo.use');
+  const photoChannelEnabled = data.attendance_scope !== "scheduled_session" || Boolean(data.capture_policy?.channels.includes("camera_assisted"));
+  const canUsePhoto=photoChannelEnabled && (portal==='principal' || !hasCalculatedAccess || roleMember.permissions?.includes('photo.use'));
   const readOnly = roleReadOnly || isLocked || unavailable || !editing || (captureNeedsReview && portal === "teacher");
   const isCorrection =
     activeBaseline.register.submitted_at !== null ||
@@ -585,7 +589,7 @@ export function TeacherAttendancePage({
         requestError.status === 423
       ) {
         setError(
-          "This register was locked by school leadership. Your unsaved edits are still here.",
+          "This register was finalized by school leadership. Your unsaved edits are still here.",
         );
       } else {
         setError(
@@ -647,12 +651,12 @@ export function TeacherAttendancePage({
     if (
       action === "lock" &&
       !window.confirm(
-        "Lock this submitted register? Teachers will not be able to change it until a principal unlocks it.",
+        "Finalize this submitted register? Teachers will not be able to change it until a principal reopens it for correction.",
       )
     )
       return;
     if (action === "unlock" && unlockReason.trim().length < 3) {
-      setError("Add a reason before unlocking this register.");
+      setError("Add a reason before reopening this register.");
       setState("error");
       return;
     }
@@ -666,8 +670,8 @@ export function TeacherAttendancePage({
       applyServerResult(
         result,
         action === "lock"
-          ? "Register locked."
-          : "Register unlocked for correction.",
+          ? "Register finalized."
+          : "Register reopened for correction.",
       );
       setUnlockReason("");
       setShowUnlockReason(false);
@@ -675,7 +679,7 @@ export function TeacherAttendancePage({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : `The register could not be ${action === "lock" ? "locked" : "unlocked"}.`,
+          : `The register could not be ${action === "lock" ? "finalized" : "reopened"}.`,
       );
       setState("error");
     }
@@ -739,12 +743,8 @@ export function TeacherAttendancePage({
   const registerMoment = formatRegisterMoment(
     activeBaseline.register.locked_at ?? activeBaseline.register.submitted_at,
   );
-  const registerStateLabel =
-    activeBaseline.register.state === "draft"
-      ? "Draft"
-      : activeBaseline.register.state === "locked"
-        ? "Locked"
-        : "Submitted";
+  const automaticFinalizationMoment = formatRegisterMoment(activeBaseline.register.auto_finalize_at ?? null);
+  const registerStateLabel = registerLifecycleLabel(activeBaseline.register.state);
   const footerMessage =
     state === "saved" && statusMessage
       ? statusMessage
@@ -759,8 +759,8 @@ export function TeacherAttendancePage({
     <OperationsShell
       portal={portal}
       active="attendance"
-      title={`${data.class.name} attendance`}
-      subtitle={`${data.class.term} - ${data.class.room}`}
+      title={data.session ? `${data.session.subject_name} attendance` : `${data.class.name} attendance`}
+      subtitle={data.session ? `${data.class.name} · Period ${data.session.period_number} · ${time(data.session.starts_at)}–${time(data.session.ends_at)}` : `${data.class.term} - ${data.class.room}`}
       backTo={portal === "teacher"
         ? `/teacher/attendance?date=${date}`
         : `/principal/attendance?date=${date}`}
@@ -775,8 +775,8 @@ export function TeacherAttendancePage({
           <div className="roll-call-summary__top">
             <div className="roll-call-class-heading">
             <div>
-              <h2>{data.class.name}</h2>
-              <p><span>Attendance · {data.roster.length} students</span>{data.class.room ? <span>{/^room\b/i.test(data.class.room) ? data.class.room : `Room ${data.class.room}`}</span> : null}</p>
+              <h2>{data.session?.subject_name ?? data.class.name}</h2>
+              <p><span>{data.session ? `${data.class.name} · Period ${data.session.period_number}` : "Attendance"} · {data.roster.length} students</span>{data.class.room ? <span>{/^room\b/i.test(data.class.room) ? data.class.room : `Room ${data.class.room}`}</span> : null}</p>
             </div>
             </div>
             <span
@@ -791,14 +791,14 @@ export function TeacherAttendancePage({
             </span>
           </div>
           <div className="roll-call-totals" aria-label="Attendance status counts">
-            {(["present", "absent", "late", "excused", "half_day"] as const).map((status) => (
+            {(data.attendance_scope === "scheduled_session" ? ["present", "absent", "late", "excused"] as const : ["present", "absent", "late", "excused", "half_day"] as const).map((status) => (
               <div key={status} className={`is-${status}`}><strong>{counts[status]}</strong><span>{statusLabels[status]}</span></div>
             ))}
             <div className={allMarked ? "" : "is-incomplete"}><strong>{unmarkedCount}</strong><span>Unmarked</span></div>
           </div>
           {activeBaseline.register.submitted_at || portal === "principal" ? (
             <div className="roll-call-saved-details">
-              <span>{activeBaseline.register.submitted_by_name ? `Submitted by ${activeBaseline.register.submitted_by_name} · ` : ""}{registerMoment ? `${isLocked ? "Locked" : "Submitted"} ${registerMoment}` : "Not submitted"} · Revision {activeBaseline.register.revision}</span>
+              <span>{activeBaseline.register.submitted_by_name ? `${isLocked ? "Finalized" : "Submitted"} by ${activeBaseline.register.submitted_by_name} · ` : ""}{registerMoment ? `${isLocked ? "Final" : "Submitted"} ${registerMoment}` : "Not submitted"}{!isLocked && automaticFinalizationMoment ? ` · Finalizes automatically ${automaticFinalizationMoment}` : ""} · Revision {activeBaseline.register.revision}</span>
               {portal === "principal" && onLock && onUnlock ? (
                 <div className="roll-call-admin-actions" role="group" aria-label="Register management">
                   {onLoadHistory ? (
@@ -822,9 +822,9 @@ export function TeacherAttendancePage({
                       }}
                     >
                       <UnlockKeyhole size={17} />
-                      Unlock register
+                      Reopen for correction
                     </button>
-                  ) : activeBaseline.register.state === "submitted" ? (
+                  ) : activeBaseline.register.state === "submitted" && !activeBaseline.register.auto_finalize_at ? (
                     <button
                       type="button"
                       disabled={
@@ -835,7 +835,7 @@ export function TeacherAttendancePage({
                       onClick={() => void changeRegisterLock("lock")}
                     >
                       <LockKeyhole size={17} />
-                      Lock register
+                      Finalize register
                     </button>
                   ) : null}
                 </div>
@@ -844,16 +844,16 @@ export function TeacherAttendancePage({
           ) : null}
         </section>
 
-        <section className={`attendance-continuity-status${!online ? " is-offline" : data.latest_capture?.status === "quarantined" ? " needs-review" : ""}`} role="status" aria-live="polite">
+        {data.attendance_scope !== "scheduled_session" ? <section className={`attendance-continuity-status${!online ? " is-offline" : data.latest_capture?.status === "quarantined" ? " needs-review" : ""}`} role="status" aria-live="polite">
           {!online ? <CloudOff size={20} /> : data.latest_capture?.status === "quarantined" ? <AlertTriangle size={20} /> : <Cloud size={20} />}
           <div>
             <strong>{!online ? "Working offline" : data.latest_capture?.status === "pending" ? "Saved on this device — not submitted" : data.latest_capture?.status === "quarantined" ? "Attendance-desk review required" : "Offline-ready register"}</strong>
             <p>{!online ? `Changes are encrypted on this device and will sync automatically. The downloaded roster is valid until ${snapshotExpiry ?? "its displayed expiry"}.` : data.latest_capture?.status === "pending" ? "Keep this device signed in. Sync will retry automatically when the connection returns." : data.latest_capture?.status === "quarantined" ? "The observation is preserved, but family attendance has not been changed." : `This roster is cached securely for connection interruptions until ${snapshotExpiry ?? "the snapshot expires"}.`}</p>
           </div>
-        </section>
+        </section> : null}
 
         {unavailable ? <section className="operations-alert is-neutral" role="status"><CalendarDays size={20} /><div><strong>Read-only date</strong><p>{data.availability?.reason}</p></div></section> : null}
-        {portal === "principal" && !isLocked && !unavailable ? <section className="roll-call-review-mode"><div><strong>{editing ? "Editing register" : "Principal review"}</strong></div><button type="button" disabled={busy} onClick={() => { if (editing) { if (!confirmDiscard()) return; setRecords(activeBaseline.records); setReason(""); setPhotoSessionId(null); } setEditing(!editing); }}>{editing ? "Cancel editing" : <><Pencil size={15} />{isCorrection ? "Make correction" : "Complete register"}</>}</button></section> : null}
+        {portal === "principal" && !isLocked && !unavailable ? <section className="roll-call-review-mode"><div><strong>{editing ? "Editing register" : awaitingAutomaticFinalization ? "Finalization scheduled" : "Principal review"}</strong></div><button type="button" disabled={busy} onClick={() => { if (editing) { if (!confirmDiscard()) return; setRecords(activeBaseline.records); setReason(""); setPhotoSessionId(null); } setEditing(!editing); }}>{editing ? "Cancel editing" : <><Pencil size={15} />{isCorrection ? "Make correction" : "Complete register"}</>}</button></section> : null}
         {portal === "principal" && editing && !isLocked && !unavailable ? <section className="attendance-capture-source" aria-labelledby="attendance-capture-source-heading">
           <div><FileInput size={20} /><span><strong id="attendance-capture-source-heading">Observation source</strong><small>The source remains attached to every attendance revision.</small></span></div>
           <div role="group" aria-label="Attendance observation source">{(["live_app", "paper", "office"] as const).map((source) => <button type="button" key={source} aria-pressed={captureSource === source} onClick={() => { setCaptureSource(source); setSourceReference(""); }}>{source === "live_app" ? "Live register" : source === "paper" ? "Paper sheet" : "Office entry"}</button>)}</div>
@@ -862,7 +862,7 @@ export function TeacherAttendancePage({
         {portal === "principal" && isLocked && showUnlockReason ? (
           <section className="attendance-unlock-panel">
             <div>
-              <strong>Unlock for correction</strong>
+              <strong>Reopen for correction</strong>
               <p>Record why this finalized register needs to be reopened.</p>
             </div>
             <label htmlFor="attendance-unlock-reason">
@@ -900,7 +900,7 @@ export function TeacherAttendancePage({
                 ) : (
                   <UnlockKeyhole size={16} />
                 )}
-                Unlock register
+                Reopen register
               </button>
             </div>
           </section>
@@ -1053,10 +1053,9 @@ export function TeacherAttendancePage({
           <section className="operations-alert is-neutral" role="status">
             <LockKeyhole size={20} />
             <div>
-              <strong>This register is locked</strong>
+              <strong>This register is final</strong>
               <p>
-                Attendance remains read-only until a principal unlocks it for
-                correction.
+                Attendance remains read-only until a principal reopens it for correction.
               </p>
             </div>
           </section>
@@ -1080,9 +1079,9 @@ export function TeacherAttendancePage({
             <div className="roll-call-toolbar__title">
               <h2 id="roll-call-heading">Class register</h2>
               {editing ? <div className="roll-call-toolbar__actions">
-                <button className="roll-call-photo" type="button" disabled={busy || readOnly || !canUsePhoto} onClick={() => setShowPhotoAttendance(true)}>
+                {canUsePhoto ? <button className="roll-call-photo" type="button" disabled={busy || readOnly} onClick={() => setShowPhotoAttendance(true)}>
                   <Camera size={17} /> Take from photo
-                </button>
+                </button> : null}
                 <button className="roll-call-mark-all" type="button" disabled={busy || readOnly || allMarked} onClick={markAllPresent}>
                   <CheckCircle2 size={17} /> {markedCount && !allMarked ? "Mark remaining present" : "Mark all present"}
                 </button>
@@ -1120,6 +1119,12 @@ export function TeacherAttendancePage({
                   remarks={record?.remarks ?? ""}
                     disabled={busy || readOnly}
                   conflict={hasConflict}
+                  statusOptions={data.attendance_scope === "scheduled_session" ? ([
+                    { value: "present", label: "Present", tone: "positive" },
+                    { value: "absent", label: "Absent", tone: "negative" },
+                    { value: "late", label: "Late" },
+                    { value: "excused", label: "Excused" },
+                  ] as const) : undefined}
                   onChange={(value) => update(student.id, value)}
                 />
               );
@@ -1153,6 +1158,8 @@ export function TeacherAttendancePage({
           <PhotoAttendanceDialog
             classSectionId={data.class.id}
             date={date}
+            sessionId={data.session?.id}
+            periodLabel={data.session ? `${data.session.subject_name} · Period ${data.session.period_number}` : undefined}
             portal={portal}
             onClose={() => setShowPhotoAttendance(false)}
             onApply={applyPhotoReview}
@@ -1167,7 +1174,7 @@ export function TeacherAttendancePage({
               aria-live="polite"
             >
               {state === "saved" ? <Check size={15} /> : null}
-              {state === "saved" && statusMessage ? statusMessage : readOnly ? isLocked ? "Locked register · Read only" : unavailable ? "Read-only date" : "Reviewing class register" : footerMessage}
+              {state === "saved" && statusMessage ? statusMessage : readOnly ? isLocked ? "Final register · Read only" : unavailable ? "Read-only date" : awaitingAutomaticFinalization ? "Submitted · Finalization scheduled" : "Reviewing class register" : footerMessage}
             </span>
             <progress value={markedCount} max={data.roster.length || 1} aria-label="Students marked" />
             </div>

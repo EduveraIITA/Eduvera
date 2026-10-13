@@ -178,6 +178,11 @@ const photoAttendanceEnv = {
   SESSION_RETENTION_DAYS: "7",
   OLLAMA_MODEL: process.env.PHOTO_ATTENDANCE_OLLAMA_MODEL || "qwen3-vl:4b-instruct",
   OLLAMA_URL: process.env.PHOTO_ATTENDANCE_OLLAMA_URL || process.env.OLLAMA_URL || process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
+  MULTIMODAL_PROVIDER: process.env.PHOTO_ATTENDANCE_MULTIMODAL_PROVIDER || "vertex",
+  GEMINI_PROJECT: process.env.PHOTO_ATTENDANCE_GEMINI_PROJECT || process.env.AGENT_GOOGLE_PROJECT || "eduera-511111",
+  GEMINI_LOCATION: process.env.PHOTO_ATTENDANCE_GEMINI_LOCATION || process.env.AGENT_GOOGLE_LOCATION || "global",
+  GEMINI_MODEL: process.env.PHOTO_ATTENDANCE_GEMINI_MODEL || process.env.AGENT_MODEL || "gemini-3.1-flash-lite",
+  GEMINI_TIMEOUT_SECONDS: process.env.PHOTO_ATTENDANCE_GEMINI_TIMEOUT_SECONDS || "90",
 };
 
 const frontendEnv = {

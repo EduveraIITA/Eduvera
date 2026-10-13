@@ -30,7 +30,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
   const auth=useOptionalAuth();
   const navigate=useAssistantNavigation();
   const studentId=new URLSearchParams(location.search).get('student_id')??undefined;
-  const context:AssistantContext={portal,pageTitle:'Chat',studentId:portal==='parent'?studentId:undefined,permissions:currentStaffMembership(auth?.memberships??[])?.permissions};
+  const context:AssistantContext={portal,pageTitle:'Assistant',studentId:portal==='parent'?studentId:undefined,permissions:currentStaffMembership(auth?.memberships??[])?.permissions};
   const conversation=useAgentConversation(context);
   const footer=useRef<HTMLDivElement>(null);
   const end=useRef<HTMLDivElement>(null);
@@ -92,7 +92,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
       <AssistantComposer key={portal+':'+(studentId??'self')+':'+conversation.threadId} onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </div>
   </div>;
-  if(portal==='teacher'||portal==='principal')return <OperationsShell portal={portal} active="chat" title="Chat" pageTitleTrailing={headerActions} onBack={onBack}>{content}</OperationsShell>;
-  if(portal==='parent')return <ParentShell active="chat" pageLabel="Chat" pageTitleTrailing={headerActions} selectedChildId={studentId} childSwitchDisabled={conversation.busy} onBack={onBack}>{content}</ParentShell>;
-  return <StudentShell activeNav="chat" pageTitle="Chat" pageTitleTrailing={headerActions} onBack={onBack}>{content}</StudentShell>;
+  if(portal==='teacher'||portal==='principal')return <OperationsShell portal={portal} active="chat" title="Assistant" pageTitleTrailing={headerActions} onBack={onBack}>{content}</OperationsShell>;
+  if(portal==='parent')return <ParentShell active="chat" pageLabel="Assistant" pageTitleTrailing={headerActions} selectedChildId={studentId} childSwitchDisabled={conversation.busy} onBack={onBack}>{content}</ParentShell>;
+  return <StudentShell activeNav="chat" pageTitle="Assistant" pageTitleTrailing={headerActions} onBack={onBack}>{content}</StudentShell>;
 }

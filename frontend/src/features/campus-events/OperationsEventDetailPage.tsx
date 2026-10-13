@@ -14,6 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { registerLifecycleLabel } from "../attendance/registerLifecycle";
 import { ConsentAuthorityDialog } from "./ConsentAuthorityDialog";
 import { OperationsEventFinancePanel } from "./EventFinancePanels";
 import { EventStatusBadge, eventAudienceLabel, eventTypeLabels, formatEventDate } from "./EventPrimitives";
@@ -168,19 +169,19 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
         <nav className="workspace-sections" aria-label="Event sections"><Link replace to={sectionPath('sessions')} aria-current={view==='sessions'?'page':undefined}>Sessions <b>{event.sessions.length}</b></Link><Link replace to={sectionPath('participants')} aria-current={view==='participants'?'page':undefined}>Participants <b>{event.counts.participants}</b></Link>{canSeeFinance?<Link replace to={sectionPath('finance')} aria-current={view==='finance'?'page':undefined}>Fees{(finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required)>0?<b>{finance?.counts.reconciliation_required??event.counts.finance_reconciliation_required}</b>:null}</Link>:null}</nav>
 
         {view==='sessions'?<section className="campus-event-detail-panel">
-          <header><h2>Sessions & attendance</h2><span>{tracked.length?`${locked}/${tracked.length} registers locked`:'No attendance tracking'}</span></header>
+          <header><h2>Sessions & attendance</h2><span>{tracked.length?`${locked} of ${tracked.length} final`:'No attendance tracking'}</span></header>
           {event.sessions.length ? (
             <div className="campus-event-session-list">
               {event.sessions.map((session) => (
                 <article key={session.id}>
                   <span className={`campus-event-session-icon is-${session.state}`}>{session.state === "locked" ? <LockKeyhole size={18} /> : <CalendarCheck2 size={18} />}</span>
-                  <div><strong>{session.title}</strong><small>{formatEventDate(session.starts_at)} · {session.venue}</small><span>{session.attendance_mode === "none" ? "No attendance register" : `${session.counts.recorded}/${session.counts.recorded + session.counts.not_recorded} recorded · ${session.state}`}</span></div>
+                  <div><strong>{session.title}</strong><small>{formatEventDate(session.starts_at)} · {session.venue}</small><span>{session.attendance_mode === "none" ? "No attendance register" : `${session.counts.recorded}/${session.counts.recorded + session.counts.not_recorded} recorded · ${registerLifecycleLabel(session.state)}`}</span></div>
                   {session.attendance_mode !== "none" ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/sessions/${session.id}/attendance${listView === 'upcoming' ? '' : `?list_view=${listView}`}`}>{session.state === "locked" ? "Review register" : event.permissions.can_take_attendance ? "Open register" : "View register"}</Link> : null}
                 </article>
               ))}
             </div>
           ) : <p className="campus-event-inline-empty">No programme sessions are scheduled for this event.</p>}
-          {event.status === "published" && !event.permissions.can_complete && tracked.some((session) => session.state !== "locked") ? <p className="campus-event-policy-note"><LockKeyhole size={15} />Complete becomes available after every attendance-tracked session is locked.</p> : null}
+          {event.status === "published" && !event.permissions.can_complete && tracked.some((session) => session.state !== "locked") ? <p className="campus-event-policy-note"><LockKeyhole size={15} />Complete becomes available after every attendance-tracked session is final.</p> : null}
         </section>:null}
 
         {view==='participants'?<><p className="workspace-context">{event.counts.mandatory} mandatory{event.requires_rsvp?` · ${event.counts.rsvp_accepted} RSVP accepted`:''}{event.requires_guardian_consent?` · ${event.counts.consent_granted} consent granted`:''}</p>{event.viewer_participants.length ? (

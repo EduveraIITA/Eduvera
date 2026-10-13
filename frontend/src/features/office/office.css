@@ -597,6 +597,9 @@
   margin-top: 14px;
 }
 
+.attendance-rule-group{min-width:0;margin:0;padding:0 0 1rem;border:0;border-bottom:1px solid var(--border-color,#e2e7ef);display:grid;gap:.75rem}.attendance-rule-group:last-of-type{border-bottom:0}.attendance-rule-group>legend{padding:0;font-size:1rem;font-weight:750;color:var(--text-primary,#172b40)}.attendance-rule-group>p{margin:-.35rem 0 0;color:var(--text-secondary,#667085);font-size:.78rem;line-height:1.5}.attendance-rule-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}.attendance-rule-choices>label{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:.6rem;padding:.75rem;border:1px solid var(--border-color,#dce3ee);border-radius:.8rem;background:var(--surface,#fff);cursor:pointer}.attendance-rule-choices input{width:1.05rem;height:1.05rem;margin:.1rem 0 0;accent-color:var(--school-primary,#155bd7)}.attendance-rule-choices span{display:grid;gap:.16rem}.attendance-rule-choices strong{font-size:.8rem}.attendance-rule-choices small{color:var(--text-secondary,#667085);font-size:.68rem;line-height:1.4}.attendance-rule-choices.is-compact>label{align-items:center}.attendance-rule-choices input:checked+span strong{color:var(--school-primary,#155bd7)}
+@media(max-width:600px){.attendance-rule-choices{grid-template-columns:1fr}}
+
 .office-form h3 {
   font-size: 15px;
 }

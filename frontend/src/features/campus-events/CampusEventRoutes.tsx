@@ -1,7 +1,7 @@
 import { useAttention } from "../attention/useAttention";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useOptionalAuth, type MembershipRole } from "../auth/AuthContext";
 import { getAccessibleStudents } from "../school/api";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
@@ -141,7 +141,7 @@ function OperationsDetailRoute({ portal }: { portal: "teacher" | "principal" }) 
   }} onCancel={async (internalReason, audienceNotice) => { await cancelCampusEvent(schoolId, event.id, event.revision, internalReason, audienceNotice); await refresh(event.id); await query.refetch(); }} /></>;
 }
 
-function EventEditorRoute({ portal, createClassTest = false }: { portal: "teacher" | "principal"; createClassTest?: boolean }) {
+function EventEditorRoute({ portal }: { portal: "teacher" | "principal" }) {
   const { eventId } = useParams();
   const schoolId = useSchoolId(portal === "principal" ? "admin" : "staff");
   const navigate = useNavigate();
@@ -160,7 +160,7 @@ function EventEditorRoute({ portal, createClassTest = false }: { portal: "teache
     await refresh(saved.id);
     void navigate(eventDetailHref(`/${portal}`, saved.id, params), { replace: true });
   };
-  return createClassTest || existing?.event_type === "class_test"
+  return existing?.event_type === "class_test"
     ? <ClassTestEditorPage portal={portal} catalog={catalog.data} event={existing} onSave={save} />
     : <EventEditorPage portal={portal} catalog={catalog.data} event={existing} onSave={save} />;
 }
@@ -283,7 +283,7 @@ export const PrincipalEventEditRoute = () => <EventEditorRoute portal="principal
 export const PrincipalEventRegisterRoute = () => <RegisterRoute portal="principal" />;
 export const TeacherEventsRoute = () => <OperationsListRoute portal="teacher" />;
 export const TeacherEventDetailRoute = () => <OperationsDetailRoute portal="teacher" />;
-export const TeacherEventCreateRoute = () => <EventEditorRoute portal="teacher" createClassTest />;
+export const TeacherEventCreateRoute = () => <Navigate to="/teacher/assessments?create=class-test" replace />;
 export const TeacherEventEditRoute = () => <EventEditorRoute portal="teacher" />;
 export const TeacherEventRegisterRoute = () => <RegisterRoute portal="teacher" />;
 export const ParentEventsRoute = () => <FamilyListRoute audience="parent" />;

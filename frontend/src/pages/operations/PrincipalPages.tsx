@@ -7,6 +7,7 @@ import { OperationsShell } from "./OperationsShell";
 import { AttendanceWorkspacePage } from "./AttendanceWorkspacePage";
 import "../../features/principal-home/principal-home.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export function PrincipalHomePage({ data, date, onDateChange }: { data: PrincipalHomeResponse; date: string; onDateChange: (date: string) => void }) {
   const location = useLocation();
   // Preserve existing notification and saved conversation links.
@@ -18,7 +19,7 @@ export function PrincipalHomePage({ data, date, onDateChange }: { data: Principa
     <div className="operations-stack principal-home principal-home--focused">
       <div className="principal-home__toolbar">
         <div className="principal-home__date-controls">
-          <label><span>{dateLabel}</span><ChevronDown size={15} aria-hidden="true" /><input type="date" aria-label="Choose date" value={date} onChange={event => { if (event.target.value) onDateChange(event.target.value); }} /></label>
+          <label><span>{dateLabel}</span><ChevronDown size={15} aria-hidden="true" /><TemporalInput type="date" aria-label="Choose date" value={date} onChange={event => { if (event.target.value) onDateChange(event.target.value); }} /></label>
           {date !== today ? <button type="button" onClick={() => onDateChange(today)}>Today</button> : null}
         </div>
         <Link to={`/principal/timetable?date=${date}&from=overview`}>Timetable<ArrowRight size={16} aria-hidden="true" /></Link>

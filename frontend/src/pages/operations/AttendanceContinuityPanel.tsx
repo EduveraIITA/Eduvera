@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, FileInput, LoaderCircle } from "lucide-react";
 import type { AttendanceContinuityWorkspace, TeacherClassSummary } from "../../features/operations/api";
+import { registerLifecycleLabel } from "../../features/attendance/registerLifecycle";
 
 const sourceLabels = {
   live_app: "Live app",
@@ -89,9 +90,9 @@ export function AttendanceContinuityPanel({ data, classes, date, loading, error,
           <div><dt>Recorded at</dt><dd>{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.observed_at))}</dd></div>
           <div><dt>Students</dt><dd>{item.roster_count}</dd></div>
           {item.source_reference ? <div><dt>Reference</dt><dd>{item.source_reference}</dd></div> : null}
-          <div><dt>Current register</dt><dd>Revision {item.current_revision} · {item.register_state ?? "not submitted"}</dd></div>
+          <div><dt>Current register</dt><dd>Revision {item.current_revision} · {item.register_state ? registerLifecycleLabel(item.register_state) : "Not submitted"}</dd></div>
         </dl>
-        {item.register_state === "locked" ? <p className="attendance-review-card__warning"><AlertTriangle size={16} />Unlock this register before applying the entry.</p> : null}
+        {item.register_state === "locked" ? <p className="attendance-review-card__warning"><AlertTriangle size={16} />Reopen this final register before applying the entry.</p> : null}
         <label>Review note<textarea value={reason} disabled={Boolean(busy)} minLength={3} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="What did you check?" /></label>
         <p className="attendance-review-card__effect">Applying updates attendance. Rejecting leaves it unchanged. Both decisions are recorded.</p>
         {actionError ? <p className="attendance-review-card__error" role="alert">{actionError}</p> : null}

@@ -4,10 +4,12 @@ import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { AttendanceStudentRow, type AttendanceStudentRowStatusOption } from "../../pages/operations/AttendanceStudentRow";
 import { eventIdempotencyKey } from "./api";
 import { formatEventDate } from "./EventPrimitives";
+import { registerLifecycleLabel } from "../attendance/registerLifecycle";
 import type { EventAttendanceHistoryResponse, EventAttendanceStatus, EventRegisterInput, EventRegisterResponse } from "./types";
 import "./campus-events.css";
 import "../../pages/operations/attendance-register.css";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 const statusLabels: Record<EventAttendanceStatus, string> = {
   not_recorded: "Not recorded",
   present: "Present",
@@ -41,16 +43,16 @@ function localDateTime(value: string | number) {
 const attendanceDisabledLabels: Record<string, string> = {
   event_not_published: "Attendance opens after this event is published.",
   attendance_not_enabled: "This session does not use an attendance register.",
-  register_locked: "This register is locked. A principal must reopen it for a correction.",
+  register_locked: "This register is final. A principal must reopen it for a correction.",
   not_attendance_taker: "Only the assigned attendance taker can mark this register.",
   attendance_window_not_open: "Attendance has not opened yet under the institution’s operating window.",
   outside_attendance_window: "The staff attendance window has closed. A principal can reconcile this register.",
-  session_not_ended: "This register can be locked after the session ends.",
-  register_incomplete: "Record a decision for every participant before locking the register.",
-  attendance_incomplete: "Record a decision for every participant before locking the register.",
-  check_out_incomplete: "Complete every required check-out before locking the register.",
-  checkout_incomplete: "Complete every required check-out before locking the register.",
-  lock_window_closed: "The staff lock window has closed. A principal can reconcile and lock this register.",
+  session_not_ended: "This register can be finalized after the session ends.",
+  register_incomplete: "Record a decision for every participant before finalizing the register.",
+  attendance_incomplete: "Record a decision for every participant before finalizing the register.",
+  check_out_incomplete: "Complete every required check-out before finalizing the register.",
+  checkout_incomplete: "Complete every required check-out before finalizing the register.",
+  lock_window_closed: "The staff finalization window has closed. A principal can reconcile and finalize this register.",
 };
 
 export function EventRegisterPage({
@@ -146,7 +148,7 @@ export function EventRegisterPage({
         }),
       });
       setState("saved");
-      setMessage("Event register saved with its revision history.");
+      setMessage(correctionRequired ? "Correction saved to the register history." : "Draft saved.");
     } catch (error) {
       setState("error");
       setMessage(error instanceof Error ? error.message : "The event register could not be saved.");
@@ -157,8 +159,8 @@ export function EventRegisterPage({
     if (lockReason.trim().length < 3) return;
     setState("locking");
     setMessage("");
-    try { await onLock(lockReason.trim()); setState("saved"); setMessage("Register locked. Reopening requires a principal reason."); setLockPanelOpen(false); }
-    catch (error) { setState("error"); setMessage(error instanceof Error ? error.message : "The register could not be locked."); }
+    try { await onLock(lockReason.trim()); setState("saved"); setMessage("Register finalized. Reopening requires a principal reason."); setLockPanelOpen(false); }
+    catch (error) { setState("error"); setMessage(error instanceof Error ? error.message : "The register could not be finalized."); }
   };
 
   const reopen = async () => {
@@ -183,7 +185,7 @@ export function EventRegisterPage({
         <section className="campus-event-register-hero">
           <div className="campus-event-register-hero__heading">
             <div><span>{register.event.title}</span><h2>{register.session.title}</h2><p>{formatEventDate(register.session.starts_at)} · {register.session.attendance_mode === "check_in_out" ? "Check-in and check-out" : "Check-in only"}</p></div>
-            <span className={`campus-event-register-state is-${register.session.state}`}>{register.session.state === "locked" ? <LockKeyhole size={15} /> : <Clock3 size={15} />}{register.session.state}</span>
+            <span className={`campus-event-register-state is-${register.session.state}`}>{register.session.state === "locked" ? <LockKeyhole size={15} /> : <Clock3 size={15} />}{registerLifecycleLabel(register.session.state)}</span>
           </div>
           <div className="campus-event-register-progress" aria-label={`${marked} of ${register.rows.length} attendance decisions recorded`}>
             <div><strong>{marked} of {register.rows.length}</strong><span>{marked === register.rows.length ? "All decisions recorded" : `${register.rows.length - marked} still to record`}</span></div>
@@ -192,7 +194,7 @@ export function EventRegisterPage({
           </div>
         </section>
 
-        {!liveObservation ? <section className="campus-event-register-lock-panel"><h2>Record past attendance</h2><p>Choose when attendance was observed for this session. This time applies to new marks and unsaved attendance below.</p><label>Observed time<input type="datetime-local" min={localDateTime(earliestObservation)} max={localDateTime(latestObservation)} value={batchObservedAt} onChange={(event) => {
+        {!liveObservation ? <section className="campus-event-register-lock-panel"><h2>Record past attendance</h2><p>Choose when attendance was observed for this session. This time applies to new marks and unsaved attendance below.</p><label>Observed time<TemporalInput type="datetime-local" min={localDateTime(earliestObservation)} max={localDateTime(latestObservation)} value={batchObservedAt} onChange={(event) => {
           const observed_at = event.target.value;
           setBatchObservedAt(observed_at);
           setRecords((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [id, physicalStatuses.has(value.status) && changedRows.some((row) => row.student_id === id) ? { ...value, observed_at } : value])));
@@ -244,7 +246,7 @@ export function EventRegisterPage({
                 noteLabel="Event note"
                 onChange={updateRow}
               >
-                {physicalStatuses.has(value.status) ? <label className="campus-event-register-observed"><span>Observed at</span><input required min={localDateTime(earliestObservation)} max={localDateTime(latestObservation)} aria-label={`Observed at for ${row.student_name}`} type="datetime-local" disabled={register.session.state === "locked" || !register.permissions.can_take_attendance} value={value.observed_at} onChange={(event) => setRecords({ ...records, [row.student_id]: { ...value, observed_at: event.target.value } })} /></label> : null}
+                {physicalStatuses.has(value.status) ? <label className="campus-event-register-observed"><span>Observed at</span><TemporalInput required min={localDateTime(earliestObservation)} max={localDateTime(latestObservation)} aria-label={`Observed at for ${row.student_name}`} type="datetime-local" disabled={register.session.state === "locked" || !register.permissions.can_take_attendance} value={value.observed_at} onChange={(event) => setRecords({ ...records, [row.student_id]: { ...value, observed_at: event.target.value } })} /></label> : null}
                 {!row.participation_ready && physicalStatuses.has(value.status) ? <label className="campus-event-register-contradiction"><span>Observed attendance explanation</span><input required minLength={3} aria-label={`Observed attendance explanation for ${row.student_name}`} disabled={register.session.state === "locked" || !register.permissions.can_take_attendance} value={value.readiness_contradiction_note} onChange={(event) => setRecords({ ...records, [row.student_id]: { ...value, readiness_contradiction_note: event.target.value } })} placeholder="Explain the verified physical observation" /><small>Physical presence may be recorded, but No-show is unavailable while participation is not ready.</small></label> : null}
               </AttendanceStudentRow>
             );
@@ -256,18 +258,18 @@ export function EventRegisterPage({
         {missingReadinessExplanation ? <p className="campus-event-form-error" role="alert">Explain every observed physical attendance decision that contradicts incomplete participation requirements.</p> : null}
         {correctionRequired ? <section className="campus-event-correction"><RotateCcw size={18} /><div><label>Correction reason<textarea rows={2} required value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are persisted attendance decisions changing?" /></label><p>This reason becomes part of the immutable register history.</p></div></section> : null}
         {message ? <p className={`campus-event-action-message is-${state}`} role="status">{message}</p> : null}
-        {register.session.state === "open" && lockPanelOpen ? <section id="event-register-lock-panel" className="campus-event-register-lock-panel" aria-labelledby="event-register-lock-heading"><div><LockKeyhole size={18} /><span><h2 id="event-register-lock-heading">Lock register</h2><p>Lock after every decision is final. A principal can reopen it for a correction.</p></span></div><label><span>Reason</span><input autoFocus value={lockReason} onChange={(event) => setLockReason(event.target.value)} placeholder="Why is this register complete?" /></label><div><button className="campus-event-secondary" type="button" onClick={() => setLockPanelOpen(false)}>Cancel</button><button className="campus-event-primary" type="button" disabled={!register.permissions.can_lock || changedRows.length > 0 || state === "locking" || lockReason.trim().length < 3} onClick={() => void lock()}><LockKeyhole size={16} />{state === "locking" ? "Locking..." : "Confirm lock"}</button></div></section> : null}
+        {register.session.state === "open" && lockPanelOpen ? <section id="event-register-lock-panel" className="campus-event-register-lock-panel" aria-labelledby="event-register-lock-heading"><div><LockKeyhole size={18} /><span><h2 id="event-register-lock-heading">Finalize register</h2><p>Finalize after every decision is complete. A principal can reopen it for a correction.</p></span></div><label><span>Reason</span><input autoFocus value={lockReason} onChange={(event) => setLockReason(event.target.value)} placeholder="Why is this register complete?" /></label><div><button className="campus-event-secondary" type="button" onClick={() => setLockPanelOpen(false)}>Cancel</button><button className="campus-event-primary" type="button" disabled={!register.permissions.can_lock || changedRows.length > 0 || state === "locking" || lockReason.trim().length < 3} onClick={() => void lock()}><LockKeyhole size={16} />{state === "locking" ? "Finalizing..." : "Confirm final"}</button></div></section> : null}
         <footer className="roll-call-submit-bar campus-event-submit-bar">
           <div className="roll-call-submit-bar__inner">
             <div className="roll-call-progress">
               <span>{changedRows.length ? `${changedRows.length} unsaved ${changedRows.length === 1 ? "change" : "changes"}` : marked === register.rows.length ? "Register complete" : `${marked} of ${register.rows.length} recorded`}</span>
               <progress aria-label="Participants recorded" max={register.rows.length || 1} value={marked}>{marked}/{register.rows.length}</progress>
             </div>
-            {register.session.state === "open" ? changedRows.length ? <button type="button" disabled={missingObservation || invalidObservation || missingReadinessExplanation || state === "saving" || (correctionRequired && reason.trim().length < 3)} onClick={() => void save()}><Save size={16} />{state === "saving" ? "Saving..." : "Save register"}</button> : register.permissions.can_lock ? <button className="campus-event-submit-secondary" type="button" aria-expanded={lockPanelOpen} aria-controls="event-register-lock-panel" onClick={() => setLockPanelOpen((open) => !open)}><LockKeyhole size={16} />Lock register</button> : null : register.permissions.can_reopen ? <div className="campus-event-reopen"><input aria-label="Reason to reopen register" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} placeholder="Reason to reopen" /><button className="campus-event-secondary" type="button" disabled={reopenReason.trim().length < 3 || state === "reopening"} onClick={() => void reopen()}><RotateCcw size={16} />Reopen</button></div> : <span className="campus-event-locked-note"><ShieldCheck size={15} />Locked record</span>}
+            {register.session.state === "open" ? changedRows.length ? <button type="button" disabled={missingObservation || invalidObservation || missingReadinessExplanation || state === "saving" || (correctionRequired && reason.trim().length < 3)} onClick={() => void save()}><Save size={16} />{state === "saving" ? "Saving..." : correctionRequired ? "Save correction" : "Save draft"}</button> : register.permissions.can_lock ? <button className="campus-event-submit-secondary" type="button" aria-expanded={lockPanelOpen} aria-controls="event-register-lock-panel" onClick={() => setLockPanelOpen((open) => !open)}><LockKeyhole size={16} />Finalize register</button> : null : register.permissions.can_reopen ? <div className="campus-event-reopen"><input aria-label="Reason to reopen register" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} placeholder="Reason to reopen" /><button className="campus-event-secondary" type="button" disabled={reopenReason.trim().length < 3 || state === "reopening"} onClick={() => void reopen()}><RotateCcw size={16} />Reopen for correction</button></div> : <span className="campus-event-locked-note"><ShieldCheck size={15} />Final register</span>}
           </div>
         </footer>
         {!register.permissions.can_take_attendance && register.session.state === "open" ? <p className="campus-event-policy-note"><Clock3 size={15} />{register.permissions.attendance_disabled_reason ? attendanceDisabledLabels[register.permissions.attendance_disabled_reason] ?? "Attendance controls are not available for this session." : "Attendance controls are not available for this session yet."}</p> : null}
-        {register.session.state === "open" && !register.permissions.can_lock && register.permissions.lock_disabled_reason ? <p className="campus-event-policy-note"><LockKeyhole size={15} />{attendanceDisabledLabels[register.permissions.lock_disabled_reason] ?? "This register is not ready to lock."}</p> : null}
+        {register.session.state === "open" && !register.permissions.can_lock && register.permissions.lock_disabled_reason ? <p className="campus-event-policy-note"><LockKeyhole size={15} />{attendanceDisabledLabels[register.permissions.lock_disabled_reason] ?? "This register is not ready to finalize."}</p> : null}
         <p className="campus-event-policy-note"><ShieldCheck size={15} /><span><b>Event register only.</b> “Not recorded” means no decision yet; academic attendance is unchanged.</span></p>
       </div>
       {historyOpen ? <EventRegisterHistorySheet history={history} loading={historyLoading} error={historyError} onClose={() => setHistoryOpen(false)} onRetry={() => void openHistory()} /> : null}

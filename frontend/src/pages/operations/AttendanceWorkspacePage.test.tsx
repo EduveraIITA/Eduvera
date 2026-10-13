@@ -15,6 +15,16 @@ const row = (patch: Partial<TeacherClassSummary> = {}): TeacherClassSummary => (
   submission_status: "not_started", periods_today: 1, assigned_teachers: ["Kavita Mehta"],
   instructional: true, date_open: true, can_mark: true, availability_reason: null, submission_authorized: true, ...patch,
 });
+const sessionRow = (patch: Partial<TeacherClassSummary> = {}): TeacherClassSummary => row({
+  attendance_scope: "scheduled_session",
+  session_id: "session-7a-maths",
+  subject_id: "maths",
+  subject_name: "Mathematics",
+  period_number: 1,
+  starts_at: "09:00:00",
+  ends_at: "09:45:00",
+  ...patch,
+});
 function show(portal: "teacher" | "principal", classes: TeacherClassSummary[]) {
   const onDateChange = vi.fn();
   render(<MemoryRouter><AttendanceWorkspacePage portal={portal} classes={classes} date="2026-09-18" onDateChange={onDateChange} /></MemoryRouter>);
@@ -58,7 +68,7 @@ describe("attendance class workspace", () => {
     fireEvent.click(screen.getByRole('button', {name: 'Previous day'}));
     expect(change).toHaveBeenCalledWith("2026-09-17");
   });
-  it("separates principal submission, review, and locked queues with real actor attribution", async () => {
+  it("separates principal submission, review, and final queues with real actor attribution", async () => {
     const user = userEvent.setup();
     show("principal", [row(), row({ class_section_id: "7b", class_name: "Class 7B", section: "B", submission_status: "submitted", submitted_by_name: "Kavita Mehta", marked_count: 25 }), row({ class_section_id: "8a", class_name: "Class 8A", grade: "8", submission_status: "locked", marked_count: 25 })]);
     await user.selectOptions(screen.getByRole('combobox',{name:'Filter registers'}),'submitted');
@@ -67,6 +77,17 @@ describe("attendance class workspace", () => {
     expect(screen.getByRole("link", { name: "Review Class 7B" })).toHaveAttribute("href", "/principal/attendance?class_section_id=7b&date=2026-09-18");
     await user.selectOptions(screen.getByRole('combobox',{name:'Filter registers'}),'locked');
     expect(within(screen.getByRole("article")).getByText("Class 8A")).toBeVisible();
+    expect(within(screen.getByRole("article")).getByText("Final")).toBeVisible();
+    expect(within(screen.getByRole("article")).getByText("Final register")).toBeVisible();
+  });
+  it("keeps automatically finalizing submissions out of the principal review queue", async () => {
+    const user = userEvent.setup();
+    show("principal", [row({ submission_status: "submitted", marked_count: 25, auto_finalize_at: "2026-09-18T10:30:00.000Z" })]);
+    expect(screen.getByText("Finalizing")).toBeVisible();
+    expect(screen.getByText(/Finalizes automatically/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "View Class 7A" })).toBeVisible();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Filter registers" }), "submitted");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
   });
   it("does not count holidays, empty classes, or future dates as missing submissions", async () => {
     const user = userEvent.setup();
@@ -98,6 +119,62 @@ describe("attendance class workspace", () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.getAllByRole('article')).toHaveLength(2);
     expect(screen.getByRole('button',{name:'Search classes'})).toHaveFocus();
+  });
+  it("turns a large principal session collection into a searchable period and class navigator", async () => {
+    const user = userEvent.setup();
+    show("principal", [
+      sessionRow(),
+      sessionRow({ session_id: "session-6a-hindi", class_section_id: "6a", class_name: "Class 6A", grade: "6", room_number: "201", subject_id: "hindi", subject_name: "Hindi" }),
+      sessionRow({ session_id: "session-7a-science", subject_id: "science", subject_name: "Science", period_number: 2, starts_at: "09:50:00", ends_at: "10:35:00" }),
+      sessionRow({ session_id: "session-6a-science", class_section_id: "6a", class_name: "Class 6A", grade: "6", room_number: "201", subject_id: "science", subject_name: "Science", period_number: 2, starts_at: "09:50:00", ends_at: "10:35:00", submission_status: "submitted", marked_count: 25 }),
+    ]);
+
+    expect(screen.getByRole("textbox", { name: "Search registers" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Search classes" })).not.toBeInTheDocument();
+    expect(document.querySelector(".principal-register-navigator__overview p")).toHaveTextContent("4 registers · 2 periods · 2 classes");
+    expect(screen.getByText("3 pending")).toBeVisible();
+    expect(document.querySelector(".principal-register-group__progress")).toHaveTextContent("2pending");
+    expect(screen.getAllByRole("link", { name: /Pending/ })).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "By period" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Period 1")).toBeVisible();
+    expect(screen.getByText("Period 2")).toBeVisible();
+    expect(document.querySelectorAll(".principal-register-row")).toHaveLength(4);
+
+    await user.click(screen.getByRole("button", { name: "By class" }));
+    expect(screen.getByRole("button", { name: "By class" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Class 6A")).toBeVisible();
+    expect(screen.getByText("Class 7A")).toBeVisible();
+
+    await user.type(screen.getByRole("textbox", { name: "Search registers" }), "Hindi");
+    expect(document.querySelector(".principal-register-navigator__overview p")).toHaveTextContent("1 register · 1 period · 1 class");
+    expect(screen.getByRole("link", { name: /Hindi/ })).toHaveAttribute("href", "/principal/attendance?session_id=session-6a-hindi&date=2026-09-18");
+    expect(screen.queryByRole("link", { name: /Mathematics/ })).not.toBeInTheDocument();
+  });
+  it("places a session-scoped attention signal on only its matching compact row", () => {
+    const item = attentionItem({
+      id: "attention:attendance_register:session-7a-maths",
+      source_id: "session-7a-maths",
+      href: "/principal/attendance?session_id=session-7a-maths&date=2026-09-18",
+      status_label: "Submission overdue",
+    });
+    const view = render(<MemoryRouter><AttendanceWorkspacePage portal="principal" classes={[sessionRow(), sessionRow({ session_id: "session-7a-science", subject_name: "Science", subject_id: "science", period_number: 2 })]} date="2026-09-18" onDateChange={vi.fn()} attention={{ data: attentionResponse([item]), isError: false, isPending: false }} /></MemoryRouter>);
+
+    expect(view.container.querySelectorAll(".principal-register-row__attention")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: /Mathematics.*Submission overdue/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: "Needs attention · 1" })).toBeInTheDocument();
+  });
+  it("presents future sessions as upcoming schedules rather than submission progress", () => {
+    const view = render(<MemoryRouter><AttendanceWorkspacePage portal="principal" classes={[
+      sessionRow({ date_open: false, can_mark: false, availability_reason: "Attendance opens on the selected date." }),
+      sessionRow({ session_id: "session-6a-hindi", class_section_id: "6a", class_name: "Class 6A", grade: "6", subject_id: "hindi", subject_name: "Hindi", date_open: false, can_mark: false, availability_reason: "Attendance opens on the selected date." }),
+    ]} date="2026-10-16" onDateChange={vi.fn()} /></MemoryRouter>);
+    const navigator = view.container.querySelector(".principal-register-navigator");
+
+    expect(navigator).toHaveTextContent("Upcoming");
+    expect(navigator).toHaveTextContent("2scheduled");
+    expect(navigator).not.toHaveTextContent("submitted");
+    expect(screen.getAllByRole("link", { name: /Upcoming/ })).toHaveLength(2);
+    expect(view.container.querySelector(".principal-register-row__result small")).toHaveTextContent("25 students");
   });
   it('does not hide an attendance desk failure behind its toolbar button',async()=>{
     render(<MemoryRouter><AttendanceWorkspacePage portal="principal" classes={[row()]} date="2026-09-18" onDateChange={vi.fn()} continuityError={new Error('Desk unavailable')} onContinuityDecision={vi.fn()}/></MemoryRouter>);

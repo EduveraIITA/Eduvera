@@ -4,13 +4,13 @@ import type { ReactNode } from "react";
 import { Link, MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssessmentWorkspacePage } from "./AssessmentWorkspacePage";
-import { getAssessmentDetail, saveAssessmentResults, type AssessmentResult, type AssessmentSummary, type AssessmentWorkspace } from "./api";
+import { createAssessment, getAssessmentDetail, saveAssessmentResults, type AssessmentResult, type AssessmentSummary, type AssessmentWorkspace } from "./api";
 
 vi.mock("../../pages/operations/OperationsShell",()=>({OperationsShell:({children,title,backTo}:{children:ReactNode;title:string;backTo:string})=><><h1>{title}</h1><Link to={backTo}>Back</Link>{children}</>}));
-vi.mock("./api",async original=>({...await original<typeof import('./api')>(),getAssessmentDetail:vi.fn(),saveAssessmentResults:vi.fn()}));
+vi.mock("./api",async original=>({...await original<typeof import('./api')>(),createAssessment:vi.fn(),getAssessmentDetail:vi.fn(),saveAssessmentResults:vi.fn()}));
 
 const assessment:AssessmentSummary={id:"test-1",cycle_id:"cycle-1",class_section_id:"class-1",subject_id:"subject-1",title:"English class test",assessment_kind:"class_test",maximum_marks:"20",weight_percent:null,scheduled_at:"2026-10-08T04:00:00Z",duration_minutes:30,venue:"Room 1",instructions:"",evidence_requirement:"optional",status:"submitted",revision:1,moderation_note:"",cycle_name:"Term 1",subject_name:"English",color:"#0037b0",icon:"book",class_name:"Class 7A",examiner_user_id:"teacher-1",examiner_name:"Teacher",moderator_user_id:"teacher-2",moderator_name:"Moderator",roster_count:0,unrecorded_count:0,publication_sequence:0};
-const data:AssessmentWorkspace={mode:"staff",cycles:[],assessments:[assessment,{...assessment,id:"test-2",title:"Published test",status:"published"}]};
+const data:AssessmentWorkspace={mode:"staff",can_plan_class_test:false,planner_user_id:"teacher-1",cycles:[],assessments:[assessment,{...assessment,id:"test-2",title:"Published test",status:"published"}]};
 const result:AssessmentResult={id:'result-1',student_id:'student-1',outcome:'scored',marks:'16.00',grade:'',feedback:'Good concepts; revise written presentation.',revision:2,first_name:'Ananya',last_name:'Iyer',admission_number:'CIS-2023-061',roll_number:1,evidence_count:0,evidence:null};
 afterEach(cleanup);
 function Location(){return <output>{useLocation().search}</output>;}
@@ -59,6 +59,22 @@ describe("assessment directory",()=>{
     mount('teacher','?status=marking');
     expect(screen.getByText('No assessments with this status')).toBeVisible();
     expect(screen.queryByLabelText('Create assessment or cycle')).not.toBeInTheDocument();
+  });
+
+  it("lets an assigned subject teacher plan a class test in the assessment workflow",async()=>{
+    vi.mocked(createAssessment).mockResolvedValue(assessment);
+    const planning:AssessmentWorkspace={
+      ...data,
+      can_plan_class_test:true,
+      cycles:[{id:"cycle-1",term_id:"term-1",name:"Unit tests",code:"UNIT",starts_on:"2026-10-01",ends_on:"2026-10-31",status:"active",result_label:"Result",revision:1,term_name:"Term 1",academic_year:"2026-27",assessment_count:0,published_count:0}],
+      references:{classes:[{id:"class-1",name:"Class 7A",academic_year:"2026-27"}],subjects:[{id:"subject-1",name:"English",color:"#0037b0",icon:"book",class_section_ids:["class-1"]}],staff:[{id:"principal-1",first_name:"Meera",last_name:"Joshi",designation:"Principal"}]},
+    };
+    mount("teacher","?create=class-test",planning);
+    expect(screen.getByRole("heading",{name:"Plan a class test"})).toBeVisible();
+    fireEvent.change(screen.getByRole("textbox",{name:"Title"}),{target:{value:"English vocabulary test"}});
+    fireEvent.change(screen.getByLabelText("Date and time"),{target:{value:"2026-10-15T09:00"}});
+    fireEvent.click(screen.getByRole("button",{name:"Send for scheduling"}));
+    await waitFor(()=>expect(createAssessment).toHaveBeenCalledWith("school-1",expect.objectContaining({assessment_kind:"class_test",examiner_user_id:"teacher-1",moderator_user_id:"principal-1",class_section_id:"class-1",subject_id:"subject-1"})));
   });
 
   it("keeps cycle creation available when there is no cycle for a new assessment",()=>{

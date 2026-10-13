@@ -37,6 +37,8 @@ suite("offline assessment and result lifecycle",()=>{
     termId=(await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on) VALUES($1,'2031-32','Term 1','2031-04-01','2031-09-30') RETURNING id",[schoolId])).rows[0].id;
     classId=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2031-32','7','A') RETURNING id",[schoolId])).rows[0].id;
     subjectId=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'ENG','English','English') RETURNING id",[schoolId])).rows[0].id;
+    await pool.query(`INSERT INTO class_section_staff_assignments(school_id,class_section_id,user_id,role,subject_id,valid_from,valid_until,assigned_by)
+      VALUES($1,$2,$3,'subject_teacher',$4,'2031-04-01','2031-09-30',$5)`,[schoolId,classId,examiner.id,subjectId,admin.id]);
     const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Learner','One') RETURNING id",[schoolId])).rows[0];
     studentId=(await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,'A-001') RETURNING id",[schoolId,person.id])).rows[0].id;
     await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,'2031-04-01')",[studentId,classId,termId]);
@@ -58,6 +60,7 @@ suite("offline assessment and result lifecycle",()=>{
       await pool.query("DELETE FROM guardian_school_profiles WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM enrollments WHERE student_id IN(SELECT id FROM students WHERE school_id=$1)",[schoolId]);
       await pool.query("DELETE FROM students WHERE school_id=$1",[schoolId]);
+      await pool.query("DELETE FROM class_section_staff_assignments WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM parents WHERE user_id=ANY($1::uuid[])",[userIds]);
       await pool.query("DELETE FROM school_people WHERE school_id=$1",[schoolId]);
       await pool.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1",[schoolId]);
@@ -70,6 +73,18 @@ suite("offline assessment and result lifecycle",()=>{
       await pool.query("DELETE FROM users WHERE id=ANY($1::uuid[])",[userIds]);
     }
     await database?.destroy();await pool.end();
+  });
+
+  it("keeps teacher-planned class tests inside assigned assessment scope and principal review",async()=>{
+    const cycle=await service.createCycle(admin,schoolId,{term_id:termId,name:"Class tests",code:"CLASS-TEST",starts_on:"2031-08-01",ends_on:"2031-09-15",result_label:"Class test result"});
+    const workspace=await service.workspace(examiner,schoolId);
+    expect(workspace).toMatchObject({mode:"staff",can_plan_class_test:true,planner_user_id:examiner.id});
+    expect("references" in workspace ? workspace.references.classes : []).toEqual([expect.objectContaining({id:classId})]);
+    const input={cycle_id:cycle.id,class_section_id:classId,subject_id:subjectId,title:"English vocabulary test",assessment_kind:"class_test",maximum_marks:20,weight_percent:null,scheduled_at:"2031-08-12T03:30:00.000Z",duration_minutes:40,venue:"Room 7A",instructions:"Offline written test",evidence_requirement:"optional",examiner_user_id:examiner.id,moderator_user_id:admin.id};
+    const planned=await service.createAssessment(examiner,schoolId,input);
+    expect(planned).toMatchObject({assessment_kind:"class_test",status:"draft",created_by:examiner.id});
+    await expect(service.createAssessment(examiner,schoolId,{...input,title:"Not permitted exam",assessment_kind:"exam"})).rejects.toThrow(/class tests only/i);
+    await expect(service.createAssessment(examiner,schoolId,{...input,title:"Self reviewed test",moderator_user_id:examiner.id})).rejects.toThrow(/different people/i);
   });
 
   it("keeps marking, moderation, publication and correction as separate states",async()=>{

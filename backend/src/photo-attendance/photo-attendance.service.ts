@@ -10,6 +10,7 @@ import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import { SchoolService } from "../school/school.service.js";
+import { AttendanceModelService } from "../attendance-model/attendance-model.service.js";
 import type { PhotoAttendanceAnalysis, VisionSession } from "./contracts.js";
 import { PhotoAttendanceVisionClient } from "./vision-client.js";
 import { proFeaturesEnabled, requireProFeatures } from '../auth/pro-features.js';
@@ -26,14 +27,19 @@ const enrollmentSchema = z.object({
   date: z.string().regex(datePattern),
   authorization_reference: z.string().trim().min(3).max(500),
   confirmed_authority: z.literal("true"),
+  session_id: z.string().uuid().optional(),
 });
 const analysisSchema = z.object({
   date: z.string().regex(datePattern),
   period: z.string().trim().min(1).max(100),
   authorization_reference: z.string().trim().min(3).max(500),
   confirmed_authority: z.literal("true"),
-  analysis_mode: z.enum(["face_embeddings", "local_llm"]).default("face_embeddings"),
+  analysis_mode: z.enum(["face_embeddings", "multimodal"]).default("face_embeddings"),
+  session_id: z.string().uuid().optional(),
 });
+
+type AttendanceScreen = Awaited<ReturnType<SchoolService["teacherAttendanceScreen"]>> |
+  Awaited<ReturnType<AttendanceModelService["screen"]>>;
 
 @Injectable()
 export class PhotoAttendanceService {
@@ -43,7 +49,21 @@ export class PhotoAttendanceService {
     private readonly db: DatabaseService,
     private readonly school: SchoolService,
     private readonly vision: PhotoAttendanceVisionClient,
+    private readonly attendanceModel: AttendanceModelService,
   ) {}
+
+  private async attendanceScreen(user: AuthUser, classSectionId: string, date: string, sessionId?: string): Promise<AttendanceScreen> {
+    const screen = sessionId
+      ? await this.attendanceModel.screen(user, sessionId)
+      : await this.school.teacherAttendanceScreen(user, classSectionId, date);
+    if (screen.class.id !== classSectionId || screen.date !== date) {
+      throw new BadRequestException("The photo must use the open register's class and date.");
+    }
+    if (sessionId && (!("capture_policy" in screen) || !screen.capture_policy?.channels.includes("camera_assisted"))) {
+      throw new BadRequestException("Camera-assisted attendance is not enabled for subject registers.");
+    }
+    return screen;
+  }
 
   private validatePhoto(photo: UploadedPhoto): void {
     const supported = new Set([
@@ -88,9 +108,9 @@ export class PhotoAttendanceService {
     if(membership.role!=="admin" && !(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${schoolId}::uuid,${user.id}::uuid,'photo.use',${classId}::uuid,${date}::date) AS allowed`.execute(this.db)).rows[0]?.allowed)throw new ForbiddenException("Your assignment does not allow photo attendance for this class.");
   }
 
-  async setup(user: AuthUser, classSectionId: string, date: string) {
+  async setup(user: AuthUser, classSectionId: string, date: string, sessionId?: string) {
     const previewEnabled = await proFeaturesEnabled(this.db,user.id);
-    const screen = await this.school.teacherAttendanceScreen(user, classSectionId, date);
+    const screen = await this.attendanceScreen(user, classSectionId, date, sessionId);
     const membership = await this.membership(user, screen.class.school_id);
     await this.requireClassPhotoAccess(user,screen.class.school_id,classSectionId,date);
     const profiles = await this.db
@@ -143,11 +163,12 @@ export class PhotoAttendanceService {
         preview_enabled: previewEnabled,
         available: previewEnabled && Boolean(llm?.available && llm.installed && llm.supports_images !== false),
         model: llm?.model ?? null,
+        provider: llm?.provider ?? null,
         unavailable_reason: llm?.available && !llm.installed
-          ? `The local vision model ${llm.model} is not installed.`
+          ? `The vision model ${llm.model} is not available.`
           : llm?.supports_images === false
-            ? llm.detail ?? `The local model ${llm.model} does not support image input.`
-            : llm?.detail ?? (llm ? null : "The local AI cross-check is unavailable."),
+            ? llm.detail ?? `The model ${llm.model} does not support image input.`
+            : llm?.detail ?? (llm ? null : "The multimodal cross-check is unavailable."),
       },
       boundaries: {
         liveness_proven: false,
@@ -264,7 +285,12 @@ export class PhotoAttendanceService {
   ) {
     this.validatePhoto(photo);
     const input = enrollmentSchema.parse(fields);
-    const screen = await this.school.teacherAttendanceScreen(request.authUser, input.class_section_id, input.date);
+    const screen = await this.attendanceScreen(
+      request.authUser,
+      input.class_section_id,
+      input.date,
+      input.session_id,
+    );
     await this.requirePrincipal(request.authUser, screen.class.school_id);
     const student = screen.roster.find((item) => item.id === studentId);
     if (!student) throw new NotFoundException("The student is not on this class roster for the selected date.");
@@ -316,8 +342,8 @@ export class PhotoAttendanceService {
   ): Promise<PhotoAttendanceAnalysis> {
     this.validatePhoto(photo);
     const input = analysisSchema.parse(fields);
-    if (input.analysis_mode === 'local_llm') await requireProFeatures(this.db,request.authUser.id);
-    const screen = await this.school.teacherAttendanceScreen(request.authUser, classSectionId, input.date);
+    if (input.analysis_mode === 'multimodal') await requireProFeatures(this.db,request.authUser.id);
+    const screen = await this.attendanceScreen(request.authUser, classSectionId, input.date, input.session_id);
     await this.membership(request.authUser, screen.class.school_id);
     await this.requireClassPhotoAccess(request.authUser,screen.class.school_id,classSectionId,input.date);
     if (!screen.availability.can_mark) {
@@ -346,7 +372,7 @@ export class PhotoAttendanceService {
       file: photo,
       date: input.date,
       period: input.period,
-      useLlm: input.analysis_mode === "local_llm",
+      useLlm: input.analysis_mode === "multimodal",
     });
     const observedAt = new Date();
     const inserted = await this.db.transaction().execute(async (tx) => {
@@ -354,6 +380,7 @@ export class PhotoAttendanceService {
         school_id: screen.class.school_id,
         class_section_id: classSectionId,
         term_id: screen.class.term_id,
+        attendance_session_id: input.session_id ?? null,
         date: input.date,
         period: input.period,
         provider_session_id: providerSession.id,
@@ -367,6 +394,9 @@ export class PhotoAttendanceService {
           warnings: providerSession.result.warnings,
           elapsed_seconds: providerSession.result.elapsed_seconds,
           enrolled: profiles.length,
+          matched_student_ids: providerSession.result.automatic_assignments
+            .map((assignment) => profiles.find((profile) => profile.provider_student_id === assignment.student_id)?.student_id)
+            .filter((studentId): studentId is string => Boolean(studentId)),
         },
         observed_at: observedAt,
         received_at: new Date(),
@@ -400,7 +430,12 @@ export class PhotoAttendanceService {
       .selectAll().where("id", "=", sessionId).executeTakeFirst();
     if (!stored) throw new NotFoundException("Photo-attendance analysis not found.");
     if (stored.expires_at < new Date()) throw new NotFoundException("Photo-attendance analysis has expired.");
-    const screen = await this.school.teacherAttendanceScreen(user, stored.class_section_id, String(stored.date));
+    const screen = await this.attendanceScreen(
+      user,
+      stored.class_section_id,
+      String(stored.date),
+      stored.attendance_session_id ?? undefined,
+    );
     await this.requireClassPhotoAccess(user,stored.school_id,stored.class_section_id,String(stored.date));
     const profiles = await this.db.selectFrom("photo_attendance_profiles")
       .selectAll().where("school_id", "=", stored.school_id)
@@ -411,7 +446,7 @@ export class PhotoAttendanceService {
 
   private mapAnalysis(
     stored: any,
-    screen: Awaited<ReturnType<SchoolService["teacherAttendanceScreen"]>>,
+    screen: AttendanceScreen,
     profiles: Array<{ student_id: string; provider_student_id: string; sample_count: number }>,
     provider: VisionSession,
   ): PhotoAttendanceAnalysis {

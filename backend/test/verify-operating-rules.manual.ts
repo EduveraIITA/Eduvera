@@ -27,19 +27,77 @@ try {
     const request = { authUser: { id: admin.user_id, active_school_id: admin.school_id }, requestId: randomUUID() } as AuthenticatedRequest;
     const before = await controller.get(request, admin.school_id);
     const { revision, ...settings } = before;
-    request.body = { ...settings, journey_lead_minutes: 45, event_staff_hours_after: 48, attendance_submission_cutoff: "11:45", expected_revision: revision };
+    request.body = { ...settings, journey_lead_minutes: 45, event_staff_hours_after: 48, attendance_submission_cutoff: "11:45", attendance_finalization_mode: "automatic", attendance_auto_finalize_minutes: 15, expected_revision: revision };
     const after = await controller.save(request, admin.school_id);
     assert.equal(after.revision, revision + 1);
     assert.equal(after.journey_lead_minutes, 45);
     assert.equal(after.event_staff_hours_after, 48);
     assert.equal(after.attendance_submission_cutoff, "11:45");
+    assert.equal(after.attendance_finalization_mode, "automatic");
+    assert.equal(after.attendance_auto_finalize_minutes, 15);
     await assert.rejects(() => controller.save(request, admin.school_id), /changed/);
     await assert.rejects(() => controller.get({ ...request, authUser: { ...request.authUser, id: staff.user_id } }, admin.school_id), /administrator/);
     await assert.rejects(() => controller.save({ ...request, authUser: { ...request.authUser, id: staff.user_id } }, admin.school_id), /administrator/);
     await assert.rejects(() => controller.get({ ...request, authUser: { ...request.authUser, active_school_id: randomUUID() } }, admin.school_id), /Switch/);
     const audit = await tx.selectFrom("audit_events").select("metadata").where("request_id", "=", request.requestId).where("action", "=", "operating_rules.updated").execute();
     assert.equal(audit.length, 1);
-    console.log("Verified: save/read, revision conflicts, staff read/write denial, cross-school denial, audit. All changes rolled back.");
+    const categoryBefore = await controller.getCategory(request, admin.school_id, "events");
+    const eventDomain = categoryBefore.domain as { revision: number; observation_hours_before: number; observation_hours_after: number };
+    request.body = {
+      expected_workflow_revision: categoryBefore.workflow.revision,
+      expected_domain_revision: eventDomain.revision,
+      event_entry_hours_before: 3,
+      event_staff_hours_after: 36,
+      observation_hours_before: 1,
+      observation_hours_after: 6,
+    };
+    const categoryAfter = await controller.saveCategory(request, admin.school_id, "events");
+    const savedEventDomain = categoryAfter.domain as { revision: number; observation_hours_after: number };
+    assert.equal(categoryAfter.workflow.revision, categoryBefore.workflow.revision + 1);
+    assert.equal(savedEventDomain.revision, eventDomain.revision + 1);
+    assert.equal(categoryAfter.workflow.event_staff_hours_after, 36);
+    assert.equal(savedEventDomain.observation_hours_after, 6);
+    await assert.rejects(() => controller.saveCategory(request, admin.school_id, "events"), /changed/);
+    const categoryAudit = await tx.selectFrom("audit_events").select("metadata").where("request_id", "=", request.requestId).where("action", "=", "operating_rules.events.updated").execute();
+    assert.equal(categoryAudit.length, 1);
+    const departureBefore = await controller.getCategory(request, admin.school_id, "departure");
+    const departureDomain = departureBefore.domain as { revision: number; enabled: boolean; enabled_modes: string[]; change_cutoff: string; location_retention_hours: number; location_stale_seconds: number };
+    request.body = {
+      expected_workflow_revision: departureBefore.workflow.revision,
+      expected_domain_revision: departureDomain.revision,
+      journey_lead_minutes: 40,
+      enabled: departureDomain.enabled,
+      enabled_modes: departureDomain.enabled_modes,
+      change_cutoff: departureDomain.change_cutoff,
+      location_retention_hours: departureDomain.location_retention_hours,
+      location_stale_seconds: departureDomain.location_stale_seconds,
+    };
+    const departureAfter = await controller.saveCategory(request, admin.school_id, "departure");
+    const savedDepartureDomain = departureAfter.domain as { revision: number };
+    assert.equal(departureAfter.workflow.journey_lead_minutes, 40);
+    assert.equal(savedDepartureDomain.revision, departureDomain.revision + 1);
+    const messagesBefore = await controller.getCategory(request, admin.school_id, "messages");
+    const messageDomain = messagesBefore.domain as { revision: number; student_teacher_direct_enabled: boolean; guardian_teacher_direct_enabled: boolean; student_group_replies: boolean; guardian_group_replies: boolean; attachments_enabled: boolean; enforce_communication_hours: boolean; communication_start: string; communication_end: string; retention_days: number };
+    request.body = {
+      expected_workflow_revision: messagesBefore.workflow.revision,
+      expected_domain_revision: messageDomain.revision,
+      message_edit_minutes: 3,
+      message_attachment_mb: messagesBefore.workflow.message_attachment_mb,
+      student_teacher_direct_enabled: messageDomain.student_teacher_direct_enabled,
+      guardian_teacher_direct_enabled: messageDomain.guardian_teacher_direct_enabled,
+      student_group_replies: messageDomain.student_group_replies,
+      guardian_group_replies: messageDomain.guardian_group_replies,
+      attachments_enabled: messageDomain.attachments_enabled,
+      enforce_communication_hours: messageDomain.enforce_communication_hours,
+      communication_start: messageDomain.communication_start,
+      communication_end: messageDomain.communication_end,
+      retention_days: messageDomain.retention_days,
+    };
+    const messagesAfter = await controller.saveCategory(request, admin.school_id, "messages");
+    const savedMessageDomain = messagesAfter.domain as { revision: number };
+    assert.equal(messagesAfter.workflow.message_edit_minutes, 3);
+    assert.equal(savedMessageDomain.revision, messageDomain.revision + 1);
+    console.log("Verified: single and category saves, revision conflicts, staff read/write denial, cross-school denial, atomic audit. All changes rolled back.");
     throw rollback;
   });
 } catch (error) { if (error !== rollback) throw error; }

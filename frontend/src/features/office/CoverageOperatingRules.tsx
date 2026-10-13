@@ -10,9 +10,17 @@ const formValue = (form: FormData, name: string) => {
 
 const staffName = (profile: AdminStaffWorkspace["profiles"][number]) =>
   [profile.first_name, profile.last_name].filter(Boolean).join(" ");
-export function CoverageOperatingRules({ schoolId, data, refresh }: { schoolId: string; data: AdminStaffWorkspace; refresh: () => Promise<void> }) {
+const fallbackLabels = {
+  independent_study: "Independent study",
+  physical_activity: "Games / physical activity",
+  library_period: "Library period",
+  merge_class: "Merge with another class",
+  cancelled_period: "Cancelled period",
+} as const;
+export function CoverageOperatingRules({ schoolId, data, refresh, onDirtyChange = () => undefined }: { schoolId: string; data: AdminStaffWorkspace; refresh: () => Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
   const [savingCoverage, setSavingCoverage] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
   const coveragePolicy = data.coverage_policy ?? {
     school_id: schoolId,
     enabled: false,
@@ -25,22 +33,26 @@ export function CoverageOperatingRules({ schoolId, data, refresh }: { schoolId: 
     revision: 0,
   };
   const [enabled, setEnabled] = useState(coveragePolicy.enabled);
+  const [fallbackKind, setFallbackKind] = useState(coveragePolicy.fallback_kind);
 
   const saveFallback = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSavingCoverage(true);
     setError("");
+    setSaved(false);
     const form = new FormData(event.currentTarget);
     try {
       await saveCoveragePolicy(schoolId, {
         enabled: form.has("enabled"),
         deadline_minutes_before: Number(formValue(form, "deadline_minutes_before")),
-        fallback_kind: formValue(form, "fallback_kind") as typeof coveragePolicy.fallback_kind,
-        fallback_label: formValue(form, "fallback_label"),
+        fallback_kind: fallbackKind,
+        fallback_label: fallbackLabels[fallbackKind],
         supervisor_staff_profile_id: formValue(form, "supervisor_staff_profile_id") || null,
         expected_revision: coveragePolicy.revision,
       });
       await refresh();
+      onDirtyChange(false);
+      setSaved(true);
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
@@ -48,7 +60,7 @@ export function CoverageOperatingRules({ schoolId, data, refresh }: { schoolId: 
     }
   };
   return (
-    <form className="coverage-rule" onSubmit={(event) => void saveFallback(event)}>
+    <form className="coverage-rule" onChange={() => { onDirtyChange(true); setSaved(false); }} onSubmit={(event) => void saveFallback(event)}>
       <header className="coverage-rule__header">
         <div>
           <h2>Leave cover</h2>
@@ -74,17 +86,13 @@ export function CoverageOperatingRules({ schoolId, data, refresh }: { schoolId: 
         </label>
         <label className="coverage-rule__row">
           <span><strong>Fallback plan</strong><small>Used when no cover is assigned</small></span>
-          <select name="fallback_kind" defaultValue={coveragePolicy.fallback_kind}>
+          <select name="fallback_kind" value={fallbackKind} onChange={(event) => { setFallbackKind(event.target.value as typeof fallbackKind); setSaved(false); }}>
             <option value="independent_study">Independent study</option>
             <option value="physical_activity">Games / physical activity</option>
             <option value="library_period">Library period</option>
             <option value="merge_class">Merge with another class</option>
             <option value="cancelled_period">Cancel period</option>
           </select>
-        </label>
-        <label className="coverage-rule__row">
-          <span><strong>Staff label</strong><small>Shown on the timetable</small></span>
-          <input name="fallback_label" defaultValue={coveragePolicy.fallback_label} required minLength={3} maxLength={120} />
         </label>
         <label className="coverage-rule__row">
           <span><strong>Responsible team</strong><small>Optional</small></span>
@@ -99,6 +107,7 @@ export function CoverageOperatingRules({ schoolId, data, refresh }: { schoolId: 
 
       <div className="coverage-rule__note"><Info size={16} aria-hidden="true" /><p>This records the planned fallback, not whether the activity happened.</p></div>
       {error ? <p className="coverage-rule__error" role="alert">{error}</p> : null}
+      {saved ? <p className="coverage-rule__success" role="status">Operating rule saved.</p> : null}
       <button className="coverage-rule__save" disabled={savingCoverage}>
         {savingCoverage ? "Saving…" : "Save changes"}
       </button>

@@ -97,7 +97,7 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
     <article className="notices-workspace notice-detail">
       <header className="notice-detail__header">
         <div className="notice-detail__eyebrow"><span className={`notice-priority notice-priority--${data.priority}`}>{data.priority}</span><span>{modeLabel(data.response_mode)}</span>{data.status !== "published" ? <span>{data.status}</span> : null}</div>
-        <h1>{data.title}</h1>
+        <h2>{data.title}</h2>
         <div className="notice-detail__dates">{data.published_at ? <span>Published {formatDate(data.published_at)}</span> : <span>Created {formatDate(data.created_at)}</span>}{data.due_at ? <span><Clock3 size={14} />Respond by {formatDate(data.due_at)}</span> : null}</div>
       </header>
       {data.status === "cancelled" ? <div className="notice-cancelled"><FileWarning size={18} /><span><b>Cancelled</b>{data.cancellation_reason}</span></div> : null}

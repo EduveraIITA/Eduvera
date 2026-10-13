@@ -82,6 +82,48 @@ export class AssessmentsService {
     await db.insertInto("assessment_audits").values({ school_id: schoolId, assessment_id: assessmentId, actor_id: user.id, action, from_status: fromStatus, to_status: toStatus, metadata }).execute();
   }
 
+  private async validateClassTestSchedule(db:Db,input:{school_id:string;class_section_id:string;subject_id:string;scheduled_at:Date|string|null;duration_minutes:number|null},excludeAssessmentId?:string){
+    if(!input.scheduled_at||!input.duration_minutes) throw new BadRequestException("A class test needs a date, start time and duration.");
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assessment-class-test:${input.school_id}:${input.class_section_id}`},0))`.execute(db);
+    const context=(await sql<{school_date:string;test_date:string;same_day:boolean;instructional:boolean;fits_subject_period:boolean}>`
+      SELECT (now() AT TIME ZONE school.timezone)::date::text AS school_date,
+        (${input.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date::text AS test_date,
+        ((${input.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date =
+          ((${input.scheduled_at}::timestamptz + make_interval(mins=>${input.duration_minutes})) AT TIME ZONE school.timezone)::date) AS same_day,
+        COALESCE((SELECT day.is_instructional FROM school_calendar_days day
+          WHERE day.school_id=school.id AND day.date=(${input.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date),
+          EXISTS(SELECT 1 FROM effective_school_schedule(school.id,(${input.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date) schedule
+            WHERE schedule.class_section_id=${input.class_section_id}::uuid AND NOT schedule.cancelled)) AS instructional,
+        EXISTS(SELECT 1 FROM effective_school_schedule(school.id,(${input.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date) schedule
+          WHERE schedule.class_section_id=${input.class_section_id}::uuid AND schedule.subject_id=${input.subject_id}::uuid
+            AND schedule.slot_type='class' AND NOT schedule.cancelled
+            AND (${input.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::time>=schedule.starts_at
+            AND ((${input.scheduled_at}::timestamptz + make_interval(mins=>${input.duration_minutes})) AT TIME ZONE school.timezone)::time<=schedule.ends_at) AS fits_subject_period
+      FROM schools school WHERE school.id=${input.school_id}::uuid
+    `.execute(db)).rows[0];
+    if(!context?.same_day) throw new BadRequestException("A class test must start and finish on one school day.");
+    if(context.test_date<=context.school_date) throw new BadRequestException("A class test must be scheduled for a future school day.");
+    if(!context.instructional) throw new BadRequestException("Choose an instructional school day for this class test.");
+    if(!context.fits_subject_period) throw new BadRequestException("The class test must fit within an effective period for the selected subject.");
+    const clash=(await sql<{id:string}>`
+      SELECT candidate.id FROM assessments candidate
+      WHERE candidate.school_id=${input.school_id}::uuid AND candidate.class_section_id=${input.class_section_id}::uuid
+        AND candidate.status IN ('scheduled','marking','submitted','moderated','published')
+        AND candidate.scheduled_at<(${input.scheduled_at}::timestamptz + make_interval(mins=>${input.duration_minutes}))
+        AND (candidate.scheduled_at + make_interval(mins=>COALESCE(candidate.duration_minutes,1)))>${input.scheduled_at}::timestamptz
+        AND (${excludeAssessmentId??null}::uuid IS NULL OR candidate.id<>${excludeAssessmentId??null}::uuid)
+      UNION ALL
+      SELECT event.id FROM campus_events event
+      WHERE event.school_id=${input.school_id}::uuid AND event.status='published'
+        AND (event.audience_mode='school' OR EXISTS(SELECT 1 FROM campus_event_class_sections audience
+          WHERE audience.event_id=event.id AND audience.class_section_id=${input.class_section_id}::uuid))
+        AND event.starts_at<(${input.scheduled_at}::timestamptz + make_interval(mins=>${input.duration_minutes}))
+        AND event.ends_at>${input.scheduled_at}::timestamptz
+      LIMIT 1
+    `.execute(db)).rows[0];
+    if(clash) throw new ConflictException("This class already has another scheduled assessment or published event in that time window.");
+  }
+
   private async eventAudience(db: Db, schoolId: string, assessmentId: string, includeFamily: boolean) {
     const staff = (await sql<{ user_id: string }>`
       SELECT membership.user_id FROM school_memberships membership
@@ -158,7 +200,51 @@ export class AssessmentsService {
       WHERE assessment.school_id=${schoolId}::uuid AND (${admin} OR EXISTS(SELECT 1 FROM assessment_staff_assignments mine WHERE mine.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid))
       GROUP BY assessment.id,cycle.name,subject.name,subject.color,subject.icon,section.grade,section.section,examiner.user_id,examiner_user.first_name,examiner_user.last_name,moderator.user_id,moderator_user.first_name,moderator_user.last_name
       ORDER BY assessment.scheduled_at NULLS LAST,assessment.created_at DESC`.execute(this.db);
-    if (!admin) return { mode: "staff", cycles: cycles.rows, assessments: assessments.rows };
+    if (!admin) {
+      const classes = (await sql<{ id:string; name:string; academic_year:string }>`
+        SELECT DISTINCT section.id,'Class '||section.grade||section.section AS name,section.academic_year
+        FROM class_sections section
+        JOIN staff_role_bindings binding ON binding.school_id=section.school_id
+          AND binding.context_kind='class' AND binding.scope_id=section.id
+        WHERE section.school_id=${schoolId}::uuid AND binding.user_id=${user.id}::uuid
+          AND binding.status='active' AND binding.role_active
+          AND 'assessments.mark'=ANY(binding.permissions)
+          AND current_date BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
+        ORDER BY section.academic_year DESC,name,section.id
+      `.execute(this.db)).rows;
+      if (!classes.length) return { mode: "staff", can_plan_class_test: false, planner_user_id: user.id, cycles: cycles.rows, assessments: assessments.rows };
+      const subjects = (await sql<{ id:string; name:string; color:string; icon:string; class_section_ids:string[] }>`
+        SELECT subject.id,subject.name,subject.color,subject.icon,
+          array_agg(DISTINCT binding.scope_id ORDER BY binding.scope_id) AS class_section_ids
+        FROM subjects subject
+        JOIN staff_role_bindings binding ON binding.school_id=subject.school_id
+          AND binding.context_kind='class' AND binding.user_id=${user.id}::uuid
+          AND binding.status='active' AND binding.role_active
+          AND 'assessments.mark'=ANY(binding.permissions)
+          AND (binding.subject_id IS NULL OR binding.subject_id=subject.id)
+          AND current_date BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
+        WHERE subject.school_id=${schoolId}::uuid
+          AND (binding.subject_id IS NOT NULL OR EXISTS(
+            SELECT 1 FROM timetable_slots slot
+            WHERE slot.class_section_id=binding.scope_id AND slot.subject_id=subject.id
+          ))
+        GROUP BY subject.id,subject.name,subject.color,subject.icon
+        ORDER BY subject.name,subject.id
+      `.execute(this.db)).rows;
+      const reviewers = (await sql<{ id:string; first_name:string; last_name:string; designation:string|null }>`
+        SELECT DISTINCT account.id,account.first_name,account.last_name,profile.designation
+        FROM school_memberships membership
+        JOIN users account ON account.id=membership.user_id AND account.is_active
+        LEFT JOIN staff_profiles profile ON profile.school_id=membership.school_id AND profile.user_id=membership.user_id
+        WHERE membership.school_id=${schoolId}::uuid AND membership.role='admin' AND membership.is_active
+        ORDER BY account.first_name,account.last_name,account.id
+      `.execute(this.db)).rows;
+      return {
+        mode: "staff", can_plan_class_test: Boolean(subjects.length && reviewers.length), planner_user_id: user.id,
+        cycles: cycles.rows, assessments: assessments.rows,
+        references: { classes, subjects, staff: reviewers },
+      };
+    }
     const terms = await sql`SELECT id,name,academic_year,starts_on,ends_on FROM academic_terms WHERE school_id=${schoolId}::uuid AND is_active ORDER BY starts_on DESC`.execute(this.db);
     const classes = await sql`SELECT id,'Class '||grade||section AS name,academic_year FROM class_sections WHERE school_id=${schoolId}::uuid ORDER BY academic_year DESC,grade,section`.execute(this.db);
     const subjects = await sql`SELECT id,name,color,icon FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(this.db);
@@ -218,13 +304,40 @@ export class AssessmentsService {
   }
 
   async createAssessment(user: AuthUser, schoolId: string, body: unknown) {
-    await this.principal(user,schoolId);
     const data=assessmentInput.parse(body);
     if(data.examiner_user_id===data.moderator_user_id) throw new BadRequestException("Examiner and moderator must be different people.");
     return this.db.transaction().execute(async(db)=>{
-      await this.principal(user,schoolId,db);
+      const membership=await db.selectFrom("school_memberships").select("role").where("school_id","=",schoolId).where("user_id","=",user.id).where("is_active","=",true).where("role","in",["admin","staff"]).executeTakeFirst();
+      if(!membership) throw new ForbiddenException("Active school staff access is required.");
+      const staffPlan=membership.role==="staff";
+      if(staffPlan){
+        if(data.assessment_kind!=="class_test") throw new ForbiddenException("Teachers may plan class tests only.");
+        if(data.examiner_user_id!==user.id) throw new ForbiddenException("A teacher-planned class test must keep the teacher as examiner.");
+        if(!data.scheduled_at) throw new BadRequestException("Choose the class test date and time.");
+        const allowed=(await sql<{allowed:boolean}>`SELECT EXISTS(
+          SELECT 1 FROM staff_role_bindings binding
+          JOIN schools school ON school.id=binding.school_id
+          WHERE binding.school_id=${schoolId}::uuid AND binding.user_id=${user.id}::uuid
+            AND binding.context_kind='class' AND binding.scope_id=${data.class_section_id}::uuid
+            AND binding.status='active' AND binding.role_active AND 'assessments.mark'=ANY(binding.permissions)
+            AND (binding.subject_id IS NULL OR binding.subject_id=${data.subject_id}::uuid)
+            AND (${data.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date
+              BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
+            AND (binding.subject_id IS NOT NULL OR EXISTS(
+              SELECT 1 FROM timetable_slots slot
+              WHERE slot.class_section_id=binding.scope_id AND slot.subject_id=${data.subject_id}::uuid
+            ))
+        ) AS allowed`.execute(db)).rows[0]?.allowed;
+        if(!allowed) throw new ForbiddenException("This class test is outside your assigned class, subject or dates.");
+        const reviewer=await db.selectFrom("school_memberships").select("id").where("school_id","=",schoolId).where("user_id","=",data.moderator_user_id).where("role","=","admin").where("is_active","=",true).executeTakeFirst();
+        if(!reviewer) throw new BadRequestException("Choose an active school administrator as the independent reviewer.");
+      }
       const cycle=await db.selectFrom("assessment_cycles").selectAll().where("id","=",data.cycle_id).where("school_id","=",schoolId).executeTakeFirst();
       if(!cycle) throw new BadRequestException("Choose an assessment cycle in this institution.");
+      if(staffPlan&&data.scheduled_at){
+        const scheduledDate=(await sql<{date:string}>`SELECT (${data.scheduled_at}::timestamptz AT TIME ZONE school.timezone)::date::text AS date FROM schools school WHERE school.id=${schoolId}::uuid`.execute(db)).rows[0]?.date;
+        if(!scheduledDate||scheduledDate<cycle.starts_on||scheduledDate>cycle.ends_on) throw new BadRequestException("Choose a date inside the selected assessment cycle.");
+      }
       const classRow=await db.selectFrom("class_sections").select("id").where("id","=",data.class_section_id).where("school_id","=",schoolId).executeTakeFirst();
       const subject=await db.selectFrom("subjects").select("id").where("id","=",data.subject_id).where("school_id","=",schoolId).executeTakeFirst();
       if(!classRow||!subject) throw new BadRequestException("Choose a class and subject in this institution.");
@@ -253,7 +366,7 @@ export class AssessmentsService {
       const allowed:Record<string,string[]>={schedule:["draft"],"open-marking":["scheduled"],submit:["marking"],approve:["submitted"],return:["submitted"],publish:["moderated"],cancel:["draft","scheduled","marking"]};
       if(!allowed[action]!.includes(current.status)) throw new ConflictException(`This action is not available while the assessment is ${current.status}.`);
       let next=current.status as string;
-      if(action==="schedule"){ if(!current.scheduled_at) throw new BadRequestException("Add the assessment date before scheduling."); next="scheduled"; }
+      if(action==="schedule"){ if(!current.scheduled_at) throw new BadRequestException("Add the assessment date before scheduling."); if(current.assessment_kind==="class_test")await this.validateClassTestSchedule(db,current,current.id); next="scheduled"; }
       if(action==="open-marking"){
         const cycle=await db.selectFrom("assessment_cycles").select("term_id").where("id","=",current.cycle_id).executeTakeFirstOrThrow();
         await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id)

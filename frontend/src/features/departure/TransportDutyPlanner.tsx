@@ -11,6 +11,7 @@ import {
   type TransportTrip,
 } from "./api";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 const indiaToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
 const read=(form:FormData,key:string)=>{const value=form.get(key);return typeof value==="string"?value.trim():"";};
 const iso=(value:Date)=>`${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,"0")}-${String(value.getDate()).padStart(2,"0")}`;
@@ -67,12 +68,12 @@ export function TransportDutyPlanner({schoolId,data,focusSwapId,focusTripId}:{sc
       <label>Schedule name<input name="label" placeholder="South route afternoon" minLength={2} required/></label>
       <label>Route<select name="route_id" required>{data.routes.map(route=><option value={route.id} key={route.id}>{route.name}</option>)}</select></label>
       <label>Direction<select name="direction"><option value="from_institution">From institution</option><option value="to_institution">To institution</option></select></label>
-      <label>Departure time<input name="departure_time" type="time" defaultValue="15:30" required/></label>
+      <label>Departure time<TemporalInput name="departure_time" type="time" defaultValue="15:30" required/></label>
       <fieldset className="departure-mode-options departure-span"><legend>Operating days</legend>{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day,index)=><label key={day}><input type="checkbox" name="weekdays" value={index+1} defaultChecked={index<6}/>{day}</label>)}</fieldset>
       <label>Primary collector<select name="primary" required>{data.collectors.map(person=><option value={person.id} key={person.id}>{person.name}</option>)}</select></label>
       <label>Backup collector<select name="backup"><option value="">No backup</option>{data.collectors.map(person=><option value={person.id} key={person.id}>{person.name}</option>)}</select></label>
-      <label>Starts<input name="valid_from" type="date" defaultValue={indiaToday()} required/></label>
-      <label>Ends<input name="valid_until" type="date" min={indiaToday()}/></label>
+      <label>Starts<TemporalInput name="valid_from" type="date" defaultValue={indiaToday()} required/></label>
+      <label>Ends<TemporalInput name="valid_until" type="date" min={indiaToday()}/></label>
       <div className="departure-form-actions"><button type="button" onClick={()=>setShowPattern(false)}>Cancel</button><button className="departure-primary" disabled={run.isPending}>Save schedule</button></div>
     </form>:null}
 

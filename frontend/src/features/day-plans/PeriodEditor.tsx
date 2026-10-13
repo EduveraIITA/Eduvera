@@ -5,6 +5,7 @@ import {
   type PeriodInput,
   type PlanOptions,
 } from "./api";
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export function PeriodEditor({
   period,
   teachers,
@@ -136,7 +137,7 @@ export function PeriodEditor({
           </label>
           <label>
             Starts at
-            <input
+            <TemporalInput
               required
               type="time"
               value={value.starts_at}
@@ -147,7 +148,7 @@ export function PeriodEditor({
           </label>
           <label>
             Ends at
-            <input
+            <TemporalInput
               required
               type="time"
               value={value.ends_at}

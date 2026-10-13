@@ -5,6 +5,7 @@ import { DateGrid, type DateDayInfo } from './DateGrid';
 import { longDateLabel, monthDateLabel, shortDateLabel, shiftDatePeriod, type DateView } from './dateMath';
 import './date-navigation.css';
 
+import { TemporalInput } from "../forms/TemporalInput";
 export function DateViewSelect<T extends DateView>({ value, onChange, label, options }: {
   value: T; onChange: (view: T) => void; label: string; options: readonly T[];
 }) {
@@ -39,7 +40,7 @@ export function DateNavigation({ date, view, onDateChange, onViewChange, onToday
     <div className="date-navigation__toolbar">
       <label className="date-navigation__heading">
         <span aria-hidden="true">{headingLabel}</span><ChevronDown size={16} aria-hidden="true" />
-        <input ref={dateInput} className="date-navigation__input" type="date" aria-label="Choose date" value={date} onChange={event => { if (event.target.value) onDateChange(event.target.value); }} />
+        <TemporalInput ref={dateInput} className="date-navigation__input" type="date" aria-label="Choose date" value={date} onChange={event => { if (event.target.value) onDateChange(event.target.value); }} />
       </label>
       <div className="date-navigation__actions">
         {date !== today ? <button type="button" aria-label={`Go to today, ${longDateLabel(today)}`} onClick={goToday}>Today</button> : null}

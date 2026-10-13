@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { respondCoverage, type DayPeriod } from "./api";
+import { TemporalInput } from "../../components/forms/TemporalInput";
 export function CoverageResponse({
   schoolId,
   period,
@@ -136,7 +137,7 @@ export function CoverageResponse({
               </label>
               <label>
                 Received at
-                <input
+                <TemporalInput
                   type="datetime-local"
                   step="1"
                   required

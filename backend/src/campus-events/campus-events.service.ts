@@ -1107,19 +1107,15 @@ export class CampusEventsService {
 
   async create(req: AuthenticatedRequest, body: unknown) {
     const input = createEventSchema.parse(body), requestHash = hash({ operation: "create", input });
+    if (input.event_type === "class_test") {
+      throw new BadRequestException("Plan class tests in Assessments so scheduling, marking and moderation stay in one record.");
+    }
     return this.db.transaction().execute(async (db) => {
       const role = await this.membership(db, req.authUser, input.school_id, true);
-      if (role !== "admin" && !(role === "staff" && input.event_type === "class_test")) {
-        throw new ForbiddenException("Only administrators may create this kind of event.");
-      }
+      if (role !== "admin") throw new ForbiddenException("Only administrators may create campus events.");
       const prior = await this.priorCommand<CampusEventDto>(db, input.school_id, req.authUser.id, input.idempotency_key, "create", requestHash);
       if (prior) return prior;
-      // A teacher cannot turn a class-test draft into a general staff-access
-      // grant. Duties for teacher-managed tests are derived from explicit
-      // class/subject authority below.
-      const definition = role === "staff" && input.event_type === "class_test"
-        ? { ...input, staff: [] }
-        : input;
+      const definition = input;
       await this.validateRelations(db, definition, req.authUser);
       const event = (await sql<EventRow>`
         INSERT INTO campus_events(school_id,event_type,subject_id,title,description,venue,starts_at,ends_at,audience_mode,

@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from "react";
+import { TemporalInput } from "../../components/forms/TemporalInput";
 import {searchGuardians,type GuardianChoice} from "./api";
 import {updateImportRow,type ImportDetail,type ImportRow,type ImportValues} from "./import-api";
 const labels:Record<keyof ImportValues,string>={admission_number:"Admission number",first_name:"Student first name",last_name:"Student last name",date_of_birth:"Date of birth",class:"Class",roll_number:"Roll number",enrolled_on:"Enrolled from",guardian_key:"Family reference",guardian_first_name:"Guardian first name",guardian_last_name:"Guardian last name",guardian_phone:"Guardian phone",guardian_email:"Guardian email",relationship:"Relationship"};
@@ -9,7 +10,7 @@ export function ImportRowEditor({schoolId,job,row,onClose,onSaved}:{schoolId:str
   useEffect(()=>{heading.current?.focus();},[]);
   async function find(){setError("");setSearching(true);try{setChoices((await searchGuardians(schoolId,search)).results);setSearched(true);}catch(e){setError(e instanceof Error?e.message:"Guardian search failed.");}finally{setSearching(false);}}
   async function save(){if(busy||stale)return;setBusy(true);setError("");try{await updateImportRow(job.id,row.row_number,{school_id:schoolId,expected_revision:revision,values,decision,guardian_choice:choice});await onSaved();onClose();}catch(e){setError(e instanceof Error?e.message:"Could not save this row.");}finally{setBusy(false);}}
-  const field=(key:keyof ImportValues,type="text")=><label key={key}>{labels[key]}<input type={type} value={values[key]} maxLength={500} onChange={e=>setValues(v=>({...v,[key]:e.target.value}))}/></label>;
+  const field=(key:keyof ImportValues,type="text")=><label key={key}>{labels[key]}{type === "date" ? <TemporalInput type="date" value={values[key]} onChange={e=>setValues(v=>({...v,[key]:e.target.value}))}/> : <input type={type} value={values[key]} maxLength={500} onChange={e=>setValues(v=>({...v,[key]:e.target.value}))}/>}</label>;
   return <section className="people-panel import-editor" aria-labelledby="import-row-title"><header className="people-heading"><div><h2 ref={heading} tabIndex={-1} id="import-row-title">Review row {row.row_number}</h2><p className="people-muted">{row.values.first_name} {row.values.last_name} · {row.values.admission_number}</p></div><button className="people-secondary" disabled={busy} onClick={onClose}>Cancel edit</button></header>
     {error?<p role="alert" className="people-error">{error}</p>:null}
     {stale?<p role="alert" className="people-error">The draft changed while you were editing. Cancel this edit and open the latest row before saving.</p>:null}

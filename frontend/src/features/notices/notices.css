@@ -56,7 +56,7 @@
 .notice-priority--urgent { color: var(--edura-danger); }
 .notice-priority--high { color: var(--edura-warning); }
 .notice-priority--normal { color: var(--edura-brand); }
-.notice-detail__header h1 { margin: 11px 0 8px; font-size: clamp(21px,5vw,28px); line-height: 1.16; letter-spacing: -.035em; }
+.notice-detail__header h2 { margin: 11px 0 8px; font-size: clamp(21px,5vw,28px); line-height: 1.16; letter-spacing: -.035em; }
 .notice-detail__dates { display: flex; flex-wrap: wrap; gap: 8px 15px; color: var(--edura-ink-muted); font-size: 11px; }
 .notice-detail__dates span { display: inline-flex; align-items: center; gap: 5px; }
 .notice-detail__body { padding: 20px 22px 23px; border-top: 1px solid var(--edura-border); color: var(--edura-ink-secondary); font-size: 14px; line-height: 1.65; }

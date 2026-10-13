@@ -202,6 +202,7 @@ def build_comparison_sheet(roster: list[dict], faces: list[dict]) -> tuple[bytes
 
 
 class OllamaVisionAttendance:
+    provider = 'ollama'
     def __init__(self, cfg: Settings):
         self.url = cfg.ollama_url.rstrip('/')
         self.model = cfg.ollama_model
@@ -284,3 +285,114 @@ class OllamaVisionAttendance:
                     {'role':'user','content':'Correct the response. Return only the required JSON object, one row for every roster ID. Use an empty class_face_id unless status is present.'},
                 ])
         raise AssertionError('unreachable')
+
+
+class VertexGeminiVisionAttendance:
+    """Keyless Vertex multimodal adapter with structured, review-only output."""
+
+    provider = 'vertex'
+
+    def __init__(self, cfg: Settings, client=None):
+        self.model = cfg.gemini_model
+        self.project = cfg.gemini_project
+        self.location = cfg.gemini_location
+        self.timeout = cfg.gemini_timeout_seconds
+        if client is None:
+            from google import genai
+            from google.genai import types
+            self._types = types
+            self._client = genai.Client(
+                vertexai=True,
+                project=self.project,
+                location=self.location,
+                http_options=types.HttpOptions(
+                    api_version='v1',
+                    timeout=self.timeout * 1000,
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                ),
+            )
+        else:
+            self._client = client
+            self._types = None
+
+    def status(self) -> dict:
+        return {
+            'available': True,
+            'installed': True,
+            'supports_images': True,
+            'provider': self.provider,
+            'model': self.model,
+        }
+
+    def analyze(self, image: bytes, roster_ids: list[str], face_ids: list[str]):
+        prompt = (
+            'You are assisting a teacher with a reviewed attendance comparison. The left panel contains '
+            'authorized enrollment reference photos labelled R001, R002, and so on. The right panel contains '
+            "faces detected in today's classroom photo labelled C001, C002, and so on. Match facial identity "
+            'only. Names and roll numbers are labels, not evidence. Use each C label at most once. Mark present '
+            'only for a clear identity match; use uncertain for a possible match and not_seen when no reasonable '
+            'candidate is visible. Do not infer absence. Return one row for every roster label. For uncertain or '
+            'not_seen, class_face_id must be an empty string. Confidence is a 0 to 1 visual-match score, not a '
+            f'calibrated probability. Roster labels: {", ".join(roster_ids)}. Face labels: {", ".join(face_ids)}.'
+        )
+        started = time.perf_counter()
+        try:
+            if self._types is None:
+                response = self._client.models.generate_content(
+                    model=self.model,
+                    contents=[prompt, image],
+                    config={
+                        'temperature': 0,
+                        'max_output_tokens': 8192,
+                        'response_mime_type': 'application/json',
+                        'response_json_schema': OLLAMA_ATTENDANCE_SCHEMA,
+                    },
+                )
+            else:
+                response = self._client.models.generate_content(
+                    model=self.model,
+                    contents=[
+                        prompt,
+                        self._types.Part.from_bytes(data=image, mime_type='image/jpeg'),
+                    ],
+                    config=self._types.GenerateContentConfig(
+                        temperature=0,
+                        max_output_tokens=8192,
+                        response_mime_type='application/json',
+                        response_json_schema=OLLAMA_ATTENDANCE_SCHEMA,
+                    ),
+                )
+            raw = getattr(response, 'text', None)
+            return parse_attendance_content(raw, roster_ids, face_ids), round(time.perf_counter()-started, 3)
+        except (ValueError, ValidationError, json.JSONDecodeError):
+            fallback = manual_review_response(
+                roster_ids,
+                'Gemini output could not be safely mapped; teacher review required.',
+            )
+            return fallback, round(time.perf_counter()-started, 3)
+
+
+class DisabledVisionAttendance:
+    provider = 'disabled'
+    model = 'disabled'
+
+    def status(self):
+        return {
+            'available': False,
+            'installed': False,
+            'supports_images': False,
+            'provider': self.provider,
+            'model': self.model,
+            'detail': 'Multimodal attendance assistance is disabled.',
+        }
+
+    def analyze(self, _image, _roster_ids, _face_ids):
+        raise RuntimeError('Multimodal attendance assistance is disabled.')
+
+
+def create_multimodal_attendance(cfg: Settings):
+    if cfg.multimodal_provider == 'vertex':
+        return VertexGeminiVisionAttendance(cfg)
+    if cfg.multimodal_provider == 'disabled':
+        return DisabledVisionAttendance()
+    return OllamaVisionAttendance(cfg)

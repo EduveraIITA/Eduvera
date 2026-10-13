@@ -9,3 +9,5 @@ opencv-python-headless==4.13.0.92
 Pillow==12.3.0
 pillow-heif==1.7.0
 cryptography==46.0.4
+google-genai==1.63.0
+psycopg[binary]==3.3.3

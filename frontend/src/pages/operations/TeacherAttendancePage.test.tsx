@@ -151,6 +151,18 @@ describe("teacher attendance register lifecycle", () => {
     expect(screen.getByRole("button", { name: "Submit register" })).toBeDisabled();
     expect(within(screen.getByRole("article", { name: "Aarav Sharma" })).getByRole("button", { name: "Present" })).toBeEnabled();
   });
+  it("shows scheduled finalization without asking the principal to finalize again", () => {
+    const data = attendanceData(["present", "present"], {
+      state: "submitted", revision: 2, submitted_by: "teacher-1",
+      submitted_at: "2026-09-12T09:00:00.000Z", submitted_by_name: "Kavita Mehta",
+      locked_by: null, locked_at: null, auto_finalize_at: "2026-09-12T09:30:00.000Z",
+    });
+    renderRegister({ portal: "principal", data, onLock: vi.fn(), onUnlock: vi.fn() });
+    expect(screen.getByText("Finalization scheduled")).toBeVisible();
+    expect(screen.getByText(/Finalizes automatically/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Finalize register" })).not.toBeInTheDocument();
+    expect(screen.getByText("Submitted · Finalization scheduled")).toBeVisible();
+  });
   it("fills remaining marks without overwriting an existing absence", async () => {
     const interact = userEvent.setup();
     renderRegister({ data: attendanceData(["absent", null]) });
@@ -338,7 +350,7 @@ describe("teacher attendance register lifecycle", () => {
     expect(screen.getByText(/Your local choices are still selected/)).toBeVisible();
   });
 
-  it("requires a reason before a principal unlocks a finalized register", async () => {
+  it("requires a reason before a principal reopens a final register", async () => {
     const interact = userEvent.setup();
     const locked = attendanceData(["present", "present"], {
       state: "locked",
@@ -394,15 +406,15 @@ describe("teacher attendance register lifecycle", () => {
     expect(await screen.findByText("1 student record changed")).toBeVisible();
     expect(onLoadHistory).toHaveBeenCalledTimes(1);
     await interact.click(screen.getByRole("button", { name: "Hide history" }));
-    await interact.click(screen.getByRole("button", { name: "Unlock register" }));
+    await interact.click(screen.getByRole("button", { name: "Reopen for correction" }));
     const reason = screen.getByLabelText("Reason");
-    const confirm = screen.getAllByRole("button", { name: "Unlock register" })[1]!;
+    const confirm = screen.getByRole("button", { name: "Reopen register" });
     expect(confirm).toBeDisabled();
     await interact.type(reason, "Parent supplied approved medical documentation");
     await interact.click(confirm);
 
     await waitFor(() => expect(onUnlock).toHaveBeenCalledWith("Parent supplied approved medical documentation"));
-    expect(await screen.findByText("Register unlocked for correction.")).toBeVisible();
+    expect(await screen.findByText("Register reopened for correction.")).toBeVisible();
   });
 
   it("reloads an open principal audit trail when a live register revision arrives", async () => {

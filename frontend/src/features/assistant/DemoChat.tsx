@@ -13,8 +13,8 @@ import './assistant.css';
 
 export function AssistantTab({chat,className='',sidebar=false}:{chat:DemoChatControl;className?:string;sidebar?:boolean}) {
   return <button type="button" className={'assistant-tab '+(sidebar?'assistant-tab--sidebar ':'')+className+(chat.active?' is-active':'')}
-    aria-label="Chat" aria-current={chat.fullPage?'page':undefined} aria-expanded={chat.fullPage?undefined:chat.open} aria-controls={chat.open?chat.id:undefined} onClick={chat.toggle}>
-    <MessageCircle size={22} strokeWidth={chat.active?2.25:1.9} aria-hidden="true"/><span>Chat</span>
+    aria-label="Assistant" aria-current={chat.fullPage?'page':undefined} aria-expanded={chat.fullPage?undefined:chat.open} aria-controls={chat.open?chat.id:undefined} onClick={chat.toggle}>
+    <MessageCircle size={22} strokeWidth={chat.active?2.25:1.9} aria-hidden="true"/><span>Assistant</span>
   </button>;
 }
 export function AssistantPanel({chat,context}:{chat:DemoChatControl;context:AssistantContext}) {
@@ -44,12 +44,12 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
   const approval=latest?.action?.status==='pending'?latest.action:null;
   const sourceTitle=chart?/attendance/i.test(chart.title)?'View attendance':/(?:result|score)/i.test(chart.title)?'View results':'View details':source?.title;
   return <><div className="assistant-backdrop" aria-hidden="true" onClick={chat.close}/>
-    <section id={chat.id} ref={panel} className="assistant-dock" tabIndex={-1} aria-label="AI chat">
+    <section id={chat.id} ref={panel} className="assistant-dock" tabIndex={-1} aria-label="Assistant">
       {approval?<ActionReviewNotice action={approval} to={fullPath} state={returnState} onClose={chat.close} onOpen={event=>navigate.fromLink(event,fullPath,{state:returnState})}/>:<div className="assistant-response">
-        <header aria-label="Chat controls">
+        <header aria-label="Assistant controls">
           <div className="assistant-response__controls">
-            <Link className="assistant-expand" to={fullPath} state={returnState} aria-label="Open full chat" onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}><Maximize2 size={16} aria-hidden="true"/></Link>
-            <button type="button" aria-label="Close chat" onClick={chat.close}><X size={18} aria-hidden="true"/></button>
+            <Link className="assistant-expand" to={fullPath} state={returnState} aria-label="Open Assistant" onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}><Maximize2 size={16} aria-hidden="true"/></Link>
+            <button type="button" aria-label="Close Assistant" onClick={chat.close}><X size={18} aria-hidden="true"/></button>
           </div>
         </header>
         <div className="assistant-response__body" aria-live="polite" aria-atomic="true" aria-busy={conversation.pending}>

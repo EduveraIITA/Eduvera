@@ -62,7 +62,7 @@ export function OperationsEventListPage({
         </section> : null}
         <div className="workspace-list-toolbar">
           <select aria-label="Filter events" value={view} onChange={event=>onViewChange(event.target.value as EventView)}><option value="upcoming">Upcoming · {upcoming}</option><option value="draft">Drafts · {drafts}</option><option value="past">Past · {eventsForView(events,"past",now).length}</option></select>
-          <Link className="workspace-add-link" aria-label={portal === "principal" ? "Create event" : "Schedule class test"} to={`${prefix}/events/new${childContext}`}><Plus size={18}/>{portal === "principal" ? "New event" : "Class test"}</Link>
+          {portal === "principal" ? <Link className="workspace-add-link" aria-label="Create event" to={`${prefix}/events/new${childContext}`}><Plus size={18}/>New event</Link> : <Link className="workspace-add-link" aria-label="Plan class test" to="/teacher/assessments?create=class-test"><Plus size={18}/>Class test</Link>}
         </div>
         <section className="campus-event-collection" aria-label="Events">
           {visible.length ? (

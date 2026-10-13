@@ -21,8 +21,10 @@ jobs:
       GCP_PROJECT_ID: eduera-511111
       GCP_REGION: asia-south1
       GCP_SERVICE: eduvera-stage
+      GCP_PHOTO_SERVICE: eduvera-stage-photo
       GCP_MIGRATION_JOB: eduvera-stage-migrate
       GCP_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/web
+      GCP_PHOTO_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance
       GCP_STAGE_DEPLOY_ENABLED: ${{ vars.GCP_STAGE_DEPLOY_ENABLED }}
       GCP_TRIAL_DEPLOY_UNTIL: ${{ vars.GCP_TRIAL_DEPLOY_UNTIL }}
     steps:
@@ -32,7 +34,9 @@ jobs:
       - name: Check target and trial deployment window
         run: node deploy/gcp/release.mjs guard
       - name: Build the tested release on GitHub (no Cloud Build charge)
-        run: docker build --platform linux/amd64 --file backend/Dockerfile --tag "$GCP_IMAGE:$GITHUB_SHA" .
+        run: |
+          docker build --platform linux/amd64 --file backend/Dockerfile --tag "$GCP_IMAGE:$GITHUB_SHA" .
+          docker build --platform linux/amd64 --file services/photo-attendance/Dockerfile --tag "$GCP_PHOTO_IMAGE:$GITHUB_SHA" services/photo-attendance
       # Authenticate after the build so a long build cannot expire the OIDC token.
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
@@ -45,6 +49,7 @@ jobs:
           gcloud artifacts repositories describe eduera --location="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)'
           gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
           docker push "$GCP_IMAGE:$GITHUB_SHA"
+          docker push "$GCP_PHOTO_IMAGE:$GITHUB_SHA"
       - name: Migrate, verify candidate, promote and verify public service
         if: vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
         run: node deploy/gcp/release.mjs deploy

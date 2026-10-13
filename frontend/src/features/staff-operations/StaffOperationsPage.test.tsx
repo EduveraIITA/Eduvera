@@ -169,12 +169,11 @@ describe("StaffOperationsPage", () => {
     expect(screen.getByRole("heading",{name:"Leave cover"})).toBeVisible();
     await user.click(screen.getByLabelText("Automatic fallback"));
     await user.selectOptions(screen.getByLabelText(/Fallback plan/),"physical_activity");
-    await user.clear(screen.getByLabelText(/Staff label/));
-    await user.type(screen.getByLabelText(/Staff label/),"Games period");
+    expect(screen.queryByLabelText(/Staff label/)).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText(/Responsible team/),profile.id);
     await user.click(screen.getByRole("button",{name:"Save changes"}));
     await waitFor(()=>expect(saveCoveragePolicy).toHaveBeenCalledWith("school-1",expect.objectContaining({
-      enabled:true,deadline_minutes_before:30,fallback_kind:"physical_activity",fallback_label:"Games period",
+      enabled:true,deadline_minutes_before:30,fallback_kind:"physical_activity",fallback_label:"Games / physical activity",
       supervisor_staff_profile_id:profile.id,expected_revision:1,
     })));
   });

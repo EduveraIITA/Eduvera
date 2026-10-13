@@ -10,14 +10,14 @@ from .schemas import MatchConfig
 from .matching import similarity_matrix, assign
 from .vision import OpenCVBackend, SCRFDArcFaceBackend, decode_image, detect_tiled, quality, crop_face, jpeg_thumbnail
 from .store import Store
-from .llm import OllamaVisionAttendance, build_comparison_sheet, is_multimodal_unsupported_error
+from .llm import build_comparison_sheet, create_multimodal_attendance, is_multimodal_unsupported_error
 
 class BusyError(RuntimeError): pass
 
 class AttendanceService:
     def __init__(self, cfg: Settings, store: Store, backend=None, llm_client=None):
         self.cfg,self.store,self._backend=cfg,store,backend
-        self.llm=llm_client or OllamaVisionAttendance(cfg)
+        self.llm=llm_client or create_multimodal_attendance(cfg)
         self.lock=threading.Lock()
 
     @property
@@ -121,13 +121,13 @@ class AttendanceService:
                 status=self.llm.status()
                 if not status.get('available'):
                     llm_enabled=False
-                    llm_warnings.append(status.get('detail','Local AI cross-check is unavailable. Using face matching only.'))
+                    llm_warnings.append(status.get('detail','Multimodal cross-check is unavailable. Using face matching only.'))
                 elif not status.get('installed'):
                     llm_enabled=False
-                    llm_warnings.append(f'Local vision model {status["model"]} is not installed. Using face matching only.')
+                    llm_warnings.append(f'Vision model {status["model"]} is not available. Using face matching only.')
                 elif status.get('supports_images') is False:
                     llm_enabled=False
-                    llm_warnings.append(status.get('detail',f'The local model {status["model"]} cannot analyze images. Using face matching only.'))
+                    llm_warnings.append(status.get('detail',f'The model {status["model"]} cannot analyze images. Using face matching only.'))
             image=decode_image(data,self.cfg)
             faces,calls=detect_tiled(image,backend,self.cfg)
             quality_reports=[quality(image,f,cfg) for f in faces]
@@ -156,20 +156,21 @@ class AttendanceService:
             analysis_mode='face_embeddings'
             if llm_enabled:
                 try:
+                    self.store.reserve_multimodal(self.llm.model)
                     proposal_ids,automatic_assignments,llm_result,new_warnings=self._llm_proposals(
                         class_id,backend.model_id,roster,records)
                     llm_warnings.extend(new_warnings)
-                    analysis_mode='local_llm'
+                    analysis_mode='vertex_gemini' if getattr(self.llm,'provider','ollama') == 'vertex' else 'local_llm'
                 except Exception as exc:
                     if is_multimodal_unsupported_error(exc):
-                        llm_warnings.append(f'The local model {self.llm.model} does not support image input. Using face matching only.')
+                        llm_warnings.append(f'The model {self.llm.model} does not support image input. Using face matching only.')
                     else:
-                        llm_warnings.append('Local AI cross-check could not be completed. Using face matching only.')
+                        llm_warnings.append('Multimodal cross-check could not be completed. Using face matching only.')
             for student in roster:
                 student.pop('authorization_record',None)
                 student['embedding_suggested_status']='present' if student['id'] in embedding_auto_ids else 'needs_review'
                 student['suggested_status']='present' if student['id'] in proposal_ids else 'needs_review'
-                student['suggestion_source']='local_llm' if analysis_mode=='local_llm' else 'face_embeddings'
+                student['suggestion_source']=analysis_mode if analysis_mode!='face_embeddings' else 'face_embeddings'
             warnings=[]
             missing=sum(not g for g in galleries)
             if missing: warnings.append(f'{missing} students have no samples for the active model; review them manually.')
@@ -234,18 +235,20 @@ class AttendanceService:
             if valid:
                 accepted.add(student_id)
                 face_id=face_map[row.class_face_id]
-                assignments.append(dict(face_id=face_id,student_id=student_id,source='local_llm',confidence=row.confidence))
+                source = 'vertex_gemini' if getattr(self.llm,'provider','ollama') == 'vertex' else 'local_llm'
+                assignments.append(dict(face_id=face_id,student_id=student_id,source=source,confidence=row.confidence))
                 face=next(item for item in records if item['face_id']==face_id)
                 face['llm_student_id']=student_id; face['llm_confidence']=row.confidence
             proposals.append(proposal)
         unexpected=sum(code not in roster_map for code in returned)
         if unexpected or duplicate_roster:
-            warnings.append('The local LLM returned duplicate or unknown roster IDs; those rows were left for review.')
+            warnings.append('The multimodal model returned duplicate or unknown roster IDs; those rows were left for review.')
         if any(p['reason'].startswith('Local LLM output could not be safely mapped') for p in proposals):
-            warnings.append('The local LLM response could not be safely mapped. All affected students remain for teacher review.')
+            warnings.append('The multimodal response could not be safely mapped. All affected students remain for teacher review.')
         low_confidence=sum(1 for p in proposals if p['status']=='present' and not p['applied'])
         if low_confidence:
-            warnings.append(f'{low_confidence} local LLM match(es) were below the acceptance rule or reused a class face; review them manually.')
-        warnings.append(f'Local LLM proposed {len(accepted)} present student(s) using {self.llm.model}. Teacher confirmation is still required.')
+            warnings.append(f'{low_confidence} multimodal match(es) were below the acceptance rule or reused a class face; review them manually.')
+        model_label = 'Gemini' if getattr(self.llm,'provider','ollama') == 'vertex' else 'Local model'
+        warnings.append(f'{model_label} proposed {len(accepted)} present student(s) using {self.llm.model}. Teacher confirmation is still required.')
         return accepted,assignments,dict(model=self.llm.model,elapsed_seconds=elapsed,
             comparison_sheet=metadata,proposals=proposals),warnings

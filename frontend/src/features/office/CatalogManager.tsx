@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Palette, Plus, Search, X } f
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { saveCatalog, type Administration, type CatalogKind, type ClassSection, type Subject, type Term } from "./api";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 type CatalogRow = Term | ClassSection | Subject;
 type EditorState = { kind: CatalogKind; row?: CatalogRow };
 
@@ -140,8 +141,8 @@ function CatalogEditor({ schoolId, state, onClose, onSaved }: { schoolId: string
         {state.kind === "terms" ? <div className="office-form-grid">
           <label className="office-field">Term name<input name="name" required maxLength={100} defaultValue={term?.name ?? ""} /></label>
           <label className="office-field">Academic year<input name="academic_year" required pattern="\d{4}-\d{2}(\d{2})?" placeholder="2026-27" defaultValue={term?.academic_year ?? ""} readOnly={Boolean(term)} /><small>{term ? "Create a new term to change the academic year." : "Use YYYY-YY, for example 2026-27."}</small></label>
-          <label className="office-field">Starts on<input name="starts_on" type="date" required defaultValue={term?.starts_on ?? ""} /></label>
-          <label className="office-field">Ends on<input name="ends_on" type="date" required defaultValue={term?.ends_on ?? ""} /></label>
+          <label className="office-field">Starts on<TemporalInput name="starts_on" type="date" required defaultValue={term?.starts_on ?? ""} /></label>
+          <label className="office-field">Ends on<TemporalInput name="ends_on" type="date" required defaultValue={term?.ends_on ?? ""} /></label>
           <label className="office-field">Attendance minimum (%)<input name="attendance_threshold" type="number" min="0" max="100" step="0.01" required defaultValue={term?.attendance_threshold ?? "85"} /></label>
           <label className="office-check office-check--field"><input type="checkbox" name="is_active" defaultChecked={term?.is_active ?? true} /> Available for current school operations</label>
         </div> : null}

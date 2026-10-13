@@ -3,6 +3,7 @@ import {useQuery,useQueryClient} from "@tanstack/react-query";
 import {ShieldCheck,X} from "lucide-react";
 import {changeGuardianAuthority,getGuardianAuthority,type AuthorityCommand,type AuthoritySnapshot,type GuardianAuthority} from "./api";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 function dateLabel(value:string){return new Intl.DateTimeFormat("en-IN",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"}).format(new Date(`${value}T00:00:00Z`));}
 function bounds(value:AuthoritySnapshot){return value.enabled?`${value.valid_from?`From ${dateLabel(value.valid_from)}`:"Existing grant"}${value.valid_until?` through ${dateLabel(value.valid_until)}`:" · no end date"}`:"Leave signing is not permitted.";}
 export function GuardianAuthorityPanel({schoolId,id,onClose}:{schoolId:string;id:string;onClose:()=>void}){
@@ -51,7 +52,7 @@ function AuthorityEditor({schoolId,data,stale,onCancel,onSaved}:{schoolId:string
       <footer className="people-authority-actions"><button type="button" className="people-secondary" disabled={saving} onClick={()=>{setReview(null);setError("");setAttempted(false);}}>Edit details</button><button type="button" className="people-primary" disabled={!verified||saving||(stale&&!attempted)} onClick={()=>void save()}>{saving?"Saving…":attempted&&error?"Retry same save":"Confirm permission"}</button></footer>
     </>:<>
       <label>Leave-signing permission<select value={enabled?"allow":"revoke"} onChange={e=>setEnabled(e.target.value==="allow")}><option value="allow">Allow signing</option><option value="revoke">Not permitted · revoke now</option></select></label>
-      {enabled?<div className="people-form-grid"><label>Valid from<input type="date" required min={data.today} value={start} onChange={e=>setStart(e.target.value)}/></label><label>Valid through (optional)<input type="date" min={start||data.today} value={end} onChange={e=>setEnd(e.target.value)}/></label></div>:<p className="people-muted">Revocation takes effect immediately after confirmation.</p>}
+      {enabled?<div className="people-form-grid"><label>Valid from<TemporalInput type="date" required min={data.today} value={start} onChange={e=>setStart(e.target.value)}/></label><label>Valid through (optional)<TemporalInput type="date" min={start||data.today} value={end} onChange={e=>setEnd(e.target.value)}/></label></div>:<p className="people-muted">Revocation takes effect immediately after confirmation.</p>}
       <label>Reason for change<textarea required minLength={10} maxLength={500} rows={3} placeholder="Record the school-verified basis. Avoid sensitive personal details." value={reason} onChange={e=>setReason(e.target.value)}/></label>
       <footer className="people-authority-actions"><button type="button" className="people-secondary" onClick={onCancel}>Cancel</button><button type="submit" className="people-primary" disabled={stale||reason.trim().length<10}>Review change</button></footer>
     </>}

@@ -4,6 +4,7 @@ import type { SchoolService } from "../src/school/school.service.js";
 import type { PhotoAttendanceAnalysis, VisionSession } from "../src/photo-attendance/contracts.js";
 import { PhotoAttendanceService } from "../src/photo-attendance/photo-attendance.service.js";
 import type { PhotoAttendanceVisionClient } from "../src/photo-attendance/vision-client.js";
+import type { AttendanceModelService } from "../src/attendance-model/attendance-model.service.js";
 
 type Screen = Awaited<ReturnType<SchoolService["teacherAttendanceScreen"]>>;
 type Mapper = (
@@ -19,6 +20,7 @@ function mapper(): Mapper {
     {} as DatabaseService,
     {} as SchoolService,
     {} as PhotoAttendanceVisionClient,
+    {} as AttendanceModelService,
   );
   return (service as unknown as { mapAnalysis: Mapper }).mapAnalysis.bind(service);
 }

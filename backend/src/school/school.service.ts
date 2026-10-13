@@ -22,6 +22,7 @@ import { classUpdates } from "./class-updates.js";
 import {lockSchedule,protectPublishedPlans} from '../day-plans/schedule.js';
 import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendance-workspace.js';
 import { findAttendanceStudents, studentAttendanceInput, studentAttendanceSearch } from '../attendance/student-attendance.js';
+import { operatingRules } from '../operating-rules/rules.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
 type LeaveStatus = "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn";
@@ -1396,6 +1397,8 @@ export class SchoolService {
             term_id: input.termId, date: day.date, state: "draft", revision: registerRevision,
             submitted_by: null, submitted_at: null, locked_by: null, locked_at: null,
             reopened_by: null, reopened_at: null, reopen_reason: null,
+            auto_finalize_at: null, finalization_policy_revision: null,
+            finalization_source: null,
           }).returningAll().executeTakeFirstOrThrow();
       const saved = current
         ? await db.updateTable("attendance_records").set({
@@ -2253,10 +2256,15 @@ export class SchoolService {
         locked_by: register.locked_by, locked_at: register.locked_at,
         reopened_by: register.reopened_by, reopened_at: register.reopened_at,
         reopen_reason: register.reopen_reason,
+        auto_finalize_at: register.auto_finalize_at,
+        finalization_policy_revision: register.finalization_policy_revision,
+        finalization_source: register.finalization_source,
       } : {
         id: null, state: "draft" as const, revision: 0, submitted_by: null,
         submitted_at: null, locked_by: null, locked_at: null,
         reopened_by: null, reopened_at: null, reopen_reason: null,
+        auto_finalize_at: null, finalization_policy_revision: null,
+        finalization_source: null,
       },
       periods,
       continuity_snapshot: {
@@ -2560,6 +2568,15 @@ export class SchoolService {
       const nextRevision = currentRevision + (advancesRevision ? 1 : 0);
       const effectiveRevision = Math.max(1, nextRevision);
       const now = new Date();
+      const finalizationRules = await operatingRules(tx, membership.school_id);
+      const autoFinalizeAt = single
+        ? currentRegister?.auto_finalize_at ?? null
+        : finalizationRules.attendance_finalization_mode === "automatic"
+          ? new Date(now.getTime() + finalizationRules.attendance_auto_finalize_minutes * 60_000)
+          : null;
+      const finalizationPolicyRevision = single
+        ? currentRegister?.finalization_policy_revision ?? null
+        : finalizationRules.revision;
       // Recording a learner is NOT submission of the whole class register.
       const nextState = single ? (currentRegister?.state ?? 'draft') as 'draft' | 'submitted' : 'submitted';
       const submittedBy = single ? currentRegister?.submitted_by ?? null : user.id;
@@ -2567,14 +2584,18 @@ export class SchoolService {
       const register = currentRegister
         ? await tx.updateTable("attendance_registers").set({
             state: nextState, revision: effectiveRevision, submitted_by: submittedBy,
-            submitted_at: submittedAt, updated_at: now,
+            submitted_at: submittedAt, auto_finalize_at: autoFinalizeAt,
+            finalization_policy_revision: finalizationPolicyRevision,
+            finalization_source: null, updated_at: now,
           }).where("id", "=", currentRegister.id).returningAll().executeTakeFirstOrThrow()
         : await tx.insertInto("attendance_registers").values({
             school_id: membership.school_id, class_section_id: data.class_section_id,
             term_id: screen.class.term_id, date: data.date, state: nextState,
             revision: effectiveRevision, submitted_by: submittedBy, submitted_at: submittedAt,
             locked_by: null, locked_at: null, reopened_by: null, reopened_at: null,
-            reopen_reason: null,
+            reopen_reason: null, auto_finalize_at: autoFinalizeAt,
+            finalization_policy_revision: finalizationPolicyRevision,
+            finalization_source: null,
           }).returningAll().executeTakeFirstOrThrow();
 
       const provisionalResult = {
@@ -2585,6 +2606,9 @@ export class SchoolService {
           locked_by: register.locked_by, locked_at: register.locked_at,
           reopened_by: register.reopened_by, reopened_at: register.reopened_at,
           reopen_reason: register.reopen_reason,
+          auto_finalize_at: register.auto_finalize_at,
+          finalization_policy_revision: register.finalization_policy_revision,
+          finalization_source: register.finalization_source,
         },
       };
       const submission = await tx.insertInto("attendance_submissions").values({
@@ -3174,10 +3198,13 @@ export class SchoolService {
       const revision = Number(register.revision) + 1;
       const now = new Date();
       await tx.updateTable("attendance_registers").set(locked ? {
-        state: "locked", revision, locked_by: user.id, locked_at: now, updated_at: now,
+        state: "locked", revision, locked_by: user.id, locked_at: now,
+        auto_finalize_at: null, finalization_source: "manual", updated_at: now,
       } : {
         state: "submitted", revision, locked_by: null, locked_at: null,
-        reopened_by: user.id, reopened_at: now, reopen_reason: data.reason!, updated_at: now,
+        reopened_by: user.id, reopened_at: now, reopen_reason: data.reason!,
+        auto_finalize_at: null, finalization_policy_revision: null,
+        finalization_source: null, updated_at: now,
       }).where("id", "=", register.id).execute();
       await tx.insertInto("audit_events").values({
         action: locked ? "attendance.register.locked" : "attendance.register.reopened",

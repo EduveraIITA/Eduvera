@@ -36,12 +36,16 @@ type Mode = "capture" | "references";
 export function PhotoAttendanceDialog({
   classSectionId,
   date,
+  sessionId,
+  periodLabel,
   portal,
   onClose,
   onApply,
 }: {
   classSectionId: string;
   date: string;
+  sessionId?: string;
+  periodLabel?: string;
   portal: "teacher" | "principal";
   onClose: () => void;
   onApply: (records: TeacherAttendanceRecordInput[], sessionId: string) => void;
@@ -58,7 +62,7 @@ export function PhotoAttendanceDialog({
   const [setupState, setSetupState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
-  const [period, setPeriod] = useState("Daily attendance");
+  const [period, setPeriod] = useState(periodLabel ?? "Daily attendance");
   const [captureReference, setCaptureReference] = useState("");
   const [captureConfirmed, setCaptureConfirmed] = useState(false);
   const [analysis, setAnalysis] = useState<PhotoAttendanceAnalysis | null>(null);
@@ -76,7 +80,7 @@ export function PhotoAttendanceDialog({
     setSetupState("loading");
     setError("");
     try {
-      const nextSetup = await getPhotoAttendanceSetup(classSectionId, date);
+      const nextSetup = await getPhotoAttendanceSetup(classSectionId, date, sessionId);
       setSetup(nextSetup);
       if (!aiPreferenceInitializedRef.current) {
         setUseLocalAi(nextSetup.ai_assist.available);
@@ -87,7 +91,7 @@ export function PhotoAttendanceDialog({
       setError(requestError instanceof Error ? requestError.message : "Photo attendance could not load.");
       setSetupState("error");
     }
-  }, [classSectionId, date]);
+  }, [classSectionId, date, sessionId]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -131,6 +135,7 @@ export function PhotoAttendanceDialog({
         authorizationReference: captureReference.trim(),
         file: photo,
         useLocalAi,
+        sessionId,
       });
       setAnalysis(result);
       setReview(Object.fromEntries(result.students.map((student) => [
@@ -163,6 +168,7 @@ export function PhotoAttendanceDialog({
         date,
         authorizationReference: authorizationReference.trim(),
         file,
+        sessionId,
       });
       await loadSetup();
       setSampleAddedStudentId(studentId);
@@ -222,7 +228,7 @@ export function PhotoAttendanceDialog({
           <div className="photo-attendance-content">
             <section className="photo-attendance-readiness" aria-label="Photo attendance readiness">
               <div><strong>{setup.enrolled_count}/{setup.students.length}</strong><span>students with references</span></div>
-              <span className={setup.available && setup.attendance.can_mark ? "is-ready" : "is-unavailable"}>{!setup.attendance.can_mark ? "No register due" : setup.available ? "Local engine ready" : "Manual register available"}</span>
+              <span className={setup.available && setup.attendance.can_mark && setup.ai_assist.available ? "is-ready" : "is-unavailable"}>{!setup.attendance.can_mark ? "No register due" : setup.available && setup.ai_assist.available ? "Camera assist ready" : "Manual register available"}</span>
             </section>
             {!setup.attendance.can_mark ? (
               <section className="photo-attendance-boundary">
@@ -256,24 +262,23 @@ export function PhotoAttendanceDialog({
             </section>
 
             <div className="photo-attendance-fields">
-              <label>Register period<input value={period} maxLength={100} onChange={(event) => setPeriod(event.target.value)} /></label>
+              <label>Register period<input value={period} maxLength={100} readOnly={Boolean(periodLabel)} onChange={(event) => setPeriod(event.target.value)} /></label>
               <label>Capture authority reference<input value={captureReference} minLength={3} maxLength={500} placeholder="School-approved record or policy reference" onChange={(event) => setCaptureReference(event.target.value)} /></label>
               <label className="photo-attendance-check"><input type="checkbox" checked={captureConfirmed} onChange={(event) => setCaptureConfirmed(event.target.checked)} /><span>I confirm this capture is authorized for this class. A photo does not prove liveness or absence.</span></label>
             </div>
 
-            {setup.ai_assist.preview_enabled && <label className={`photo-ai-assist${setup.ai_assist.available ? "" : " is-unavailable"}`} aria-disabled={!setup.ai_assist.available}>
-              <input type="checkbox" checked={useLocalAi && setup.ai_assist.available} disabled={!setup.ai_assist.available} onChange={(event) => setUseLocalAi(event.target.checked)} />
+            {setup.ai_assist.preview_enabled && <div className={`photo-ai-assist${setup.ai_assist.available ? "" : " is-unavailable"}`}>
               <span className="photo-ai-assist__icon"><ScanSearch size={19} /></span>
               <span>
-                <strong>Local AI cross-check</strong>
+                <strong>{setup.ai_assist.provider === "vertex" ? "Gemini-assisted matching" : "Multimodal matching"}</strong>
                 <small>{setup.ai_assist.available
-                  ? `${setup.ai_assist.model ?? "Local vision model"} compares detected faces with enrolled references after normal face matching.`
-                  : setup.ai_assist.unavailable_reason ?? "Local AI cross-check is unavailable."}</small>
+                  ? `${setup.ai_assist.model ?? "Vision model"} compares detected faces with enrolled references. Every result still needs teacher review.`
+                  : setup.ai_assist.unavailable_reason ?? "Multimodal matching is unavailable."}</small>
               </span>
-            </label>}
+            </div>}
 
             <button className="photo-attendance-primary" type="button" disabled={!photo || !setup.available || !setup.attendance.can_mark || setup.enrolled_count === 0 || period.trim().length === 0 || captureReference.trim().length < 3 || !captureConfirmed || analysisState === "analyzing"} onClick={() => void analyze()}>
-              {analysisState === "analyzing" ? <><LoaderCircle className="spin" size={18} />Analyzing on this Mac…</> : <><ScanFace size={18} />Analyze classroom photo</>}
+              {analysisState === "analyzing" ? <><LoaderCircle className="spin" size={18} />Checking enrolled faces…</> : <><ScanFace size={18} />Analyze classroom photo</>}
             </button>
             <p className="photo-attendance-fineprint">Only strong matches can suggest Present. Unmatched, missing and low-quality faces remain unmarked.</p>
           </div>
@@ -322,7 +327,7 @@ export function PhotoAttendanceDialog({
             </section>
             <section className="photo-attendance-boundary is-calm">
               <UserRoundCheck size={19} />
-              <div><strong>{analysis.analysis_mode === "local_llm" ? "Local AI cross-check complete" : "Suggestions are ready"}</strong><p>Check every row. “Not seen” remains blank until you make the attendance decision.</p></div>
+              <div><strong>{analysis.analysis_mode === "vertex_gemini" ? "Gemini suggestions are ready" : analysis.analysis_mode === "local_llm" ? "Multimodal suggestions are ready" : "Suggestions are ready"}</strong><p>Check every row. “Not seen” remains blank until you make the attendance decision.</p></div>
             </section>
             {analysis.faces.length ? (
               <section className="photo-face-strip" aria-label="Detected face evidence">

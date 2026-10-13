@@ -63,6 +63,9 @@ class Store:
             CREATE INDEX IF NOT EXISTS sessions_lookup ON sessions(class_id,created);
             CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, timestamp REAL NOT NULL,
                 action TEXT NOT NULL, object_id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS multimodal_usage (
+                id TEXT PRIMARY KEY, created REAL NOT NULL, model TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS multimodal_usage_period ON multimodal_usage(created);
             ''')
             sentinel = connection.execute("SELECT value FROM meta WHERE key='encryption_check'").fetchone()
             if sentinel:
@@ -263,5 +266,22 @@ class Store:
         with self.db(write=True) as c:
             count=c.execute('DELETE FROM sessions WHERE created<?',(cutoff,)).rowcount
             c.execute('DELETE FROM audit WHERE timestamp<?',(time.time()-90*86400,))
+            c.execute('DELETE FROM multimodal_usage WHERE created<?',(time.time()-370*86400,))
             if count: self.log(c,'expired_sessions_purged',str(count))
         return count
+
+    def reserve_multimodal(self, model: str):
+        now=time.time(); day=now-86400; month=now-31*86400
+        with self.db(write=True) as c:
+            daily=c.execute('SELECT COUNT(*) FROM multimodal_usage WHERE created>=?',(day,)).fetchone()[0]
+            monthly=c.execute('SELECT COUNT(*) FROM multimodal_usage WHERE created>=?',(month,)).fetchone()[0]
+            if daily>=self.cfg.multimodal_daily_limit or monthly>=self.cfg.multimodal_monthly_limit:
+                raise RuntimeError('The camera-assistance allowance has been reached. Continue with the manual register.')
+            c.execute('INSERT INTO multimodal_usage VALUES(?,?,?)',(uuid.uuid4().hex,now,model))
+
+
+def create_store(cfg: Settings):
+    if cfg.database_url:
+        from .postgres_store import PostgresStore
+        return PostgresStore(cfg)
+    return Store(cfg)

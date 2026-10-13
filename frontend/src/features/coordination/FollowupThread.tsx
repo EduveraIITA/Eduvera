@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { addFollowupEntry, getFollowup, type FollowupContext, type FollowupDetail, type FollowupEntryInput } from "./api";
 
+import { TemporalInput } from "../../components/forms/TemporalInput";
 const moment = (value: string) => new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 const outcomeLabels = { absence_explained: "Absence explained", record_corrected: "Attendance record corrected", query_withdrawn: "Query withdrawn" };
 export function FollowupThread({ id, context }: { id: string; context: FollowupContext }) {
@@ -57,7 +58,7 @@ function ResponseForm({ data, context, onRefresh }: { data: FollowupDetail; cont
     {kind === "assisted_reply" ? <div className="followup-form__grid">
       <label>Guardian<select required value={guardian} onChange={(event) => setGuardian(event.target.value)}><option value="">Select guardian</option>{data.guardians.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
       <label>Contact method<select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}><option value="phone">Phone call</option><option value="paper">Paper response</option><option value="in_person">In person</option></select></label>
-      <label>Response received at<input type="datetime-local" required value={observedAt} onChange={(event) => setObservedAt(event.target.value)} /></label>
+      <label>Response received at<TemporalInput type="datetime-local" required value={observedAt} onChange={(event) => setObservedAt(event.target.value)} /></label>
     </div> : null}
     {kind === "resolved" ? <label>Outcome<select value={outcome} onChange={(event) => setOutcome(event.target.value as typeof outcome)}>{Object.entries(outcomeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}
     <label>{kind === "resolved" ? "Outcome details" : "Your response"}<textarea required minLength={3} maxLength={1000} rows={3} value={body} onChange={(event) => setBody(event.target.value)} /></label>

@@ -13,7 +13,7 @@ export default function PrincipalFeedbackPage() {
   const [creating,setCreating]=useState(false);const [selected,setSelected]=useState('');const [closing,setClosing]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');
   async function close(id:string){setBusy(true);setError('');try{await closeCampaign(school,id);setClosing('');await client.invalidateQueries({queryKey:['teacher-feedback']});}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}}
   return <OperationsShell portal="principal" active="more" title="Teacher feedback"><div className="teacher-feedback">
-    <header className="teacher-feedback__heading"><div><h1>Small check-ins. Better teaching.</h1><p>Ask a class what is working and where support could help.</p></div><button className="teacher-feedback__primary" disabled={!query.data||creating} onClick={()=>setCreating(true)}>Ask for feedback</button></header>
+    <header className="teacher-feedback__heading"><div><h2>Small check-ins. Better teaching.</h2><p>Ask a class what is working and where support could help.</p></div><button className="teacher-feedback__primary" disabled={!query.data||creating} onClick={()=>setCreating(true)}>Ask for feedback</button></header>
     {!school?<p role="alert">Select an institution with principal administrator access.</p>:query.isPending?<p role="status">Loading feedback requests…</p>:query.error?<div role="alert"><p>{query.error.message}</p><button onClick={()=>void query.refetch()}>Try again</button></div>:query.data?<>
       {creating?<CreateFeedback school={school} data={query.data} onCancel={()=>setCreating(false)} onCreated={async()=>{setCreating(false);await query.refetch();}}/>:null}
       {error?<p role="alert">{error}</p>:null}

@@ -140,6 +140,14 @@ AVATARS = [
     "/assets/kavya-nair.png",
 ]
 
+# Exact crops from the authorized synthetic Class 7A camera-attendance fixture.
+# These are deliberately limited to the first 14 learners; the remaining roster
+# exercises the explicit "needs review" path during a whole-class photo test.
+CAMERA_DEMO_AVATARS = [
+    f"/assets/demo-camera-attendance/student-{index:02d}.jpg"
+    for index in range(1, 15)
+]
+
 PROFILE_AVATARS = {
     "pooja.parent": "/assets/pooja-sharma.png",
     "parent.cis0103": "/assets/rashmi-joshi.png",
@@ -217,6 +225,8 @@ def make_students(rng: random.Random, academic_year: str) -> list[dict[str, Any]
                 key = f"student-{sequence:03d}"
                 admission = f"CIS-{academic_year[:4]}-{sequence:04d}"
                 avatar = AVATARS[(sequence + grade + roll) % len(AVATARS)]
+            if grade == 7 and section == "A" and roll <= len(CAMERA_DEMO_AVATARS):
+                avatar = CAMERA_DEMO_AVATARS[roll - 1]
             birth_year = int(academic_year[:4]) - (grade + 5)
             birth = date(birth_year, rng.randint(1, 12), rng.randint(1, 28))
             user_id = deterministic_id(f"user-{key}") if key not in {"aarav", "ananya", "rohan", "kavya"} else deterministic_id(f"user-{key}")

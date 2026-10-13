@@ -13,13 +13,13 @@ describe('AssistantHeaderActions',()=>{
   it('keeps conversation navigation and new chat in one labelled control group',()=>{
     const onSelect=vi.fn(),onNewChat=vi.fn();
     render(<AssistantHeaderActions threads={threads} currentThreadId="thread-1" onSelect={onSelect} onNewChat={onNewChat}/>);
-    const controls=screen.getByLabelText('Chat controls');
-    fireEvent.click(within(controls).getByRole('button',{name:'Open conversations'}));
+    const controls=screen.getByLabelText('Assistant controls');
+    fireEvent.click(within(controls).getByRole('button',{name:'Open Assistant history'}));
     expect(within(controls).getByRole('button',{name:'Attendance for Aarav'})).toHaveAttribute('aria-current','true');
     fireEvent.click(within(controls).getByRole('button',{name:'Weekly planning'}));
     expect(onSelect).toHaveBeenCalledWith('thread-2');
-    expect(within(controls).queryByText('Conversations')).not.toBeVisible();
-    fireEvent.click(within(controls).getByRole('button',{name:'Start a new chat'}));
+    expect(within(controls).queryByText('Assistant history')).not.toBeVisible();
+    fireEvent.click(within(controls).getByRole('button',{name:'Start a new Assistant conversation'}));
     expect(onNewChat).toHaveBeenCalledOnce();
   });
 });

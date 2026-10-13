@@ -36,6 +36,7 @@ import { DepartureCoordinationModule } from "./departure-coordination/departure-
 import { RequestsModule } from "./requests/requests.module.js";
 import { NoticesModule } from "./notices/notices.module.js";
 import { AttentionModule } from "./attention/attention.module.js";
+import { AttendanceModelModule } from "./attendance-model/attendance-model.module.js";
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { AttentionModule } from "./attention/attention.module.js";
     RequestsModule,
     NoticesModule,
     AttentionModule,
+    AttendanceModelModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

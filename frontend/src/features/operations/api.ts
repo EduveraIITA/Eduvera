@@ -16,9 +16,17 @@ export interface AttendanceRegister {
   locked_at: string | null;
   reopened_by?: string | null;
   reopened_at?: string | null;
+  auto_finalize_at?: string | null;
+  finalization_policy_revision?: number | null;
+  finalization_source?: "manual" | "automatic" | null;
 }
 
 export interface TeacherClassSummary {
+  attendance_scope?: "daily_class" | "scheduled_session";
+  session_id?: string;
+  subject_id?: string;
+  subject_name?: string;
+  period_number?: number;
   class_section_id: string;
   class_name: string;
   grade: string;
@@ -39,6 +47,9 @@ export interface TeacherClassSummary {
   assignment_kind?: "regular" | "substitute";
   submitted_by_name?: string | null;
   submitted_at?: string | null;
+  auto_finalize_at?: string | null;
+  finalization_policy_revision?: number | null;
+  finalization_source?: "manual" | "automatic" | null;
   submission_authorized?: boolean;
   instructional?: boolean;
   date_open?: boolean;
@@ -81,6 +92,9 @@ export interface TeacherRosterStudent {
 }
 
 export interface TeacherAttendanceResponse {
+  attendance_scope?: "daily_class" | "scheduled_session";
+  session?: { id: string; subject_id: string; subject_name: string; period_number: number; starts_at: string; ends_at: string };
+  capture_policy?: { channels: string[]; self_check_in_mode: "disabled" | "staff_review" | "automatic" };
   date: string;
   availability?: { can_mark: boolean; reason: string | null };
   class: { id: string; school_id: string; term_id: string; name: string; grade: string; section: string; room: string; board: string; term: string };
@@ -259,6 +273,47 @@ export function getTeacherHome(date = schoolDateToday()) {
 
 export function getTeacherAttendance(classSectionId: string, date = schoolDateToday()) {
   return apiFetch<TeacherAttendanceResponse>(query("/api/v1/screens/teacher/attendance/", { class_section_id: classSectionId, date }));
+}
+
+export interface AttendanceModelWorkspace {
+  mode: "daily_class" | "scheduled_session" | "none";
+  campus_mode: "none" | "entry_only" | "entry_exit";
+  capture_channels: string[];
+  registers: TeacherClassSummary[];
+}
+
+export function getAttendanceModelWorkspace(date = schoolDateToday()) {
+  return apiFetch<AttendanceModelWorkspace>(query("/api/v1/attendance-model/workspace", { date }));
+}
+
+export function getSessionAttendance(sessionId: string) {
+  return apiFetch<TeacherAttendanceResponse>(`/api/v1/attendance-model/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function saveSessionAttendance(sessionId: string, input: TeacherAttendanceSaveInput) {
+  return apiFetch<TeacherAttendanceResponse>(`/api/v1/attendance-model/sessions/${encodeURIComponent(sessionId)}/submit`, {
+    method: "POST",
+    headers: { "Idempotency-Key": input.idempotency_key },
+    body: JSON.stringify({ records: input.records, expected_revision: input.expected_revision, photo_session_id: input.photo_session_id, reason: input.reason }),
+  });
+}
+
+export function getSessionAttendanceHistory(sessionId: string) {
+  return apiFetch<AttendanceRegisterHistoryResponse>(`/api/v1/attendance-model/sessions/${encodeURIComponent(sessionId)}/history`);
+}
+
+export function lockSessionAttendance(sessionId: string) {
+  return apiFetch<TeacherAttendanceResponse>(`/api/v1/attendance-model/sessions/${encodeURIComponent(sessionId)}/lock`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function unlockSessionAttendance(sessionId: string, reason: string) {
+  return apiFetch<TeacherAttendanceResponse>(`/api/v1/attendance-model/sessions/${encodeURIComponent(sessionId)}/lock`, {
+    method: "DELETE",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export function saveTeacherAttendance(classSectionId: string, date: string, input: TeacherAttendanceSaveInput) {
