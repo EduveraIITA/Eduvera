@@ -26,8 +26,9 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   person=(await query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Aarav','Test') RETURNING id",[school])).id;
   student=(await query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id",[school,person,tag])).id;
   const collector=(await query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Verified','Collector') RETURNING id",[school])).id;
-  authority=(await query("INSERT INTO departure_collection_authorities(school_id,student_id,collector_person_id,valid_from,verification_method,verification_note,granted_by) VALUES($1,$2,$3,current_date,'in_person','Verified in person',$4) RETURNING id",[school,student,collector,admin.id])).id;
-  plan=(await query("INSERT INTO departure_plans(school_id,student_id,service_date,mode,authority_id,state,source,created_by,revision) VALUES($1,$2,current_date,'authorized_collector',$3,'ready','administrator',$4,1) RETURNING id",[school,student,authority,admin.id])).id;
+  const serviceDay=(await query("SELECT (now() AT TIME ZONE timezone)::date::text day FROM schools WHERE id=$1",[school])).day;
+  authority=(await query("INSERT INTO departure_collection_authorities(school_id,student_id,collector_person_id,valid_from,verification_method,verification_note,granted_by) VALUES($1,$2,$3,$4,'in_person','Verified in person',$5) RETURNING id",[school,student,collector,serviceDay,admin.id])).id;
+  plan=(await query("INSERT INTO departure_plans(school_id,student_id,service_date,mode,authority_id,state,source,created_by,revision) VALUES($1,$2,$3,'authorized_collector',$4,'ready','administrator',$5,1) RETURNING id",[school,student,serviceDay,authority,admin.id])).id;
  });
  afterAll(async()=>{await db?.destroy();await pool?.end();});
  it('creates a non-teaching gatekeeper with only the gate permission and a private password',async()=>{
