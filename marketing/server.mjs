@@ -4,7 +4,7 @@ import {resolve,extname,sep} from 'node:path';
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
-const fallbackLogin='https://eduvera-stage-367469594690.asia-south1.run.app/login';
+const fallbackLogin='https://app.thatcampus.com/login';
 export function settings(env=process.env){
  const loginUrl=new URL(env.LOGIN_URL||fallbackLogin);
  if(loginUrl.protocol!=='https:'||loginUrl.pathname!=='/login'||loginUrl.search||loginUrl.hash||loginUrl.username||loginUrl.password)throw new Error('LOGIN_URL must be an exact HTTPS /login URL');
@@ -30,7 +30,7 @@ export function createHandler({db,config=settings(),clock=()=>Date.now()}){retur
  const url=new URL(req.url,'http://internal');
  if(req.headers.host==='www.thatcampus.com'){res.writeHead(308,{Location:`https://thatcampus.com${url.pathname}${url.search}`});res.end();return;}
  if(url.pathname==='/healthz'){json(res,200,{status:'ok',release:config.release});return;}
- if(url.pathname==='/readyz'){await db.query('SELECT 1 FROM marketing_enquiries LIMIT 0');json(res,200,{status:'ready'});return;}
+ if(url.pathname==='/readyz'){await db.query('SELECT 1 FROM marketing_enquiries LIMIT 0');json(res,200,{status:'ready',release:config.release});return;}
  if(url.pathname==='/api/config'&&req.method==='GET'){
  const payload=`${Date.now()}.${randomBytes(16).toString('hex')}`;const csrfToken=`${payload}.${sign(payload,config.secret)}`;
  res.setHeader('Set-Cookie',`tc_form=${csrfToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800${config.production?'; Secure':''}`);json(res,200,{loginUrl:config.loginUrl,csrfToken});return;

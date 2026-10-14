@@ -6,7 +6,7 @@ import '@fontsource/plus-jakarta-sans/700.css';
 import './style.css';
 
 type Config = {loginUrl:string;csrfToken:string};
-const initialLogin='https://eduvera-stage-367469594690.asia-south1.run.app/login';
+const initialLogin='https://app.thatcampus.com/login';
 const features=[
  ['01','Smart attendance & insights','From daily registers to subject-level patterns, see where attention is needed.','Attendance'],
  ['02','Institution administration','Bring people, academic terms, classes and institution setup into one workspace.','Administration'],
