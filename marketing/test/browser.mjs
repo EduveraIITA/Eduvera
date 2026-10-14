@@ -16,7 +16,7 @@ try{
   assert.equal(await page.locator('h1').textContent(),'One Campus.EverythingConnected.');
   assert.equal(await page.locator('.header-actions a').getAttribute('href'),'https://eduvera-stage-367469594690.asia-south1.run.app/login');
   assert(await page.locator('.header-actions a').isVisible());
-  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'Horizontal overflow');
+  const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);if(!fits){console.log(name,await page.evaluate(()=>Array.from(document.querySelectorAll('body *')).filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,cls:el.className,right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))));await page.screenshot({path:`screenshots/${name}-overflow.png`,fullPage:true});}assert(fits,`${name}: horizontal overflow`);
   if(width<761){await page.getByRole('button',{name:'Open navigation'}).click();}
   for(const name of ['Features','Solutions','About','Contact'])assert(await page.locator('nav').getByRole('link',{name,exact:true}).isVisible());
   await page.locator('nav').getByRole('link',{name:'Features',exact:true}).click();assert.equal(new URL(page.url()).hash,'#features');
