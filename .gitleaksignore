@@ -1,0 +1,13 @@
+# Reviewed 2026-10-14 after fixing the scanner's container repository ownership.
+# Exact historical fingerprints only; do not exclude whole test files or rules.
+# agent-channels: alphabet/number fixture used only with mocked HTTP at school.example.
+321bc2526e442ca747497980dfc6cedc47f244fa:backend/test/agent-channels.test.ts:generic-api-key:9
+# agent-channels: synthetic /start token repeated in the parser assertion.
+321bc2526e442ca747497980dfc6cedc47f244fa:backend/test/agent-channels.test.ts:generic-api-key:16
+# Conversation evaluation: named local-test cookie secret, loopback server,
+# isolated database guard. This is not a provider API credential.
+45374b3a1303d2be47cdacbe0cc2702906bc6ce5:backend/test/agent-conversation.eval.ts:generic-api-key:15
+# Institution integration: explicitly named test-cookie fixture on loopback.
+# Same synthetic value appears in two historical commits after a line shift.
+ba687cc47eba22a73558836643667c90b5998ec6:backend/test/institutions.integration.test.ts:generic-api-key:65
+4aa77b0196f41cfd9127b7d58f5f7ae9956906ca:backend/test/institutions.integration.test.ts:generic-api-key:64

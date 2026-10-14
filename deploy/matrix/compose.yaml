@@ -1,0 +1,75 @@
+name: eduvera-matrix
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${SYNAPSE_DB_PASSWORD:?Run generate-config.py first}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U synapse -d synapse']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [matrix]
+  synapse:
+    image: matrixdotorg/synapse:v1.162.0
+    restart: unless-stopped
+    user: '${MATRIX_UID:?Run generate-config.py first}:${MATRIX_GID:?Run generate-config.py first}'
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    volumes:
+      - ./runtime/synapse:/data
+    ports:
+      - '127.0.0.1:8008:8008'
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [matrix]
+  worker:
+    profiles: [worker]
+    build:
+      context: ../..
+      dockerfile: deploy/matrix/worker.Dockerfile
+    restart: unless-stopped
+    env_file: ./runtime/worker.env
+    depends_on: [synapse]
+    networks: [matrix]
+  # These are isolated preparation services, not an enabled calling feature.
+  # Do not publish them until the Element widget host and access checks are complete.
+  element-call:
+    profiles: [rtc-lab]
+    image: ghcr.io/element-hq/element-call:v0.28.0
+    restart: unless-stopped
+    volumes:
+      - ./runtime/element-call.json:/app/config.json:ro
+    ports:
+      - '127.0.0.1:8081:8080'
+    networks: [matrix]
+  livekit:
+    profiles: [rtc-lab]
+    image: livekit/livekit-server:v1.13.10
+    restart: unless-stopped
+    command: [--config, /etc/livekit.yaml]
+    volumes:
+      - ./runtime/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - '127.0.0.1:7880:7880'
+      - '127.0.0.1:7881:7881'
+      - '127.0.0.1:50000-50100:50000-50100/udp'
+    networks: [matrix]
+  matrix-rtc:
+    profiles: [rtc-lab]
+    image: ghcr.io/element-hq/lk-jwt-service:0.8.0
+    restart: unless-stopped
+    env_file: ./runtime/rtc.env
+    depends_on: [livekit, synapse]
+    # No public JWT endpoint. Production wiring must go through authenticated Synapse.
+    networks: [matrix]
+networks:
+  matrix: {}
+volumes:
+  postgres-data: {}
