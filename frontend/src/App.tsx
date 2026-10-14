@@ -11,6 +11,8 @@ import {
   RoleLanding,
 } from "./features/auth/RouteGuards";
 
+const GatePage=lazy(()=>import("./features/gate/GatePage"));
+const GateAdminPage=lazy(()=>import("./features/gate/GateAdminPage"));
 const CompanyPage=lazy(()=>import('./features/onboarding/CompanyPage'));
 const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage'));
 const LegacyAnalyticsRedirect = lazy(async () => ({ default: (await import('./features/analytics/InsightNavigation')).LegacyAnalyticsRedirect }));
@@ -215,6 +217,8 @@ export function App() {
         <PortalScreenFrame>
           <Suspense fallback={<PageLoader />}>
             <Routes>
+              <Route path="/gate" element={<AuthenticatedOnly><GatePage /></AuthenticatedOnly>} />
+              <Route path="/principal/gate" element={<PortalOnly portal="principal"><GateAdminPage /></PortalOnly>} />
               <Route path="/" element={<RoleLanding />} />
               <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
               <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />

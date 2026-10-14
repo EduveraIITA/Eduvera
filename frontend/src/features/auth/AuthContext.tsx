@@ -369,7 +369,10 @@ export function authDestination(auth: Pick<AuthContextValue, "status" | "portals
   if (auth.companyOperator) return "/company";
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
-  if (auth.portals.includes("teacher")) return "/teacher";
+  if (auth.portals.includes("teacher")) {
+    const gateOnly=auth.memberships.some(m=>m.role==="staff"&&m.permissions?.includes("gate.manage")&&m.permissions.every(p=>p==="gate.manage"));
+    return gateOnly ? "/gate" : "/teacher";
+  }
   if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/activation" : "/principal";
   if (auth.memberships.length === 0) return "/onboarding/start";
   return "/workspace";

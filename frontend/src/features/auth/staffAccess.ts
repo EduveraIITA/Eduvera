@@ -1,6 +1,7 @@
 import type { SchoolMembership } from "./AuthContext";
 
 export const TEACHER_TOOL_PERMISSIONS: Readonly<Record<string, string>> = {
+  gate:"gate.manage",
   transport: "departure.collect",
   assessments: "assessments.view",
   "report-cards": "reports.comment",

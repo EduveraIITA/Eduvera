@@ -6012,3 +6012,34 @@ completed successfully, the no-traffic candidate passed its checks, and commit
 `eduvera-stage-00091-jog` with 100% traffic. Independent public `/releasez` and `/readyz`
 checks report that exact commit with database/events ready. Installed-calendar/physical-phone
 acceptance remains open because a real calendar client must consume the private subscription.
+
+## Gate & Safety — 14 October 2026
+
+User-directed first release: a non-technical gatekeeper workspace at `/gate`, with
+three large actions (Scan QR, Find Student, Visitor Entry), account-and-institution
+scoped Hindi/English preference, and explicit identity confirmation. New
+`gate.manage` (Manage In & Out) is institution scoped and excluded from default
+teaching permissions. Admins can provision a non-teaching gatekeeper with a random
+initial password and one direct Gatekeeper assignment; no teaching, finance,
+collection-authority management or approval permission is granted.
+
+Opaque QR passes store only hashes. Student passes identify entry; single-use
+15-minute pickup passes require today's current ready departure plan. Confirmation
+rechecks the school, plan and current collector authority under the existing
+school departure lock, then atomically records the handover, completes the plan,
+consumes the pass, saves the gate observation and queues guardian notifications.
+Gate movement never writes classroom attendance. Visitor requests require admin
+approval before entry; approved visitors have QR passes with ordered check-in and
+checkout. Admin QR generation and visitor approvals are available under
+Principal → More → Gate & Safety; guardians can display their own pickup QR in
+Transport & departure. Other collectors need an office-issued pass.
+
+Verified locally: all 93 numbered migrations (including duplicate-numbered
+existing migrations) applied to a disposable PostgreSQL WASM database with pg_trgm;
+seven database lifecycle/authorization tests and five QR/movement rule tests pass.
+Frontend gate, More grouping and permission-scoped navigation tests pass. Backend
+and frontend typechecks, builds and lint pass. Native PostgreSQL integration,
+physical camera/mobile/accessibility review and Stage release evidence remain
+pending until CI and cloud checks complete. Offline release, staff movement,
+vehicle/bus gate scans, historical corrections and configurable gate policy are
+outside this first release; no release is authorized from cached offline data.

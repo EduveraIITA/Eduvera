@@ -1,3 +1,4 @@
+import { FamilyGatePass } from "../gate/FamilyGatePass";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { ParentShell } from "../../pages/parent/ParentShell";
@@ -35,6 +36,7 @@ export default function ParentDeparturePage({student=false}:{student?:boolean}) 
     <label className="departure-date">Service date<TemporalInput type="date" value={data.service_date} onChange={event=>{if(!event.target.value)return;const next=new URLSearchParams(params);next.set("date",event.target.value);setParams(next,{replace:true});}}/></label>
     {staleAttentionTarget?<AttentionTargetUnavailable message="This update no longer matches the current departure record. It was not marked as opened."/>:null}
     {exactAttentionTarget?<AttentionOpenAcknowledgement/>:null}
+    <FamilyGatePass school={auth.memberships.find(m=>m.role==='guardian')?.school_id??''} student={data.student.id}/>
     <FamilyDepartureContent key={data.student.id+":"+data.service_date} data={data} actorId={auth.user?.id??""} {...focus?{focus}:{}}/>
   </div>;
   return student?<StudentShell activeNav="launcher" section="Departure & bus" className={"Class "+child.grade+child.section}>{content}</StudentShell>:<ParentShell active="more" pageLabel="Departure & bus" backTo="/parent/more" child={child} selectedChildId={data.student.id} childOptions={data.children.map(item=>({id:item.id,name:[item.first_name,item.last_name].join(" ").trim(),grade:item.grade??"",section:item.section??"",avatarUrl:item.avatar_url}))} onSelectChild={id=>setParams(searchForStudentContext(params,id), { replace: true })}>{content}</ParentShell>;

@@ -1,3 +1,4 @@
+import { GateModule } from "./gate/gate.module.js";
 import { TeacherFeedbackModule } from "./teacher-feedback/teacher-feedback.module.js";
 import { OperatingRulesModule } from "./operating-rules/operating-rules.module.js";
 import { InvitationEmailWorker } from "./common/invitation-queue.js";
@@ -42,6 +43,7 @@ import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-int
 
 @Module({
   imports: [
+    GateModule,
     OperatingRulesModule,
     TeacherFeedbackModule,
     AnalyticsModule,

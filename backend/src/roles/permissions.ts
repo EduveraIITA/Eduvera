@@ -4,6 +4,7 @@ export const PERMISSION_METADATA = "eduera:permission";
 export const RequirePermission = (permission: string) => SetMetadata(PERMISSION_METADATA, permission);
 
 export const PERMISSIONS = [
+  { code: "gate.manage", group: "Gate & Safety", label: "Manage In & Out", description: "Scan gate QR passes, verify student movements and record visitors. Does not approve departure plans or grant collection authority." },
   { code: "members.invite", group: "Onboarding", label: "Invite school members", description: "Invite or revoke staff, student and guardian access within this institution. Administrator invitations and role assignment stay with school admins." },
   { code: "sis.manage", group: "School office", label: "Manage students and school records", description: "Maintain student records, terms, classes, guardians and enrolments. Includes directory, reviewed enrollment and student imports." },
   { code: "fees.manage", group: "Finance", label: "Manage fees and receipts", description: "View the school ledger, create invoices, record payments and review payment submissions." },
@@ -30,5 +31,5 @@ export const PERMISSIONS = [
 ] as const;
 
 export const DEFAULT_STAFF_PERMISSIONS: string[] = PERMISSIONS.map((permission) => permission.code).filter(
-  (code) => code !== "sis.manage" && code !== "fees.manage" && code !== "members.invite",
+  (code) => code !== "gate.manage" && code !== "sis.manage" && code !== "fees.manage" && code !== "members.invite",
 );
