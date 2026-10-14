@@ -9,5 +9,6 @@ import { CampusEventsService } from "./campus-events.service.js";
   imports: [SchoolModule],
   controllers: [CampusEventsController, CampusEventFinanceController],
   providers: [CampusEventsService, CampusEventFinanceService],
+  exports: [CampusEventsService],
 })
 export class CampusEventsModule {}

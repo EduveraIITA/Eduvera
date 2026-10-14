@@ -5967,3 +5967,40 @@ Profile connection and private-chat round trip as physical-device acceptance. A 
 WhatsApp adapter requires its own Meta account, webhook verification, policy review and
 template/24-hour-window handling while retaining this same application-owned identity
 and action contract.
+
+### Provider-independent calendar export and subscription — 14 October 2026 (local)
+
+Users can now take the role-aware Edura calendar into an installed calendar application
+without granting Google, Microsoft or Apple API access. An authenticated export returns a
+standards-based `.ics` snapshot for the selected portal/child. A separate private
+subscription URL provides a continuously refreshed, read-only projection for calendar
+applications that support web calendar subscriptions. Edura remains the source of truth;
+external calendar applications receive no command path back into attendance, assessments,
+events or school configuration.
+
+Migration `092_calendar_subscriptions.sql` stores one active subscription per
+owner/school/portal/child scope. The 256-bit bearer token is returned only when created;
+only its SHA-256 digest and a six-character display hint are retained. Replacing or
+disconnecting immediately revokes the previous feed. Every fetch revalidates the active
+account, school membership, portal and guardian/student relationship before producing a
+feed. The projection includes non-instructional school dates, the learner's or teacher's
+effective timetable (including published dated changes), visible campus events and
+permission-scoped assessments. Principal feeds deliberately omit every classroom period
+to avoid turning the leadership calendar into thousands of low-value entries. Event
+descriptions are minimized and direct the user back to Edura for current details.
+
+Profile now exposes Calendar sync independently of the AI Pro toggle. It supports
+one-year snapshot export, subscription creation, one-time open/copy actions, last-fetch
+health, confirmed link replacement and confirmed disconnect. The implementation uses
+stable iCalendar UIDs, revisions, explicit cancellation, exclusive all-day end dates,
+UTF-8-safe line folding, UTC event times and the school's IANA timezone metadata.
+
+Verified locally: backend build/typecheck and focused lint pass; iCalendar format tests
+pass **2/2**; Profile/calendar interaction tests pass **6/6**; the complete frontend suite
+passes **930/930** and the Vite production build passes. All runnable backend unit tests
+pass (**432 passed, 184 skipped**); the remaining integration files correctly refuse to run
+without the repository's isolated `DATABASE_URL`. The complete frontend TypeScript wrapper
+remains blocked by the previously documented untracked duplicate test files and was not
+represented as passing. Migration 092 has been applied to the local development database
+only; it still requires the normal Stage migration pipeline. Installed-calendar/physical-
+phone acceptance plus Stage deployment remain open at this checkpoint.

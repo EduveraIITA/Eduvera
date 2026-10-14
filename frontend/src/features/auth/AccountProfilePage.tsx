@@ -8,6 +8,7 @@ import { proFeaturesKey, useProFeatures, type ProFeaturesPreference } from './us
 import { AssistantMemorySettings } from './AssistantMemorySettings';
 import { DemoProfileSwitcher } from './DemoProfileSwitcher';
 import { AgentChannelConnections } from './AgentChannelConnections';
+import { CalendarConnections } from './CalendarConnections';
 import './account-security.css';
 import './account-profile.css';
 import './account-navigation.css';
@@ -53,6 +54,7 @@ export function AccountProfilePage() {
     {preference.isPending?<p className="account-profile-status" role="status">Loading preference…</p>:null}
     {preference.isError?<p className="security-alert" role="alert">Could not load your preference. <button type="button" onClick={()=>void preference.refetch()}>Try again</button></p>:null}
     {error?<p className="security-alert" role="alert">{error}</p>:null}
+    <CalendarConnections portal={portal} studentId={studentId}/>
     {preference.enabled ? <><AgentChannelConnections portal={portal} studentId={studentId}/><AssistantMemorySettings userId={auth.user?.id}/></> : null}
     <Link className="account-profile-security" to={`/account/security?from=${encodeURIComponent(profileHref)}`} state={{accountReturnTo:profileHref,accountCanPop:true}}><ShieldCheck size={18}/> Account security <span aria-hidden="true">›</span></Link>
   </main>;
