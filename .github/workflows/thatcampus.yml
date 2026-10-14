@@ -1,0 +1,83 @@
+name: ThatCampus website
+on:
+  pull_request:
+    branches: [Stage]
+    paths: ['marketing/**', 'backend/migrations/094_marketing_enquiries.sql', '.github/workflows/thatcampus.yml']
+  push:
+    branches: [Stage]
+    paths: ['marketing/**', 'backend/migrations/094_marketing_enquiries.sql', '.github/workflows/thatcampus.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: thatcampus-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: marketing_test
+          POSTGRES_USER: marketing_test
+          POSTGRES_PASSWORD: isolated-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U marketing_test -d marketing_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      MARKETING_TEST_DATABASE_URL: postgresql://marketing_test:isolated-test-only@127.0.0.1:5432/marketing_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: marketing/package-lock.json
+      - working-directory: marketing
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+      - name: Isolated marketing schema
+        run: |
+          psql "$MARKETING_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE users(id uuid PRIMARY KEY);'
+          psql "$MARKETING_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/094_marketing_enquiries.sql
+      - name: Browser and persistent form verification
+        working-directory: marketing
+        run: |
+          npx playwright install --with-deps chromium
+          node test/browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: thatcampus-viewport-checks
+          path: marketing/screenshots/
+  deploy:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/Stage'
+    environment: gcp-stage
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build separate website image
+        run: docker build -t asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:${{ github.sha }} marketing
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: eduera-511111
+          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
+          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - run: |
+          gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+          docker push asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:${{ github.sha }}
+      - name: Deploy isolated Cloud Run service and verify
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: node marketing/deploy.mjs
