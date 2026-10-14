@@ -11,7 +11,7 @@ const config = () => matrixSettings({ MATRIX_ENABLED: 'true', MATRIX_INTERNAL_UR
 function stub(responses: Array<{ status?: number; body: unknown }>) {
   const requests: Array<{ url: URL; init: RequestInit }> = [];
   const fetcher: typeof fetch = (input, init) => {
-    requests.push({ url: new URL(String(input)), init: init ?? {} });
+    requests.push({ url: new URL(input instanceof Request ? input.url : String(input)), init: init ?? {} });
     const next = responses.shift();
     assert.ok(next, 'Unexpected extra Matrix request');
     return Promise.resolve(new Response(JSON.stringify(next.body), { status: next.status ?? 200,
@@ -50,6 +50,7 @@ test('AS credentials stay in headers and redirects are refused', async () => {
   const { client, requests } = stub([{ body: { user_id: '@eduvera_bot:chat.example.test' } }]);
   await client.request('GET', '/_matrix/client/v3/account/whoami');
   const call = requests[0];
+  assert.ok(call);
   assert.equal(call.url.origin, config().baseUrl);
   assert.ok(!call.url.toString().includes(config().asToken));
   assert.equal(new Headers(call.init.headers).get('Authorization'), `Bearer ${config().asToken}`);
@@ -75,7 +76,10 @@ test('new rooms are private, non-federated and governed by the service account',
   const { client, requests } = stub([{ status: 404, body: { errcode: 'M_NOT_FOUND' } },
     { body: { room_id: room } }, { body: { school_id: school, conversation_id: person } }]);
   assert.equal(await client.ensureRoom(school, person), room);
-  const body = JSON.parse(String(requests[1].init.body)) as {
+  const createRequest = requests[1];
+  assert.ok(createRequest);
+  assert.ok(typeof createRequest.init.body === 'string');
+  const body = JSON.parse(createRequest.init.body) as {
     visibility: string; creation_content: Record<string, boolean>;
     initial_state: Array<{ type: string; content: Record<string, string> }>;
     power_level_content_override: { invite: number; state_default: number; users: Record<string, number> };
@@ -101,8 +105,10 @@ test('sending uses a stable transaction path and the scoped sender identity', as
   const identity = client.userId(school, person);
   const transaction = matrixTransactionId('42');
   assert.equal(await client.send(room, identity, transaction, { body: 'A question', msgtype: 'm.text' }), '$accepted');
-  assert.equal(requests[0].url.searchParams.get('user_id'), identity);
-  assert.ok(requests[0].url.pathname.endsWith(`/send/m.room.message/${transaction}`));
+  const sent = requests[0];
+  assert.ok(sent);
+  assert.equal(sent.url.searchParams.get('user_id'), identity);
+  assert.ok(sent.url.pathname.endsWith(`/send/m.room.message/${transaction}`));
 });
 test('malformed success responses do not mark a message delivered', async () => {
   const { client } = stub([{ body: {} }]);

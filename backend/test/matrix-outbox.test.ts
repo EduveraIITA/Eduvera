@@ -43,14 +43,14 @@ describe.skipIf(!isolated)('Matrix transactional outbox', () => {
   test('an enabled school atomically queues a pending immutable payload', async () => {
     await enable(); await send();
     const rows = (await outbox()).rows;
-    assert.equal(rows.length, 1); assert.equal(rows[0].state, 'pending'); assert.equal(rows[0].payload.body, 'Original');
+    assert.equal(rows.length, 1); assert.ok(rows[0]); assert.equal(rows[0].state, 'pending'); assert.equal(rows[0].payload.body, 'Original');
   });
   test('rolling back message persistence also rolls back the delivery job', async () => {
     await enable(); await db.query('SAVEPOINT sending'); await send();
     await db.query('ROLLBACK TO SAVEPOINT sending'); assert.equal((await outbox()).rows.length, 0);
   });
   test('edits preserve earlier snapshots and deletion queues a redaction', async () => {
-    await enable(); const id = (await send()).rows[0].id;
+    await enable(); const message = (await send()).rows[0]; assert.ok(message); const id = message.id;
     await db.query("UPDATE chat_messages SET body='Edited' WHERE id=$1", [id]);
     await db.query('UPDATE chat_messages SET is_deleted=true WHERE id=$1', [id]);
     const rows = (await outbox()).rows;
@@ -63,7 +63,7 @@ describe.skipIf(!isolated)('Matrix transactional outbox', () => {
     await db.query('ROLLBACK TO SAVEPOINT duplicate'); assert.equal((await outbox()).rows.length, 1);
   });
   test('unrelated timestamp updates do not generate edit events', async () => {
-    await enable(); const id = (await send()).rows[0].id;
+    await enable(); const message = (await send()).rows[0]; assert.ok(message); const id = message.id;
     await db.query('UPDATE chat_messages SET updated_at=now() WHERE id=$1', [id]);
     assert.equal((await outbox()).rows.length, 1);
   });

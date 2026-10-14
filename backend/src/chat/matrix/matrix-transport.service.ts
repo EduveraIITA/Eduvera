@@ -74,7 +74,9 @@ export class MatrixTransportService {
     const conversation = await this.scope(user, conversationId, 'messages.send');
     if (!await this.isEnabled(conversation.school_id)) throw new BadRequestException('Matrix is not enabled for this school.');
     // Caller cannot pick an arbitrary school, Matrix room, access token or user to impersonate.
-    return this.flushConversation(conversationId, 10);
+    const result = await sql`UPDATE chat_matrix_outbox SET available_at=now()
+      WHERE conversation_id=${conversationId}::uuid AND state='pending'`.execute(this.database);
+    return { scheduled: Number(result.numAffectedRows ?? 0), delivered: false };
   }
   async deliveryForMessages(ids: string[]): Promise<Map<string, string>> {
     if (!this.client.settings.enabled || !ids.length) return new Map();
@@ -169,8 +171,9 @@ export class MatrixTransportService {
             }
             const attachment = (await sql<{ id: string; original_name: string; content_type: string; size_bytes: number }>`
               SELECT id,original_name,content_type,size_bytes FROM chat_attachments WHERE message_id=${row.message_id}::uuid`.execute(tx)).rows[0];
+            const text = row.payload.body || (attachment ? `Attachment: ${attachment.original_name}` : '');
             const content: Record<string,unknown> = {
-              msgtype: 'm.text', body: row.payload.body || (attachment ? `Attachment: ${attachment.original_name}` : ''),
+              msgtype: 'm.text', body: text,
               'io.eduvera.message_id': row.message_id,
               'io.eduvera.original_created_at': row.payload.created_at,
               // Keep files behind Eduvera's conversation-scoped authorization, not public mxc URLs.
@@ -183,7 +186,7 @@ export class MatrixTransportService {
                 AND action='send' AND state='delivered'`.execute(tx)).rows[0];
               if (reply) content['m.relates_to'] = { 'm.in_reply_to': { event_id: reply.matrix_event_id } };
             }
-            const eventContent = row.action === 'edit' ? { ...content, body: `* ${content.body}`,
+            const eventContent = row.action === 'edit' ? { ...content, body: `* ${text}`,
               'm.new_content': content, 'm.relates_to': { rel_type: 'm.replace', event_id: first } } : content;
             eventId = await this.client.send(roomId,sender,txn,eventContent);
           }

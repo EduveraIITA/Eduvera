@@ -47,6 +47,12 @@ jobs:
           fetch-depth: 0
       - name: Repository secret scan
         uses: docker://ghcr.io/gitleaks/gitleaks:v8.27.2
+        env:
+          # The scanner runs in a container with a different repository owner.
+          # Without this it may report success after scanning zero commits.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: /github/workspace
         with:
           args: git --redact --verbose .
       - uses: actions/setup-node@v4
@@ -59,6 +65,11 @@ jobs:
           python-version: "3.12"
       - name: Google Cloud deployment contract tests
         run: node --test deploy/gcp/*.test.mjs
+      - name: Matrix private configuration contracts
+        run: |
+          python3 -m unittest discover -s deploy/matrix -p 'test_*.py' -v
+          python3 deploy/matrix/generate-config.py --server-name chat.example.test
+          docker compose -f deploy/matrix/compose.yaml config --quiet
       - name: Backend · install, typecheck, lint, build
         working-directory: backend
         run: |
