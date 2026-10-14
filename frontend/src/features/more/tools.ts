@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Award, BookOpen, Bus, CalendarDays, CalendarRange, CalendarX2,
-  FileText, Handshake, Inbox, Megaphone, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
+  FileText, FlaskConical, Handshake, Inbox, Megaphone, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
 import { ChartNoAxesCombined } from "lucide-react";
@@ -93,6 +93,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "administration", name: "Institute settings", description: "Academic setup, account access and history", icon: Settings2, tone: "slate", path: "/principal/administration" },
     { id: "fees", name: "Fees & receipts", description: "Invoices, offline payments and balances", icon: ReceiptIndianRupee, tone: "amber", path: "/principal/fees" },
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
+    { id: "experimental", name: "Experimental settings", description: "Try optional interfaces before they become the default", icon: FlaskConical, tone: "slate", path: "/principal/experimental" },
   ],
 };
 

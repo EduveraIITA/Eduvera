@@ -100,6 +100,9 @@ const PrincipalInsightsPage = lazy(async () => ({ default: (await import("./feat
 const PrincipalAttendanceRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalAttendanceRoute }));
 const PrincipalTimetableRoute = lazy(async () => ({ default: (await import("./features/operations/OperationsRoutes")).PrincipalTimetableRoute }));
 const PrincipalDayPlanPage = lazy(() => import('./features/day-plans/PrincipalDayPlanPage'));
+const PrincipalTimetableExperienceRoute = lazy(async () => ({ default: (await import("./features/experiments/TimetableExperienceRoutes")).PrincipalTimetableExperienceRoute }));
+const PrincipalCalendarExperienceRoute = lazy(async () => ({ default: (await import("./features/experiments/TimetableExperienceRoutes")).PrincipalCalendarExperienceRoute }));
+const ExperimentalSettingsPage = lazy(() => import("./features/experiments/ExperimentalSettingsPage"));
 const TeacherDayPage = lazy(() => import('./features/day-plans/TeacherDayPage'));
 const PeoplePage = lazy(() => import("./features/people/PeoplePage"));
 const PeopleImportPage = lazy(() => import("./features/people/PeopleImportPage"));
@@ -129,7 +132,6 @@ const PrincipalMoreRoute = lazy(async () => ({ default: (await import("./feature
 const ParentCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).ParentCalendarRoute }));
 const StudentCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).StudentCalendarRoute }));
 const TeacherCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).TeacherCalendarRoute }));
-const PrincipalCalendarRoute = lazy(async () => ({ default: (await import("./features/calendar/CalendarRoutes")).PrincipalCalendarRoute }));
 const TeacherClassesPage = lazy(() => import("./features/classes/TeacherClassesPage"));
 const TeacherClassPage = lazy(() => import("./features/classes/TeacherClassPage"));
 const AdministrationPage = lazy(() => import("./features/office/AdministrationPage"));
@@ -320,7 +322,7 @@ export function App() {
               {(["review", "recording", "followups", "learning-review", "operations", "finance"] as const).map(topic => <Route key={`insight-review-${topic}`} path={`/principal/insights/${topic}`} element={<PortalOnly portal="principal"><PrincipalInsightsPage topic={topic} /></PortalOnly>} />)}
               <Route path="/principal/insights/review/:studentId" element={<PortalOnly portal="principal"><PrincipalInsightsPage topic="review" /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
-              <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
+              <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalTimetableExperienceRoute /></PortalOnly>} />
               <Route path="/principal/timetable/day" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
               <Route path="/principal/timetable/weekly" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
               <Route path="/principal/students" element={<PortalOnly portal="principal"><PeoplePage /></PortalOnly>} />
@@ -339,13 +341,14 @@ export function App() {
               <Route path="/principal/events/:eventId/edit" element={<PortalOnly portal="principal"><PrincipalEventEditRoute /></PortalOnly>} />
               <Route path="/principal/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="principal"><PrincipalEventRegisterRoute /></PortalOnly>} />
               <Route path="/principal/more" element={<PortalOnly portal="principal"><PrincipalMoreRoute /></PortalOnly>} />
+              <Route path="/principal/experimental" element={<PortalOnly portal="principal"><ExperimentalSettingsPage /></PortalOnly>} />
               <Route path="/principal/requests" element={<PortalOnly portal="principal"><PrincipalRequestsRoute /></PortalOnly>} />
               <Route path="/principal/student-leave" element={<PortalOnly portal="principal"><PrincipalStudentLeavePage /></PortalOnly>} />
               <Route path="/principal/notices" element={<PortalOnly portal="principal"><PrincipalNoticesRoute /></PortalOnly>} />
               <Route path="/principal/notices/new" element={<PortalOnly portal="principal"><PrincipalNoticeCreateRoute /></PortalOnly>} />
               <Route path="/principal/notices/:noticeId" element={<PortalOnly portal="principal"><PrincipalNoticeDetailRoute /></PortalOnly>} />
               <Route path="/principal/notices/:noticeId/edit" element={<PortalOnly portal="principal"><PrincipalNoticeEditRoute /></PortalOnly>} />
-              <Route path="/principal/calendar" element={<PortalOnly portal="principal"><PrincipalCalendarRoute /></PortalOnly>} />
+              <Route path="/principal/calendar" element={<PortalOnly portal="principal"><PrincipalCalendarExperienceRoute /></PortalOnly>} />
               <Route path="/principal/governance" element={<PortalOnly portal="principal"><PrincipalGovernanceRoute /></PortalOnly>} />
               <Route path="/principal/assessments" element={<PortalOnly portal="principal"><PrincipalAssessmentsRoute /></PortalOnly>} />
               <Route path="/principal/report-cards" element={<PortalOnly portal="principal"><PrincipalAcademicReportsRoute /></PortalOnly>} />

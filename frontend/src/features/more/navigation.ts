@@ -11,7 +11,7 @@ const groups: Record<Portal, Group[]> = {
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
     { name: "Operations", ids: ["gate", "departure", "events", "notices", "messages", "fees", "safeguarding"] },
     { name: "Institute", ids: ["administration", "governance"] },
-    { name: "Account", ids: ["security"] },
+    { name: "Account", ids: ["security", "experimental"] },
   ],
   teacher: [
     { name: "Needs attention", ids: ["requests"] },

@@ -1,0 +1,19 @@
+.experimental-settings { width:min(680px,100%); margin:0 auto; padding:24px; }
+.experimental-settings > section { overflow:hidden; border:1px solid var(--thatcampus-border); border-radius:20px; background:var(--thatcampus-surface); box-shadow:0 10px 30px rgb(15 23 42 / .05); }
+.experimental-settings > section > header { display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; padding:20px; border-bottom:1px solid var(--thatcampus-border); }
+.experimental-settings > section > header > span { display:grid; width:40px; height:40px; place-items:center; border-radius:12px; color:var(--thatcampus-brand); background:var(--thatcampus-surface-strong); }
+.experimental-settings h2,.experimental-settings p { margin:0; }
+.experimental-settings h2 { font-size:18px; line-height:1.3; letter-spacing:-.02em; }
+.experimental-settings header p { margin-top:4px; color:var(--thatcampus-ink-secondary); font-size:13px; line-height:1.5; }
+.experimental-settings__choices { display:grid; padding:0 20px; }
+.experimental-settings__choices button { display:grid; width:100%; min-height:76px; grid-template-columns:minmax(0,1fr) 24px; align-items:center; gap:12px; padding:14px 0; border:0; border-bottom:1px solid var(--thatcampus-border); color:var(--thatcampus-ink); background:transparent; text-align:left; cursor:pointer; }
+.experimental-settings__choices button:last-child { border-bottom:0; }
+.experimental-settings__choices button > span { display:grid; min-width:0; gap:5px; }
+.experimental-settings__choices strong { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:15px; }
+.experimental-settings__choices em { padding:3px 7px; border-radius:999px; color:#684d08; background:#fff2c7; font-size:10px; font-style:normal; font-weight:700; }
+.experimental-settings__choices small { color:var(--thatcampus-ink-secondary); font-size:12px; line-height:1.45; }
+.experimental-settings__choices i { display:grid; width:22px; height:22px; place-items:center; border:1px solid var(--thatcampus-border); border-radius:50%; color:#fff; background:var(--thatcampus-surface); }
+.experimental-settings__choices button[aria-checked=true] i { border-color:var(--thatcampus-brand); background:var(--thatcampus-brand); }
+.experimental-settings__choices button:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
+.experimental-settings .experimental-settings__note { padding:14px 20px 18px; color:var(--thatcampus-ink-secondary); background:var(--thatcampus-surface-strong); font-size:11px; line-height:1.5; }
+@media (max-width:600px) { .experimental-settings { padding:16px 24px 28px; } .experimental-settings > section { border-radius:16px; } }

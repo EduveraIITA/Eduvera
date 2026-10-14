@@ -31,6 +31,11 @@ function show(portal: Portal, path = `/${portal}/more`) {
 }
 
 describe("settings-style More", () => {
+  it("puts the optional timetable experience in principal Account settings only", () => {
+    show("principal");
+    expect(screen.getByRole("link", { name: "Open Experimental settings" })).toHaveAttribute("href", "/principal/experimental");
+  });
+
   it.each(["principal", "teacher", "parent", "student"] as const)("makes Analytics discoverable from %s More", portal => {
     show(portal);
     expect(screen.getByRole("link", { name: "Open Insights" })).toHaveAttribute("href", `/${portal}/insights`);

@@ -6116,3 +6116,28 @@ application production builds, focused UI tests and desktop browser screenshots
 were verified before release.
 
 Verified last-template release: Stage run 38614406544 succeeded and public thatcampus.com/readyz reports 1588213bc8f1bec52ed9e8cf730328d2087a0471. Public HTML confirms the platform_2 centred hero, feature cards, horizontal role selector and zero emoji characters. Website CI 38613892400 passed five viewports and real PostgreSQL enquiry persistence. The shared backend suite passed after making the lead-time test fixture remain on its service date near midnight; production transport authorization was not changed.
+## Principal timetable experience experiment — 15 October 2026
+
+User decision: preserve the established timetable and calendar while the unified,
+Teams-inspired timeline is evaluated. The current experience remains the default;
+the new interface must not silently replace a proven operational workflow.
+
+- Added **More → Account → Experimental settings** for principals. The timetable
+  choice is stored per signed-in user on the current device and is labelled as an
+  interface experiment, not an institution operating rule or school policy.
+- **Current** retains the existing principal timetable and calendar routes without
+  changing their data, navigation or authoring behavior. **Timeline** uses the
+  shared schedule data in a proportional day/week canvas with a current-time line,
+  positional class and event blocks, free-time planning, month navigation, and the
+  existing authorized draft/publication commands.
+- The preference controls both `/principal/timetable` and `/principal/calendar` so
+  the two destinations cannot present contradictory experiences. Calendar context
+  and attention deep-link parameters survive the experimental redirect. Switching
+  back changes only the interface; timetable records are not copied or rewritten.
+- Kept the experiment principal-only. Teacher, parent and student timetable/calendar
+  experiences are unchanged.
+
+Verified locally: frontend typecheck and zero-warning lint pass; production build
+passes; 38 focused planner, experiment and More tests pass; 100 tests pass when the
+affected application-route suite is included. Stage deployment and physical-phone
+acceptance remain open at this point.

@@ -1,0 +1,33 @@
+import { CalendarDays, Check } from "lucide-react";
+import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { setTimetableExperience, useTimetableExperience, type TimetableExperience } from "./timetableExperience";
+import "./experimental-settings.css";
+
+const options: Array<{ id: TimetableExperience; name: string; description: string; badge?: string }> = [
+  { id: "current", name: "Current", description: "The proven timetable and calendar, kept as the default." },
+  { id: "timeline", name: "Timeline", description: "A Teams-inspired day and week canvas with positional planning.", badge: "Experimental" },
+];
+
+export default function ExperimentalSettingsPage() {
+  const auth = useOptionalAuth();
+  const userId = auth?.user?.id ?? "anonymous";
+  const selected = useTimetableExperience(userId);
+  return <OperationsShell portal="principal" active="more" title="Experimental settings" backTo="/principal/more">
+    <div className="experimental-settings">
+      <section aria-labelledby="timetable-experience-title">
+        <header>
+          <span aria-hidden="true"><CalendarDays size={20} /></span>
+          <div><h2 id="timetable-experience-title">Timetable experience</h2><p>Choose the interface used for Timetable and Calendar on this device.</p></div>
+        </header>
+        <div className="experimental-settings__choices" role="radiogroup" aria-label="Timetable experience">
+          {options.map((option) => <button key={option.id} type="button" role="radio" aria-checked={selected === option.id} onClick={() => setTimetableExperience(userId, option.id)}>
+            <span><strong>{option.name}{option.badge ? <em>{option.badge}</em> : null}</strong><small>{option.description}</small></span>
+            <i aria-hidden="true">{selected === option.id ? <Check size={16} /> : null}</i>
+          </button>)}
+        </div>
+        <p className="experimental-settings__note">You can switch back at any time. Your timetable data is shared; only the interface changes.</p>
+      </section>
+    </div>
+  </OperationsShell>;
+}

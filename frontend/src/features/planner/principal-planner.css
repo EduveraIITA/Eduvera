@@ -1,0 +1,105 @@
+.principal-planner { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; min-width:0; max-width:100%; --planner-blue:#164e9a; --planner-blue-soft:#eaf1ff; }
+.principal-planner button,.principal-planner select,.principal-planner input { font:inherit; }
+.principal-planner__actions { display:flex; align-items:center; gap:4px; }
+.planner-settings { display:grid; width:40px; height:40px; place-items:center; color:var(--thatcampus-brand); text-decoration:none; border-radius:10px; }
+.planner-settings:hover { background:var(--thatcampus-surface-strong); }
+.planner-new { position:relative; z-index:12; font-size:13px; }
+.planner-new summary { display:flex; align-items:center; justify-content:center; gap:5px; min-height:40px; padding:0 10px; border-radius:10px; color:#fff; background:var(--thatcampus-brand); cursor:pointer; list-style:none; font-weight:700; }
+.planner-new summary::-webkit-details-marker { display:none; }
+.planner-new__menu { position:absolute; top:calc(100% + 8px); right:0; width:min(320px,calc(100vw - 32px)); padding:6px; border:1px solid var(--thatcampus-border); border-radius:16px; background:var(--thatcampus-surface); box-shadow:0 12px 32px rgb(15 23 42 / .16); }
+.planner-new__menu button,.planner-new__menu a { display:grid; width:100%; grid-template-columns:24px 1fr; gap:8px; padding:12px; border:0; border-radius:10px; color:var(--thatcampus-ink); background:transparent; text-align:left; text-decoration:none; cursor:pointer; }
+.planner-new__menu button:hover,.planner-new__menu a:hover { background:var(--thatcampus-surface-strong); }
+.planner-new__menu svg { color:var(--thatcampus-brand); }
+.planner-new__menu span { display:grid; gap:3px; text-transform:none; letter-spacing:0; }
+.planner-new__menu strong { font-size:13px; }.planner-new__menu small { color:var(--thatcampus-ink-secondary); font-size:11px; line-height:1.4; }
+.planner-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.planner-toolbar__date { display:flex; align-items:center; gap:2px; min-width:0; flex:1; }
+.planner-toolbar__date strong { flex:1; font-size:16px; color:var(--thatcampus-ink); letter-spacing:-.02em; }
+.planner-toolbar button { display:grid; min-height:40px; place-items:center; padding:0 8px; border:0; border-radius:9px; color:var(--thatcampus-ink-secondary); background:transparent; cursor:pointer; }
+.planner-toolbar__date > button:not(.planner-toolbar__today) { width:32px; flex:0 0 32px; padding:0; color:var(--thatcampus-brand); }
+.planner-toolbar .planner-toolbar__today { font-size:12px; font-weight:700; color:var(--thatcampus-brand); }
+.planner-toolbar__views { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:3px; border-radius:11px; background:var(--thatcampus-surface-strong); }
+.planner-toolbar__views button { min-width:64px; min-height:34px; font-size:12px; font-weight:700; }
+.planner-toolbar__views button[aria-checked=true] { color:var(--thatcampus-brand); background:var(--thatcampus-surface); box-shadow:0 1px 4px rgb(15 23 42 / .07); }
+.planner-filter-row { display:flex; align-items:center; gap:12px; min-width:0; }
+.planner-filter-row label { display:flex; align-items:center; gap:8px; min-width:0; min-height:44px; flex:1; padding:0 12px; border:1px solid var(--thatcampus-border); border-radius:12px; background:var(--thatcampus-surface); color:var(--thatcampus-ink-secondary); }
+.planner-filter-row select { width:100%; min-width:0; padding:0; border:0; background:transparent; color:var(--thatcampus-ink); font-weight:600; font-size:14px; }
+.planner-draft-action { display:flex; align-items:center; gap:6px; min-height:44px; border:0; padding:0 8px; border-radius:10px; color:#805c10; background:#fff4d9; font-size:12px!important; font-weight:700!important; }
+.planner-draft-action span { color:#62470c; }.planner-success { display:grid; grid-template-columns:20px 1fr 32px; align-items:center; gap:8px; padding:8px 12px; border-radius:12px; background:#e4f5f1; color:#165d54; font-size:12px; }
+.planner-success button { width:32px; height:32px; border:0; background:transparent; color:inherit; }
+.planner-loading,.planner-error { display:grid; place-content:center; justify-items:center; gap:12px; min-height:240px; padding:20px; border-radius:16px; background:var(--thatcampus-surface); color:var(--thatcampus-ink-secondary); }
+.planner-error button { min-height:40px; padding:0 16px; border:0; border-radius:10px; color:#fff; background:var(--thatcampus-brand); }
+.planner-error--compact { min-height:0; grid-template-columns:1fr auto; align-items:center; color:#9b2c2c; background:#fff0ef; }
+
+/* FullCalendar v7 public class hooks own these styles, avoiding generated selectors. */
+.school-calendar { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; gap:0; --fc-monarch-now:#d92e45; --fc-monarch-highlight:#dbe9ff80; --fc-monarch-border:#e9edf3; --fc-monarch-tertiary:var(--thatcampus-brand); }
+.school-calendar__scroll { min-width:0; width:100%; overflow:auto; border:1px solid var(--thatcampus-border); border-radius:16px; background:var(--thatcampus-surface); }
+.school-calendar__canvas { min-width:780px; }.school-calendar--day .school-calendar__canvas { min-width:0; }
+.school-calendar-engine { color:var(--thatcampus-ink); font-family:inherit; font-size:12px; }
+.school-calendar-view { background:var(--thatcampus-surface); }
+.school-calendar-day { padding:0; border-bottom:1px solid #e9edf3; background:#fff; }
+.school-calendar-day__inner { display:flex; align-items:center; justify-content:center; gap:6px; min-height:48px; padding:4px; }
+.school-calendar-day__inner > span { font-size:11px; font-weight:600; color:#637184; text-transform:uppercase; }
+.school-calendar-day__inner > strong { display:grid; place-items:center; min-width:30px; height:30px; border-radius:50%; font-size:15px; font-weight:700; }
+.school-calendar-day__inner > strong.is-today { background:var(--thatcampus-brand); color:#fff; }
+.school-calendar-lane { border-top:1px solid #e9edf3; }.school-calendar-lane.is-half-hour { border-top:1px solid #f2f4f8; }
+.school-calendar-time { vertical-align:top; border:0; width:52px; min-width:52px; }
+.school-calendar-time__inner { height:auto; min-height:0; padding:0 8px 0 4px; font-size:10px; font-weight:500; line-height:1; text-align:right; white-space:nowrap; color:#617087; transform:translateY(-5px); }
+.school-calendar-time-divider { border-right:1px solid #e9edf3; }
+.school-calendar .school-calendar-block { overflow:hidden; margin:1px 3px 2px 1px; border:0; border-left:3px solid #2862bb; border-radius:7px; background:#eaf1ff; color:#15345b; cursor:pointer; box-shadow:none; }
+.school-calendar .school-calendar-block--break,.school-calendar .school-calendar-block--activity { border-left-color:#9caab5; background:#f1f4f6; color:#4b5a67; }
+.school-calendar .school-calendar-block--event { border-left-color:#278676; background:#e4f5f1; color:#165d54; }
+.school-calendar-block__inner { height:100%; min-width:0; padding:7px 8px; color:inherit; }
+.school-calendar-event__content { display:flex; flex-direction:column; gap:2px; min-width:0; height:100%; overflow:hidden; line-height:1.25; }
+.school-calendar-event__content strong { flex:0 0 auto; font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:inherit; }
+.school-calendar-event__content time { flex:0 0 auto; font-size:10px; font-weight:500; color:inherit; opacity:.87; }
+.school-calendar-event__content small { overflow:hidden; font-size:10px; color:inherit; text-overflow:ellipsis; white-space:nowrap; opacity:.87; }
+.school-calendar--week .school-calendar-event__content small { display:none; }
+.school-calendar--day .school-calendar-event__content { position:relative; padding-right:88px; }
+.school-calendar--day .school-calendar-event__content strong { font-size:14px; }
+.school-calendar--day .school-calendar-event__content small { font-size:11px; }
+.school-calendar--day .school-calendar-event__content time { position:absolute; right:0; top:1px; max-width:84px; text-align:right; font-size:10px; }
+.school-calendar-hit:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:2px; }
+.school-calendar-now { border-top:2px solid #d92e45; pointer-events:none; z-index:6; }
+.school-calendar-now-dot { width:7px; height:7px; margin-top:-3px; border-radius:50%; background:#d92e45; pointer-events:none; }
+.planner-week-strip { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; padding:0 0 12px; }
+.planner-week-strip button { display:grid; justify-items:center; gap:5px; min-height:58px; padding:4px 0; border:0; border-radius:12px; background:transparent; color:var(--thatcampus-ink-secondary); cursor:pointer; }
+.planner-week-strip span { font-size:10px; font-weight:600; }.planner-week-strip strong { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; font-size:15px; font-weight:700; color:var(--thatcampus-ink); }
+.planner-week-strip .is-today strong { color:var(--thatcampus-brand); box-shadow:inset 0 0 0 1px var(--thatcampus-brand); }
+.planner-week-strip button[aria-pressed=true] strong { color:#fff; background:var(--thatcampus-brand); box-shadow:none; }
+.planner-closure { display:flex; justify-content:space-between; gap:8px; padding:12px; margin-bottom:8px; border-radius:10px; background:#fff4d9; color:#62470c; font-size:13px; font-weight:600; }.planner-closure small { font-size:11px; font-weight:400; }
+
+.planner-month__weekdays,.planner-month { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); }
+.planner-month__weekdays { padding:4px; color:var(--thatcampus-ink-secondary); font-size:11px; text-align:center; }
+.planner-month { overflow:hidden; border:1px solid var(--thatcampus-border); border-radius:16px; background:var(--thatcampus-surface); }
+.planner-month > button { display:grid; align-content:start; gap:4px; min-width:0; min-height:112px; padding:8px; border:0; border-right:1px solid var(--thatcampus-border); border-bottom:1px solid var(--thatcampus-border); color:var(--thatcampus-ink); background:transparent; text-align:left; cursor:pointer; }
+.planner-month > button:nth-child(7n) { border-right:0; }.planner-month .is-outside { opacity:.45; }.planner-month .is-selected { box-shadow:inset 0 0 0 2px var(--thatcampus-brand); }
+.planner-month time { font-size:12px; font-weight:700; }.planner-month__item,.planner-month__closure { overflow:hidden; padding:3px 4px; border-radius:4px; background:#eaf1ff; color:#15345b; font-size:10px; white-space:nowrap; text-overflow:ellipsis; }.planner-month__item--event { background:#e4f5f1; color:#165d54; }.planner-month__closure { background:#fff4d9; color:#62470c; }.planner-month small { font-size:10px; }.planner-month__selected { display:none; }
+
+.planner-dialog { position:fixed; inset:auto 0 0; width:min(560px,100%); max-width:100%; max-height:92dvh; padding:0; margin:0 auto; overflow:auto; border:0; border-radius:24px 24px 0 0; background:var(--thatcampus-surface,#fff); color:var(--thatcampus-ink,#152437); font-family:inherit; box-shadow:0 20px 80px rgb(15 23 42 / .2); }
+.planner-dialog::backdrop { background:rgb(15 23 42 / .3); backdrop-filter:blur(3px); }
+.planner-dialog__surface > header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:20px 20px 16px; border-bottom:1px solid var(--thatcampus-border); }
+.planner-dialog h2 { margin:0; font-size:21px; line-height:1.3; letter-spacing:-.03em; }.planner-dialog header p { margin:5px 0 0; font-size:12px; color:var(--thatcampus-ink-secondary); }
+.planner-dialog header button { display:grid; flex:0 0 36px; width:36px; height:36px; place-items:center; padding:0; border:0; border-radius:50%; color:var(--thatcampus-ink-secondary); background:var(--thatcampus-surface-strong); cursor:pointer; }
+.planner-dialog button,.planner-dialog input,.planner-dialog select { font-family:inherit; }.planner-dialog button:disabled { opacity:.5; cursor:default; }
+.planner-lesson-form { display:grid; gap:16px; padding:20px; }.planner-lesson-form p { margin:0; font-size:13px; line-height:1.5; color:var(--thatcampus-ink-secondary); }
+.planner-lesson-form label,.planner-sheet__readonly { display:grid; min-width:0; gap:7px; font-size:12px; font-weight:600; color:var(--thatcampus-ink-secondary); }
+.planner-lesson-form input,.planner-lesson-form select,.planner-sheet__readonly strong { width:100%; min-width:0; min-height:44px; padding:0 12px; box-sizing:border-box; border:1px solid var(--thatcampus-border); border-radius:10px; color:var(--thatcampus-ink); background:var(--thatcampus-surface); font-size:15px; font-weight:500; }
+.planner-sheet__readonly strong { display:flex; align-items:center; font-size:13px; }
+.planner-form-pair,.planner-sheet__grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.planner-lesson-form footer,.planner-lesson-detail footer { display:flex; gap:8px; padding-top:8px; padding-bottom:env(safe-area-inset-bottom); }
+.planner-lesson-form footer button,.planner-lesson-detail footer button { flex:1; min-height:46px; padding:8px 12px; border:0; border-radius:12px; color:#fff; background:var(--thatcampus-brand); font-weight:700; font-size:13px; cursor:pointer; }
+.planner-lesson-form footer .is-secondary { color:var(--thatcampus-ink-secondary); background:var(--thatcampus-surface-strong); }
+.planner-lesson-form .planner-form-error { padding:12px; border-radius:10px; color:#9b2c2c; background:#fff0ef; }
+.planner-lesson-detail { padding:20px; }.planner-lesson-detail dl { display:grid; gap:18px; margin:0 0 20px; }.planner-lesson-detail dl > div { display:grid; grid-template-columns:22px 1fr; gap:3px 10px; }.planner-lesson-detail svg { grid-row:span 2; margin-top:3px; color:var(--thatcampus-ink-secondary); }.planner-lesson-detail dt { font-size:11px; color:var(--thatcampus-ink-secondary); }.planner-lesson-detail dd { margin:0; font-size:14px; font-weight:500; }.planner-lesson-detail footer { flex-direction:column; }.planner-lesson-detail footer a { display:grid; min-height:42px; place-items:center; font-size:13px; font-weight:600; color:var(--thatcampus-brand); text-decoration:none; }
+.planner-choice-list { display:grid; gap:4px; padding:12px 12px calc(12px + env(safe-area-inset-bottom)); }.planner-choice-list > button,.planner-choice-list > a { display:grid; width:100%; min-height:64px; grid-template-columns:28px 1fr 18px; gap:8px; align-items:center; padding:10px; border:0; border-radius:12px; color:var(--thatcampus-ink); background:transparent; text-align:left; text-decoration:none; cursor:pointer; }.planner-choice-list > button:hover,.planner-choice-list > a:hover { background:var(--thatcampus-surface-strong); }.planner-choice-list svg { color:var(--thatcampus-brand); }.planner-choice-list span { display:grid; gap:4px; }.planner-choice-list strong { font-size:14px; }.planner-choice-list small { font-size:12px; color:var(--thatcampus-ink-secondary); }
+.planner-sheet-form fieldset { margin:0; padding:0; border:0; }.planner-sheet-form legend { margin-bottom:8px; font-size:12px; font-weight:600; color:var(--thatcampus-ink-secondary); }.planner-sheet__days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }.planner-sheet__days button { min-height:40px; padding:0; border:0; border-radius:9px; color:var(--thatcampus-ink-secondary); background:var(--thatcampus-surface-strong); font-size:11px; }.planner-sheet__days button[aria-pressed=true] { color:#fff; background:var(--thatcampus-brand); }.planner-sheet__notice,.planner-sheet__error { font-size:12px!important; }.planner-sheet__error { color:#9b2c2c!important; }
+.spin { animation:planner-spin .8s linear infinite; } @keyframes planner-spin { to { transform:rotate(360deg); } }
+@media (min-width:761px) { .planner-dialog { inset:0; margin:auto; border-radius:20px; height:fit-content; } }
+@media (max-width:760px) {
+  .planner-toolbar { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }.planner-toolbar__date strong { font-size:14px; }.planner-toolbar__views { width:100%; }.planner-toolbar__views button { min-width:0; min-height:32px; }
+  .school-calendar__canvas { min-width:0; }.school-calendar--day .school-calendar-event__content { padding-right:0; }.school-calendar--day .school-calendar-event__content time { position:static; max-width:none; text-align:left; }.school-calendar--day .school-calendar-event__content small { display:none; }.school-calendar-block__inner { padding:6px 8px; }
+  .planner-month > button { min-height:62px; justify-items:center; padding:6px 2px; }.planner-month__item,.planner-month__closure { width:6px; height:6px; padding:0; border-radius:50%; color:transparent; }.planner-month small { display:none; }.planner-month__selected { display:grid; gap:8px; }.planner-month__selected h2 { margin:8px 0 0; font-size:16px; }
+  .planner-sheet__grid { grid-template-columns:1fr; }.planner-draft-action { gap:3px; }.planner-draft-action > span { display:none; }
+}
+@media (prefers-reduced-motion:reduce) { .spin { animation:none; } }
