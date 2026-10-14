@@ -6114,3 +6114,5 @@ header, authentication surface, browser favicon and install metadata. The prior
 Eduvera leaf is no longer referenced by rendered product branding. Marketing and
 application production builds, focused UI tests and desktop browser screenshots
 were verified before release.
+
+Verified last-template release: Stage run 38614406544 succeeded and public thatcampus.com/readyz reports 1588213bc8f1bec52ed9e8cf730328d2087a0471. Public HTML confirms the platform_2 centred hero, feature cards, horizontal role selector and zero emoji characters. Website CI 38613892400 passed five viewports and real PostgreSQL enquiry persistence. The shared backend suite passed after making the lead-time test fixture remain on its service date near midnight; production transport authorization was not changed.
