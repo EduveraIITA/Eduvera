@@ -6,7 +6,7 @@ Merged PR: https://github.com/EduveraIITA/Eduvera/pull/29
 
 Merged release: `e1c00815f4adc0de9c785f9b0d42f3a72332efcd`.
 The marketing site is separate from the authenticated app. Direct Login remains:
-https://eduvera-stage-367469594690.asia-south1.run.app/login
+https://app.thatcampus.com/login
 
 Implemented: responsive marketing pages, original transparent logo, configurable
 Login, honest feature descriptions, labelled sample previews, role/solution views,
@@ -28,7 +28,7 @@ SEO/legal pages, metadata, robots/sitemap, security headers and analytics hooks.
 - The merged Stage release passed all verification and deployed the existing
   application, applied migrations, verified its candidate and verified its public
   service. The release log confirms `Verified Stage e1c00815...` at
-  https://eduvera-stage-367469594690.asia-south1.run.app.
+  https://app.thatcampus.com.
   https://github.com/EduveraIITA/Eduvera/actions/runs/38598878117
 - The marketing image was built and uploaded:
   `asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:e1c00815f4adc0de9c785f9b0d42f3a72332efcd`.
