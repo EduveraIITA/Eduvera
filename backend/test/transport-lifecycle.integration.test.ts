@@ -17,9 +17,9 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     await pool.query("INSERT INTO users(id,username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'unused','Transport','Test',$4)",[id,username,`${username}@example.test`,role]);
     return {id,username,email:`${username}@example.test`,first_name:"Transport",last_name:"Test",role,is_active:true};
   }
-  async function fixture(direction:"from_institution"|"to_institution"="from_institution",learnerCount=2,stopCount=1) {
+  async function fixture(direction:"from_institution"|"to_institution"="from_institution",learnerCount=2,stopCount=1,timezone="Asia/Kolkata") {
     const admin=await actor("admin");const collector=await actor("staff");const parent=await actor("parent");const student=await actor("student");const sibling=await actor("student");const outsider=await actor("parent");
-    const school=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Transport Test',$1,'Asia/Kolkata') RETURNING id",[randomUUID().slice(0,24)])).rows[0].id as string;
+    const school=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Transport Test',$1,$2) RETURNING id",[randomUUID().slice(0,24),timezone])).rows[0].id as string;
     for(const [user,role] of [[admin,"admin"],[collector,"staff"],[parent,"guardian"],[student,"student"],[sibling,"student"],[outsider,"guardian"]] as const) await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,$3)",[school,user.id,role]);
     const learnerIds:string[]=[];
     const guardian=(await pool.query("INSERT INTO parents(user_id) VALUES($1) RETURNING id",[parent.id])).rows[0].id;
@@ -29,7 +29,7 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
       const id=(await pool.query("INSERT INTO students(user_id,school_id,admission_number) VALUES($1,$2,$3) RETURNING id",[learner.id,school,randomUUID()])).rows[0].id;
       learnerIds.push(id);await pool.query("INSERT INTO guardian_relationships(school_id,student_id,guardian_id,relationship) VALUES($1,$2,$3,'guardian')",[school,id,guardian]);
     }
-    const day=(await pool.query("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS day")).rows[0].day as string;
+    const day=(await pool.query("SELECT (now() AT TIME ZONE $1)::date::text AS day",[timezone])).rows[0].day as string;
     const route=await service.createRoute(admin,school,{code:"TEST",name:"Test route",stops:Array.from({length:stopCount},(_,index)=>({direction,sequence:index+1,name:stopCount===1?"Library stop":`Stop ${index+1}`,latitude:32.11+index*.001,longitude:77.16+index*.001}))});
     const stopIds=(await pool.query("SELECT id FROM transport_stops WHERE route_id=$1 ORDER BY sequence",[route.id])).rows.map(row=>row.id as string);const stop=stopIds[0]!;
     for(const [index,id] of learnerIds.entries()) await service.assignStudent(admin,school,{student_id:id,route_id:route.id,stop_id:stopIds[Math.floor(index*stopCount/learnerCount)],direction,valid_from:day});
@@ -42,8 +42,8 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     const accepted=await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     return service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:accepted.revision});
   }
-  async function departureIn(tripId:string,minutes:number) {
-    await pool.query("UPDATE transport_trips SET service_date=((now()+make_interval(mins=>$2)) AT TIME ZONE 'Asia/Kolkata')::date, scheduled_departure_time=((now()+make_interval(mins=>$2)) AT TIME ZONE 'Asia/Kolkata')::time WHERE id=$1",[tripId,minutes]);
+  async function departureIn(tripId:string,minutes:number,timezone="Asia/Kolkata") {
+    await pool.query("UPDATE transport_trips SET service_date=((now()+make_interval(mins=>$2)) AT TIME ZONE $3)::date, scheduled_departure_time=((now()+make_interval(mins=>$2)) AT TIME ZONE $3)::time WHERE id=$1",[tripId,minutes,timezone]);
   }
   const rider=(state:string,revision=1,note="Observed by assigned staff")=>({state,expected_revision:revision,note});
   beforeAll(()=>{db=new DatabaseService();service=new DepartureCoordinationService(db,new SchoolEventService(db));});
@@ -248,13 +248,17 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
   });
 
   it("opens controls only in the configured window and closes self-service duty changes",async()=>{
-    const f=await fixture();await departureIn(f.trip.id,31);
+    // Keep the 31-minute lead-time scenario on its service date, including
+    // when CI runs close to midnight in the institution's timezone.
+    const timezone=new Date().getUTCHours()>=22?"Asia/Kolkata":"UTC";
+    const f=await fixture("from_institution",2,1,timezone);
+    await departureIn(f.trip.id,31,timezone);
     await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     const early=(await service.collectorWorkspace(f.collector)).trips.find(trip=>trip.id===f.trip.id)!;
     expect(early.controls_available).toBe(false);expect(early.duty_change_available).toBe(true);
     await expect(service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:2})).rejects.toThrow(/configured lead time/);
     await expect(service.tripAction(f.collector,f.trip.id,"cancel",{expected_revision:2,note:"Cannot operate today"})).rejects.toThrow(/configured lead time/);
-    await departureIn(f.trip.id,30);
+    await departureIn(f.trip.id,30,timezone);
     const openWindow=(await service.collectorWorkspace(f.collector)).trips.find(trip=>trip.id===f.trip.id)!;
     expect(openWindow.controls_available).toBe(true);expect(openWindow.duty_change_available).toBe(false);
     await expect(service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Last minute cover"})).rejects.toThrow(/institution's journey operating window/);
