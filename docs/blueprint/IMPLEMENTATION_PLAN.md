@@ -5907,3 +5907,9 @@ assertions under shared CI load: the parent More attention link used the query l
 default, while the two month/year timetable cases inherited the suite's 15-second ceiling. Their
 behavior was already correct and the focused cases passed locally; the tests now use explicit bounded
 waits appropriate to those asynchronous screens. The affected route cases pass **3/3** locally.
+
+Stage run [38510889856](https://github.com/EduveraIITA/Eduvera/actions/runs/38510889856)
+then passed the complete backend, isolated-PostgreSQL, mobile and desktop gates. Google Cloud promoted
+revision `eduvera-stage-00081-fuw` and verified commit
+`43dda491b526647b2bc629776f831d5b78c4adce` on the public service. Physical-phone visual acceptance
+of the refreshed follow-up list remains required.
