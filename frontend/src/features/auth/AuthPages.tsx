@@ -25,7 +25,7 @@ import "./auth.css";
 
 function AuthBrand() {
   return (
-    <Link className="auth-brand" to="/" aria-label="Cambridge International School and Eduvera">
+    <Link className="auth-brand" to="/" aria-label="Cambridge International School and ThatCampus">
       <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" />
     </Link>
   );
@@ -39,7 +39,7 @@ export function AuthLayout({ eyebrow, title, description, children }: {
 }) {
   return (
     <main className="auth-page">
-      <section className="auth-story" aria-label="Edura OS introduction">
+      <section className="auth-story" aria-label="ThatCampus introduction">
         <AuthBrand />
         <div className="auth-story__content">
           <h1>School records that stay current.</h1>
@@ -181,7 +181,7 @@ export function LoginPage() {
         </button>
       </form>}
 
-      <p className="auth-switch">New to Edura OS? <Link to="/signup">Create an account</Link></p>
+      <p className="auth-switch">New to ThatCampus? <Link to="/signup">Create an account</Link></p>
     </AuthLayout>
   );
 }

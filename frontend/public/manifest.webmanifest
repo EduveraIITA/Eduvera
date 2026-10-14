@@ -1,6 +1,6 @@
 {
-  "name": "Edura OS",
-  "short_name": "Edura",
+  "name": "ThatCampus",
+  "short_name": "ThatCampus",
   "description": "School attendance, timetable, leave, and diary workspace for students and families.",
   "id": "/",
   "start_url": "/",
@@ -12,21 +12,9 @@
   "theme_color": "#f8f9ff",
   "icons": [
     {
-      "src": "/edura-leaf-favicon.png",
-      "sizes": "64x64",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/edura-leaf-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/edura-leaf-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
+      "src": "/assets/thatcampus-logo.jpg",
+      "sizes": "1254x1254",
+      "type": "image/jpeg",
       "purpose": "any maskable"
     }
   ]

@@ -8,6 +8,8 @@ afterEach(cleanup);
 it('keeps private sign-in without any demo personas or published password even when an old server advertises demo mode',()=>{
   render(<MemoryRouter><LoginPage /></MemoryRouter>);
   expect(screen.getByRole('button',{name:/^Sign in/})).toBeVisible();
+  expect(screen.getByRole('link',{name:'Cambridge International School and ThatCampus'}).querySelector('img')?.src).toContain('/assets/thatcampus-logo.jpg');
+  expect(screen.getByText(/New to ThatCampus/)).toBeVisible();
   expect(screen.queryByText(/OmniDemo|Principal demo|Teacher demo|Parent demo|Student demo|Try a demo/i)).not.toBeInTheDocument();
   expect(screen.getByLabelText(/password/i,{selector:'input'})).toHaveAttribute('type','password');
 });

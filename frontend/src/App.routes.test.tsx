@@ -188,7 +188,7 @@ describe("implemented application routes", () => {
       const { container } = render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
       await waitFor(() => expect(container.querySelector(".school-brand__crest")).toHaveTextContent("CIS"));
       expect(container.querySelector(".school-brand__name")).toHaveTextContent("Cambridge International School");
-      expect(container.querySelector<HTMLImageElement>(".school-brand__eduvera img")?.src).toContain("/assets/edura-leaf-mark.png");
+      expect(container.querySelector<HTMLImageElement>(".school-brand__eduvera img")?.src).toContain("/assets/thatcampus-logo.jpg");
     }
     cleanup();
     const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><OperationsShell portal="teacher" active="home" title="Today" subtitle="Your day"><span /></OperationsShell></MemoryRouter></QueryClientProvider>);

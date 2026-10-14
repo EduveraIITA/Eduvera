@@ -6106,4 +6106,11 @@ The live private database job successfully verified `gatekeeper.review` with onl
 
 ## Last Stitch variant selected — 14 October 2026
 
-User correction: use the last uploaded UI variant, `thatcampus_education_management_platform_2`, superseding platform_1. Marketing now follows its monochrome centred hero, italic Connected headline, three-column feature cards, institution solutions, horizontal role selector, sample dashboard and dark sales banner. Existing logo and no-emoji rule retained; a replacement logo asset is still awaited. Typecheck, lint, eight server tests, production build and five-viewport local browser checks pass. Live release and PostgreSQL CI verification are pending.
+User correction: use the last uploaded UI variant, `thatcampus_education_management_platform_2`, superseding platform_1. Marketing now follows its monochrome centred hero, italic Connected headline, three-column feature cards, institution solutions, horizontal role selector, sample dashboard and dark sales banner. The no-emoji rule is retained and the replacement logo is supplied by the shared full-mark asset described below. Typecheck, lint, eight server tests, production build and five-viewport local browser checks pass. Live release and PostgreSQL CI verification are pending.
+
+The shared visual identity now uses the exact user-supplied full ThatCampus mark
+through a cache-busted asset on the marketing header, previews, application school
+header, authentication surface, browser favicon and install metadata. The prior
+Eduvera leaf is no longer referenced by rendered product branding. Marketing and
+application production builds, focused UI tests and desktop browser screenshots
+were verified before release.

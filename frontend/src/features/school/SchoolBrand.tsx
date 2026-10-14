@@ -1,6 +1,6 @@
 import "./school-brand.css";
 
-const appMark = "/assets/edura-leaf-mark.png";
+const appMark = "/assets/thatcampus-logo.jpg";
 
 export function SchoolBrand({
   name,
