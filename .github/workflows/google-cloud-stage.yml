@@ -2,6 +2,11 @@ name: Google Cloud Stage release
 
 on:
   workflow_call:
+    inputs:
+      provision_gatekeeper:
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -13,7 +18,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera'
+    if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: gcp-stage
@@ -67,3 +72,35 @@ jobs:
           docker build --platform linux/amd64 --file marketing/Dockerfile --tag "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA" marketing
           docker push "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA"
           node marketing/deploy.mjs
+
+  provision-gatekeeper:
+    if: inputs.provision_gatekeeper && github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: gcp-stage
+    env:
+      GCP_PROJECT_ID: eduera-511111
+      GCP_REGION: asia-south1
+      GCP_SERVICE: eduvera-stage
+      GCP_PHOTO_SERVICE: eduvera-stage-photo
+      GCP_MIGRATION_JOB: eduvera-stage-migrate
+      GCP_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/web
+      GCP_PHOTO_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance
+      GCP_STAGE_DEPLOY_ENABLED: ${{ vars.GCP_STAGE_DEPLOY_ENABLED }}
+      GCP_TRIAL_DEPLOY_UNTIL: ${{ vars.GCP_TRIAL_DEPLOY_UNTIL }}
+      PROVISION_GATEKEEPER: 'true'
+      GATEKEEPER_OPERATION_ID: 270762d5-1025-4f4a-aac5-86113900a2b8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Verify bounded account operation
+        run: node --test deploy/gcp/provision-stage-gatekeeper.test.mjs
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: eduera-511111
+          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
+          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - name: Create the authorized review gatekeeper through the private database job
+        run: node deploy/gcp/provision-stage-gatekeeper.mjs

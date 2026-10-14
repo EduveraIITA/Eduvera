@@ -109,8 +109,19 @@ jobs:
   google-cloud:
     name: Google Cloud Stage
     needs: verify
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/Stage'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/Stage' && !contains(github.event.head_commit.message, '[provision-gatekeeper]')
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/google-cloud-stage.yml
+
+  gatekeeper-provision:
+    name: Authorized Stage gatekeeper account
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/Stage' && contains(github.event.head_commit.message, '[provision-gatekeeper]')
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/google-cloud-stage.yml
+    with:
+      provision_gatekeeper: true
