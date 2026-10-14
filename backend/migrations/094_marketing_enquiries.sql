@@ -22,3 +22,11 @@ CREATE TABLE marketing_notification_jobs(
 ALTER TABLE marketing_enquiries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE marketing_rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE marketing_notification_jobs ENABLE ROW LEVEL SECURITY;
+-- Match the established migration contract: the application table owner is
+-- separate from the migrator login. No public/anonymous policies are added.
+DO $$ DECLARE runtime_owner text; BEGIN
+ SELECT pg_get_userbyid(relowner) INTO runtime_owner FROM pg_class WHERE oid='school_memberships'::regclass;
+ EXECUTE format('ALTER TABLE marketing_enquiries OWNER TO %I',runtime_owner);
+ EXECUTE format('ALTER TABLE marketing_rate_limits OWNER TO %I',runtime_owner);
+ EXECUTE format('ALTER TABLE marketing_notification_jobs OWNER TO %I',runtime_owner);
+END $$;
