@@ -51,7 +51,7 @@ export async function provisionInsideContainer(publicKeyBase64, operationId) {
     const user = (await pool.query("SELECT role,is_active,email_verified_at FROM users WHERE id=$1", [account.id])).rows[0];
     if (member.total !== 1 || profile?.staff_kind !== 'non_teaching' || profile.status !== 'active' || user.role !== 'staff' || !user.is_active || !user.email_verified_at) throw new Error('Account identity verification failed');
     await db.insertInto('audit_events').values({actor_id:principal.id,school_id:principal.school_id,action:'gate.direct_database_provision',target_type:'gate',target_id:account.id,request_id:operationId,ip_hash:'',metadata:{source:'user_authorized_database_maintenance',created:account.created,permissions}}).execute();
-    const packet = Buffer.from(JSON.stringify({ ...account, permissions, school: principal.school_name, school_id: principal.school_id, operation_id: operationId, login_url: 'https://eduvera-stage-367469594690.asia-south1.run.app/login' }));
+    const packet = Buffer.from(JSON.stringify({ ...account, permissions, school: principal.school_name, school_id: principal.school_id, operation_id: operationId, login_url: 'https://app.thatcampus.com/login' }));
     const key = crypto.randomBytes(32), iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     const encrypted = Buffer.concat([cipher.update(packet), cipher.final()]);
