@@ -696,7 +696,7 @@ describe("implemented application routes", () => {
       return original(endpoint);
     });
     const view = render(<MemoryRouter initialEntries={["/parent/more"]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("link", { name: "Open Events & activities, 3 actions required" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Open Events & activities, 3 actions required" }, { timeout: 10_000 })).toBeVisible();
     expect(screen.getByRole("link", { name: "Read Diary, 1 new diary" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Messages" })).toBeVisible();
     expect(view.container.querySelector(".more-grid--list")).toBeInTheDocument();
@@ -834,7 +834,7 @@ describe("implemented application routes", () => {
     fireEvent.click(screen.getByRole("button", { name: /^November,.*open month view$/ }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Timetable view" })).toHaveValue("month"));
     expect(screen.getByRole("button", { name: /^Sunday, 1 November.*$/ })).toHaveAttribute("aria-pressed", "true");
-  });
+  }, 60_000);
 });
 
 describe("authentication and route authorization", () => {

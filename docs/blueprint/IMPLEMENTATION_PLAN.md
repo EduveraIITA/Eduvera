@@ -5901,3 +5901,9 @@ the changed component graph passes. The complete frontend TypeScript wrapper rem
 previously documented untracked duplicate `AgentChart.test 2.tsx` and
 `AccountProfilePage.test 2.tsx` files, which were not modified. Physical-phone visual acceptance and
 Stage deployment remain pending at this checkpoint.
+
+The first Stage run reached the full mobile route suite and exposed two existing timing-sensitive
+assertions under shared CI load: the parent More attention link used the query library's one-second
+default, while the two month/year timetable cases inherited the suite's 15-second ceiling. Their
+behavior was already correct and the focused cases passed locally; the tests now use explicit bounded
+waits appropriate to those asynchronous screens. The affected route cases pass **3/3** locally.
