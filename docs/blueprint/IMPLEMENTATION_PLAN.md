@@ -5914,7 +5914,7 @@ revision `eduvera-stage-00081-fuw` and verified commit
 `43dda491b526647b2bc629776f831d5b78c4adce` on the public service. Physical-phone visual acceptance
 of the refreshed follow-up list remains required.
 
-### Provider-neutral assistant channels — 14 October 2026 (local, Telegram adapter ready; not live)
+### Provider-neutral assistant channels — 14 October 2026 (Telegram live on Stage)
 
 The assistant can now use a verified external messaging transport without creating a
 second agent or bypassing the application's controls. Migration
@@ -5949,11 +5949,21 @@ on the pre-existing SQL error after migration 032, and the ordinary local runner
 stops on the pre-existing checksum drift in applied migration 047; neither historical
 migration was changed.
 
-Not yet complete: a BotFather token has not been provided. Secret Manager containers
-now exist for the bot token and webhook secret, and the webhook secret has a generated
-version; the bot-token container intentionally has no version. Cloud Run bindings and
-webhook registration have not run, and no real Telegram account/device exchange or Stage
-deployment has been verified. Until those gates pass, Telegram remains disabled by
-default and must not be represented as live. A future WhatsApp adapter requires its
-own Meta account, webhook verification, policy review and template/24-hour-window
-handling while retaining this same application-owned identity and action contract.
+BotFather created `@EduraOmniSchoolBot`. Its token and webhook verification secret are
+held only in Google Secret Manager and are exposed to the capped Stage runtime through
+secret references; the release contract fails closed if either value becomes plaintext
+or automatic verified webhook registration is disabled. Stage workflow
+[38540126927](https://github.com/EduveraIITA/Eduvera/actions/runs/38540126927)
+passed the full repository secret scan, backend, isolated PostgreSQL, mobile and desktop
+gates, then migrated, smoke-tested and promoted commit
+`321bc2526e442ca747497980dfc6cedc47f244fa` as revision
+`eduvera-stage-00087-xew`. Public release and readiness checks report that commit with
+database/events ready. Telegram `getMe` verifies the bot, `getWebhookInfo` reports the
+canonical `/api/v1/agent/channels/telegram/webhook` URL, zero pending updates, no last
+error and message-only delivery, and the live revision logs confirm successful webhook
+registration. The service remains one CPU / 1 GiB, min/max one, with CPU always allocated;
+no additional always-on service was added. A real user still needs to complete the
+Profile connection and private-chat round trip as physical-device acceptance. A future
+WhatsApp adapter requires its own Meta account, webhook verification, policy review and
+template/24-hour-window handling while retaining this same application-owned identity
+and action contract.

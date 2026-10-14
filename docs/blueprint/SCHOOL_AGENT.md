@@ -744,3 +744,9 @@ token with Telegram and resolves the bot username through `getMe`; an explicit
 `TELEGRAM_BOT_USERNAME` is only an optional override. A WhatsApp adapter may
 be added behind the same interface only after Meta policy, business-account, webhook,
 conversation-window and template-message requirements are implemented and reviewed.
+
+Stage currently enables this contract for `@EduraOmniSchoolBot`. The bot token and
+webhook secret are Secret Manager references, the canonical verified webhook is
+registered automatically, and the existing single capped application service processes
+the durable queue. This deployment evidence does not replace a signed-in user's
+Profile-link and private-chat acceptance test.
