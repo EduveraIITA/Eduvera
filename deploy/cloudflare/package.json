@@ -1,0 +1,9 @@
+{
+  "name": "thatcampus-cloudflare-edge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "npx --yes wrangler@4 deploy"
+  }
+}

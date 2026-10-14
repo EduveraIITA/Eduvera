@@ -6081,3 +6081,16 @@ its schema-job execution exception, least-privilege checks and encrypted deliver
 are recorded in [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md). Local
 contracts and actual SQL/encryption validation pass; live creation is pending
 execution of the authorized maintenance marker.
+## Branded public routing and Stage release — 14 October 2026
+
+`thatcampus.com` now fronts the separately deployed marketing service and
+`app.thatcampus.com` fronts the school application through the checked-in
+Cloudflare Worker contract in `deploy/cloudflare/`. The homepage login contract,
+marketing runtime fallback and Stage deployment verifier use the branded app URL.
+The Worker preserves `Origin` for API authorization while removing it only from
+static app asset origin fetches, preventing Cloud Run CORS handling from blocking
+the browser bundle. Seven Worker contract tests pass and the live homepage-to-login
+flow was browser-verified. The existing Stage workflow remains the single push
+gate: every successful `Stage` push builds, verifies and promotes both Cloud Run
+services, which the stable Cloudflare routes expose without a per-release edge
+deployment.

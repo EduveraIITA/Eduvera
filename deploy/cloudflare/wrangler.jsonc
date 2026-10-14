@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "thatcampus-edge",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-10-14",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "thatcampus.com/*",
+      "zone_name": "thatcampus.com"
+    },
+    {
+      "pattern": "www.thatcampus.com/*",
+      "zone_name": "thatcampus.com"
+    },
+    {
+      "pattern": "app.thatcampus.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "SITE_ORIGIN_URL": "https://thatcampus-web-367469594690.asia-south1.run.app",
+    "APP_ORIGIN_URL": "https://eduvera-stage-367469594690.asia-south1.run.app"
+  }
+}
