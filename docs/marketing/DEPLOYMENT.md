@@ -68,9 +68,12 @@ be called verified until a real inbox is configured and a delivery is observed.
 `.github/workflows/thatcampus.yml` runs type checks, lint, build, Node HTTP tests,
 real PostgreSQL form storage and Chromium checks at 1440, 768 and 360 pixels.
 Viewport screenshots and the saved-enquiry state are uploaded as a CI artifact.
-Only trusted Stage pushes/manual Stage runs may use the existing `gcp-stage` OIDC
-identity to deploy the separate **thatcampus-web** service in `eduera-511111`,
-`asia-south1`. The normal Stage release remains responsible for backend migrations.
+The existing trusted `.github/workflows/google-cloud-stage.yml` release deploys
+the separate **thatcampus-web** service in `eduera-511111`, `asia-south1` only after
+its normal Stage application migration and verification succeed. It reuses the
+existing `gcp-stage` OIDC workflow identity, without widening workload trust to a
+new workflow. The standalone website workflow verifies pull requests; publication
+is owned by the existing release workflow.
 No workflow or script changes registrar DNS or app traffic.
 
 The deploy script creates an independent Secret Manager `thatcampus-form-secret`

@@ -58,3 +58,12 @@ jobs:
         run: |
           echo '### Google Cloud image prepared; deployment is disabled' >> "$GITHUB_STEP_SUMMARY"
           echo 'Keyless access and image upload succeeded. Database/file migration and runtime verification must finish before GCP_STAGE_DEPLOY_ENABLED is enabled. The existing app is unchanged.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build and deploy the separate ThatCampus website
+        if: vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          docker build --platform linux/amd64 --file marketing/Dockerfile --tag "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA" marketing
+          docker push "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA"
+          node marketing/deploy.mjs

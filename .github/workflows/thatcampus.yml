@@ -56,28 +56,3 @@ jobs:
         with:
           name: thatcampus-viewport-checks
           path: marketing/screenshots/
-  deploy:
-    needs: verify
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/Stage'
-    environment: gcp-stage
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build separate website image
-        run: docker build -t asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:${{ github.sha }} marketing
-      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
-        with:
-          project_id: eduera-511111
-          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
-          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
-      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
-      - run: |
-          gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
-          docker push asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:${{ github.sha }}
-      - name: Deploy isolated Cloud Run service and verify
-        env:
-          RELEASE_SHA: ${{ github.sha }}
-        run: node marketing/deploy.mjs
