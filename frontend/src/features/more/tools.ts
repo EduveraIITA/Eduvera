@@ -56,6 +56,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   teacher: [
+    {id:"gate",name:"Gate & Safety",description:"Scan QR passes and record entry and exit",icon:ShieldCheck,tone:"teal",path:"/gate"},
     { id: "requests", name: "Requests", description: "Assignments, cover, reviews and responses that need you", icon: Inbox, tone: "blue", path: "/teacher/requests" },
     { id: "notices", name: "Notices", description: "Class and school updates with recorded responses", icon: Megaphone, tone: "blue", path: "/teacher/notices" },
     { id: "analytics", name: "Insights", description: "Assigned-class attendance and assessment progress", icon: ChartNoAxesCombined, tone: "blue", path: "/teacher/insights" },
@@ -73,6 +74,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "security", name: "Account security", description: "Verified email, authenticator and password recovery", icon: ShieldCheck, tone: "slate", path: "/account/security" },
   ],
   principal: [
+    {id:"gate",name:"Gate & Safety",description:"Gatekeeper access, QR passes and visitor approvals",icon:ShieldCheck,tone:"teal",path:"/principal/gate"},
     { id: "requests", name: "Requests", description: "Prioritised school decisions and operational reviews", icon: Inbox, tone: "blue", path: "/principal/requests" },
     { id: "notices", name: "Notices", description: "School-wide updates, delivery and responses", icon: Megaphone, tone: "blue", path: "/principal/notices" },
     { id: "teacher-feedback", name: "Teacher feedback", description: "Create quick check-ins and review private results", icon: MessageCircle, tone: "teal", path: "/principal/teacher-feedback" },
