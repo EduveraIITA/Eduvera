@@ -6094,3 +6094,7 @@ flow was browser-verified. The existing Stage workflow remains the single push
 gate: every successful `Stage` push builds, verifies and promotes both Cloud Run
 services, which the stable Cloudflare routes expose without a per-release edge
 deployment.
+
+## Stitch marketing homepage — 14 October 2026
+
+The uploaded blue/indigo platform-1 Stitch design is implemented in marketing/: centred hero, operating dashboard, feature cards, five stakeholder cards, desktop/mobile preview and the existing persistent demo form. Original transparent brand.png and local SVG icons are used throughout; no emojis or Tailwind CDN. Typecheck, lint, eight server tests and production build pass. Chromium checks passed at 320, 360, 768, 1024 and 1440px for overflow, logo, navigation, dashboard controls and legal routes. Real PostgreSQL form verification and live release are pending Stage CI.

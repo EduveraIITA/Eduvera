@@ -10,18 +10,18 @@ const server=createServer(createHandler({db,config:{...settings({}),origins:['ht
 await new Promise(r=>server.listen(8080,'127.0.0.1',r));
 const browser=await chromium.launch();await mkdir('screenshots',{recursive:true});
 try{
- for(const [name,width,height]of[['desktop',1440,1000],['tablet',768,1024],['mobile',360,800]]){
+ for(const [name,width,height]of[['desktop',1440,1000],['laptop',1024,900],['tablet',768,1024],['mobile',360,800],['small-mobile',320,800]]){
   const page=await browser.newPage({viewport:{width,height},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:8080/',{waitUntil:'networkidle'});
   assert.equal(await page.locator('h1').textContent(),'One Campus.EverythingConnected.');
   assert.equal(await page.locator('.header-actions a').getAttribute('href'),'https://app.thatcampus.com/login');
   assert(await page.locator('.header-actions a').isVisible());
   const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);if(!fits){console.log(name,await page.evaluate(()=>Array.from(document.querySelectorAll('body *')).filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,cls:el.className,right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))));await page.screenshot({path:`screenshots/${name}-overflow.png`,fullPage:true});}assert(fits,`${name}: horizontal overflow`);
-  if(width<761){await page.getByRole('button',{name:'Open navigation'}).click();}
-  for(const name of ['Features','Solutions','About','Contact'])assert(await page.locator('nav').getByRole('link',{name,exact:true}).isVisible());
+  if(width<1051){await page.getByRole('button',{name:'Open navigation'}).click();}
+  for(const name of ['Features','Who it’s for','Showcase','About','Contact'])assert(await page.locator('nav').getByRole('link',{name,exact:true}).isVisible());
   await page.locator('nav').getByRole('link',{name:'Features',exact:true}).click();assert.equal(new URL(page.url()).hash,'#features');
   await page.getByRole('button',{name:'Attendance',exact:true}).click();assert(await page.getByText('Every learner counts.',{exact:true}).isVisible());
-  await page.getByRole('tab',{name:'Parents'}).click();assert(await page.getByText('Stay close to the school day.').isVisible());
+  assert(await page.getByRole('heading',{name:'Parents',exact:true}).isVisible());assert(await page.getByRole('heading',{name:'A unified experience across desktop and mobile devices'}).isVisible());
   await page.screenshot({path:`screenshots/${name}.png`,fullPage:true});
   await page.goto('http://127.0.0.1:8080/privacy');assert(await page.getByRole('heading',{name:'Privacy Policy'}).isVisible());
   assert.deepEqual(errors,[]);await page.close();
