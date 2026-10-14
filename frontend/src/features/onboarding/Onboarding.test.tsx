@@ -21,6 +21,7 @@ function NavigationProbe(){const location=useLocation();const navigationType=use
 afterEach(cleanup);
 beforeEach(()=>{
   vi.clearAllMocks();auth.companyOperator=true;auth.hasPortal.mockReturnValue(true);
+  vi.mocked(apiFetch).mockResolvedValue({enquiries:[]});
   vi.mocked(getCompany).mockResolvedValue({schools:[],invitations:[],applications:[]});
   vi.mocked(createInstitution).mockResolvedValue({school:{id:'new',name:'Lotus',code:'lotus',institution_kind:'college',admin_count:0,pending_admins:1},invitation:{token:'012345',email:'admin@example.test',expires_at:'2099-10-04'}});
   vi.mocked(getInvitations).mockResolvedValue({can_invite_admin:false,invitations:[],students:[{id:'student',name:'Learner',admission_number:'A001',email:null}],guardians:[],roles:[]});

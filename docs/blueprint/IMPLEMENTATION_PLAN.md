@@ -6054,3 +6054,21 @@ signed-in UI review were not performed: automatic approval review rejected the
 principal browser sign-in needed for privileged account provisioning. The account
 creation workflow is implemented and covered by the native database tests;
 explicit principal sign-in authorization is needed to complete the live review.
+
+## ThatCampus public website — 14 October 2026
+
+The user's explicit marketing brief adds a separate React/Vite/TypeScript website
+in `marketing/`, with runtime-configurable existing Eduera Login, prerendered SEO
+pages and labelled illustrative product previews. This is a sales enquiry flow,
+not the institution pre-admission pipeline. PostgreSQL migration 094 adds enquiries,
+shared rate buckets and notification outbox. Existing company operators review
+enquiries in /company; school membership does not grant company access. Email uses
+the existing backend transport and an explicitly configured MARKETING_NOTIFY_TO.
+Local marketing TypeScript, lint, build and seven HTTP/security tests pass. Real
+PostgreSQL/browser CI, backend checks, Cloud Run public verification and DNS/HTTPS
+remain release gates until their actual workflow evidence is recorded. Payments
+are disclosed as sandbox; university suitability is not advertised as implemented.
+See [deployment and verification](../marketing/DEPLOYMENT.md) for the separate
+service workflow and the remaining account/domain prerequisites. Existing app
+authentication and dashboards are preserved.
+

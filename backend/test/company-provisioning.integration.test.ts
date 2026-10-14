@@ -52,6 +52,27 @@ suite('company provisioning and delegated onboarding against PostgreSQL',()=>{
     expect((await request('company','auth/me/')).data.company_operator).toBe(true);
     expect((await request('admin','auth/me/')).data.company_operator).toBe(false);
   });
+
+  it('protects marketing enquiries with company authority and CSRF and audits review',async()=>{
+    const enquiry=(await pool.query(`INSERT INTO marketing_enquiries(full_name,institution_name,institution_type,email,phone,location,student_count,consent_version,fingerprint)
+      VALUES('Marketing QA','Enquiry Test','school',$1,'9000000000','Bengaluru',250,'2026-10-14',$2) RETURNING id`,
+      ['marketing.'+suffix+'@example.test','marketing-'+suffix])).rows[0].id;
+    try{
+      expect((await request('public','company/enquiries')).status).toBe(401);
+      expect((await request('admin','company/enquiries')).status).toBe(403);
+      expect((await request('staff','company/enquiries')).status).toBe(403);
+      const list=await request('company','company/enquiries');
+      expect(list.status).toBe(200);
+      expect(list.data.enquiries.some((item:{id:string})=>item.id===enquiry)).toBe(true);
+      expect((await request('company',`company/enquiries/${enquiry}/status`,{status:'contacted'},'POST',false)).status).toBe(403);
+      expect((await request('admin',`company/enquiries/${enquiry}/status`,{status:'contacted'})).status).toBe(403);
+      expect((await request('company',`company/enquiries/${enquiry}/status`,{status:'invalid'})).status).toBe(400);
+      expect((await request('company',`company/enquiries/${enquiry}/status`,{status:'contacted'})).status).toBe(201);
+      expect((await pool.query('SELECT status,reviewed_by FROM marketing_enquiries WHERE id=$1',[enquiry])).rows[0]).toEqual({status:'contacted',reviewed_by:companyId});
+      expect((await pool.query("SELECT 1 FROM company_audit WHERE actor_id=$1 AND action='marketing.enquiry_reviewed' AND metadata->>'enquiry_id'=$2",[companyId,enquiry])).rowCount).toBe(1);
+    }finally{await pool.query('DELETE FROM marketing_enquiries WHERE id=$1',[enquiry]);}
+  });
+
   it('creates a college and first admin invitation atomically without membership for company',async()=>{
     const payload={name:'Lotus Test College',code:'college-'+suffix.slice(0,10),institution_kind:'college',admin_email:firstEmail};
     expect((await request('company','company/institutions/',payload,'POST',false)).status).toBe(403);
