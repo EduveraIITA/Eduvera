@@ -6098,3 +6098,8 @@ deployment.
 ## Stitch marketing homepage — 14 October 2026
 
 The uploaded blue/indigo platform-1 Stitch design is implemented in marketing/: centred hero, operating dashboard, feature cards, five stakeholder cards, desktop/mobile preview and the existing persistent demo form. Original transparent brand.png and local SVG icons are used throughout; no emojis or Tailwind CDN. Typecheck, lint, eight server tests and production build pass. Chromium checks passed at 320, 360, 768, 1024 and 1440px for overflow, logo, navigation, dashboard controls and legal routes. Real PostgreSQL form verification and live release are pending Stage CI.
+
+
+### Gatekeeper direct Stage account retry — 14 October 2026
+
+The live private database job successfully verified `gatekeeper.review` with only institution-scoped `gate.manage` after full Stage Verify checks. Workflow 38609626549 / execution `eduvera-stage-migrate-g7qrk` completed the account operation but failed afterward because Cloud Logging denied encrypted-result retrieval. Credential delivery is pending; do not claim it complete or reset an existing password. Runtime origin and maintenance queue corrections are in PRs #32 and #33. Full evidence and the precise blocker are in [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md).

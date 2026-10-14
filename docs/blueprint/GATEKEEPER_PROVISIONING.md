@@ -38,3 +38,12 @@ and the actual encoded container operation against a disposable PostgreSQL WASM
 schema. That test successfully created the non-teaching account, verified only
 `gate.manage`, and recovered the encrypted credentials. Live execution evidence
 will be recorded after the authorized Stage operation completes.
+
+
+## Live Stage evidence — 14 October 2026
+
+- Initial workflow 38606743742 stopped before database execution because the app had moved to the reviewed branded origin while that run held the earlier URL contract. PR #32 aligned the encrypted credential login URL with https://app.thatcampus.com/login.
+- A newer ordinary Stage release replaced the pending retry. PR #33 gave explicit gatekeeper-maintenance runs a separate verification queue; the shared Google Cloud execution queue remains serialized.
+- Workflow 38609626549 passed all backend/mobile/desktop Verify checks. Its private database execution `eduvera-stage-migrate-g7qrk` completed successfully at 17:56:20 UTC. The encoded program verified `gatekeeper.review`, active non-teaching staff, one active school membership, institution-scoped access, and exactly `gate.manage` before returning successfully.
+- The workflow failed afterward while reading the encrypted result: the deployment service account was denied access to Cloud Logging views. The account transaction succeeded, but the generated password has not been recovered or delivered. No IAM grants, password resets, or duplicate accounts were attempted.
+- Credential delivery remains blocked on retrieving the single `GATEKEEPER_PROVISION_RESULT:` ciphertext line from that execution's logs. Keep the recipient private key outside Git until decryption and private delivery succeed. Do not re-run account creation to try to recover a password: existing-account verification intentionally preserves it.
