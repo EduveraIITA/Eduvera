@@ -5913,3 +5913,47 @@ then passed the complete backend, isolated-PostgreSQL, mobile and desktop gates.
 revision `eduvera-stage-00081-fuw` and verified commit
 `43dda491b526647b2bc629776f831d5b78c4adce` on the public service. Physical-phone visual acceptance
 of the refreshed follow-up list remains required.
+
+### Provider-neutral assistant channels — 14 October 2026 (local, Telegram adapter ready; not live)
+
+The assistant can now use a verified external messaging transport without creating a
+second agent or bypassing the application's controls. Migration
+`091_agent_messaging_channels.sql` adds private, backend-owned connection, one-use
+link, idempotent webhook-queue and metadata-only delivery tables. Telegram is the
+first adapter behind a provider registry; WhatsApp is an explicit adapter seam rather
+than a second hard-coded conversation path.
+
+A signed-in Pro user starts a short-lived connection from Profile. Telegram's private
+`/start` update consumes the token once, links one Telegram user to one current
+OmniSchool owner/provider pair and creates a normal owner/school/portal/child-scoped
+agent thread. Raw link tokens are hashed before persistence, webhook requests require
+Telegram's secret header, duplicate provider updates are ignored and completed
+transport text is erased. The existing agent service revalidates the active account,
+school membership, selected child, role permissions, Pro preference, tool catalogue,
+per-user allowance, model budget and pending-action state on every turn. External
+channels do not receive direct write authority: reviewed actions link back to the
+exact in-app conversation for the existing preview/revalidation/confirmation flow.
+
+The shared profile surface lists configured connections and supports disconnect. It
+is hidden with the rest of Pro AI when the Pro preference is off. Deep links select
+the exact channel thread in the existing Assistant UI. The transport worker uses the
+same leased PostgreSQL and continuously allocated single-instance Stage runtime
+assumptions already enforced for background events; when no provider is configured,
+the worker does not poll the database.
+
+Verified locally: backend typecheck/build and focused provider/delegation tests pass;
+the frontend connection tests and production build pass; the nine-table agent storage
+isolation check passes against a disposable loopback schema clone. Migration 091 was
+applied to the local development database only. A clean-database rehearsal still stops
+on the pre-existing SQL error after migration 032, and the ordinary local runner still
+stops on the pre-existing checksum drift in applied migration 047; neither historical
+migration was changed.
+
+Not yet complete: a BotFather token has not been provided. Secret Manager containers
+now exist for the bot token and webhook secret, and the webhook secret has a generated
+version; the bot-token container intentionally has no version. Cloud Run bindings and
+webhook registration have not run, and no real Telegram account/device exchange or Stage
+deployment has been verified. Until those gates pass, Telegram remains disabled by
+default and must not be represented as live. A future WhatsApp adapter requires its
+own Meta account, webhook verification, policy review and template/24-hour-window
+handling while retaining this same application-owned identity and action contract.

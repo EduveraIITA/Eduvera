@@ -35,6 +35,12 @@ export function assertRuntime(service, job) {
       if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new Error(`Unsafe AI allowance: ${name}`);
     }
   }
+  if (env.TELEGRAM_BOT_ENABLED === 'true') {
+    for (const name of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
+      if (!app.env?.find(item => item.name === name)?.valueFrom?.secretKeyRef) throw new Error(`${name} must use Secret Manager`);
+    }
+    if (env.TELEGRAM_AUTO_REGISTER_WEBHOOK !== 'true') throw new Error('Telegram must register its verified webhook automatically');
+  }
   if (env.DEPLOYMENT_ENVIRONMENT !== 'stage' || env.COOKIE_SECURE !== 'true' || env.RATE_LIMIT_STORE !== 'postgres') throw new Error('Unsafe runtime environment');
   if (env.PUBLIC_URL !== 'https://eduvera-stage-367469594690.asia-south1.run.app' || !env.ALLOWED_ORIGINS?.split(',').includes(env.PUBLIC_URL)) throw new Error('The canonical app origin must be allowed');
   if (!app.volumeMounts?.some(mount => mount.mountPath === env.UPLOAD_DIR && template.spec.volumes?.some(volume => volume.name === mount.name && volume.csi?.driver === 'gcsfuse.run.googleapis.com' && volume.csi.volumeAttributes?.bucketName === 'eduera-511111-stage-files'))) throw new Error('Uploads must use the private persistent Stage bucket');

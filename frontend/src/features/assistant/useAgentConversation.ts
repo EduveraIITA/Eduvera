@@ -5,7 +5,7 @@ import { agentApi, type AgentThread } from './agentApi';
 import { ApiError } from '../../lib/api';
 import type { AssistantContext } from './context';
 
-export function useAgentConversation(context:AssistantContext) {
+export function useAgentConversation(context:AssistantContext,preferredThreadId?:string) {
   const auth=useOptionalAuth();
   const cache=useQueryClient();
   const scopeKey=[auth?.user?.id,auth?.user?.active_school_id,context.portal,context.studentId??'self'];
@@ -13,7 +13,8 @@ export function useAgentConversation(context:AssistantContext) {
   const selection=useQuery<string|null>({queryKey:selectionKey,queryFn:()=>Promise.resolve(null),enabled:false,staleTime:Infinity});
   const list=useQuery({queryKey:['agent-threads',...scopeKey],queryFn:({signal})=>agentApi.threads(context,signal),enabled:Boolean(auth?.user),staleTime:15000});
   const status=useQuery({queryKey:['agent-status',...scopeKey],queryFn:({signal})=>agentApi.status(context,signal),enabled:Boolean(auth?.user),staleTime:30000});
-  const threadId=selection.data??list.data?.threads[0]?.id;
+  const linkedThread=preferredThreadId&&list.data?.threads.some(thread=>thread.id===preferredThreadId)?preferredThreadId:undefined;
+  const threadId=selection.data??linkedThread??list.data?.threads[0]?.id;
   const queryKey=['agent-thread',...scopeKey,threadId];
   const detail=useQuery({queryKey,queryFn:({signal})=>agentApi.detail(threadId!,signal),enabled:Boolean(threadId),
     refetchInterval:query=>query.state.data?.runs.some(run=>run.status==='running'||run.action?.status==='executing')?1500:query.state.data?.runs.some(run=>run.action?.status==='pending')?10000:false,

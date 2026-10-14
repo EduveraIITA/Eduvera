@@ -16,6 +16,7 @@ beforeEach(()=>{
   apiFetchMock.mockReset();
   refreshMock.mockReset().mockResolvedValue(undefined);
   apiFetchMock.mockImplementation((path:string,init?:RequestInit)=>{
+    if(path==='/api/v1/agent/channels')return Promise.resolve({providers:[]});
     if(path==='/api/v1/agent/memories')return Promise.resolve(init?.method==='DELETE'?{cleared:true,count:1}:{items:[],budget:{used_tokens:0,max_tokens:1200,used_items:0,max_items:32},contract:'2026-10-10.1'});
     if(path.startsWith('/api/v1/agent/memories/'))return Promise.resolve({deleted:true,id:path.split('/').at(-1)});
     return Promise.resolve({enabled:init?.method==='POST',preview:true});
@@ -78,4 +79,20 @@ it('shows four authenticated demo profiles and switches the session with one tap
   await waitFor(()=>expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/auth/demo-profile-switch/',{method:'POST',body:JSON.stringify({role:'admin'})}));
   expect(refreshMock).toHaveBeenCalledOnce();
   expect(await screen.findByText('Principal home')).toBeInTheDocument();
+});
+
+it('shows and revokes the linked Telegram assistant from Profile',async()=>{
+  apiFetchMock.mockImplementation((path:string,init?:RequestInit)=>{
+    if(path==='/api/v1/auth/pro-features/')return Promise.resolve({enabled:true,preview:true});
+    if(path==='/api/v1/auth/demo-profiles/')return Promise.resolve({enabled:false,profiles:[]});
+    if(path==='/api/v1/agent/memories')return Promise.resolve({items:[],budget:{used_tokens:0,max_tokens:1200,used_items:0,max_items:32},contract:'2026-10-10.1'});
+    if(path==='/api/v1/agent/channels'&&init?.method!=='DELETE')return Promise.resolve({providers:[{name:'telegram',label:'Telegram',configured:true,username:'@OmniSchoolBot',connection:{portal:'student',student_id:null,linked_at:'2026-10-14T00:00:00Z',last_inbound_at:null,last_outbound_at:null}}]});
+    if(path==='/api/v1/agent/channels/telegram'&&init?.method==='DELETE')return Promise.resolve({provider:'telegram',connected:false});
+    return Promise.resolve({});
+  });
+  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+  render(<QueryClientProvider client={client}><MemoryRouter><AccountProfilePage/></MemoryRouter></QueryClientProvider>);
+  expect(await screen.findByText('Connected to student')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button',{name:'Disconnect'}));
+  await waitFor(()=>expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/agent/channels/telegram',{method:'DELETE'}));
 });

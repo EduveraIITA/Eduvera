@@ -20,6 +20,7 @@ export type AuthenticatedRequest = FastifyRequest & {
   sessionHash: string;
   csrfToken: string;
   requestId: string;
+  internalAgentDelegation?: true;
 };
 
 export type RequestWithContext = FastifyRequest & {
@@ -27,4 +28,5 @@ export type RequestWithContext = FastifyRequest & {
   sessionHash?: string;
   csrfToken?: string;
   requestId: string;
+  internalAgentDelegation?: true;
 };

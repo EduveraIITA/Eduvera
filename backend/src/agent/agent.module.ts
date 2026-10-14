@@ -5,5 +5,6 @@ import { AgentController } from './agent.controller.js';
 import { AgentService } from './agent.service.js';
 import { AgentGateway } from './gateway.js';
 import { AgentMemoryService } from './long-term-memory.js';
-@Module({ imports:[RolesModule,SchoolModule],controllers:[AgentController],providers:[AgentService,AgentGateway,AgentMemoryService] })
+import { AuthModule } from '../auth/auth.module.js';
+@Module({ imports:[RolesModule,SchoolModule,AuthModule],controllers:[AgentController],providers:[AgentService,AgentGateway,AgentMemoryService],exports:[AgentService] })
 export class AgentModule {}

@@ -4,9 +4,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { AgentScope, Capability } from './catalogue.js';
 import type { AgentChart } from './charts.js';
+import type { AuthUser } from '../common/request.js';
+import { InternalAgentDelegationService } from '../auth/internal-agent-delegation.js';
 
 /** Ephemeral transport credentials. Never store or include these in a model prompt. */
-export interface AgentCredentials { cookie: string; csrf: string; requestId: string }
+export interface AgentCredentials { cookie?: string; csrf?: string; requestId: string; delegatedUser?: AuthUser }
 export interface Evidence { id: string; title: string; href: string; retrieved_at: string; capability: string; chart?:AgentChart }
 
 export function stableHash(value: unknown): string {
@@ -42,7 +44,7 @@ export function assertLocalScreen(path: string): string {
 
 @Injectable()
 export class AgentGateway {
-  constructor(private readonly adapter: HttpAdapterHost) {}
+  constructor(private readonly adapter: HttpAdapterHost,private readonly delegations:InternalAgentDelegationService) {}
   async dispatch(capability: Capability, input: unknown, scope: AgentScope, credentials: AgentCredentials, actionId?: string) {
     if (!capability.request || capability.kind === 'handoff') throw new ForbiddenException('This action must be completed in the app.');
     if (capability.kind === 'write' && !actionId) throw new ForbiddenException('An approved action is required.');
@@ -51,8 +53,11 @@ export class AgentGateway {
     const query = new URLSearchParams();
     for (const [key,value] of Object.entries(command.query ?? {})) if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') query.set(key,String(value));
     const app = this.adapter.httpAdapter.getInstance<FastifyInstance>();
+    const delegation = credentials.delegatedUser ? this.delegations.issue(credentials.delegatedUser,credentials.requestId) : undefined;
     const response = await app.inject({ method: command.method, url: `/api/v1${command.path}${query.size ? `?${query.toString()}` : ''}`,
-      headers: { cookie: credentials.cookie, 'x-csrftoken': credentials.csrf, 'x-request-id': credentials.requestId || randomUUID(), ...(actionId ? { 'idempotency-key':actionId } : {}), ...(command.body ? { 'content-type': 'application/json' } : {}) },
+      headers: { ...(credentials.cookie ? {cookie:credentials.cookie} : {}), ...(credentials.csrf ? {'x-csrftoken':credentials.csrf} : {}),
+        ...(delegation ? {'x-omnischool-agent-delegation':delegation} : {}),
+        'x-request-id': credentials.requestId || randomUUID(), ...(actionId ? { 'idempotency-key':actionId } : {}), ...(command.body ? { 'content-type': 'application/json' } : {}) },
       ...(command.body ? { payload: JSON.stringify(command.body) } : {}),
     });
     if (response.body.length > 2_000_000) throw new BadRequestException('Narrow this request; the app returned too many records.');

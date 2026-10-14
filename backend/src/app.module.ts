@@ -37,6 +37,7 @@ import { RequestsModule } from "./requests/requests.module.js";
 import { NoticesModule } from "./notices/notices.module.js";
 import { AttentionModule } from "./attention/attention.module.js";
 import { AttendanceModelModule } from "./attendance-model/attendance-model.module.js";
+import { AgentChannelModule } from "./agent/channels/channel.module.js";
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { AttendanceModelModule } from "./attendance-model/attendance-model.modul
     NoticesModule,
     AttentionModule,
     AttendanceModelModule,
+    AgentChannelModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

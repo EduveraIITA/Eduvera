@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, HttpExcepti
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { z } from 'zod';
-import type { AuthenticatedRequest } from '../common/request.js';
+import type { AuthenticatedRequest, AuthUser } from '../common/request.js';
 import { DatabaseService } from '../database/database.service.js';
 import { RolesService } from '../roles/roles.service.js';
 import { SchoolService } from '../school/school.service.js';
@@ -93,8 +93,34 @@ export class AgentService implements OnModuleDestroy {
   onModuleDestroy() { for (const controller of this.running.values()) controller.abort(); }
 
   private credentials(request: AuthenticatedRequest): AgentCredentials {
+    if (request.internalAgentDelegation) return { requestId:request.requestId,delegatedUser:request.authUser };
     // The HTTP guard compares the signed cookie value, not its unsigned session secret.
     return { cookie: request.headers.cookie ?? '', csrf: request.cookies.csrftoken ?? '', requestId: request.requestId };
+  }
+  private delegatedRequest(user:AuthUser,requestId:string,body:unknown={}):AuthenticatedRequest {
+    return {authUser:user,requestId,body,headers:{},cookies:{},internalAgentDelegation:true,
+      sessionHash:`agent:${requestId}`,csrfToken:'internal-agent-delegation'} as unknown as AuthenticatedRequest;
+  }
+
+  async createChannelThread(user:AuthUser,requestId:string,portal:Portal,studentId?:string|null) {
+    return this.create(this.delegatedRequest(user,requestId,{portal,...(studentId?{student_id:studentId}:{})}));
+  }
+
+  async channelScope(user:AuthUser,requestId:string,portal:Portal,studentId?:string|null) {
+    return this.scope(this.delegatedRequest(user,requestId),portal,studentId);
+  }
+
+  async sendFromChannel(user:AuthUser,requestId:string,threadId:string,question:string,clientId:string) {
+    return this.send(this.delegatedRequest(user,requestId,{question,client_id:clientId}),threadId);
+  }
+
+  async channelRun(user:AuthUser,requestId:string,threadId:string,runId:string) {
+    await this.owned(this.delegatedRequest(user,requestId),threadId);
+    const run=(await sql<{id:string;status:string;answer:string;progress:string}>`SELECT id,status,answer,progress FROM agent_runs
+      WHERE id=${runId}::uuid AND thread_id=${threadId}::uuid`.execute(this.db)).rows[0];
+    if(!run)throw new NotFoundException('Request not found.');
+    const action=(await sql<{id:string;status:string}>`SELECT id,status FROM agent_actions WHERE run_id=${runId}::uuid`.execute(this.db)).rows[0]??null;
+    return {...run,action};
   }
   private async scope(request: AuthenticatedRequest, portal: Portal, studentId?: string | null): Promise<AgentScope> {
     const user = request.authUser;

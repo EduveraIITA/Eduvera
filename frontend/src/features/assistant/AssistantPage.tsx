@@ -29,9 +29,11 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
   const location=useLocation();
   const auth=useOptionalAuth();
   const navigate=useAssistantNavigation();
-  const studentId=new URLSearchParams(location.search).get('student_id')??undefined;
+  const search=new URLSearchParams(location.search);
+  const studentId=search.get('student_id')??undefined;
+  const linkedThreadId=search.get('thread')??undefined;
   const context:AssistantContext={portal,pageTitle:'Assistant',studentId:portal==='parent'?studentId:undefined,permissions:currentStaffMembership(auth?.memberships??[])?.permissions};
-  const conversation=useAgentConversation(context);
+  const conversation=useAgentConversation(context,linkedThreadId);
   const footer=useRef<HTMLDivElement>(null);
   const end=useRef<HTMLDivElement>(null);
   const page=useRef<HTMLDivElement>(null);

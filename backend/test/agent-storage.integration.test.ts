@@ -12,7 +12,9 @@ it('keeps agent storage behind backend ownership and denies browser-role access'
       (has_table_privilege(r.oid,c.oid,'SELECT') OR has_table_privilege(r.oid,c.oid,'INSERT') OR
        has_table_privilege(r.oid,c.oid,'UPDATE') OR has_table_privilege(r.oid,c.oid,'DELETE'))) AS no_browser_grant
     FROM pg_class c WHERE c.oid IN ('public.agent_threads'::regclass,'public.agent_runs'::regclass,
-      'public.agent_tool_steps'::regclass,'public.agent_actions'::regclass,'public.agent_user_memories'::regclass)`);
-  expect(result.rows).toHaveLength(5);
+      'public.agent_tool_steps'::regclass,'public.agent_actions'::regclass,'public.agent_user_memories'::regclass,
+      'public.agent_channel_connections'::regclass,'public.agent_channel_link_tokens'::regclass,
+      'public.agent_channel_updates'::regclass,'public.agent_channel_deliveries'::regclass)`);
+  expect(result.rows).toHaveLength(9);
   for(const row of result.rows)expect(row).toMatchObject({relrowsecurity:true,app_owned:true,no_public_grant:true,no_browser_grant:true});
 });

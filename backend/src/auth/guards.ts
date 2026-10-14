@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { PUBLIC_ROUTE, SKIP_CSRF } from "../common/decorators.js";
 import type { RequestWithContext } from "../common/request.js";
 import { AuthService } from "./auth.service.js";
+import { InternalAgentDelegationService } from "./internal-agent-delegation.js";
 
 export function signedCookie(request: FastifyRequest, name: string): string | undefined {
   const encoded = request.cookies[name];
@@ -15,10 +16,21 @@ export function signedCookie(request: FastifyRequest, name: string): string | un
 
 @Injectable()
 export class SessionGuard implements CanActivate {
-  constructor(@Inject(Reflector) private readonly reflector: Reflector, private readonly auth: AuthService) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector, private readonly auth: AuthService,
+    private readonly delegations: InternalAgentDelegationService) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [context.getHandler(), context.getClass()])) return true;
     const request = context.switchToHttp().getRequest<RequestWithContext>();
+    const internalToken = request.headers["x-omnischool-agent-delegation"];
+    if (typeof internalToken === "string") {
+      const delegation = this.delegations.consume(internalToken);
+      if (!delegation || delegation.requestId !== request.requestId) throw new UnauthorizedException("Internal delegation is invalid or expired.");
+      request.authUser = delegation.user;
+      request.sessionHash = `agent:${delegation.requestId}`;
+      request.csrfToken = "internal-agent-delegation";
+      request.internalAgentDelegation = true;
+      return true;
+    }
     const identity = await this.auth.resolveSession(signedCookie(request, config().SESSION_COOKIE_NAME));
     if (!identity) throw new UnauthorizedException("Authentication credentials were not provided or have expired.");
     request.authUser = identity.user;
@@ -34,6 +46,7 @@ export class CsrfGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
+    if (request.internalAgentDelegation) return true;
     if (this.reflector.getAllAndOverride<boolean>(SKIP_CSRF, [context.getHandler(), context.getClass()])) return true;
     const cookie = request.cookies.csrftoken;
     const header = request.headers["x-csrftoken"];

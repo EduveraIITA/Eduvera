@@ -703,3 +703,44 @@ synthetic data, exercises clarification/discussion/resumption/approval and a his
 false refusal, and never targets Stage or the personal preview database. The ordinary
 integration suite covers permission, Pro-off, CSRF, stale revisions, rejection and
 idempotent confirmation independently of the model.
+
+## External messaging transport contract — 14 October 2026
+
+Telegram is the first supported external transport, not a separate assistant. The
+provider-neutral channel registry normalizes verified updates and outbound delivery;
+the existing `AgentService` remains the only conversation/orchestration owner. A
+future provider adapter must implement public identity, secure account-link URL,
+verified webhook normalization and outbound delivery, while leaving thread storage,
+tools, authorization, memory, limits and action review unchanged.
+
+External identity is a locator, never school authority. A user must first be signed in
+to OmniSchool and consume a short-lived, single-use link token in a private provider
+chat. The resulting binding snapshots owner, active school, portal and selected child,
+but each turn reconstructs the current user and re-runs current scope/Pro/permission
+checks. Revoked membership, child access or Pro access therefore takes effect without
+relinking. Telegram groups are ignored and Telegram cannot initiate a conversation
+before the user starts the bot.
+
+Inbound provider update IDs are idempotent and processed from a leased PostgreSQL
+queue. Raw provider payloads are not retained. Raw link tokens are never persisted;
+only SHA-256 hashes enter the queue/link tables. Transport message text is deleted
+after terminal handling, while the authorized agent thread remains the canonical
+conversation and the delivery ledger stores only hashes, counts and provider message
+IDs. The provider secret and bot token are server-only configuration.
+
+Agent reads and low-impact monitored actions use a one-use, 15-second in-process
+delegation to the existing internal HTTP contracts. This avoids copying browser
+cookies into channel storage while preserving the same endpoint authorization,
+validation, idempotency and audit behavior. Consequential actions remain pending in
+the agent action table and are reviewed in the app using a deep link to the exact
+thread; provider reply text is never an approval signal. Shared AI rate and budget
+limits apply across web and external channels.
+
+Telegram configuration is disabled by default. Enabling it requires
+`TELEGRAM_BOT_ENABLED`, `TELEGRAM_BOT_TOKEN`, a random
+`TELEGRAM_WEBHOOK_SECRET`, the canonical HTTPS `PUBLIC_URL`, and either explicit
+webhook registration or `TELEGRAM_AUTO_REGISTER_WEBHOOK=true`. The server verifies the
+token with Telegram and resolves the bot username through `getMe`; an explicit
+`TELEGRAM_BOT_USERNAME` is only an optional override. A WhatsApp adapter may
+be added behind the same interface only after Meta policy, business-account, webhook,
+conversation-window and template-message requirements are implemented and reviewed.

@@ -60,6 +60,13 @@ const schema = z.object({
   PHOTO_ATTENDANCE_BASE_URL: z.string().url().default("http://127.0.0.1:8100/api"),
   PHOTO_ATTENDANCE_API_TOKEN: z.string().default(""),
   PHOTO_ATTENDANCE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(120000),
+  TELEGRAM_BOT_ENABLED: booleanString("false"),
+  TELEGRAM_BOT_TOKEN: z.string().default(""),
+  TELEGRAM_BOT_USERNAME: z.string().regex(/^[A-Za-z0-9_]{5,64}$/).optional(),
+  TELEGRAM_WEBHOOK_SECRET: z.string().default(""),
+  TELEGRAM_AUTO_REGISTER_WEBHOOK: booleanString("false"),
+  AGENT_CHANNEL_WORKER_INTERVAL_MS: z.coerce.number().int().min(250).max(30000).default(1000),
+  AGENT_CHANNEL_LINK_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
   LOG_LEVEL: z.string().default("info"),
   // "postgres" shares buckets across API instances; "memory" costs nothing per request.
   RATE_LIMIT_STORE: z.enum(["postgres", "memory"]).optional(),
@@ -156,6 +163,13 @@ export function loadConfig() {
   }
   if (value.PHOTO_ATTENDANCE_ENABLED && value.PHOTO_ATTENDANCE_API_TOKEN.length < 24) {
     throw new Error("PHOTO_ATTENDANCE_API_TOKEN must contain at least 24 characters when photo attendance is enabled");
+  }
+  if (value.TELEGRAM_BOT_ENABLED) {
+    if (!/^\d{5,20}:[A-Za-z0-9_-]{20,100}$/.test(value.TELEGRAM_BOT_TOKEN)
+      || !/^[A-Za-z0-9_-]{24,256}$/.test(value.TELEGRAM_WEBHOOK_SECRET)) {
+      throw new Error("Telegram requires a valid bot token and a 24–256 character webhook secret using letters, numbers, underscore or hyphen.");
+    }
+    if (!value.PUBLIC_URL) throw new Error("PUBLIC_URL is required when Telegram is enabled.");
   }
   return {
     ...value,

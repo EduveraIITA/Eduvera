@@ -7,6 +7,7 @@ import { useAuth } from './AuthContext';
 import { proFeaturesKey, useProFeatures, type ProFeaturesPreference } from './useProFeatures';
 import { AssistantMemorySettings } from './AssistantMemorySettings';
 import { DemoProfileSwitcher } from './DemoProfileSwitcher';
+import { AgentChannelConnections } from './AgentChannelConnections';
 import './account-security.css';
 import './account-profile.css';
 import './account-navigation.css';
@@ -24,6 +25,10 @@ export function AccountProfilePage() {
   const returnState=location.state as {accountReturnTo?:unknown;accountCanPop?:unknown}|null;
   const canPopBack=returnState?.accountReturnTo===back&&returnState.accountCanPop===true;
   const profileHref=`${location.pathname}${location.search}`;
+  const backUrl=new URL(back,window.location.origin);
+  const portal=(['principal','teacher','parent','student'].includes(backUrl.pathname.split('/')[1]??'')?backUrl.pathname.split('/')[1]
+    :auth.user?.role==='admin'?'principal':auth.user?.role==='staff'?'teacher':auth.user?.role==='parent'?'parent':'student') as import('./AuthContext').Portal;
+  const studentId=portal==='parent'?backUrl.searchParams.get('student_id')??undefined:undefined;
   async function setEnabled(enabled:boolean) {
     setBusy(true);setError('');
     try {
@@ -48,7 +53,7 @@ export function AccountProfilePage() {
     {preference.isPending?<p className="account-profile-status" role="status">Loading preference…</p>:null}
     {preference.isError?<p className="security-alert" role="alert">Could not load your preference. <button type="button" onClick={()=>void preference.refetch()}>Try again</button></p>:null}
     {error?<p className="security-alert" role="alert">{error}</p>:null}
-    {preference.enabled ? <AssistantMemorySettings userId={auth.user?.id}/> : null}
+    {preference.enabled ? <><AgentChannelConnections portal={portal} studentId={studentId}/><AssistantMemorySettings userId={auth.user?.id}/></> : null}
     <Link className="account-profile-security" to={`/account/security?from=${encodeURIComponent(profileHref)}`} state={{accountReturnTo:profileHref,accountCanPop:true}}><ShieldCheck size={18}/> Account security <span aria-hidden="true">›</span></Link>
   </main>;
 }

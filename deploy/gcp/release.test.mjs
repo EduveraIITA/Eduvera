@@ -62,3 +62,15 @@ test('cloud AI deployment requires the reviewed model, budget and expiry', () =>
   assert.equal(check(cloud),'old');
   for (const [key,value] of Object.entries({AGENT_MODEL:'expensive-model',AGENT_GOOGLE_PROJECT:'other-project',AGENT_BASE_URL:'https://other.example',AGENT_ENABLED_UNTIL:'2020-01-01',AGENT_DAILY_BUDGET_MICROS:'50000000',AGENT_MONTHLY_BUDGET_MICROS:'',AGENT_USER_DAILY_LIMIT:'1000'})) assert.throws(()=>check({...cloud,[key]:value}));
 });
+test('Telegram deployment requires Secret Manager bindings and verified webhook registration', () => {
+  const check = ({secret=true,auto='true'}={}) => {
+    const {service,job}=fixture();const app=service.spec.template.spec.containers[0];
+    app.env.push({name:'TELEGRAM_BOT_ENABLED',value:'true'},{name:'TELEGRAM_AUTO_REGISTER_WEBHOOK',value:auto});
+    for(const name of ['TELEGRAM_BOT_TOKEN','TELEGRAM_WEBHOOK_SECRET']) app.env.push(secret
+      ?{name,valueFrom:{secretKeyRef:{name:'telegram-secret',key:'latest'}}}:{name,value:'plaintext'});
+    return assertRuntime(service,job);
+  };
+  assert.equal(check(),'old');
+  assert.throws(()=>check({secret:false}));
+  assert.throws(()=>check({auto:'false'}));
+});
