@@ -25,7 +25,7 @@ function validToken(token,secret){if(typeof token!=='string'||!/^\d{13}\.[a-f0-9
 function json(res,status,body){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body));}
 export function createHandler({db,config=settings(),clock=()=>Date.now()}){return async(req,res)=>{
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
- if(config.production)res.setHeader('Strict-Transport-Security','max-age=31536000');
+ if(config.production){res.setHeader('Strict-Transport-Security','max-age=31536000');if(req.headers.host!=='thatcampus.com'&&req.headers.host!=='www.thatcampus.com')res.setHeader('X-Robots-Tag','noindex');}
  try{
  const url=new URL(req.url,'http://internal');
  if(req.headers.host==='www.thatcampus.com'){res.writeHead(308,{Location:`https://thatcampus.com${url.pathname}${url.search}`});res.end();return;}

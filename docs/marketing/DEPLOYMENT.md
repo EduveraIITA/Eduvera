@@ -131,6 +131,8 @@ write access. Neither an expected URL nor a prepared script proves a live domain
 ## Optional analytics
 
 Analytics are disabled by default and no external tracker is loaded. An approved
-provider can be added through `marketing/src/main.tsx`; obtain the required consent,
+provider can subscribe to the `thatcampus:analytics` window event (allowlisted
+`login_clicked` and `demo_enquiry_saved`, with no form data) through
+`marketing/src/main.tsx`; obtain the required consent,
 update the privacy notice and explicitly allow its script/connect origins in CSP.
 Do not include form values, email, phone or student data in analytics events.
