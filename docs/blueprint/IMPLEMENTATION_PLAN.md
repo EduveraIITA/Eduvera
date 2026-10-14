@@ -6038,8 +6038,19 @@ Verified locally: all 93 numbered migrations (including duplicate-numbered
 existing migrations) applied to a disposable PostgreSQL WASM database with pg_trgm;
 seven database lifecycle/authorization tests and five QR/movement rule tests pass.
 Frontend gate, More grouping and permission-scoped navigation tests pass. Backend
-and frontend typechecks, builds and lint pass. Native PostgreSQL integration,
-physical camera/mobile/accessibility review and Stage release evidence remain
-pending until CI and cloud checks complete. Offline release, staff movement,
+and frontend typechecks, builds and lint pass. Native PostgreSQL CI passed all 793 backend tests, including the seven gate
+lifecycle tests, and all 934 mobile tests; desktop typecheck/build passed.
+Physical phone camera and accessibility review remain pending. Offline release, staff movement,
 vehicle/bus gate scans, historical corrections and configurable gate policy are
 outside this first release; no release is authorized from cached offline data.
+
+Stage release evidence: PR [#27](https://github.com/EduveraIITA/Eduvera/pull/27)
+merged as `a58155193a8658b14704b1e549c0988870d9ffa1`. Stage workflow
+[38569760911](https://github.com/EduveraIITA/Eduvera/actions/runs/38569760911)
+passed verification and Google Cloud deployment. The migration job completed,
+candidate revision `eduvera-stage-00094-xid` passed checks, and public release
+verification confirmed that exact SHA. Live gatekeeper account creation and
+signed-in UI review were not performed: automatic approval review rejected the
+principal browser sign-in needed for privileged account provisioning. The account
+creation workflow is implemented and covered by the native database tests;
+explicit principal sign-in authorization is needed to complete the live review.
