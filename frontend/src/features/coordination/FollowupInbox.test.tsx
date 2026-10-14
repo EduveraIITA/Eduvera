@@ -16,6 +16,29 @@ afterEach(() => {
 });
 
 describe("FollowupInbox attention destinations", () => {
+  it("keeps conversation detail behind a compact task row", async () => {
+    const item: Followup = {
+      id: "followup-compact", student_id: "student-1", student_name: "Aarushi Mishra", owner_name: "Meera Kapoor",
+      attendance_date: "2026-10-08", question: "Please confirm the recorded absence.", due_at: "2026-10-09T10:00:00.000Z",
+      overdue: true, state: "in_review", revision: 1, outcome: null,
+      updated_at: "2026-10-08T10:00:00.000Z", created_at: "2026-10-08T09:00:00.000Z",
+    };
+    vi.mocked(getFollowups).mockResolvedValue({ results: [item], next_cursor: null });
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <FollowupInbox context="staff" showHeading={false} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Open", pressed: true })).toBeVisible();
+    const row = await screen.findByRole("button", { name: /Aarushi Mishra/ });
+    expect(row).toHaveTextContent("School review");
+    expect(row).toHaveTextContent("Overdue");
+    expect(row).not.toHaveTextContent(item.question);
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("opens and focuses the exact follow-up selected by the attention link", async () => {
     const target: Followup = {
       id: "followup-1",

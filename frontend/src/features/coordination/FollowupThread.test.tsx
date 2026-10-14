@@ -16,6 +16,7 @@ describe("Attendance follow-up UI", () => {
   it("offers a guardian response without resolution or staff attribution controls", async () => {
     mount("guardian");
     const user = userEvent.setup();
+    expect(await screen.findByText("Please clarify the absence.")).toBeVisible();
     await user.type(await screen.findByLabelText("Your response"), "We had a family appointment.");
     vi.mocked(addFollowupEntry).mockResolvedValue({ id: detail.id, revision: 2 });
     await user.click(screen.getByRole("button", { name: "Send response" }));

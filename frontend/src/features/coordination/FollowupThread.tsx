@@ -10,6 +10,7 @@ export function FollowupThread({ id, context }: { id: string; context: FollowupC
   if (query.isPending) return <p role="status">Loading conversation…</p>;
   if (query.isError) return <div className="followup-error" role="alert"><p>Could not load this follow-up.</p><button onClick={() => void query.refetch()}>Try again</button></div>;
   return <div className="followup-thread">
+    <div className="followup-thread__question"><span>Follow-up note</span><p>{query.data.question}</p></div>
     <p className="followup-meta">Response due {moment(query.data.due_at)}</p>
     <ol>{query.data.entries.map((entry) => <li key={entry.id}>
       <div><strong>{entry.actor_name}</strong><time dateTime={entry.recorded_at}>{moment(entry.recorded_at)}</time></div>

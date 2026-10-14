@@ -5884,3 +5884,20 @@ profiles plus one uncertain enrolled learner). The analysis was saved as a seven
 **no attendance was submitted or finalized**. This verifies the live workflow and safety boundary,
 not identity accuracy, liveness, fairness or production readiness. Physical-phone visual acceptance
 remains required.
+
+### Attendance follow-up interaction refresh — 14 October 2026 (local)
+
+The principal follow-up destination now follows the established single-heading and progressive-
+disclosure rules. The page-level app bar remains the only title. Open/Resolved is a compact native-
+style segmented control, and each conversation is a separate touch-sized task card with the student,
+attendance date, responsible owner, plain-language state and one restrained overdue cue. The full
+question and response controls remain available only after the user opens the exact card, removing
+internal fixture prose and competing status pills from the scanning view without changing the
+follow-up contract, authority checks or resolution workflow. Loading, empty, error and selected-
+attention states remain explicit; reduced-motion and keyboard focus treatment are preserved.
+
+Focused coordination tests pass **8/8**, focused lint passes, and isolated TypeScript validation of
+the changed component graph passes. The complete frontend TypeScript wrapper remains blocked by the
+previously documented untracked duplicate `AgentChart.test 2.tsx` and
+`AccountProfilePage.test 2.tsx` files, which were not modified. Physical-phone visual acceptance and
+Stage deployment remain pending at this checkpoint.
