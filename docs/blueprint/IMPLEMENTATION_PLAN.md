@@ -6103,3 +6103,7 @@ The uploaded blue/indigo platform-1 Stitch design is implemented in marketing/: 
 ### Gatekeeper direct Stage account retry — 14 October 2026
 
 The live private database job successfully verified `gatekeeper.review` with only institution-scoped `gate.manage` after full Stage Verify checks. Workflow 38609626549 / execution `eduvera-stage-migrate-g7qrk` completed the account operation but failed afterward because Cloud Logging denied encrypted-result retrieval. Credential delivery is pending; do not claim it complete or reset an existing password. Runtime origin and maintenance queue corrections are in PRs #32 and #33. Full evidence and the precise blocker are in [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md).
+
+## Last Stitch variant selected — 14 October 2026
+
+User correction: use the last uploaded UI variant, `thatcampus_education_management_platform_2`, superseding platform_1. Marketing now follows its monochrome centred hero, italic Connected headline, three-column feature cards, institution solutions, horizontal role selector, sample dashboard and dark sales banner. Existing logo and no-emoji rule retained; a replacement logo asset is still awaited. Typecheck, lint, eight server tests, production build and five-viewport local browser checks pass. Live release and PostgreSQL CI verification are pending.
