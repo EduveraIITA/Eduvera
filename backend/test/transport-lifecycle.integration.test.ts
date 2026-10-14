@@ -45,6 +45,17 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
   async function departureIn(tripId:string,minutes:number,timezone="Asia/Kolkata") {
     await pool.query("UPDATE transport_trips SET service_date=((now()+make_interval(mins=>$2)) AT TIME ZONE $3)::date, scheduled_departure_time=((now()+make_interval(mins=>$2)) AT TIME ZONE $3)::time WHERE id=$1",[tripId,minutes,timezone]);
   }
+  async function timezoneWithoutDateRollover(minutes:number) {
+    const result=await pool.query<{timezone:string}>(`
+      SELECT zone AS timezone
+      FROM unnest(ARRAY['UTC','Asia/Kolkata','America/New_York','Pacific/Honolulu']) AS zones(zone)
+      WHERE (now() AT TIME ZONE zone)::date
+        = ((now()+make_interval(mins=>$1)) AT TIME ZONE zone)::date
+      LIMIT 1
+    `,[minutes]);
+    if(!result.rows[0]) throw new Error("No stable test timezone is available");
+    return result.rows[0].timezone;
+  }
   const rider=(state:string,revision=1,note="Observed by assigned staff")=>({state,expected_revision:revision,note});
   beforeAll(()=>{db=new DatabaseService();service=new DepartureCoordinationService(db,new SchoolEventService(db));});
   afterAll(async()=>{await db?.destroy();await pool.end();});
@@ -248,9 +259,9 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
   });
 
   it("opens controls only in the configured window and closes self-service duty changes",async()=>{
-    // Keep the 31-minute lead-time scenario on its service date, including
-    // when CI runs close to midnight in the institution's timezone.
-    const timezone=new Date().getUTCHours()>=22?"Asia/Kolkata":"UTC";
+    // Keep the 31-minute lead-time scenario on its service date regardless
+    // of the wall-clock time at which CI happens to run.
+    const timezone=await timezoneWithoutDateRollover(31);
     const f=await fixture("from_institution",2,1,timezone);
     await departureIn(f.trip.id,31,timezone);
     await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
