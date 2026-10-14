@@ -6072,3 +6072,12 @@ See [deployment and verification](../marketing/DEPLOYMENT.md) for the separate
 service workflow and the remaining account/domain prerequisites. Existing app
 authentication and dashboards are preserved.
 
+
+## Direct Stage gatekeeper entry — 14 October 2026
+
+The user approved the review gatekeeper and explicitly requested direct database
+creation after declining browser authentication. The bounded private-job route,
+its schema-job execution exception, least-privilege checks and encrypted delivery
+are recorded in [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md). Local
+contracts and actual SQL/encryption validation pass; live creation is pending
+execution of the authorized maintenance marker.
