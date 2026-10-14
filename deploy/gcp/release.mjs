@@ -42,7 +42,7 @@ export function assertRuntime(service, job) {
     if (env.TELEGRAM_AUTO_REGISTER_WEBHOOK !== 'true') throw new Error('Telegram must register its verified webhook automatically');
   }
   if (env.DEPLOYMENT_ENVIRONMENT !== 'stage' || env.COOKIE_SECURE !== 'true' || env.RATE_LIMIT_STORE !== 'postgres') throw new Error('Unsafe runtime environment');
-  if (env.PUBLIC_URL !== 'https://eduvera-stage-367469594690.asia-south1.run.app' || !env.ALLOWED_ORIGINS?.split(',').includes(env.PUBLIC_URL)) throw new Error('The canonical app origin must be allowed');
+  if (env.PUBLIC_URL !== 'https://app.thatcampus.com' || !env.ALLOWED_ORIGINS?.split(',').includes(env.PUBLIC_URL)) throw new Error('The canonical app origin must be allowed');
   if (!app.volumeMounts?.some(mount => mount.mountPath === env.UPLOAD_DIR && template.spec.volumes?.some(volume => volume.name === mount.name && volume.csi?.driver === 'gcsfuse.run.googleapis.com' && volume.csi.volumeAttributes?.bucketName === 'eduera-511111-stage-files'))) throw new Error('Uploads must use the private persistent Stage bucket');
   const task = job.spec?.template?.spec?.template?.spec;
   if (job.spec?.template?.spec?.taskCount !== 1 || task?.maxRetries !== 0 || task?.serviceAccountName !== 'stage-migrator@eduera-511111.iam.gserviceaccount.com') throw new Error('Unsafe migration job');
@@ -57,7 +57,7 @@ export function assertRuntime(service, job) {
 
 export async function verify(origin, sha, request = fetch) {
   const base = new URL(origin);
-  if (base.protocol !== 'https:' || !base.hostname.endsWith('.run.app') || base.origin !== origin) throw new Error('Expected a Cloud Run HTTPS origin');
+  if (base.protocol !== 'https:' || (base.hostname !== 'app.thatcampus.com' && !base.hostname.endsWith('.run.app')) || base.origin !== origin) throw new Error('Expected the branded app or a Cloud Run HTTPS origin');
   const get = async path => {
     const response = await request(`${origin}${path}`, { signal: AbortSignal.timeout(20000), redirect: 'error' });
     if (!response.ok) throw new Error(`Smoke check failed: ${path} (${response.status})`);
