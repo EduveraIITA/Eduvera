@@ -1,3 +1,4 @@
+import {allowedDeploymentOrigins} from './deploy-config.mjs';
 import {randomBytes} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync,writeFileSync,unlinkSync} from 'node:fs';
@@ -26,7 +27,10 @@ if(previous)deploy.push('--no-traffic');
 let promoted=false;
 async function verify(origin){for(const path of ['/','/privacy','/terms','/sitemap.xml','/robots.txt','/brand.png','/readyz']){const r=await fetch(origin+path,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error(`Public verification failed: ${path} ${r.status}`);}const config=await(await fetch(origin+'/api/config')).json();if(config.loginUrl!==env.LOGIN_URL)throw new Error('Wrong login destination');const health=await(await fetch(origin+'/healthz')).json();if(health.release!==process.env.RELEASE_SHA)throw new Error('Wrong release');}
 try{
- g(deploy);const site=JSON.parse(g(['run','services','describe',service,...flags,'--format=json']));const candidate=site.status.traffic.find(t=>t.tag===tag);if(!candidate?.url||!candidate.revisionName)throw new Error('Candidate URL missing');
+ g(deploy);let site=JSON.parse(g(['run','services','describe',service,...flags,'--format=json']));let candidate=site.status.traffic.find(t=>t.tag===tag);if(!candidate?.url||!candidate.revisionName)throw new Error('Candidate URL missing');
+ const origins=allowedDeploymentOrigins(site.status.url,candidate.url);
+ g(['run','services','update',service,...flags,`--update-env-vars=^|^ALLOWED_ORIGINS=${origins}`,'--no-traffic',`--tag=${tag}`]);
+ site=JSON.parse(g(['run','services','describe',service,...flags,'--format=json']));candidate=site.status.traffic.find(t=>t.tag===tag);if(!candidate?.url||!candidate.revisionName)throw new Error('Configured candidate URL missing');
  // Wait briefly for the normal Stage pipeline to apply the additive migration.
  let ready=false;for(let i=0;i<40;i++){try{await verify(candidate.url);ready=true;break;}catch{await new Promise(r=>setTimeout(r,15000));}}if(!ready)throw new Error('Candidate not ready. Verify migration 094 in the Stage release.');
  promoted=true;g(['run','services','update-traffic',service,...flags,`--to-revisions=${candidate.revisionName}=100`]);await verify(site.status.url);
