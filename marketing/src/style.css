@@ -4,3 +4,15 @@
 .hero-art{overflow:clip}
 
 .hero-actions{flex-wrap:wrap}.hero-actions .button{white-space:nowrap;flex-shrink:0}
+
+/* Original brand artwork and consistent vector icons; no font-based pictograms. */
+.icon{display:inline-block;flex-shrink:0;vertical-align:middle}
+.window-dots{display:flex;gap:5px}.window-dots i{width:6px;height:6px;border-radius:50%;background:#cbd5e4}
+.mini-brand{display:flex;align-items:center;gap:5px;font-size:13px;margin-left:0;white-space:nowrap}
+.mini-brand img,.preview-brand img,.role-symbol{object-fit:contain;flex-shrink:0}
+.preview-brand{display:flex;align-items:center;justify-content:center}
+.strip-dot{width:4px;height:4px;border-radius:50%;background:#b0bfd8;flex-shrink:0}
+.demo-notice>span{display:grid;place-items:center}.demo-notice .icon{width:14px;height:14px}
+.success .icon{width:30px;height:30px}.expand{display:flex}.role-symbol{display:block;width:64px;height:64px}
+.menu-button .icon{width:22px;height:22px}.product-side .icon{width:16px;height:16px}
+@media(max-width:760px){.window-dots,.role-tabs button>.icon{display:none}}
