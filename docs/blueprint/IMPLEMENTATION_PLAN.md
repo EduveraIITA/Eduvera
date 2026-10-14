@@ -5968,7 +5968,7 @@ WhatsApp adapter requires its own Meta account, webhook verification, policy rev
 template/24-hour-window handling while retaining this same application-owned identity
 and action contract.
 
-### Provider-independent calendar export and subscription — 14 October 2026 (local)
+### Provider-independent calendar export and subscription — 14 October 2026 (Google Cloud Stage)
 
 Users can now take the role-aware Edura calendar into an installed calendar application
 without granting Google, Microsoft or Apple API access. An authenticated export returns a
@@ -6001,6 +6001,14 @@ passes **930/930** and the Vite production build passes. All runnable backend un
 pass (**432 passed, 184 skipped**); the remaining integration files correctly refuse to run
 without the repository's isolated `DATABASE_URL`. The complete frontend TypeScript wrapper
 remains blocked by the previously documented untracked duplicate test files and was not
-represented as passing. Migration 092 has been applied to the local development database
-only; it still requires the normal Stage migration pipeline. Installed-calendar/physical-
-phone acceptance plus Stage deployment remain open at this checkpoint.
+represented as passing locally. Migration 092 has also been applied to the local development
+database.
+
+Stage workflow [38550372652](https://github.com/EduveraIITA/Eduvera/actions/runs/38550372652)
+passed the repository secret scan, deployment-contract checks, clean PostgreSQL migration,
+backend integration suite, complete mobile checks and desktop build. The migration execution
+completed successfully, the no-traffic candidate passed its checks, and commit
+`436889dac5119b31b8d8b03a1b840f3c02f1ddde` was promoted as Cloud Run revision
+`eduvera-stage-00091-jog` with 100% traffic. Independent public `/releasez` and `/readyz`
+checks report that exact commit with database/events ready. Installed-calendar/physical-phone
+acceptance remains open because a real calendar client must consume the private subscription.
