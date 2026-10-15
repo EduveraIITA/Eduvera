@@ -26,14 +26,16 @@ float noise(vec2 P) {
   return dot(results, blend.zxzx * blend.wwyy);
 }
 void main() {
-  float perc = float(gl_InstanceID) / 110.0;
+  float perc = float(gl_InstanceID) / 159.0;
   float x = aPoint.x;
   float split = 0.04 + perc * 0.5;
   float amp = smoothstep(split, max(0.7, split + 0.2), x) * 0.65;
   float t = uTime / 10.0;
   float n = mix(noise(vec2(t * 2.5, (x * 1.05 + perc) * 2.5)), noise(vec2(t * 3.5, (x * 1.05 + t) * 3.5)) / 1.5, x * 0.3);
-  // Spread across the projected viewport, including the corners in landscape.
-  float y = 0.5 + (perc - 0.5) * 1.2 + n * 0.5 * amp;
+  // Overscan the band and anchor its outer strands: waves must never expose
+  // an empty wedge at any viewport edge, even during landscape rotation.
+  float edgeEnvelope = smoothstep(0.0, 0.18, perc) * (1.0 - smoothstep(0.82, 1.0, perc));
+  float y = 0.5 + (perc - 0.5) * 1.5 + n * 0.5 * amp * edgeEnvelope;
   float c = 0.9063078, s = 0.4226183;
   vec2 frame = vec2(uResolution.x*c + uResolution.y*s, uResolution.x*s + uResolution.y*c) * 1.1;
   vec2 local = (vec2(x,y) - 0.5) * frame;
@@ -111,7 +113,7 @@ export default function Threads() {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.uniform2f(resolution, canvas.width, canvas.height);
       gl.uniform1f(time, elapsed);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 110);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 160);
       canvas.dataset.ready = gl.getError() === gl.NO_ERROR ? "true" : "false";
     };
     const frame = (now: number) => {
