@@ -102,3 +102,50 @@
   .gate-shell .gate-search-submit { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .gate-action { transition: none; } }
+.gate-student-results { display: grid; gap: 12px; margin-top: 16px; }
+.gate-student-row { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); }
+.gate-shell .gate-student-open { display: flex; align-items: center; flex: 1; min-width: 0; gap: 12px; border: 0; padding: 4px; text-align: left; }
+.gate-student-open img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.gate-student-open strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.gate-student-open small { display: block; margin-top: 6px; color: var(--edura-ink-muted); font-size: 11px; }
+.gate-student-open > svg { flex-shrink: 0; margin-left: auto; color: var(--edura-ink-muted); }
+.gate-shell .gate-quick-entry { display: flex; align-items: center; justify-content: center; gap: 7px; flex-shrink: 0; border-color: var(--edura-brand); background: var(--edura-brand); color: white; font-size: 12px; font-weight: 800; }
+.gate-shell .gate-quick-entry.is-inside { border-color: transparent; background: var(--edura-positive-soft); color: var(--edura-positive); opacity: 1; }
+.gate-entry-success { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: var(--edura-radius-control); background: var(--edura-positive-soft); color: var(--edura-positive); font-size: 12px; }
+.gate-section-heading { display: flex; align-items: center; gap: 12px; }
+.gate-section-icon { display: grid; width: 48px; height: 48px; flex-shrink: 0; place-items: center; border-radius: var(--edura-radius-card); background: var(--edura-brand-soft); color: var(--edura-brand); }
+.gate-section-heading h2 { margin: 0; font-size: 19px; letter-spacing: -.03em; }
+.gate-section-heading p { margin: 6px 0 0; color: var(--edura-ink-muted); font-size: 12px; line-height: 1.6; }
+.gate-visitor-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 4px; }
+.gate-field-wide { grid-column: 1 / -1; }
+.gate-form-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 14px; border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-ink-muted); font-size: 12px; line-height: 1.7; }
+.gate-form-note svg { margin-top: 2px; flex-shrink: 0; }
+.gate-shell .gate-send-request { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 0; }
+.gate-visitor-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 20px; }
+.gate-shell .gate-visitor-filters button { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-color: transparent; background: transparent; color: var(--edura-ink-muted); font-size: 11px; font-weight: 700; }
+.gate-shell .gate-visitor-filters button[aria-pressed=true] { border-color: var(--edura-border); background: var(--edura-surface); color: var(--edura-brand); box-shadow: var(--edura-shadow-card); }
+.gate-visitor-filters span { min-width: 20px; padding: 2px 5px; border-radius: 5px; background: var(--edura-surface-soft); text-align: center; }
+.gate-visitor-list { display: grid; gap: 16px; }
+.gate-visitor-card { min-width: 0; padding: 20px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-surface); box-shadow: var(--edura-shadow-card); }
+.gate-visitor-identity { display: flex; align-items: flex-start; gap: 12px; }
+.gate-visitor-avatar { display: grid; width: 42px; height: 42px; flex-shrink: 0; place-items: center; border-radius: 13px; color: var(--edura-brand); background: var(--edura-surface-soft); }
+.gate-visitor-identity h3 { margin: 0; font-size: 15px; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.gate-visitor-identity p { margin: 6px 0 0; color: var(--edura-ink-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.gate-visitor-status { display: flex; align-items: center; gap: 5px; flex-shrink: 0; margin-left: auto; padding: 6px 8px; border-radius: var(--edura-radius-pill); font-size: 10px; font-weight: 800; line-height: 1.4; background: var(--edura-surface-soft); color: var(--edura-ink-secondary); }
+.gate-visitor-status.is-pending { color: var(--edura-warning); background: var(--edura-warning-soft); }
+.gate-visitor-status.is-approved, .gate-visitor-status.is-inside { color: var(--edura-positive); background: var(--edura-positive-soft); }
+.gate-visitor-status.is-denied, .gate-visitor-status.is-expired { color: var(--edura-danger); background: var(--edura-danger-soft); }
+.gate-visitor-meta { display: flex; flex-wrap: wrap; gap: 16px 32px; margin: 20px 0; }
+.gate-visitor-meta dt { margin-bottom: 5px; color: var(--edura-ink-muted); font-size: 10px; }
+.gate-visitor-meta dd { margin: 0; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.gate-visitor-card footer { display: flex; align-items: center; gap: 16px; padding-top: 16px; border-top: 1px solid var(--edura-border); }
+.gate-visitor-card footer p { display: flex; align-items: center; gap: 6px; flex: 1; margin: 0; color: var(--edura-ink-muted); font-size: 11px; line-height: 1.7; }
+.gate-visitor-card footer p svg { flex-shrink: 0; }
+.gate-visitor-card footer button { display: flex; align-items: center; justify-content: center; gap: 7px; flex-shrink: 0; font-size: 12px; font-weight: 700; }
+.gate-shell .gate-visitor-enter { border-color: var(--edura-brand); background: var(--edura-brand); color: white; }
+.gate-shell .gate-visitor-exit { border-color: var(--edura-border); background: var(--edura-surface-soft); color: var(--edura-brand); }
+.gate-visitor-empty { display: grid; justify-items: center; padding: 40px 20px; border: 1px dashed var(--edura-border); border-radius: var(--edura-radius-card); color: var(--edura-ink-muted); text-align: center; }
+.gate-visitor-empty svg { color: var(--edura-positive); }
+.gate-visitor-empty h3 { margin: 16px 0 6px; color: var(--edura-ink); font-size: 15px; }
+.gate-visitor-empty p { margin: 0; font-size: 12px; line-height: 1.6; }
+@media(max-width:580px) { .gate-visitor-fields { grid-template-columns: 1fr; gap: 16px; }.gate-student-row { flex-wrap: wrap; }.gate-student-open { flex-basis: 100%; }.gate-shell .gate-quick-entry { width: 100%; }.gate-visitor-card { padding: 16px; }.gate-visitor-identity { flex-wrap: wrap; }.gate-visitor-identity > div { flex: 1; min-width: 0; }.gate-visitor-status { margin-left: 54px; }.gate-visitor-card footer { flex-wrap: wrap; }.gate-visitor-card footer p { flex-basis: 100%; }.gate-visitor-card footer button { width: 100%; } }

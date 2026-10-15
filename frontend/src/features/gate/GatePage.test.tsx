@@ -23,7 +23,7 @@ describe('simple permission-scoped gate workspace',()=>{
   mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));
   const input=screen.getByRole('searchbox');fireEvent.change(input,{target:{value:'A'}});
   expect(state.find).not.toHaveBeenCalled();fireEvent.change(input,{target:{value:'Aarav'}});
-  fireEvent.click(await screen.findByRole('button',{name:/Aarav/}));
+  fireEvent.click(await screen.findByRole('button',{name:'View Aarav'}));
   expect(state.find).toHaveBeenCalledWith('school','Aarav',expect.any(AbortSignal));
   expect(state.student).toHaveBeenCalledWith('school','student');
   expect(await screen.findByRole('button',{name:'Confirm Entry'})).toBeDisabled();
@@ -43,9 +43,34 @@ describe('simple permission-scoped gate workspace',()=>{
   await waitFor(()=>expect(state.find).toHaveBeenCalledTimes(1));
   const signal=state.find.mock.calls[0][2] as AbortSignal;
   fireEvent.change(screen.getByRole('searchbox'),{target:{value:'New'}});
-  expect(await screen.findByRole('button',{name:/New Student/})).toBeInTheDocument();
+  expect(await screen.findByRole('button',{name:'View New Student'})).toBeInTheDocument();
   expect(signal.aborted).toBe(true);
   finishOld([{id:'old',name:'Old Student',class_label:'7 A',admission_number:'101',avatar_url:''}]);
-  await waitFor(()=>expect(screen.queryByRole('button',{name:/Old Student/})).not.toBeInTheDocument());
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'View Old Student'})).not.toBeInTheDocument());
+ });
+ it('records entry in one click from search results without a separate detail request',async()=>{
+  state.find.mockResolvedValueOnce([{id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',avatar_url:'',direction:'out'}]).mockResolvedValue([{id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',avatar_url:'',direction:'in'}]);
+  state.command.mockResolvedValue({saved:true});mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Aarav'}});
+  fireEvent.click(await screen.findByRole('button',{name:'Mark entry for Aarav'}));
+  expect(await screen.findByText('Entry recorded for Aarav.')).toBeInTheDocument();
+  expect(state.command).toHaveBeenCalledWith('school','movements',expect.objectContaining({student_id:'student',direction:'in',identity_verified:true}));
+  expect((state.command.mock.calls[0]?.[2] as {command_id:string}).command_id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(state.student).not.toHaveBeenCalled();expect(await screen.findByRole('button',{name:'Mark entry for Aarav'})).toBeDisabled();
+ });
+ it('reuses the same command after an uncertain entry response',async()=>{
+  state.find.mockResolvedValue([{id:'student',name:'Aarav',class_label:'7 A',admission_number:'100',avatar_url:'',direction:'out'}]);
+  state.command.mockRejectedValueOnce(new Error('network interrupted')).mockResolvedValueOnce({saved:true});
+  mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Aarav'}});
+  fireEvent.click(await screen.findByRole('button',{name:'Mark entry for Aarav'}));expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm entry');
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Mark entry for Aarav'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Mark entry for Aarav'}));
+  await screen.findByText('Entry recorded for Aarav.');expect(state.command.mock.calls[1]).toEqual(state.command.mock.calls[0]);
+ });
+ it('shows visitor state changes in the list without leaving a stale confirmation button',async()=>{
+  const approved={id:'visitor',school_id:'school',name:'Khelu',purpose:'Lunch',host_name:'Meera',revision:2,state:'approved'};
+  state.workspace.mockResolvedValueOnce({visitors:[approved],hosts:[],pending:0}).mockResolvedValue({visitors:[{...approved,state:'inside',revision:3}],hosts:[],pending:0});
+  state.command.mockResolvedValue({saved:true,visitor:{...approved,state:'inside',revision:3}});mount();fireEvent.click(screen.getByRole('button',{name:/Pending approvals/}));
+  fireEvent.click(await screen.findByRole('button',{name:'Confirm Entry'}));
+  expect(await screen.findByText('Visitor entry recorded.')).toBeInTheDocument();expect(await screen.findByRole('button',{name:'Confirm Exit'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Confirm Entry'})).not.toBeInTheDocument();expect(state.command).toHaveBeenCalledWith('school','visitors/visitor/in',{expected_revision:2});
  });
 });

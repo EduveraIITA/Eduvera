@@ -25,12 +25,15 @@ in Roles & permissions. No account credentials or role assignments are changed.
   admission substrings, deduplicates and caps matches at 30 before enrichment.
   Separate name/admission branches can use the expression trigram indexes added
   by migration `097_gate_student_search.sql`. The list includes class and today's
-  plan state for the existing administrator pass controls, but no gate history
-  or collecting-person details.
-- Selecting a student fetches `/students/:studentId/` afresh through `gate.manage`
-  and institution scope checks. Entry/exit confirmation still checks current
-  authority in the server transaction; a cached roster match cannot authorize
-  a movement. Identity verification and QR pickup safeguards remain required.
+  plan state for the existing administrator pass controls and the latest movement
+  direction for only those 30 matches; collecting-person details remain excluded.
+- View details fetches `/students/:studentId/` afresh. The owner's subsequent
+  explicit one-click entry decision adds Mark entry directly to each search result.
+  The instruction requires checking identity before tapping; that deliberate entry
+  action attests identity and sends a stable command UUID without a detail round trip.
+  The server still checks current authority, school scope and current movement state
+  transactionally. Inside students have a disabled entry action. Exit retains the
+  existing detail, identity and pickup QR safeguards.
 
 ## Verification
 
@@ -68,3 +71,38 @@ separate website deployment also succeeded; IndexNow accepted its eight URLs at
 A separate local public HTTP recheck returned 403 and the search tool could not
 retrieve the health endpoints. Public release confirmation above comes from the
 successful trusted release verifier, not those unsuccessful local requests.
+
+## Visitor approval and one-click entry follow-up — 15 October 2026
+
+Visitor entry and the pending/approved/inside list now use the shared theme with
+clear status badges, host details, filters and only the action permitted by the
+current state. Successful entry immediately changes the action to Confirm Exit.
+The creation form retains its request UUID across uncertain retries; duplicate
+requests do not create duplicate notifications. API responses whitelist public
+visitor fields and omit internal token hashes.
+
+A selected active staff/admin host sees an in-app Approve / Decline popup after
+login, even without gate.manage. Review later postpones the popup for that login
+session and leaves the request pending; its notification can reopen it. School
+admins retain fallback decision authority. Other staff and gate operators cannot
+approve somebody else's request. Gate operators still need gate.manage for
+physical entry/exit. Pending and approved requests expire after eight hours; an
+inside visitor can still be checked out.
+
+Migration 098 adds request idempotency, revision and expiry fields plus current
+relationship checks for gate.visitor.updated event/notification visibility.
+Creation, decisions, movements, audit and outbox writes share their transaction.
+Decisions and movement controls submit the displayed revision, serialize on the
+visitor row and reject stale/conflicting actions. Notifications target the host
+on creation and the recording operator after a decision. Live events invalidate
+the gate, approval and notification queries; focus refresh and a 30-second poll
+recover missed events. Notifications are in-app, not background OS push.
+
+Local frontend/backend typecheck and lint, frontend production build and 49
+focused UI tests passed. Headless browser checks with synthetic fixtures passed
+one-click entry without a student-detail request, visitor creation, immediate
+entry/exit state updates and login-time Approve/Decline at 320/768/1024/1440 px
+without overflow or page errors. Phone/tablet renders were visually inspected.
+Native database coverage exercises durable publisher delivery, retry deduplication,
+current host revocation, school isolation, expiry and concurrent decisions. Hosted
+CI and deployment are pending; these local fixtures are not live account evidence.
