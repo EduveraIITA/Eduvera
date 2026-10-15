@@ -31,7 +31,9 @@ interface AuthState {
   grants: Array<{ school_id: string; permission: string }>;
   child: string | null;                 // guardian's selected child (student id)
   setChild(id: string | null): void;
-  login(identifier: string, password: string): Promise<void>;
+  login(identifier: string, password: string): Promise<{ challengeToken: string | null }>;
+  googleLogin(credential: string): Promise<{ challengeToken: string | null }>;
+  completeMfa(challengeToken: string, code: string): Promise<void>;
   logout(): Promise<void>;
   selectSchool(id: string, destination?: "administration" | "security"): Promise<void>;
 }
@@ -82,7 +84,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (identifier: string, password: string) => {
     await api("/api/v1/auth/csrf/");
-    await api("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password }) });
+    const response = await api<{ mfa_required?: boolean; challenge_token?: string }>("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password }) });
+    if (response.mfa_required && response.challenge_token) return { challengeToken: response.challenge_token };
+    await load();
+    return { challengeToken: null };
+  }, [load]);
+
+  const googleLogin = useCallback(async (credential: string) => {
+    await api("/api/v1/auth/csrf/");
+    const response = await api<{ mfa_required?: boolean; challenge_token?: string }>("/api/v1/auth/google/", { method: "POST", body: JSON.stringify({ credential }) });
+    if (response.mfa_required && response.challenge_token) return { challengeToken: response.challenge_token };
+    await load();
+    return { challengeToken: null };
+  }, [load]);
+  const completeMfa = useCallback(async (challengeToken: string, code: string) => {
+    await api("/api/v1/auth/mfa/login/", { method: "POST", body: JSON.stringify({ challenge_token: challengeToken, code }) });
     await load();
   }, [load]);
 
@@ -99,8 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // A full navigation clears all student- and school-keyed caches together.
       window.location.assign(`${import.meta.env.BASE_URL}${destination}`);
     };
-    return { status, user, memberships, persona, school, demoMode, grants, child, setChild, login, logout, selectSchool };
-  }, [status, user, memberships, demoMode, grants, child, login, logout]);
+    return { status, user, memberships, persona, school, demoMode, grants, child, setChild, login, googleLogin, completeMfa, logout, selectSchool };
+  }, [status, user, memberships, demoMode, grants, child, login, googleLogin, completeMfa, logout]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

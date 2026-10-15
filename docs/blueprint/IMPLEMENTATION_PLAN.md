@@ -6804,6 +6804,36 @@ review preview returned HTTP 200. Owner device/live-account review remains open;
 local synthetic browser fixtures do not establish that acceptance.
 
 
+## Google sign-in — 15 October 2026
+
+User authorized Google sign-in and supplied the public OAuth web Client ID. Both React clients
+use the official Google Identity Services button and POST its ID token through the existing
+same-origin CSRF convention. The backend uses google-auth-library to verify signature, issuer,
+audience and expiry, plus a signed browser cookie and expiring, single-use database nonce.
+Google subject is the durable identity key. First linking accepts only verified Gmail or Google
+Workspace email, preserves existing roles and memberships, and revokes pre-link sessions.
+Third-party non-Workspace email must use password login. Disabled accounts remain blocked.
+New Google accounts have no school membership or operational grants; ordinary onboarding applies.
+Both Google and password sign-in use the same MFA challenge/session boundary; desktop now
+supports that existing MFA challenge too. No Google client secret or API scopes are used.
+
+The Stage release sets GOOGLE_CLIENT_ID explicitly; other environments default to disabled.
+Required authorized origin: https://app.thatcampus.com (identified in the current deployment
+configuration and communicated to the user), plus the existing direct Stage origin when used.
+The marketing origins alone do not authorize the app subdomain. OAuth origin setup and an
+interactive real-account Google login remain user acceptance gates.
+
+Local evidence: both frontend production builds passed, backend typecheck and focused lint
+passed after the new test additions; 10 signed-token/identity rejection tests, 3 Google button
+tests and 8 existing frontend auth regressions passed. New isolated PostgreSQL cases cover linking, no automatic membership, replay,
+disabled accounts, changed email, conflicting identity and MFA; CI verification and deployment
+are pending. No real-user Google login has been claimed.
+
+Publishing status: the user explicitly approved pushing, CI and Stage deployment on 15 October
+2026 after the initial automatic approval review requested publication authorization. Hosted CI
+and Stage verification are pending. PostgreSQL integration tests were skipped locally because
+no isolated PostgreSQL server is available.
+
 ### Compact post-login attribution — 15 October 2026
 
 User approved a smaller Powered by ThatCampus pill after login and removal of the ThatCampus logo from authenticated headers. Added a shared compact 190px ribbon to operations/web sidebars and the parent, student and operations Home content footer on mobile. The separate desktop client also includes it in the sidebar. The school crest/name remain in headers; auth branding remains unchanged. The Home footer scrolls with content and does not overlay bottom navigation.
