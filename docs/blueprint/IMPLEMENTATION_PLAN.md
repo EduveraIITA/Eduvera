@@ -6687,3 +6687,16 @@ confirmation safeguards. Phone/tablet renders were visually inspected. The
 regular browser launcher failed on a Unix socket; headless QA did not require it.
 A local public HTTP recheck returned 403, so live confirmation relies on the
 trusted release verifier. Owner device review remains requested.
+
+### Mobile sign-in layout — 15 October 2026
+
+User superseded the powered-by ribbon proposal: prioritize the demo's mobile login
+layout without any attribution, and only suggest placement after sign-in. Added
+mobile-only centered original ThatCampus logo, Welcome back heading, campus subtitle,
+larger inputs and primary action. Existing email/username authentication, MFA,
+password reset, invitation and signup links remain functional. No unconnected
+social-provider buttons were added. Logged-in shells remain unchanged. Proposed
+future attribution location: Profile/About, pending the user's choice.
+
+Verification: frontend production build, AuthPages lint and existing AuthPages
+sign-in regression test passed. Deployment and user visual acceptance remain open.

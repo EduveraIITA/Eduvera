@@ -249,3 +249,38 @@
 }
 
 .auth-invite-link{font-size:12px;color:var(--edura-ink-muted);margin:0 0 18px}.auth-invite-link a{font-weight:600;color:var(--edura-brand)}
+
+/* Selected mobile login concept: original logo and a quiet, focused sign-in form. */
+.auth-login-mobile-heading { display: none; }
+.auth-login-forgot { align-self: flex-end; padding-block: 12px; margin-block: -12px 0; color: var(--edura-brand); font-size: 12px; font-weight: 600; }
+@media (max-width: 650px) {
+  .auth-page--login .auth-panel {
+    padding: max(40px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+    background: #fff;
+  }
+  .auth-page--login .auth-panel__mobile-brand { margin: 0 auto 32px; }
+  .auth-login-logo { display: flex; width: fit-content; margin: 0 auto; border-radius: 12px; }
+  .auth-login-logo img { display: block; width: 200px; height: 120px; object-fit: contain; }
+  .auth-page--login .auth-card { display: flex; flex-direction: column; max-width: 400px; }
+  .auth-page--login .auth-card__header { display: none; }
+  .auth-login-mobile-heading { display: block; text-align: center; }
+  .auth-login-mobile-heading h1 { margin: 0; color: #0b1645; font-size: clamp(28px, 8vw, 36px); line-height: 1.2; letter-spacing: -.045em; font-weight: 800; }
+  .auth-login-mobile-heading p { margin: 12px 0 0; color: #536180; font-size: 16px; line-height: 1.5; }
+  .auth-page--login .auth-form { margin-top: 36px; gap: 20px; }
+  .auth-page--login .auth-field { gap: 8px; font-size: 14px; font-weight: 600; }
+  .auth-page--login .auth-input-wrap { height: 56px; border-radius: 12px; }
+  .auth-page--login .auth-input-wrap input { font-size: 16px; color: #172943; }
+  .auth-page--login .auth-input-wrap input::placeholder { color: #71809a; }
+  .auth-page--login .auth-primary-button { min-height: 56px; border-radius: 12px; font-size: 16px; background: #0866ff; box-shadow: none; }
+  .auth-page--login .auth-login-forgot { margin-top: -16px; margin-bottom: -8px; font-size: 13px; }
+  .auth-page--login .auth-invite-link { order: 2; margin: 20px 0 0; font-size: 13px; text-align: center; line-height: 1.6; }
+  .auth-page--login .auth-invite-link a { display: inline-flex; min-height: 44px; align-items: center; }
+  .auth-page--login .auth-switch { order: 3; margin-top: 8px; font-size: 13px; }
+  .auth-page--login .auth-alert { font-size: 13px; }
+  .auth-login-logo:focus-visible { outline: 3px solid var(--edura-brand); outline-offset: 4px; }
+}
+@media (max-width: 360px) {
+  .auth-page--login .auth-panel { padding-inline: 20px; padding-top: 24px; }
+  .auth-page--login .auth-panel__mobile-brand { margin-bottom: 24px; }
+  .auth-login-logo img { width: 168px; height: 100px; }
+}
