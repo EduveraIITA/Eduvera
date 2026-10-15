@@ -100,6 +100,26 @@ describe("StaffOperationsPage", () => {
     expect(screen.queryByText("Onboarding complete")).not.toBeInTheDocument();
   });
 
+  it("shows and saves Manage In & Out when customising the Gatekeeper template", async () => {
+    const gateRole:AccessRole={...accessRole,id:"gate-role",name:"Gatekeeper",description:"School gate entry and exit",context_kind:"institution",permissions:["gate.manage"],assignment_count:0};
+    const options:RoleOptions={...roleOptions,contexts:[...roleOptions.contexts,{code:"institution",label:"Institution",permissions:["gate.manage"]}],permissions:[...roleOptions.permissions,{code:"gate.manage",group:"Gate & Safety",label:"Manage In & Out",description:"Scan gate QR passes and record visitors."}]};
+    const data:AdminStaffWorkspace={mode:"admin",academic_year:"2026-27",profiles:[profile],onboarding_items:[],policies:[],balances:[],requests:[],work_types:[],responsibility_types:[],assignments:[],coverage_tasks:[],references:{classes:[],subjects:[],events:[]},access_roles:[gateRole],role_options:options};
+    renderPage(data,"principal");
+    const user=userEvent.setup();
+    await user.click(screen.getByRole("button",{name:"Roles"}));
+    await user.click(screen.getByRole("button",{name:/New role/}));
+    expect(screen.queryByLabelText("Manage In & Out")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Start from"),gateRole.id);
+    expect(screen.getByLabelText("Applies to")).toHaveValue("institution");
+    expect(screen.getByRole("heading",{name:"Gate & Safety"})).toBeVisible();
+    expect(screen.getByLabelText("Manage In & Out")).toBeChecked();
+    await user.click(screen.getByLabelText("Manage In & Out"));
+    expect(screen.getByRole("button",{name:"Save role"})).toBeDisabled();
+    await user.click(screen.getByLabelText("Manage In & Out"));
+    await user.click(screen.getByRole("button",{name:"Save role"}));
+    expect(saveAccessRole).toHaveBeenCalledWith("school-1",expect.objectContaining({context_kind:"institution",template_id:gateRole.id,permissions:["gate.manage"]}),undefined);
+  });
+
   it("creates a genuine role with selected actions instead of a work-type workflow alias", async () => {
     const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [policy], balances: [balance], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
     renderPage({...data,access_roles:[accessRole],role_options:roleOptions}, "principal");

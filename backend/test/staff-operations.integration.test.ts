@@ -309,4 +309,29 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     expect((await request(adminCookies,staffPath("role-assignments"),{role_id:foreignRole.id,staff_profile_id:profileId,scope_id:sectionId,starts_on:new Date().toISOString().slice(0,10)})).status).toBe(400);
     expect((await pool.query("SELECT action FROM school_operations_audit WHERE target_id=$1",[native.id])).rows.map((r)=>r.action)).toEqual(expect.arrayContaining(["staff.assignment.role_changed","staff.assignment.ended"]));
   });
+
+  it("exposes, saves and assigns gate access to an existing staff member with immediate revocation",async()=>{
+    const workspace=await request(adminCookies,staffPath("workspace"));
+    expect(workspace.data.role_options.contexts.find((item:{code:string})=>item.code==="institution").permissions).toContain("gate.manage");
+    const gatePath=`gate/schools/${schoolId}/workspace/`;
+    expect((await request(teacherCookies,gatePath)).status).toBe(403);
+    const usersBefore=(await pool.query("SELECT count(*)::int total FROM users")).rows[0].total;
+    const payload={name:"Gate desk operator",context_kind:"institution",permissions:["gate.manage"]};
+    expect((await request(teacherCookies,staffPath("access-roles"),payload)).status).toBe(403);
+    expect((await request(adminCookies,staffPath("access-roles"),{...payload,name:"Wrong gate scope",context_kind:"class"})).status).toBe(400);
+    const role=await request(adminCookies,staffPath("access-roles"),payload);
+    expect(role.status).toBe(201);
+    expect(role.data.permissions).toEqual(["gate.manage"]);
+    await pool.query("UPDATE staff_profiles SET status='active' WHERE id=$1",[profileId]);
+    const assignment=await request(adminCookies,staffPath("role-assignments"),{role_id:role.data.id,staff_profile_id:profileId,starts_on:new Date().toISOString().slice(0,10)});
+    expect(assignment.status).toBe(201);
+    expect((await request(teacherCookies,gatePath)).status).toBe(200);
+    const effective=await request(teacherCookies,`schools/${schoolId}/roles/effective/`);
+    expect(effective.data.permissions).toContain("gate.manage");
+    expect(effective.data.permissions).not.toContain("departure.manage");
+    expect((await pool.query("SELECT count(*)::int total FROM users")).rows[0].total).toBe(usersBefore);
+    expect((await pool.query("SELECT action FROM school_operations_audit WHERE target_id=$1",[assignment.data.id])).rows).toContainEqual({action:"staff.role.assigned"});
+    expect((await request(adminCookies,staffPath(`responsibilities/${assignment.data.id}/revoke`),{reason:"Gate cover completed.",expected_revision:assignment.data.revision})).status).toBe(201);
+    expect((await request(teacherCookies,gatePath)).status).toBe(403);
+  });
 });
