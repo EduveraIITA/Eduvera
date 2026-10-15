@@ -1,8 +1,11 @@
 # Development reference
 
-- Use the repository's `School_Operations_Blueprint.pdf` (v1.0, 15 September 2026)
-  as the primary product and engineering blueprint. Read the relevant sections
-  before planning or implementing a domain; do not rely only on conversation memory.
+- Use `docs/blueprint/PRODUCT_BLUEPRINT_V2.md` as the primary product and
+  engineering blueprint. Read its linked domain/architecture contracts before
+  planning or implementing a domain; do not rely only on conversation memory.
+- Treat `School_Operations_Blueprint.pdf` (v1.0, 15 September 2026) as historical
+  provenance, not the current product authority. A v1 constraint remains binding
+  only where Blueprint v2 or a linked current contract explicitly retains it.
 - Read `docs/blueprint/IMPLEMENTATION_PLAN.md` for the current delivery state,
   dependency order, accepted architecture decisions, missing companion artifacts,
   and remaining acceptance gaps. Keep that record updated with verified evidence.
@@ -15,7 +18,11 @@
   branch and read the latest versions of these references. Reconcile concurrent
   documentation changes without discarding another agent's evidence or unresolved
   acceptance gates.
-- Preserve the established theme, shared headers, navigation, and UX. The blueprint
+- Keep the Campus Model Core separate and API/contract-driven. Domain modules own
+  authoritative rules and records; frontend features call domain APIs and use only
+  domain-specific language. Never expose model-core persistence or graph concepts
+  directly to UI code.
+- Preserve the established theme, shared headers, navigation, and UX. Blueprint v2
   guides capabilities and architecture; it is not permission to redesign the app.
 - Prefer substantial, end-to-end workflows with real database relationships,
   authorization, audit/event handling, and tests over isolated cosmetic features.

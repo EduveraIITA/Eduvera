@@ -1,14 +1,20 @@
-# EDUVERA — Product Functionality Specification
+# THATCAMPUS — Product Functionality Specification
 
 **Document:** 03_PRODUCT_FUNCTIONALITY.md  
 **Scope:** Web + Android + iOS school operating system  
-**Basis:** Functional concepts present in the uploaded EDUVERA JSX prototype, expanded into a production product specification.
+**Basis:** Functional concepts present in the uploaded THATCAMPUS JSX prototype, expanded into a production product specification.
 
 ---
 
 ## 1. Product definition
 
-EDUVERA is a unified operating platform for an education provider, in any country.
+THATCAMPUS is a unified operating platform for an education provider, in any country.
+
+Blueprint v2 defines the platform as a living digital twin of the campus rather
+than a conventional ERP. An institution can activate one bounded capability first
+and expand without re-creating people, classes, places or resources. The backend
+connects those identities and workflows; each frontend remains entirely in the
+language and interaction model of its domain.
 
 Target institutions:
 
@@ -193,7 +199,7 @@ Needs:
 
 ### SaaS operator
 
-#### Eduvera super administrator
+#### ThatCampus super administrator
 
 Needs:
 
@@ -1145,7 +1151,7 @@ Operational views:
 - substitution availability
 - open positions (optional HR integration)
 
-Avoid turning EDUVERA into a full HR/payroll system in the first release unless strategically required.
+Avoid turning THATCAMPUS into a full HR/payroll system in the first release unless strategically required.
 
 ---
 
@@ -1257,7 +1263,7 @@ Received
 - Statutory response clocks are tracked and visible, because deadlines differ by jurisdiction.
 - Deletion is per purpose. Academic records may be erasable while the invoices referencing them must be retained, and the workflow must express that outcome rather than failing.
 - Export is available on demand and at contract termination, in a documented format.
-- An institution can review its own access logs without contacting Eduvera.
+- An institution can review its own access logs without contacting ThatCampus.
 
 ---
 
@@ -1465,6 +1471,12 @@ Administrators configure:
 - roles/permissions
 - integrations
 - modules enabled
+
+Configuration is progressive and capability-driven. Creating an account does not
+force the administrator to configure every item above. Each enabled capability
+declares the minimum prerequisites it needs, reuses existing campus identities and
+asks for missing information in domain language. Readiness is evaluated per
+capability, not as one misleading universal setup percentage.
 
 ---
 
@@ -1780,7 +1792,7 @@ Integrate or add later where strategically justified.
 
 ## 38. Product north star
 
-A good EDUVERA session should let each person answer:
+A good THATCAMPUS session should let each person answer:
 
 ### Principal
 

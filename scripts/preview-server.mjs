@@ -129,6 +129,9 @@ if (!existsSync(photoTokenPath)) {
   writeFileSync(photoTokenPath, randomBytes(32).toString("base64url"), { mode: 0o600 });
 }
 const photoToken = readFileSync(photoTokenPath, "utf8").trim();
+const photoEncryptionKeyPath = resolve(photoDataRoot, "encryption.key");
+const photoEncryptionKey = process.env.ATTENDANCE_ENCRYPTION_KEY
+  || (existsSync(photoEncryptionKeyPath) ? readFileSync(photoEncryptionKeyPath, "utf8").trim() : "");
 const photoPythonCandidates = [
   process.env.PHOTO_ATTENDANCE_PYTHON,
   resolve(photoAttendanceRoot, ".venv/bin/python"),
@@ -174,6 +177,7 @@ const photoAttendanceEnv = {
   DATA_DIR: photoDataRoot,
   MODELS_DIR: photoModels ?? photoAttendanceRunRoot,
   ATTENDANCE_API_TOKEN: photoToken,
+  ATTENDANCE_ENCRYPTION_KEY: photoEncryptionKey,
   ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]",
   SESSION_RETENTION_DAYS: "7",
   OLLAMA_MODEL: process.env.PHOTO_ATTENDANCE_OLLAMA_MODEL || "qwen3-vl:4b-instruct",

@@ -1,20 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import { BookOpenCheck, ChevronRight, History, KeyRound, Layers, Mail, Settings2, ShieldCheck, UsersRound, X } from "lucide-react";
+import { BookOpenCheck, Building2, ChevronRight, History, KeyRound, Layers, Mail, MapPin, Settings2, ShieldCheck, UsersRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { useAuth } from "../auth/AuthContext";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
-import { getAdministration, personName, promoteClass, updateMember, type Administration, type Member } from "./api";
+import { getAdministration, getInstitutionSetup, personName, promoteClass, updateMember, type Administration, type Member } from "./api";
+import { CampusReplicaManager } from "./CampusReplicaManager";
 import { CatalogManager } from "./CatalogManager";
 import { OperatingRules } from "./OperatingRules";
 import "./office.css";
 import "../onboarding/onboarding.css";
 import "../more/more.css";
 
-type Section = "setup" | "access" | "audit" | "promotion" | "rules";
+type Section = "campus" | "setup" | "access" | "audit" | "promotion" | "rules";
 type AdministrationPortal = "principal" | "teacher";
-const sections: Array<{ id: Section; label: string; icon: typeof Settings2 }> = [{ id: "setup", label: "Academic setup", icon: BookOpenCheck }, { id: "access", label: "Account access", icon: KeyRound }, { id: "audit", label: "Administrative history", icon: History }, { id: "promotion", label: "Promote a class", icon: Layers }];
+const sections: Array<{ id: Section; label: string; icon: typeof Settings2 }> = [{ id: "campus", label: "Campus & spaces", icon: Building2 }, { id: "setup", label: "Academic structure", icon: BookOpenCheck }, { id: "access", label: "Account access", icon: KeyRound }, { id: "audit", label: "Administrative history", icon: History }, { id: "promotion", label: "Promote a class", icon: Layers }];
 const formatDate = (value: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(value));
 const formString = (data: FormData, field: string) => { const value = data.get(field); return typeof value === "string" ? value : ""; };
 const auditReason = (item: Administration["audit"][number]) => typeof item.metadata.reason === "string" ? item.metadata.reason : "";
@@ -47,15 +48,18 @@ export default function AdministrationPage() {
   const portal: AdministrationPortal = auth.hasPortal("principal") ? "principal" : "teacher";
   const selectedRule = params.get("rule");
   const query = useQuery({ queryKey: ["office", "administration", schoolId], queryFn: () => getAdministration(schoolId), enabled: Boolean(schoolId) });
+  const setupQuery = useQuery({ queryKey: ["institution-setup", schoolId], queryFn: () => getInstitutionSetup(schoolId), enabled: Boolean(schoolId) });
   const refresh = () => query.refetch().then(() => undefined);
-  return <OperationsShell portal={portal} active="more" title={section?.label ?? "Institute settings"} schoolName={schools.find(s => s.school_id === schoolId)?.school_name} backTo={administrationBackTarget(portal, schoolId, section?.id, selectedRule)}>
+  return <OperationsShell portal={portal} active="more" title={section?.label ?? "Institute setup"} schoolName={schools.find(s => s.school_id === schoolId)?.school_name} backTo={administrationBackTarget(portal, schoolId, section?.id, selectedRule)}>
     <div className="office-page">
       {schools.length > 1 ? <label className="office-field">Institution<select value={schoolId} onChange={event => setSelectedSchool(event.target.value)}>{schools.map(school => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
       {!schoolId ? <p className="office-alert">An active institution membership is required.</p> : query.isPending ? <ScreenLoading/> : query.isError ? <LiveRouteError error={query.error} onRetry={query.refetch}/> : query.data ? <>
-        {!section ? <nav className="more-grid more-grid--list" aria-label="Institute settings">
-          {available.filter(item => item.id !== "promotion").map(item => { const Icon = item.icon; return <Link key={item.id} className="more-tile" to={administrationRoute(portal, schoolId, item.id)}><span className="more-tile__icon"><Icon size={20}/></span><span className="more-tile__copy"><strong>{item.label}</strong></span><ChevronRight size={18}/></Link>; })}
-          {canManageAccess ? <Link className="more-tile" to={'/principal/activation?school=' + encodeURIComponent(schoolId)}><span className="more-tile__icon"><ShieldCheck size={20}/></span><span className="more-tile__copy"><strong>Setup status</strong></span><ChevronRight size={18}/></Link> : null}
-        </nav> : null}
+        {!section ? <div className="office-setup-home"><section className="office-setup-home__intro"><div><span className="office-eyebrow"><MapPin size={13}/>CAMPUS SETUP</span><h2>Connect the parts you use</h2><p>Start with one class or map multiple campuses. Add structure only when an operation needs it.</p></div>{setupQuery.data ? <div className="office-setup-home__connection"><strong>{setupQuery.data.readiness.filter((item)=>item.complete).length}</strong><span>areas connected</span></div>:null}</section>
+          {setupQuery.data ? <section className="office-setup-home__metrics" aria-label="Institution setup summary"><div><strong>{setupQuery.data.summary.campuses}</strong><span>Campuses</span></div><div><strong>{setupQuery.data.summary.spaces}</strong><span>Spaces</span></div><div><strong>{setupQuery.data.summary.classes}</strong><span>Classes</span></div><div><strong>{setupQuery.data.summary.staff}</strong><span>Staff</span></div></section>:null}
+          <section className="office-setup-domain"><h3>Campus foundation</h3><nav className="more-grid more-grid--list" aria-label="Campus foundation"><SetupLink icon={Building2} title="Campus & spaces" detail="Branches, buildings, rooms and equipment" to={administrationRoute(portal, schoolId, "campus")} status={setupQuery.data?.readiness.find((item)=>item.key==="spaces")?.detail}/><SetupLink icon={BookOpenCheck} title="Academic structure" detail="Terms, classes and subjects" to={administrationRoute(portal, schoolId, "setup")}/><SetupLink icon={UsersRound} title="People & roles" detail="Staff records, work and scoped roles" to="/principal/staff?section=directory"/><SetupLink icon={KeyRound} title="Account access" detail="Administrators, staff and invitations" to={administrationRoute(portal, schoolId, "access")}/></nav></section>
+          <section className="office-setup-domain"><h3>Behaviour & readiness</h3><nav className="more-grid more-grid--list" aria-label="Behaviour and readiness"><SetupLink icon={Settings2} title="Operating rules" detail="Automatic behaviour and exception handling" to={administrationRoute(portal, schoolId, "rules")}/><SetupLink icon={ShieldCheck} title="Setup readiness" detail="Review what is needed before operations" to={'/principal/activation?school=' + encodeURIComponent(schoolId)}/><SetupLink icon={History} title="Administrative history" detail="Audited configuration changes" to={administrationRoute(portal, schoolId, "audit")}/></nav></section>
+        </div> : null}
+        {section?.id === "campus" ? <CampusReplicaManager schoolId={schoolId}/> : null}
         {section?.id === "setup" ? <CatalogManager schoolId={schoolId} data={query.data} refresh={refresh}/> : null}
         {section?.id === "rules" && canManageAccess ? <OperatingRules key={schoolId} schoolId={schoolId}/> : null}
         {section?.id === "promotion" ? <Promotion schoolId={schoolId} data={query.data} refresh={refresh}/> : null}
@@ -64,6 +68,10 @@ export default function AdministrationPage() {
       </> : null}
     </div>
   </OperationsShell>;
+}
+
+function SetupLink({ icon: Icon, title, detail, to, status }: { icon: typeof Settings2; title: string; detail: string; to: string; status?: string }) {
+  return <Link className="more-tile office-setup-link" to={to}><span className="more-tile__icon"><Icon size={20}/></span><span className="more-tile__copy"><strong>{title}</strong><small>{detail}</small></span>{status ? <b>{status}</b>:null}<ChevronRight size={18}/></Link>;
 }
 
 function Promotion({ schoolId, data, refresh }: { schoolId: string; data: Administration; refresh: () => Promise<void> }) {
@@ -94,10 +102,11 @@ function Access({ schoolId, data, refresh }: { schoolId: string; data: Administr
   const [selected, setSelected] = useState<Member | null>(null);
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(25);
-  const members = data.members.filter((member) => `${personName(member)} ${member.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, limit);
+  const accountMembers = data.members.filter((member) => member.role === "admin" || member.role === "staff");
+  const members = accountMembers.filter((member) => `${personName(member)} ${member.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, limit);
   return <>
     <Link className="office-secondary" to={"/principal/invitations?from=settings&school=" + encodeURIComponent(schoolId)}><Mail size={18}/>Invitations</Link>
-    <section className="office-panel"><div className="office-panel-heading"><span className="office-panel-icon"><UsersRound size={19} /></span><div><h2>School members</h2><p>Review active roles and assigned access.</p></div><b>{data.members.length}</b></div><label className="office-field office-search-field">Find a member<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setLimit(25); }} placeholder="Name or email" /></label>{members.length ? <ul className="office-list office-list--cards office-member-list">{members.map((member) => <li key={member.id}><div><strong>{personName(member)}</strong><span>{member.role}, {member.email}</span></div><span className={`office-status ${member.is_active ? "office-status--active" : "office-status--inactive"}`}>{member.is_active ? "Active" : "Inactive"}</span><button type="button" onClick={() => setSelected(member)}>Manage</button></li>)}</ul> : <p className="office-empty">No members match your search.</p>}{data.members.length > limit ? <button type="button" className="office-secondary office-add" onClick={() => setLimit(limit + 50)}>Show more</button> : null}</section>
+    <section className="office-panel"><div className="office-panel-heading"><span className="office-panel-icon"><UsersRound size={19} /></span><div><h2>Administrator & staff access</h2><p>Learner and guardian accounts remain with their connected student records.</p></div><b>{accountMembers.length}</b></div><label className="office-field office-search-field">Find an administrator or staff member<input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setLimit(25); }} placeholder="Name or email" /></label>{members.length ? <ul className="office-list office-list--cards office-member-list">{members.map((member) => <li key={member.id}><div><strong>{personName(member)}</strong><span>{member.role}, {member.email}</span></div><span className={`office-status ${member.is_active ? "office-status--active" : "office-status--inactive"}`}>{member.is_active ? "Active" : "Inactive"}</span><button type="button" onClick={() => setSelected(member)}>Manage</button></li>)}</ul> : <p className="office-empty">No administrators or staff match your search.</p>}{accountMembers.length > limit ? <button type="button" className="office-secondary office-add" onClick={() => setLimit(limit + 50)}>Show more</button> : null}</section>
     {selected ? <MemberEditor member={selected} onCancel={() => setSelected(null)} onSave={async (values) => { await updateMember(schoolId, selected.id, values); setSelected(null); await refresh().catch(() => undefined); }} /> : null}
   </>;
 }

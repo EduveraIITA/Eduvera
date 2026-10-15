@@ -1,4 +1,4 @@
-# EDUVERA — Technical Architecture
+# THATCAMPUS — Technical Architecture
 
 **Document:** 02_TECHNICAL_ARCHITECTURE.md  
 **Target:** Production Web + Android + iOS  
@@ -9,7 +9,7 @@
 
 ## 1. Executive recommendation
 
-Build EDUVERA as a **multi-tenant SaaS platform** with:
+Build THATCAMPUS as a **multi-tenant SaaS platform** with:
 
 - **Next.js** for the public website and operations web application.
 - **React Native + Expo** for Android and iOS.
@@ -33,7 +33,7 @@ Start as a modular monolith. Extract services only when scale, fault isolation o
 
 ## 2. Why not one universal UI codebase?
 
-Expo can target mobile and web, but EDUVERA has two very different web needs:
+Expo can target mobile and web, but THATCAMPUS has two very different web needs:
 
 1. Public website / SEO / marketing / admissions discovery.
 2. Dense operations software for school staff.
@@ -190,6 +190,8 @@ IdentityModule
 TenantModule
 AuthorizationModule
 SchoolConfigModule
+CampusModelCoreModule
+CampusTopologyModule
 
 AdmissionsModule
 StudentModule
@@ -231,6 +233,22 @@ Each module owns:
 - authorization rules.
 
 Avoid importing another module’s database repository directly.
+
+### 5.1 Campus Model Core boundary
+
+Blueprint v2 introduces a separate, API/contract-driven Campus Model Core. It owns
+stable cross-domain identity, temporal relationships, normalized observation and
+command envelopes, agent authority evidence and projection checkpoints. Domain
+modules continue to own authoritative state machines, relational records and
+invariants.
+
+Feature modules depend on narrow model-core ports, never its repositories. Web and
+mobile clients call domain APIs, not model-core persistence or a generic graph API.
+Accepted domain events update connected projections through the transactional
+outbox. The first deployment remains a modular monolith; this boundary does not
+justify a network service or graph database by itself.
+
+Normative contract: `docs/blueprint/CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md`.
 
 ---
 
@@ -330,7 +348,7 @@ For very large individual tenants, dedicated database isolation is the same mech
 
 ## 8. Institution model
 
-EDUVERA is not a schools-only product. It targets any education provider, in any country.
+THATCAMPUS is not a schools-only product. It targets any education provider, in any country.
 
 ```text
 institution_type
@@ -645,6 +663,22 @@ AIActionProposal
 AIActionExecution
 ```
 
+### Campus Model Core (internal cross-domain spine)
+
+```text
+CampusModelEntity
+CampusModelRelationship
+CampusModelAgent
+CampusModelAgentAuthority
+CampusObservationEnvelope
+CampusCommandEnvelope
+CampusCommandOutcome
+CampusProjectionCheckpoint
+```
+
+These are internal coordination records, not replacements for typed domain tables.
+The domain record remains authoritative and is revalidated for consequential writes.
+
 ---
 
 ## 12. Database
@@ -948,7 +982,7 @@ Notification bodies are templates resolved against the recipient's locale, the t
 
 Never let the payment gateway become the financial ledger.
 
-EDUVERA owns:
+THATCAMPUS owns:
 
 - invoice,
 - line items,
@@ -1069,7 +1103,7 @@ Never multiply by 100 to get minor units. Resolve the exponent from the currency
 tenant.base_currency        reporting and accounting currency of the institution
 invoice.currency            fixed at issue, never re-denominated
 payment.charge_currency     what the payer was actually charged
-platform.billing_currency   what Eduvera bills the tenant in (SaaS subscription)
+platform.billing_currency   what ThatCampus bills the tenant in (SaaS subscription)
 ```
 
 An issued invoice is never revalued because an exchange rate moved. Historical financial records are immutable in their original currency.
@@ -1105,7 +1139,7 @@ Cash-rounding at the smallest circulating denomination (for example in Sweden, S
 
 This is the area where a global education product most often has to be rebuilt. Design for it before the first market.
 
-### Eduvera is not a tax engine
+### ThatCampus is not a tax engine
 
 The product must compute, store and present tax correctly under a supplied rule set, and must integrate a tax determination service or the tenant's finance system where a market requires it. It should not attempt to encode the world's tax law itself.
 
@@ -1582,7 +1616,7 @@ Additionally required for a regulated, multi-market product:
 
 ## 34. Data protection, residency and consent
 
-EDUVERA handles personal and academic data about children and adults, across jurisdictions with materially different and sometimes conflicting rules.
+THATCAMPUS handles personal and academic data about children and adults, across jurisdictions with materially different and sometimes conflicting rules.
 
 Design for:
 
@@ -1654,7 +1688,7 @@ assessing the appropriate level of education a person will receive
 monitoring or detecting prohibited behaviour during assessments
 ```
 
-EDUVERA's admissions scoring, assessment support and proctoring-adjacent features fall inside that list. Obligations that follow include a risk management system, data governance, technical documentation, automatic event logging, transparency to deployers, human oversight design, accuracy and robustness targets, a quality management system, conformity assessment before placing on the market, and post-market monitoring. Obligations phase in through 2026–2027.
+THATCAMPUS's admissions scoring, assessment support and proctoring-adjacent features fall inside that list. Obligations that follow include a risk management system, data governance, technical documentation, automatic event logging, transparency to deployers, human oversight design, accuracy and robustness targets, a quality management system, conformity assessment before placing on the market, and post-market monitoring. Obligations phase in through 2026–2027.
 
 Consequences for this architecture:
 
@@ -1742,8 +1776,8 @@ This is a business-model decision with licensing consequences, and it must be ma
 
 ```text
 institution is merchant of record   funds settle directly to the institution;
-                                    Eduvera orchestrates but never takes custody
-Eduvera collects and remits         Eduvera handles third-party funds, which can
+                                    ThatCampus orchestrates but never takes custody
+ThatCampus collects and remits         ThatCampus handles third-party funds, which can
                                     require payment institution, money transmitter
                                     or payment aggregator authorization per market,
                                     plus AML/KYC obligations
@@ -1845,9 +1879,9 @@ Treat biometric attendance as an opt-in, per-market, separately consented capabi
 ```text
 institution (tenant)   controller - decides purposes, holds the relationship
                        with families, responds to most subject requests
-Eduvera                processor - acts on documented instructions, secures
+ThatCampus                processor - acts on documented instructions, secures
                        the data, assists the controller, manages sub-processors
-Eduvera as controller   only for its own account, billing and product telemetry
+ThatCampus as controller   only for its own account, billing and product telemetry
 ```
 
 This division must be reflected in the product, not only in contracts. Tenants need self-service tooling to discharge their own obligations.
@@ -2351,7 +2385,7 @@ Small, low-write, one deployment:
 tenant directory      tenant_id -> cell_id, domain -> tenant_id
 identity              login, credentials, MFA, session issuance
 billing/subscription  SaaS-level plans and invoicing
-super-admin           Eduvera operator tooling
+super-admin           ThatCampus operator tooling
 platform config       feature flag definitions, catalogues
 ```
 
@@ -2679,7 +2713,7 @@ A coherent first release should support:
 ## 63. Architecture north star
 
 ```text
-                ONE SCHOOL DATA MODEL
+               CAMPUS DIGITAL TWIN
                          |
         --------------------------------------
         |                 |                  |
@@ -2687,7 +2721,7 @@ A coherent first release should support:
         |                 |                  |
         -------- permission-scoped APIs ------
                          |
-                 DOMAIN APPLICATION
+              DOMAIN-SPECIFIC APPLICATION
                          |
         --------------------------------------
         |         |         |        |       |
@@ -2699,6 +2733,8 @@ A coherent first release should support:
 ```
 
 The AI is not a separate database.  
+The Campus Model Core is not a frontend API or generic graph editor.
+Domain modules remain authoritative for their own decisions.
 Mobile is not a WebView.  
 Permissions are not a frontend feature.  
 The payment gateway is not the ledger.  

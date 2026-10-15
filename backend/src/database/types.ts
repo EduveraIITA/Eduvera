@@ -75,7 +75,7 @@ export interface CurriculumSubjectTargetTable {
   created_at: Timestamp; updated_at: Timestamp;
 }
 export interface GateEventTable { id: Generated<string>; student_id: string; occurred_at: Timestamp; direction: "in" | "out"; gate: string; source: Generated<string>; device_reference: Generated<string>; recorded_by: Generated<string|null>; command_id: Generated<string|null> }
-export interface TimetableSlotTable { id: Generated<string>; class_section_id: string; term_id: string; subject_id: string | null; weekday: number; period_number: number; starts_at: TimeOnly; ends_at: TimeOnly; slot_type: Generated<"class" | "break" | "activity">; title: Generated<string>; room: Generated<string>; teacher_user_id: string | null; teacher_designation: Generated<string> }
+export interface TimetableSlotTable { id: Generated<string>; class_section_id: string; term_id: string; subject_id: string | null; weekday: number; period_number: number; starts_at: TimeOnly; ends_at: TimeOnly; slot_type: Generated<"class" | "break" | "activity">; title: Generated<string>; room: Generated<string>; space_id: string | null; teacher_user_id: string | null; teacher_designation: Generated<string> }
 export interface AttendancePolicyTable { id: Generated<string>; term_id: string; name: string; minimum_percentage: string; medical_document_after_days: Generated<number>; policy_text: Generated<string> }
 export interface LeaveRequestTable { id: Generated<string>; student_id: string; term_id: string; requested_by: string; category: "medical" | "family" | "travel" | "personal"; starts_on: DateOnly; ends_on: DateOnly; reason: string; status: "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn"; submitted_at: NullableTimestamp; guardian_authorized_by: string | null; guardian_authorized_at: NullableTimestamp; decided_by: string | null; decided_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
 export interface LeaveDocumentTable { id: Generated<string>; leave_request_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; uploaded_by: string; created_at: Timestamp }
@@ -119,6 +119,99 @@ export interface StaffProfileTable {
   employment_type: "full_time" | "part_time" | "contract"; joined_on: DateOnly;
   status: Generated<"onboarding" | "active" | "inactive">; revision: Generated<number>;
   created_by: string | null; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionCampusTable {
+  id: Generated<string>; school_id: string; parent_campus_id: string | null; name: string; code: string;
+  campus_type: "main" | "branch" | "learning_centre" | "virtual";
+  status: Generated<"active" | "inactive">; is_primary: Generated<boolean>;
+  address_line: Generated<string>; city: Generated<string>; state: Generated<string>;
+  postal_code: Generated<string>; timezone: Generated<string>; revision: Generated<number>;
+  created_by: string | null; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusSpaceTable {
+  id: Generated<string>; school_id: string; campus_id: string; parent_space_id: string | null;
+  name: string; code: string;
+  kind: "building" | "wing" | "floor" | "classroom" | "laboratory" | "library" | "office" | "auditorium" | "sports_area" | "workshop" | "staff_room" | "gate" | "outdoor_area" | "virtual" | "other";
+  capacity: number | null; is_accessible: Generated<boolean>; is_bookable: Generated<boolean>;
+  status: Generated<"active" | "inactive">; attributes: Json; revision: Generated<number>;
+  created_by: string | null; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusResourceTypeTable {
+  id: Generated<string>; school_id: string; code: string; name: string;
+  category: "computer" | "display" | "tablet" | "lab_equipment" | "furniture" | "vehicle" | "network" | "safety" | "other";
+  tracking_mode: "pooled" | "individual"; unit_label: Generated<string>; is_active: Generated<boolean>;
+  revision: Generated<number>; created_by: string | null; updated_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusResourceHoldingTable {
+  id: Generated<string>; school_id: string; campus_id: string; space_id: string | null;
+  resource_type_id: string; name: string; quantity: Generated<number>; asset_tag: string | null;
+  state: Generated<"available" | "unavailable" | "retired">;
+  notes: Generated<string>; revision: Generated<number>; created_by: string | null; updated_by: string | null;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface ClassCampusPlacementTable {
+  id: Generated<string>; school_id: string; class_section_id: string; campus_id: string; home_space_id: string | null;
+  is_primary: Generated<boolean>; effective_from: DateOnly; effective_until: DateOnly | null; revision: Generated<number>;
+  assigned_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface StaffCampusAssignmentTable {
+  id: Generated<string>; school_id: string; staff_profile_id: string; campus_id: string;
+  is_primary: Generated<boolean>; effective_from: DateOnly; effective_until: DateOnly | null;
+  revision: Generated<number>; assigned_by: string | null; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface InstitutionSetupAuditTable {
+  id: Generated<string>; school_id: string; actor_id: string; action: string;
+  target_type: string; target_id: string | null; metadata: Json; created_at: Timestamp;
+}
+export interface CampusModelEntityTable {
+  id: Generated<string>; school_id: string; kind: string; domain: string; domain_id: string;
+  label: string; lifecycle_state: "planned" | "active" | "inactive" | "retired" | "archived";
+  source_revision: Generated<number>; metadata: Json; revision: Generated<number>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusModelRelationshipTable {
+  id: Generated<string>; school_id: string; relation_type: string; source_entity_id: string;
+  target_entity_id: string; effective_from: Timestamp; effective_until: NullableTimestamp;
+  source_domain: string; source_record_id: string; source_revision: Generated<number>;
+  metadata: Json; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusModelAgentTable {
+  id: Generated<string>; school_id: string; agent_kind: "human" | "team" | "device" | "integration" | "software";
+  user_id: string | null; external_ref: string | null; label: string;
+  status: Generated<"active" | "suspended" | "revoked">; metadata: Json;
+  revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusModelAgentAuthorityTable {
+  id: Generated<string>; school_id: string; agent_id: string; capability: string;
+  scope_entity_id: string | null; effective_from: Timestamp; effective_until: NullableTimestamp;
+  grant_source: string; grant_reference_id: string; approved_by: string | null;
+  operating_rule_version_ref: string | null; constraints: Json; revoked_at: NullableTimestamp;
+  revoked_by: string | null; created_at: Timestamp;
+}
+export interface CampusModelObservationTable {
+  id: Generated<string>; school_id: string; kind: string; subject_entity_id: string;
+  context_entity_id: string | null; captured_by_agent_id: string; source_type: string;
+  source_ref: string | null; source_record_id: string; observed_at: Timestamp; received_at: Timestamp;
+  evidence_refs: Generated<string[]>; payload: Json; schema_version: Generated<number>;
+  state: Generated<"pending" | "accepted" | "rejected" | "quarantined" | "superseded">;
+  idempotency_key: string; domain_event_id: string | null; created_at: Timestamp;
+}
+export interface CampusModelCommandTable {
+  id: Generated<string>; school_id: string; command_type: string; target_entity_id: string | null;
+  actor_agent_id: string; state: Generated<"pending" | "review_required" | "accepted" | "rejected" | "conflicted" | "expired" | "failed" | "cancelled">;
+  requested_at: Timestamp; effective_at: NullableTimestamp; expected_revision: number | null;
+  authority_evidence: Generated<string[]>; operating_rule_version_ref: string | null;
+  correlation_id: string; causation_id: string | null; idempotency_key: string;
+  source_domain: string; safe_context: Json; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusModelCommandOutcomeTable {
+  id: Generated<number>; command_id: string; sequence: number;
+  status: "review_required" | "accepted" | "rejected" | "conflicted" | "expired" | "failed" | "cancelled";
+  code: string; explanation: string; resulting_entity_id: string | null;
+  resulting_revision: number | null; domain_event_id: string | null; metadata: Json; recorded_at: Timestamp;
+}
+export interface CampusModelProjectionCheckpointTable {
+  consumer: string; last_delivery_sequence: Generated<number>; last_event_id: string | null; updated_at: Timestamp;
 }
 export interface StaffOnboardingItemTable {
   id: Generated<string>; school_id: string; staff_profile_id: string;
@@ -584,6 +677,21 @@ export interface Database {
   diary_notes: DiaryNoteTable;
   notifications: NotificationTable;
   school_contacts: SchoolContactTable;
+  institution_campuses: InstitutionCampusTable;
+  campus_spaces: CampusSpaceTable;
+  campus_resource_types: CampusResourceTypeTable;
+  campus_resource_holdings: CampusResourceHoldingTable;
+  class_campus_placements: ClassCampusPlacementTable;
+  staff_campus_assignments: StaffCampusAssignmentTable;
+  institution_setup_audits: InstitutionSetupAuditTable;
+  campus_model_entities: CampusModelEntityTable;
+  campus_model_relationships: CampusModelRelationshipTable;
+  campus_model_agents: CampusModelAgentTable;
+  campus_model_agent_authorities: CampusModelAgentAuthorityTable;
+  campus_model_observations: CampusModelObservationTable;
+  campus_model_commands: CampusModelCommandTable;
+  campus_model_command_outcomes: CampusModelCommandOutcomeTable;
+  campus_model_projection_checkpoints: CampusModelProjectionCheckpointTable;
   staff_profiles: StaffProfileTable;
   staff_onboarding_items: StaffOnboardingItemTable;
   staff_leave_policies: StaffLeavePolicyTable;

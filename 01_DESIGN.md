@@ -1,4 +1,4 @@
-# EDUVERA — Product & Experience Design Specification
+# THATCAMPUS — Product & Experience Design Specification
 
 **Document:** 01_DESIGN.md  
 **Target:** Web + Android + iOS  
@@ -9,7 +9,12 @@
 
 ## 1. Design intent
 
-EDUVERA should feel like **one coherent school operating system**, not a collection of ERP screens.
+THATCAMPUS should feel like **one coherent school operating system**, not a collection of ERP screens.
+
+Blueprint v2 clarifies the underlying product as a campus digital twin. That is a
+backend architecture, not a new interface metaphor. Users continue to see
+domain-specific language and established workflows; never expose graph, edge,
+twin-entity, command-envelope or projection terminology in ordinary product UI.
 
 The uploaded prototype already establishes several strong ideas worth preserving:
 
@@ -90,6 +95,10 @@ Examples:
 
 The UI should avoid “dashboard-only” metrics that cannot be inspected.
 
+The frontend reaches truth through domain APIs. It must not call the Campus Model
+Core or query its persistence directly. Cross-domain context is composed by a
+domain service and presented in the vocabulary of the current task.
+
 ---
 
 ### 2.4 Explainability over cleverness
@@ -137,7 +146,7 @@ This prevents ERP-style visual overload.
 
 ## 3. Product surfaces
 
-EDUVERA should have four primary surfaces.
+THATCAMPUS should have four primary surfaces.
 
 | Surface | Primary audience | Main device |
 |---|---|---|
@@ -150,7 +159,7 @@ A fifth internal surface can later be added:
 
 | Surface | Audience |
 |---|---|
-| Eduvera Control Plane | EDUVERA SaaS operations / school tenant management |
+| ThatCampus Control Plane | THATCAMPUS SaaS operations / school tenant management |
 
 ---
 

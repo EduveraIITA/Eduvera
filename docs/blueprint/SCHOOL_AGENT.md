@@ -18,6 +18,20 @@ decisions stay human-only. Asking in chat is never permission to invent recipien
 dates, amounts, observations or marks. Natural conversation supplies the goal—there
 are no special retry phrases or UI copy masquerading as agent instructions.
 
+### Relationship to the Campus Model Core
+
+Blueprint v2 uses **agent** for any identified human, team, device, integration or
+bounded software actor capable of issuing a command. The School agent in this
+document is the conversational ThatCampus AI: one software-agent interface to
+authorized domain APIs. It is not the Campus Model Core, is not the source of campus
+truth and does not receive direct model-core/database access.
+
+The model core supplies stable campus context, source/freshness references and
+authority evidence through versioned application contracts. The conversational
+agent still discovers and executes only catalogue tools backed by domain APIs. A
+new model-core relationship or observation never automatically becomes an AI tool,
+and a model tool call never grants agent authority.
+
 ## Architecture
 
 1. Persist owner-, school-, portal- and child-scoped threads and bounded runs in
@@ -714,7 +728,7 @@ verified webhook normalization and outbound delivery, while leaving thread stora
 tools, authorization, memory, limits and action review unchanged.
 
 External identity is a locator, never school authority. A user must first be signed in
-to OmniSchool and consume a short-lived, single-use link token in a private provider
+to ThatCampus and consume a short-lived, single-use link token in a private provider
 chat. The resulting binding snapshots owner, active school, portal and selected child,
 but each turn reconstructs the current user and re-runs current scope/Pro/permission
 checks. Revoked membership, child access or Pro access therefore takes effect without
@@ -745,7 +759,7 @@ token with Telegram and resolves the bot username through `getMe`; an explicit
 be added behind the same interface only after Meta policy, business-account, webhook,
 conversation-window and template-message requirements are implemented and reviewed.
 
-Stage currently enables this contract for `@EduraOmniSchoolBot`. The bot token and
+Stage currently enables this contract for the existing Telegram bot. The bot token and
 webhook secret are Secret Manager references, the canonical verified webhook is
 registered automatically, and the existing single capped application service processes
 the durable queue. This deployment evidence does not replace a signed-in user's

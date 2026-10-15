@@ -1,17 +1,23 @@
-# School Operations Blueprint implementation
+# ThatCampus Blueprint v2 implementation
 
-Baseline: [School_Operations_Blueprint.pdf](../../School_Operations_Blueprint.pdf),
-v1.0, 15 September 2026, supplied by Abhishek. The repository-root PDF is the primary
-blueprint reference; consult its relevant sections for each development increment.
-Explicit user decisions and documented architecture decisions clarify its application.
+Baseline: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md), accepted
+16 October 2026. [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md)
+is its normative backend/model companion. The repository-root `School_Operations_Blueprint.pdf`
+v1.0 is historical provenance and is no longer the primary product authority.
 
 This is the implementation record, not a claim that the entire blueprint is complete.
-The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
-scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,
-not reconstructed companion artifacts. Field discovery, school sign-off and operational/legal
+The v1 PDF referenced a companion 40-item backlog, six workflow contracts, schemas and 36
+acceptance scenarios that were not attached. IDs below are local traceability IDs, not
+reconstructed companion artifacts. Field discovery, institution sign-off and operational/legal
 decisions cannot be replaced by synthetic software tests.
 
 ## Accepted direction
+
+- Product decision, 16 October 2026: ThatCampus is a campus digital twin, not a
+  conventional ERP. Institutions can start with one bounded capability and expand from
+  zero to the full campus without duplicate people, classes, places or resources. The
+  backend Campus Model Core remains a separate API/contract-driven module; domain
+  services retain authoritative state and the frontend uses only domain-specific language.
 
 - Preserve the existing blue/mint palette, Plus Jakarta Sans, shared app bars, child switching,
   mobile navigation and existing React UX. Extend established components and semantic tokens.
@@ -54,7 +60,7 @@ decisions cannot be replaced by synthetic software tests.
 | Order / requirement | Existing base | Remaining implementation and acceptance |
 | --- | --- | --- |
 | B0: Reproducible preview | Compiled bundles existed; previous runtime had manual patches and stopped | Restore locked dependencies, compile source, managed local restart, readiness and restart drill |
-| B1: People and authority | School-scoped account-optional people; individual and reviewed bulk enrollment; dated guardian leave-signing permission | Other purpose-specific grants, account invitations, transfer/withdrawal; no merge by phone/name |
+| B1: People and authority | School-scoped account-optional people; individual and reviewed bulk enrollment; dated guardian leave-signing permission; locally implemented connected-student class movement, withdrawal and transfer-out with preserved history | Other purpose-specific grants and account-invitation acceptance; physical connected-student acceptance; no merge by phone/name |
 | B2: Daily plan | Weekly baseline plus dated, versioned daily plans; notices/materials; coverage responses; shared family schedule; conflict checks and outbox updates | Local UI acceptance and school-operating validation; resource catalogue/advanced authoring remains later timetable scope |
 | B3: Attendance | Daily full-roster commands plus configurable scheduled-subject registers linked to the effective timetable; independent campus-presence mode; revision checks, idempotency, correction history, calendar, leave; immutable source-rich observations; encrypted account-scoped offline queue with expiry/quarantine; reviewed paper and office capture; time-bounded QR self check-in contract | Staff review UI for QR/device evidence; registered camera/biometric adapters and provider health; campus capture command; print/export reconciliation, physical offline/device drill and school-operating acceptance; retain unrecorded/unknown states |
 | B4: Attendance follow-up | Attendance facts and parent/teacher screens | First local slice implemented below: explicit owner/deadline, guardian reply, assisted response, outcome, event update |
@@ -71,6 +77,90 @@ decisions cannot be replaced by synthetic software tests.
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
+
+## Active delivery: Blueprint v2 and Campus Model Core foundation - 16 October 2026 (local)
+
+The owner superseded the v1 PDF as product authority and accepted a new direction:
+ThatCampus is a campus digital twin, not a conventional ERP. The normative living
+blueprint is now [PRODUCT_BLUEPRINT_V2.md](PRODUCT_BLUEPRINT_V2.md), with the
+backend contract in [CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md).
+The v1 PDF remains historical provenance only.
+
+The backend target is a separate API/contract-driven Campus Model Core. It owns the
+stable cross-domain identity, temporal relationships, observation/command envelopes,
+agent authority evidence and projections. Attendance, timetable, people, finance and
+other domains keep their authoritative records and invariants. Frontend code calls
+domain APIs and uses campus language; no twin/graph persistence or terminology is
+exposed to ordinary users.
+
+The campus/space/resource/placement work is retained as the first **campus topology
+domain** projection, not treated as the complete model core. Migrations 101 and 102
+passed transaction-only validation and are applied to the loopback-only preview
+database with checksums recorded in `node_schema_migrations`. The separate
+`CampusModelCoreModule` exposes a typed application port; institution setup writes its
+authoritative domain state, audit/outbox evidence, stable model identity, temporal
+relationships and correlated command/outcome in one database transaction. An
+architecture regression rejects direct model-table access from the topology service.
+
+The administrator UI now uses only campus language: Campus & spaces, buildings,
+classrooms, equipment, class locations and people. It does not present the internal
+model, graph or twin terminology, and it reports connected records rather than a
+mandatory whole-institution completion percentage. The established mobile shell,
+focused edit sheet, loading/error/empty states and touch targets are retained. A
+390 px browser review confirmed no horizontal overflow; physical owner-device review
+remains open.
+
+Verified local evidence: backend typecheck/build pass; the focused Campus Model Core
+contract and architecture suite passes 4/4; focused campus/admin/catalog frontend tests
+pass 7/7; targeted frontend lint and Vite production bundling pass. The persistent
+model projection contains institution/campus/space/class/staff identities with current
+`part_of`, `located_in`, `home_space` and `assigned_to` relationships and zero detected
+cross-tenant relationships. The main preview, database/event readiness and private
+photo-attendance health return successfully. Full frontend TypeScript build is
+currently blocked by unrelated untracked duplicate `* 2.tsx`/`* 3.tsx` test files in
+the shared dirty checkout; those files were not deleted or modified by this slice.
+
+This section records direction and incomplete local work. It does not claim a
+complete digital twin, autonomous campus operation, multi-campus release or deployed
+behavior.
+
+## Active delivery: connected student lifecycle — 16 October 2026 (local)
+
+The first connected-student lifecycle slice extends the existing student profile rather than creating
+another roster or administration module. An authorized `sis.manage` operator can review and apply one
+of three same-day decisions: move the student to another class in the current term, withdraw the
+student, or record a transfer to another institution. Next-term bulk progression remains owned by the
+existing **Promote class** workflow.
+
+The data model now retains inactive enrollment rows and enforces uniqueness only for the current
+active student/term placement and active class roll number. A short-lived review command freezes the
+expected enrollment and revision, effective date, reason and calculated impact. Commit serializes the
+student boundary and rejects expired, stale, cross-tenant, conflicting-roll and final-register changes.
+Class movement creates a new active placement; withdrawal and transfer-out leave no active placement.
+None of the paths deletes the student identity, guardian relationships, attendance, assessments, fees,
+transport or departure history.
+
+Routine propagation is automatic after the human decision: affected submitted attendance registers
+return to Draft with roster-change audit entries, destination subject-attendance rows are seeded, the
+decision is audited with its reviewed impact, and a scoped `people.updated` outbox event refreshes
+authorized principal, teacher, guardian, transport and departure consumers. Final attendance registers
+remain an explicit blocker. This follows the operating-rule automation principle: software performs
+bounded mechanical propagation, while the consequential enrollment decision is never inferred.
+
+The student profile adds one compact current-placement card, a three-choice progressive change flow,
+an impact confirmation, and expandable enrollment history. The UI keeps the established ThatCampus
+tokens, shared page shell and mobile hierarchy; it does not introduce a competing student workspace.
+Detailed contract and boundaries: [Connected student lifecycle](STUDENT_ENROLLMENT_LIFECYCLE.md).
+
+Verified locally: backend TypeScript build and lint pass; the Vite production bundle passes; focused
+student-directory/lifecycle coverage passes **7/7**. Migration 100 was applied transactionally to the
+loopback-only preview database and all **3/3** PostgreSQL lifecycle scenarios pass, covering idempotent
+movement, preserved history, register reopening, audit/outbox, transfer-out and stale-decision rejection.
+The ordinary migration runner remains blocked by the pre-existing migration 047 checksum drift, so the
+reviewed migration and its checksum were recorded directly in the local ledger. The managed preview is
+healthy. A task-scoped mobile preview is available at
+`https://shore-brandon-obligations-researchers.trycloudflare.com`; physical phone review and deployment
+remain open release evidence.
 
 ## Active delivery: one principal timetable — 14 October 2026
 
@@ -6885,3 +6975,79 @@ Updated existing login branding/title expectations. Local execution and browser 
 ## Original ThatCampus logo on login — 16 October 2026
 
 Owner clarified that login must use the same original stacked ThatCampus logo as Home, supplying the navy/blue wordmark reference. Both login clients now reuse /assets/thatcampus-logo.png (the existing Home attribution asset) in the header and above Welcome back, replacing the generic graduation-cap icons and separate typed wordmark. Uses object-fit: contain and responsive dimensions; retains the latest Threads background, authentication flows and other concurrent changes. Hosted build/release checks are pending; no visual device acceptance is claimed.
+
+## Compact route regression suite — 15 October 2026
+
+Follow-up to PR #40: all hosted checks passed and release 2de06c11cad265560b79883767564a97ae37715a
+was successfully deployed in Actions run 38735993491. PR verification took about
+3m37s versus the earlier roughly 10-minute sequential baseline. The remaining
+mobile hotspot was App.routes.test.tsx (62 cases, about 169s in the merged run).
+
+Consolidate this suite to 54 cases by removing duplicate full-App mounts, keeping
+observable assertions in the interaction tests that already exercise each route:
+
+- Four heading-only smoke cases move to existing parent home/attendance and
+  student home/attendance workflows. Other smoke routes remain.
+- Two parent standings cases move into the existing home-card and attendance
+  score workflows. Aggregate-card, whole-home-card and score triggers all remain,
+  including row count, selected-child highlighting and list visibility checks.
+- The default home metrics case shares the homework/attendance interaction mount.
+  Alternate homework counts move to the alternate-metrics case, retaining count,
+  trend direction and missing-baseline assertions.
+- The child-menu case owns selection and identity data; the four-child deck case
+  owns swipe behavior. Eight repeated deck transitions become four: an interior
+  move and wraparound in each direction. The two swipes after menu selection remain
+  because they cover synchronization of menu selection and deck position. Two-child switching, delayed loading,
+  header selection, and permission/authorization regressions remain separate.
+
+No skips, timeout increases, application-code changes or backend/security test
+removals are introduced. Hosted run 38738727147 passed every check, including
+all 54 route cases. That file took 198s versus 169s in the prior run, so the
+compaction alone does not establish a speedup. A local full run hit two 15s
+timeouts (combined standings and unchanged avatar switching). The combined
+standings case now uses click dispatch and dialog-scoped close lookup, matching
+its route-outcome purpose, instead of costly pointer simulation. Its isolated
+local run passed in 9.25s versus 16.52s before that adjustment; no timeout was
+increased. Lint passed. Historical hosted validation passed in run 38739608845; a fresh run
+is required after reconciling this branch with current Stage.
+
+Reconciliation checkpoint (15 October 2026): preserved current Stage branding,
+login, assistant and release work. The compacted tests retain core assertions with
+fewer repeated swipe permutations. Fresh hosted validation is pending.
+
+Coverage review retained the distinct menu-selection-to-swipe regression, rather
+than treating it as a duplicate of the isolated deck test. No skipped cases or
+increased timeouts were introduced.
+
+### 2026-10-15 — Parallel release image preparation
+
+The measured PR #40 release took 12m42s overall versus 15m56s before it;
+verification improved, but serial image building/cache exports increased the
+release job to 8m59s. Image preparation now uses three independent matrix runners
+for application, photo attendance and marketing, each authenticating after its
+build and uploading its SHA-tagged image. The deployment job requires the entire
+matrix to succeed, repeats the target/window guard, and retains migration,
+candidate health, promotion and public verification. Disabled deployment still
+only prepares application/photo images; website-only and provision paths remain
+separate. Existing release concurrency and environment protections remain.
+
+Photo model download/checksum layers precede application source, marketing build
+copies only its production inputs, and mobile test files already excluded by its
+production tsconfig no longer invalidate the application image cache. No tests
+were removed. A path-filtered PR workflow builds all three Dockerfiles without
+publishing or cloud credentials when container configuration changes.
+
+Local evidence: workflow actionlint and all 14 GCP deployment contract tests pass.
+Docker is unavailable locally; hosted container validation is required before
+merging. The new end-to-end deployment duration is not yet measured; parallel
+builds target the serial image bottleneck, not runtime verification safeguards.
+
+Reconciliation and fresh-runner repair (15 October 2026): this branch includes the
+current Stage work and PR #41's compacted tests, retaining menu-to-swipe integration
+coverage. The split deployment runner resolves both immutable image digests from
+Artifact Registry instead of inspecting images on another runner. Lookup accepts
+only the two approved repositories, full commit tags and valid SHA-256 digests;
+missing images or denied registry reads fail before migration. All 13 release
+contract tests and syntax checks pass locally, including three new regressions.
+Fresh hosted checks and deployment timing are pending; old runs do not validate
+this reconciled head. No security/runtime guards or provisioning paths were removed.

@@ -13,6 +13,33 @@ export interface Administration {
   invitations: Invitation[]; grants: Array<{ user_id: string; permission: string }>;
   audit: Array<{ id: string; action: string; target_id: string | null; metadata: Record<string, unknown>; created_at: string; first_name: string; last_name: string }>;
 }
+export interface InstitutionCampus {
+  id: string; school_id: string; parent_campus_id: string | null; name: string; code: string; campus_type: "main" | "branch" | "learning_centre" | "virtual";
+  status: "active" | "inactive"; is_primary: boolean; address_line: string; city: string; state: string; postal_code: string;
+  timezone: string; revision: number;
+}
+export interface CampusSpace {
+  id: string; school_id: string; campus_id: string; parent_space_id: string | null; name: string; code: string;
+  kind: "building" | "wing" | "floor" | "classroom" | "laboratory" | "library" | "office" | "auditorium" | "sports_area" | "workshop" | "staff_room" | "gate" | "outdoor_area" | "virtual" | "other";
+  capacity: number | null; is_accessible: boolean; is_bookable: boolean; status: "active" | "inactive"; revision: number;
+}
+export interface CampusResourceType {
+  id: string; school_id: string; code: string; name: string; category: "computer" | "display" | "tablet" | "lab_equipment" | "furniture" | "vehicle" | "network" | "safety" | "other";
+  tracking_mode: "pooled" | "individual"; unit_label: string; is_active: boolean; revision: number;
+}
+export interface CampusResourceHolding {
+  id: string; school_id: string; campus_id: string; space_id: string | null; resource_type_id: string; name: string;
+  quantity: number; asset_tag: string | null; state: "available" | "unavailable" | "retired"; notes: string; revision: number;
+  resource_type_name: string; category: CampusResourceType["category"]; tracking_mode: CampusResourceType["tracking_mode"]; unit_label: string;
+}
+export interface InstitutionSetup {
+  school: { id: string; name: string; code: string; timezone: string; institution_kind: string };
+  campuses: InstitutionCampus[]; spaces: CampusSpace[]; resource_types: CampusResourceType[]; holdings: CampusResourceHolding[];
+  classes: Array<{ id: string; grade: string; section: string; academic_year: string; class_revision: number; placement_id: string | null; campus_id: string | null; home_space_id: string | null; home_space_name: string | null; placement_revision: number | null; effective_from: string | null; effective_until: string | null }>;
+  staff: Array<{ id: string; first_name: string; last_name: string; staff_code: string; designation: string; status: string; assignment_id: string | null; campus_id: string | null; assignment_revision: number | null; effective_from: string | null; effective_until: string | null }>;
+  readiness: Array<{ key: string; label: string; complete: boolean; detail: string }>;
+  summary: { campuses: number; spaces: number; resources: number; classes: number; classes_with_home_space: number; staff: number; complete: boolean };
+}
 export interface FeeStudent { id: string; admission_number: string; first_name: string; last_name: string }
 export interface Invoice extends FeeStudent {
   id: string; student_id: string; reference: string; description: string; due_on: string;
@@ -25,6 +52,17 @@ export interface FeeLedger { currency: "INR"; invoices: Invoice[]; payments: Pay
 
 const schoolPath = (schoolId: string, path: string) => `/api/v1/schools/${encodeURIComponent(schoolId)}/${path}/`;
 export const getAdministration = (schoolId: string) => apiFetch<Administration>(schoolPath(schoolId, "administration"));
+export const getInstitutionSetup = (schoolId: string) => apiFetch<InstitutionSetup>(schoolPath(schoolId, "institution-setup"));
+export const createCampus = (schoolId: string, values: object) => apiFetch<InstitutionCampus>(schoolPath(schoolId, "institution-setup/campuses"), { method: "POST", body: JSON.stringify(values) });
+export const updateCampus = (schoolId: string, id: string, values: object) => apiFetch<InstitutionCampus>(schoolPath(schoolId, `institution-setup/campuses/${id}`), { method: "PATCH", body: JSON.stringify(values) });
+export const createSpace = (schoolId: string, values: object) => apiFetch<CampusSpace>(schoolPath(schoolId, "institution-setup/spaces"), { method: "POST", body: JSON.stringify(values) });
+export const updateSpace = (schoolId: string, id: string, values: object) => apiFetch<CampusSpace>(schoolPath(schoolId, `institution-setup/spaces/${id}`), { method: "PATCH", body: JSON.stringify(values) });
+export const createResourceType = (schoolId: string, values: object) => apiFetch<CampusResourceType>(schoolPath(schoolId, "institution-setup/resource-types"), { method: "POST", body: JSON.stringify(values) });
+export const updateResourceType = (schoolId: string, id: string, values: object) => apiFetch<CampusResourceType>(schoolPath(schoolId, `institution-setup/resource-types/${id}`), { method: "PATCH", body: JSON.stringify(values) });
+export const createAsset = (schoolId: string, values: object) => apiFetch<CampusResourceHolding>(schoolPath(schoolId, "institution-setup/assets"), { method: "POST", body: JSON.stringify(values) });
+export const updateAsset = (schoolId: string, id: string, values: object) => apiFetch<CampusResourceHolding>(schoolPath(schoolId, `institution-setup/assets/${id}`), { method: "PATCH", body: JSON.stringify(values) });
+export const placeClass = (schoolId: string, id: string, values: object) => apiFetch(schoolPath(schoolId, `institution-setup/classes/${id}/location`), { method: "PATCH", body: JSON.stringify(values) });
+export const placeStaff = (schoolId: string, id: string, values: object) => apiFetch(schoolPath(schoolId, `institution-setup/staff/${id}/campus`), { method: "POST", body: JSON.stringify(values) });
 export type CatalogKind = "terms" | "classes" | "subjects";
 export type CatalogMutation = Record<string, unknown> & { expected_revision?: number; confirmed?: boolean; change_reason?: string };
 export const saveCatalog = (schoolId: string, kind: CatalogKind, values: CatalogMutation, id?: string) => apiFetch<Term | ClassSection | Subject>(schoolPath(schoolId, `catalog/${kind}${id ? `/${id}` : ""}`), { method: id ? "PATCH" : "POST", body: JSON.stringify(values) });

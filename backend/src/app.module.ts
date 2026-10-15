@@ -31,6 +31,7 @@ import { GovernanceModule } from "./governance/governance.module.js";
 import { RestrictedCareModule } from "./restricted-care/restricted-care.module.js";
 import { InstitutionOnboardingModule } from "./institution-onboarding/institution-onboarding.module.js";
 import { InstitutionActivationModule } from "./institution-activation/institution-activation.module.js";
+import { InstitutionSetupModule } from "./institution-setup/institution-setup.module.js";
 import { AssessmentsModule } from "./assessments/assessments.module.js";
 import { AcademicReportsModule } from "./academic-reports/academic-reports.module.js";
 import { DepartureCoordinationModule } from "./departure-coordination/departure-coordination.module.js";
@@ -68,6 +69,7 @@ import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-int
     RestrictedCareModule,
     InstitutionOnboardingModule,
     InstitutionActivationModule,
+    InstitutionSetupModule,
     AssessmentsModule,
     AcademicReportsModule,
     DepartureCoordinationModule,
