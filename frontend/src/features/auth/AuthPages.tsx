@@ -31,14 +31,15 @@ function AuthBrand() {
   );
 }
 
-export function AuthLayout({ eyebrow, title, description, children }: {
+export function AuthLayout({ eyebrow, title, description, children, variant }: {
+  variant?: "login";
   eyebrow: string;
   title: string;
   description: string;
   children: ReactNode;
 }) {
   return (
-    <main className="auth-page">
+    <main className={`auth-page${variant === "login" ? " auth-page--login" : ""}`}>
       <section className="auth-story" aria-label="ThatCampus introduction">
         <AuthBrand />
         <div className="auth-story__content">
@@ -53,8 +54,13 @@ export function AuthLayout({ eyebrow, title, description, children }: {
       </section>
 
       <section className="auth-panel">
-        <div className="auth-panel__mobile-brand"><AuthBrand /></div>
+        <div className="auth-panel__mobile-brand">{variant === "login" ? (
+          <Link className="auth-login-logo" to="/" aria-label="ThatCampus">
+            <img src="/assets/thatcampus-logo.png" alt="ThatCampus" width="200" height="120" />
+          </Link>
+        ) : <AuthBrand />}</div>
         <div className="auth-card">
+          {variant === "login" ? <header className="auth-login-mobile-heading"><h1>Welcome back</h1><p>Sign in to your campus</p></header> : null}
           <header className="auth-card__header">
             <span>{eyebrow}</span>
             <h2>{title}</h2>
@@ -81,6 +87,7 @@ function PasswordInput({ value, onChange, autoComplete = "current-password" }: {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
+        placeholder="Enter your password"
         minLength={12}
         required
       />
@@ -147,7 +154,7 @@ export function LoginPage() {
 
 
   return (
-    <AuthLayout eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
+    <AuthLayout variant="login" eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
       <p className="auth-invite-link">Have an invitation? <Link to="/join">Join your institution</Link></p>
       {mfaChallenge ? <form className="auth-form" onSubmit={submitMfa}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
@@ -173,9 +180,10 @@ export function LoginPage() {
           </div>
         </label>
         <label className="auth-field">
-          <span className="auth-field__split">Password <Link to="/forgot-password">Forgot password?</Link></span>
+          <span>Password</span>
           <PasswordInput value={password} onChange={setPassword} />
         </label>
+        <Link className="auth-login-forgot" to="/forgot-password">Forgot password?</Link>
         <button className="auth-primary-button" type="submit" disabled={pending !== null}>
           {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
