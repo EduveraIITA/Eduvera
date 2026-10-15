@@ -12,8 +12,8 @@ try{
   assert.equal(await page.locator('header .login').getAttribute('href'),login);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:`screenshots/preview-${width}.png`,fullPage:true});
-  assert.equal(await page.locator('.demo-film').count(),3);
-  for(const name of ['attendance','timetable','family']){
+  assert.equal(await page.locator('.demo-film').count(),5);
+  for(const name of ['attendance','timetable','family','ai-context','ai-sources']){
    const video=page.locator(`.demo-${name} .demo-device video`);await video.scrollIntoViewIfNeeded();
    await page.waitForFunction(selector=>Boolean(document.querySelector(selector)?.getAttribute('src')),`.demo-${name} .demo-device video`);
    assert.equal(await video.getAttribute('src'),`/demos/${name}.mp4`);assert(await video.evaluate(element=>element.paused));

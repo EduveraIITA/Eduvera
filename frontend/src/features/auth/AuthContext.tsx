@@ -43,6 +43,7 @@ interface SessionResponse {
   csrf_token: string;
   demo_mode: boolean;
   demo_profile_switcher?: boolean;
+  public_demo?: boolean;
 }
 
 interface MeResponse {
@@ -53,6 +54,7 @@ interface MeResponse {
   students: Array<{ id: string }>;
   memberships: SchoolMembership[];
   demo_mode: boolean;
+  public_demo?: boolean;
 }
 
 interface AuthResponse {
@@ -60,6 +62,7 @@ interface AuthResponse {
   csrf_token: string;
   demo_mode: boolean;
   demo_profile_switcher?: boolean;
+  public_demo?: boolean;
   onboarding?: {
     status: "pending_school_membership";
     has_school_access: boolean;
@@ -93,6 +96,7 @@ interface AuthState {
   user: AuthUser | null;
   memberships: SchoolMembership[];
   demoMode: boolean;
+  publicDemo: boolean;
   serviceError: string | null;
 }
 
@@ -103,6 +107,7 @@ export interface AuthContextValue extends AuthState {
   completeMfa: (challengeToken: string, code: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   enterDemo: (persona: DemoPersona) => Promise<void>;
+  enterPublicDemo: (persona: "student" | "parent" | "staff" | "admin") => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -112,6 +117,7 @@ const initialState: AuthState = {
   user: null,
   memberships: [],
   demoMode: false,
+  publicDemo: false,
   serviceError: null,
 };
 
@@ -174,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setupRequired:profile.institution_setup_required===true,
         memberships: (profile.user.active_school_id ? profile.memberships.filter((m) => m.school_id === profile.user.active_school_id) : profile.memberships).map(m=>({...m,...profile.school_permissions?.find(p=>p.school_id===m.school_id)})),
         demoMode: profile.demo_mode,
+        publicDemo: profile.public_demo ?? fallback?.public_demo ?? false,
         serviceError: null,
       });
     } catch (error) {
@@ -183,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: fallback.user,
         memberships: [],
         demoMode: fallback.demo_mode,
+        publicDemo: fallback.public_demo ?? false,
         serviceError: null,
       });
     }
@@ -198,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Development sessions created before the retained flag was introduced
         // should not lose the local test personas after their first logout.
         demoMode: retainedDemoMode === null ? import.meta.env.DEV : retainedDemoMode === "1",
+        publicDemo: false,
         serviceError: null,
       });
       return;
@@ -210,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user: null,
           memberships: [],
           demoMode: session.demo_mode,
+          publicDemo: false,
           serviceError: null,
         });
         return;
@@ -218,6 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: session.user,
         csrf_token: session.csrf_token,
         demo_mode: session.demo_mode,
+        public_demo: session.public_demo,
       });
     } catch (error) {
       const isUnauthorized = error instanceof ApiError && error.status === 401;
@@ -226,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: null,
         memberships: [],
         demoMode: false,
+        publicDemo: false,
         serviceError: isUnauthorized
           ? null
           : "We couldn't reach the school service. You can retry in a moment.",
@@ -248,6 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: null,
         memberships: [],
         demoMode: current.demoMode,
+        publicDemo: false,
         serviceError: null,
       }));
     };
@@ -294,6 +307,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: response.user,
         memberships: [],
         demoMode: response.demo_mode,
+        publicDemo: response.public_demo ?? false,
         serviceError: null,
       });
       if (response.verification?.development_token) {
@@ -315,6 +329,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadProfile, queryClient],
   );
 
+  const enterPublicDemo = useCallback(
+    async (persona: "student" | "parent" | "staff" | "admin") => {
+      const response = await authMutation<AuthResponse>("/api/v1/auth/public-demo-session/", { role: persona });
+      window.localStorage.removeItem(LOGGED_OUT_KEY);
+      window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
+      await loadProfile(response);
+      queryClient.clear();
+    },
+    [loadProfile, queryClient],
+  );
+
   const logout = useCallback(async () => {
     window.localStorage.setItem(LOGGED_OUT_KEY, "1");
     window.localStorage.setItem(LOGGED_OUT_DEMO_MODE_KEY, state.demoMode ? "1" : "0");
@@ -324,6 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: null,
       memberships: [],
       demoMode: current.demoMode,
+      publicDemo: false,
       serviceError: null,
     }));
     try {
@@ -344,10 +370,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       completeMfa,
       register,
       enterDemo,
+      enterPublicDemo,
       logout,
       refresh,
     }),
-    [completeMfa, enterDemo, login, logout, portals, refresh, register, state],
+    [completeMfa, enterDemo, enterPublicDemo, login, logout, portals, refresh, register, state],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

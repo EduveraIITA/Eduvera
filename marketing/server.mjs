@@ -14,13 +14,14 @@ export function settings(env=process.env){
  if(loginUrl.protocol!=='https:'||loginUrl.pathname!=='/login'||loginUrl.search||loginUrl.hash||loginUrl.username||loginUrl.password)throw new Error('LOGIN_URL must be an exact HTTPS /login URL');
  const production=env.NODE_ENV==='production';
  if(production&&(!env.FORM_SECRET||env.FORM_SECRET.length<32||!env.DATABASE_URL))throw new Error('DATABASE_URL and a random FORM_SECRET of at least 32 characters are required');
- return {loginUrl:loginUrl.href,secret:env.FORM_SECRET||'development-only-do-not-use-in-production',production,origins:(env.ALLOWED_ORIGINS||'http://localhost:8080,http://127.0.0.1:8080').split(',').map(s=>s.trim()),dist:resolve(env.DIST_DIR||'dist'),release:env.RELEASE_SHA||'local'};
+ return {loginUrl:loginUrl.href,demoUrl:new URL('/demo',loginUrl).href,secret:env.FORM_SECRET||'development-only-do-not-use-in-production',production,origins:(env.ALLOWED_ORIGINS||'http://localhost:8080,http://127.0.0.1:8080').split(',').map(s=>s.trim()),dist:resolve(env.DIST_DIR||'dist'),release:env.RELEASE_SHA||'local'};
 }
 export function validateEnquiry(data,now=Date.now()){
  if(!data||typeof data!=='object'||Array.isArray(data))throw new Error('Please check the form details.');
  const text=(name,min,max)=>{const value=data[name];if(typeof value!=='string'||value.trim().length<min||value.trim().length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))throw new Error(`Please check ${name}.`);return value.trim();};
- const result={fullName:text('fullName',2,100),institution:text('institution',2,180),institutionType:text('institutionType',1,20),email:text('email',3,254).toLowerCase(),phone:text('phone',7,30),location:text('location',2,160),message: data.message===undefined?'':text('message',0,2000),students:data.students};
- if(!['school','college','university','other'].includes(result.institutionType)||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(result.email)||!/^\+?[\d () .-]+$/.test(result.phone)||result.phone.replace(/\D/g,'').length<7||!Number.isSafeInteger(result.students)||result.students<1||result.students>1000000||data.consent!=='yes'||(data.website&&data.website!=='')||!Number.isSafeInteger(data.startedAt)||now-data.startedAt<2000||now-data.startedAt>86400000)throw new Error('Please check the form details and try again.');
+ const contact=text('contact',7,254);const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(contact)?contact.toLowerCase():'';const phone=email?'':contact;
+ const result={fullName:'',institution:'',institutionType:'',email,phone,location:'',message:'',students:null};
+ if((!email&&(!/^\+?[\d () .-]+$/.test(phone)||phone.replace(/\D/g,'').length<7||phone.length>30))||(data.website&&data.website!=='')||!Number.isSafeInteger(data.startedAt)||now-data.startedAt<2000||now-data.startedAt>86400000)throw new Error('Please check the form details and try again.');
  return result;
 }
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.woff2':'font/woff2','.woff':'font/woff','.xml':'application/xml','.txt':'text/plain'};
@@ -71,7 +72,7 @@ export function createHandler({db,config=settings(),clock=()=>Date.now()}){retur
  if(url.pathname==='/readyz'){await db.query('SELECT 1 FROM marketing_enquiries LIMIT 0');json(res,200,{status:'ready',release:config.release});return;}
  if(url.pathname==='/api/config'&&req.method==='GET'){
  const payload=`${Date.now()}.${randomBytes(16).toString('hex')}`;const csrfToken=`${payload}.${sign(payload,config.secret)}`;
- res.setHeader('Set-Cookie',`tc_form=${csrfToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800${config.production?'; Secure':''}`);json(res,200,{loginUrl:config.loginUrl,csrfToken});return;
+ res.setHeader('Set-Cookie',`tc_form=${csrfToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800${config.production?'; Secure':''}`);json(res,200,{loginUrl:config.loginUrl,demoUrl:config.demoUrl,csrfToken});return;
  }
  if(url.pathname==='/api/enquiries'&&req.method==='POST'){
  if(!config.origins.includes(req.headers.origin)||req.headers['sec-fetch-site']==='cross-site'){json(res,403,{message:'Refresh the page and try again.'});return;}

@@ -3,14 +3,16 @@ import { ArrowRight, ArrowsOut, CalendarBlank, CaretDown, Check, ChatsCircle, Cl
 import { motion, useReducedMotion } from 'motion/react';
 import { PhysicsBackdrop } from './PhysicsBackdrop';
 
-type DemoName = 'attendance' | 'timetable' | 'family';
+type DemoName = 'attendance' | 'timetable' | 'family' | 'ai-context' | 'ai-sources';
 const demos = {
   attendance: {label:'Attendance walkthrough', description:'Switch from period to class grouping, expand Class 7A and open its Mathematics register.', width:430, height:760},
   timetable: {label:'Timetable walkthrough', description:'Explore a class timetable and switch between its day and week views.', width:1440, height:900},
   family: {label:'Family walkthrough', description:'Explore a parent’s school-day overview and linked attendance information.', width:430, height:760},
+  'ai-context': {label:'AI attendance walkthrough', description:'See the assistant identify the next overdue register, answer a follow-up and prepare a reminder for review.', width:430, height:760},
+  'ai-sources': {label:'AI review walkthrough', description:'See how source checks and human approval stay visible beside the assistant’s proposed action.', width:430, height:760},
 };
 
-/** Real application footage, never an authenticated iframe or simulated record. */
+/** Bounded product media, never an authenticated iframe or a mutable live record. */
 function DemoFilm({name, paused}:{name:DemoName; paused:boolean}) {
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -26,6 +28,7 @@ function DemoFilm({name, paused}:{name:DemoName; paused:boolean}) {
   const [expanded, setExpanded] = useState(false);
   const [automatic, setAutomatic] = useState(false);
   const demo = demos[name];
+  const isAiStory = name.startsWith('ai-');
   useEffect(() => {
     const connection=(navigator as Navigator & {connection?:EventTarget & {saveData?:boolean}}).connection;
     const update=()=>setAutomatic(!connection?.saveData);
@@ -72,7 +75,7 @@ function DemoFilm({name, paused}:{name:DemoName; paused:boolean}) {
     </div>
     {failed&&<p className="film-fallback">Preview unavailable. Explore the screen gallery below.</p>}
     <dialog ref={dialog} className="film-dialog" aria-label={demo.label} onCancel={()=>setExpanded(false)} onClick={event=>{if(event.target===event.currentTarget)setExpanded(false);}}>
-      <div className="film-dialog-heading"><div><strong>{demo.label}</strong><p>Recorded in the ThatCampus demo app</p></div><button className="button secondary" autoFocus onClick={()=>setExpanded(false)}>Close</button></div>
+      <div className="film-dialog-heading"><div><strong>{demo.label}</strong><p>{isAiStory?'Illustrative ThatCampus AI interaction':'Recorded in the ThatCampus demo app'}</p></div><button className="button secondary" autoFocus onClick={()=>setExpanded(false)}>Close</button></div>
       {expanded&&<video ref={largeVideo} src={`/demos/${name}.mp4`} poster={`/demos/${name}-poster.webp`} width={demo.width} height={demo.height} controls playsInline preload="metadata" aria-label={demo.label}/>}
       <p>{demo.description} Sample school data; this preview does not change records.</p>
     </dialog>
@@ -99,7 +102,8 @@ export function Capabilities({paused}:{paused:boolean}) {
         <div className="scene-stage"><PhysicsBackdrop variant="orbit" paused={paused}/><DemoFilm name="family" paused={paused}/></div>
       </motion.article>
     </div>
-    <p className="demo-provenance">Real app recordings with sample school data. Play, pause or enlarge any walkthrough.</p>
+    <div className="ai-film-section"><div className="ai-film-copy"><span className="eyebrow">ThatCampus AI</span><h3>Ask in context.<br/><span>Keep people in control.</span></h3><p>See a connected attendance workflow: the assistant finds the next overdue register, names who needs a follow-up and prepares a reminder without sending it.</p><ul><li><Check size={17}/> Answers grounded in school records</li><li><Check size={17}/> Source checks stay visible</li><li><Check size={17}/> Proposed changes still require review</li></ul></div><div className="ai-film-grid"><DemoFilm name="ai-context" paused={paused}/><DemoFilm name="ai-sources" paused={paused}/></div></div>
+    <p className="demo-provenance">App walkthroughs use synthetic school data. The AI examples are illustrative product interactions; the public demo does not run a model. Play, pause or enlarge any walkthrough.</p>
   </section>;
 }
 

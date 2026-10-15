@@ -25,7 +25,8 @@ export function assertRuntime(service, job) {
     if (!app.env?.find(item => item.name === name)?.valueFrom?.secretKeyRef) throw new Error(`${name} must use Secret Manager`);
   }
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
-  if (env.DEMO_MODE !== 'false') throw new Error('Public demo access must remain disabled');
+  if (env.DEMO_MODE !== 'false') throw new Error('Password-based development demo access must remain disabled');
+  if (env.PUBLIC_DEMO_ENABLED !== 'true' || env.DEMO_PROFILE_SWITCHER_ENABLED !== 'true') throw new Error('Stage public demo must use the bounded read-only session path');
   if (env.AGENT_PROVIDER === 'vertex' && env.AGENT_ENABLED !== 'false') {
     if (env.AGENT_MODEL !== 'gemini-3.1-flash-lite' || env.AGENT_GOOGLE_PROJECT !== 'eduera-511111' || env.AGENT_GOOGLE_LOCATION !== 'global' || env.AGENT_BASE_URL || env.AGENT_API_KEY) throw new Error('Only the reviewed keyless cloud model is allowed');
     const expiry = Date.parse(env.AGENT_ENABLED_UNTIL ?? '');
@@ -69,7 +70,7 @@ export async function verify(origin, sha, request = fetch) {
   if (!(await (await get('/')).text()).includes('<title>ThatCampus</title>')) throw new Error('Mobile app failed');
   if (!(await (await get('/staff/')).text()).includes('<title>OmniSchool · Staff</title>')) throw new Error('Staff app failed');
   for (const path of ['/assets/thatcampus-logo.png', '/manifest.webmanifest', '/api/schema']) await get(path);
-  if ((await (await get('/api/v1/auth/session/')).json()).demo_mode !== false) throw new Error('Public demo access must be disabled');
+  if ((await (await get('/api/v1/auth/session/')).json()).demo_mode !== false) throw new Error('Password-based development demo access must be disabled');
   if ((await request(`${origin}/api/v1/auth/demo-session/`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{"role":"admin"}',signal:AbortSignal.timeout(20000),redirect:'error'})).status !== 404) throw new Error('Demo authentication must reject public access');
   if ((await request(`${origin}/metrics`, { signal: AbortSignal.timeout(20000), redirect: 'error' })).status !== 401) throw new Error('Metrics must reject anonymous access');
 }
@@ -116,7 +117,7 @@ async function deploy(env) {
   const tag = `check-${env.GITHUB_SHA.slice(0, 12)}`;
   let promoted = false;
   try {
-    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},DEMO_PROFILE_SWITCHER_ENABLED=true,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest', '--no-traffic', `--tag=${tag}`]);
+    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},DEMO_PROFILE_SWITCHER_ENABLED=true,PUBLIC_DEMO_ENABLED=true,PUBLIC_DEMO_SESSION_TTL_SECONDS=1800,PUBLIC_DEMO_MAX_STARTS_PER_HOUR=20,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest', '--no-traffic', `--tag=${tag}`]);
     const updated = describe('services', env.GCP_SERVICE);
     const candidate = updated.status?.traffic?.find(item => item.tag === tag);
     if (!candidate?.url || !candidate.revisionName) throw new Error('Candidate URL/revision is missing');

@@ -21,6 +21,7 @@ export type AuthenticatedRequest = FastifyRequest & {
   csrfToken: string;
   requestId: string;
   internalAgentDelegation?: true;
+  publicDemo?: boolean;
 };
 
 export type RequestWithContext = FastifyRequest & {
@@ -29,4 +30,5 @@ export type RequestWithContext = FastifyRequest & {
   csrfToken?: string;
   requestId: string;
   internalAgentDelegation?: true;
+  publicDemo?: boolean;
 };

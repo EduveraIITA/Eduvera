@@ -17,7 +17,7 @@ import { PeopleModule } from "./people/people.module.js";
 import { DayPlanModule } from "./day-plans/day-plan.module.js";
 import { AppController } from "./app.controller.js";
 import { AuthModule } from "./auth/auth.module.js";
-import { CsrfGuard, SessionGuard } from "./auth/guards.js";
+import { CsrfGuard, PublicDemoGuard, SessionGuard } from "./auth/guards.js";
 import { ChatModule } from "./chat/chat.module.js";
 import { CampusEventsModule } from "./campus-events/campus-events.module.js";
 import { DatabaseModule } from "./database/database.module.js";
@@ -83,6 +83,7 @@ import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-int
     InvitationEmailWorker,
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: PublicDemoGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],
 })

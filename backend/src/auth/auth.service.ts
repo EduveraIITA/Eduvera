@@ -50,7 +50,7 @@ const demoUsernames = {
 } as const;
 const institutionDemoUsernames = new Set<string>(Object.values(demoUsernames).filter((username) => username !== demoUsernames.company));
 
-export interface SessionIdentity { user: AuthUser; tokenHash: string; csrfToken: string }
+export interface SessionIdentity { user: AuthUser; tokenHash: string; csrfToken: string; publicDemo: boolean }
 
 function publicUser(user: AuthUser) {
   return {
@@ -98,7 +98,7 @@ export class AuthService {
     const row = await this.db.selectFrom("auth_sessions as s")
       .innerJoin("users as u", "u.id", "s.user_id")
       .select([
-        "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at", "s.active_school_id",
+        "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at", "s.active_school_id", "s.is_public_demo",
         "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.avatar_url", "u.role", "u.is_active", "u.email_verified_at",
       ])
       .where("s.token_hash", "=", tokenHash).executeTakeFirst();
@@ -116,6 +116,7 @@ export class AuthService {
     return {
       tokenHash,
       csrfToken: row.csrf_token,
+      publicDemo: row.is_public_demo,
       user: {
         id: row.id,
         username: row.username,
@@ -131,7 +132,7 @@ export class AuthService {
     };
   }
 
-  async createSession(user: AuthUser, request: FastifyRequest): Promise<{ rawToken: string; csrfToken: string }> {
+  async createSession(user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number } = {}): Promise<{ rawToken: string; csrfToken: string }> {
     if (!user.active_school_id) {
       const memberships = await this.db.selectFrom('school_memberships').select('school_id')
         .where('user_id','=',user.id).where('is_active','=',true).limit(2).execute();
@@ -140,7 +141,7 @@ export class AuthService {
     }
     const rawToken = randomBytes(32).toString("base64url");
     const csrfToken = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + config().SESSION_TTL_SECONDS * 1000);
+    const expiresAt = new Date(Date.now() + (options.ttlSeconds ?? config().SESSION_TTL_SECONDS) * 1000);
     const ipHash = createHash("sha256").update(request.ip).digest("hex");
     await this.db.insertInto("auth_sessions").values({
       token_hash: AuthService.tokenHash(rawToken),
@@ -150,8 +151,25 @@ export class AuthService {
       expires_at: expiresAt,
       ip_hash: ipHash,
       user_agent: String(request.headers["user-agent"] ?? "").slice(0, 500),
+      is_public_demo: options.publicDemo ?? false,
     }).execute();
     return { rawToken, csrfToken };
+  }
+
+  async publicDemoUser(role: DemoSwitchRole, request: FastifyRequest): Promise<AuthUser> {
+    if (!config().PUBLIC_DEMO_ENABLED) throw new (await import("@nestjs/common")).NotFoundException();
+    const ipBucket = AuthService.tokenHash(`public-demo:${request.ip}`);
+    const globalBucket = AuthService.tokenHash("public-demo:global");
+    const hit = async (bucket: string) => (await sql<{ hits: number }>`INSERT INTO api_rate_limit_buckets(bucket_key,hits,expires_at)
+      VALUES(${bucket},1,now()+interval '1 hour') ON CONFLICT(bucket_key) DO UPDATE SET
+      hits=CASE WHEN api_rate_limit_buckets.expires_at<=now() THEN 1 ELSE api_rate_limit_buckets.hits+1 END,
+      expires_at=CASE WHEN api_rate_limit_buckets.expires_at<=now() THEN excluded.expires_at ELSE api_rate_limit_buckets.expires_at END
+      RETURNING hits`.execute(this.db)).rows[0]!.hits;
+    const [clientHits, globalHits] = await Promise.all([hit(ipBucket), hit(globalBucket)]);
+    if (clientHits > config().PUBLIC_DEMO_MAX_STARTS_PER_HOUR || globalHits > 500) {
+      throw new HttpException("The public demo is busy. Please try again later.", 429);
+    }
+    return this.demoProfile(role);
   }
 
   async login(body: unknown, request: FastifyRequest): Promise<{ user: AuthUser; mfaChallenge?: string }> {

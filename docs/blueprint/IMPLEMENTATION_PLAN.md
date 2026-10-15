@@ -6471,3 +6471,34 @@ preservation, capture provenance, verified final checks and remaining gates are 
 owner physical-device acceptance remain pending at this implementation checkpoint.
 The capture found a separate parent timetable mixed-child heading; it is recorded
 in [MOTION_CAPTURE.md](../marketing/MOTION_CAPTURE.md), not presented as fixed.
+
+## Public, read-only product exploration — 15 October 2026
+
+Latest owner decision: prospective users may explore a working four-role ThatCampus
+demo without creating an account or supplying personal information. The public
+website also carries short, truthful ThatCampus AI demonstrations and the personal
+demo form asks for one contact route only: email or phone.
+
+The implementation adds a dedicated `/demo` role chooser for principal, teacher,
+parent and student. Public-demo sessions are distinct, expire after 30 minutes and
+are rate-limited by anonymised client bucket and globally. A server-side guard
+permits reads and profile switching but rejects every other state-changing request;
+the application keeps a visible **Sample data · read-only** banner. The feature is
+enabled only on the isolated Stage deployment, and production startup rejects an
+enabled public-demo configuration. Standard authenticated sessions and the private
+development demo route are unchanged. The Stage data set must remain synthetic;
+this control does not authorize publishing real school data.
+
+The marketing enquiry now accepts exactly one field containing a valid email address
+or phone number, while preserving the existing enquiry audit/outbox workflow and
+concise consent notice. Two compact AI motion stories use a purpose-built synthetic
+app screen: the assistant identifies an attendance task, answers a contextual
+follow-up, names its source and prepares a reminder for human review. They are
+illustrative product media, not claimed as live model recordings. Future replacement
+with captured live AI interactions requires the same synthetic-data review.
+
+Verified locally: frontend, backend and marketing typechecks pass; the marketing
+production build and all 19 marketing HTTP/configuration tests pass; the public-demo
+guard has focused read/write/control-path coverage. Full API integration, browser
+acceptance, trusted Stage promotion and physical-device review remain release gates
+and must not be inferred from this implementation record.

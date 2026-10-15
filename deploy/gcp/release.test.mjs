@@ -18,6 +18,8 @@ const fixture = () => {
   };
   result.service.spec.template.spec.containers[0].env.push(
     { name: 'DEMO_MODE', value: 'false' },
+    { name: 'PUBLIC_DEMO_ENABLED', value: 'true' },
+    { name: 'DEMO_PROFILE_SWITCHER_ENABLED', value: 'true' },
     { name: 'PUBLIC_URL', value: 'https://app.thatcampus.com' },
     { name: 'ALLOWED_ORIGINS', value: 'https://app.thatcampus.com,https://eduvera-stage-367469594690.asia-south1.run.app' },
   );

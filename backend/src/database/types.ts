@@ -357,7 +357,7 @@ export interface RestrictedCareAuditTable {
   id: Generated<string>; school_id: string; case_id: string | null; actor_id: string;
   action: string; metadata: Json; created_at: Timestamp;
 }
-export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string>; active_school_id: Generated<string | null> }
+export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string>; active_school_id: Generated<string | null>; is_public_demo: Generated<boolean> }
 export interface AuditEventTable { id: Generated<string>; action: string; actor_id: string | null; school_id: string | null; target_type: Generated<string>; target_id: string | null; request_id: string; ip_hash: string | null; metadata: Json; created_at: Timestamp }
 export interface AiConversationTable { id: Generated<string>; owner_id: string; student_id: string; title: string; status: Generated<"active" | "archived">; created_at: Timestamp; updated_at: Timestamp }
 export interface AiMessageTable { id: Generated<string>; conversation_id: string; role: "user" | "assistant"; content: string; citations: Json; provider: string; model: string; status: Generated<"complete" | "error">; latency_ms: number | null; created_at: Timestamp }

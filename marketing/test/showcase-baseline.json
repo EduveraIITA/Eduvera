@@ -11,7 +11,7 @@
     "ScreenDialog": "4d126b64227d0792e1323007659dca100bdc8a764b275c714ed728ad4bc1ee69"
   },
   "files": {
-    "src/style.css": "87b26699346dd71a02c1211e5385aab9cf6fb2657c104f9a62c98cd0d1ef9523",
+    "src/style.css": "81425256d5ef01aadc55e4a552baf10a2b1484ea560d5f90f99a6857bb66b563",
     "public/screens/attendance-small.webp": "28926f532cb7e3ee69de7babba567b20d9aa6c8f02bc7e89813a67ec69f678fb",
     "public/screens/attendance.webp": "7a152bc4780a46a165702ee663ac77bd28ff63652dc823e746d582a32cd98555",
     "public/screens/family-small.webp": "025ddc62cb4b285926f98f207ed95e262470397019fc6f271bd28b6a72d45cd8",

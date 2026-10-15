@@ -10,7 +10,7 @@ const server=createServer(createHandler({db:{query:async()=>({rows:[]})},config:
 await new Promise(r=>server.listen(8081,'127.0.0.1',r));
 const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
 await mkdir('screenshots',{recursive:true});
-const names=['attendance','timetable','family'];
+const names=['attendance','timetable','family','ai-context','ai-sources'];
 const inlineVideo=name=>`.demo-${name} .demo-device video`;
 async function visibleFilm(page,name) {
  await page.locator(inlineVideo(name)).scrollIntoViewIfNeeded();

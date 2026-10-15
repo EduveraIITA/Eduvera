@@ -45,6 +45,7 @@ export class AuthController {
       csrf_token: csrfToken,
       demo_mode: config().DEMO_MODE,
       demo_profile_switcher: identity ? this.auth.canUseDemoProfileSwitcher(identity.user) : false,
+      public_demo: identity?.publicDemo ?? false,
     };
   }
 
@@ -146,6 +147,19 @@ export class AuthController {
     return this.auth.response(user, session.csrfToken);
   }
 
+  @Public()
+  @Post("public-demo-session/")
+  @HttpCode(200)
+  async publicDemo(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
+    const role = (request.body as { role?: string } | undefined)?.role;
+    if (!role || !demoSwitchRoles.includes(role as DemoSwitchRole)) throw new BadRequestException("Choose one of the available demo profiles.");
+    const user = await this.auth.publicDemoUser(role as DemoSwitchRole, request);
+    const session = await this.auth.createSession(user, request, { publicDemo: true, ttlSeconds: config().PUBLIC_DEMO_SESSION_TTL_SECONDS });
+    this.setSession(reply, session.rawToken, session.csrfToken);
+    await this.audit.record({ action: "auth.public_demo.started", request, actorId: user.id, metadata: { persona: role } });
+    return { ...this.auth.response(user, session.csrfToken), public_demo: true };
+  }
+
   @ApiCookieAuth()
   @Get("demo-profiles/")
   async demoProfiles(@Req() request: AuthenticatedRequest) {
@@ -165,7 +179,7 @@ export class AuthController {
     if (target.username === request.authUser.username) {
       return { ...this.auth.response(target, request.csrfToken), redirect_to: this.demoHome(role as DemoSwitchRole) };
     }
-    const session = await this.auth.createSession(target, request);
+    const session = await this.auth.createSession(target, request, request.publicDemo ? { publicDemo: true, ttlSeconds: config().PUBLIC_DEMO_SESSION_TTL_SECONDS } : {});
     await this.auth.logout(request.sessionHash);
     this.setSession(reply, session.rawToken, session.csrfToken);
     await this.audit.record({
@@ -176,7 +190,7 @@ export class AuthController {
       targetId: target.id,
       metadata: { from_role: request.authUser.role, to_role: role },
     });
-    return { ...this.auth.response(target, session.csrfToken), redirect_to: this.demoHome(role as DemoSwitchRole) };
+    return { ...this.auth.response(target, session.csrfToken), public_demo: request.publicDemo === true, redirect_to: this.demoHome(role as DemoSwitchRole) };
   }
 
   private demoHome(role: DemoSwitchRole): string {
@@ -217,7 +231,7 @@ export class AuthController {
   @ApiCookieAuth()
   @Get("me/")
   me(@Req() request: AuthenticatedRequest) {
-    return this.auth.me(request.authUser);
+    return this.auth.me(request.authUser).then(result => ({ ...result, public_demo: request.publicDemo === true }));
   }
 
   @ApiCookieAuth()

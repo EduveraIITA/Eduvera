@@ -31,6 +31,9 @@ const schema = z.object({
   ALLOWED_ORIGINS: z.string().default("http://127.0.0.1:8000,http://localhost:8000"),
   DEMO_MODE: booleanString("false"),
   DEMO_PROFILE_SWITCHER_ENABLED: booleanString("false"),
+  PUBLIC_DEMO_ENABLED: booleanString("false"),
+  PUBLIC_DEMO_SESSION_TTL_SECONDS: z.coerce.number().int().min(300).max(3600).default(1800),
+  PUBLIC_DEMO_MAX_STARTS_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(20),
   SPA_DIST_DIR: z.string().default("../frontend/dist"),
   STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),
@@ -159,6 +162,9 @@ export function loadConfig() {
     }
     if (value.DEMO_MODE) {
       throw new Error("DEMO_MODE must be false in managed deployments");
+    }
+    if (value.PUBLIC_DEMO_ENABLED && deploymentEnvironment !== "stage") {
+      throw new Error("PUBLIC_DEMO_ENABLED is restricted to the isolated Stage environment");
     }
   }
   if (value.PHOTO_ATTENDANCE_ENABLED && value.PHOTO_ATTENDANCE_API_TOKEN.length < 24) {

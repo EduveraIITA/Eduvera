@@ -63,8 +63,8 @@ export function DemoProfileSwitcher() {
 
   return <section className="demo-profile-switcher" aria-labelledby="demo-profile-title">
     <div className="demo-profile-switcher__heading">
-      <div><h2 id="demo-profile-title">Demo profiles</h2><small>Development preview · switch without signing out</small></div>
-      <span>Temporary</span>
+      <div><h2 id="demo-profile-title">Demo profiles</h2><small>{auth.publicDemo ? "Explore another role · sample data" : "Development preview · switch without signing out"}</small></div>
+      <span>{auth.publicDemo ? "Read-only" : "Temporary"}</span>
     </div>
     <ul className="demo-profile-switcher__list">
       {query.data.profiles.map((profile) => <li key={profile.role}>

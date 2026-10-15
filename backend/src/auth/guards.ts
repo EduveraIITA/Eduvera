@@ -36,7 +36,19 @@ export class SessionGuard implements CanActivate {
     request.authUser = identity.user;
     request.sessionHash = identity.tokenHash;
     request.csrfToken = identity.csrfToken;
+    request.publicDemo = identity.publicDemo;
     return true;
+  }
+}
+
+@Injectable()
+export class PublicDemoGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<RequestWithContext>();
+    if (!request.publicDemo || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
+    const path = request.url.split("?", 1)[0];
+    if (path === "/api/v1/auth/demo-profile-switch/" || path === "/api/v1/auth/logout/") return true;
+    throw new ForbiddenException("This public demo is read-only. Switch profiles to explore another workspace.");
   }
 }
 

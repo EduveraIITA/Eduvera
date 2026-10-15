@@ -106,3 +106,5 @@
   .portal-secondary-screen .staff-hero__metrics strong { font-size: 18px; }
   .portal-secondary-screen .governance-summary dl { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+/* A persistent boundary marker keeps the public sandbox legible without adding dots or modal friction. */
+.public-demo-banner{position:fixed;z-index:120;right:14px;bottom:calc(82px + env(safe-area-inset-bottom));display:flex;min-height:42px;padding:8px 10px 8px 13px;align-items:center;gap:12px;border:1px solid #c7d7f3;border-radius:16px;color:#2d3b52;background:#fffffff2;box-shadow:0 12px 36px #18316022;backdrop-filter:blur(16px);font-size:10px}.public-demo-banner a,.public-demo-banner button{min-height:30px;padding:0 10px;border:0;border-radius:10px;color:var(--edura-brand);background:#eaf1ff;font:inherit;font-weight:800}.public-demo-banner button{color:#6d3740;background:#fff0f1}@media(max-width:520px){.public-demo-banner{left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));justify-content:space-between}.public-demo-banner>span{max-width:145px}}

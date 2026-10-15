@@ -29,6 +29,7 @@ const LoginPage = lazy(async () => ({
 const SignupPage = lazy(async () => ({
   default: (await import("./features/auth/AuthPages")).SignupPage,
 }));
+const PublicDemoPage = lazy(() => import("./features/auth/PublicDemoPage"));
 const AccountSecurityPage = lazy(async () => ({
   default: (await import("./features/auth/AccountSecurityPages")).AccountSecurityPage,
 }));
@@ -223,6 +224,7 @@ export function App() {
               <Route path="/principal/gate" element={<PortalOnly portal="principal"><GateAdminPage /></PortalOnly>} />
               <Route path="/" element={<RoleLanding />} />
               <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
+              <Route path="/demo" element={<PublicOnly><PublicDemoPage /></PublicOnly>} />
               <Route path="/signup" element={<PublicOnly><SignupPage /></PublicOnly>} />
               <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
