@@ -3,6 +3,10 @@ name: Google Cloud Stage release
 on:
   workflow_call:
     inputs:
+      website_only:
+        type: boolean
+        default: false
+        required: false
       provision_gatekeeper:
         type: boolean
         default: false
@@ -18,7 +22,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper
+    if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper && !inputs.website_only
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: gcp-stage
@@ -104,3 +108,53 @@ jobs:
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
       - name: Create the authorized review gatekeeper through the private database job
         run: node deploy/gcp/provision-stage-gatekeeper.mjs
+
+  website-only:
+    if: inputs.website_only && github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: gcp-stage
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Require a bounded website-only release
+        run: |
+          git diff --name-only HEAD^ HEAD > /tmp/release-paths
+          if grep -Ev '^(marketing/|docs/marketing/|docs/blueprint/IMPLEMENTATION_PLAN.md$|.github/workflows/(stage|google-cloud-stage|thatcampus).yml$)' /tmp/release-paths; then exit 1; fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: marketing/package-lock.json
+      - name: Verify and build website without touching the application
+        working-directory: marketing
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+          npx playwright install --with-deps chromium
+          node test/visual.mjs
+      - name: Build website image
+        run: docker build --platform linux/amd64 --file marketing/Dockerfile --tag "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA" marketing
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          project_id: eduera-511111
+          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
+          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - name: Push and verify candidate before website-only promotion
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+          docker push "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA"
+          node marketing/deploy-website-only.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stitch-preview-verification
+          path: marketing/screenshots/
