@@ -6700,3 +6700,10 @@ future attribution location: Profile/About, pending the user's choice.
 
 Verification: frontend production build, AuthPages lint and existing AuthPages
 sign-in regression test passed. Deployment and user visual acceptance remain open.
+
+
+### Desktop/tablet floating-window login — 15 October 2026
+
+User selected the second preview in the latest set (05, Floating window) and requested implementation and push. Above 650px, login uses a pale blue canvas with decorative rays, a white card with blue top accent and a floating original-logo tab. The old marketing sidebar is hidden. Phone layout, authentication behavior and non-login auth pages remain unchanged. No powered-by ribbon or unsupported social providers were added.
+
+Verification: frontend production build and existing AuthPages regression test passed locally; diff whitespace check passed. Browser visual verification was blocked by the environment's process-singleton socket permission. The workspace disconnected before push, so the CSS patch was reconstructed via GitHub; remote CI and user device review remain pending. Pushed for review, not deployed.

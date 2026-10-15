@@ -253,6 +253,84 @@
 /* Selected mobile login concept: original logo and a quiet, focused sign-in form. */
 .auth-login-mobile-heading { display: none; }
 .auth-login-forgot { align-self: flex-end; padding-block: 12px; margin-block: -12px 0; color: var(--edura-brand); font-size: 12px; font-weight: 600; }
+/* Floating-window login for tablets and desktops; phone layout stays unchanged. */
+@media (min-width: 651px) {
+  .auth-page--login {
+    --login-accent: #0866ff;
+    --login-ink: #0b1645;
+    --login-muted: #536180;
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 104px 32px 64px;
+    background: #eaf4ff;
+  }
+  .auth-page--login::before,
+  .auth-page--login::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    width: clamp(120px, 20vw, 320px);
+    height: 420px;
+    max-height: 70%;
+    pointer-events: none;
+    background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 420'%3E%3Cg fill='%23d0e5fc'%3E%3Crect x='-90' y='45' width='300' height='72' rx='36' transform='rotate(28 80 80)'/%3E%3Crect x='-100' y='174' width='310' height='72' rx='36'/%3E%3Crect x='-90' y='303' width='300' height='72' rx='36' transform='rotate(-28 80 340)'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  .auth-page--login::before { left: 0; transform: translateY(-50%); }
+  .auth-page--login::after { right: 0; transform: translateY(-50%) scaleX(-1); }
+  .auth-page--login .auth-story { display: none; }
+  .auth-page--login .auth-panel {
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    width: min(100%, 480px);
+    min-height: 0;
+    padding: 80px 40px 32px;
+    border-top: 4px solid var(--login-accent);
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 16px 40px rgb(34 83 145 / 8%);
+  }
+  .auth-page--login .auth-panel__mobile-brand {
+    display: block;
+    position: absolute;
+    top: -56px;
+    left: 50%;
+    margin: 0;
+    transform: translateX(-50%);
+  }
+  .auth-page--login .auth-login-logo {
+    display: grid;
+    width: 168px;
+    height: 104px;
+    place-items: center;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgb(34 83 145 / 9%);
+  }
+  .auth-page--login .auth-login-logo img { display: block; width: 120px; height: 72px; object-fit: contain; }
+  .auth-page--login .auth-card { display: flex; width: 100%; flex-direction: column; }
+  .auth-page--login .auth-card__header { display: none; }
+  .auth-page--login .auth-login-mobile-heading { display: block; text-align: center; }
+  .auth-page--login .auth-login-mobile-heading h1 { margin: 0; color: var(--login-ink); font-size: 32px; line-height: 1.2; letter-spacing: -.04em; font-weight: 800; }
+  .auth-page--login .auth-login-mobile-heading p { margin: 12px 0 0; color: var(--login-muted); font-size: 16px; line-height: 1.5; }
+  .auth-page--login .auth-form { margin-top: 32px; gap: 20px; }
+  .auth-page--login .auth-field { gap: 8px; font-size: 14px; font-weight: 600; }
+  .auth-page--login .auth-input-wrap { height: 52px; border-radius: 12px; }
+  .auth-page--login .auth-input-wrap input { font-size: 16px; color: var(--login-ink); }
+  .auth-page--login .auth-input-wrap input::placeholder { color: #71809a; }
+  .auth-page--login .auth-primary-button { min-height: 52px; border-radius: 12px; font-size: 16px; background: var(--login-accent); box-shadow: none; }
+  .auth-page--login .auth-primary-button:disabled { background: #526eaf; }
+  .auth-page--login .auth-login-forgot { margin-top: -16px; margin-bottom: -8px; font-size: 13px; }
+  .auth-page--login .auth-invite-link { order: 2; margin: 20px 0 0; font-size: 13px; text-align: center; line-height: 1.6; }
+  .auth-page--login .auth-invite-link a { display: inline-flex; min-height: 44px; align-items: center; }
+  .auth-page--login .auth-switch { order: 3; margin-top: 8px; font-size: 13px; }
+  .auth-page--login .auth-alert { font-size: 13px; }
+  .auth-page--login a:focus-visible { outline: 3px solid var(--login-accent); outline-offset: 4px; }
+}
 @media (max-width: 650px) {
   .auth-page--login .auth-panel {
     padding: max(40px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
