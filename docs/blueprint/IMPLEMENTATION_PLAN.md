@@ -6675,5 +6675,15 @@ name/admission substring indexes. Selecting a result reloads current student
 detail; transactional QR/current-authority checks remain the source of truth.
 Companion contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local typecheck, lint
 and frontend production build pass; focused UI tests cover the changed behavior.
-Native database CI and live deployment remain pending. Local real-browser QA was
-blocked by sandbox socket restrictions; no rendered responsive check is claimed.
+Native PostgreSQL CI passed; Stage run `38752498133` deployed merge
+`3079cff948d60962aed03e63b533459b344bb091` successfully, with 829 backend and
+961 frontend tests passing. Migration execution `eduvera-stage-migrate-62mqr`
+completed; app revision `eduvera-stage-00160-pux` passed candidate and exact public
+release/readiness checks after promotion. The separate website release succeeded.
+The headless browser successfully checked the actual local app with synthetic API
+fixtures at 320/768/1024/1440 px for gate-only and mixed staff: no overflow/page
+errors, home redirect, active bottom tab, search and fresh detail, and identity
+confirmation safeguards. Phone/tablet renders were visually inspected. The
+regular browser launcher failed on a Unix socket; headless QA did not require it.
+A local public HTTP recheck returned 403, so live confirmation relies on the
+trusted release verifier. Owner device review remains requested.
