@@ -6189,3 +6189,7 @@ isolated-PostgreSQL enquiry/outbox browser verification, and six desktop/mobile/
 dark visual variants. Full screenshot provenance, refresh scripts and acceptance
 scope are in `docs/marketing/PRODUCT_STORY.md`. Stage deployment, live verification
 and owner physical-phone acceptance are pending at this checkpoint.
+
+## 15 October 2026 — transparent ThatCampus branding
+
+Replaced the opaque app and marketing logo references with transparent PNG/WebP assets; removed white logo containers. Invitations, payment emails, account emails and PDF receipts share the ThatCampus mark. Email asset v2 avoids immutable-cache reuse; the legacy endpoint remains available for previously delivered emails. Validation and release evidence are recorded in the change commit.

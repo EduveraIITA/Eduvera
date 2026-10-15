@@ -9,7 +9,7 @@ import { invitationLogo } from './common/invitation-logo.js';
 @Controller()
 export class SpaController {
   @Public()
-  @Get('email-assets/eduera-logo-v1.png')
+  @Get(['email-assets/thatcampus-logo-v2.png', 'email-assets/eduera-logo-v1.png'])
   emailLogo(@Res() reply: FastifyReply) {
     return reply.header('Cache-Control', 'public, max-age=31536000, immutable')
       .header('Content-Disposition', 'inline').type('image/png').send(Buffer.from(invitationLogo.content, 'base64'));

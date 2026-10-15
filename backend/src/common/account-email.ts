@@ -23,9 +23,10 @@ export async function deliverAccountAction(input: {
   const verify = input.purpose === "email_verification";
   try {
     await sendTransactionalEmail({
-      senderName: "Eduvera · Pathyakram",
+      senderName: "ThatCampus",
       to: input.email,
-      subject: verify ? "Verify your Eduvera email" : "Reset your Eduvera password",
+      subject: verify ? "Verify your ThatCampus email" : "Reset your ThatCampus password",
+      html: `<html><body style="font-family:Arial,sans-serif"><img src="${new URL('/email-assets/thatcampus-logo-v2.png', settings.PUBLIC_URL).href}" width="120" height="80" alt="ThatCampus"/><h1>${verify ? "Verify your email" : "Reset your password"}</h1><p><a href="${link.href.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">${verify ? "Verify email" : "Reset password"}</a></p><p>This single-use link expires ${input.expiresAt.toISOString()}. If you did not request this, ignore this message.</p></body></html>`,
       text: `${verify ? "Verify your email address" : "Reset your password"} using this single-use link:\n\n${link.href}\n\nThe link expires ${input.expiresAt.toISOString()}. If you did not request this, ignore this message.`,
     });
     return { delivery: "email_accepted" as const };

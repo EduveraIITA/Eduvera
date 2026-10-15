@@ -36,10 +36,10 @@
   flex: 0 0 auto;
   overflow: hidden;
   place-items: center;
-  border: 1px solid rgba(180, 194, 219, 0.72);
+  border: 0;
   border-radius: 11px;
-  background: #ffffff;
-  box-shadow: 0 5px 14px rgba(14, 37, 83, 0.12);
+  background: transparent;
+  box-shadow: none;
 }
 
 .school-brand__eduvera img {

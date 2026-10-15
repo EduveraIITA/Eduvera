@@ -42,7 +42,7 @@ describe('invitation SMTP delivery', () => {
     expect(body.html).toContain('Accept Invitation');
     expect(body.html).toContain(invitation.token);
     expect(body.attachments).toBeUndefined();
-    expect(body.html).toContain('https://school.example.test/email-assets/eduera-logo-v1.png');
+    expect(body.html).toContain('https://school.example.test/email-assets/thatcampus-logo-v2.png');
   });
   it('reports API authentication failures without exposing the response body', async () => {
     mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
@@ -97,8 +97,8 @@ describe('invitation SMTP delivery', () => {
       expect(params.get('email')).toBe('"quoted"@example.test');
     }
     expect(message.html).not.toMatch(/<script|<form/i);
-    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/email-assets/eduera-logo-v1.png"']);
-    expect(message.html).toContain('alt="Eduera logo" width="48" height="48"');
+    expect(message.html.match(/src="[^"]+"/g)).toEqual(['src="https://school.example.test/email-assets/thatcampus-logo-v2.png"']);
+    expect(message.html).toContain('alt="ThatCampus logo" width="120" height="72"');
     expect(message.text).toContain('<script>private&code</script>');
     expect(message.html).toContain('Oct 4, 2099, 12:00 AM UTC');
     expect(message.text).toContain('2099-10-04T00:00:00.000Z');
