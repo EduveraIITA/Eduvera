@@ -6576,3 +6576,25 @@ not restore the former serial test path. Remaining external gates are trusted St
 deployment, Rich Results/URL Inspection checks, Google Search Console ownership and
 sitemap submission, followed by measurement of impressions, queries and qualified
 demo visits. No search ranking is promised or represented as achieved.
+
+## New gate.demo user, not Kavita — 15 October 2026
+
+Latest owner instruction supersedes assigning gate access to `kavita.staff`:
+create a separate new user. Added a fixed-target private maintenance operation for
+`gate.demo`, with an active non-teaching profile and exactly `gate.manage` through
+the Gatekeeper role in Cambridge (`cis`). No existing user, password or assignment
+is updated. Account and role binding are transactional, audited and emit an access
+update. Re-running against an existing username fails without resetting it.
+
+Initial credentials are generated and encrypted by the trusted runner so delivery
+does not depend on the unavailable Cloud Logging read permission. The database job
+receives only a salted scrypt hash, not the plaintext password. The operation uses
+the existing approved private job with per-execution arguments; persisted job
+configuration and IAM remain unchanged. Public-demo session restrictions remain.
+Details: [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md).
+
+All 19 deployment/maintenance contract tests and backend typecheck/lint pass locally.
+Added a native PostgreSQL regression for account creation, credential compatibility,
+gate-only scope, refusal to overwrite, outbox evidence and unchanged Kavita data.
+Hosted verification, live account creation and private credential delivery remain
+pending; no database change has been made at this implementation checkpoint.
