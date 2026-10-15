@@ -188,14 +188,16 @@ describe("implemented application routes", () => {
       const { container } = render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
       await waitFor(() => expect(container.querySelector(".school-brand__crest")).toHaveTextContent("CIS"));
       expect(container.querySelector(".school-brand__name")).toHaveTextContent("Cambridge International School");
-      expect(container.querySelector<HTMLImageElement>(".school-brand__eduvera img")?.src).toContain("/assets/thatcampus-logo.png");
+      expect(container.querySelector(".school-brand__eduvera")).not.toBeInTheDocument();
+      expect(container.querySelector<HTMLImageElement>(".powered-by img")?.src).toContain("/assets/thatcampus-logo.png");
     }
     cleanup();
     const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><OperationsShell portal="teacher" active="home" title="Today" subtitle="Your day"><span /></OperationsShell></MemoryRouter></QueryClientProvider>);
     expect(container.querySelectorAll(".school-brand__crest")).toHaveLength(2);
     container.querySelectorAll(".school-brand__crest").forEach((crest) => expect(crest).toHaveTextContent("CIS"));
     container.querySelectorAll(".school-brand__name").forEach((name) => expect(name).toHaveTextContent("Cambridge International School"));
-    expect(container.querySelectorAll(".school-brand__eduvera img")).toHaveLength(2);
+    expect(container.querySelectorAll(".school-brand__eduvera img")).toHaveLength(0);
+    expect(container.querySelectorAll(".powered-by img")).toHaveLength(2);
   });
 
   it("removes every assistant surface when Pro features are off", () => {

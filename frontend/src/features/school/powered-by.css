@@ -1,0 +1,10 @@
+.powered-by { display: flex; justify-content: center; flex-shrink: 0; padding: 16px 0; }
+.powered-by__ribbon { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 190px; max-width: 100%; min-height: 36px; box-sizing: border-box; padding: 2px 12px; border: 1px solid #fff; border-radius: 999px; background: linear-gradient(110deg, #eaf3ff, #f1edff); box-shadow: 0 2px 8px rgb(24 55 112 / 4%); }
+.powered-by__ribbon > span { color: #415477; font-size: 9px; font-weight: 600; line-height: 1.5; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.powered-by__ribbon > i { width: 1px; height: 18px; flex-shrink: 0; background: #bdcbe2; }
+.powered-by__ribbon > img { display: block; width: 56px; height: 32px; object-fit: contain; }
+.powered-by--home { margin-top: 16px; }
+.operations-sidebar > .powered-by { margin-top: auto; }
+@media (min-width: 1001px) { .operations-main > .powered-by--home { display: none; } }
+@media (max-width: 1000px) { .operations-sidebar > .powered-by { display: none; } }
+@media print { .powered-by { display: none; } }
