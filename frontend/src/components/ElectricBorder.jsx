@@ -220,6 +220,10 @@ void main() {
         slopeScale;
       float drift = lead > 0.5 ? 0.0 : wobble(fi * 7.3, seed + 9u) * 2.5 * uSpread;
       offset += drift;
+      // Smooth travelling wave, with its derivative preserving a thin core.
+      float wavePhase = x * 18.8495559 - t * 1.6;
+      offset += sin(wavePhase) * uSpread * 10.0;
+      slope += cos(wavePhase) * uSpread * 10.0 * 18.8495559 * slopeScale;
       float across = (d - offset) / sqrt(1.0 + slope * slope);
       float spread = d - a.x * bendAmp * range - drift;
       float swell = 0.5 + 0.5 * ring(vec2(x * uSoft.y, t * 2.0 + fi * 5.1), uSoft.y, seed + 8u).x;
