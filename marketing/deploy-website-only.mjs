@@ -18,7 +18,7 @@ const baseline=JSON.parse(readFileSync(new URL('./test/showcase-baseline.json',i
 const tag=`stitch-${release.slice(0,12)}`;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 async function verify(origin){
- for(const path of ['/','/privacy','/terms','/robots.txt','/sitemap.xml']){
+ for(const path of ['/','/school-management-software','/school-attendance-management','/school-timetable-software','/parent-communication-app','/ai-assistant-for-schools','/privacy','/terms','/robots.txt','/sitemap.xml','/llms.txt']){
   const response=await fetch(origin+path,{signal:AbortSignal.timeout(30000)});
   assert(response.ok,`${path}: HTTP ${response.status}`);
   if(path==='/')assert((await response.text()).includes('Working together.'));

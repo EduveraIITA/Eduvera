@@ -6539,3 +6539,40 @@ command. A family-home timeout in shard 2 passes on isolated rerun; that full
 shard did not finish locally and was stopped. Hosted CI validation is still required. Failures are not waived. Actual hosted speedup and
 warm Docker cache behavior require subsequent Actions runs. More parallel runners
 can increase total runner minutes even while reducing elapsed time.
+
+## Public search discovery foundation — 15 October 2026
+
+Latest owner decision: make the public ThatCampus website understandable and
+discoverable through Google Search and recommendation systems. Search work must
+not become a keyword dump or invent customers, rankings, certifications, pricing
+or production capabilities. The existing visual system, public demo distinction
+and product-availability disclosures remain authoritative.
+
+The first implementation slice adds five substantial, server-rendered solution
+pages for school management, attendance, timetable/calendar, parent communication
+and the access-aware school assistant. Each page has one clear intent, a unique
+title and description, visible explanatory copy, a real product screen or the
+approved illustrative AI videos, direct demo/walkthrough routes, related-workflow
+links and a single canonical slashless URL. The homepage and footer now provide
+crawlable links to every solution; the public demo, personal walkthrough and
+school login remain three distinct destinations.
+
+Prerendering now emits page-specific canonical, Open Graph, Twitter and language
+metadata plus truthful Schema.org Organization, WebSite, SoftwareApplication,
+WebPage and BreadcrumbList data. The AI page also exposes two VideoObject records
+whose titles, descriptions, thumbnails, durations and MP4 URLs match the visible
+media. The XML sitemap lists all canonical pages and both videos; robots continues
+to exclude only API routes. `llms.txt` provides a concise, caveated product map for
+systems that voluntarily consume it, without claiming it is a ranking signal.
+Only the canonical Cloudflare hosts are indexable; Cloud Run previews retain the
+existing `X-Robots-Tag: noindex` protection.
+
+Verified in the isolated worktree: marketing lint and production build pass; all
+eight public HTML documents are prerendered with one H1, unique metadata and JSON-LD;
+focused deployment/server tests pass, including canonical-host indexing, solution
+routes and trailing-slash redirects. The Stage workflow has separately been
+parallelised and cached by PR #40; this slice must rebase onto that work and must
+not restore the former serial test path. Remaining external gates are trusted Stage
+deployment, Rich Results/URL Inspection checks, Google Search Console ownership and
+sitemap submission, followed by measurement of impressions, queries and qualified
+demo visits. No search ranking is promised or represented as achieved.
