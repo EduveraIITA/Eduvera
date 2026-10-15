@@ -24,6 +24,16 @@ decisions cannot be replaced by synthetic software tests.
   not prerequisites for a working web coordination loop. See ADR-001 below.
 - Use the local synthetic school for review. Do not silently switch to Supabase credentials.
 - Ask Abhishek to review working UI after substantial changes, before continuing UI expansion.
+- Product decision, 16 October 2026: reduce repetitive staff work through bounded,
+  explainable automation. Mutable automatic actions belong to institution-level **Operating
+  rules**, not per-record settings or hard-coded UI behavior. Authorized administrators can
+  review and edit the rule's timing, scope and fallback; each execution retains the effective
+  rule/version, reason and audit evidence, remains visible to the responsible operator, and has
+  an explicit correction or override path where the domain permits one. Automation must not
+  manufacture observations, infer missing attendance as absence, grant authority or consent,
+  complete financial reconciliation, resolve safeguarding decisions, or authorize physical
+  handover. New workflows should default routine safe work automatically while escalating only
+  genuine exceptions, avoiding extra confirmation steps that do not change risk or authority.
 - Preserve `schools` as the current tenancy anchor while modelling new capabilities as
   institution-scoped configuration. The product target includes schools, colleges and coaching
   institutions; capability packs must express regulator and education-stage differences instead

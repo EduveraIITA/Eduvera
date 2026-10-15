@@ -19,6 +19,12 @@
   guides capabilities and architecture; it is not permission to redesign the app.
 - Prefer substantial, end-to-end workflows with real database relationships,
   authorization, audit/event handling, and tests over isolated cosmetic features.
+- Reduce operator burden through bounded automation. Routine automatic actions must
+  be driven by institution-level Operating rules that authorized administrators can
+  review and edit, with clear timing, scope, fallback, explanation, audit evidence,
+  and a safe correction or override path. Do not hard-code mutable operating choices
+  into individual records, and do not automate authority, consent, safeguarding,
+  financial reconciliation, or physical handover beyond their explicit domain rules.
 - Ask the user to validate working UI after substantial UI changes. Keep the local
   preview available for review and verify its health after relevant deployments.
 - Follow explicit user decisions where they clarify or supersede the blueprint;
