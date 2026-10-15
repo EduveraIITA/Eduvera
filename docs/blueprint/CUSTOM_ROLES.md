@@ -25,3 +25,8 @@ Review: **Principal → More → Staff setup & leave → Roles**. The separate P
 **Roles & assignments**. `npm run db:seed:access-roles` adds a read-only Attendance reviewer example
 in demo mode without resetting existing choices. See the implementation plan for verified results
 and deployment gates.
+
+Gate access uses this same flow: **Manage In & Out** under **Gate & Safety** is
+an institution-scoped action in a built-in or custom role, assigned to existing
+staff from People. Gate & Safety links to Roles and People instead of showing a
+separate gatekeeper-account creation form. Its QR and visitor tools remain there.
