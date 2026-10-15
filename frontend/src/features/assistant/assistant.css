@@ -251,3 +251,10 @@
 @media (min-width: 1001px) {
   .operations-app .assistant-page__composer { left: calc(50% + 120px); width: min(720px, calc(100% - 288px)); }
 }
+
+/* React Bits current stays close to the edge; decorative canvas never blocks input. */
+.assistant-electric-border { min-width: 0; box-shadow: 0 0 0 1px rgb(120 170 242 / 12%); }
+.assistant-electric-border > .electric-border__canvas { opacity: .55; }
+@media (prefers-reduced-motion: reduce) {
+  .assistant-electric-border > .electric-border__canvas { display: none; }
+}

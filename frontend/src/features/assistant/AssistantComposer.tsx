@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
+import { AssistantElectricBorder } from './AssistantElectricBorder';
 export function useAssistantKeyboard(ref:RefObject<HTMLElement|null>) {
   useEffect(()=>{
     const viewport=window.visualViewport;
@@ -23,12 +24,12 @@ export function AssistantComposer({onSend,disabled=false,pending=false,onCancel}
     try {if(await onSend(question,client.current.id)){setDraft('');client.current={question:'',id:crypto.randomUUID()};}}
     finally {setSending(false);}
   };
-  return <form className="assistant-composer" onSubmit={event=>void submit(event)}>
+  return <AssistantElectricBorder borderRadius={28}><form className="assistant-composer" onSubmit={event=>void submit(event)}>
     <label className="sr-only" htmlFor={id+'-question'}>Ask the assistant</label>
     <textarea ref={input} id={id+'-question'} rows={1} maxLength={4000} placeholder="Ask anything…" value={draft} disabled={disabled||sending}
       onChange={event=>setDraft(event.target.value)} aria-describedby={id+'-hint'}
       onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();void submit(event);}}}/>
     {pending?<button type="button" onClick={onCancel} aria-label="Stop request"><Square size={17} fill="currentColor" aria-hidden="true"/></button>:<button type="submit" disabled={disabled||sending||!draft.trim()} aria-label="Send message"><ArrowUp size={21} aria-hidden="true"/></button>}
     <span className="sr-only" id={id+'-hint'}>Enter sends. Shift and Enter adds a new line. Changes require your confirmation.</span>
-  </form>;
+  </form></AssistantElectricBorder>;
 }
