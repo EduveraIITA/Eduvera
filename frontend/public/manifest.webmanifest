@@ -13,7 +13,7 @@
   "icons": [
     {
       "src": "/assets/thatcampus-logo.png",
-      "sizes": "1536x1024",
+      "sizes": "768x512",
       "type": "image/png",
       "purpose": "any"
     }
