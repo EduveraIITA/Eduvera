@@ -6726,7 +6726,7 @@ Local typechecks/lint, production frontend build, 49 focused UI tests and real
 headless browser fixture workflows passed, including responsive 320/768/1024/1440
 px layouts with no overflow/page errors. Native integration coverage was added
 for publisher delivery, retries, revocation, school isolation, expiry and racing
-decisions. Hosted CI and deployed verification remain pending. Owner device
+decisions. Hosted CI and deployed verification passed as recorded below. Owner device
 review remains requested after release. Concurrent mobile sign-in changes from
 PR #48 were preserved.
 
@@ -6736,3 +6736,16 @@ PR #48 were preserved.
 User selected the second preview in the latest set (05, Floating window) and requested implementation and push. Above 650px, login uses a pale blue canvas with decorative rays, a white card with blue top accent and a floating original-logo tab. The old marketing sidebar is hidden. Phone layout, authentication behavior and non-login auth pages remain unchanged. No powered-by ribbon or unsupported social providers were added.
 
 Verification: frontend production build and existing AuthPages regression test passed locally; diff whitespace check passed. Browser visual verification was blocked by the environment's process-singleton socket permission. The workspace disconnected before push, so the CSS patch was reconstructed via GitHub; remote CI and user device review remain pending. Pushed for review, not deployed.
+
+
+Release verification: PR #50 passed hosted CI run `38764776642` (832 backend
+and 971 frontend tests, both client builds and security/deployment contracts).
+Merge `585fc55c45f55460528fa894c6629c7fe51bf1f8` deployed successfully in Stage
+run `38765399927`. Private migration `eduvera-stage-migrate-d65b2` completed at
+16:08:56 UTC. App revision `eduvera-stage-00166-hop` passed candidate checks and
+was promoted; the trusted release verifier confirmed the exact public SHA,
+Stage environment, readiness and both apps at 16:09:59 UTC. The separate website
+release succeeded; IndexNow accepted eight canonical URLs at 16:11:08 UTC.
+No existing account or permission assignments changed. Owner device review and
+a real host/guard visitor-request walkthrough remain requested. Local fixture QA
+and native isolated database tests do not represent that live account walkthrough.

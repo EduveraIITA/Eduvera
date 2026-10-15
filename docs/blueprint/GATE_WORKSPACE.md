@@ -105,4 +105,17 @@ entry/exit state updates and login-time Approve/Decline at 320/768/1024/1440 px
 without overflow or page errors. Phone/tablet renders were visually inspected.
 Native database coverage exercises durable publisher delivery, retry deduplication,
 current host revocation, school isolation, expiry and concurrent decisions. Hosted
-CI and deployment are pending; these local fixtures are not live account evidence.
+CI and deployment passed as recorded below; these local fixtures are not live account evidence.
+
+
+Release verification: PR #50 passed hosted CI run `38764776642` (832 backend
+and 971 frontend tests, both client builds and security/deployment contracts).
+Merge `585fc55c45f55460528fa894c6629c7fe51bf1f8` deployed successfully in Stage
+run `38765399927`. Private migration `eduvera-stage-migrate-d65b2` completed at
+16:08:56 UTC. App revision `eduvera-stage-00166-hop` passed candidate checks and
+was promoted; the trusted release verifier confirmed the exact public SHA,
+Stage environment, readiness and both apps at 16:09:59 UTC. The separate website
+release succeeded; IndexNow accepted eight canonical URLs at 16:11:08 UTC.
+No existing account or permission assignments changed. Owner device review and
+a real host/guard visitor-request walkthrough remain requested. Local fixture QA
+and native isolated database tests do not represent that live account walkthrough.
