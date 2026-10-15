@@ -6190,6 +6190,15 @@ dark visual variants. Full screenshot provenance, refresh scripts and acceptance
 scope are in `docs/marketing/PRODUCT_STORY.md`. Stage deployment, live verification
 and owner physical-phone acceptance are pending at this checkpoint.
 
+Release evidence: website CI `38697763717` and Stage deployment `38697763736`
+passed. Public website and app release endpoints both report
+`11077883d2b9bfd63ce641d5ee37d6b67a65defc`. Live desktop/mobile browser checks
+passed for the new content, image delivery, layout, gallery/modal, Login and form
+configuration. The owner approved the visual direction. Isolated form persistence
+is verified; no test lead was sent to production. Physical-device review remains
+open. See `docs/marketing/PRODUCT_STORY.md` for audit scores and the nonblocking
+Cloudflare analytics/CSP warning, which was not bypassed.
+
 ## 15 October 2026 — transparent ThatCampus branding
 
 Replaced the opaque app and marketing logo references with transparent PNG/WebP assets; removed white logo containers. Invitations, payment emails, account emails and PDF receipts share the ThatCampus mark. Email asset v2 avoids immutable-cache reuse; the legacy endpoint remains available for previously delivered emails. Validation and release evidence are recorded in the change commit.

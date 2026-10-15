@@ -77,3 +77,36 @@ Local Lighthouse mobile audit after optimization: performance 96, accessibility
 CLS 0.001. These are simulated local audit results, not production field metrics.
 The initial audit exposed blocked unnecessary font subsets and oversized image
 transfers; Latin-only fonts, responsive images and gzip resolved those findings.
+
+Desktop Lighthouse also returned 100 for performance, accessibility, best
+practices and SEO. Additional browser checks passed for Arrow/Home/End tab
+navigation, parallax pause, native-dialog autofocus, Escape focus restoration
+and a clean browser console. The owner approved continuing with this visual
+direction after reviewing the preview on 15 October 2026.
+
+Website CI passed on release `11077883d2b9bfd63ce641d5ee37d6b67a65defc`:
+https://github.com/EduveraIITA/Eduvera/actions/runs/38697763717
+
+## Verified live release
+
+Stage release and deployment passed:
+https://github.com/EduveraIITA/Eduvera/actions/runs/38697763736
+
+Both `https://thatcampus.com/readyz` and the application `/releasez` identify
+`11077883d2b9bfd63ce641d5ee37d6b67a65defc`. The gate passed 100 backend test
+files, 137 mobile frontend test files, desktop build and deployment verification.
+Public Chromium checks at 1440px and 390px verified the new hero, correct Login,
+no horizontal overflow, six WebP screenshots with correct MIME types, workflow
+switching, modal/Escape, and enabled/configured enquiry form. No synthetic lead
+was submitted to the production inbox; persistence/outbox were tested in isolated
+PostgreSQL locally and in CI. The canonical public response no longer has the
+incorrect `noindex` header.
+
+Known nonblocking edge configuration: Cloudflare injects its optional analytics
+beacon but the existing self-only CSP blocks it, generating a console warning.
+No website JavaScript errors were found. CSP was not weakened to enable tracking;
+the local audit scores above do not include this edge-injected warning.
+
+The owner accepted the visual direction. Live desktop/mobile browser verification
+is complete; physical-device acceptance remains with the owner. Local preview
+health was rechecked after release.
