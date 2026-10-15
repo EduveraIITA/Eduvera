@@ -22,6 +22,7 @@ import {
 import { authDestination, useAuth, type RegisterInput } from "./AuthContext";
 import { SchoolBrand } from "../school/SchoolBrand";
 import "./auth.css";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 
 function AuthBrand() {
   return (
@@ -188,6 +189,15 @@ export function LoginPage() {
           {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
       </form>}
+      {!mfaChallenge ? <GoogleSignInButton disabled={pending !== null} onError={setError} onCredential={async credential => {
+        setError(null);
+        setPending("login");
+        try {
+          const result = await auth.googleLogin(credential);
+          if (result.challengeToken) { setMfaChallenge(result.challengeToken); setPassword(""); return; }
+          void navigate(safeNextPath(location.search) ?? "/", { replace: true });
+        } finally { setPending(null); }
+      }} /> : null}
 
       <p className="auth-switch">New to ThatCampus? <Link to="/signup">Create an account</Link></p>
     </AuthLayout>

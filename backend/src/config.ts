@@ -22,6 +22,7 @@ const schema = z.object({
   EVENT_REPLAY_LIMIT: z.coerce.number().int().min(10).max(1000).default(250),
   SSE_MAX_CONNECTIONS: z.coerce.number().int().min(10).max(100000).default(10000),
   SSE_MAX_CONNECTIONS_PER_SESSION: z.coerce.number().int().min(1).max(10).default(1),
+  GOOGLE_CLIENT_ID: z.string().default(""),
   SESSION_COOKIE_NAME: z.string().default("omnischool_session"),
   SESSION_TTL_SECONDS: z.coerce.number().int().min(300).max(604800).default(28800),
   COOKIE_SECRET: z.string().min(32).default("development-only-cookie-secret-change-me-now"),
