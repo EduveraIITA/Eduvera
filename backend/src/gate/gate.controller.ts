@@ -9,6 +9,8 @@ export class GateController {
  workspace(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string) {return this.service.workspace(r.authUser,s);}
  @Get("schools/:schoolId/students/") @RequirePermission("gate.manage")
  students(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Query("q") q='') {return this.service.students(r.authUser,s,q);}
+ @Get("schools/:schoolId/students/:studentId/") @RequirePermission("gate.manage")
+ student(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Param("studentId") id:string) {return this.service.student(r.authUser,s,id);}
  @Post("schools/:schoolId/scan/") @RequirePermission("gate.manage")
  scan(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Body() b:unknown) {return this.service.scan(r.authUser,s,b);}
  @Post("schools/:schoolId/movements/") @RequirePermission("gate.manage")

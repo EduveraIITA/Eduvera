@@ -49,6 +49,28 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   await expect(service.movement(guard,school,{...command,command_id:randomUUID()})).rejects.toThrow(/Movement changed/);
   expect((await query('SELECT count(*)::int count FROM gate_events WHERE student_id=$1',[student])).count).toBe(1);
   expect((await query('SELECT count(*)::int count FROM attendance_records WHERE student_id=$1',[student])).count).toBe(0);
+  expect(await service.student(guard,school,student)).toMatchObject({id:student,direction:'in',plan_state:'ready'});
+  await expect(service.student(outsider,school,student)).rejects.toThrow(/permission/);
+  await expect(service.student(admin,otherSchool,student)).rejects.toThrow(/permission/);
+ });
+ it('searches a bounded school roster without loading movement or collector details',async()=>{
+  const match=await service.students(guard,school,'  AARAV  ');
+  expect(match).toHaveLength(1);expect(match[0]).toMatchObject({id:student,name:'Aarav Test',plan_state:'ready'});
+  expect(match[0]).not.toHaveProperty('direction');expect(match[0]).not.toHaveProperty('collector_name');
+  const admission=(await query('SELECT admission_number FROM students WHERE id=$1',[student])).admission_number;
+  expect((await service.students(guard,school,admission))[0]?.id).toBe(student);
+  expect(await service.students(guard,school,'A')).toEqual([]);
+  expect(await service.students(guard,school,'%_')).toEqual([]);
+  await expect(service.students(outsider,school,'Aarav')).rejects.toThrow(/permission/);
+  const foreignPerson=(await query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Aarav','Foreign') RETURNING id",[otherSchool])).id;
+  const foreignStudent=(await query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,'FOREIGN') RETURNING id",[otherSchool,foreignPerson])).id;
+  expect((await service.students(guard,school,'Aarav')).map(row=>row.id)).toEqual([student]);
+  await expect(service.student(guard,school,foreignStudent)).rejects.toThrow(/not found/);
+  await pool.query(`WITH people AS (INSERT INTO school_people(school_id,first_name,last_name)
+   SELECT $1,'SearchBound',lpad(i::text,3,'0') FROM generate_series(1,40) i RETURNING id,last_name)
+   INSERT INTO students(school_id,person_id,admission_number) SELECT $1,id,'SEARCH-'||last_name FROM people`,[school]);
+  const bounded=await service.students(guard,school,'SearchBound');
+  expect(bounded).toHaveLength(30);expect(bounded[0]?.name).toBe('SearchBound 001');expect(bounded[29]?.name).toBe('SearchBound 030');
  });
  it('blocks exit without a pickup pass and rejects QR from another institution',async()=>{
   await expect(service.movement(guard,school,{student_id:student,direction:'out',command_id:randomUUID(),identity_verified:true})).rejects.toThrow(/pickup QR/);

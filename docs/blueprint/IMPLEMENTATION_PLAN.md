@@ -6657,3 +6657,23 @@ layout/link handling. Frontend auth/permission tests passed (10 total after addi
 no-permission landing regression). PostgreSQL acceptance regression added for the
 isolated CI suite; no local disposable PostgreSQL available. Inbox-client rendering
 still needs user validation on the affected email app after release.
+
+## Gate home theme, staff tab and bounded search — 15 October 2026
+
+Owner requested the gate workspace match the shared app theme, be the gatekeeper
+home, and appear as a new bottom button for authorized staff. Implemented branded
+gate-only home with shared color/spacing/card tokens, Hindi/English controls,
+primary QR action and compact search/visitor actions. `/teacher` redirects gate-only
+staff to `/gate`; mixed staff keep their home and gain a permission-gated
+`/teacher/gate` In & Out tab in both mobile navigation and sidebar. Scoped staff
+home also exposes the gate tool. Existing accounts and assignments are untouched.
+
+Search now debounces at 250 ms, cancels obsolete requests, handles loading/error/
+empty results, and uses a bounded lightweight school-roster query instead of
+loading gate history and collector data for all matches. Migration 097 adds
+name/admission substring indexes. Selecting a result reloads current student
+detail; transactional QR/current-authority checks remain the source of truth.
+Companion contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local typecheck, lint
+and frontend production build pass; focused UI tests cover the changed behavior.
+Native database CI and live deployment remain pending. Local real-browser QA was
+blocked by sandbox socket restrictions; no rendered responsive check is claimed.

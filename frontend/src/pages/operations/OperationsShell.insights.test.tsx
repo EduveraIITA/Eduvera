@@ -3,10 +3,11 @@ import {cleanup,render,within} from "@testing-library/react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {MemoryRouter} from "react-router-dom";
 import {OperationsShell} from "./OperationsShell";
-vi.mock("../../features/auth/AuthContext",()=>({useOptionalAuth:()=>({memberships:[{role:"staff",school_id:"school-1",permissions:["attendance.view","timetable.view"]}]})}));
+const state=vi.hoisted(()=>({permissions:["attendance.view","timetable.view"]}));
+vi.mock("../../features/auth/AuthContext",()=>({useOptionalAuth:()=>({memberships:[{role:"staff",school_id:"school-1",permissions:state.permissions}]})}));
 vi.mock("../../features/auth/AccountMenu",()=>({AccountMenu:()=>null}));
 vi.mock("../../features/notifications/NotificationCenter",()=>({NotificationCenter:()=>null}));
-afterEach(cleanup);
+afterEach(()=>{cleanup();state.permissions=["attendance.view","timetable.view"];});
 const renderShell=(route:string,shell:React.ReactNode)=>{
   const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}>{shell}</MemoryRouter></QueryClientProvider>);
@@ -27,5 +28,14 @@ describe("principal Insights navigation",()=>{
     const mobile=within(container.querySelector<HTMLElement>(".operations-mobile-nav")!);
     expect(mobile.getByRole("link",{name:"Timetable",hidden:true})).toBeInTheDocument();
     expect(mobile.queryByRole("link",{name:"Insights",hidden:true})).not.toBeInTheDocument();
+    expect(mobile.queryByRole("link",{name:"In & Out",hidden:true})).not.toBeInTheDocument();
+  });
+  it("adds the In & Out tab only when staff have gate permission",()=>{
+    state.permissions.push('gate.manage');
+    const {container}=renderShell('/teacher/gate',<OperationsShell portal="teacher" active="gate" title="In & Out">Content</OperationsShell>);
+    const mobile=within(container.querySelector<HTMLElement>('.operations-mobile-nav')!);
+    expect(mobile.getByRole('link',{name:'In & Out',hidden:true})).toHaveAttribute('href','/teacher/gate');
+    expect(mobile.getByRole('link',{name:'In & Out',hidden:true})).toHaveAttribute('aria-current','page');
+    expect([...container.querySelector('.operations-mobile-nav')!.children].map(item=>item.textContent)).toEqual(['Today','Attendance','Timetable','In & Out','More']);
   });
 });

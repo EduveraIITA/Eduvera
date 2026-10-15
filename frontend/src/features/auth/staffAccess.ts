@@ -16,6 +16,7 @@ export const TEACHER_TOOL_PERMISSIONS: Readonly<Record<string, string>> = {
 };
 
 const TEACHER_SECTION_PERMISSIONS: Readonly<Record<string, string>> = {
+  gate: "gate.manage",
   attendance: "attendance.view",
   classes: "attendance.view",
   calendar: "timetable.view",
@@ -35,6 +36,11 @@ const TEACHER_SECTION_PERMISSIONS: Readonly<Record<string, string>> = {
 
 export function currentStaffMembership(memberships: SchoolMembership[]) {
   return memberships.find((membership) => membership.role === "staff");
+}
+
+export function isGateOnlyMember(member: SchoolMembership | undefined) {
+  return member?.role === 'staff' && member.permissions?.includes('gate.manage') === true
+    && member.permissions.every(permission => permission === 'gate.manage');
 }
 
 export function hasStaffPermission(member: SchoolMembership | undefined, permission: string) {
