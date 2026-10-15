@@ -22,49 +22,46 @@ import {
 import { authDestination, useAuth, type RegisterInput } from "./AuthContext";
 import { SchoolBrand } from "../school/SchoolBrand";
 import "./auth.css";
+import { CampusLoginLayout } from "./CampusLoginLayout";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 
 function AuthBrand() {
   return (
     <Link className="auth-brand" to="/" aria-label="Cambridge International School and ThatCampus">
-      <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" />
+      <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" showAppMark />
     </Link>
   );
 }
 
-export function AuthLayout({ eyebrow, title, description, children }: {
+export function AuthLayout({ eyebrow, title, description, children, variant }: {
+  variant?: "login";
   eyebrow: string;
   title: string;
   description: string;
   children: ReactNode;
 }) {
-  return (
-    <main className="auth-page">
-      <section className="auth-story" aria-label="ThatCampus introduction">
-        <AuthBrand />
-        <div className="auth-story__content">
-          <h1>School records that stay current.</h1>
-          <p>Attendance, timetables, leave and communication for every school role.</p>
-          <div className="auth-story__proof">
-            <span><ShieldCheck size={17} /><b>Role-safe access</b></span>
-            <span><Clock3 size={17} /><b>Live attendance</b></span>
-            <span><BookOpenCheck size={17} /><b>One source of truth</b></span>
-          </div>
+  if (variant === "login") return <CampusLoginLayout>{children}</CampusLoginLayout>;
+  return <main className="auth-page">
+    <section className="auth-story" aria-label="ThatCampus introduction">
+      <AuthBrand />
+      <div className="auth-story__content">
+        <h1>School records that stay current.</h1>
+        <p>Attendance, timetables, leave and communication for every school role.</p>
+        <div className="auth-story__proof">
+          <span><ShieldCheck size={17} /><b>Role-safe access</b></span>
+          <span><Clock3 size={17} /><b>Live attendance</b></span>
+          <span><BookOpenCheck size={17} /><b>One source of truth</b></span>
         </div>
-      </section>
-
-      <section className="auth-panel">
-        <div className="auth-panel__mobile-brand"><AuthBrand /></div>
-        <div className="auth-card">
-          <header className="auth-card__header">
-            <span>{eyebrow}</span>
-            <h2>{title}</h2>
-            <p>{description}</p>
-          </header>
-          {children}
-        </div>
-      </section>
-    </main>
-  );
+      </div>
+    </section>
+    <section className="auth-panel">
+      <div className="auth-panel__mobile-brand"><AuthBrand /></div>
+      <div className="auth-card">
+        <header className="auth-card__header"><span>{eyebrow}</span><h2>{title}</h2><p>{description}</p></header>
+        {children}
+      </div>
+    </section>
+  </main>;
 }
 
 function PasswordInput({ value, onChange, autoComplete = "current-password" }: {
@@ -81,6 +78,7 @@ function PasswordInput({ value, onChange, autoComplete = "current-password" }: {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
+        placeholder="Enter your password"
         minLength={12}
         required
       />
@@ -147,8 +145,16 @@ export function LoginPage() {
 
 
   return (
-    <AuthLayout eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
-      <p className="auth-invite-link">Have an invitation? <Link to="/join">Join your institution</Link></p>
+    <AuthLayout variant="login" eyebrow="Welcome back" title="Sign in to your school" description="Use the email or username connected to your school account.">
+      {!mfaChallenge ? <GoogleSignInButton disabled={pending !== null} onError={setError} onCredential={async credential => {
+        setError(null);
+        setPending("login");
+        try {
+          const result = await auth.googleLogin(credential);
+          if (result.challengeToken) { setMfaChallenge(result.challengeToken); setPassword(""); return; }
+          void navigate(safeNextPath(location.search) ?? "/", { replace: true });
+        } finally { setPending(null); }
+      }} /> : null}
       {mfaChallenge ? <form className="auth-form" onSubmit={submitMfa}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <div className="auth-verification-intro"><ShieldCheck size={20}/><div><strong>Two-step verification</strong><p>Enter the six-digit authenticator code or one unused recovery code.</p></div></div>
@@ -173,15 +179,20 @@ export function LoginPage() {
           </div>
         </label>
         <label className="auth-field">
-          <span className="auth-field__split">Password <Link to="/forgot-password">Forgot password?</Link></span>
+          <span>Password</span>
           <PasswordInput value={password} onChange={setPassword} />
         </label>
+        <Link className="auth-login-forgot" to="/forgot-password">Forgot password?</Link>
         <button className="auth-primary-button" type="submit" disabled={pending !== null}>
           {pending === "login" ? <><LoaderCircle className="auth-spin" size={18} /> Signing in...</> : <>Sign in <ArrowRight size={18} /></>}
         </button>
       </form>}
 
-      <p className="auth-switch">New to ThatCampus? <Link to="/signup">Create an account</Link></p>
+
+      <div className="campus-login__links">
+        <p className="auth-invite-link">Have an invitation? <Link to="/join">Join your institution</Link></p>
+        <p className="auth-switch">New to ThatCampus? <Link to="/signup">Create an account</Link></p>
+      </div>
     </AuthLayout>
   );
 }
@@ -317,10 +328,14 @@ export function WorkspaceUnavailablePage() {
       <div className="onboarding-card">
         <AuthBrand />
         <div className="onboarding-illustration" aria-hidden="true"><School size={38} /></div>
-        <span className="onboarding-eyebrow">Attendance pilot</span>
-        <h1>Your account is verified</h1>
-        <p>This release includes the parent and student attendance workspaces. Your school role is valid, but its workspace is not part of this pilot yet.</p>
-        <Link className="auth-primary-button" to="/">Check available portal <ArrowRight size={18} /></Link>
+        <span className="onboarding-eyebrow">My home</span>
+        <h1>Welcome, {auth.user?.first_name || "there"}</h1>
+        <p>{auth.user?.email}</p>
+        <p>{[...new Set(auth.memberships.map(member=>member.school_name))].join(", ")}</p>
+        <h2>Ask your administrator for access</h2>
+        <p>Your account is ready. No workspace permissions have been assigned yet. Ask your institution administrator to assign a role and the permissions you need.</p>
+        <p>Share your account email above so they can find you in Roles and permissions.</p>
+        <Link className="auth-primary-button" to="/">Check my access <ArrowRight size={18} /></Link>
         <button className="auth-text-button" type="button" onClick={() => void auth.logout()}>Sign out</button>
       </div>
     </main>

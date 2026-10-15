@@ -10,6 +10,8 @@ import './style.css';
 import './story.css';
 import { Capabilities, Solutions, RoleBenefits } from './WebsiteSections';
 import { PhysicsBackdrop } from './PhysicsBackdrop';
+import { SearchLanding } from './SearchLanding';
+import { solutionByPath, solutionPages } from './seo';
 
 // Product showcases below are preserved from the verified live Stage source.
 // DESIGN_VARIANCE 7 / MOTION_INTENSITY 6 / VISUAL_DENSITY 3.
@@ -117,6 +119,8 @@ export function App({pathname='/'}:{pathname?:string}) {
  const [screen,setScreen]=useState<ScreenKey|null>(null);
  const [still,setStill]=useState(false);
  const legal=pathname==='/privacy'||pathname==='/terms';
+ const solution=solutionByPath[pathname];
+ const awayFromHome=pathname!=='/';
  async function refresh(){try{const result=await fetch('/api/config',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!result.ok)throw new Error();setConfig(await result.json());}catch{setConfig(null);}}
  useEffect(()=>{void refresh();},[]);
  useEffect(()=>{
@@ -132,15 +136,15 @@ export function App({pathname='/'}:{pathname?:string}) {
  },[]);
  useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape'){setMenu(false);document.getElementById('menu-toggle')?.focus();}};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[menu]);
  return <MotionConfig reducedMotion={still?'always':'user'}><a className="skip" href="#main">Skip to content</a>
-  <header className="site-header"><div className="nav-inner"><Brand/><nav id="site-navigation" aria-label="Main navigation" className={menu?'nav open':'nav'}>{['Features','Solutions','About','Contact'].map(name=><a key={name} href={`${legal?'/':''}#${name==='Features'?'in-action':name==='Solutions'?'institution-solutions':name.toLowerCase()}`} onClick={()=>setMenu(false)}>{name}</a>)}</nav><div className="header-actions"><a className="login" href={config?.loginUrl||initialLogin}>School login <ArrowUpRight size={15} aria-hidden="true"/></a><a className="button primary header-demo" href={config?.demoUrl||initialDemo}>Try the app <ArrowRight size={15}/></a><button id="menu-toggle" className="menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="site-navigation" onClick={()=>setMenu(!menu)}>{menu?<X size={23}/>:<List size={23}/>}</button></div></div></header>
-  {legal?<div id="main"><Legal kind={pathname==='/privacy'?'privacy':'terms'}/></div>:<main id="main">
+  <header className="site-header"><div className="nav-inner"><Brand/><nav id="site-navigation" aria-label="Main navigation" className={menu?'nav open':'nav'}>{['Features','Solutions','About','Contact'].map(name=><a key={name} href={`${awayFromHome?'/':''}#${name==='Features'?'in-action':name==='Solutions'?'institution-solutions':name.toLowerCase()}`} onClick={()=>setMenu(false)}>{name}</a>)}</nav><div className="header-actions"><a className="login" href={config?.loginUrl||initialLogin}>School login <ArrowUpRight size={15} aria-hidden="true"/></a><a className="button primary header-demo" href={config?.demoUrl||initialDemo}>Try the app <ArrowRight size={15}/></a><button id="menu-toggle" className="menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="site-navigation" onClick={()=>setMenu(!menu)}>{menu?<X size={23}/>:<List size={23}/>}</button></div></div></header>
+  {legal?<div id="main"><Legal kind={pathname==='/privacy'?'privacy':'terms'}/></div>:solution?<SearchLanding page={solution} config={config}/>:<main id="main">
    <section className="campus-hero"><div className="campus-hero-grid section"><div className="campus-hero-copy"><span className="hero-signature">Not just any campus. That campus.</span><h1>A school day.<br/><span>Working together.</span></h1><p>Attendance, schedules and family communication, connected in one workspace for the people who run your school.</p><div className="campus-hero-actions"><a className="button primary" href={config?.demoUrl||initialDemo}>Try the public demo <ArrowRight size={17}/></a><a className="text-link" href="#contact">Book a personal walkthrough <ArrowRight size={15} aria-hidden="true"/></a></div></div><div className="campus-hero-visual"><PhysicsBackdrop variant="flow" paused={still}/><HeroScreens onOpen={setScreen} still={still}/></div></div><div className="hero-under section"><span>Choose principal, teacher, parent or student.</span><span>No account. Sample data. Read-only.</span></div></section>
    <Capabilities paused={still}/><RoleBenefits/><Solutions/>
    <section className="screen-library section" aria-label="Detailed product screens"><details id="screen-library"><summary><div><span>Want a closer look?</span><h2>Explore the actual workspaces.</h2></div><span className="library-action">Open screen gallery <CaretRight size={20}/></span></summary><ProductTour onOpen={setScreen}/><Planning onOpen={setScreen} still={still}/><ConnectedPeople onOpen={setScreen}/><MorePossibilities/></details></section>
    <About/><Enquiry config={config} refresh={refresh}/>
    <button className="page-motion-control" aria-pressed={still} onClick={()=>setStill(!still)}>{still?<Play size={14} weight="fill"/>:<Pause size={14} weight="fill"/>}{still?'Resume motion':'Pause motion'}</button>
   </main>}
-  <footer className="story-footer section"><div className="footer-main"><Brand/><p>Not just any campus. That campus.</p><div className="footer-actions"><a href={config?.demoUrl||initialDemo}>Try the public demo <ArrowRight size={16} aria-hidden="true"/></a><a href={config?.loginUrl||initialLogin}>School login <ArrowUpRight size={16} aria-hidden="true"/></a></div></div><div className="footer-bottom"><span>© {new Date().getFullYear()} ThatCampus</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/#contact">Contact</a></div></div></footer>
+  <footer className="story-footer section"><div className="footer-main"><Brand/><p>Not just any campus. That campus.</p><div className="footer-actions"><a href={config?.demoUrl||initialDemo}>Try the public demo <ArrowRight size={16} aria-hidden="true"/></a><a href={config?.loginUrl||initialLogin}>School login <ArrowUpRight size={16} aria-hidden="true"/></a></div></div><nav className="footer-solutions" aria-label="Product solutions">{solutionPages.map(page=><a key={page.path} href={page.path}>{page.eyebrow}</a>)}</nav><div className="footer-bottom"><span>© {new Date().getFullYear()} ThatCampus</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/#contact">Contact</a></div></div></footer>
   <ScreenDialog screen={screen} onClose={()=>setScreen(null)}/>
  </MotionConfig>;
 }

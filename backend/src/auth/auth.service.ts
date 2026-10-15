@@ -193,8 +193,12 @@ export class AuthService {
       });
       throw new UnauthorizedException("Invalid email/username or password.");
     }
-    const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${user.id}::uuid`.execute(this.db);
     await sql`DELETE FROM api_rate_limit_buckets WHERE bucket_key=${accountBucket}`.execute(this.db);
+    return this.finishPrimaryLogin(user, request);
+  }
+
+  async finishPrimaryLogin(user: AuthUser, request: FastifyRequest): Promise<{ user: AuthUser; mfaChallenge?: string }> {
+    const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${user.id}::uuid`.execute(this.db);
     if (factor.rows[0]?.active) {
       const challenge = randomBytes(32).toString("base64url");
       await this.db.transaction().execute(async (db) => {

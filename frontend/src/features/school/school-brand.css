@@ -88,3 +88,5 @@
   .school-brand__marks--side-by-side { width: auto; gap: 7px; }
   .school-brand__name { font-size: 13px; }
 }
+
+.school-brand__marks--school-only { width: auto; }

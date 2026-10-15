@@ -7,6 +7,7 @@ import {gzip} from 'node:zlib';
 import {promisify} from 'node:util';
 import {pipeline} from 'node:stream/promises';
 const compress=promisify(gzip);
+const publicPages=new Set(['/', '/school-management-software', '/school-attendance-management', '/school-timetable-software', '/parent-communication-app', '/ai-assistant-for-schools', '/privacy', '/terms']);
 
 const fallbackLogin='https://app.thatcampus.com/login';
 export function settings(env=process.env){
@@ -67,7 +68,7 @@ export function createHandler({db,config=settings(),clock=()=>Date.now()}){retur
  if(config.production){res.setHeader('Strict-Transport-Security','max-age=31536000');if(!['thatcampus.com','www.thatcampus.com'].includes(publicHost))res.setHeader('X-Robots-Tag','noindex');}
  try{
  const url=new URL(req.url,'http://internal');
- if(req.headers.host==='www.thatcampus.com'){res.writeHead(308,{Location:`https://thatcampus.com${url.pathname}${url.search}`});res.end();return;}
+ if(publicHost==='www.thatcampus.com'){res.writeHead(308,{Location:`https://thatcampus.com${url.pathname}${url.search}`});res.end();return;}
  if(url.pathname==='/healthz'){json(res,200,{status:'ok',release:config.release});return;}
  if(url.pathname==='/readyz'){await db.query('SELECT 1 FROM marketing_enquiries LIMIT 0');json(res,200,{status:'ready',release:config.release});return;}
  if(url.pathname==='/api/config'&&req.method==='GET'){
@@ -97,13 +98,13 @@ export function createHandler({db,config=settings(),clock=()=>Date.now()}){retur
  if(url.pathname.startsWith('/api/')){json(res,404,{message:'Not found'});return;}
  if(!['GET','HEAD'].includes(req.method)){json(res,405,{message:'Method not allowed'});return;}
  let path;try{path=decodeURIComponent(url.pathname);}catch{json(res,400,{message:'Invalid path'});return;}
- const page=['/','/privacy','/terms'].includes(path);
+ if(path.length>1&&path.endsWith('/')&&publicPages.has(path.slice(0,-1))){res.writeHead(308,{Location:`${path.slice(0,-1)}${url.search}`});res.end();return;}
+ const page=publicPages.has(path);
  const filename=page?resolve(config.dist,path==='/'?'index.html':`${path.slice(1)}.html`):resolve(config.dist,`.${path}`);
  if(!filename.startsWith(config.dist+sep)){json(res,404,{message:'Not found'});return;}
  const cacheControl=page?'no-cache':path.startsWith('/assets/')?'public, max-age=31536000, immutable':'public, max-age=3600';
  if(extname(filename)==='.mp4'){await video(req,res,filename,cacheControl);return;}
  let file;try{file=await readFile(filename);}catch{json(res,404,{message:'Not found'});return;}
- if(page){let html=file.toString();if(path!=='/'){const title=path==='/privacy'?'Privacy Policy':'Terms of Service';html=html.replace('<title>ThatCampus | Not just any campus. That campus.</title>',`<title>${title} — ThatCampus</title>`).replaceAll('https://thatcampus.com/"',`https://thatcampus.com${path}"`);}file=Buffer.from(html);}
  const type=mime[extname(filename)]||'application/octet-stream';
  const acceptsGzip=String(req.headers['accept-encoding']||'').split(',').some(part=>{const [encoding,...parameters]=part.trim().split(';');const quality=parameters.find(p=>p.trim().startsWith('q='));return encoding==='gzip'&&(!quality||Number(quality.trim().slice(2))>0);});
  res.setHeader('Vary','Accept-Encoding');

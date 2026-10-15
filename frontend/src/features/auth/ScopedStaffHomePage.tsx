@@ -1,4 +1,4 @@
-import { Award, Bus, CalendarDays, ClipboardCheck, FileText, Handshake, MessageCircle, MoreHorizontal, ShieldAlert } from "lucide-react";
+import { Award, Bus, CalendarDays, ClipboardCheck, FileText, Handshake, MessageCircle, MoreHorizontal, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import type { SchoolMembership } from "./AuthContext";
@@ -6,6 +6,7 @@ import { hasStaffPermission } from "./staffAccess";
 import "./scoped-staff-home.css";
 
 const capabilityLinks = [
+  { permission: "gate.manage", label: "In & Out", detail: "Scan QR passes, find students and record visitors", path: "/teacher/gate", icon: ShieldCheck },
   { permission: "departure.collect", label: "Transport & departure", detail: "Assigned trip, riders and handovers", path: "/teacher/transport", icon: Bus },
   { permission: "attendance.view", label: "Registers", detail: "Assigned attendance registers", path: "/teacher/attendance", icon: ClipboardCheck },
   { permission: "timetable.view", label: "Timetable", detail: "Published teaching schedule", path: "/teacher/timetable", icon: CalendarDays },

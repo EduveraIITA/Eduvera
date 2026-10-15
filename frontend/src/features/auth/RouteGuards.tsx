@@ -2,14 +2,10 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authDestination, useAuth, type Portal } from "./AuthContext";
 import { currentStaffMembership, teacherPathIsAuthorized } from "./staffAccess";
+import { ThatCampusLoader } from "../../components/ThatCampusLoader";
 
 function SessionLoader() {
-  return (
-    <div className="route-loader" role="status" aria-live="polite">
-      <span className="route-loader__mark" aria-hidden="true" />
-      <span>Opening your secure workspace...</span>
-    </div>
-  );
+  return <ThatCampusLoader label="Opening your secure workspace…" />;
 }
 
 function securityRedirect(location: ReturnType<typeof useLocation>) {
@@ -23,8 +19,11 @@ function securityRedirect(location: ReturnType<typeof useLocation>) {
 
 export function RoleLanding() {
   const auth = useAuth();
+  const location = useLocation();
   if (auth.status === "loading") return <SessionLoader />;
-  return <Navigate to={authDestination(auth)} replace />;
+  const request=new URLSearchParams(location.search).get('visitor_request');
+  const marker=request&&/^[0-9a-f-]{36}$/i.test(request)?`?visitor_request=${encodeURIComponent(request)}`:'';
+  return <Navigate to={authDestination(auth)+marker} replace />;
 }
 
 export function PublicOnly({ children }: { children: ReactNode }) {
@@ -67,6 +66,7 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
   if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
   if(portal==='teacher') {
     const member=currentStaffMembership(auth.memberships);
+    if (member && !member.permissions?.length) return <Navigate to="/workspace" replace/>;
     if(!teacherPathIsAuthorized(member,location.pathname)) return <Navigate to="/teacher" replace/>;
   }
   return children;

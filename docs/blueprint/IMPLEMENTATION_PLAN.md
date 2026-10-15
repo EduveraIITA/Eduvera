@@ -6540,6 +6540,342 @@ shard did not finish locally and was stopped. Hosted CI validation is still requ
 warm Docker cache behavior require subsequent Actions runs. More parallel runners
 can increase total runner minutes even while reducing elapsed time.
 
+## Public search discovery foundation — 15 October 2026
+
+Latest owner decision: make the public ThatCampus website understandable and
+discoverable through Google Search and recommendation systems. Search work must
+not become a keyword dump or invent customers, rankings, certifications, pricing
+or production capabilities. The existing visual system, public demo distinction
+and product-availability disclosures remain authoritative.
+
+The first implementation slice adds five substantial, server-rendered solution
+pages for school management, attendance, timetable/calendar, parent communication
+and the access-aware school assistant. Each page has one clear intent, a unique
+title and description, visible explanatory copy, a real product screen or the
+approved illustrative AI videos, direct demo/walkthrough routes, related-workflow
+links and a single canonical slashless URL. The homepage and footer now provide
+crawlable links to every solution; the public demo, personal walkthrough and
+school login remain three distinct destinations.
+
+Prerendering now emits page-specific canonical, Open Graph, Twitter and language
+metadata plus truthful Schema.org Organization, WebSite, SoftwareApplication,
+WebPage and BreadcrumbList data. The AI page also exposes two VideoObject records
+whose titles, descriptions, thumbnails, durations and MP4 URLs match the visible
+media. The XML sitemap lists all canonical pages and both videos; robots continues
+to exclude only API routes. `llms.txt` provides a concise, caveated product map for
+systems that voluntarily consume it, without claiming it is a ranking signal.
+Only the canonical Cloudflare hosts are indexable; Cloud Run previews retain the
+existing `X-Robots-Tag: noindex` protection.
+
+Verified in the isolated worktree: marketing lint and production build pass; all
+eight public HTML documents are prerendered with one H1, unique metadata and JSON-LD;
+focused deployment/server tests pass, including canonical-host indexing, solution
+routes and trailing-slash redirects. The Stage workflow has separately been
+parallelised and cached by PR #40; this slice must rebase onto that work and must
+not restore the former serial test path. Remaining external gates are trusted Stage
+deployment, Rich Results/URL Inspection checks, Google Search Console ownership and
+sitemap submission, followed by measurement of impressions, queries and qualified
+demo visits. No search ranking is promised or represented as achieved.
+
+## New gate.demo user, not Kavita — 15 October 2026
+
+Latest owner instruction supersedes assigning gate access to `kavita.staff`:
+create a separate new user. Added a fixed-target private maintenance operation for
+`gate.demo`, with an active non-teaching profile and exactly `gate.manage` through
+the Gatekeeper role in Cambridge (`cis`). No existing user, password or assignment
+is updated. Account and role binding are transactional, audited and emit an access
+update. Re-running against an existing username fails without resetting it.
+
+Initial credentials are generated and encrypted by the trusted runner so delivery
+does not depend on the unavailable Cloud Logging read permission. The database job
+receives only a salted scrypt hash, not the plaintext password. The operation uses
+the existing approved private job with per-execution arguments; persisted job
+configuration and IAM remain unchanged. Public-demo session restrictions remain.
+Details: [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md).
+
+All 19 deployment/maintenance contract tests and backend typecheck/lint pass locally.
+Added a native PostgreSQL regression for account creation, credential compatibility,
+gate-only scope, refusal to overwrite, outbox evidence and unchanged Kavita data.
+Hosted verification, live account creation and private credential delivery remain
+pending; no database change has been made at this implementation checkpoint.
+
+<!-- Verified gate.demo follow-through: 15 October 2026 -->
+
+### New gate.demo account — verified live
+
+PR #43 merged as `8a6a8547fb284414e1207267e5cca4a0d847471e`. All 827 backend
+tests, mobile shards, client builds and deployment contracts passed. Stage run
+`38743814034` completed the account-only private job `eduvera-stage-migrate-kfzd4`
+at 13:38:50 UTC on 15 October 2026. It created the separate `gate.demo` user in
+Cambridge with only institution-scoped `gate.manage`, an active non-teaching
+profile and Gatekeeper role. Kavita and all existing account credentials were
+unchanged; persisted migration configuration was unchanged. The encrypted
+credential was recovered privately and delivered as `Gate_Demo_Credentials.txt`.
+No password/private key is committed. Regular credential login is required;
+public-demo personas and read-only authority are unchanged. See
+`GATEKEEPER_PROVISIONING.md` for the fixed-target operation and success evidence.
+
+### Search-engine registration and change notification — 15 October 2026
+
+Google Search Console domain ownership was automatically verified through the
+existing DNS record. Google accepted the canonical sitemap and reported eight
+discovered pages and two discovered videos. The homepage was already indexed;
+its refreshed release plus the five primary solution pages were individually
+submitted to Google's priority crawl queue. Submission is discovery evidence,
+not a guarantee of indexing or ranking.
+
+The public website now also hosts a non-secret IndexNow verification key and the
+tested deployment paths send the eight canonical public URLs to the shared
+IndexNow endpoint after successful promotion. Search notification is deliberately
+best-effort and cannot roll back an otherwise healthy release when an external
+search endpoint is unavailable. Stage run `38749486599` deployed commit
+`d2dbd4ff9db7b683dcb24e1f5f807c9c4616ec93`, passed every existing parallel test
+and build gate, verified the public ownership assets, and received HTTP 202 from
+IndexNow for all eight canonical URLs. Its deployment verifier now tolerates the
+brief Cloud Run propagation interval after traffic promotion instead of rolling
+back a healthy revision because the stable URL still serves the previous release.
+
+Bing ownership was then verified independently with the live root XML file, so
+Bing received no ongoing Google Search Console access. Bing Webmaster Tools
+accepted `https://thatcampus.com/sitemap.xml` on 15 October 2026 and showed one
+known sitemap, zero errors and zero warnings while crawl processing began.
+Submission and notification are discovery evidence, not guarantees of indexing
+or ranking.
+
+## Invitation account flow — 15 October 2026
+
+User decision: accepting a valid email invitation verifies that email; subsequent login
+opens the assigned home. Staff with no permissions see account/institution information
+and instructions to ask their administrator for a role. Server authorization is unchanged.
+Password reset retains its existing expiring single-use token flow and uses the invitation
+email layout. Email branding uses only the original logo with a white contrast surface
+for dark inboxes. Migration 096 repairs previously accepted invitations only when the
+current account existed at acceptance. Local verification and release evidence follow.
+
+Verification: backend build passed; 13 email/transport tests passed, including reset
+layout/link handling. Frontend auth/permission tests passed (10 total after adding the
+no-permission landing regression). PostgreSQL acceptance regression added for the
+isolated CI suite; no local disposable PostgreSQL available. Inbox-client rendering
+still needs user validation on the affected email app after release.
+
+## Gate home theme, staff tab and bounded search — 15 October 2026
+
+Owner requested the gate workspace match the shared app theme, be the gatekeeper
+home, and appear as a new bottom button for authorized staff. Implemented branded
+gate-only home with shared color/spacing/card tokens, Hindi/English controls,
+primary QR action and compact search/visitor actions. `/teacher` redirects gate-only
+staff to `/gate`; mixed staff keep their home and gain a permission-gated
+`/teacher/gate` In & Out tab in both mobile navigation and sidebar. Scoped staff
+home also exposes the gate tool. Existing accounts and assignments are untouched.
+
+Search now debounces at 250 ms, cancels obsolete requests, handles loading/error/
+empty results, and uses a bounded lightweight school-roster query instead of
+loading gate history and collector data for all matches. Migration 097 adds
+name/admission substring indexes. Selecting a result reloads current student
+detail; transactional QR/current-authority checks remain the source of truth.
+Companion contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local typecheck, lint
+and frontend production build pass; focused UI tests cover the changed behavior.
+Native PostgreSQL CI passed; Stage run `38752498133` deployed merge
+`3079cff948d60962aed03e63b533459b344bb091` successfully, with 829 backend and
+961 frontend tests passing. Migration execution `eduvera-stage-migrate-62mqr`
+completed; app revision `eduvera-stage-00160-pux` passed candidate and exact public
+release/readiness checks after promotion. The separate website release succeeded.
+The headless browser successfully checked the actual local app with synthetic API
+fixtures at 320/768/1024/1440 px for gate-only and mixed staff: no overflow/page
+errors, home redirect, active bottom tab, search and fresh detail, and identity
+confirmation safeguards. Phone/tablet renders were visually inspected. The
+regular browser launcher failed on a Unix socket; headless QA did not require it.
+A local public HTTP recheck returned 403, so live confirmation relies on the
+trusted release verifier. Owner device review remains requested.
+
+### Mobile sign-in layout — 15 October 2026
+
+User superseded the powered-by ribbon proposal: prioritize the demo's mobile login
+layout without any attribution, and only suggest placement after sign-in. Added
+mobile-only centered original ThatCampus logo, Welcome back heading, campus subtitle,
+larger inputs and primary action. Existing email/username authentication, MFA,
+password reset, invitation and signup links remain functional. No unconnected
+social-provider buttons were added. Logged-in shells remain unchanged. Proposed
+future attribution location: Profile/About, pending the user's choice.
+
+Verification: frontend production build, AuthPages lint and existing AuthPages
+sign-in regression test passed. Deployment and user visual acceptance remain open.
+
+## Gate one-click entry and visitor approvals — 15 October 2026
+
+Owner explicitly requested one-click student entry after search, themed visitor
+entry/pending lists and a MyGate-style approval popup after login. Search now
+includes the latest direction for only its bounded shortlist. Mark entry attests
+identity after the visible instruction and sends a stable movement command UUID
+without a detail fetch; current server authority/state checks still apply. This
+owner decision changes entry only; exit identity/pickup QR safeguards remain.
+
+Visitor creation uses a stable request UUID; migration 098 adds idempotency,
+revision and expiry. Selected active staff/admin hosts can approve their own
+pending requests without gate.manage, while school admins retain fallback
+authority. Other staff/gate operators cannot approve another host's request.
+Revision checks and row locks reject stale decisions; expired requests cannot be
+admitted. Audit, outbox and durable notifications are atomic with each change.
+Current relationship checks protect event replay and notification reads. The
+authenticated shell presents Approve/Decline/Review later, invalidates queues on
+live events and refreshes on focus/poll fallback. This is in-app notification,
+not OS/background push. Gate lists immediately reflect returned entry/exit state.
+No account or permission assignments changed. Contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md).
+
+Local typechecks/lint, production frontend build, 49 focused UI tests and real
+headless browser fixture workflows passed, including responsive 320/768/1024/1440
+px layouts with no overflow/page errors. Native integration coverage was added
+for publisher delivery, retries, revocation, school isolation, expiry and racing
+decisions. Hosted CI and deployed verification passed as recorded below. Owner device
+review remains requested after release. Concurrent mobile sign-in changes from
+PR #48 were preserved.
+
+
+### Desktop/tablet floating-window login — 15 October 2026
+
+User selected the second preview in the latest set (05, Floating window) and requested implementation and push. Above 650px, login uses a pale blue canvas with decorative rays, a white card with blue top accent and a floating original-logo tab. The old marketing sidebar is hidden. Phone layout, authentication behavior and non-login auth pages remain unchanged. No powered-by ribbon or unsupported social providers were added.
+
+Verification: frontend production build and existing AuthPages regression test passed locally; diff whitespace check passed. Browser visual verification was blocked by the environment's process-singleton socket permission. The workspace disconnected before push, so the CSS patch was reconstructed via GitHub; remote CI and user device review remain pending. Pushed for review, not deployed.
+
+
+Release verification: PR #50 passed hosted CI run `38764776642` (832 backend
+and 971 frontend tests, both client builds and security/deployment contracts).
+Merge `585fc55c45f55460528fa894c6629c7fe51bf1f8` deployed successfully in Stage
+run `38765399927`. Private migration `eduvera-stage-migrate-d65b2` completed at
+16:08:56 UTC. App revision `eduvera-stage-00166-hop` passed candidate checks and
+was promoted; the trusted release verifier confirmed the exact public SHA,
+Stage environment, readiness and both apps at 16:09:59 UTC. The separate website
+release succeeded; IndexNow accepted eight canonical URLs at 16:11:08 UTC.
+No existing account or permission assignments changed. Owner device review and
+a real host/guard visitor-request walkthrough remain requested. Local fixture QA
+and native isolated database tests do not represent that live account walkthrough.
+
+### Shared ThatCampus page loader — 15 October 2026
+
+The user-supplied animated ThatCampus SVG now replaces the legacy synthetic mark
+for full-page route loading. One accessible shared component covers lazy route
+transitions, authentication restoration, live school-record loading, operations
+workspaces and ThatCampus AI startup. It announces contextual status text, keeps
+the artwork decorative for assistive technology and presents a static branded
+fallback when the device requests reduced motion. Contextual section-level
+skeletons and local progress indicators remain unchanged.
+
+Verification on current Stage: focused ESLint passed; the loader component test
+passed; TypeScript and the production Vite build passed. Deployment evidence is
+Stage workflow `38770723509` passed all frontend, mobile, backend, security and
+deployment gates for application commit
+`80cd39400010a9af0284ec628b6c6f41b22f2b73`. Google Cloud candidate verification,
+promotion and the separate website deployment completed successfully. Independent
+public checks returned HTTP 200 for `https://app.thatcampus.com/login` and the new
+SVG asset; `/releasez` reported that exact Stage SHA and `/readyz` reported ready
+database and event dependencies. The marketing apex intentionally does not serve
+application routes. Physical-phone visual acceptance remains requested.
+
+## Home-only guest approvals and subtle decision feedback — 15 October 2026
+
+Owner requested approvals only on home after login, with notification access and
+no departure from home after close/approve/reject. VisitorApprovalCenter now uses
+the existing authDestination contract, suppresses cached popups and approval
+polling on non-home routes, and routes valid visitor notification links to home.
+All dismissal/decision paths clear the request marker and notification return
+state without returning to the originating tool. Existing host authority, current
+revision checks, expiry and durable notification behavior remain unchanged.
+
+After server-confirmed approval/rejection, a restrained themed check/cross
+animation announces the saved decision and dismisses after 1.2 seconds or Done.
+Errors never show the success state. Modal focus and reduced-motion support are
+retained. Contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local production build,
+typecheck, focused lint and 24 approval/notification tests passed. Actual local
+headless browser fixture checks passed home-only behavior, notification links,
+close/decisions remaining home, both animations and reduced motion, plus layouts
+at 320/768/1024/1440 px without overflow or page errors. These are not live account
+checks. Hosted CI and deployment passed as recorded below; owner-device review remains pending.
+
+
+Home-only approval release verification: PR #52 passed CI run `38774800786`
+with 832 backend and 986 frontend tests, both client builds and deployment/security
+contracts. Merge `45ddb3e53fc53e15063e93f89543bfefcbbc0586` deployed successfully
+in Stage run `38775411724`. Migration/guard execution `eduvera-stage-migrate-9b75h`
+completed at 17:20:34 UTC (no new schema migration in this UI change). App revision
+`eduvera-stage-00175-nip` passed candidate checks, promotion and exact public SHA,
+environment, readiness and both-app verification at 17:21:38 UTC. The website
+release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
+review preview returned HTTP 200. Owner device/live-account review remains open;
+local synthetic browser fixtures do not establish that acceptance.
+
+
+## Google sign-in — 15 October 2026
+
+User authorized Google sign-in and supplied the public OAuth web Client ID. Both React clients
+use the official Google Identity Services button and POST its ID token through the existing
+same-origin CSRF convention. The backend uses google-auth-library to verify signature, issuer,
+audience and expiry, plus a signed browser cookie and expiring, single-use database nonce.
+Google subject is the durable identity key. First linking accepts only verified Gmail or Google
+Workspace email, preserves existing roles and memberships, and revokes pre-link sessions.
+Third-party non-Workspace email must use password login. Disabled accounts remain blocked.
+New Google accounts have no school membership or operational grants; ordinary onboarding applies.
+Both Google and password sign-in use the same MFA challenge/session boundary; desktop now
+supports that existing MFA challenge too. No Google client secret or API scopes are used.
+
+The Stage release sets GOOGLE_CLIENT_ID explicitly; other environments default to disabled.
+Required authorized origin: https://app.thatcampus.com (identified in the current deployment
+configuration and communicated to the user), plus the existing direct Stage origin when used.
+The marketing origins alone do not authorize the app subdomain. OAuth origin setup and an
+interactive real-account Google login remain user acceptance gates.
+
+Local evidence: both frontend production builds passed, backend typecheck and focused lint
+passed after the new test additions; 10 signed-token/identity rejection tests, 3 Google button
+tests and 8 existing frontend auth regressions passed. New isolated PostgreSQL cases cover linking, no automatic membership, replay,
+disabled accounts, changed email, conflicting identity and MFA; CI verification and deployment
+are pending. No real-user Google login has been claimed.
+
+Publishing status: the user explicitly approved pushing, CI and Stage deployment on 15 October
+2026 after the initial automatic approval review requested publication authorization. Hosted CI
+and Stage verification are pending. PostgreSQL integration tests were skipped locally because
+no isolated PostgreSQL server is available.
+
+### Compact post-login attribution — 15 October 2026
+
+User approved a smaller Powered by ThatCampus pill after login and removal of the ThatCampus logo from authenticated headers. Added a shared compact 190px ribbon to operations/web sidebars and the parent, student and operations Home content footer on mobile. The separate desktop client also includes it in the sidebar. The school crest/name remain in headers; auth branding remains unchanged. The Home footer scrolls with content and does not overlay bottom navigation.
+
+Validation: both frontend production builds and targeted ESLint passed; git diff whitespace check passed. Existing route branding assertions updated. Local Vitest runs stalled before reporting results (including a single-worker retry), but all hosted PR checks subsequently passed, including all three frontend test shards, backend, both builds and security/deployment contracts. Owner visual acceptance remains pending. This record does not claim deployment or pixel verification.
+
+### Subtle attribution reflection — 15 October 2026
+
+Owner approved a soft reflection and blue glow on the compact post-login ribbon in both clients. Identical CSS adds a brief sweep every nine seconds, behind the stationary text and logo, clipped to the pill with a non-interactive decorative pseudo-element. Animation only runs with prefers-reduced-motion: no-preference; reduced-motion users retain the static ribbon. No size, placement or auth changes. Prior compact-ribbon release d44652ea211389001f986fb551319adaf99b4443 passed Stage application promotion and public verification in run 38778851119. Animation change awaits hosted build checks and deployment; local execution is unavailable, so no visual acceptance is claimed.
+
+### Stronger ribbon animation — 15 October 2026
+
+Owner requested a more visible reflection and glow on both web/app ribbons. Increased the sweep frequency from nine to four seconds, starting immediately, with a wider white/cyan/lilac reflection and stronger smoothly breathing blue/violet halo and border. Text/logo remain stationary above the effect. Reduced-motion fallback, pill dimensions and placements remain intact. Previous reflection release fd7ae93aa721329ba209b9cac32e876b1b3e7502 passed all Stage checks and application public verification in run 38781089465. This CSS adjustment awaits hosted validation/deployment; local execution and visual review are unavailable.
+
+## Google sign-in release verification — 15 October 2026
+
+PR #56 passed hosted CI run 38781597027, including all 846 backend tests and the four new
+isolated PostgreSQL Google-linking/MFA cases. Merge e7322a95279b8206de9fd4fde876d84de2c636a3
+passed Stage run 38782143819, including migration, candidate checks, promotion, public-service
+verification and the separate website deployment. Independent live checks returned the exact
+merge SHA at /releasez, ready database/events at /readyz and enabled Google configuration with
+the supplied Client ID and a nonce. Live browser inspection confirmed Continue with Google on
+/login and /staff/login.
+
+Outstanding configuration: the live Google button reports '[GSI_LOGGER]: The given origin is not
+allowed for the given client ID.' The owner must add https://app.thatcampus.com to this OAuth
+client's Authorized JavaScript origins and save. This is an observed external configuration
+blocker, not a completed real-account sign-in. Real Google login and owner-device acceptance
+remain pending that change. No client secret is needed or stored.
+
+## Light-blue campus login reference — 16 October 2026
+
+Owner supplied a visible Stitch login screenshot after ZIP access failed. Recreated its centered pale login card, blue/cyan background, framed header/footer and floating feature badges in both app and desktop sign-in. The owner's latest correction explicitly retains the reference-style ThatCampus name and blue graduation-cap icon in the header and centered cap icon above Welcome back. This supersedes the earlier instruction to omit the logo. Authenticated Home and Powered by ribbons are unchanged.
+
+Existing password login, Google credentials/nonce flow, MFA, errors, invitation, registration and reset routes are retained. Google is first, using its official rendered button. Help Center opens real account guidance. Decorative badges describe actual portal capabilities rather than invent uptime, response speed, library hours or compliance. The unsupported remember-device checkbox is omitted. Responsive rules retain the login at phone widths and remove peripheral badges where space is limited.
+
+Updated existing login branding/title expectations. Local execution and browser inspection are unavailable; hosted builds/tests and public release verification remain required. Screenshot matching and device acceptance are not claimed as tested.
+
+## Original ThatCampus logo on login — 16 October 2026
+
+Owner clarified that login must use the same original stacked ThatCampus logo as Home, supplying the navy/blue wordmark reference. Both login clients now reuse /assets/thatcampus-logo.png (the existing Home attribution asset) in the header and above Welcome back, replacing the generic graduation-cap icons and separate typed wordmark. Uses object-fit: contain and responsive dimensions; retains the latest Threads background, authentication flows and other concurrent changes. Hosted build/release checks are pending; no visual device acceptance is claimed.
+
 ## Compact route regression suite — 15 October 2026
 
 Follow-up to PR #40: all hosted checks passed and release 2de06c11cad265560b79883767564a97ae37715a
@@ -6571,4 +6907,9 @@ timeouts (combined standings and unchanged avatar switching). The combined
 standings case now uses click dispatch and dialog-scoped close lookup, matching
 its route-outcome purpose, instead of costly pointer simulation. Its isolated
 local run passed in 9.25s versus 16.52s before that adjustment; no timeout was
-increased. Lint passed. Final hosted validation of this adjustment is pending.
+increased. Lint passed. Historical hosted validation passed in run 38739608845; a fresh run
+is required after reconciling this branch with current Stage.
+
+Reconciliation checkpoint (15 October 2026): preserved current Stage branding,
+login, assistant and release work. The compacted tests retain core assertions with
+fewer repeated swipe permutations. Fresh hosted validation is pending.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SchoolMembership } from "./AuthContext";
-import { teacherPathIsAuthorized, teacherToolIsVisible } from "./staffAccess";
+import { isGateOnlyMember, teacherPathIsAuthorized, teacherToolIsVisible } from "./staffAccess";
 
 const busAttendant: SchoolMembership = {
   id: "membership-1",
@@ -25,6 +25,14 @@ describe("custom staff access", () => {
     expect(teacherPathIsAuthorized(busAttendant, "/teacher/transport")).toBe(true);
     expect(teacherPathIsAuthorized(busAttendant, "/teacher/assessments")).toBe(false);
     expect(teacherPathIsAuthorized(busAttendant, "/teacher/report-cards")).toBe(false);
+    expect(teacherPathIsAuthorized(busAttendant, "/teacher/gate")).toBe(false);
+  });
+  it('keeps gate-only home distinct from staff with additional access',()=>{
+    const guard={...busAttendant,permissions:['gate.manage']};
+    expect(isGateOnlyMember(guard)).toBe(true);
+    expect(teacherPathIsAuthorized(guard,'/teacher/gate')).toBe(true);
+    expect(isGateOnlyMember({...guard,permissions:['gate.manage','attendance.view']})).toBe(false);
+    expect(isGateOnlyMember({...guard,permissions:[]})).toBe(false);
   });
   it("allows a staff member to open their invitation inbox without giving them journey-operating permissions",()=>{
     const invited={...busAttendant,permissions:[]};

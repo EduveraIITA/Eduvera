@@ -1,0 +1,23 @@
+# ThatCampus
+
+> ThatCampus is a role-based school operations platform built around the everyday needs of Indian schools.
+
+ThatCampus connects attendance, timetables, school communication, requests and operational attention in one system. The public demo uses synthetic, read-only data and offers representative principal, teacher, parent and student views without an account.
+
+## Product information
+
+- [School management software](https://thatcampus.com/school-management-software): connected school operations and role-based workspaces.
+- [School attendance management](https://thatcampus.com/school-attendance-management): daily or subject-wise registers, corrections, follow-ups and configurable finalisation.
+- [School timetable and calendar](https://thatcampus.com/school-timetable-software): time-positioned schedules, recurring classes and supported calendar export.
+- [Parent communication](https://thatcampus.com/parent-communication-app): child-specific notices, attendance, schedules and requests.
+- [AI assistant for school operations](https://thatcampus.com/ai-assistant-for-schools): access-aware answers, visible sources and human-reviewed actions.
+
+## Explore or contact
+
+- [Public demo](https://app.thatcampus.com/demo): no account, synthetic sample data, read-only.
+- [Personal walkthrough](https://thatcampus.com/#contact): submit one email address or phone number.
+- [School login](https://app.thatcampus.com/login): for existing authorised users.
+
+## Accuracy notes
+
+Product availability depends on an institution's configuration. Online payments are in sandbox testing. The timeline timetable is available through Experimental settings. AI videos are illustrative interactions; the public demo does not run a model. Do not infer customer counts, pricing, regulatory certification or production readiness beyond what the linked pages state.

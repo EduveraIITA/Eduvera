@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import { Public, SkipCsrf } from "../common/decorators.js";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { AuditService } from "../common/audit.service.js";
+import { GoogleAuthService } from "./google-auth.service.js";
 import { AuthService } from "./auth.service.js";
 import { signedCookie } from "./guards.js";
 import { demoSwitchRoles, type DemoSwitchRole } from "./demo-profile-switcher.js";
@@ -13,7 +14,7 @@ import { demoSwitchRoles, type DemoSwitchRole } from "./demo-profile-switcher.js
 @ApiTags("authentication")
 @Controller("api/v1/auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService, private readonly audit: AuditService) {}
+  constructor(private readonly auth: AuthService, private readonly audit: AuditService, private readonly googleAuth: GoogleAuthService) {}
 
   private cookieOptions(httpOnly: boolean) {
     return { path: "/", sameSite: "lax" as const, secure: config().COOKIE_SECURE, httpOnly, signed: true, maxAge: config().SESSION_TTL_SECONDS };
@@ -47,6 +48,33 @@ export class AuthController {
       demo_profile_switcher: identity ? this.auth.canUseDemoProfileSwitcher(identity.user) : false,
       public_demo: identity?.publicDemo ?? false,
     };
+  }
+
+  @Public()
+  @Get("google/config/")
+  async googleConfig(@Res({ passthrough: true }) reply: FastifyReply) {
+    reply.header("Cache-Control", "no-store");
+    if (!config().GOOGLE_CLIENT_ID) return { enabled: false };
+    const nonce = await this.googleAuth.issueNonce();
+    reply.setCookie("google_signin_nonce", nonce, { ...this.cookieOptions(true), maxAge: 600 });
+    return { enabled: true, client_id: config().GOOGLE_CLIENT_ID, nonce };
+  }
+
+  @Public()
+  @Post("google/")
+  @HttpCode(200)
+  async googleLogin(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
+    const nonce = signedCookie(request, "google_signin_nonce");
+    reply.clearCookie("google_signin_nonce", { path: "/" });
+    const user = await this.googleAuth.login(request.body, nonce, request);
+    const result = await this.auth.finishPrimaryLogin(user, request);
+    if (result.mfaChallenge) {
+      reply.status(202);
+      return { mfa_required: true, challenge_token: result.mfaChallenge };
+    }
+    const session = await this.auth.createSession(user, request);
+    this.setSession(reply, session.rawToken, session.csrfToken);
+    return this.auth.response(user, session.csrfToken);
   }
 
   @Public()

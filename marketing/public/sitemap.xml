@@ -1,2 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://thatcampus.com/</loc></url><url><loc>https://thatcampus.com/privacy</loc></url><url><loc>https://thatcampus.com/terms</loc></url></urlset>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  <url><loc>https://thatcampus.com/</loc><lastmod>2026-10-15</lastmod></url>
+  <url><loc>https://thatcampus.com/school-management-software</loc><lastmod>2026-10-15</lastmod></url>
+  <url><loc>https://thatcampus.com/school-attendance-management</loc><lastmod>2026-10-15</lastmod></url>
+  <url><loc>https://thatcampus.com/school-timetable-software</loc><lastmod>2026-10-15</lastmod></url>
+  <url><loc>https://thatcampus.com/parent-communication-app</loc><lastmod>2026-10-15</lastmod></url>
+  <url>
+    <loc>https://thatcampus.com/ai-assistant-for-schools</loc><lastmod>2026-10-15</lastmod>
+    <video:video><video:thumbnail_loc>https://thatcampus.com/demos/ai-context-poster.webp</video:thumbnail_loc><video:title>ThatCampus AI: attendance context</video:title><video:description>The assistant identifies an overdue attendance register, answers a follow-up and prepares a reminder for human review.</video:description><video:content_loc>https://thatcampus.com/demos/ai-context.mp4</video:content_loc></video:video>
+    <video:video><video:thumbnail_loc>https://thatcampus.com/demos/ai-sources-poster.webp</video:thumbnail_loc><video:title>ThatCampus AI: sources and review</video:title><video:description>The assistant keeps source checks visible beside a proposed school action that still requires human approval.</video:description><video:content_loc>https://thatcampus.com/demos/ai-sources.mp4</video:content_loc></video:video>
+  </url>
+  <url><loc>https://thatcampus.com/privacy</loc><lastmod>2026-10-15</lastmod></url>
+  <url><loc>https://thatcampus.com/terms</loc><lastmod>2026-10-15</lastmod></url>
+</urlset>

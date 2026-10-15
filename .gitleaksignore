@@ -11,3 +11,7 @@
 # Same synthetic value appears in two historical commits after a line shift.
 ba687cc47eba22a73558836643667c90b5998ec6:backend/test/institutions.integration.test.ts:generic-api-key:65
 4aa77b0196f41cfd9127b7d58f5f7ae9956906ca:backend/test/institutions.integration.test.ts:generic-api-key:64
+# IndexNow requires this website-ownership value to be publicly served. The
+# duplicate JavaScript literal was removed; this permits only its historical
+# reviewed fingerprint and does not suppress the generic key rule.
+17e97b3ed911097cc895983b46bedf185e49c3b0:marketing/indexnow.mjs:generic-api-key:1

@@ -124,7 +124,7 @@ async function deploy(env) {
   const tag = `check-${env.GITHUB_SHA.slice(0, 12)}`;
   let promoted = false;
   try {
-    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},DEMO_PROFILE_SWITCHER_ENABLED=true,PUBLIC_DEMO_ENABLED=true,PUBLIC_DEMO_SESSION_TTL_SECONDS=1800,PUBLIC_DEMO_MAX_STARTS_PER_HOUR=20,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest', '--no-traffic', `--tag=${tag}`]);
+    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},GOOGLE_CLIENT_ID=367469594690-mp6vblj14p9b9c9fo5dgrfg9a6h06pat.apps.googleusercontent.com,DEMO_PROFILE_SWITCHER_ENABLED=true,PUBLIC_DEMO_ENABLED=true,PUBLIC_DEMO_SESSION_TTL_SECONDS=1800,PUBLIC_DEMO_MAX_STARTS_PER_HOUR=20,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest', '--no-traffic', `--tag=${tag}`]);
     const updated = describe('services', env.GCP_SERVICE);
     const candidate = updated.status?.traffic?.find(item => item.tag === tag);
     if (!candidate?.url || !candidate.revisionName) throw new Error('Candidate URL/revision is missing');

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthProvider, useAuth } from "./AuthContext";
+import { AuthProvider, useAuth, authDestination } from "./AuthContext";
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
 
@@ -142,4 +142,11 @@ describe("AuthProvider logout", () => {
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
     expect(window.localStorage.getItem("omnischool:explicitly-logged-out")).toBeNull();
   });
+});
+
+it('lands verified staff without permissions on their basic home', () => {
+  const auth = {status: 'authenticated' as const, user: {...adminUser, email_verified: true}, portals: ['teacher' as const], memberships: [{id:'m1',school_id:'s1',school_name:'School',role:'staff' as const,permissions:[]}]};
+  expect(authDestination(auth)).toBe('/workspace');
+  expect(authDestination({...auth, memberships:[{...auth.memberships[0],permissions:['gate.manage']}]})).toBe('/gate');
+  expect(authDestination({...auth,user:{...auth.user,email_verified:false}})).toBe('/account/security');
 });

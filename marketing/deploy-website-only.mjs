@@ -2,6 +2,7 @@ import {execFileSync} from 'node:child_process';
 import {appendFileSync,readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
+import {indexNowUrls,submitIndexNow} from './indexnow.mjs';
 const release=process.env.RELEASE_SHA;
 if(process.env.GITHUB_REPOSITORY!=='EduveraIITA/Eduvera'||process.env.GITHUB_REF!=='refs/heads/Stage'||!/^[a-f0-9]{40}$/.test(release||''))throw Error('Only a verified Stage website release may deploy');
 const flags=['--project=eduera-511111','--region=asia-south1','--quiet'];
@@ -18,7 +19,7 @@ const baseline=JSON.parse(readFileSync(new URL('./test/showcase-baseline.json',i
 const tag=`stitch-${release.slice(0,12)}`;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 async function verify(origin){
- for(const path of ['/','/privacy','/terms','/robots.txt','/sitemap.xml']){
+ for(const path of ['/','/school-management-software','/school-attendance-management','/school-timetable-software','/parent-communication-app','/ai-assistant-for-schools','/privacy','/terms','/robots.txt','/sitemap.xml','/llms.txt','/ed304ac9e7409dcf016a1d3d61b3abc1.txt','/BingSiteAuth.xml']){
   const response=await fetch(origin+path,{signal:AbortSignal.timeout(30000)});
   assert(response.ok,`${path}: HTTP ${response.status}`);
   if(path==='/')assert((await response.text()).includes('Working together.'));
@@ -41,6 +42,7 @@ async function verify(origin){
   assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,32);
  }
 }
+async function verifyEventually(origin,attempts=24){let failure;for(let i=0;i<attempts;i++){try{await verify(origin);return;}catch(error){failure=error;if(i<attempts-1)await new Promise(r=>setTimeout(r,5000));}}throw failure;}
 let promoted=false;
 try{
  // Image + release identifier only: retain secrets, identity, networking, limits,
@@ -54,8 +56,9 @@ try{
  execFileSync(process.execPath,['test/remote-preview.mjs',candidate.url,login],{cwd:new URL('.',import.meta.url),stdio:'inherit'});
  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`## Verified no-traffic preview\n${candidate.url}\n\nAll original screenshot bytes preserved. Responsive gallery, dialogs and navigation checked before promotion.\n`);
  promoted=true;g(['run','services','update-traffic','thatcampus-web',...flags,`--to-revisions=${candidate.revisionName}=100`]);
- await verify(site.status.url);await verify('https://www.thatcampus.com');
+ await verifyEventually(site.status.url);await verifyEventually('https://www.thatcampus.com');
  assert((await fetch(login,{signal:AbortSignal.timeout(30000)})).ok,'Existing Login not reachable');
+ try{const status=await submitIndexNow();console.log(`IndexNow accepted ${indexNowUrls.length} canonical URLs: HTTP ${status}`);}catch(error){console.warn(`IndexNow notification deferred: ${error.message}`);}
  const appAfter=describe('eduvera-stage');assert.deepEqual(appAfter.spec,appBefore.spec,'Application config changed concurrently');assert.deepEqual(appAfter.status.traffic,appBefore.status.traffic,'Application traffic changed concurrently');
  console.log(`Verified redesigned website: https://www.thatcampus.com; release ${release}`);
  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`## Production verified\nhttps://www.thatcampus.com\n\nRelease ${release}. Existing application configuration and traffic unchanged.\n`);

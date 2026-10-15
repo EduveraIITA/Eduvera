@@ -1,4 +1,5 @@
 import {allowedDeploymentOrigins} from './deploy-config.mjs';
+import {indexNowUrls,submitIndexNow} from './indexnow.mjs';
 import {randomBytes} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync,writeFileSync,unlinkSync} from 'node:fs';
@@ -25,7 +26,8 @@ const deploy=['run','deploy',service,...flags,`--image=${image}`,'--service-acco
 const cloudsql=app.spec.template.metadata?.annotations?.['run.googleapis.com/cloudsql-instances'];if(cloudsql)deploy.push(`--add-cloudsql-instances=${cloudsql}`);
 if(previous)deploy.push('--no-traffic');
 let promoted=false;
-async function verify(origin){for(const path of ['/','/privacy','/terms','/sitemap.xml','/robots.txt','/thatcampus-logo.png']){const r=await fetch(origin+path,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error(`Public verification failed: ${path} ${r.status}`);}const config=await(await fetch(origin+'/api/config')).json();if(config.loginUrl!==env.LOGIN_URL)throw new Error('Wrong login destination');const ready=await(await fetch(origin+'/readyz',{signal:AbortSignal.timeout(20000)})).json();if(ready.status!=='ready'||ready.release!==process.env.RELEASE_SHA)throw new Error('Wrong release or database not ready');}
+async function verify(origin){for(const path of ['/','/school-management-software','/school-attendance-management','/school-timetable-software','/parent-communication-app','/ai-assistant-for-schools','/privacy','/terms','/sitemap.xml','/robots.txt','/llms.txt','/ed304ac9e7409dcf016a1d3d61b3abc1.txt','/BingSiteAuth.xml','/social.png','/thatcampus-logo.png']){const r=await fetch(origin+path,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error(`Public verification failed: ${path} ${r.status}`);if(path.startsWith('/school-')||path==='/parent-communication-app'||path==='/ai-assistant-for-schools'){const html=await r.text();if(!html.includes('application/ld+json')||!html.includes(`https://thatcampus.com${path}`))throw new Error(`Search metadata failed: ${path}`);}}const config=await(await fetch(origin+'/api/config')).json();if(config.loginUrl!==env.LOGIN_URL)throw new Error('Wrong login destination');const ready=await(await fetch(origin+'/readyz',{signal:AbortSignal.timeout(20000)})).json();if(ready.status!=='ready'||ready.release!==process.env.RELEASE_SHA)throw new Error('Wrong release or database not ready');}
+async function verifyEventually(origin,attempts=24){let failure;for(let i=0;i<attempts;i++){try{await verify(origin);return;}catch(error){failure=error;if(i<attempts-1)await new Promise(r=>setTimeout(r,5000));}}throw failure;}
 try{
  g(deploy);let site=JSON.parse(g(['run','services','describe',service,...flags,'--format=json']));let candidate=site.status.traffic.find(t=>t.tag===tag);if(!candidate?.url||!candidate.revisionName)throw new Error('Candidate URL missing');
  const origins=allowedDeploymentOrigins(site.status.url,candidate.url);
@@ -33,8 +35,9 @@ try{
  site=JSON.parse(g(['run','services','describe',service,...flags,'--format=json']));candidate=site.status.traffic.find(t=>t.tag===tag);if(!candidate?.url||!candidate.revisionName)throw new Error('Configured candidate URL missing');
  // Wait briefly for the normal Stage pipeline to apply the additive migration.
  let ready=false;for(let i=0;i<40;i++){try{await verify(candidate.url);ready=true;break;}catch{await new Promise(r=>setTimeout(r,15000));}}if(!ready)throw new Error('Candidate not ready. Verify marketing migrations 094–095 in the Stage release.');
- promoted=true;g(['run','services','update-traffic',service,...flags,`--to-revisions=${candidate.revisionName}=100`]);await verify(site.status.url);
+ promoted=true;g(['run','services','update-traffic',service,...flags,`--to-revisions=${candidate.revisionName}=100`]);await verifyEventually(site.status.url);
  const appResponse=await fetch(env.LOGIN_URL,{signal:AbortSignal.timeout(20000)});if(!appResponse.ok)throw new Error('Existing app login is not reachable');
+ try{const status=await submitIndexNow();console.log(`IndexNow accepted ${indexNowUrls.length} canonical URLs: HTTP ${status}`);}catch(error){console.warn(`IndexNow notification deferred: ${error.message}`);}
  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`## ThatCampus deployed\n\n${site.status.url}\n\nRelease ${process.env.RELEASE_SHA}. Website, legal routes, SEO assets, database readiness, login destination and existing app HTTP availability verified. DNS remains unchanged.\n`);
  console.log(`Verified website: ${site.status.url}`);
 }catch(error){if(previous&&promoted)g(['run','services','update-traffic',service,...flags,`--to-revisions=${previous}=100`]);throw error;}finally{unlinkSync('/tmp/thatcampus-env.json');}

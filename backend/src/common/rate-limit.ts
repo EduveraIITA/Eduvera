@@ -27,6 +27,7 @@ function rule(path: string): { limit: number; windowMs: number } {
   if (/\/agent\/threads\/?$/.test(path)) return { limit: 60, windowMs: 60_000 };
   if (path.replace(/\/$/, "").endsWith("/invitations/accept")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/auth/register/")) return { limit: 5, windowMs: 60 * 60_000 };
+  if (path.endsWith("/auth/google/") || path.endsWith("/auth/google/config/")) return { limit: 20, windowMs: 60_000 };
   if (path.endsWith("/auth/login/") || path.endsWith("/auth/demo-session/")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/auth/mfa/login/")) return { limit: 10, windowMs: 5 * 60_000 };
   if (path.endsWith("/auth/password-reset/request/") || path.endsWith("/auth/email-verification/request/")) return { limit: 5, windowMs: 60 * 60_000 };
