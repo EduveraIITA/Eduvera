@@ -6576,3 +6576,26 @@ not restore the former serial test path. Remaining external gates are trusted St
 deployment, Rich Results/URL Inspection checks, Google Search Console ownership and
 sitemap submission, followed by measurement of impressions, queries and qualified
 demo visits. No search ranking is promised or represented as achieved.
+
+### 2026-10-15 — Parallel release image preparation
+
+The measured PR #40 release took 12m42s overall versus 15m56s before it;
+verification improved, but serial image building/cache exports increased the
+release job to 8m59s. Image preparation now uses three independent matrix runners
+for application, photo attendance and marketing, each authenticating after its
+build and uploading its SHA-tagged image. The deployment job requires the entire
+matrix to succeed, repeats the target/window guard, and retains migration,
+candidate health, promotion and public verification. Disabled deployment still
+only prepares application/photo images; website-only and provision paths remain
+separate. Existing release concurrency and environment protections remain.
+
+Photo model download/checksum layers precede application source, marketing build
+copies only its production inputs, and mobile test files already excluded by its
+production tsconfig no longer invalidate the application image cache. No tests
+were removed. A path-filtered PR workflow builds all three Dockerfiles without
+publishing or cloud credentials when container configuration changes.
+
+Local evidence: workflow actionlint and all 14 GCP deployment contract tests pass.
+Docker is unavailable locally; hosted container validation is required before
+merging. The new end-to-end deployment duration is not yet measured; parallel
+builds target the serial image bottleneck, not runtime verification safeguards.
