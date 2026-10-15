@@ -1,7 +1,7 @@
 # Custom roles and scoped access
 
 Current contract: [Roles and contextual assignments](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
-Updated: 7 October 2026.
+Updated: 15 October 2026.
 
 The former single-role permission matrix, subsequent role/duty eligibility model, and
 immutable “work type = workflow alias” model are superseded.
