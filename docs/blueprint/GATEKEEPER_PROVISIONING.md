@@ -25,7 +25,16 @@ persisted runtime configuration remain. Public-demo sessions remain read-only.
 All 19 local deployment contracts and backend typecheck/lint pass. The native
 PostgreSQL regression covers successful creation, credential verification, gate-only
 scope, refusal to overwrite, outbox evidence and unchanged Kavita records. Hosted
-CI, live account creation and private credential delivery are pending.
+CI passed: all 827 backend tests (including the native new-user regression),
+client builds, mobile shards and deployment contracts. PR #43 merged as
+`8a6a8547fb284414e1207267e5cca4a0d847471e`. Stage workflow `38743814034`
+successfully executed the private operation `eduvera-stage-migrate-kfzd4` at
+13:38:50 UTC on 15 October. It verified the new `gate.demo` account, Gatekeeper
+role and only `gate.manage`; existing users including `kavita.staff` and the
+persisted migration-job configuration were unchanged. The encrypted credential
+packet was privately decrypted and delivered in `Gate_Demo_Credentials.txt`;
+no password or private key is stored in the repository. Use regular credential
+login; this does not add a public-demo persona or change read-only demo access.
 
 ## Earlier gatekeeper.review operation — 14 October 2026
 
