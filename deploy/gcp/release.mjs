@@ -12,7 +12,7 @@ export function guard(env, now = Date.now()) {
   if (!Number.isFinite(expiry) || expiry <= now || expiry - now > 90 * 86400000) throw new Error('Trial deployment window is missing, expired or exceeds 90 days; review remaining credit before renewing');
 }
 
-export function assertRuntime(service, job) {
+export function assertRuntime(service, job, { allowPublicDemoBootstrap = false } = {}) {
   const template = service.spec?.template;
   const app = template?.spec?.containers?.[0];
   const annotations = template?.metadata?.annotations ?? {};
@@ -26,7 +26,9 @@ export function assertRuntime(service, job) {
   }
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
   if (env.DEMO_MODE !== 'false') throw new Error('Password-based development demo access must remain disabled');
-  if (env.PUBLIC_DEMO_ENABLED !== 'true' || env.DEMO_PROFILE_SWITCHER_ENABLED !== 'true') throw new Error('Stage public demo must use the bounded read-only session path');
+  const publicDemoReady = env.PUBLIC_DEMO_ENABLED === 'true' && env.DEMO_PROFILE_SWITCHER_ENABLED === 'true';
+  const publicDemoUnconfigured = env.PUBLIC_DEMO_ENABLED === undefined && env.DEMO_PROFILE_SWITCHER_ENABLED === undefined;
+  if (!publicDemoReady && !(allowPublicDemoBootstrap && publicDemoUnconfigured)) throw new Error('Stage public demo must use the bounded read-only session path');
   if (env.AGENT_PROVIDER === 'vertex' && env.AGENT_ENABLED !== 'false') {
     if (env.AGENT_MODEL !== 'gemini-3.1-flash-lite' || env.AGENT_GOOGLE_PROJECT !== 'eduera-511111' || env.AGENT_GOOGLE_LOCATION !== 'global' || env.AGENT_BASE_URL || env.AGENT_API_KEY) throw new Error('Only the reviewed keyless cloud model is allowed');
     const expiry = Date.parse(env.AGENT_ENABLED_UNTIL ?? '');
@@ -90,7 +92,10 @@ async function deploy(env) {
   const gcloud = args => execFileSync('gcloud', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
   const describe = (kind, name) => JSON.parse(gcloud(['run', kind, 'describe', name, ...flags, '--format=json']));
   const service = describe('services', env.GCP_SERVICE);
-  const previous = assertRuntime(service, describe('jobs', env.GCP_MIGRATION_JOB));
+  // A one-time bootstrap may start from the last verified Stage revision, which
+  // predates the public-demo flags. Explicitly false or partially configured
+  // values still fail closed; the candidate smoke check verifies the new path.
+  const previous = assertRuntime(service, describe('jobs', env.GCP_MIGRATION_JOB), { allowPublicDemoBootstrap: true });
   const publicUrl = service.spec.template.spec.containers[0].env.find(item => item.name === 'PUBLIC_URL').value;
   const imageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));
   const image = imageInfo[0]?.RepoDigests?.find(digest => digest.startsWith(`${env.GCP_IMAGE}@sha256:`));

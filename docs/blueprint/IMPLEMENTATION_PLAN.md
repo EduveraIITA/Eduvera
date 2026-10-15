@@ -6499,6 +6499,14 @@ with captured live AI interactions requires the same synthetic-data review.
 
 Verified locally: frontend, backend and marketing typechecks pass; the marketing
 production build and all 19 marketing HTTP/configuration tests pass; the public-demo
-guard has focused read/write/control-path coverage. Full API integration, browser
-acceptance, trusted Stage promotion and physical-device review remain release gates
-and must not be inferred from this implementation record.
+guard has focused read/write/control-path coverage. The dedicated website workflow
+then passed five viewport/browser checks, navigation, JavaScript-error detection,
+and isolated PostgreSQL enquiry persistence in run 38729379402. Full Stage run
+38729379496 passed the backend integration suite, mobile typecheck/lint/build/tests
+and desktop build, but correctly stopped before migration or traffic promotion when
+the pre-deployment runtime assertion encountered the last Stage revision, which
+predated both public-demo environment variables. The release guard now permits only
+that one-time completely-unconfigured bootstrap state; explicit false or partial
+configuration still fails closed, and the candidate must still pass the release
+smoke checks before promotion. Trusted Stage promotion and physical-device review
+remain release gates and must not be inferred from this implementation record.
