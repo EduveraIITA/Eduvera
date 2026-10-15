@@ -514,6 +514,9 @@ export class OperationsService {
           ) THEN 'active' ELSE 'onboarding' END,updated_by=${accountId}::uuid,updated_at=now()
           WHERE profile.school_id=${invite.school_id}::uuid AND profile.user_id=${accountId}::uuid`.execute(db);
       }
+      // Possession of the valid, email-bound invitation proves control of this address.
+      // Keep verification atomic with acceptance so failed invitations cannot verify accounts.
+      await sql`UPDATE users SET email_verified_at=COALESCE(email_verified_at,now()),updated_at=now() WHERE id=${accountId}::uuid AND lower(email)=${invite.email}`.execute(db);
       await sql`UPDATE school_invitations SET accepted_at=now() WHERE id=${invite.id}::uuid`.execute(db);
       await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id) VALUES (${invite.school_id}::uuid,${accountId}::uuid,'invitation.accepted',${invite.id}::uuid)`.execute(db);
       if(invite.source==='company') await sql`INSERT INTO company_audit(actor_id,school_id,action,metadata) VALUES(${accountId}::uuid,${invite.school_id}::uuid,'company.admin_joined',${JSON.stringify({invitation_id:invite.id})}::jsonb)`.execute(db);

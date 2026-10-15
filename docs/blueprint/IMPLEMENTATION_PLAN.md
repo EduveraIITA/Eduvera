@@ -6631,3 +6631,19 @@ best-effort and cannot roll back an otherwise healthy release when an external
 search endpoint is unavailable. Bing is being verified independently with its
 root XML file so it receives no ongoing Google Search Console access; live Bing
 verification and sitemap submission remain deployment gates at this checkpoint.
+
+## Invitation account flow — 15 October 2026
+
+User decision: accepting a valid email invitation verifies that email; subsequent login
+opens the assigned home. Staff with no permissions see account/institution information
+and instructions to ask their administrator for a role. Server authorization is unchanged.
+Password reset retains its existing expiring single-use token flow and uses the invitation
+email layout. Email branding uses only the original logo with a white contrast surface
+for dark inboxes. Migration 096 repairs previously accepted invitations only when the
+current account existed at acceptance. Local verification and release evidence follow.
+
+Verification: backend build passed; 13 email/transport tests passed, including reset
+layout/link handling. Frontend auth/permission tests passed (10 total after adding the
+no-permission landing regression). PostgreSQL acceptance regression added for the
+isolated CI suite; no local disposable PostgreSQL available. Inbox-client rendering
+still needs user validation on the affected email app after release.

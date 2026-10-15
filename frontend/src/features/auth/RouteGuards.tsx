@@ -67,6 +67,7 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
   if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
   if(portal==='teacher') {
     const member=currentStaffMembership(auth.memberships);
+    if (member && !member.permissions?.length) return <Navigate to="/workspace" replace/>;
     if(!teacherPathIsAuthorized(member,location.pathname)) return <Navigate to="/teacher" replace/>;
   }
   return children;
