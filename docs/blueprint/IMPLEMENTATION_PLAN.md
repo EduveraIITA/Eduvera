@@ -6598,3 +6598,20 @@ Added a native PostgreSQL regression for account creation, credential compatibil
 gate-only scope, refusal to overwrite, outbox evidence and unchanged Kavita data.
 Hosted verification, live account creation and private credential delivery remain
 pending; no database change has been made at this implementation checkpoint.
+
+<!-- Verified gate.demo follow-through: 15 October 2026 -->
+
+### New gate.demo account — verified live
+
+PR #43 merged as `8a6a8547fb284414e1207267e5cca4a0d847471e`. All 827 backend
+tests, mobile shards, client builds and deployment contracts passed. Stage run
+`38743814034` completed the account-only private job `eduvera-stage-migrate-kfzd4`
+at 13:38:50 UTC on 15 October 2026. It created the separate `gate.demo` user in
+Cambridge with only institution-scoped `gate.manage`, an active non-teaching
+profile and Gatekeeper role. Kavita and all existing account credentials were
+unchanged; persisted migration configuration was unchanged. The encrypted
+credential was recovered privately and delivered as `Gate_Demo_Credentials.txt`.
+No password/private key is committed. Regular credential login is required;
+public-demo personas and read-only authority are unchanged. See
+`GATEKEEPER_PROVISIONING.md` for the fixed-target operation and success evidence.
+
