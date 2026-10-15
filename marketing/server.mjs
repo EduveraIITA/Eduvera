@@ -3,6 +3,9 @@ import {readFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
+import {gzip} from 'node:zlib';
+import {promisify} from 'node:util';
+const compress=promisify(gzip);
 
 const fallbackLogin='https://app.thatcampus.com/login';
 export function settings(env=process.env){
@@ -19,13 +22,16 @@ export function validateEnquiry(data,now=Date.now()){
  if(!['school','college','university','other'].includes(result.institutionType)||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(result.email)||!/^\+?[\d () .-]+$/.test(result.phone)||result.phone.replace(/\D/g,'').length<7||!Number.isSafeInteger(result.students)||result.students<1||result.students>1000000||data.consent!=='yes'||(data.website&&data.website!=='')||!Number.isSafeInteger(data.startedAt)||now-data.startedAt<2000||now-data.startedAt>86400000)throw new Error('Please check the form details and try again.');
  return result;
 }
-const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2','.woff':'font/woff','.xml':'application/xml','.txt':'text/plain'};
+const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.woff2':'font/woff2','.woff':'font/woff','.xml':'application/xml','.txt':'text/plain'};
 function sign(value,secret){return createHmac('sha256',secret).update(value).digest('hex');}
 function validToken(token,secret){if(typeof token!=='string'||!/^\d{13}\.[a-f0-9]{32}\.[a-f0-9]{64}$/.test(token))return false;const [time,nonce,signature]=token.split('.');if(Date.now()-Number(time)>1800000||Number(time)>Date.now())return false;return timingSafeEqual(Buffer.from(signature),Buffer.from(sign(`${time}.${nonce}`,secret)));}
 function json(res,status,body){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body));}
 export function createHandler({db,config=settings(),clock=()=>Date.now()}){return async(req,res)=>{
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
- if(config.production){res.setHeader('Strict-Transport-Security','max-age=31536000');if(req.headers.host!=='thatcampus.com'&&req.headers.host!=='www.thatcampus.com')res.setHeader('X-Robots-Tag','noindex');}
+ // Cloudflare forwards the public hostname while Cloud Run keeps its own Host.
+ // This only selects SEO headers; it grants no application or form permissions.
+ const publicHost=req.headers['x-forwarded-host']||req.headers.host;
+ if(config.production){res.setHeader('Strict-Transport-Security','max-age=31536000');if(!['thatcampus.com','www.thatcampus.com'].includes(publicHost))res.setHeader('X-Robots-Tag','noindex');}
  try{
  const url=new URL(req.url,'http://internal');
  if(req.headers.host==='www.thatcampus.com'){res.writeHead(308,{Location:`https://thatcampus.com${url.pathname}${url.search}`});res.end();return;}
@@ -62,8 +68,12 @@ export function createHandler({db,config=settings(),clock=()=>Date.now()}){retur
  const filename=page?resolve(config.dist,path==='/'?'index.html':`${path.slice(1)}.html`):resolve(config.dist,`.${path}`);
  if(!filename.startsWith(config.dist+sep)){json(res,404,{message:'Not found'});return;}
  let file;try{file=await readFile(filename);}catch{json(res,404,{message:'Not found'});return;}
- if(page){let html=file.toString();if(path!=='/'){const title=path==='/privacy'?'Privacy Policy':'Terms of Service';html=html.replace('<title>ThatCampus — One Campus. Everything Connected.</title>',`<title>${title} — ThatCampus</title>`).replaceAll('https://thatcampus.com/"',`https://thatcampus.com${path}"`);}file=Buffer.from(html);}
- res.writeHead(200,{'Content-Type':mime[extname(filename)]||'application/octet-stream','Cache-Control':page?'no-cache':path.startsWith('/assets/')?'public, max-age=31536000, immutable':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);
+ if(page){let html=file.toString();if(path!=='/'){const title=path==='/privacy'?'Privacy Policy':'Terms of Service';html=html.replace('<title>ThatCampus | Not just any campus. That campus.</title>',`<title>${title} — ThatCampus</title>`).replaceAll('https://thatcampus.com/"',`https://thatcampus.com${path}"`);}file=Buffer.from(html);}
+ const type=mime[extname(filename)]||'application/octet-stream';
+ const acceptsGzip=String(req.headers['accept-encoding']||'').split(',').some(part=>{const [encoding,...parameters]=part.trim().split(';');const quality=parameters.find(p=>p.trim().startsWith('q='));return encoding==='gzip'&&(!quality||Number(quality.trim().slice(2))>0);});
+ res.setHeader('Vary','Accept-Encoding');
+ if(file.length>1024&&acceptsGzip&&/^(text\/|application\/xml)/.test(type)){file=await compress(file);res.setHeader('Content-Encoding','gzip');}
+ res.writeHead(200,{'Content-Type':type,'Cache-Control':page?'no-cache':path.startsWith('/assets/')?'public, max-age=31536000, immutable':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);
  }catch{json(res,503,{message:'We could not confirm your request. Please try again shortly.'});}
 };}
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){

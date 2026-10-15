@@ -6162,3 +6162,23 @@ native PostgreSQL HTTP regression for role options, custom-role creation,
 assignment to an existing account, gate endpoint authorization, audit evidence
 and immediate revocation; that test and live release verification remain pending
 the trusted Stage workflow.
+
+## Product-led public website — 15 October 2026
+
+User decision supersedes the prior public Stitch variant: use the real product,
+Apple-inspired clarity, generous space and restrained screenshot tilt/parallax.
+Implemented six real synthetic-demo captures, a four-workflow gallery, image
+enlargement, full timetable preview, role-specific storytelling, the exact brand
+mark/tagline, responsive dark/reduced-motion handling and the existing persistent
+enquiry form. No authenticated-app routes or operational data were changed.
+
+Read the blueprint product-positioning and attendance/calendar/AI boundaries
+before writing copy. Experimental timeline and sandbox payment limitations are
+disclosed rather than marketed as unconditional capabilities. Legacy brand names
+in visible website/legal copy are replaced with ThatCampus.
+
+Local evidence: typecheck/lint/build, ten HTTP/security/deployment tests, real
+isolated-PostgreSQL enquiry/outbox browser verification, and six desktop/mobile/
+dark visual variants. Full screenshot provenance, refresh scripts and acceptance
+scope are in `docs/marketing/PRODUCT_STORY.md`. Stage deployment, live verification
+and owner physical-phone acceptance are pending at this checkpoint.
