@@ -6428,5 +6428,15 @@ workspace stay in their existing modules.
 
 Added gate-admin coverage for role/profile destinations, no account form or
 password UI, keyboard navigation, student QR issuance, visitor approvals and
-non-admin denial. Existing gate and staff-role tests are included in local
-validation. Trusted Stage checks and public release verification remain pending.
+non-admin denial. All 27 focused tests, frontend typecheck, lint and production
+build passed locally. The local preview served the current build; its referenced
+gate-admin chunk contains the central role/profile links and no account/password
+form. Trusted Stage workflow [38712551172](https://github.com/EduveraIITA/Eduvera/actions/runs/38712551172)
+passed all 819 backend and 954 mobile tests plus the desktop build, then completed
+Google Cloud deployment successfully. PR [#38](https://github.com/EduveraIITA/Eduvera/pull/38)
+merged as `2b0090da73d23377e2796ac16bb40466455dc318`. Revision
+`eduvera-stage-00136-xam` was promoted; the trusted deployer verified that exact
+release, readiness, database/events, both app bundles and public origin at
+09:42:51 UTC. An independent Python request from the editing environment received
+HTTP 403; public release evidence is the successful trusted workflow's checks,
+not that blocked request. Signed-in physical-device review remains user acceptance.
