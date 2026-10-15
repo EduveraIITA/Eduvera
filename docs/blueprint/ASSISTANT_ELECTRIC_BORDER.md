@@ -10,3 +10,12 @@ Validation: frontend production build and targeted changed-file ESLint passed.
 Focused compact chat interaction tests: 7/7 passed (single-worker thread pool).
 The broader default-pool assistant run did not finish during this session.
 Deployment verification is pending; this is not a claim of a live release.
+
+## Visibility refinement — 16 October 2026
+
+User reported the original border was too faint and requested a little more
+brightness. Increase strand thickness from 0.65 to 1px, intensity from 0.24 to
+0.5, glow from 0.12 to 0.28, and canvas opacity from 0.55 to 0.85. Use a clearer
+blue and a visible static outline with a faint halo. Keep one strand, slow
+movement, no flicker, no sparks, and the reduced-motion fallback. Scope remains
+the responsive app's shared assistant; the separate staff console is unchanged.
