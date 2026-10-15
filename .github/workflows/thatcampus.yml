@@ -37,8 +37,7 @@ jobs:
           cache-dependency-path: marketing/package-lock.json
       - working-directory: marketing
         run: |
-          npm ci
-          npm run typecheck
+          npm ci --prefer-offline --no-audit --no-fund
           npm run lint
           npm test
           npm run build

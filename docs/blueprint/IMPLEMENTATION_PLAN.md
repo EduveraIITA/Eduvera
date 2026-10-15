@@ -6511,3 +6511,31 @@ states; an explicit public-demo false or any other partial configuration still f
 closed, and the candidate must still pass the release
 smoke checks before promotion. Trusted Stage promotion and physical-device review
 remain release gates and must not be inferred from this implementation record.
+
+## Stage CI execution optimization — 15 October 2026
+
+Baseline observed in Actions run 38732120179: Verify took about 10 minutes;
+mobile install/check/build/test took 6m06s, backend integration 2m13s, backend
+install/check/build 51s, and desktop 14s. Deployment subsequently failed, so
+these timings are not evidence of a successful release.
+
+The optimization branch runs security/deployment contracts, backend verification,
+client builds and three disjoint Vitest mobile shards concurrently. The existing
+`Verify` check aggregates every job and fails closed on failure, cancellation or
+skipping; both release paths still depend on it. Backend integration remains
+serial against its disposable database. All existing test files are retained.
+CI reuses the backend build before Vitest; local `npm test` still builds first.
+Client and marketing builds already typecheck, so separate duplicate typechecks
+are removed. npm caches use each package's lockfile instead of a repository-wide
+key. Docker Buildx uses separately scoped GitHub layer caches for application,
+photo service and marketing images; authentication remains after image builds.
+Cloud migration, candidate checks, promotion and release serialization remain.
+
+Validation: actionlint passed for all three edited workflows; 14 GCP contracts
+and 5 Matrix configuration tests passed locally; the aggregate gate was checked
+against success, failure, cancellation and skipped results. Mobile shard 1 passed all 300 tests. Shard 3 passed 351 tests and failed two
+campus-event attendance tests; both failures reproduce with the original unsharded
+command. A family-home timeout in shard 2 passes on isolated rerun; that full
+shard did not finish locally and was stopped. Hosted CI validation is still required. Failures are not waived. Actual hosted speedup and
+warm Docker cache behavior require subsequent Actions runs. More parallel runners
+can increase total runner minutes even while reducing elapsed time.
