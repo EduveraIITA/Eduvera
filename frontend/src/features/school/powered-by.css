@@ -8,3 +8,32 @@
 @media (min-width: 1001px) { .operations-main > .powered-by--home { display: none; } }
 @media (max-width: 1000px) { .operations-sidebar > .powered-by { display: none; } }
 @media print { .powered-by { display: none; } }
+
+/* A brief reflection every nine seconds; branding remains still. */
+.powered-by__ribbon { position: relative; isolation: isolate; overflow: hidden; }
+.powered-by__ribbon > * { position: relative; z-index: 1; }
+.powered-by__ribbon::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: -50% auto -50% 0;
+  width: 45%;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(105deg, transparent, rgb(255 255 255 / 80%), transparent);
+  transform: translateX(-160%) skewX(-18deg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .powered-by__ribbon { animation: powered-by-glow 9s ease-in-out infinite; }
+  .powered-by__ribbon::before { animation: powered-by-reflection 9s ease-in-out infinite; }
+}
+@keyframes powered-by-reflection {
+  0%, 76% { opacity: 0; transform: translateX(-160%) skewX(-18deg); }
+  79% { opacity: .7; }
+  92% { opacity: .7; }
+  96%, 100% { opacity: 0; transform: translateX(340%) skewX(-18deg); }
+}
+@keyframes powered-by-glow {
+  0%, 76%, 100% { box-shadow: 0 2px 8px rgb(24 55 112 / 4%); }
+  86% { box-shadow: 0 2px 12px rgb(76 125 245 / 16%), 0 0 5px rgb(131 161 255 / 10%); }
+}
