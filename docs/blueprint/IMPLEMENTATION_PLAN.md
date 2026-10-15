@@ -6789,4 +6789,16 @@ typecheck, focused lint and 24 approval/notification tests passed. Actual local
 headless browser fixture checks passed home-only behavior, notification links,
 close/decisions remaining home, both animations and reduced motion, plus layouts
 at 320/768/1024/1440 px without overflow or page errors. These are not live account
-checks. Hosted CI, deployment and owner-device review remain pending.
+checks. Hosted CI and deployment passed as recorded below; owner-device review remains pending.
+
+
+Home-only approval release verification: PR #52 passed CI run `38774800786`
+with 832 backend and 986 frontend tests, both client builds and deployment/security
+contracts. Merge `45ddb3e53fc53e15063e93f89543bfefcbbc0586` deployed successfully
+in Stage run `38775411724`. Migration/guard execution `eduvera-stage-migrate-9b75h`
+completed at 17:20:34 UTC (no new schema migration in this UI change). App revision
+`eduvera-stage-00175-nip` passed candidate checks, promotion and exact public SHA,
+environment, readiness and both-app verification at 17:21:38 UTC. The website
+release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
+review preview returned HTTP 200. Owner device/live-account review remains open;
+local synthetic browser fixtures do not establish that acceptance.
