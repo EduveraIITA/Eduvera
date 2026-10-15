@@ -12,3 +12,8 @@ gha-creds-*.json
 tmp
 **/.env
 **/.env.*
+
+# Mobile production tsconfig excludes these files; keep test edits out of its build cache.
+frontend/src/**/*.test.ts
+frontend/src/**/*.test.tsx
+frontend/src/test

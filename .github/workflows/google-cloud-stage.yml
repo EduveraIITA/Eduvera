@@ -21,7 +21,76 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-images:
+    if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper && !inputs.website_only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: gcp-stage
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: web
+            context: .
+            dockerfile: backend/Dockerfile
+            cache: stage-web
+          - image: photo-attendance
+            context: services/photo-attendance
+            dockerfile: services/photo-attendance/Dockerfile
+            cache: stage-photo
+          - image: thatcampus
+            context: marketing
+            dockerfile: marketing/Dockerfile
+            cache: stage-marketing
+    env:
+      GCP_PROJECT_ID: eduera-511111
+      GCP_REGION: asia-south1
+      GCP_SERVICE: eduvera-stage
+      GCP_PHOTO_SERVICE: eduvera-stage-photo
+      GCP_MIGRATION_JOB: eduvera-stage-migrate
+      GCP_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/web
+      GCP_PHOTO_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance
+      GCP_STAGE_DEPLOY_ENABLED: ${{ vars.GCP_STAGE_DEPLOY_ENABLED }}
+      GCP_TRIAL_DEPLOY_UNTIL: ${{ vars.GCP_TRIAL_DEPLOY_UNTIL }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check target and trial deployment window
+        run: node deploy/gcp/release.mjs guard
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        if: matrix.image != 'thatcampus' || vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+      - name: Build release image with layer cache
+        if: matrix.image != 'thatcampus' || vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          tags: asia-south1-docker.pkg.dev/eduera-511111/eduera/${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,scope=${{ matrix.cache }},mode=max,ignore-error=true
+      # Authenticate after the build so a long build cannot expire the OIDC token.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        if: matrix.image != 'thatcampus' || vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+        with:
+          project_id: eduera-511111
+          workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
+          service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
+      - if: matrix.image != 'thatcampus' || vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Push release image
+        if: matrix.image != 'thatcampus' || vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
+        env:
+          IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/${{ matrix.image }}
+        run: |
+          gcloud artifacts repositories describe eduera --location="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)'
+          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+          docker push "$IMAGE:$GITHUB_SHA"
+
   deploy:
+    needs: build-images
     if: github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper && !inputs.website_only
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -42,51 +111,12 @@ jobs:
           persist-credentials: false
       - name: Check target and trial deployment window
         run: node deploy/gcp/release.mjs guard
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - name: Build tested application with layer cache
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          file: backend/Dockerfile
-          platforms: linux/amd64
-          load: true
-          tags: ${{ env.GCP_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha,scope=stage-web
-          cache-to: type=gha,scope=stage-web,mode=max,ignore-error=true
-      - name: Build photo service with layer cache
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: services/photo-attendance
-          file: services/photo-attendance/Dockerfile
-          platforms: linux/amd64
-          load: true
-          tags: ${{ env.GCP_PHOTO_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha,scope=stage-photo
-          cache-to: type=gha,scope=stage-photo,mode=max,ignore-error=true
-      - name: Build ThatCampus website with layer cache
-        if: vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: marketing
-          file: marketing/Dockerfile
-          platforms: linux/amd64
-          load: true
-          tags: asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:${{ github.sha }}
-          cache-from: type=gha,scope=stage-marketing
-          cache-to: type=gha,scope=stage-marketing,mode=max,ignore-error=true
-      # Authenticate after the build so a long build cannot expire the OIDC token.
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           project_id: eduera-511111
           workload_identity_provider: projects/367469594690/locations/global/workloadIdentityPools/github-stage/providers/eduvera-stage
           service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
-      - name: Verify keyless access and push release image
-        run: |
-          gcloud artifacts repositories describe eduera --location="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)'
-          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
-          docker push "$GCP_IMAGE:$GITHUB_SHA"
-          docker push "$GCP_PHOTO_IMAGE:$GITHUB_SHA"
       - name: Migrate, verify candidate, promote and verify public service
         if: vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
         run: node deploy/gcp/release.mjs deploy
@@ -100,9 +130,7 @@ jobs:
         if: vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
         env:
           RELEASE_SHA: ${{ github.sha }}
-        run: |
-          docker push "asia-south1-docker.pkg.dev/eduera-511111/eduera/thatcampus:$GITHUB_SHA"
-          node marketing/deploy.mjs
+        run: node marketing/deploy.mjs
 
   provision-gatekeeper:
     if: inputs.provision_gatekeeper && github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera'

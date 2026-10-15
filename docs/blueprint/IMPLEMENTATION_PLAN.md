@@ -6918,3 +6918,36 @@ fewer repeated swipe permutations. Fresh hosted validation is pending.
 Coverage review retained the distinct menu-selection-to-swipe regression, rather
 than treating it as a duplicate of the isolated deck test. No skipped cases or
 increased timeouts were introduced.
+
+### 2026-10-15 — Parallel release image preparation
+
+The measured PR #40 release took 12m42s overall versus 15m56s before it;
+verification improved, but serial image building/cache exports increased the
+release job to 8m59s. Image preparation now uses three independent matrix runners
+for application, photo attendance and marketing, each authenticating after its
+build and uploading its SHA-tagged image. The deployment job requires the entire
+matrix to succeed, repeats the target/window guard, and retains migration,
+candidate health, promotion and public verification. Disabled deployment still
+only prepares application/photo images; website-only and provision paths remain
+separate. Existing release concurrency and environment protections remain.
+
+Photo model download/checksum layers precede application source, marketing build
+copies only its production inputs, and mobile test files already excluded by its
+production tsconfig no longer invalidate the application image cache. No tests
+were removed. A path-filtered PR workflow builds all three Dockerfiles without
+publishing or cloud credentials when container configuration changes.
+
+Local evidence: workflow actionlint and all 14 GCP deployment contract tests pass.
+Docker is unavailable locally; hosted container validation is required before
+merging. The new end-to-end deployment duration is not yet measured; parallel
+builds target the serial image bottleneck, not runtime verification safeguards.
+
+Reconciliation and fresh-runner repair (15 October 2026): this branch includes the
+current Stage work and PR #41's compacted tests, retaining menu-to-swipe integration
+coverage. The split deployment runner resolves both immutable image digests from
+Artifact Registry instead of inspecting images on another runner. Lookup accepts
+only the two approved repositories, full commit tags and valid SHA-256 digests;
+missing images or denied registry reads fail before migration. All 13 release
+contract tests and syntax checks pass locally, including three new regressions.
+Fresh hosted checks and deployment timing are pending; old runs do not validate
+this reconciled head. No security/runtime guards or provisioning paths were removed.
