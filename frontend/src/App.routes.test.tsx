@@ -542,7 +542,16 @@ describe("implemented application routes", () => {
     fireEvent.click(chooseChild);
     fireEvent.click(screen.getByRole("button", { name: "View Rohan Sharma's parent dashboard" }));
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    // Swipe directions and wraparound are exercised in the four-child deck case.
+    const rohanCard = activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ });
+    expect(rohanCard).toBeVisible();
+    fireEvent.touchStart(rohanCard, { touches: [{ clientX: 80 }] });
+    fireEvent.touchEnd(rohanCard, { changedTouches: [{ clientX: 220 }] });
+    await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
+    const ananyaCard = activeCard().getByRole("button", { name: /Open digital student ID for Ananya Sharma/ });
+    expect(ananyaCard).toBeVisible();
+    fireEvent.touchStart(ananyaCard, { touches: [{ clientX: 220 }] });
+    fireEvent.touchEnd(ananyaCard, { changedTouches: [{ clientX: 80 }] });
+    await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
     await interact.click(activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ }));
     expect(screen.getByRole("dialog", { name: "Rohan Sharma" })).toHaveTextContent("CIS-003");
   }, 45000);

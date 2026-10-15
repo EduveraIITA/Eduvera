@@ -6895,8 +6895,9 @@ observable assertions in the interaction tests that already exercise each route:
   Alternate homework counts move to the alternate-metrics case, retaining count,
   trend direction and missing-baseline assertions.
 - The child-menu case owns selection and identity data; the four-child deck case
-  owns swipe behavior. Ten repeated swipe transitions become four: an interior
-  move and wraparound in each direction. Two-child switching, delayed loading,
+  owns swipe behavior. Eight repeated deck transitions become four: an interior
+  move and wraparound in each direction. The two swipes after menu selection remain
+  because they cover synchronization of menu selection and deck position. Two-child switching, delayed loading,
   header selection, and permission/authorization regressions remain separate.
 
 No skips, timeout increases, application-code changes or backend/security test
@@ -6913,3 +6914,7 @@ is required after reconciling this branch with current Stage.
 Reconciliation checkpoint (15 October 2026): preserved current Stage branding,
 login, assistant and release work. The compacted tests retain core assertions with
 fewer repeated swipe permutations. Fresh hosted validation is pending.
+
+Coverage review retained the distinct menu-selection-to-swipe regression, rather
+than treating it as a duplicate of the isolated deck test. No skipped cases or
+increased timeouts were introduced.
