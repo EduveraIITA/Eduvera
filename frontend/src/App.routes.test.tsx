@@ -87,18 +87,23 @@ function useInstantCardTransitions() {
   vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
 }
 
+function expectParentStandings() {
+  const dialog = screen.getByRole("dialog", { name: /standings/ });
+  expect(dialog).toBeVisible();
+  expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
+  expect(within(dialog).getByRole("listitem", { name: /Your child, Aarav Sharma/ })).toHaveClass("attendance-ranking__row--current");
+  expect(within(dialog).getByRole("list", { name: "All class attendance" })).toBeVisible();
+}
+
 interface RouteSmokeCase {
   path: string;
   heading: string | RegExp;
 }
 
+// Routes with dedicated interaction tests below are not repeated in this smoke table.
 const implementedScreenRoutes: RouteSmokeCase[] = [
-  { path: "/parent/home", heading: "Today's activities" },
-  { path: "/parent/attendance", heading: "Attendance calendar" },
   { path: "/parent/leave", heading: "Leave Application by Aarav" },
   { path: "/parent/diary", heading: /Wednesday, 16 Sep/ },
-  { path: "/student", heading: "Home" },
-  { path: "/student/attendance", heading: "Attendance" },
   { path: "/student/attendance/eligibility", heading: "Attendance eligibility" },
   { path: "/student/leave/new", heading: "Apply leave" },
   { path: "/student/leave", heading: "Leave" },
@@ -404,6 +409,7 @@ describe("implemented application routes", () => {
   it("opens class standings from its explicit attendance option and restores focus on close", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/student/attendance"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Attendance", exact: true })).toBeVisible();
     const trigger=await screen.findByRole("button",{name:"Class attendance"});
     await interact.click(trigger);
     const dialog=screen.getByRole("dialog",{name:"Class 7A standings"});
@@ -417,22 +423,26 @@ describe("implemented application routes", () => {
     await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
   }, 30000);
 
-  it.each(["/parent/home", "/parent/attendance"])("opens the same highlighted class standings from %s", async (path) => {
-    const interact = userEvent.setup();
-    render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
-    await interact.click(await screen.findByRole("button", { name: path.endsWith("home") ? "View all class attendance" : /Overall Aggregate/ }));
-    const dialog = screen.getByRole("dialog", { name: /standings/ });
-    expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
-    expect(within(dialog).getByRole("listitem", { name: /Your child, Aarav Sharma/ })).toHaveClass("attendance-ranking__row--current");
-    expect(within(dialog).getByRole("list", { name: "All class attendance" })).toBeVisible();
-  });
-
   it("opens attendance from the whole card and reviews pending and completed homework", async () => {
     render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "Today's activities" })).toBeVisible();
+    const attendanceMetric = within((await screen.findByRole("button", { name: "View all class attendance" })).closest("article")!);
+    const risingTrend = attendanceMetric.getByText("+5%");
+    expect(risingTrend.closest(".metric-card__value-row")).toContainElement(attendanceMetric.getByText("95.0%"));
+    expect(risingTrend.querySelector("svg.lucide-trending-up")).toBeInTheDocument();
+    expect(attendanceMetric.getByText("Class rank #4 of 32")).toBeVisible();
+    const homeworkMetric = within(screen.getByText("Homework", { selector: ".metric-card__header span" }).closest("article")!);
+    expect(homeworkMetric.getByText("1/12")).toBeVisible();
+    expect(homeworkMetric.getByText("1 pending")).toBeVisible();
+    expect(homeworkMetric.getByText("12 assigned this term")).toBeVisible();
+    const homeworkTrend = homeworkMetric.getByText("-25%");
+    expect(homeworkTrend.closest(".metric-card__value-row")).toContainElement(homeworkMetric.getByText("1/12"));
+    expect(homeworkTrend.querySelector("svg.lucide-trending-down")).toBeInTheDocument();
+    expect(homeworkMetric.getByText("last 30d vs prior 30d")).toBeVisible();
     const attendance = await screen.findByRole("button", { name: "View all class attendance" });
     expect(attendance).toHaveClass("metric-card__hit-area");
     fireEvent.click(attendance);
-    expect(screen.getByRole("dialog", { name: /standings/ })).toBeVisible();
+    expectParentStandings();
     fireEvent.click(screen.getByRole("button", { name: "Close attendance standings" }));
 
     const homework = screen.getByRole("button", { name: "View homework details" });
@@ -446,52 +456,17 @@ describe("implemented application routes", () => {
     expect(within(dialog).queryByText("Algebra practice")).not.toBeInTheDocument();
   });
 
-  it("opens all class attendance by tapping the score in the parent Attendance tab", async () => {
+  it("opens highlighted class standings from the parent attendance aggregate and score", async () => {
     const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
-    const score = await screen.findByRole("button", { name: "View all class attendance from the attendance score" });
+    expect(await screen.findByRole("heading", { name: "Attendance calendar" })).toBeVisible();
+    const score = screen.getByRole("button", { name: "View all class attendance from the attendance score" });
     expect(score).toHaveTextContent("95.0%");
-    await interact.click(score);
-    const dialog = screen.getByRole("dialog", { name: /standings/ });
-    expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
-    expect(within(dialog).getByRole("listitem", { name: /Your child, Aarav Sharma/ })).toHaveClass("attendance-ranking__row--current");
-  });
-
-  it("shows live attendance rank and trends alongside pending and historical homework", async () => {
-    render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
-    const attendance = within((await screen.findByRole("button", { name: "View all class attendance" })).closest("article")!);
-    const risingTrend = attendance.getByText("+5%");
-    expect(risingTrend.closest(".metric-card__value-row")).toContainElement(attendance.getByText("95.0%"));
-    expect(risingTrend.querySelector("svg.lucide-trending-up")).toBeInTheDocument();
-    expect(attendance.getByText("Class rank #4 of 32")).toBeVisible();
-    const homework = within(screen.getByText("Homework", { selector: ".metric-card__header span" }).closest("article")!);
-    expect(homework.getByText("1/12")).toBeVisible();
-    expect(homework.getByText("1 pending")).toBeVisible();
-    expect(homework.getByText("12 assigned this term")).toBeVisible();
-    const homeworkTrend = homework.getByText("-25%");
-    expect(homeworkTrend.closest(".metric-card__value-row")).toContainElement(homework.getByText("1/12"));
-    expect(homeworkTrend.querySelector("svg.lucide-trending-down")).toBeInTheDocument();
-    expect(homework.getByText("last 30d vs prior 30d")).toBeVisible();
-  });
-
-  it("formats homework as pending over all assignments in the term", async () => {
-    const original = apiFetchMock.getMockImplementation() as (path: string) => Promise<unknown>;
-    apiFetchMock.mockImplementation((path: string) => {
-      if (path.startsWith("/api/v1/screens/parent/home/")) {
-        const response = schoolApiFixture(path) as { semester_metrics: Record<string, unknown> };
-        return Promise.resolve({ ...response, semester_metrics: {
-          ...response.semester_metrics,
-          homework_due: 6,
-          homework_total: 41,
-        } });
-      }
-      return original(path);
-    });
-    render(<MemoryRouter initialEntries={["/parent/home"]}><App /></MemoryRouter>);
-    const homework = within((await screen.findByText("Homework", { selector: ".metric-card__header span" })).closest("article")!);
-    expect(homework.getByText("6/41")).toBeVisible();
-    expect(homework.getByText("6 pending")).toBeVisible();
-    expect(homework.getByText("41 assigned this term")).toBeVisible();
+    for (const trigger of [screen.getByRole("button", { name: /Overall Aggregate/ }), score]) {
+      await interact.click(trigger);
+      expectParentStandings();
+      await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
+    }
   });
 
   it("handles declining attendance and new homework without inventing a rank or percentage baseline", async () => {
@@ -504,6 +479,8 @@ describe("implemented application routes", () => {
           attendance_trend_percent: -6,
           attendance_rank: null,
           attendance_cohort_size: null,
+          homework_due: 6,
+          homework_total: 41,
           homework_recent: 3,
           homework_previous: 0,
         } });
@@ -518,8 +495,11 @@ describe("implemented application routes", () => {
     expect(fallingTrend.querySelector("svg.lucide-trending-up")).not.toBeInTheDocument();
     expect(attendance.getByText("Class rank not published")).toBeVisible();
     const homework = within(screen.getByText("Homework", { selector: ".metric-card__header span" }).closest("article")!);
+    expect(homework.getByText("6/41")).toBeVisible();
+    expect(homework.getByText("6 pending")).toBeVisible();
+    expect(homework.getByText("41 assigned this term")).toBeVisible();
     const homeworkTrend = homework.getByText("+3 new");
-    expect(homeworkTrend.closest(".metric-card__value-row")).toContainElement(homework.getByText("1/12"));
+    expect(homeworkTrend.closest(".metric-card__value-row")).toContainElement(homework.getByText("6/41"));
     expect(homeworkTrend.querySelector("svg.lucide-trending-up")).toBeInTheDocument();
   });
 
@@ -559,16 +539,7 @@ describe("implemented application routes", () => {
     fireEvent.click(chooseChild);
     fireEvent.click(screen.getByRole("button", { name: "View Rohan Sharma's parent dashboard" }));
     await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    const rohanCard = activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ });
-    expect(rohanCard).toBeVisible();
-    fireEvent.touchStart(rohanCard, { touches: [{ clientX: 80 }] });
-    fireEvent.touchEnd(rohanCard, { changedTouches: [{ clientX: 220 }] });
-    await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
-    const ananyaCard = activeCard().getByRole("button", { name: /Open digital student ID for Ananya Sharma/ });
-    expect(ananyaCard).toBeVisible();
-    fireEvent.touchStart(ananyaCard, { touches: [{ clientX: 220 }] });
-    fireEvent.touchEnd(ananyaCard, { changedTouches: [{ clientX: 80 }] });
-    await waitFor(() => expect(chooseChild).toBeEnabled(), { timeout: 5000 });
+    // Swipe directions and wraparound are exercised in the four-child deck case.
     await interact.click(activeCard().getByRole("button", { name: /Open digital student ID for Rohan Sharma/ }));
     expect(screen.getByRole("dialog", { name: "Rohan Sharma" })).toHaveTextContent("CIS-003");
   }, 45000);
@@ -798,14 +769,10 @@ describe("implemented application routes", () => {
     fireEvent.click(chooser);
     expect(screen.getByRole("dialog", { name: "Select child profile" }).querySelectorAll("button")).toHaveLength(4);
     fireEvent.click(chooser);
-    await swipe("Aarav", "Kavya", "right");
-    await swipe("Kavya", "Rohan", "right");
-    await swipe("Rohan", "Ananya", "right");
-    await swipe("Ananya", "Aarav", "right");
-    await swipe("Aarav", "Ananya", "left");
-    await swipe("Ananya", "Rohan", "left");
-    await swipe("Rohan", "Kavya", "left");
-    await swipe("Kavya", "Aarav", "left");
+    await swipe("Aarav", "Kavya", "right"); // Backward wrap.
+    await swipe("Kavya", "Rohan", "right"); // Backward interior move.
+    await swipe("Rohan", "Kavya", "left"); // Forward interior move.
+    await swipe("Kavya", "Aarav", "left"); // Forward wrap.
   }, 90000);
 
   it("renders the timetable with the shared day view switcher", async () => {

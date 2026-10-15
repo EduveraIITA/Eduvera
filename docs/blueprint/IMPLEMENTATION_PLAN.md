@@ -6539,3 +6539,29 @@ command. A family-home timeout in shard 2 passes on isolated rerun; that full
 shard did not finish locally and was stopped. Hosted CI validation is still required. Failures are not waived. Actual hosted speedup and
 warm Docker cache behavior require subsequent Actions runs. More parallel runners
 can increase total runner minutes even while reducing elapsed time.
+
+## Compact route regression suite — 15 October 2026
+
+Follow-up to PR #40: all hosted checks passed and release 2de06c11cad265560b79883767564a97ae37715a
+was successfully deployed in Actions run 38735993491. PR verification took about
+3m37s versus the earlier roughly 10-minute sequential baseline. The remaining
+mobile hotspot was App.routes.test.tsx (62 cases, about 169s in the merged run).
+
+Consolidate this suite to 54 cases by removing duplicate full-App mounts, keeping
+observable assertions in the interaction tests that already exercise each route:
+
+- Four heading-only smoke cases move to existing parent home/attendance and
+  student home/attendance workflows. Other smoke routes remain.
+- Two parent standings cases move into the existing home-card and attendance
+  score workflows. Aggregate-card, whole-home-card and score triggers all remain,
+  including row count, selected-child highlighting and list visibility checks.
+- The default home metrics case shares the homework/attendance interaction mount.
+  Alternate homework counts move to the alternate-metrics case, retaining count,
+  trend direction and missing-baseline assertions.
+- The child-menu case owns selection and identity data; the four-child deck case
+  owns swipe behavior. Ten repeated swipe transitions become four: an interior
+  move and wraparound in each direction. Two-child switching, delayed loading,
+  header selection, and permission/authorization regressions remain separate.
+
+No skips, timeout increases, application-code changes or backend/security test
+removals are introduced. Validation of the revised full suite is pending.
