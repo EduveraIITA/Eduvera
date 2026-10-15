@@ -34,13 +34,37 @@ in Roles & permissions. No account credentials or role assignments are changed.
 
 ## Verification
 
-Local typecheck, lint and production build are verified as completed in the
-implementation record. Focused UI coverage includes QR identity checks, Hindi,
+Local frontend/backend typecheck and lint, the frontend production build and 20
+focused UI tests passed. Focused coverage includes QR identity checks, Hindi,
 gate-only home, mixed staff shell, permission-gated navigation, automatic search,
 retry, cancellation and fresh selected-student detail. Native PostgreSQL coverage
 checks bounded matches, literal wildcard characters, case/whitespace handling,
-school isolation and current movement detail. Hosted database tests and release
-verification remain pending at this implementation checkpoint. Real-browser
-responsive review remains an acceptance item: the local browser runtime could
-not launch because its sandbox denies sockets. No responsive screenshot evidence
-is claimed from that failed attempt.
+school isolation and current movement detail. PR #46 passed hosted CI in run
+`38751807483`: 829 backend tests, all mobile shards, both client builds and
+security/deployment contracts. It merged as
+`3079cff948d60962aed03e63b533459b344bb091`.
+
+The regular local Chromium launcher failed because it requires an unavailable
+Unix socket. The separate headless runtime successfully rendered the actual app
+with synthetic API fixtures in its local network context. Checks passed at 320,
+768, 1024 and 1440 px for both gate-only and mixed staff: no horizontal overflow,
+no page errors, correct gatekeeper-home redirect, active staff In & Out bottom
+tab, search selection and disabled confirmation until identity verification.
+Tablet and phone renders were also visually inspected. These were local UI
+checks, not a login to live school records. Owner device review is still requested.
+
+## Live release — 15 October 2026
+
+Stage run `38752498133` completed successfully for
+`3079cff948d60962aed03e63b533459b344bb091`. It passed 829 backend tests and
+961 frontend tests, both client builds and the security/deployment contracts.
+Private migration execution `eduvera-stage-migrate-62mqr` completed at 14:43:24
+UTC. App revision `eduvera-stage-00160-pux` was first verified as a zero-traffic
+candidate, then promoted. The trusted release script verified the exact public
+release SHA, Stage environment, readiness and both apps after promotion. The
+separate website deployment also succeeded; IndexNow accepted its eight URLs at
+14:46:09 UTC. No existing account or permission assignments were changed.
+
+A separate local public HTTP recheck returned 403 and the search tool could not
+retrieve the health endpoints. Public release confirmation above comes from the
+successful trusted release verifier, not those unsuccessful local requests.
