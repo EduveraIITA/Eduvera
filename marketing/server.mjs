@@ -1,10 +1,11 @@
 import {createServer} from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,open} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {gzip} from 'node:zlib';
 import {promisify} from 'node:util';
+import {pipeline} from 'node:stream/promises';
 const compress=promisify(gzip);
 
 const fallbackLogin='https://app.thatcampus.com/login';
@@ -22,10 +23,41 @@ export function validateEnquiry(data,now=Date.now()){
  if(!['school','college','university','other'].includes(result.institutionType)||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(result.email)||!/^\+?[\d () .-]+$/.test(result.phone)||result.phone.replace(/\D/g,'').length<7||!Number.isSafeInteger(result.students)||result.students<1||result.students>1000000||data.consent!=='yes'||(data.website&&data.website!=='')||!Number.isSafeInteger(data.startedAt)||now-data.startedAt<2000||now-data.startedAt>86400000)throw new Error('Please check the form details and try again.');
  return result;
 }
-const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.woff2':'font/woff2','.woff':'font/woff','.xml':'application/xml','.txt':'text/plain'};
+const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.mp4':'video/mp4','.woff2':'font/woff2','.woff':'font/woff','.xml':'application/xml','.txt':'text/plain'};
 function sign(value,secret){return createHmac('sha256',secret).update(value).digest('hex');}
 function validToken(token,secret){if(typeof token!=='string'||!/^\d{13}\.[a-f0-9]{32}\.[a-f0-9]{64}$/.test(token))return false;const [time,nonce,signature]=token.split('.');if(Date.now()-Number(time)>1800000||Number(time)>Date.now())return false;return timingSafeEqual(Buffer.from(signature),Buffer.from(sign(`${time}.${nonce}`,secret)));}
 function json(res,status,body){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body));}
+function byteRange(value,size){
+ // RFC 9110 allows ignoring malformed/unsupported ranges. Keep parsing bounded,
+ // support one interval only, and use BigInt before clipping large numerals.
+ if(typeof value!=='string'||value.length>256||size===0)return null;
+ const match=/^bytes=[\t ]*(\d*)-(\d*)[\t ]*$/i.exec(value);
+ if(!match||(!match[1]&&!match[2]))return null;
+ const length=BigInt(size);
+ if(!match[1]){const suffix=BigInt(match[2]);if(suffix===0n)return false;return {start:Number(suffix>=length?0n:length-suffix),end:size-1};}
+ const start=BigInt(match[1]);let end=match[2]?BigInt(match[2]):length-1n;
+ if(match[2]&&end<start)return null;
+ if(start>=length)return false;
+ if(end>=length)end=length-1n;
+ return {start:Number(start),end:Number(end)};
+}
+async function video(req,res,filename,cacheControl){
+ let handle;try{handle=await open(filename,'r');}catch{json(res,404,{message:'Not found'});return;}
+ try{
+ const file=await handle.stat();
+ if(!file.isFile()){json(res,404,{message:'Not found'});return;}
+ if(!Number.isSafeInteger(file.size)||file.size<0)throw new Error('Unsupported media size');
+ const headers={'Content-Type':mime['.mp4'],'Accept-Ranges':'bytes','Cache-Control':cacheControl,'Content-Length':file.size};
+ // Range only applies to GET. Without a representation validator, If-Range
+ // must receive the complete file rather than risk joining different versions.
+ const range=req.method==='GET'&&!req.headers['if-range']?byteRange(req.headers.range,file.size):null;
+ if(range===false){res.writeHead(416,{...headers,'Content-Range':`bytes */${file.size}`,'Content-Length':0,'Cache-Control':'no-store'});res.end();return;}
+ if(range){headers['Content-Range']=`bytes ${range.start}-${range.end}/${file.size}`;headers['Content-Length']=range.end-range.start+1;}
+ res.writeHead(range?206:200,headers);
+ if(req.method==='HEAD'||file.size===0){res.end();return;}
+ await pipeline(handle.createReadStream({start:range?.start??0,end:range?.end??file.size-1,autoClose:false}),res);
+ }catch(error){if(res.headersSent){res.destroy();return;}throw error;}finally{await handle.close();}
+}
 export function createHandler({db,config=settings(),clock=()=>Date.now()}){return async(req,res)=>{
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
  // Cloudflare forwards the public hostname while Cloud Run keeps its own Host.
@@ -67,13 +99,15 @@ export function createHandler({db,config=settings(),clock=()=>Date.now()}){retur
  const page=['/','/privacy','/terms'].includes(path);
  const filename=page?resolve(config.dist,path==='/'?'index.html':`${path.slice(1)}.html`):resolve(config.dist,`.${path}`);
  if(!filename.startsWith(config.dist+sep)){json(res,404,{message:'Not found'});return;}
+ const cacheControl=page?'no-cache':path.startsWith('/assets/')?'public, max-age=31536000, immutable':'public, max-age=3600';
+ if(extname(filename)==='.mp4'){await video(req,res,filename,cacheControl);return;}
  let file;try{file=await readFile(filename);}catch{json(res,404,{message:'Not found'});return;}
  if(page){let html=file.toString();if(path!=='/'){const title=path==='/privacy'?'Privacy Policy':'Terms of Service';html=html.replace('<title>ThatCampus | Not just any campus. That campus.</title>',`<title>${title} — ThatCampus</title>`).replaceAll('https://thatcampus.com/"',`https://thatcampus.com${path}"`);}file=Buffer.from(html);}
  const type=mime[extname(filename)]||'application/octet-stream';
  const acceptsGzip=String(req.headers['accept-encoding']||'').split(',').some(part=>{const [encoding,...parameters]=part.trim().split(';');const quality=parameters.find(p=>p.trim().startsWith('q='));return encoding==='gzip'&&(!quality||Number(quality.trim().slice(2))>0);});
  res.setHeader('Vary','Accept-Encoding');
  if(file.length>1024&&acceptsGzip&&/^(text\/|application\/xml)/.test(type)){file=await compress(file);res.setHeader('Content-Encoding','gzip');}
- res.writeHead(200,{'Content-Type':type,'Cache-Control':page?'no-cache':path.startsWith('/assets/')?'public, max-age=31536000, immutable':'public, max-age=3600'});res.end(req.method==='HEAD'?undefined:file);
+ res.writeHead(200,{'Content-Type':type,'Cache-Control':cacheControl});res.end(req.method==='HEAD'?undefined:file);
  }catch{json(res,503,{message:'We could not confirm your request. Please try again shortly.'});}
 };}
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){

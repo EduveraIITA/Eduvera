@@ -13,15 +13,22 @@ try{
  for(const [name,width,height]of[['desktop',1440,1000],['laptop',1024,900],['tablet',768,1024],['mobile',360,800],['small-mobile',320,800]]){
   const page=await browser.newPage({viewport:{width,height},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:8080/',{waitUntil:'networkidle'});
-  assert.equal(await page.locator('h1').textContent(),'One Campus.Everything Connected.');
+  assert.equal(await page.locator('h1').textContent(),'A school day.Working together.');
   assert.equal(await page.locator('.header-actions a.login').getAttribute('href'),'https://app.thatcampus.com/login');
   assert(await page.locator('.header-actions a.login').isVisible());
   const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);if(!fits){console.log(name,await page.evaluate(()=>Array.from(document.querySelectorAll('body *')).filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,cls:el.className,right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))));await page.screenshot({path:`screenshots/${name}-overflow.png`,fullPage:true});}assert(fits,`${name}: horizontal overflow`);
   if(width<768){await page.getByRole('button',{name:'Open navigation'}).click();}
   for(const name of ['Features','Solutions','About','Contact'])assert(await page.locator('nav').getByRole('link',{name,exact:true}).isVisible());
-  await page.locator('nav').getByRole('link',{name:'Features',exact:true}).click();assert.equal(new URL(page.url()).hash,'#features');
-  await page.getByRole('tab',{name:'Attendance',exact:true}).click();assert(await page.getByText('Every class. Every learner. A clearer picture.',{exact:true}).isVisible());
-  await page.getByRole('tab',{name:'For families'}).click();assert(await page.getByText('Closer to their school day.').isVisible());
+  await page.locator('nav').getByRole('link',{name:'Features',exact:true}).click();assert.equal(new URL(page.url()).hash,'#in-action');
+  assert.equal(await page.locator('.demo-film').count(),3);
+  await page.locator('.demo-attendance .demo-device video').scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>document.querySelector('.demo-attendance .demo-device video')?.getAttribute('src')==='/demos/attendance.mp4');
+  assert(await page.locator('.demo-device video').evaluateAll(videos=>videos.every(video=>video.paused)),`${name}: reduced motion did not suppress autoplay`);
+  for(const role of ['Principal','Teacher','Parent','Student']){const tab=page.getByRole('tab',{name:role,exact:true});await tab.click();assert.equal(await tab.getAttribute('aria-selected'),'true');assert(await page.locator('#role-panel').isVisible());}
+  const gallery=page.locator('details#screen-library');await gallery.locator(':scope > summary').click();
+  await gallery.getByRole('tab',{name:'Attendance',exact:true}).click();assert(await gallery.getByRole('heading',{name:'Every class. Every learner. A clearer picture.',exact:true}).isVisible());
+  await gallery.getByRole('tab',{name:'For families',exact:true}).click();assert(await gallery.getByRole('heading',{name:'Closer to their school day.',exact:true}).isVisible());
+  await gallery.getByRole('button',{name:'Explore this screen',exact:true}).click();assert(await page.getByRole('dialog').isVisible());await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]').count(),0);
   await page.screenshot({path:`screenshots/${name}.png`,fullPage:true});
   await page.goto('http://127.0.0.1:8080/privacy');assert(await page.getByRole('heading',{name:'Privacy Policy'}).isVisible());
   assert.deepEqual(errors,[]);await page.close();

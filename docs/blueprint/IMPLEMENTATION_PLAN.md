@@ -6430,3 +6430,34 @@ Added gate-admin coverage for role/profile destinations, no account form or
 password UI, keyboard navigation, student QR issuance, visitor approvals and
 non-admin denial. Existing gate and staff-role tests are included in local
 validation. Trusted Stage checks and public release verification remain pending.
+
+## Product demonstrations and sales narrative — 15 October 2026
+
+Latest owner decision: learn Stripe's product storytelling and motion detail,
+without copying its brand. Replace generic feature cards with relevant real app
+demonstrations that help school leaders understand the product and request a demo.
+The main public website now leads through attendance, timetable and family
+workflows, role-specific perspectives and configurable operating rules. Original
+screen assets/showcase functions remain protected and available in an expandable
+gallery. The school application, domain routing and production school records are
+outside this slice.
+
+Latest owner decision rejects the subsequent sand-particle/cropped-screen
+experiment and restores the previously reviewed walkthrough-based preview.
+The active version uses three actual synthetic-app recordings, spring ribbon/grid/
+orbit backgrounds, individual/global playback controls, reduced-motion/data-saving
+fallbacks, offscreen suspension, accessible expanded video and streamed MP4 ranges.
+Do not reintroduce the rejected composition without a new owner decision.
+The existing authorized enquiry persistence/outbox and legal consent remain intact.
+Experimental timetable, sandbox payments and institution-fit limitations remain
+visible. No fabricated proof, metrics or customers are introduced.
+
+The original walkthrough version passed local typecheck/lint/build, nineteen unit
+tests, six visual variants and the isolated PostgreSQL enquiry regression. The
+restoration passes those checks again; all six media assets byte-match their
+backups and local preview readiness is healthy. Details, research, screenshot
+preservation, capture provenance, verified final checks and remaining gates are in
+[MOTION_STORY.md](../marketing/MOTION_STORY.md). Website-only Stage promotion and
+owner physical-device acceptance remain pending at this implementation checkpoint.
+The capture found a separate parent timetable mixed-child heading; it is recorded
+in [MOTION_CAPTURE.md](../marketing/MOTION_CAPTURE.md), not presented as fixed.

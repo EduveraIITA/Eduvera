@@ -7,8 +7,9 @@ import '@fontsource/plus-jakarta-sans/latin-600.css';
 import '@fontsource/plus-jakarta-sans/latin-700.css';
 import { Enquiry, Legal, initialLogin, type Config } from './Enquiry';
 import './style.css';
-import './stitch.css';
-import { Capabilities, Solutions, RoleBenefits, HeroContext } from './WebsiteSections';
+import './story.css';
+import { Capabilities, Solutions, RoleBenefits } from './WebsiteSections';
+import { PhysicsBackdrop } from './PhysicsBackdrop';
 
 // Product showcases below are preserved from the verified live Stage source.
 // DESIGN_VARIANCE 7 / MOTION_INTENSITY 6 / VISUAL_DENSITY 3.
@@ -118,14 +119,28 @@ export function App({pathname='/'}:{pathname?:string}) {
  const legal=pathname==='/privacy'||pathname==='/terms';
  async function refresh(){try{const result=await fetch('/api/config',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!result.ok)throw new Error();setConfig(await result.json());}catch{setConfig(null);}}
  useEffect(()=>{void refresh();},[]);
+ useEffect(()=>{
+  const openLinkedGallery=()=>{
+   if(['#features','#solutions'].includes(window.location.hash)){
+    const gallery=document.getElementById('screen-library') as HTMLDetailsElement|null;
+    if(gallery)gallery.open=true;
+    document.querySelector(window.location.hash)?.scrollIntoView({block:'start'});
+   }
+  };
+  openLinkedGallery();window.addEventListener('hashchange',openLinkedGallery);
+  return()=>window.removeEventListener('hashchange',openLinkedGallery);
+ },[]);
  useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape'){setMenu(false);document.getElementById('menu-toggle')?.focus();}};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[menu]);
- return <MotionConfig reducedMotion="user"><a className="skip" href="#main">Skip to content</a>
-  <header className="site-header"><div className="nav-inner"><Brand/><nav id="site-navigation" aria-label="Main navigation" className={menu?'nav open':'nav'}>{['Features','Solutions','About','Contact'].map(name=><a key={name} href={`${legal?'/':''}#${name==='Solutions'?'institution-solutions':name.toLowerCase()}`} onClick={()=>setMenu(false)}>{name}</a>)}</nav><div className="header-actions"><a className="login" href={config?.loginUrl||initialLogin}>Login <ArrowUpRight size={15} aria-hidden="true"/></a><button id="menu-toggle" className="menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="site-navigation" onClick={()=>setMenu(!menu)}>{menu?<X size={23}/>:<List size={23}/>}</button></div></div></header>
+ return <MotionConfig reducedMotion={still?'always':'user'}><a className="skip" href="#main">Skip to content</a>
+  <header className="site-header"><div className="nav-inner"><Brand/><nav id="site-navigation" aria-label="Main navigation" className={menu?'nav open':'nav'}>{['Features','Solutions','About','Contact'].map(name=><a key={name} href={`${legal?'/':''}#${name==='Features'?'in-action':name==='Solutions'?'institution-solutions':name.toLowerCase()}`} onClick={()=>setMenu(false)}>{name}</a>)}</nav><div className="header-actions"><a className="login" href={config?.loginUrl||initialLogin}>Login <ArrowUpRight size={15} aria-hidden="true"/></a><a className="button primary header-demo" href={`${legal?'/':''}#contact`}>Request a Demo <ArrowRight size={15}/></a><button id="menu-toggle" className="menu-button" aria-label={menu?'Close navigation':'Open navigation'} aria-expanded={menu} aria-controls="site-navigation" onClick={()=>setMenu(!menu)}>{menu?<X size={23}/>:<List size={23}/>}</button></div></div></header>
   {legal?<div id="main"><Legal kind={pathname==='/privacy'?'privacy':'terms'}/></div>:<main id="main">
-   <section className="stitch-hero"><div className="stitch-hero-grid section"><div className="stitch-hero-copy"><span className="stitch-eyebrow">YOUR CAMPUS, CONNECTED</span><h1>One Campus.<br/>Everything <span>Connected.</span></h1><p>A smarter way to manage your institution. Connect administration, teachers, students and parents in one shared workspace.</p><div className="stitch-hero-actions"><a className="button primary" href="#contact">Request a Demo <ArrowRight size={17}/></a><a className="text-link" href="#features">Explore ThatCampus <CaretRight size={18} aria-hidden="true"/></a></div><p className="stitch-audiences">Schools <span>/</span> Colleges <span>/</span> Campus communities</p></div><HeroContext/></div><HeroScreens onOpen={setScreen} still={still}/><div className="hero-caption"><span>Your school. Connected.</span><button className="motion-toggle" aria-label={still?'Enable parallax':'Pause parallax'} aria-pressed={still} onClick={()=>setStill(!still)}>{still?<Play size={14} weight="fill"/>:<Pause size={14} weight="fill"/>}</button></div></section>
-   <Capabilities/><ProductTour onOpen={setScreen}/><Solutions/><RoleBenefits/><ConnectedPeople onOpen={setScreen}/><Planning onOpen={setScreen} still={still}/><MorePossibilities/><About/><Enquiry config={config} refresh={refresh}/>
+   <section className="campus-hero"><div className="campus-hero-grid section"><div className="campus-hero-copy"><span className="hero-signature">Not just any campus. That campus.</span><h1>A school day.<br/><span>Working together.</span></h1><p>Attendance, schedules and family communication, connected in one workspace for the people who run your school.</p><div className="campus-hero-actions"><a className="button primary" href="#contact">Request a Demo <ArrowRight size={17}/></a><a className="text-link" href="#in-action">See it in action <Play size={15} weight="fill" aria-hidden="true"/></a></div></div><div className="campus-hero-visual"><PhysicsBackdrop variant="flow" paused={still}/><HeroScreens onOpen={setScreen} still={still}/></div></div><div className="hero-under section"><span>Built around school leaders, teachers and families.</span><span>Real product. Sample school data.</span></div></section>
+   <Capabilities paused={still}/><RoleBenefits/><Solutions/>
+   <section className="screen-library section" aria-label="Detailed product screens"><details id="screen-library"><summary><div><span>Want a closer look?</span><h2>Explore the actual workspaces.</h2></div><span className="library-action">Open screen gallery <CaretRight size={20}/></span></summary><ProductTour onOpen={setScreen}/><Planning onOpen={setScreen} still={still}/><ConnectedPeople onOpen={setScreen}/><MorePossibilities/></details></section>
+   <About/><Enquiry config={config} refresh={refresh}/>
+   <button className="page-motion-control" aria-pressed={still} onClick={()=>setStill(!still)}>{still?<Play size={14} weight="fill"/>:<Pause size={14} weight="fill"/>}{still?'Resume motion':'Pause motion'}</button>
   </main>}
-  <footer className="stitch-footer"><div className="section"><div className="stitch-footer-grid"><div><Brand/><p>One campus. Everything connected.<br/>More space for learning, together.</p></div><div><h2>Platform</h2><a href="/#features">Features</a><a href="/#institution-solutions">Solutions</a><a href={config?.loginUrl||initialLogin}>Login to ThatCampus <ArrowUpRight size={16} aria-hidden="true"/></a></div><div><h2>ThatCampus</h2><a href="/#about">About us</a><a href="/#contact">Contact</a><a href="/#contact">Request a Demo</a></div></div><div className="footer-bottom"><span>© {new Date().getFullYear()} ThatCampus</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/#contact">Contact</a></div></div></div></footer>
+  <footer className="story-footer section"><div className="footer-main"><Brand/><p>Not just any campus. That campus.</p><a href={config?.loginUrl||initialLogin}>Login to ThatCampus <ArrowUpRight size={16} aria-hidden="true"/></a></div><div className="footer-bottom"><span>© {new Date().getFullYear()} ThatCampus</span><div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/#contact">Contact</a></div></div></footer>
   <ScreenDialog screen={screen} onClose={()=>setScreen(null)}/>
  </MotionConfig>;
 }

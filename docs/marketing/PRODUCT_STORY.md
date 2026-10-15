@@ -1,5 +1,9 @@
 # Public website product story — 15 October 2026
 
+Historical release record. The latest owner-requested presentation is documented
+in [MOTION_STORY.md](MOTION_STORY.md); its recorded demos extend the real-screen
+approach while preserving this release's original gallery assets and functions.
+
 ## User decision
 
 Replace the generic illustrative landing page with Apple-inspired, product-led

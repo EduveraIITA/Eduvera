@@ -21,7 +21,7 @@ async function verify(origin){
  for(const path of ['/','/privacy','/terms','/robots.txt','/sitemap.xml']){
   const response=await fetch(origin+path,{signal:AbortSignal.timeout(30000)});
   assert(response.ok,`${path}: HTTP ${response.status}`);
-  if(path==='/')assert((await response.text()).includes('One Campus.'));
+  if(path==='/')assert((await response.text()).includes('Working together.'));
  }
  const ready=await(await fetch(origin+'/readyz',{signal:AbortSignal.timeout(30000)})).json();
  assert.equal(ready.status,'ready');assert.equal(ready.release,release);
@@ -29,6 +29,16 @@ async function verify(origin){
  for(const [path,expected] of Object.entries(baseline.files).filter(([path])=>path.startsWith('public/'))){
   const response=await fetch(origin+'/'+path.slice(7),{signal:AbortSignal.timeout(30000)});
   assert(response.ok,path);assert.equal(hash(Buffer.from(await response.arrayBuffer())),expected,path);
+ }
+ for(const name of ['attendance','timetable','family']){
+  for(const suffix of ['.mp4','-poster.webp']){
+   const path=`/demos/${name}${suffix}`;
+   const response=await fetch(origin+path,{signal:AbortSignal.timeout(30000)});
+   assert(response.ok,path);
+   assert.equal(hash(Buffer.from(await response.arrayBuffer())),hash(readFileSync(new URL(`./public${path}`,import.meta.url))),path);
+  }
+  const range=await fetch(`${origin}/demos/${name}.mp4`,{headers:{Range:'bytes=0-31'},signal:AbortSignal.timeout(30000)});
+  assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,32);
  }
 }
 let promoted=false;
