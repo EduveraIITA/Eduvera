@@ -6628,9 +6628,19 @@ The public website now also hosts a non-secret IndexNow verification key and the
 tested deployment paths send the eight canonical public URLs to the shared
 IndexNow endpoint after successful promotion. Search notification is deliberately
 best-effort and cannot roll back an otherwise healthy release when an external
-search endpoint is unavailable. Bing is being verified independently with its
-root XML file so it receives no ongoing Google Search Console access; live Bing
-verification and sitemap submission remain deployment gates at this checkpoint.
+search endpoint is unavailable. Stage run `38749486599` deployed commit
+`d2dbd4ff9db7b683dcb24e1f5f807c9c4616ec93`, passed every existing parallel test
+and build gate, verified the public ownership assets, and received HTTP 202 from
+IndexNow for all eight canonical URLs. Its deployment verifier now tolerates the
+brief Cloud Run propagation interval after traffic promotion instead of rolling
+back a healthy revision because the stable URL still serves the previous release.
+
+Bing ownership was then verified independently with the live root XML file, so
+Bing received no ongoing Google Search Console access. Bing Webmaster Tools
+accepted `https://thatcampus.com/sitemap.xml` on 15 October 2026 and showed one
+known sitemap, zero errors and zero warnings while crawl processing began.
+Submission and notification are discovery evidence, not guarantees of indexing
+or ranking.
 
 ## Invitation account flow — 15 October 2026
 
