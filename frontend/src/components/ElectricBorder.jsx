@@ -227,7 +227,11 @@ void main() {
       float vis = mix(0.3 + 0.45 * smoothstep(-0.25, 0.2, ring(vec2(x * uSoft.x, t * 0.5 + fi * 3.7), uSoft.x, seed + 5u).x), 1.0, lead);
       float spark = 1.0 - uFlicker * 0.3 * (0.5 + 0.5 * wobble(t * 13.0 + fi * 2.3, seed + 6u));
       float weight = max(vis, heat * 0.6) * spark * fade * present * (0.7 + 0.6 * swell);
-      vec2 g = glowShape(across, spread, w) * weight;
+      // A travelling crest carries the light around the perimeter, rather
+      // than only changing the noise in place.
+      float flowPhase = fract(s / uPerimeter - t * 0.12);
+      float flow = 0.65 + 0.85 * exp(-pow((flowPhase - 0.5) / 0.12, 2.0));
+      vec2 g = glowShape(across, spread, w) * weight * flow;
       g.y *= inward;
       float haze = uGlow * (1.0 + heat * 0.5) * (1.0 - uInk * 0.7);
       light += uCore * g.x + uGlowColor * g.y * haze;

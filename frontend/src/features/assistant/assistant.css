@@ -253,8 +253,10 @@
 }
 
 /* React Bits current stays close to the edge; decorative canvas never blocks input. */
-.assistant-electric-border { min-width: 0; box-shadow: 0 0 0 1px rgb(77 141 232 / 28%), 0 0 12px rgb(77 141 232 / 8%); }
-.assistant-electric-border > .electric-border__canvas { opacity: .85; }
+.assistant-electric-border { min-width: 0; box-shadow: 0 0 0 .5px rgb(56 189 248 / 30%), 0 0 10px rgb(56 189 248 / 12%); }
+.assistant-electric-border > .electric-border__canvas { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .assistant-electric-border > .electric-border__canvas { display: none; }
 }
+
+.assistant-conversation .assistant-electric-border > .assistant-full-reply { padding: 12px 16px; border-radius: inherit; background: var(--edura-surface); }
