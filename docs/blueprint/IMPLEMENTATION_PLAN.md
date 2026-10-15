@@ -6160,8 +6160,15 @@ selecting the Gatekeeper template, seeing the checked action, toggling it and
 saving exactly `gate.manage`. Backend typecheck and lint pass locally. Added a
 native PostgreSQL HTTP regression for role options, custom-role creation,
 assignment to an existing account, gate endpoint authorization, audit evidence
-and immediate revocation; that test and live release verification remain pending
-the trusted Stage workflow.
+and immediate revocation. All 819 backend tests (including that regression) and
+949 mobile tests passed in trusted Stage workflow
+[38696887998](https://github.com/EduveraIITA/Eduvera/actions/runs/38696887998), along
+with the desktop build. PR [#35](https://github.com/EduveraIITA/Eduvera/pull/35)
+merged as `75cadec48984db444f752818893432c7b1e9502b`. The public branded app's
+`/releasez` returned that exact SHA after promotion; `/readyz` reported ready with
+both database and events OK. Signed-in tablet/phone confirmation of the updated
+checkbox remains a user acceptance check; automated role editor and HTTP
+assignment/revocation coverage passed.
 
 ## Product-led public website — 15 October 2026
 
