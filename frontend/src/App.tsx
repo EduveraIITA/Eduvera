@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppProviders } from "./app/AppProviders";
 import AssistantPage from "./features/assistant/AssistantPage";
 import { PortalScreenFrame } from "./features/navigation/PortalScreenFrame";
+import { ThatCampusLoader } from "./components/ThatCampusLoader";
 import {
   AuthenticatedOnly,
   CompanyOnly,
@@ -171,15 +172,6 @@ const PrincipalNoticeDetailRoute = lazy(async () => ({ default: (await import(".
 const PrincipalNoticeCreateRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).PrincipalNoticeCreateRoute }));
 const PrincipalNoticeEditRoute = lazy(async () => ({ default: (await import("./features/notices/NoticesRoutes")).PrincipalNoticeEditRoute }));
 
-function PageLoader() {
-  return (
-    <div className="route-loader" role="status" aria-live="polite">
-      <span className="route-loader__mark" aria-hidden="true" />
-      <span>Opening your school portal...</span>
-    </div>
-  );
-}
-
 interface ErrorBoundaryState {
   hasError: boolean;
 }
@@ -218,7 +210,7 @@ export function App() {
     <AppProviders>
       <AppErrorBoundary>
         <PortalScreenFrame>
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<ThatCampusLoader label="Opening your school portal…" />}>
             <Routes>
               <Route path="/gate" element={<AuthenticatedOnly><GatePage /></AuthenticatedOnly>} />
               <Route path="/teacher/gate" element={<PortalOnly portal="teacher"><GatePage /></PortalOnly>} />

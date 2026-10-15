@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useSearchParams } from "react-router-dom";
+import { ThatCampusLoader } from "../../components/ThatCampusLoader";
 import { schoolDateToday } from "../../lib/schoolTime";
 import {
   PrincipalHomePage,
@@ -131,12 +132,7 @@ async function submitAttendanceWithContinuity(
 }
 
 function Loading() {
-  return (
-    <div className="route-loader" role="status">
-      <span className="route-loader__mark" />
-      <span>Loading live school data...</span>
-    </div>
-  );
+  return <ThatCampusLoader />;
 }
 
 function Failure({ error }: { error: Error }) {

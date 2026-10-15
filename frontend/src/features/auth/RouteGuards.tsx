@@ -2,14 +2,10 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authDestination, useAuth, type Portal } from "./AuthContext";
 import { currentStaffMembership, teacherPathIsAuthorized } from "./staffAccess";
+import { ThatCampusLoader } from "../../components/ThatCampusLoader";
 
 function SessionLoader() {
-  return (
-    <div className="route-loader" role="status" aria-live="polite">
-      <span className="route-loader__mark" aria-hidden="true" />
-      <span>Opening your secure workspace...</span>
-    </div>
-  );
+  return <ThatCampusLoader label="Opening your secure workspace…" />;
 }
 
 function securityRedirect(location: ReturnType<typeof useLocation>) {

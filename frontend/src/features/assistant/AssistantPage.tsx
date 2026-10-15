@@ -15,12 +15,13 @@ import { requestAssistantReopen } from './useDemoChat';
 import type { AssistantContext, AssistantPortal } from './context';
 import { browserHistoryIndex, previousPortalLocation } from '../navigation/portalHistory';
 import { samePortalHref } from '../navigation/portalReturnState';
+import { ThatCampusLoader } from '../../components/ThatCampusLoader';
 import './assistant.css';
 
 export default function AssistantPage({portal}:{portal:AssistantPortal}) {
   const proFeatures=useProFeatures();
   const fallback=portal==='parent'?'/parent/home':'/'+portal;
-  if(proFeatures.isPending)return <main className="route-loader" aria-busy="true"><p role="status">Loading…</p></main>;
+  if(proFeatures.isPending)return <ThatCampusLoader label="Opening ThatCampus AI…"/>;
   if(!proFeatures.enabled)return <Navigate to={fallback} replace/>;
   return <AssistantPageContent portal={portal}/>;
 }

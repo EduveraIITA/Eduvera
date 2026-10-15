@@ -6749,3 +6749,18 @@ release succeeded; IndexNow accepted eight canonical URLs at 16:11:08 UTC.
 No existing account or permission assignments changed. Owner device review and
 a real host/guard visitor-request walkthrough remain requested. Local fixture QA
 and native isolated database tests do not represent that live account walkthrough.
+
+### Shared ThatCampus page loader — 15 October 2026
+
+The user-supplied animated ThatCampus SVG now replaces the legacy synthetic mark
+for full-page route loading. One accessible shared component covers lazy route
+transitions, authentication restoration, live school-record loading, operations
+workspaces and ThatCampus AI startup. It announces contextual status text, keeps
+the artwork decorative for assistive technology and presents a static branded
+fallback when the device requests reduced motion. Contextual section-level
+skeletons and local progress indicators remain unchanged.
+
+Verification on current Stage: focused ESLint passed; the loader component test
+passed; TypeScript and the production Vite build passed. Deployment evidence is
+recorded only after the push-triggered Stage release and public asset checks
+complete. Physical-phone visual acceptance remains requested.
