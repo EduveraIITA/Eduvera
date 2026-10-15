@@ -6770,3 +6770,23 @@ public checks returned HTTP 200 for `https://app.thatcampus.com/login` and the n
 SVG asset; `/releasez` reported that exact Stage SHA and `/readyz` reported ready
 database and event dependencies. The marketing apex intentionally does not serve
 application routes. Physical-phone visual acceptance remains requested.
+
+## Home-only guest approvals and subtle decision feedback — 15 October 2026
+
+Owner requested approvals only on home after login, with notification access and
+no departure from home after close/approve/reject. VisitorApprovalCenter now uses
+the existing authDestination contract, suppresses cached popups and approval
+polling on non-home routes, and routes valid visitor notification links to home.
+All dismissal/decision paths clear the request marker and notification return
+state without returning to the originating tool. Existing host authority, current
+revision checks, expiry and durable notification behavior remain unchanged.
+
+After server-confirmed approval/rejection, a restrained themed check/cross
+animation announces the saved decision and dismisses after 1.2 seconds or Done.
+Errors never show the success state. Modal focus and reduced-motion support are
+retained. Contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local production build,
+typecheck, focused lint and 24 approval/notification tests passed. Actual local
+headless browser fixture checks passed home-only behavior, notification links,
+close/decisions remaining home, both animations and reduced motion, plus layouts
+at 320/768/1024/1440 px without overflow or page errors. These are not live account
+checks. Hosted CI, deployment and owner-device review remain pending.
