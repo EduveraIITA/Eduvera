@@ -3,12 +3,12 @@ import { Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { useAuth, authDestination } from '../auth/AuthContext';
-import { gateCommand, getGateWorkspace, findGateStudents, type GateStudent, type QRPass } from './api';
+import { gateCommand, getGateWorkspace, findGateStudents, type GateStudentMatch, type QRPass } from './api';
 import './gate.css';
 export default function GateAdminPage(){
  const auth=useAuth(),member=auth.memberships.find(m=>m.role==='admin'),school=member?.school_id??'';
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
- const [q,setQ]=useState(''),[students,setStudents]=useState<GateStudent[]>([]),[pass,setPass]=useState<{image:string;data:QRPass}>();
+ const [q,setQ]=useState(''),[students,setStudents]=useState<GateStudentMatch[]>([]),[pass,setPass]=useState<{image:string;data:QRPass}>();
  const workspace=useQuery({queryKey:['gate-admin',school],queryFn:()=>getGateWorkspace(school),enabled:!!school,refetchInterval:10000});
  if(!member)return <Navigate to={authDestination(auth)} replace/>;
  async function search(e:React.FormEvent){e.preventDefault();setBusy(true);try{setStudents(await findGateStudents(school,q));}catch(e){setError(String(e));}finally{setBusy(false);}}

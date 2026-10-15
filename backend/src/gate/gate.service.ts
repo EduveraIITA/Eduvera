@@ -52,7 +52,48 @@ export class GateService {
   if(person.mode==='independent_departure')return true;
   return Boolean((await sql<{allowed:boolean}>`SELECT EXISTS(SELECT 1 FROM departure_collection_authorities ca JOIN departure_plans dp ON dp.authority_id=ca.id WHERE dp.id=${person.plan_id}::uuid AND dp.school_id=${school}::uuid AND ca.school_id=dp.school_id AND ca.student_id=dp.student_id AND ca.status='active' AND ca.valid_from<=dp.service_date AND (ca.valid_until IS NULL OR ca.valid_until>=dp.service_date)) allowed`.execute(db)).rows[0]?.allowed);
  }
- async students(user:AuthUser,school:string,q:string) {await this.access(user,school); return this.people(this.db,school,z.string().max(100).parse(q));}
+ async students(user:AuthUser,school:string,q:string) {
+  await this.access(user,school);
+  const term=z.string().trim().max(100).parse(q).toLowerCase();
+  if(term.length<2)return [];
+  // Match and cap the roster before looking up classes. The list does not need
+  // gate history or pickup authority; those are fetched fresh on selection.
+  const pattern=`%${term.replace(/[\\%_]/g,'\\$&')}%`;
+  return (await sql<Pick<Person,'id'|'name'|'avatar_url'|'admission_number'|'class_label'|'plan_state'>>`
+   WITH matched_ids AS MATERIALIZED (
+    SELECT s.id FROM school_people p
+    JOIN students s ON s.person_id=p.id AND s.school_id=p.school_id
+    WHERE p.school_id=${school}::uuid
+     AND lower(p.first_name||' '||p.last_name) LIKE ${pattern} ESCAPE '\\'
+    UNION
+    SELECT s.id FROM students s WHERE s.school_id=${school}::uuid
+     AND lower(s.admission_number) LIKE ${pattern} ESCAPE '\\'
+   ), matches AS MATERIALIZED (
+    SELECT s.id,s.admission_number,COALESCE(NULLIF(s.avatar_url,''),p.avatar_url) avatar_url,
+     p.first_name,p.last_name
+    FROM students s JOIN school_people p ON p.id=s.person_id AND p.school_id=s.school_id
+    JOIN matched_ids found ON found.id=s.id
+    WHERE s.school_id=${school}::uuid
+    ORDER BY p.first_name,p.last_name,s.id LIMIT 30
+   )
+   SELECT m.id,m.first_name||' '||m.last_name name,m.avatar_url,m.admission_number,
+    COALESCE(c.grade||' '||c.section,'') class_label,dp.state plan_state
+   FROM matches m
+   JOIN schools sc ON sc.id=${school}::uuid
+   LEFT JOIN departure_plans dp ON dp.student_id=m.id AND dp.school_id=sc.id AND dp.is_current
+    AND dp.service_date=(now() AT TIME ZONE sc.timezone)::date
+   LEFT JOIN LATERAL (
+    SELECT cs.grade,cs.section FROM enrollments e JOIN class_sections cs ON cs.id=e.class_section_id
+    WHERE e.student_id=m.id AND e.is_active AND cs.school_id=${school}::uuid
+    ORDER BY e.enrolled_on DESC,e.id DESC LIMIT 1
+   ) c ON true ORDER BY m.first_name,m.last_name,m.id`.execute(this.db)).rows;
+ }
+ async student(user:AuthUser,school:string,id:string) {
+  await this.access(user,school);z.uuid().parse(id);
+  const student=(await this.people(this.db,school,'',id))[0];
+  if(!student)throw new NotFoundException('Student not found.');
+  return student;
+ }
  async workspace(user:AuthUser,school:string) {
   await this.access(user,school);
   const visitors=(await sql<{id:string;name:string;purpose:string;state:string;host_user_id:string}>`SELECT id,name,purpose,state,host_user_id FROM gate_visitors WHERE school_id=${school}::uuid AND (state IN ('pending','approved','inside') OR created_at>now()-interval '1 day') ORDER BY created_at DESC LIMIT 100`.execute(this.db)).rows;

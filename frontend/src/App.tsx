@@ -221,6 +221,7 @@ export function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/gate" element={<AuthenticatedOnly><GatePage /></AuthenticatedOnly>} />
+              <Route path="/teacher/gate" element={<PortalOnly portal="teacher"><GatePage /></PortalOnly>} />
               <Route path="/principal/gate" element={<PortalOnly portal="principal"><GateAdminPage /></PortalOnly>} />
               <Route path="/" element={<RoleLanding />} />
               <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />

@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert, TrendingUp } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert, ShieldCheck, TrendingUp } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useProFeatures } from "../../features/auth/useProFeatures";
@@ -18,7 +18,7 @@ import "./operations-links.css";
 import "./operations-brand.css";
 
 type Portal = "teacher" | "principal";
-type Active = "home" | "attendance" | "insights" | "timetable" | "chat" | "safeguarding" | "more" | "events";
+type Active = "home" | "attendance" | "insights" | "timetable" | "chat" | "safeguarding" | "more" | "events" | "gate";
 
 const nav = {
   teacher: [
@@ -27,6 +27,7 @@ const nav = {
     { id: "timetable", label: "Timetable", path: "/teacher/timetable", icon: CalendarDays },
     { id: "chat", label: "Messages", path: "/teacher/messages", icon: MessageCircle },
     { id: "safeguarding", label: "Safeguarding", path: "/teacher/safeguarding", icon: ShieldAlert },
+    { id: "gate", label: "In & Out", path: "/teacher/gate", icon: ShieldCheck },
     { id: "more", label: "More", path: "/teacher/more", icon: MoreHorizontal },
   ],
   principal: [
@@ -42,7 +43,7 @@ const nav = {
 
 export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack, beforeBack, pageTitleTrailing }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void; beforeBack?: () => boolean | void; pageTitleTrailing?: ReactNode }) {
   const auth = useOptionalAuth();
-  const mobileNavIds = new Set(["home", "attendance", portal === "principal" ? "insights" : "timetable", "more"]);
+  const mobileNavIds = new Set(["home", "attendance", portal === "principal" ? "insights" : "timetable", "gate", "more"]);
   const { pathname } = useLocation();
   const planning = portal === "principal" && (pathname.startsWith("/principal/timetable") || pathname === "/principal/calendar");
   const planningTabs = portal === "principal" && (pathname === "/principal/timetable" || pathname === "/principal/calendar");
@@ -61,9 +62,10 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           : undefined;
   const attentionOwnedNavigation = new Set(["more", "attendance", "timetable", "chat", "safeguarding"]);
   const attentionUnavailableForNavigation = (id: string) => attention.isError && attentionOwnedNavigation.has(id);
-  const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review'};
+  const required:Record<string,string>={attendance:'attendance.view',timetable:'timetable.view',chat:'messages.view',safeguarding:'safeguarding.review',gate:'gate.manage'};
   const navigation=nav[portal].filter(item=>{
     if(portal!=='teacher') return true;
+    if(item.id==='gate') return member?.permissions?.includes('gate.manage')===true;
     const permission=required[item.id];
     return !permission || hasStaffPermission(member,permission);
   });
