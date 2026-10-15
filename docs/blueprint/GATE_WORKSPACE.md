@@ -119,3 +119,29 @@ release succeeded; IndexNow accepted eight canonical URLs at 16:11:08 UTC.
 No existing account or permission assignments changed. Owner device review and
 a real host/guard visitor-request walkthrough remain requested. Local fixture QA
 and native isolated database tests do not represent that live account walkthrough.
+
+## Home-only approval popup and decision feedback — 15 October 2026
+
+The owner narrowed the popup location: pending guest approvals appear only on the
+authenticated user's actual home from authDestination, including permissionless
+staff home, gate-only home and principal home. They do not interrupt other tools,
+profile, login, security or institution activation. The approval query and polling
+are disabled away from home, even if its queue is already cached. A valid visitor
+notification link opens that same home with the request marker; closing, Review
+later, Approve and Decline clear the marker/notification return state and stay home.
+Review later does not change the request and it can be reopened from notifications.
+
+Successful decisions show a short checkmark or cross confirmation, then dismiss
+after 1.2 seconds (or immediately with Done/Close). Animation starts only after
+the server confirms the decision; failures retain the review/retry UI. Shared
+theme tokens, native modal focus management, live status announcements and the
+device's reduced-motion preference are preserved. No backend authority, expiry,
+revision, gate movement or permission assignments change.
+
+Local production build, typecheck, focused lint and 24 approval/notification tests
+passed. Tests exercise real notification-panel taps from a tool, home-only cached
+queues, staff/principal/gate home destinations, close/Escape, decision feedback,
+retry and session restrictions. Headless checks of the actual local app with
+synthetic API fixtures passed at 320/768/1024/1440 px, with no page errors or
+overflow; both decision animations, auto-dismiss and reduced motion were checked.
+Hosted CI, release verification and owner-device review remain pending.
