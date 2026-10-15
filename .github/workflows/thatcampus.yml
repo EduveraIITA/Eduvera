@@ -2,10 +2,10 @@ name: ThatCampus website
 on:
   pull_request:
     branches: [Stage]
-    paths: ['marketing/**', 'backend/migrations/094_marketing_enquiries.sql', '.github/workflows/thatcampus.yml']
+    paths: ['marketing/**', 'backend/migrations/094_marketing_enquiries.sql', 'backend/migrations/095_public_demo_and_contact.sql', '.github/workflows/thatcampus.yml']
   push:
     branches: [Stage]
-    paths: ['marketing/**', 'backend/migrations/094_marketing_enquiries.sql', '.github/workflows/thatcampus.yml']
+    paths: ['marketing/**', 'backend/migrations/094_marketing_enquiries.sql', 'backend/migrations/095_public_demo_and_contact.sql', '.github/workflows/thatcampus.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,6 +46,7 @@ jobs:
         run: |
           psql "$MARKETING_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE users(id uuid PRIMARY KEY); CREATE TABLE school_memberships(id uuid PRIMARY KEY);'
           psql "$MARKETING_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/094_marketing_enquiries.sql
+          psql "$MARKETING_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/095_public_demo_and_contact.sql
       - name: Browser and persistent form verification
         working-directory: marketing
         run: |

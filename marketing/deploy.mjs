@@ -32,7 +32,7 @@ try{
  g(['run','services','update',service,...flags,`--update-env-vars=^|^ALLOWED_ORIGINS=${origins}`,'--no-traffic',`--tag=${tag}`]);
  site=JSON.parse(g(['run','services','describe',service,...flags,'--format=json']));candidate=site.status.traffic.find(t=>t.tag===tag);if(!candidate?.url||!candidate.revisionName)throw new Error('Configured candidate URL missing');
  // Wait briefly for the normal Stage pipeline to apply the additive migration.
- let ready=false;for(let i=0;i<40;i++){try{await verify(candidate.url);ready=true;break;}catch{await new Promise(r=>setTimeout(r,15000));}}if(!ready)throw new Error('Candidate not ready. Verify migration 094 in the Stage release.');
+ let ready=false;for(let i=0;i<40;i++){try{await verify(candidate.url);ready=true;break;}catch{await new Promise(r=>setTimeout(r,15000));}}if(!ready)throw new Error('Candidate not ready. Verify marketing migrations 094–095 in the Stage release.');
  promoted=true;g(['run','services','update-traffic',service,...flags,`--to-revisions=${candidate.revisionName}=100`]);await verify(site.status.url);
  const appResponse=await fetch(env.LOGIN_URL,{signal:AbortSignal.timeout(20000)});if(!appResponse.ok)throw new Error('Existing app login is not reachable');
  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`## ThatCampus deployed\n\n${site.status.url}\n\nRelease ${process.env.RELEASE_SHA}. Website, legal routes, SEO assets, database readiness, login destination and existing app HTTP availability verified. DNS remains unchanged.\n`);
