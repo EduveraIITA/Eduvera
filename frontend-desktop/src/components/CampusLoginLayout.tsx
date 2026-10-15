@@ -1,10 +1,11 @@
 import Threads from "./Threads";
 import type { ReactNode } from "react";
-import { BookOpenCheck, ShieldCheck, UsersRound, CalendarDays } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import "./campus-login.css";
 
 export function CampusLoginLayout({ children }: { children: ReactNode }) {
   return <div className="campus-login">
+    <Threads />
     <div className="campus-login__frame">
       <header className="campus-login__topbar">
         <a className="campus-login__brand" href="/" aria-label="ThatCampus portal">
@@ -20,15 +21,9 @@ export function CampusLoginLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="campus-login__stage">
-        <Threads />
-        <div className="campus-login__badge campus-login__badge--one"><CalendarDays size={17} aria-hidden="true" /><span>Attendance &amp; timetables</span></div>
-        <div className="campus-login__badge campus-login__badge--two"><ShieldCheck size={17} aria-hidden="true" /><span>Role-based access</span></div>
-        <div className="campus-login__badge campus-login__badge--three"><BookOpenCheck size={20} aria-hidden="true" /><span>Campus workspace<small>Your school day, connected</small></span></div>
-        <div className="campus-login__badge campus-login__badge--four"><UsersRound size={20} aria-hidden="true" /><span>School community<small>Staff, students &amp; families</small></span></div>
         <div className="campus-login__center">
           <section className="campus-login__card" aria-labelledby="campus-login-title">
             <header className="campus-login__heading">
-              <img className="campus-login__main-logo" src="/assets/thatcampus-logo.png" alt="ThatCampus" width="152" height="90" />
               <h1 id="campus-login-title">Welcome back</h1>
               <p>Access your attendance, timetable, and campus portal</p>
             </header>
