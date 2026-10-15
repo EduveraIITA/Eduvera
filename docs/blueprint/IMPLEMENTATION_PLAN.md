@@ -6875,3 +6875,46 @@ Updated existing login branding/title expectations. Local execution and browser 
 ## Original ThatCampus logo on login — 16 October 2026
 
 Owner clarified that login must use the same original stacked ThatCampus logo as Home, supplying the navy/blue wordmark reference. Both login clients now reuse /assets/thatcampus-logo.png (the existing Home attribution asset) in the header and above Welcome back, replacing the generic graduation-cap icons and separate typed wordmark. Uses object-fit: contain and responsive dimensions; retains the latest Threads background, authentication flows and other concurrent changes. Hosted build/release checks are pending; no visual device acceptance is claimed.
+
+## Compact route regression suite — 15 October 2026
+
+Follow-up to PR #40: all hosted checks passed and release 2de06c11cad265560b79883767564a97ae37715a
+was successfully deployed in Actions run 38735993491. PR verification took about
+3m37s versus the earlier roughly 10-minute sequential baseline. The remaining
+mobile hotspot was App.routes.test.tsx (62 cases, about 169s in the merged run).
+
+Consolidate this suite to 54 cases by removing duplicate full-App mounts, keeping
+observable assertions in the interaction tests that already exercise each route:
+
+- Four heading-only smoke cases move to existing parent home/attendance and
+  student home/attendance workflows. Other smoke routes remain.
+- Two parent standings cases move into the existing home-card and attendance
+  score workflows. Aggregate-card, whole-home-card and score triggers all remain,
+  including row count, selected-child highlighting and list visibility checks.
+- The default home metrics case shares the homework/attendance interaction mount.
+  Alternate homework counts move to the alternate-metrics case, retaining count,
+  trend direction and missing-baseline assertions.
+- The child-menu case owns selection and identity data; the four-child deck case
+  owns swipe behavior. Eight repeated deck transitions become four: an interior
+  move and wraparound in each direction. The two swipes after menu selection remain
+  because they cover synchronization of menu selection and deck position. Two-child switching, delayed loading,
+  header selection, and permission/authorization regressions remain separate.
+
+No skips, timeout increases, application-code changes or backend/security test
+removals are introduced. Hosted run 38738727147 passed every check, including
+all 54 route cases. That file took 198s versus 169s in the prior run, so the
+compaction alone does not establish a speedup. A local full run hit two 15s
+timeouts (combined standings and unchanged avatar switching). The combined
+standings case now uses click dispatch and dialog-scoped close lookup, matching
+its route-outcome purpose, instead of costly pointer simulation. Its isolated
+local run passed in 9.25s versus 16.52s before that adjustment; no timeout was
+increased. Lint passed. Historical hosted validation passed in run 38739608845; a fresh run
+is required after reconciling this branch with current Stage.
+
+Reconciliation checkpoint (15 October 2026): preserved current Stage branding,
+login, assistant and release work. The compacted tests retain core assertions with
+fewer repeated swipe permutations. Fresh hosted validation is pending.
+
+Coverage review retained the distinct menu-selection-to-swipe regression, rather
+than treating it as a duplicate of the isolated deck test. No skipped cases or
+increased timeouts were introduced.
