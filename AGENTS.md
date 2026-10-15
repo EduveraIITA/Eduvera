@@ -6,6 +6,15 @@
 - Read `docs/blueprint/IMPLEMENTATION_PLAN.md` for the current delivery state,
   dependency order, accepted architecture decisions, missing companion artifacts,
   and remaining acceptance gaps. Keep that record updated with verified evidence.
+- Treat this file, the blueprint, the implementation plan, and the referenced
+  companion artifacts as shared version-controlled context. When a product
+  decision, architecture contract, delivery state, or agent rule materially
+  changes, commit and push the relevant document with the owning work; do not
+  leave project knowledge only in a conversation or one agent's local checkout.
+- Before starting substantial work, compare the current checkout with the shared
+  branch and read the latest versions of these references. Reconcile concurrent
+  documentation changes without discarding another agent's evidence or unresolved
+  acceptance gates.
 - Preserve the established theme, shared headers, navigation, and UX. The blueprint
   guides capabilities and architecture; it is not permission to redesign the app.
 - Prefer substantial, end-to-end workflows with real database relationships,
