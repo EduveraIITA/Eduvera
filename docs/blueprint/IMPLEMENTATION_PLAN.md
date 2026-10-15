@@ -30,7 +30,7 @@ decisions cannot be replaced by synthetic software tests.
   of scattering school-only assumptions through new domains. The first governance pack is the
   India school core pack; college and coaching packs require their own evidence and acceptance.
 - Product decision, 5 October 2026: initial institution onboarding assumes the institution is
-  bringing already-admitted learners into Eduvera. A pre-admission/enquiry/application pipeline is
+  bringing already-admitted learners into ThatCampus. A pre-admission/enquiry/application pipeline is
   parked for a later release. Current reviewed individual/bulk enrolment remains the supported
   starting workflow; do not make admissions CRM a dependency for the next academic-operations slice.
 - Product decision, 7 October 2026 (latest correction): descriptive **Position**, reusable
@@ -61,6 +61,123 @@ decisions cannot be replaced by synthetic software tests.
 
 B1 still has foundational gaps; B2 and B3 have locally implemented workflows awaiting acceptance. The B4 slice builds only on already-existing account, enrollment
 and attendance primitives; it does not imply that the complete Stage B exit gate has passed.
+
+## Active delivery: one principal timetable — 14 October 2026
+
+User decision: end the Timetable / Calendar / Planner comparison and keep one principal-facing
+planning concept. **Timetable** is now the canonical browsing destination because it is the familiar
+school term and the blueprint already assigns it ownership of classes, rooms, staff allocation and
+conflict-aware scheduling. Calendar is a view of that timetable, not a peer module; Planner was the
+interaction experiment, not a lasting product label.
+
+- `/principal/timetable` now presents the retained planner interaction with Day, Week and Month views.
+  Month contains school dates, closures and events, so the separate Calendar decision block is gone.
+  The previous preview/current switch, explanatory preview card and redundant colour key were removed.
+- The screen has one compact view switch, one class scope and one **New** menu. The later UX refinement
+  below moves recurring lesson editing and publication into calendar sheets. **Academic settings** now
+  holds term/year preparation, holidays and teaching-time targets. One-day changes still open the dated-plan editor, while recurring classes,
+  events and closures continue to write through their existing authoritative APIs and review rules.
+- Existing `/principal/calendar` and `/principal/planner` links redirect to the canonical Timetable while
+  preserving date, class, view and typed attention parameters. Calendar links default to Month. Calendar
+  attention acknowledgement is evaluated inside the retained Timetable, and event creation returns there.
+  Search and More now use the single Timetable name; School calendar search opens its Month view.
+- No timetable, event or school-calendar data was migrated or duplicated. Teacher, parent and student
+  reading experiences are unchanged in this slice.
+
+The retained Day and Week surfaces now use FullCalendar v7's MIT-licensed React time-grid rather than
+another bespoke positioning engine. Lesson and event blocks are placed and sized by their real start and
+end times, the current day has a live time indicator, empty time can be selected by click, drag or touch,
+and the week remains horizontally navigable at phone widths. Selecting free time opens one compact
+planning sheet with the date and time already filled. Recurring classes can be composed without leaving
+the timetable; event and one-day-change choices continue into their existing authoritative editors.
+
+An in-range timetable draft is projected into the same calendar instead of a separate preview mode.
+Draft lessons can be moved or resized in place and save through the existing versioned timetable API;
+editing a published lesson prepares a future draft through the same API, while dragging remains scoped
+to existing drafts. The month grid remains the better density for long-range browsing, but its
+selected-day detail now uses the same proportional day timeline.
+
+Verified locally: 94 focused timetable, calendar-attention, event-navigation, More and hierarchy tests
+pass; changed files pass focused ESLint; the Vite production bundle succeeds. The authenticated mobile
+preview was checked in Week and Month, including the canonical Calendar redirect, with no runtime error
+or horizontal page overflow observed. The repository-wide TypeScript build remains blocked only by the
+preserved, unrelated untracked duplicate `* 2.tsx` tests. No cloud deployment or database migration was
+performed. Physical-phone acceptance remains requested.
+
+Additional timeline verification: the focused planner suite passes **5/5**, the changed planner files pass
+focused ESLint, and the Vite production build succeeds. The authenticated mobile preview was exercised in
+Day and Week, including free-time selection, recurring-class prefill and the touch-sized planning sheet.
+FullCalendar is lazy-loaded with the principal timetable route; its route chunk is approximately 89 kB
+gzip. The optional local photo-attendance sidecar still lacks `psycopg` and is unrelated to this slice.
+
+### Calendar interaction and visual refinement — 14 October 2026
+
+The user's phone screenshots rejected the initial library skin and the remaining duplicate class editor.
+The recurring timetable now has one principal-facing editing surface:
+
+- New and Academic settings live in the shared page header. Selecting a lesson opens a native modal
+  sheet with its time, teacher, room and recurrence; **Edit recurring class** edits it in that sheet.
+  Selecting free time opens the small creation menu with the selected date/time and class preserved.
+- A class draft has one contextual review control. Dates and publication are reviewed over the calendar,
+  using the existing revision-checked save/publish commands. No school timetable was published during
+  visual verification. Published-lesson edits create future drafts; matching copied lesson IDs uses the
+  original weekday, period number, subject and start time, not subject alone.
+- Academic settings no longer lists a second set of class timetable editors. Old pattern links redirect
+  to the calendar with class/date/period or review context. Unavailable period links show an explicit
+  state instead of selecting a different lesson. Annual setup and coverage configuration remain there.
+- Phone Week view uses a compact seven-day strip with a full-width proportional timeline for the chosen
+  day. Larger screens retain the seven-column week. Blue lesson blocks have dark readable text; breaks
+  use a quiet neutral fill. Details are shown on demand. Short blocks retain their title without clipped
+  text. The current-time marker and selected-day treatment use the established brand/severity colours.
+- Styling now uses FullCalendar v7 public class hooks and theme variables. The previous v6-style selectors
+  did not match v7's generated classes, which caused the default dark blocks and inconsistent spacing.
+
+Verification: 32 focused planner, draft, navigation and event-return tests pass across the final runs;
+changed files pass focused ESLint and the production Vite bundle builds. Browser inspection covered
+320, 390, 768, 1024 and 1440 CSS-pixel widths, with document width equal to viewport width; calendar-only
+overflow at narrower tablet widths remains intentional. Lesson details/editing, free-slot selection,
+publication review and the live current-time line were visually checked. Repository-wide TypeScript
+checking still reports the pre-existing unrelated duplicate `* 2.tsx` test matcher errors; no new planner
+type errors were reported. The managed local preview remains available. No cloud deployment was performed.
+
+Design references: [Teams calendar interaction](https://support.microsoft.com/en-us/teams/meetings/get-started-with-the-microsoft-teams-calendar)
+and [FullCalendar v7 styling API](https://fullcalendar.io/docs/css-customization). Physical-phone review
+is still required; these local checks do not claim school acceptance or complete release readiness.
+
+## Superseded comparison record: unified planning preview — 14 October 2026
+
+A second, explicitly labelled **Planner preview** was implemented locally for principal review without
+replacing the current Timetable, Calendar or Schedule settings experience. A top-level comparison
+control switches between the current experience and `/principal/planner`; it preserves date, class and
+the originating current view so the trial does not introduce a second navigation hierarchy.
+
+The preview follows the interaction rhythm of a modern work calendar while retaining ThatCampus's
+existing visual tokens and domain boundaries:
+
+- Day, week and month views project the authoritative dated timetable versions, legacy weekly
+  baseline where no dated version applies, school closures and campus events. The all-class week
+  overview groups lessons by period to prevent a forty-register school from rendering hundreds of
+  competing cards; selecting a class reveals the individual lessons.
+- One **New** menu is the only creation entry point in the preview. Its templates distinguish a
+  recurring class, an event/activity, a holiday/closure and a one-day change. This is progressive
+  disclosure, not four permanently competing action bars.
+- Recurring class creation writes to the existing versioned timetable draft API and requires the
+  established publish review before becoming live. Event creation opens the canonical event editor
+  with the chosen date/time prefilled and a safe return to the planner. Holidays reuse the existing
+  audited closure command and editor. A one-day change opens the existing dated day-plan workflow.
+  No second scheduling store, event store, permission path or approval engine was added.
+- The comparison UI described below has now been removed by the decision above. Its data ownership
+  remains valid: removing the preview did not orphan records because all writes belonged to the
+  authoritative domains.
+
+Verified locally: the focused planner, comparison-navigation and event-return coverage passes **9/9**;
+changed files pass focused ESLint; the Vite production bundle succeeds. Repository-wide TypeScript
+checking remains blocked only by the preserved, unrelated untracked duplicate `* 2.tsx` tests already
+recorded above. The authenticated managed preview was inspected at the mobile breakpoint in week and
+month views, including the grouped all-class overview and recurring-class composer. The core preview
+is running; its optional photo-attendance sidecar currently lacks the local `psycopg` package and is
+not part of this planning slice. This was the evidence used for the consolidation decision recorded
+above. No cloud deployment or database migration was performed for this comparison slice.
 
 ## Active delivery: cross-app behaviour consolidation — 13 October 2026
 
@@ -1011,7 +1128,7 @@ Verification:
 ## Live mobile preview tunnel — 17 September 2026
 
 - Repointed the reserved ngrok URL from the old attendance-lab process to the active local
-  Eduvera preview on port 8000. Vite now accepts the reserved ngrok host during local review,
+  ThatCampus preview on port 8000. Vite now accepts the reserved ngrok host during local review,
   so phone sessions reach the hot React dev server instead of receiving a host-header 403.
 - Verified `http://127.0.0.1:8000` returns HTTP 200, the ngrok inspector reports
   `https://dalene-miraculous-sweepingly.ngrok-free.dev` forwarding to `http://localhost:8000`,
@@ -1389,7 +1506,7 @@ scratch files). Local and Cloudflare readiness both report database/events healt
   unrelated cards.
 - Attendance progress is represented once, with the full register rows remaining authoritative and
   directly actionable. Detailed follow-ups still render only when open, and timetable detail remains
-  one tap away. The established Eduvera type, cobalt accent, shell, headers and navigation are unchanged.
+  one tap away. The established ThatCampus type, cobalt accent, shell, headers and navigation are unchanged.
 - The teacher pilot received user visual approval. Cross-role typecheck, focused tests, production build
   and local route health are the acceptance checks for the expanded implementation; phone review of
   parent, student and principal Home remains the final visual gate.
@@ -1475,7 +1592,7 @@ scratch files). Local and Cloudflare readiness both report database/events healt
   migrations include Gandhi Jayanti as a non-instructional day. Non-instructional overrides suppress
   recurring periods and register workload while retaining explicitly scheduled events.
 - Loading, empty, error/retry and selected-day states are present, indicators pair shape/labels with
-  colour, and controls retain keyboard-visible native button semantics. The existing Eduvera cobalt
+  colour, and controls retain keyboard-visible native button semantics. The existing ThatCampus cobalt
   visual system, role headers and navigation remain unchanged.
 - Frontend/backend typecheck and lint pass, the production frontend build passes, all **180** frontend
   tests, **53** backend non-integration tests and all **8** deterministic seed integrity tests pass. The localhost preview is healthy
@@ -1501,7 +1618,7 @@ scratch files). Local and Cloudflare readiness both report database/events healt
   rules. Its action opens the school calendar instead of repeating the weekly-view action.
 - Normal school days retain plan preparation, revisions, printing, coverage, history and the full
   period list. Empty instructional schedules use a compact inline state rather than reserving a large
-  card. The established Eduvera type, cobalt palette, staff header and four-tab phone navigation are
+  card. The established ThatCampus type, cobalt palette, staff header and four-tab phone navigation are
   unchanged. The selected class, schedule status, revision control and print control now share one
   schedule header rather than repeating the class context in a separate block.
 - All **180** frontend tests, the production build, typecheck and lint pass. The Gandhi Jayanti closure state and a
@@ -1583,7 +1700,7 @@ scratch files). Local and Cloudflare readiness both report database/events healt
   the browser. Summary ranges are validated and capped at 370 days.
 - Interaction research used the official Google Calendar and Microsoft Outlook/Teams patterns:
   quick view switching, stable selection, previous/next date navigation and a selected-day agenda.
-  The implementation retains Eduvera's established cobalt strip, compact mobile surfaces, headers
+  The implementation retains ThatCampus's established cobalt strip, compact mobile surfaces, headers
   and four-item navigation rather than copying those products' visual styling.
 - Frontend/backend typecheck, lint and production builds pass. All **186** frontend tests and **53**
   database-free backend tests pass. Database integration suites remain gated on an isolated test
@@ -1690,25 +1807,28 @@ scratch files). Local and Cloudflare readiness both report database/events healt
   focused week navigation, date jump, compact-rail and target-editing coverage. Physical-phone
   acceptance remains open.
 
-## Eduvera co-brand and install icon — 3 October 2026
+## ThatCampus supplied brand artwork rollout — 14 October 2026
 
-- Extracted the symbol-only Eduvera mark from the approved supplied artwork; the `Eduvera` wordmark,
-  surrounding canvas and decorative effects are not embedded in the application asset. The transparent
-  master is stored once under the public assets directory and used by the shared school-brand component.
-- Login, signup and onboarding now show the school crest and Eduvera mark side by side. Authenticated
+- Extracted the approved complete two-line ThatCampus lockup directly from the supplied artwork
+  without redrawing its letterforms or changing the blue palette. The app uses an opaque light
+  version (navy `That` on white) and an opaque dark version (white `That` on black); the dark version
+  uses a slightly lighter blue `Campus` for contrast while preserving the original ray colours. The
+  complete lockup is used on every current brand surface.
+- Login, signup and onboarding now show the school crest and complete ThatCampus lockup side by side. Authenticated
   student, parent, teacher and principal headers inherit the same shared component with a compact
-  overlapping lockup, while retaining the established school name, theme, navigation and accessible
+  paired lockup, while retaining the established school name, theme, navigation and accessible
   label.
-- Replaced the old browser and install artwork with symbol-only PNG assets: a browser favicon, a
+- Replaced the old `TC` monogram and browser/install artwork with complete-lockup PNG assets: light and dark browser favicons, a
   180-pixel Safari touch icon, and 192/512-pixel manifest icons with maskable declarations. The manifest
   and document head reference the new files directly so newly added iOS home-screen shortcuts use the
-  Eduvera symbol.
-- The production SPA server now exposes the root PNG favicon and Safari touch icon plus the manifest
-  icon directory. The Stage release smoke test requests all four install assets, preventing a healthy
+  complete ThatCampus identity.
+- The desktop staff portal, transactional invitation route and generated payment receipts now use the
+  same supplied lockup. The production SPA server exposes both browser variants, the Safari touch icon,
+  manifest icons and both in-app background variants. The Stage release smoke test requests each install/brand asset, preventing a healthy
   application deployment from silently shipping broken home-screen artwork.
-- The complete route regression file passes (**44** tests) and the production frontend build succeeds.
-  The principal top bar plus login and signup lockups were visually checked at a 390 x 844 mobile
-  viewport; both co-brand arrangements remain legible without colliding with account actions.
+- Focused route, branding, invitation, receipt and deployment-contract checks cover the lockup paths.
+  The production mobile, desktop and backend builds are part of the release gate; physical-phone
+  acceptance of the final complete-lockup treatment remains open.
 
 ## Consistent portal page headers — 3 October 2026
 
@@ -2451,7 +2571,7 @@ expiry/revocation/acceptance and current-authority checks remain authoritative.
 Validation: five transport tests and seven onboarding UI tests pass. Backend
 and mobile typechecks, backend lint, backend build and both web production builds
 pass. The connected Railway account exposes DigiRobe and Petboarding only, so
-Eduera SMTP variables have not been configured and no live email has been sent.
+ThatCampus SMTP variables have not been configured and no live email has been sent.
 Durable queue retries, persisted delivery history, crash recovery and real mailbox
 confirmation remain outside this increment; create a replacement invitation for
 manual retry. See COMPANY_ONBOARDING.md for server activation settings.
@@ -2461,7 +2581,7 @@ manual retry. See COMPANY_ONBOARDING.md for server activation settings.
 A company-demo invitation to the user-requested `ise2016004@gmail.com` on
 live Stage release `669050f` returned `delivery: failed`. Inbox delivery was
 not confirmed. The prior blanket error hid the cause. Connected Railway access
-still does not expose the Eduera project, so the plan, variables and runtime
+still does not expose the ThatCampus project, so the plan, variables and runtime
 logs cannot be inspected through that connector. Local Gmail SMTP is also
 unreachable from this workspace; that does not prove the live server's cause.
 
@@ -4620,7 +4740,7 @@ variable requirement for the existing Stage demo deployment. No live credentials
 or production activation are enabled. Actual deployment/checkout remains unverified.
 ### Google Cloud trial connection — 9 October 2026
 
-- User selected **Eduera (`eduera-511111`)** and authorised setup limited to the
+- User selected **ThatCampus (`eduera-511111`)** and authorised setup limited to the
   **$300 trial**. No paid-account upgrade, GPU/Marketplace deployment or spending
   beyond available trial credit is authorised. Keep the current deployment intact
   until a separate Google Cloud deployment is verified.
@@ -4821,7 +4941,7 @@ Deployment and real browser checkout remain separate verification steps.
 ### Invitation logo — 9 October 2026
 
 - Reused the app's existing `frontend/public/assets/edura-leaf-mark.png` in
-  the invitation header at 48px alongside the Eduera wordmark. The fixed image
+  the invitation header at 48px alongside the ThatCampus wordmark. The fixed image
   URL uses the configured public origin, with no recipient/code/query parameters.
   This supersedes the previous template's no-remote-image design at the user's
   request. Text branding and the full invitation remain usable if images are blocked.
@@ -5264,7 +5384,7 @@ Numeric hashes use an email-bound HMAC with the stable cookie secret; previously
 issued long-code hashes remain compatible until their original expiry. Five
 acceptance attempts per recipient per 15 minutes are committed separately from
 acceptance so failed guesses cannot roll back the limit. Resend replaces the code.
-The established Eduera logo is embedded as an inline PNG attachment with a CID
+The established ThatCampus logo is embedded as an inline PNG attachment with a CID
 reference in SMTP and HTTPS provider emails; it no longer needs a remote image
 request. Focused checks cover MIME metadata, code scoping and legacy digests;
 database CI covers guess limits. Live deployment/email verification follows CI.
@@ -5280,7 +5400,7 @@ and pending attempts are distinct from captured and school-review payments.
 Parents can download an authorized PDF from invoice status or receipt detail.
 
 Migration 059 adds a transactional, deduplicated email queue. A post-commit worker
-uses Eduera's existing configured sender, verifies the initiating guardian still
+uses ThatCampus's existing configured sender, verifies the initiating guardian still
 has access and a verified email, and attaches a branded PDF only for allocated
 capture. Other states get accurate status templates. Provider acceptance is not
 claimed as inbox delivery. Ambiguous sending is recorded without automatic resend;
@@ -5314,7 +5434,7 @@ must be verified separately; no live email was sent by this UI change.
 ### Reference-led invitation email — 9 October 2026
 
 The supplied email reference now guides the invitation template: white rounded
-card, original embedded Eduera logo, navy heading, neutral code panel with
+card, original embedded ThatCampus logo, navy heading, neutral code panel with
 single-use label, readable UTC expiry including time, violet full-width join
 button, fallback join link and quiet privacy footer. Responsive overrides reduce
 padding on small screens; presentation tables and inline styles retain email
@@ -5863,7 +5983,7 @@ profile enrollment and physical-phone acceptance remained pending at that checkp
 
 Stage release rehearsal exposed that Cloud Run reserves the standard `Authorization` header even on
 an otherwise public health endpoint. The inference contract now uses the dedicated
-`X-Edura-Inference-Token` header so the Secret Manager credential reaches the application unchanged;
+the existing internal inference-token header so the Secret Manager credential reaches the application unchanged;
 the public surface remains limited to `/api/health`. This correction passed the 15 sidecar tests and
 backend typecheck. The first Stage enrollment then exposed a PostgreSQL-only nullable-parameter
 ambiguity in the provider roster query; the durable store now uses separate filtered and unfiltered
@@ -5925,7 +6045,7 @@ than a second hard-coded conversation path.
 
 A signed-in Pro user starts a short-lived connection from Profile. Telegram's private
 `/start` update consumes the token once, links one Telegram user to one current
-OmniSchool owner/provider pair and creates a normal owner/school/portal/child-scoped
+ThatCampus owner/provider pair and creates a normal owner/school/portal/child-scoped
 agent thread. Raw link tokens are hashed before persistence, webhook requests require
 Telegram's secret header, duplicate provider updates are ignored and completed
 transport text is erased. The existing agent service revalidates the active account,
@@ -5949,7 +6069,7 @@ on the pre-existing SQL error after migration 032, and the ordinary local runner
 stops on the pre-existing checksum drift in applied migration 047; neither historical
 migration was changed.
 
-BotFather created `@EduraOmniSchoolBot`. Its token and webhook verification secret are
+The existing Telegram bot's token and webhook verification secret are
 held only in Google Secret Manager and are exposed to the capped Stage runtime through
 secret references; the release contract fails closed if either value becomes plaintext
 or automatic verified webhook registration is disabled. Stage workflow
@@ -5970,11 +6090,11 @@ and action contract.
 
 ### Provider-independent calendar export and subscription — 14 October 2026 (Google Cloud Stage)
 
-Users can now take the role-aware Edura calendar into an installed calendar application
+Users can now take the role-aware ThatCampus calendar into an installed calendar application
 without granting Google, Microsoft or Apple API access. An authenticated export returns a
 standards-based `.ics` snapshot for the selected portal/child. A separate private
 subscription URL provides a continuously refreshed, read-only projection for calendar
-applications that support web calendar subscriptions. Edura remains the source of truth;
+applications that support web calendar subscriptions. ThatCampus remains the source of truth;
 external calendar applications receive no command path back into attendance, assessments,
 events or school configuration.
 
@@ -5987,7 +6107,7 @@ feed. The projection includes non-instructional school dates, the learner's or t
 effective timetable (including published dated changes), visible campus events and
 permission-scoped assessments. Principal feeds deliberately omit every classroom period
 to avoid turning the leadership calendar into thousands of low-value entries. Event
-descriptions are minimized and direct the user back to Edura for current details.
+descriptions are minimized and direct the user back to ThatCampus for current details.
 
 Profile now exposes Calendar sync independently of the AI Pro toggle. It supports
 one-year snapshot export, subscription creation, one-time open/copy actions, last-fetch
@@ -6013,6 +6133,76 @@ completed successfully, the no-traffic candidate passed its checks, and commit
 checks report that exact commit with database/events ready. Installed-calendar/physical-phone
 acceptance remains open because a real calendar client must consume the private subscription.
 
+### ThatCampus product identity and domain transition — 14 October 2026 (historical checkpoint)
+
+This section records the pre-release checkpoint. The later release entries below
+supersede its pending gates with verified Stage and public-domain evidence.
+
+The approved customer-facing product identity is **ThatCampus**, the canonical domain is
+`thatcampus.com`, and the tagline is **“Not just any campus. That campus.”** Mobile, desktop,
+browser/PWA metadata, authentication and onboarding copy, transactional email, receipts,
+calendar exports, assistant language, documentation and package display names now use the
+new identity in the working tree. The complete two-line lockup extracted from the approved supplied
+artwork replaces the prior product mark, with separate opaque light- and dark-background versions,
+beside each institution's own crest; school identity, navigation and the established interface
+theme remain unchanged.
+
+Compatibility identifiers that are not shown to customers have deliberately not been renamed:
+the existing Google Cloud project, Cloud Run services, Artifact Registry, Cloud SQL resources,
+GitHub repository, database columns, signed-token labels, telemetry keys, legacy email asset URL
+and stable iCalendar UIDs continue to use their deployed identifiers. Renaming those values is a
+separate infrastructure/data migration, not a visual rebrand. The old invitation image route is
+retained only for messages that have already been sent; new messages and receipts use the
+ThatCampus mark.
+
+A repository-wide public-surface audit now covers the mobile and desktop source trees, browser
+metadata, backend-generated customer messages and the photo-attendance service. It corrected the
+remaining institution-onboarding message and added an automated regression check that rejects the
+retired OmniSchool/Eduvera/Eduera/Edura/Edera/Educera names in customer-facing source. The guard
+also asserts the approved name and tagline remain on authentication, install-manifest and invitation
+surfaces. Explicitly allowlisted legacy inference headers and already-sent email asset URLs remain
+unchanged as compatibility contracts; database/resource names, stable calendar UIDs, storage keys,
+event channels and deployed infrastructure identifiers are likewise not presentation branding.
+
+Google Search Console ownership of `thatcampus.com` is verified for the deployment account and
+the verification TXT record resolves publicly. Direct Cloud Run domain mapping was attempted and
+correctly rejected by Google because the current Mumbai region (`asia-south1`) is not supported by
+the preview mapping product. The user selected **Cloudflare Free** as the public edge. A versioned
+Worker now proxies the apex to the existing Mumbai Cloud Run service, redirects `www` to the apex,
+preserves paths, queries, request bodies and streaming responses, rewrites only origin redirects,
+and rejects unknown hosts. Release checks accept the custom domain only when explicitly requested.
+
+The Cloudflare Free account is authenticated through Wrangler with only user/background access,
+Workers route/script write and zone read scopes. The `thatcampus.com` zone has been created and its
+six public records were independently compared with Cloudflare's import: two parked apex A records,
+the `www` and `_domainconnect` aliases, Google verification TXT and DMARC TXT are preserved. The
+tested Worker is uploaded as `thatcampus-edge` (version
+`bb8f5238-7ebf-4f10-9394-648bbce0032f`) and its non-destructive zone routes are deployed for
+`thatcampus.com/*` and `www.thatcampus.com/*`; zone routes were chosen after custom-domain setup
+correctly refused to replace the imported apex records.
+
+The registrar owner replaced the GoDaddy delegation with `diana.ns.cloudflare.com` and
+`elijah.ns.cloudflare.com`; ICANN Registry RDAP reports that exact delegation and records the
+change at 15:11:29 UTC. Cloudflare activated the zone shortly afterwards. Its authoritative server
+and the `1.1.1.1` resolver return the live Cloudflare edge addresses, while `8.8.8.8` and the local
+resolver were still returning the previously cached GoDaddy parking addresses at the activation
+checkpoint. This is resolver propagation, not an application or Worker failure.
+
+Bypassing the stale local resolver verifies the live edge end to end: HTTPS `/` returns the app with
+HTTP 200 through Cloudflare, `/readyz` returns HTTP 200 from the Cloud Run origin, and HTTPS `www`
+returns the intended 308 redirect to `https://thatcampus.com/`. The public domain is therefore live,
+although individual devices may temporarily see the old GoDaddy site until their recursive DNS
+cache expires. API, deep-link, Assistant streaming, file-upload, Telegram-webhook and calendar-link
+release checks remain open; only after those pass should Cloud Run canonical URL/origin settings
+and the webhook be switched.
+
+Verified locally at this checkpoint: backend TypeScript build, mobile Vite production build,
+desktop TypeScript/Vite build, deployment-contract tests (**10/10**), Cloudflare edge tests
+(**5/5**), focused backend email, receipt, calendar and assistant-channel tests (**24/24**) and the
+public-brand regression guard (**3/3**) pass. Mobile route, account-profile and onboarding checks
+pass **87/87** when run as focused suites. The complete mobile TypeScript/build wrapper remains
+blocked only by the already documented untracked duplicate `* 2.tsx` test files; the production
+Vite build itself succeeds. Stage deployment and physical-device brand acceptance remain pending.
 ## Gate & Safety — 14 October 2026
 
 User-directed first release: a non-technical gatekeeper workspace at `/gate`, with
