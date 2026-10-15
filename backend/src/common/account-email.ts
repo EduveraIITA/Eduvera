@@ -1,3 +1,4 @@
+import { invitationTemplate } from "./invitation-template.js";
 import { Logger } from "@nestjs/common";
 import { sendTransactionalEmail } from "./email-transport.js";
 import { config } from "../config.js";
@@ -26,7 +27,8 @@ export async function deliverAccountAction(input: {
       senderName: "ThatCampus",
       to: input.email,
       subject: verify ? "Verify your ThatCampus email" : "Reset your ThatCampus password",
-      html: `<html><body style="font-family:Arial,sans-serif"><img src="${new URL('/email-assets/thatcampus-logo-v2.png', settings.PUBLIC_URL).href}" width="120" height="80" alt="ThatCampus"/><h1>${verify ? "Verify your email" : "Reset your password"}</h1><p><a href="${link.href.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">${verify ? "Verify email" : "Reset password"}</a></p><p>This single-use link expires ${input.expiresAt.toISOString()}. If you did not request this, ignore this message.</p></body></html>`,
+      html: invitationTemplate({email: input.email, token: "", expires_at: input.expiresAt, publicUrl: link.origin,
+        action: {title: verify ? "Verify your email" : "Reset your password", description: verify ? "Confirm your email address to continue to your workspace." : "We received a request to reset your password. Choose a new password using the secure button below. This link expires in 30 minutes.", label: verify ? "Verify email" : "Reset password", url: link.href}}).html,
       text: `${verify ? "Verify your email address" : "Reset your password"} using this single-use link:\n\n${link.href}\n\nThe link expires ${input.expiresAt.toISOString()}. If you did not request this, ignore this message.`,
     });
     return { delivery: "email_accepted" as const };

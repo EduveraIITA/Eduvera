@@ -317,10 +317,14 @@ export function WorkspaceUnavailablePage() {
       <div className="onboarding-card">
         <AuthBrand />
         <div className="onboarding-illustration" aria-hidden="true"><School size={38} /></div>
-        <span className="onboarding-eyebrow">Attendance pilot</span>
-        <h1>Your account is verified</h1>
-        <p>This release includes the parent and student attendance workspaces. Your school role is valid, but its workspace is not part of this pilot yet.</p>
-        <Link className="auth-primary-button" to="/">Check available portal <ArrowRight size={18} /></Link>
+        <span className="onboarding-eyebrow">My home</span>
+        <h1>Welcome, {auth.user?.first_name || "there"}</h1>
+        <p>{auth.user?.email}</p>
+        <p>{[...new Set(auth.memberships.map(member=>member.school_name))].join(", ")}</p>
+        <h2>Ask your administrator for access</h2>
+        <p>Your account is ready. No workspace permissions have been assigned yet. Ask your institution administrator to assign a role and the permissions you need.</p>
+        <p>Share your account email above so they can find you in Roles and permissions.</p>
+        <Link className="auth-primary-button" to="/">Check my access <ArrowRight size={18} /></Link>
         <button className="auth-text-button" type="button" onClick={() => void auth.logout()}>Sign out</button>
       </div>
     </main>

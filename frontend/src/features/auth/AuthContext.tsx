@@ -397,6 +397,7 @@ export function authDestination(auth: Pick<AuthContextValue, "status" | "portals
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
   if (auth.portals.includes("teacher")) {
+    if (auth.memberships.filter(m=>m.role==="staff").every(m=>!m.permissions?.length)) return "/workspace";
     const gateOnly=auth.memberships.some(m=>m.role==="staff"&&m.permissions?.includes("gate.manage")&&m.permissions.every(p=>p==="gate.manage"));
     return gateOnly ? "/gate" : "/teacher";
   }

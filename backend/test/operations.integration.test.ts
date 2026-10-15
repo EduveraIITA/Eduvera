@@ -143,6 +143,7 @@ suite("school operations against disposable PostgreSQL", () => {
     const payload = { token: inviteToken, email: studentEmail, first_name: "Mira", last_name: "Sen", password };
     expect((await request("invitations/accept/", { ...payload, email: "wrong@example.test" })).status).toBe(400);
     expect((await request("invitations/accept/", payload)).status).toBe(200);
+    expect((await pool.query("SELECT email_verified_at FROM users WHERE email=$1", [studentEmail])).rows[0].email_verified_at).not.toBeNull();
     expect((await request("invitations/accept/", payload)).status).toBe(400);
   });
   it("limits the student to their own fees and denies administration", async () => {
