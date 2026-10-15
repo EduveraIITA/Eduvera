@@ -18,7 +18,7 @@ vi.mock("./api", async (original) => {
 
 const notice = (overrides: Partial<NoticeSummary> = {}): NoticeSummary => ({
   id: "notice-1", title: "Tomorrow's uniform", body: "Please use the winter uniform.", response_mode: "acknowledgement",
-  response_options: [], priority: "normal", due_at: "2026-10-15T12:00:00.000Z", status: "published", revision: 2,
+  response_options: [], priority: "normal", due_at: new Date(Date.now() + 86_400_000).toISOString(), status: "published", revision: 2,
   published_at: "2026-10-13T06:00:00.000Z", cancelled_at: null, cancellation_reason: "", created_at: "2026-10-13T05:00:00.000Z",
   recipient_id: "recipient-1", student_id: "student-1", opened_at: null, responded_at: null, response_value: null,
   attention_reasons: ["unread", "response_required"],
