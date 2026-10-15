@@ -848,7 +848,7 @@ describe("authentication and route authorization", () => {
       return Promise.reject(new Error("Unexpected request"));
     });
     render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
-    expect(await screen.findByRole("heading", { name: "Sign in to your school" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeVisible();
     expect(screen.getByRole("button", { name: /^Sign in$/i })).toBeVisible();
     for (const name of [/Parent view/i, /Student view/i, /Teacher view/i, /Principal view/i]) {
       expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
