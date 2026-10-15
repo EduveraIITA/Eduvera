@@ -42,6 +42,7 @@ async function verify(origin){
   assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,32);
  }
 }
+async function verifyEventually(origin,attempts=24){let failure;for(let i=0;i<attempts;i++){try{await verify(origin);return;}catch(error){failure=error;if(i<attempts-1)await new Promise(r=>setTimeout(r,5000));}}throw failure;}
 let promoted=false;
 try{
  // Image + release identifier only: retain secrets, identity, networking, limits,
@@ -55,7 +56,7 @@ try{
  execFileSync(process.execPath,['test/remote-preview.mjs',candidate.url,login],{cwd:new URL('.',import.meta.url),stdio:'inherit'});
  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,`## Verified no-traffic preview\n${candidate.url}\n\nAll original screenshot bytes preserved. Responsive gallery, dialogs and navigation checked before promotion.\n`);
  promoted=true;g(['run','services','update-traffic','thatcampus-web',...flags,`--to-revisions=${candidate.revisionName}=100`]);
- await verify(site.status.url);await verify('https://www.thatcampus.com');
+ await verifyEventually(site.status.url);await verifyEventually('https://www.thatcampus.com');
  assert((await fetch(login,{signal:AbortSignal.timeout(30000)})).ok,'Existing Login not reachable');
  try{const status=await submitIndexNow();console.log(`IndexNow accepted ${indexNowUrls.length} canonical URLs: HTTP ${status}`);}catch(error){console.warn(`IndexNow notification deferred: ${error.message}`);}
  const appAfter=describe('eduvera-stage');assert.deepEqual(appAfter.spec,appBefore.spec,'Application config changed concurrently');assert.deepEqual(appAfter.status.traffic,appBefore.status.traffic,'Application traffic changed concurrently');
