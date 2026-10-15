@@ -248,7 +248,7 @@ void main() {
   hot *= frameFade;
   float alpha = 1.0 - exp(-energy * gain);
   vec3 color = mix(1.0 - exp(-light * gain), alpha * light / max(energy, 1e-4), uInk);
-  color = mix(color, vec3(alpha), clamp(hot, 0.0, 1.0) * uInk * 0.85);
+  color = mix(color, vec3(alpha), clamp(hot, 0.0, 1.0) * uInk * 0.2);
   float grain = (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5) / 255.0;
   alpha = clamp(alpha + grain, 0.0, 1.0);
   fragColor = vec4(clamp(color + grain, 0.0, alpha), alpha);
@@ -416,7 +416,7 @@ const ElectricBorder = ({
 
   const base = parseColor(color);
   const settings = {
-    core: base.map(channel => channel + (1 - channel) * 0.55),
+    core: base.map(channel => channel + (1 - channel) * (theme === 'light' ? 0.1 : 0.55)),
     glowColor: glowColor ? parseColor(glowColor) : base,
     speed: Math.max(0, speed),
     chaos: clamp(chaos, 0, 2),

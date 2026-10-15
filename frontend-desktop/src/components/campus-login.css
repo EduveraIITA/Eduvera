@@ -17,7 +17,7 @@
 .campus-login a:hover { text-decoration: underline; }
 .campus-login :is(a, button, summary):focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; }
 .campus-login__frame { position: relative; min-height: 100dvh; display: flex; flex-direction: column; }
-.campus-login__topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 64px; padding: 12px 44px; background: rgb(252 251 255 / 45%); }
+.campus-login__topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 64px; padding: 12px 44px; background: transparent; }
 .campus-login__brand { display: flex; align-items: center; gap: 12px; color: var(--campus-ink) !important; }
 .campus-login__brand > span:last-child { display: grid; gap: 2px; }
 .campus-login__brand strong { font-size: 17px; font-weight: 750; line-height: 1.2; }
@@ -61,7 +61,7 @@
 .campus-login .google-sign-in__divider { order: 5; margin-top: 6px; font-size: 11px !important; }
 .campus-login__assurance { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0 0; color: #425470; font-size: 11px; }
 .campus-login__assurance svg { color: #187a8a; }
-.campus-login__footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 60px; padding: 12px 44px;  color: #536078; background: rgb(252 251 255 / 45%); font-size: 11px; }
+.campus-login__footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 60px; padding: 12px 44px;  color: #536078; background: transparent; font-size: 11px; }
 .campus-login__footer nav { display: flex; gap: 20px; }
 .campus-login__footer a { display: inline-flex; align-items: center; min-height: 36px; color: #414d63; }
 @media (max-width: 650px) {
