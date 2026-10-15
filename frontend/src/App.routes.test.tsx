@@ -93,6 +93,7 @@ function expectParentStandings() {
   expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
   expect(within(dialog).getByRole("listitem", { name: /Your child, Aarav Sharma/ })).toHaveClass("attendance-ranking__row--current");
   expect(within(dialog).getByRole("list", { name: "All class attendance" })).toBeVisible();
+  return dialog;
 }
 
 interface RouteSmokeCase {
@@ -457,15 +458,15 @@ describe("implemented application routes", () => {
   });
 
   it("opens highlighted class standings from the parent attendance aggregate and score", async () => {
-    const interact = userEvent.setup();
     render(<MemoryRouter initialEntries={["/parent/attendance"]}><App /></MemoryRouter>);
     expect(await screen.findByRole("heading", { name: "Attendance calendar" })).toBeVisible();
     const score = screen.getByRole("button", { name: "View all class attendance from the attendance score" });
     expect(score).toHaveTextContent("95.0%");
     for (const trigger of [screen.getByRole("button", { name: /Overall Aggregate/ }), score]) {
-      await interact.click(trigger);
-      expectParentStandings();
-      await interact.click(screen.getByRole("button", { name: "Close attendance standings" }));
+      // This route assertion needs click outcomes, not pointer-style traversal.
+      fireEvent.click(trigger);
+      const dialog = expectParentStandings();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close attendance standings" }));
     }
   });
 

@@ -6564,4 +6564,11 @@ observable assertions in the interaction tests that already exercise each route:
   header selection, and permission/authorization regressions remain separate.
 
 No skips, timeout increases, application-code changes or backend/security test
-removals are introduced. Validation of the revised full suite is pending.
+removals are introduced. Hosted run 38738727147 passed every check, including
+all 54 route cases. That file took 198s versus 169s in the prior run, so the
+compaction alone does not establish a speedup. A local full run hit two 15s
+timeouts (combined standings and unchanged avatar switching). The combined
+standings case now uses click dispatch and dialog-scoped close lookup, matching
+its route-outcome purpose, instead of costly pointer simulation. Its isolated
+local run passed in 9.25s versus 16.52s before that adjustment; no timeout was
+increased. Lint passed. Final hosted validation of this adjustment is pending.
