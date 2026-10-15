@@ -38,4 +38,32 @@ application specification and traffic are checked read-only. Failed promotion
 verification restores the previous website revision. Preview captures are uploaded
 as the `stitch-preview-verification` workflow artifact.
 
-Deployment remains unverified until the workflow and public-domain checks pass.
+## Verified release
+
+PR #37 merged as `33e878b33607b631faf0ee1d2eb506c271d73a0c`.
+PR website CI 38703967068 and full repository CI 38703967132 passed, including
+819 backend tests, 949 mobile tests, desktop build and isolated enquiry/outbox
+persistence. Merged website CI 38705223469 and release 38705223449 passed.
+
+Cloud Run revision `thatcampus-web-00027-fik` was first deployed at 0% traffic:
+https://stitch-33e878b33607---thatcampus-web-g4mo4unk4a-el.a.run.app
+Candidate browser checks passed at 1440, 768, 390 and 320 pixels, including
+original workflow gallery, image dialogs, role tabs, navigation and Login.
+The candidate was promoted only after verification. Final verification confirmed
+HTTPS public routes, readiness with the exact release SHA, all 12 screenshot
+response hashes and the retained Login URL. Existing eduvera-stage specification
+and traffic remained identical; its deployment job was skipped. No production
+enquiry was submitted. Website secrets, configuration and DNS were retained.
+
+Final live browser verification confirmed the new hero, navigation, ready enquiry
+form, preserved Insights image viewer and Escape dismissal. The canonical URL is
+https://thatcampus.com/ (www was also verified over HTTPS).
+
+Preview captures:
+https://github.com/EduveraIITA/Eduvera/actions/runs/38705223449/artifacts/11959480214
+Release log:
+https://github.com/EduveraIITA/Eduvera/actions/runs/38705223449
+
+Physical-phone owner review remains an acceptance check; automated viewport and
+reduced-motion checks passed. Optional Cloudflare analytics remains outside this
+redesign. No analytics/CSP protections were bypassed.
