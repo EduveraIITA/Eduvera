@@ -26,21 +26,22 @@ float noise(vec2 P) {
   return dot(results, blend.zxzx * blend.wwyy);
 }
 void main() {
-  float perc = float(gl_InstanceID) / 72.0;
+  float perc = float(gl_InstanceID) / 110.0;
   float x = aPoint.x;
   float split = 0.04 + perc * 0.5;
   float amp = smoothstep(split, max(0.7, split + 0.2), x) * 0.65;
   float t = uTime / 10.0;
   float n = mix(noise(vec2(t * 2.5, (x * 1.05 + perc) * 2.5)), noise(vec2(t * 3.5, (x * 1.05 + t) * 3.5)) / 1.5, x * 0.3);
-  float y = 0.5 + (perc - 0.5) * 0.4 + n * 0.5 * amp;
+  // Spread across the projected viewport, including the corners in landscape.
+  float y = 0.5 + (perc - 0.5) * 1.2 + n * 0.5 * amp;
   float c = 0.9063078, s = 0.4226183;
-  vec2 frame = vec2(uResolution.x*c + uResolution.y*s, uResolution.x*s + uResolution.y*c);
+  vec2 frame = vec2(uResolution.x*c + uResolution.y*s, uResolution.x*s + uResolution.y*c) * 1.1;
   vec2 local = (vec2(x,y) - 0.5) * frame;
   local.y += aPoint.y * 1.5;
   vec2 turned = vec2(local.x*c - local.y*s, local.x*s + local.y*c);
   gl_Position = vec4(turned / (uResolution * 0.5), 0.0, 1.0);
   vEdge = aPoint.y;
-  vAlpha = (1.0 - smoothstep(0.0, 1.0, pow(perc, 0.3)) * 0.85) * 0.38;
+  vAlpha = (1.0 - smoothstep(0.0, 1.0, pow(perc, 0.3)) * 0.55) * 0.30;
   vIndex = perc;
 }`;
 const fragment = `#version 300 es
@@ -105,7 +106,7 @@ export default function Threads() {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.uniform2f(resolution, canvas.width, canvas.height);
       gl.uniform1f(time, elapsed);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 72);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 110);
     };
     const frame = (now: number) => {
       raf = 0;
@@ -131,6 +132,10 @@ export default function Threads() {
     };
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
+    // Safari rotation and browser chrome changes can precede ResizeObserver.
+    window.addEventListener("resize", resize, { passive: true });
+    window.visualViewport?.addEventListener("resize", resize, { passive: true });
+    window.screen.orientation?.addEventListener("change", resize);
     const intersection = new IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); wake(); });
     intersection.observe(canvas);
     const onLost = () => { lost = true; cancelAnimationFrame(raf); };
@@ -141,6 +146,9 @@ export default function Threads() {
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+      window.screen.orientation?.removeEventListener("change", resize);
       intersection.disconnect();
       canvas.removeEventListener("webglcontextlost", onLost);
       document.removeEventListener("visibilitychange", wake);
