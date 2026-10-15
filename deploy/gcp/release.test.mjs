@@ -30,13 +30,18 @@ const fixture = () => {
 test('a bounded runtime with durable files and an isolated migrator passes', () => {
   const { service, job } = fixture(); assert.equal(assertRuntime(service, job), 'old');
 });
-test('public demo bootstrap accepts only a completely unconfigured previous revision', () => {
+test('public demo bootstrap accepts only the known private-demo predecessor states', () => {
   const { service, job } = fixture();
   const app = service.spec.template.spec.containers[0];
   app.env = app.env.filter(item => !['PUBLIC_DEMO_ENABLED', 'DEMO_PROFILE_SWITCHER_ENABLED'].includes(item.name));
   assert.throws(() => assertRuntime(service, job));
   assert.equal(assertRuntime(service, job, { allowPublicDemoBootstrap: true }), 'old');
+  app.env.push({ name: 'DEMO_PROFILE_SWITCHER_ENABLED', value: 'true' });
+  assert.equal(assertRuntime(service, job, { allowPublicDemoBootstrap: true }), 'old');
   app.env.push({ name: 'PUBLIC_DEMO_ENABLED', value: 'false' });
+  assert.throws(() => assertRuntime(service, job, { allowPublicDemoBootstrap: true }));
+  app.env.find(item => item.name === 'PUBLIC_DEMO_ENABLED').value = 'true';
+  app.env.find(item => item.name === 'DEMO_PROFILE_SWITCHER_ENABLED').value = 'false';
   assert.throws(() => assertRuntime(service, job, { allowPublicDemoBootstrap: true }));
 });
 test('ephemeral files, plaintext secrets, GPUs and unsafe jobs fail', () => {

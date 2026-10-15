@@ -27,8 +27,9 @@ export function assertRuntime(service, job, { allowPublicDemoBootstrap = false }
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
   if (env.DEMO_MODE !== 'false') throw new Error('Password-based development demo access must remain disabled');
   const publicDemoReady = env.PUBLIC_DEMO_ENABLED === 'true' && env.DEMO_PROFILE_SWITCHER_ENABLED === 'true';
-  const publicDemoUnconfigured = env.PUBLIC_DEMO_ENABLED === undefined && env.DEMO_PROFILE_SWITCHER_ENABLED === undefined;
-  if (!publicDemoReady && !(allowPublicDemoBootstrap && publicDemoUnconfigured)) throw new Error('Stage public demo must use the bounded read-only session path');
+  const publicDemoLegacyPrivate = env.PUBLIC_DEMO_ENABLED === undefined
+    && [undefined, 'true'].includes(env.DEMO_PROFILE_SWITCHER_ENABLED);
+  if (!publicDemoReady && !(allowPublicDemoBootstrap && publicDemoLegacyPrivate)) throw new Error('Stage public demo must use the bounded read-only session path');
   if (env.AGENT_PROVIDER === 'vertex' && env.AGENT_ENABLED !== 'false') {
     if (env.AGENT_MODEL !== 'gemini-3.1-flash-lite' || env.AGENT_GOOGLE_PROJECT !== 'eduera-511111' || env.AGENT_GOOGLE_LOCATION !== 'global' || env.AGENT_BASE_URL || env.AGENT_API_KEY) throw new Error('Only the reviewed keyless cloud model is allowed');
     const expiry = Date.parse(env.AGENT_ENABLED_UNTIL ?? '');
@@ -93,8 +94,9 @@ async function deploy(env) {
   const describe = (kind, name) => JSON.parse(gcloud(['run', kind, 'describe', name, ...flags, '--format=json']));
   const service = describe('services', env.GCP_SERVICE);
   // A one-time bootstrap may start from the last verified Stage revision, which
-  // predates the public-demo flags. Explicitly false or partially configured
-  // values still fail closed; the candidate smoke check verifies the new path.
+  // predates the public-demo gate but may already carry the authenticated demo
+  // profile switcher. Explicit public-demo false or other partial values still
+  // fail closed; the candidate smoke check verifies the new public path.
   const previous = assertRuntime(service, describe('jobs', env.GCP_MIGRATION_JOB), { allowPublicDemoBootstrap: true });
   const publicUrl = service.spec.template.spec.containers[0].env.find(item => item.name === 'PUBLIC_URL').value;
   const imageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));

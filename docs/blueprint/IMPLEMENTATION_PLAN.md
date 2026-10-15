@@ -6505,8 +6505,9 @@ and isolated PostgreSQL enquiry persistence in run 38729379402. Full Stage run
 38729379496 passed the backend integration suite, mobile typecheck/lint/build/tests
 and desktop build, but correctly stopped before migration or traffic promotion when
 the pre-deployment runtime assertion encountered the last Stage revision, which
-predated both public-demo environment variables. The release guard now permits only
-that one-time completely-unconfigured bootstrap state; explicit false or partial
-configuration still fails closed, and the candidate must still pass the release
+predated the public-demo gate (while already carrying the authenticated profile
+switcher). The release guard now permits only the two known private-demo predecessor
+states; an explicit public-demo false or any other partial configuration still fails
+closed, and the candidate must still pass the release
 smoke checks before promotion. Trusted Stage promotion and physical-device review
 remain release gates and must not be inferred from this implementation record.
