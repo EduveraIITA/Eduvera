@@ -6847,3 +6847,19 @@ Owner approved a soft reflection and blue glow on the compact post-login ribbon 
 ### Stronger ribbon animation — 15 October 2026
 
 Owner requested a more visible reflection and glow on both web/app ribbons. Increased the sweep frequency from nine to four seconds, starting immediately, with a wider white/cyan/lilac reflection and stronger smoothly breathing blue/violet halo and border. Text/logo remain stationary above the effect. Reduced-motion fallback, pill dimensions and placements remain intact. Previous reflection release fd7ae93aa721329ba209b9cac32e876b1b3e7502 passed all Stage checks and application public verification in run 38781089465. This CSS adjustment awaits hosted validation/deployment; local execution and visual review are unavailable.
+
+## Google sign-in release verification — 15 October 2026
+
+PR #56 passed hosted CI run 38781597027, including all 846 backend tests and the four new
+isolated PostgreSQL Google-linking/MFA cases. Merge e7322a95279b8206de9fd4fde876d84de2c636a3
+passed Stage run 38782143819, including migration, candidate checks, promotion, public-service
+verification and the separate website deployment. Independent live checks returned the exact
+merge SHA at /releasez, ready database/events at /readyz and enabled Google configuration with
+the supplied Client ID and a nonce. Live browser inspection confirmed Continue with Google on
+/login and /staff/login.
+
+Outstanding configuration: the live Google button reports '[GSI_LOGGER]: The given origin is not
+allowed for the given client ID.' The owner must add https://app.thatcampus.com to this OAuth
+client's Authorized JavaScript origins and save. This is an observed external configuration
+blocker, not a completed real-account sign-in. Real Google login and owner-device acceptance
+remain pending that change. No client secret is needed or stored.
