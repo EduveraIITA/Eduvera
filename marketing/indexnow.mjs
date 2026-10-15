@@ -1,4 +1,6 @@
-const key = 'ed304ac9e7409dcf016a1d3d61b3abc1';
+import {readFileSync} from 'node:fs';
+
+const key = readFileSync(new URL('./public/ed304ac9e7409dcf016a1d3d61b3abc1.txt', import.meta.url), 'utf8').trim();
 
 export const indexNowUrls = [
   '/',
