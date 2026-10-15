@@ -6628,6 +6628,6 @@ The public website now also hosts a non-secret IndexNow verification key and the
 tested deployment paths send the eight canonical public URLs to the shared
 IndexNow endpoint after successful promotion. Search notification is deliberately
 best-effort and cannot roll back an otherwise healthy release when an external
-search endpoint is unavailable. Bing Webmaster Tools account connection and
-sitemap import remain pending owner approval of Google's OAuth disclosure of the
-connected account name, profile picture and email address to Bing.
+search endpoint is unavailable. Bing is being verified independently with its
+root XML file so it receives no ongoing Google Search Console access; live Bing
+verification and sitemap submission remain deployment gates at this checkpoint.
