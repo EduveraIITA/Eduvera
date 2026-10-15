@@ -126,7 +126,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify bounded account operation
-        run: node --test deploy/gcp/provision-stage-gatekeeper.test.mjs
+        run: node --test deploy/gcp/provision-stage-gatekeeper.test.mjs deploy/gcp/provision-demo-gatekeeper.test.mjs
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           project_id: eduera-511111
@@ -134,7 +134,13 @@ jobs:
           service_account: github-stage-deploy@eduera-511111.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
       - name: Create the authorized review gatekeeper through the private database job
+        if: ${{ !contains(github.event.head_commit.message, '[new-gate-demo]') }}
         run: node deploy/gcp/provision-stage-gatekeeper.mjs
+      - name: Create the separately authorized gate.demo account and Gatekeeper role binding
+        if: contains(github.event.head_commit.message, '[new-gate-demo]')
+        env:
+          CREATE_NEW_GATE_DEMO: 'true'
+        run: node deploy/gcp/provision-demo-gatekeeper.mjs
 
   website-only:
     if: inputs.website_only && github.ref == 'refs/heads/Stage' && github.repository == 'EduveraIITA/Eduvera' && !inputs.provision_gatekeeper
