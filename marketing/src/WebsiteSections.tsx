@@ -119,13 +119,16 @@ export function RoleBenefits(){
     <div className="role-workspace"><div className="role-navigation"><div className="role-tabs" role="tablist" aria-label="Campus roles">{roles.map((item,i)=><button key={item.name} id={`role-${i}`} role="tab" aria-selected={active===i} aria-controls="role-panel" tabIndex={active===i?0:-1} onClick={()=>setActive(i)} onKeyDown={event=>{let next=i;if(event.key==='ArrowRight'||event.key==='ArrowDown')next=(i+1)%4;else if(event.key==='ArrowLeft'||event.key==='ArrowUp')next=(i+3)%4;else if(event.key==='Home')next=0;else if(event.key==='End')next=3;else return;event.preventDefault();setActive(next);document.getElementById(`role-${next}`)?.focus();}}>{item.name}<ArrowRight size={18}/></button>)}</div>
       <div id="role-panel" role="tabpanel" aria-labelledby={`role-${active}`} tabIndex={0}><h3>{role.title}</h3><p>{role.description}</p><ul>{role.points.map(point=><li key={point}><Check size={17}/>{point}</li>)}</ul></div></div>
       <div className={`role-proof ${active===0?'role-proof-wide':''}`}>
-        {active===3?<div className="student-principle"><UsersThree size={48} weight="duotone"/><h3>People first.<br/>Devices optional.</h3><p>The student is at the centre of the school day. A personal phone doesn’t have to be.</p><a className="text-link" href="#contact">Request a Demo <ArrowRight size={18}/></a></div>:<img key={role.screen} src={`/screens/${role.screen}.webp`} width={active===0?1920:860} height={active===0?1307:1800} loading="lazy" alt={`Real ${role.name.toLowerCase()} workspace with sample school data`}/>}
+        {active===3
+          ? <div className="student-principle"><UsersThree size={48} weight="duotone"/><h3>People first.<br/>Devices optional.</h3><p>The student is at the centre of the school day. A personal phone doesn’t have to be.</p><a className="text-link" href="#contact">Book a walkthrough <ArrowRight size={18}/></a></div>
+          : <img key={role.screen} src={`/screens/${role.screen}.webp`} width={active===0?1920:860} height={active===0?1307:1800} loading="lazy" alt={`Real ${role.name.toLowerCase()} workspace with sample school data`}/>
+        }
       </div>
     </div>
   </section>;
 }
 
-export function Solutions(){return <section id="institution-solutions" className="fit-section section"><div className="fit-intro"><span className="eyebrow">Your institution’s way</span><h2>A shared system.<br/><span>Your operating rules.</span></h2><p>Start with the daily work that matters most to your school. Configure access and supported workflows around your team.</p><a className="button primary" href="#contact">Request a Demo <ArrowRight size={17}/></a></div><div className="fit-details">{[
+export function Solutions(){return <section id="institution-solutions" className="fit-section section"><div className="fit-intro"><span className="eyebrow">Your institution’s way</span><h2>A shared system.<br/><span>Your operating rules.</span></h2><p>Start with the daily work that matters most to your school. Configure access and supported workflows around your team.</p><a className="button primary" href="#contact">Book a walkthrough <ArrowRight size={17}/></a></div><div className="fit-details">{[
   [SlidersHorizontal,'Attendance that fits your day','Daily or subject-wise registers, with configurable submission and finalisation rules.'],
   [ShieldCheck,'Access with a purpose','Institution-scoped roles and permissions determine which records and actions each person can use.'],
   [Sparkle,'An assistant within your team’s access','Ask about school information and request supported actions. The system applies permissions and required review.'],
