@@ -6701,6 +6701,35 @@ future attribution location: Profile/About, pending the user's choice.
 Verification: frontend production build, AuthPages lint and existing AuthPages
 sign-in regression test passed. Deployment and user visual acceptance remain open.
 
+## Gate one-click entry and visitor approvals — 15 October 2026
+
+Owner explicitly requested one-click student entry after search, themed visitor
+entry/pending lists and a MyGate-style approval popup after login. Search now
+includes the latest direction for only its bounded shortlist. Mark entry attests
+identity after the visible instruction and sends a stable movement command UUID
+without a detail fetch; current server authority/state checks still apply. This
+owner decision changes entry only; exit identity/pickup QR safeguards remain.
+
+Visitor creation uses a stable request UUID; migration 098 adds idempotency,
+revision and expiry. Selected active staff/admin hosts can approve their own
+pending requests without gate.manage, while school admins retain fallback
+authority. Other staff/gate operators cannot approve another host's request.
+Revision checks and row locks reject stale decisions; expired requests cannot be
+admitted. Audit, outbox and durable notifications are atomic with each change.
+Current relationship checks protect event replay and notification reads. The
+authenticated shell presents Approve/Decline/Review later, invalidates queues on
+live events and refreshes on focus/poll fallback. This is in-app notification,
+not OS/background push. Gate lists immediately reflect returned entry/exit state.
+No account or permission assignments changed. Contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md).
+
+Local typechecks/lint, production frontend build, 49 focused UI tests and real
+headless browser fixture workflows passed, including responsive 320/768/1024/1440
+px layouts with no overflow/page errors. Native integration coverage was added
+for publisher delivery, retries, revocation, school isolation, expiry and racing
+decisions. Hosted CI and deployed verification remain pending. Owner device
+review remains requested after release. Concurrent mobile sign-in changes from
+PR #48 were preserved.
+
 
 ### Desktop/tablet floating-window login — 15 October 2026
 

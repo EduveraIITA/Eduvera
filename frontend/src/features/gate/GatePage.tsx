@@ -1,11 +1,14 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Link } from 'react-router-dom';
 import { Check, QrCode, Search, UserRoundPlus, ArrowLeft, ShieldCheck, ArrowRight, Clock3, Languages } from 'lucide-react';
 import { useAuth, authDestination } from '../auth/AuthContext';
-import { getGateStudent, gateCommand, getGateWorkspace, type GateStudent, type Visitor } from './api';
+import { getGateStudent, gateCommand, getGateWorkspace, type GateStudent, type Visitor, type Workspace } from './api';
 import { GateFrame } from './GateFrame';
 import { GateStudentSearch } from './GateStudentSearch';
+import { GateVisitorForm } from './GateVisitorForm';
+import { GateVisitors } from './GateVisitors';
+import { gateError } from './gateError';
 import { isGateOnlyMember } from '../auth/staffAccess';
 import QRScanner from './QRScanner';
 import './gate.css';
@@ -21,16 +24,20 @@ export default function GatePage(){
  const [verified,setVerified]=useState(false);
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [success,setSuccess]=useState('');
  const [commandId,setCommandId]=useState(()=>crypto.randomUUID());
+ const [visitorRequestId,setVisitorRequestId]=useState(()=>crypto.randomUUID());
+ const queryClient=useQueryClient();
+ useEffect(()=>{if(!success)return;const timer=window.setTimeout(()=>setSuccess(''),4500);return()=>window.clearTimeout(timer);},[success]);
  const workspace=useQuery({queryKey:['gate',auth.user?.id,school],queryFn:()=>getGateWorkspace(school),enabled:Boolean(school),refetchInterval:30000,retry:false});
  if(!member)return <Navigate to={authDestination(auth)} replace/>;
- function reset(){setMode('home');setScannedVisitor(null);setPerson(null);setQr(undefined);setVerified(false);setError('');setCommandId(crypto.randomUUID());}
+ function reset(){setMode('home');setScannedVisitor(null);setPerson(null);setQr(undefined);setVerified(false);setError('');setSuccess('');setCommandId(crypto.randomUUID());setVisitorRequestId(crypto.randomUUID());}
+ function updateVisitor(visitor:Visitor){queryClient.setQueryData<Workspace>(['gate',auth.user?.id,school],data=>{if(!data)return data;const visitors=data.visitors.some(v=>v.id===visitor.id)?data.visitors.map(v=>v.id===visitor.id?visitor:v):[visitor,...data.visitors];return {...data,visitors,pending:visitors.filter(v=>v.state==='pending').length};});void workspace.refetch();}
  async function scan(value:string){setBusy(true);setError('');try{const r=await gateCommand<{student:GateStudent;kind:'student'|'pickup'}|{visitor:Visitor;kind:'visitor'}>(school,'scan',{qr:value});if(r.kind==='visitor'){setScannedVisitor(r.visitor);setMode('pending');return;}setPerson(r.student);setKind(r.kind);setQr(value);setVerified(false);setCommandId(crypto.randomUUID());}catch{setError(t.expired);setMode('home');}finally{setBusy(false);}}
  async function selectStudent(id:string){setBusy(true);setError('');try{setPerson(await getGateStudent(school,id));setKind('student');setQr(undefined);setVerified(false);setCommandId(crypto.randomUUID());}catch{setError(t.retry);}finally{setBusy(false);}}
  const direction=kind==='pickup'?'out':'in';
  const allowed=person&&(direction==='in'?person.direction!=='in':person.direction==='in'&&person.plan_state==='ready');
  async function confirm(){if(!person||!verified)return;setBusy(true);setError('');try{await gateCommand(school,'movements',{student_id:person.id,direction,qr,identity_verified:true,command_id:commandId});reset();setSuccess(t.saved);void workspace.refetch();}catch{setError(t.expired);}finally{setBusy(false);}}
- async function visitor(event:React.FormEvent<HTMLFormElement>){event.preventDefault();const form=new FormData(event.currentTarget);setBusy(true);setError('');try{await gateCommand(school,'visitors',Object.fromEntries(form));reset();setSuccess(t.waiting);void workspace.refetch();}catch{setError(t.retry);}finally{setBusy(false);}}
- async function moveVisitor(id:string,action:string){setBusy(true);try{await gateCommand(school,`visitors/${id}/${action}`);reset();setSuccess(t.saved);void workspace.refetch();}catch{setError(t.retry);}finally{setBusy(false);}}
+ async function visitor(event:React.FormEvent<HTMLFormElement>){event.preventDefault();const form=new FormData(event.currentTarget);setBusy(true);setError('');setSuccess('');try{const result=await gateCommand<Visitor>(school,'visitors',{...Object.fromEntries(form),request_id:visitorRequestId});reset();updateVisitor(result);setMode('pending');setSuccess(language==='hi'?'अनुमति का अनुरोध भेज दिया गया।':'Approval request sent to the host.');}catch(error){setError(gateError(error,language==='hi',t.retry));}finally{setBusy(false);}}
+ async function moveVisitor(visitor:Visitor,action:'in'|'out'){setBusy(true);setError('');setSuccess('');try{const result=await gateCommand<{saved:boolean;visitor:Visitor}>(school,`visitors/${visitor.id}/${action}`,{expected_revision:visitor.revision});reset();updateVisitor(result.visitor);setMode('pending');setSuccess(language==='hi'?(action==='in'?'आगंतुक का प्रवेश दर्ज हुआ।':'आगंतुक का निकास दर्ज हुआ।'):(action==='in'?'Visitor entry recorded.':'Visitor exit recorded.'));}catch(error){setError(gateError(error,language==='hi',t.retry));void workspace.refetch();}finally{setBusy(false);}}
  const Heading=isGateOnlyMember(member)?'h1':'h2';
  return <GateFrame member={member} hindi={language==='hi'}><section className="gate-shell gate-workspace" lang={language==='hi'?'hi':'en'}>
   <header className="gate-header"><div><span className="gate-eyebrow"><ShieldCheck size={15} aria-hidden="true"/>{language==='hi'?'प्रवेश और निकास':'Manage In & Out'}</span><Heading>{t.title}</Heading><p>{language==='hi'?'छात्रों और आगंतुकों का सुरक्षित प्रवेश और निकास।':'Safe arrivals and departures, all in one place.'}</p></div><button className="gate-language" onClick={()=>{const next=language==='en'?'hi':'en';setLanguage(next);localStorage.setItem(key,next);setError('');setSuccess('');}} aria-label="Switch Hindi / English"><Languages size={17} aria-hidden="true"/>{language==='en'?'हिन्दी':'English'}</button></header>
@@ -52,6 +59,6 @@ export default function GatePage(){
    <button className="gate-pending" onClick={()=>setMode('pending')}><Clock3 size={20} aria-hidden="true"/><span>{t.pending}</span><strong>{workspace.data?.pending??'—'}</strong><ArrowRight size={17} aria-hidden="true"/></button>
    <p className="gate-safety-note"><ShieldCheck size={17} aria-hidden="true"/>{language==='hi'?'दर्ज करने से पहले छात्र और लेने आए व्यक्ति की पहचान जाँचें।':'Check the student and collecting person before confirming.'}</p>
    {member.role==='admin'?<Link className="gate-admin-link" to="/principal/gate">Manage gate access <ArrowRight size={16}/></Link>:null}
-  </>:mode==='scan'?<QRScanner hindi={language==='hi'} onScan={value=>void scan(value)}/>:mode==='search'?<GateStudentSearch school={school} hindi={language==='hi'} busy={busy} onSelect={student=>void selectStudent(student.id)}/>:mode==='visitor'?<form className="gate-form" onSubmit={e=>void visitor(e)}><h2>{t.visitor}</h2><label>{t.name}<input name="name" required minLength={2} maxLength={150}/></label><label>{t.phone}<input name="phone" type="tel" required minLength={6} maxLength={32}/></label><label>{t.purpose}<input name="purpose" required minLength={3} maxLength={300}/></label><label>{t.host}<select name="host_user_id" required><option value="">{t.host}</option>{workspace.data?.hosts.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label><button className="gate-primary" disabled={busy}>{t.submit}</button></form>:<section className="gate-list"><h2>{t.visitors}</h2>{!(scannedVisitor||workspace.data?.visitors.some(v=>['pending','approved','inside'].includes(v.state)))?<p className="gate-search-status">{language==='hi'?'अभी कोई आगंतुक नहीं है।':'No visitors waiting right now.'}</p>:null}{(scannedVisitor?[scannedVisitor]:workspace.data?.visitors??[]).filter(v=>['pending','approved','inside'].includes(v.state)).map(v=><div key={v.id}><strong>{v.name}</strong><p>{v.purpose}</p>{v.state==='pending'?<span>{t.waiting}</span>:<button disabled={busy} onClick={()=>void moveVisitor(v.id,v.state==='approved'?'in':'out')}>{v.state==='approved'?t.confirmIn:t.confirmOut}</button>}</div>)}</section>}
+  </>:mode==='scan'?<QRScanner hindi={language==='hi'} onScan={value=>void scan(value)}/>:mode==='search'?<GateStudentSearch school={school} hindi={language==='hi'} busy={busy} onSelect={student=>void selectStudent(student.id)}/>:mode==='visitor'?<GateVisitorForm hosts={workspace.data?.hosts??[]} hindi={language==='hi'} busy={busy} onSubmit={event=>void visitor(event)}/>:<GateVisitors visitors={scannedVisitor?[scannedVisitor]:workspace.data?.visitors??[]} hindi={language==='hi'} busy={busy} onMove={(visitor,action)=>void moveVisitor(visitor,action)}/>}
  </section></GateFrame>;
 }

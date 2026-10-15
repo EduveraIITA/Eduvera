@@ -56,7 +56,7 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
  it('searches a bounded school roster without loading movement or collector details',async()=>{
   const match=await service.students(guard,school,'  AARAV  ');
   expect(match).toHaveLength(1);expect(match[0]).toMatchObject({id:student,name:'Aarav Test',plan_state:'ready'});
-  expect(match[0]).not.toHaveProperty('direction');expect(match[0]).not.toHaveProperty('collector_name');
+  expect(match[0]).toHaveProperty('direction','in');expect(match[0]).not.toHaveProperty('collector_name');
   const admission=(await query('SELECT admission_number FROM students WHERE id=$1',[student])).admission_number;
   expect((await service.students(guard,school,admission))[0]?.id).toBe(student);
   expect(await service.students(guard,school,'A')).toEqual([]);
@@ -97,7 +97,7 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
  it('requires visitor approval and allows QR check-in and checkout only in order',async()=>{
   const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',purpose:'Meeting principal',host_user_id:admin.id});
   await expect(service.visitorAction(guard,school,visitor.id,'in')).rejects.toThrow(/not ready/);
-  await expect(service.visitorAction(guard,school,visitor.id,'approve')).rejects.toThrow(/administrator/);
+  await expect(service.visitorAction(guard,school,visitor.id,'approve')).rejects.toThrow(/requested host/);
   await service.visitorAction(admin,school,visitor.id,'approve');
   const pass=await service.visitorPass(admin,school,visitor.id);
   expect(await service.scan(guard,school,{qr:pass.qr})).toHaveProperty('kind','visitor');
