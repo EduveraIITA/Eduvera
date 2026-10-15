@@ -6615,3 +6615,19 @@ No password/private key is committed. Regular credential login is required;
 public-demo personas and read-only authority are unchanged. See
 `GATEKEEPER_PROVISIONING.md` for the fixed-target operation and success evidence.
 
+### Search-engine registration and change notification — 15 October 2026
+
+Google Search Console domain ownership was automatically verified through the
+existing DNS record. Google accepted the canonical sitemap and reported eight
+discovered pages and two discovered videos. The homepage was already indexed;
+its refreshed release plus the five primary solution pages were individually
+submitted to Google's priority crawl queue. Submission is discovery evidence,
+not a guarantee of indexing or ranking.
+
+The public website now also hosts a non-secret IndexNow verification key and the
+tested deployment paths send the eight canonical public URLs to the shared
+IndexNow endpoint after successful promotion. Search notification is deliberately
+best-effort and cannot roll back an otherwise healthy release when an external
+search endpoint is unavailable. Bing Webmaster Tools account connection and
+sitemap import remain pending owner approval of Google's OAuth disclosure of the
+connected account name, profile picture and email address to Bing.
