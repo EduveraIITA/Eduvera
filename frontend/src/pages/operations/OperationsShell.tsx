@@ -1,3 +1,4 @@
+import { PoweredBy } from "../../features/school/PoweredBy";
 import { Fragment, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { BarChart3, CalendarDays, ClipboardCheck, Home, LayoutDashboard, MessageCircle, MoreHorizontal, ShieldAlert, ShieldCheck, TrendingUp } from "lucide-react";
@@ -91,6 +92,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           ))}
         </nav>
         <div className="operations-sidebar__scope"><span>Current scope</span><strong>School operations</strong><small>Attendance, timetable, and secure communication.</small></div>
+        <PoweredBy />
       </aside>
       <div className="operations-workspace">
         <header className="operations-topbar">
@@ -98,7 +100,7 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
           <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
         </header>
-        <main className="operations-main" inert={assistantOpen}>{planningTabs ? <PlanningNavigation/> : null}{children}</main>
+        <main className="operations-main" inert={assistantOpen}>{planningTabs ? <PlanningNavigation/> : null}{children}{active === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
         {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal, pageTitle: title, permissions: member?.permissions }} /> : null}
         {!(assistantEnabled && chat.fullPage) ? <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
           {mobileNavigation.map(({ id, label, path, icon: Icon }, index) => <Fragment key={id}>

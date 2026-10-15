@@ -1,3 +1,4 @@
+import { PoweredBy } from "../../features/school/PoweredBy";
 import { Fragment, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -149,7 +150,7 @@ export function StudentShell({
         </div>
       </header>
 
-      <main className="student-main" inert={assistantOpen}>{children}</main>
+      <main className="student-main" inert={assistantOpen}>{children}{activeNav === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
       {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal: "student", pageTitle: pageTitle ?? pageTitleFor(location.pathname, activeNav, section) }} /> : null}
 
       {!(assistantEnabled && chat.fullPage) ? <nav className="student-bottom-nav" aria-label="Student navigation">

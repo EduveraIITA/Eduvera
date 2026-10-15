@@ -6802,3 +6802,10 @@ environment, readiness and both-app verification at 17:21:38 UTC. The website
 release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
 review preview returned HTTP 200. Owner device/live-account review remains open;
 local synthetic browser fixtures do not establish that acceptance.
+
+
+### Compact post-login attribution — 15 October 2026
+
+User approved a smaller Powered by ThatCampus pill after login and removal of the ThatCampus logo from authenticated headers. Added a shared compact 190px ribbon to operations/web sidebars and the parent, student and operations Home content footer on mobile. The separate desktop client also includes it in the sidebar. The school crest/name remain in headers; auth branding remains unchanged. The Home footer scrolls with content and does not overlay bottom navigation.
+
+Validation: both frontend production builds and targeted ESLint passed; git diff whitespace check passed. Existing route branding assertions updated. Local Vitest runs stalled before reporting results (including a single-worker retry), but all hosted PR checks subsequently passed, including all three frontend test shards, backend, both builds and security/deployment contracts. Owner visual acceptance remains pending. This record does not claim deployment or pixel verification.

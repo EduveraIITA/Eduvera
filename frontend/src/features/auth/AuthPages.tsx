@@ -26,7 +26,7 @@ import "./auth.css";
 function AuthBrand() {
   return (
     <Link className="auth-brand" to="/" aria-label="Cambridge International School and ThatCampus">
-      <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" />
+      <SchoolBrand name="Cambridge International School" className="auth-brand__school" marksLayout="side-by-side" showAppMark />
     </Link>
   );
 }
