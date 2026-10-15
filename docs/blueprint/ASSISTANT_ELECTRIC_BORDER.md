@@ -19,3 +19,13 @@ brightness. Increase strand thickness from 0.65 to 1px, intensity from 0.24 to
 blue and a visible static outline with a faint halo. Keep one strand, slow
 movement, no flicker, no sparks, and the reduced-motion fallback. Scope remains
 the responsive app's shared assistant; the separate staff console is unchanged.
+
+## Response-only flowing light blue — 16 October 2026
+
+User requested a thinner, bright light-blue electric flow on responses only.
+The composer no longer mounts ElectricBorder. Compact responses retain it;
+full conversation adds it to the latest response only, avoiding a WebGL context
+for every historic reply. The 0.65px twin-strand preset uses light blue/cyan,
+small close-edge ripples and a travelling brightness crest around the perimeter.
+Glow is brighter without thickening the strand. Reduced-motion stays static.
+Validation and live release confirmation are recorded in the owning PR.

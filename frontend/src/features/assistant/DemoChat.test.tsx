@@ -15,6 +15,13 @@ const open=()=>fireEvent.click(screen.getByRole('button',{name:'Assistant',exact
 beforeEach(()=>{state.runs=[];state.pending=false;state.awaiting=false;state.error='';state.send.mockResolvedValue(true);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 describe('connected compact assistant',()=>{
+  it('keeps the electric decoration on the response and outside the input',()=>{
+    state.runs=[run('Here is your answer')];
+    const {container}=render(<MemoryRouter><Harness/></MemoryRouter>);open();
+    expect(screen.getByText('Here is your answer').closest('.assistant-electric-border')).not.toBeNull();
+    expect(screen.getByRole('textbox').closest('.assistant-electric-border')).toBeNull();
+    expect(container.querySelectorAll('.assistant-electric-border')).toHaveLength(1);
+  });
   it('shows a verified chart above the composer and replaces it with the next reply',()=>{
     const chart:AgentChartData={kind:'bar',title:'Subject attendance',scope:'My class',from:'2026-04-01',to:'2026-10-09',unit:'percent',points:[{label:'Maths',value:90,detail:'9 of 10 lessons'}],note:'Recorded data',total:1,shown:1};
     state.runs=[{...run('Here is the comparison'),evidence:[{id:'e',title:'Attendance',href:'/teacher/insights/attendance',retrieved_at:new Date().toISOString(),capability:'insights',chart}]}];
