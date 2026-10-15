@@ -6789,11 +6789,23 @@ typecheck, focused lint and 24 approval/notification tests passed. Actual local
 headless browser fixture checks passed home-only behavior, notification links,
 close/decisions remaining home, both animations and reduced motion, plus layouts
 at 320/768/1024/1440 px without overflow or page errors. These are not live account
-checks. Hosted CI, deployment and owner-device review remain pending.
+checks. Hosted CI and deployment passed as recorded below; owner-device review remains pending.
+
+
+Home-only approval release verification: PR #52 passed CI run `38774800786`
+with 832 backend and 986 frontend tests, both client builds and deployment/security
+contracts. Merge `45ddb3e53fc53e15063e93f89543bfefcbbc0586` deployed successfully
+in Stage run `38775411724`. Migration/guard execution `eduvera-stage-migrate-9b75h`
+completed at 17:20:34 UTC (no new schema migration in this UI change). App revision
+`eduvera-stage-00175-nip` passed candidate checks, promotion and exact public SHA,
+environment, readiness and both-app verification at 17:21:38 UTC. The website
+release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
+review preview returned HTTP 200. Owner device/live-account review remains open;
+local synthetic browser fixtures do not establish that acceptance.
 
 
 ### Compact post-login attribution — 15 October 2026
 
 User approved a smaller Powered by ThatCampus pill after login and removal of the ThatCampus logo from authenticated headers. Added a shared compact 190px ribbon to operations/web sidebars and the parent, student and operations Home content footer on mobile. The separate desktop client also includes it in the sidebar. The school crest/name remain in headers; auth branding remains unchanged. The Home footer scrolls with content and does not overlay bottom navigation.
 
-Validation: both frontend production builds and targeted ESLint passed; git diff whitespace check passed. Existing route branding assertions updated. Local Vitest runs stalled before reporting results (including a single-worker retry), so automated route/auth and visual acceptance remain pending CI/user review. This record does not claim deployment or pixel verification.
+Validation: both frontend production builds and targeted ESLint passed; git diff whitespace check passed. Existing route branding assertions updated. Local Vitest runs stalled before reporting results (including a single-worker retry), but all hosted PR checks subsequently passed, including all three frontend test shards, backend, both builds and security/deployment contracts. Owner visual acceptance remains pending. This record does not claim deployment or pixel verification.
