@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { PERMISSIONS } from "./permissions.js";
 
 export const ROLE_CONTEXTS = [
-  { code: "institution", label: "Institution", permissions: ["members.invite", "sis.manage", "fees.manage", "departure.manage", "messages.view", "messages.send", "groups.create", "ai.use"] },
+  { code: "institution", label: "Institution", permissions: ["gate.manage", "members.invite", "sis.manage", "fees.manage", "departure.manage", "messages.view", "messages.send", "groups.create", "ai.use"] },
   { code: "class", label: "Class", permissions: ["attendance.view", "attendance.record", "photo.use", "timetable.view", "followups.manage", "messages.view", "messages.send", "groups.create", "reports.comment", "events.view", "events.manage", "ai.use"] },
   { code: "event", label: "Event", permissions: ["events.view", "events.manage", "events.attendance"] },
   { code: "assessment", label: "Assessment", permissions: ["assessments.view", "assessments.mark", "assessments.moderate"] },

@@ -47,7 +47,7 @@ One entry: **Staff setup & leave**, with **People / Roles / Leave / Settings**.
 
 | Context | Supported action families | Assignment owner |
 | --- | --- | --- |
-| Institution | Ordinary member invitations, student records, fees, departure planning, communication, AI | Staff profile |
+| Institution | Gate entry/exit, ordinary member invitations, student records, fees, departure planning, communication, AI | Staff profile |
 | Class | Attendance, photo attendance, timetable, follow-up, communication, report remarks, class activities/tests, AI | Staff profile / existing class staffing |
 | Event | Event read, bounded management, session attendance | Event plan |
 | Assessment | Read, marking OR independent moderation | Assessment plan |

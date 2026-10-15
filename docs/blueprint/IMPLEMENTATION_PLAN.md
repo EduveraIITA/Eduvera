@@ -6141,3 +6141,24 @@ Verified locally: frontend typecheck and zero-warning lint pass; production buil
 passes; 38 focused planner, experiment and More tests pass; 100 tests pass when the
 affected application-route suite is included. Stage deployment and physical-phone
 acceptance remain open at this point.
+
+## Gate permission in role editor — 15 October 2026
+
+Fixed the institution-context API allowlist omitting `gate.manage`. Migration 093
+already allowed it in PostgreSQL and the permission catalogue already registered
+**Gate & Safety → Manage In & Out**, but the API's context list hid it from the
+role editor and rejected saves/assignments containing it. The API now matches the
+database contract. Institution roles can contain gate access alone or combine it
+with other explicitly selected institution actions, then be assigned to existing
+staff through the ordinary role-assignment flow. No new account is required.
+Other contexts still reject gate access; default teaching access does not gain
+it, and it does not imply departure-management or collection authority.
+
+The new policy test reproduced the defect (two assertions failed before the
+fix); all six assertions pass after it. All 18 staff UI tests pass, including
+selecting the Gatekeeper template, seeing the checked action, toggling it and
+saving exactly `gate.manage`. Backend typecheck and lint pass locally. Added a
+native PostgreSQL HTTP regression for role options, custom-role creation,
+assignment to an existing account, gate endpoint authorization, audit evidence
+and immediate revocation; that test and live release verification remain pending
+the trusted Stage workflow.
