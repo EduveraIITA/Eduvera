@@ -6863,3 +6863,11 @@ allowed for the given client ID.' The owner must add https://app.thatcampus.com 
 client's Authorized JavaScript origins and save. This is an observed external configuration
 blocker, not a completed real-account sign-in. Real Google login and owner-device acceptance
 remain pending that change. No client secret is needed or stored.
+
+## Light-blue campus login reference — 16 October 2026
+
+Owner supplied a visible Stitch login screenshot after ZIP access failed. Recreated its centered pale login card, blue/cyan background, framed header/footer and floating feature badges in both app and desktop sign-in. The owner's latest correction explicitly retains the reference-style ThatCampus name and blue graduation-cap icon in the header and centered cap icon above Welcome back. This supersedes the earlier instruction to omit the logo. Authenticated Home and Powered by ribbons are unchanged.
+
+Existing password login, Google credentials/nonce flow, MFA, errors, invitation, registration and reset routes are retained. Google is first, using its official rendered button. Help Center opens real account guidance. Decorative badges describe actual portal capabilities rather than invent uptime, response speed, library hours or compliance. The unsupported remember-device checkbox is omitted. Responsive rules retain the login at phone widths and remove peripheral badges where space is limited.
+
+Updated existing login branding/title expectations. Local execution and browser inspection are unavailable; hosted builds/tests and public release verification remain required. Screenshot matching and device acceptance are not claimed as tested.

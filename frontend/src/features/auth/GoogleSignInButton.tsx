@@ -59,7 +59,7 @@ export function GoogleSignInButton({ onCredential, onError, disabled = false }: 
           },
         });
         host.current.replaceChildren();
-        window.google.accounts.id.renderButton(host.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "pill", width: Math.min(400, host.current.clientWidth || 300) });
+        window.google.accounts.id.renderButton(host.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "rectangular", width: Math.min(400, host.current.clientWidth || 300) });
         setState("ready");
       } catch {
         if (!cancelled) setState("error");
@@ -69,8 +69,8 @@ export function GoogleSignInButton({ onCredential, onError, disabled = false }: 
     return () => { cancelled = true; controller.abort(); };
   }, [retry]);
   if (state === "disabled") return null;
-  return <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, color: "#64748b", fontSize: 12 }}><span style={{ height: 1, background: "#e2e8f0", flex: 1 }} />or<span style={{ height: 1, background: "#e2e8f0", flex: 1 }} /></div>
+  return <div className="google-sign-in" style={{ display: "grid", gap: 12, marginTop: 16 }}>
+    <div className="google-sign-in__divider" style={{ display: "flex", alignItems: "center", gap: 12, color: "#64748b", fontSize: 12 }}><span style={{ height: 1, background: "#e2e8f0", flex: 1 }} />or sign in with email<span style={{ height: 1, background: "#e2e8f0", flex: 1 }} /></div>
     <div ref={host} aria-label="Continue with Google" inert={disabled || busy} style={{ minHeight: state === "error" ? 0 : 44, display: "flex", justifyContent: "center", opacity: disabled || busy ? 0.55 : 1 }} />
     {busy ? <span role="status" style={{ textAlign: "center", fontSize: 13 }}>Signing in with Google…</span> : null}
     {state === "loading" ? <span role="status" style={{ textAlign: "center", fontSize: 13 }}>Loading Google sign-in…</span> : null}
