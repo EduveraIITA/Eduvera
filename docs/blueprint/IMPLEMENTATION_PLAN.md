@@ -6412,3 +6412,21 @@ record. A website-only mode in the existing trusted Google Cloud workflow retain
 website configuration, tests a no-traffic candidate, promotes only thatcampus-web,
 and rolls back website traffic if final verification fails. It never deploys or
 updates eduvera-stage, its database migrations, domain or DNS.
+
+## Gate access setup belongs in Roles & permissions — 15 October 2026
+
+Explicit owner decision: gate access is configured in the ordinary role and
+permission workflow, not through a separate gatekeeper-account form. Removed that
+form, its generated-password display and its account-creation action from Gate &
+Safety. Replaced it with links to central Roles and the People directory. Named
+the central role panel **Roles & permissions**. The institution-scoped
+**Manage In & Out** action remains assignable through built-in or custom roles to
+existing active staff; no duplicate account is required. Existing accounts,
+assignments and backend administrative compatibility operations are unchanged.
+QR issuance, visitor approvals and the permission-scoped Hindi/English guard
+workspace stay in their existing modules.
+
+Added gate-admin coverage for role/profile destinations, no account form or
+password UI, keyboard navigation, student QR issuance, visitor approvals and
+non-admin denial. Existing gate and staff-role tests are included in local
+validation. Trusted Stage checks and public release verification remain pending.

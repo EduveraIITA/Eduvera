@@ -12,7 +12,7 @@ export function AccessRolesPanel({schoolId,data,refresh}: {schoolId:string;data:
   const options=data.role_options;
   const visible=roles.filter((role)=>`${role.name} ${role.description}`.toLowerCase().includes(search.toLowerCase()));
   return <section className="staff-panel staff-access-roles">
-    <header><div><h2>Roles & access</h2><p>Use a built-in role or customise its allowed actions.</p></div><button className="staff-primary" disabled={!options} onClick={()=>setEditing({})}><Plus size={16}/> New role</button></header>
+    <header><div><h2>Roles & permissions</h2><p>Use a built-in role or customise its allowed actions.</p></div><button className="staff-primary" disabled={!options} onClick={()=>setEditing({})}><Plus size={16}/> New role</button></header>
     <label className="staff-access-search"><span className="sr-only">Search roles</span><input type="search" value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Search roles" /></label>
     <div className="staff-access-role-list">{visible.map((role)=><article key={role.id}>
       <ShieldCheck size={21} aria-hidden="true"/><div><h3>{role.name}</h3><p>{options?.contexts.find((item)=>item.code===role.context_kind)?.label} · {role.permissions.length} {role.permissions.length===1?"action":"actions"} · {role.assignment_count} {role.assignment_count===1?"assignment":"assignments"}</p>

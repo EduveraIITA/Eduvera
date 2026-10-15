@@ -125,7 +125,7 @@ describe("StaffOperationsPage", () => {
     renderPage({...data,access_roles:[accessRole],role_options:roleOptions}, "principal");
     const user=userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Roles" }));
-    expect(screen.getByRole("heading", { name: "Roles & access" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Roles & permissions" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: /New role/ }));
     expect(screen.getByRole("heading", { name: "Create role" })).toBeVisible();
     expect(screen.queryByLabelText("Workflow")).not.toBeInTheDocument();
