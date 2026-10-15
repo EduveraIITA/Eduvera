@@ -1,6 +1,6 @@
 import Threads from "./Threads";
 import type { ReactNode } from "react";
-import { BookOpenCheck, GraduationCap, ShieldCheck, UsersRound, CalendarDays } from "lucide-react";
+import { BookOpenCheck, ShieldCheck, UsersRound, CalendarDays } from "lucide-react";
 import "./campus-login.css";
 
 export function CampusLoginLayout({ children }: { children: ReactNode }) {
@@ -8,8 +8,8 @@ export function CampusLoginLayout({ children }: { children: ReactNode }) {
     <div className="campus-login__frame">
       <header className="campus-login__topbar">
         <a className="campus-login__brand" href="/" aria-label="ThatCampus portal">
-          <span className="campus-login__brand-icon"><GraduationCap size={20} aria-hidden="true" /></span>
-          <span><strong>ThatCampus</strong><small>PORTAL ACCESS</small></span>
+          <img className="campus-login__brand-logo" src="/assets/thatcampus-logo.png" alt="ThatCampus" width="104" height="62" />
+          <span><small>PORTAL ACCESS</small></span>
         </a>
         <div className="campus-login__top-actions">
           <span className="campus-login__access"><ShieldCheck size={13} aria-hidden="true" />School portal</span>
@@ -28,7 +28,7 @@ export function CampusLoginLayout({ children }: { children: ReactNode }) {
         <div className="campus-login__center">
           <section className="campus-login__card" aria-labelledby="campus-login-title">
             <header className="campus-login__heading">
-              <span className="campus-login__emblem"><GraduationCap size={29} aria-hidden="true" /><span><ShieldCheck size={13} aria-hidden="true" /></span></span>
+              <img className="campus-login__main-logo" src="/assets/thatcampus-logo.png" alt="ThatCampus" width="152" height="90" />
               <h1 id="campus-login-title">Welcome back</h1>
               <p>Access your attendance, timetable, and campus portal</p>
             </header>

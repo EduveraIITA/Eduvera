@@ -86,3 +86,8 @@
   .campus-login .auth-primary-button { min-height: 50px; }
   .campus-login__footer { justify-content: center; padding: 16px 20px max(16px, env(safe-area-inset-bottom)); text-align: center; border-radius: 0; }
 }
+
+/* Reuse the original transparent Home-page brand asset. */
+.campus-login__brand-logo { display: block; width: 104px; height: 62px; object-fit: contain; flex-shrink: 0; }
+.campus-login__main-logo { display: block; width: 152px; height: 90px; object-fit: contain; margin: 0 auto 24px; }
+@media (max-width: 650px) { .campus-login__brand { gap: 8px; } .campus-login__brand-logo { width: 88px; height: 52px; } .campus-login__brand small { font-size: 9px; } }
