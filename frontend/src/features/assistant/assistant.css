@@ -253,8 +253,8 @@
 }
 
 /* React Bits current stays close to the edge; decorative canvas never blocks input. */
-.assistant-electric-border { min-width: 0; box-shadow: 0 0 0 1px rgb(120 170 242 / 12%); }
-.assistant-electric-border > .electric-border__canvas { opacity: .55; }
+.assistant-electric-border { min-width: 0; box-shadow: 0 0 0 1px rgb(77 141 232 / 28%), 0 0 12px rgb(77 141 232 / 8%); }
+.assistant-electric-border > .electric-border__canvas { opacity: .85; }
 @media (prefers-reduced-motion: reduce) {
   .assistant-electric-border > .electric-border__canvas { display: none; }
 }
