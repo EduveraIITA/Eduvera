@@ -23,8 +23,11 @@ function securityRedirect(location: ReturnType<typeof useLocation>) {
 
 export function RoleLanding() {
   const auth = useAuth();
+  const location = useLocation();
   if (auth.status === "loading") return <SessionLoader />;
-  return <Navigate to={authDestination(auth)} replace />;
+  const request=new URLSearchParams(location.search).get('visitor_request');
+  const marker=request&&/^[0-9a-f-]{36}$/i.test(request)?`?visitor_request=${encodeURIComponent(request)}`:'';
+  return <Navigate to={authDestination(auth)+marker} replace />;
 }
 
 export function PublicOnly({ children }: { children: ReactNode }) {

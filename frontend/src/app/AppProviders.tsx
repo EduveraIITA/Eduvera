@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { AuthProvider } from "../features/auth/AuthContext";
 import { AttendanceContinuitySync } from "../features/attendance/AttendanceContinuitySync";
 import { SchoolEventBridge } from "../features/school/SchoolEventBridge";
+import { VisitorApprovalCenter } from "../features/gate/VisitorApprovalCenter";
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -34,6 +35,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <AuthProvider>
         <SchoolEventBridge />
         <AttendanceContinuitySync />
+        <VisitorApprovalCenter />
         {children}
       </AuthProvider>
     </QueryClientProvider>
