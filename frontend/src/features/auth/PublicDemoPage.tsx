@@ -27,7 +27,7 @@ export default function PublicDemoPage() {
 
   async function open(role: (typeof profiles)[number]["role"]) {
     setPending(role); setError(null);
-    try { await auth.enterPublicDemo(role); navigate(profileDestinations[role], { replace: true }); }
+    try { await auth.enterPublicDemo(role); void navigate(profileDestinations[role], { replace: true }); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The demo could not be opened."); setPending(null); }
   }
 
