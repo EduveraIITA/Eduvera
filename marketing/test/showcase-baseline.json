@@ -1,0 +1,28 @@
+{
+  "baseline": "3a103b927db9f5fb696b92a90a9d81903c285865",
+  "components": {
+    "ScreenImage": "6f11b13d740abf388cb4ef5ced69f8b236974000280ce8331f5972c9bf6c0213",
+    "ScreenButton": "0df1baf6bd4ee0e024b3777f3d44ba45bc898c2b69f98dfcb905d014ddfe2ac6",
+    "Reveal": "b5b281bfcf4eae29fc7317dd112b222d25941fbcfc39d5e02d081ec89f28d4e9",
+    "HeroScreens": "5e762efb9d0fdd2f50d6515813b1ab58633a21fc189cec2295c0bc6267bb4de0",
+    "ProductTour": "a503247a21e61c10ca6a7447d0cabf0e22cfe1ab70f4f862e5b519e213d20306",
+    "Planning": "6be59ec86697625a9873d94fd81baf99fe574c273527a0776ca1358cea32eff1",
+    "ConnectedPeople": "c01747d39d1b5a7ae3836fff3c308df434cf91850e0199d9dd4b4c2a4b49b832",
+    "ScreenDialog": "4d126b64227d0792e1323007659dca100bdc8a764b275c714ed728ad4bc1ee69"
+  },
+  "files": {
+    "src/style.css": "87b26699346dd71a02c1211e5385aab9cf6fb2657c104f9a62c98cd0d1ef9523",
+    "public/screens/attendance-small.webp": "28926f532cb7e3ee69de7babba567b20d9aa6c8f02bc7e89813a67ec69f678fb",
+    "public/screens/attendance.webp": "7a152bc4780a46a165702ee663ac77bd28ff63652dc823e746d582a32cd98555",
+    "public/screens/family-small.webp": "025ddc62cb4b285926f98f207ed95e262470397019fc6f271bd28b6a72d45cd8",
+    "public/screens/family.webp": "e5f1427a3510ff2717b8d130eca334aa9f2674b66d2e81cd6d2ab24826931a7b",
+    "public/screens/insights-desktop-small.webp": "b6fb7430ef727966e2118a0e3e1744007d98050e0dc9555a3718cb47743e9987",
+    "public/screens/insights-desktop.webp": "3970b18b075bea53f6520f0f051db80e7e1bcc11acb6dbd8a5ec8080d0c0d50d",
+    "public/screens/overview-small.webp": "4ad0fe083139ef6eaf45556d07a4ec58e30d0569d7e3af03a61226d8cd8c4b43",
+    "public/screens/overview.webp": "5395821e3e91fbd458aaf16881b92262660f50ef9ef0e85c09232f5ec4f5e42d",
+    "public/screens/planner-desktop-small.webp": "3c116f909a1f6679b9aaff73c58bf1073ac38485e4abb7a460b9699213d00540",
+    "public/screens/planner-desktop.webp": "f1ef746344d7742f78c1e263a706cb7d8e1ff927d99e7e5ed722923bca867766",
+    "public/screens/teacher-small.webp": "d847ea179e0a8a44935d55a96d29a4dc86623ba2df075b9348a7d91889c7e0c5",
+    "public/screens/teacher.webp": "6a3402b9a290d3b23408bc37957275a90e0ac66e602c2755f931666479457e6b"
+  }
+}

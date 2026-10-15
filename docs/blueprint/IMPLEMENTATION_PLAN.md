@@ -6392,3 +6392,23 @@ Cloudflare analytics/CSP warning, which was not bypassed.
 ## 15 October 2026 — transparent ThatCampus branding
 
 Replaced the opaque app and marketing logo references with transparent PNG/WebP assets; removed white logo containers. Invitations, payment emails, account emails and PDF receipts share the ThatCampus mark. Email asset v2 avoids immutable-cache reuse; the legacy endpoint remains available for previously delivered emails. Validation and release evidence are recorded in the change commit.
+
+## 15 October 2026 — Stitch surroundings with preserved product showcases
+
+Latest explicit owner brief supersedes the Apple-inspired surrounding marketing
+layout: follow `stitch_thatcampus_education_saas_website (1).zip`, use Plus Jakarta
+Sans and retain every live product screenshot and demonstration unchanged. This
+applies only to the public website. Existing app and authentication are outside scope.
+
+Implemented the Stitch hero, capability cards, school/college/university suitability
+sections, four role benefits, contact treatment and navy footer. Existing showcase
+functions, animation timings, stylesheet and screenshot files are protected by a
+baseline hash regression. No screenshots were captured from the application.
+
+Local typecheck, lint, production build and 11 HTTP/configuration/preservation tests
+pass. Browser checks and production release evidence will be recorded in
+`docs/marketing/STITCH_RELEASE.md`; do not infer deployment from this implementation
+record. A website-only mode in the existing trusted Google Cloud workflow retains
+website configuration, tests a no-traffic candidate, promotes only thatcampus-web,
+and rolls back website traffic if final verification fails. It never deploys or
+updates eduvera-stage, its database migrations, domain or DNS.

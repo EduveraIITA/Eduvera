@@ -13,7 +13,7 @@ try{
  for(const [name,width,height]of[['desktop',1440,1000],['laptop',1024,900],['tablet',768,1024],['mobile',360,800],['small-mobile',320,800]]){
   const page=await browser.newPage({viewport:{width,height},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:8080/',{waitUntil:'networkidle'});
-  assert.equal(await page.locator('h1').textContent(),'Not just any campus.That campus.');
+  assert.equal(await page.locator('h1').textContent(),'One Campus.Everything Connected.');
   assert.equal(await page.locator('.header-actions a.login').getAttribute('href'),'https://app.thatcampus.com/login');
   assert(await page.locator('.header-actions a.login').isVisible());
   const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);if(!fits){console.log(name,await page.evaluate(()=>Array.from(document.querySelectorAll('body *')).filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,cls:el.className,right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))));await page.screenshot({path:`screenshots/${name}-overflow.png`,fullPage:true});}assert(fits,`${name}: horizontal overflow`);
