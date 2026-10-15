@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./Threads.css";
 
 // Instanced ribbon strips, adapted from the supplied React Bits Threads shaders.
@@ -26,16 +26,14 @@ float noise(vec2 P) {
   return dot(results, blend.zxzx * blend.wwyy);
 }
 void main() {
-  float perc = float(gl_InstanceID) / 159.0;
+  float perc = float(gl_InstanceID) / 110.0;
   float x = aPoint.x;
   float split = 0.04 + perc * 0.5;
   float amp = smoothstep(split, max(0.7, split + 0.2), x) * 0.65;
   float t = uTime / 10.0;
   float n = mix(noise(vec2(t * 2.5, (x * 1.05 + perc) * 2.5)), noise(vec2(t * 3.5, (x * 1.05 + t) * 3.5)) / 1.5, x * 0.3);
-  // Overscan the band and anchor its outer strands: waves must never expose
-  // an empty wedge at any viewport edge, even during landscape rotation.
-  float edgeEnvelope = smoothstep(0.0, 0.18, perc) * (1.0 - smoothstep(0.82, 1.0, perc));
-  float y = 0.5 + (perc - 0.5) * 1.5 + n * 0.5 * amp * edgeEnvelope;
+  // Spread across the projected viewport, including the corners in landscape.
+  float y = 0.5 + (perc - 0.5) * 1.2 + n * 0.5 * amp;
   float c = 0.9063078, s = 0.4226183;
   vec2 frame = vec2(uResolution.x*c + uResolution.y*s, uResolution.x*s + uResolution.y*c) * 1.1;
   vec2 local = (vec2(x,y) - 0.5) * frame;
@@ -60,11 +58,16 @@ void main() {
 
 export default function Threads() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [generation, setGeneration] = useState(0);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false });
-    if (!gl) return; // The CSS background remains available without WebGL.
+    canvas.dataset.ready = "false";
+    let gl: WebGL2RenderingContext | null;
+    try {
+      gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" });
+    } catch { return; }
+    if (!gl) return; // The animated SVG threads remain visible without WebGL.
     const shaders: WebGLShader[] = [];
     const program = gl.createProgram();
     if (!program) return;
@@ -108,7 +111,8 @@ export default function Threads() {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.uniform2f(resolution, canvas.width, canvas.height);
       gl.uniform1f(time, elapsed);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 160);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 110);
+      canvas.dataset.ready = gl.getError() === gl.NO_ERROR ? "true" : "false";
     };
     const frame = (now: number) => {
       raf = 0;
@@ -140,8 +144,15 @@ export default function Threads() {
     window.screen.orientation?.addEventListener("change", resize);
     const intersection = new IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); wake(); });
     intersection.observe(canvas);
-    const onLost = () => { lost = true; cancelAnimationFrame(raf); };
+    const onLost = (event: Event) => {
+      event.preventDefault();
+      lost = true;
+      canvas.dataset.ready = "false";
+      cancelAnimationFrame(raf);
+    };
+    const onRestored = () => setGeneration(value => value + 1);
     canvas.addEventListener("webglcontextlost", onLost);
+    canvas.addEventListener("webglcontextrestored", onRestored);
     document.addEventListener("visibilitychange", wake);
     motion.addEventListener("change", wake);
     resize();
@@ -153,6 +164,8 @@ export default function Threads() {
       window.screen.orientation?.removeEventListener("change", resize);
       intersection.disconnect();
       canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+      canvas.dataset.ready = "false";
       document.removeEventListener("visibilitychange", wake);
       motion.removeEventListener("change", wake);
       gl.deleteBuffer(buffer);
@@ -160,6 +173,17 @@ export default function Threads() {
       shaders.forEach(shader => gl.deleteShader(shader));
       gl.deleteProgram(program);
     };
-  }, []);
-  return <canvas ref={canvasRef} className="threads-canvas" aria-hidden="true" />;
+  }, [generation]);
+  return <div className="threads-background" aria-hidden="true">
+    <canvas ref={canvasRef} className="threads-canvas" />
+    <svg className="threads-fallback" viewBox="0 0 1600 1000" preserveAspectRatio="none" focusable="false">
+      <g fill="none" strokeWidth="1.2">
+        {Array.from({ length: 100 }, (_, index) => {
+          const y = -450 + index * 20;
+          return <path key={index} stroke={index % 3 === 0 ? "#9185d9" : "#609bea"}
+            d={`M -200 ${y + 380} C 350 ${y + 300}, 850 ${y - 180}, 1800 ${y + 100}`} />;
+        })}
+      </g>
+    </svg>
+  </div>;
 }
