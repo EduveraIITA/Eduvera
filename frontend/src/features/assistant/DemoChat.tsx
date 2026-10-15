@@ -9,6 +9,7 @@ import { useAssistantNavigation } from './useAssistantNavigation';
 import { AssistantText } from './AssistantText';
 import { AgentChart } from './AgentChart';
 import { ActionReviewNotice } from './AgentReply';
+import { AssistantElectricBorder } from './AssistantElectricBorder';
 import './assistant.css';
 
 export function AssistantTab({chat,className='',sidebar=false}:{chat:DemoChatControl;className?:string;sidebar?:boolean}) {
@@ -45,7 +46,7 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
   const sourceTitle=chart?/attendance/i.test(chart.title)?'View attendance':/(?:result|score)/i.test(chart.title)?'View results':'View details':source?.title;
   return <><div className="assistant-backdrop" aria-hidden="true" onClick={chat.close}/>
     <section id={chat.id} ref={panel} className="assistant-dock" tabIndex={-1} aria-label="Assistant">
-      {approval?<ActionReviewNotice action={approval} to={fullPath} state={returnState} onClose={chat.close} onOpen={event=>navigate.fromLink(event,fullPath,{state:returnState})}/>:<div className="assistant-response">
+      {approval?<ActionReviewNotice action={approval} to={fullPath} state={returnState} onClose={chat.close} onOpen={event=>navigate.fromLink(event,fullPath,{state:returnState})}/>:<AssistantElectricBorder><div className="assistant-response">
         <header aria-label="Assistant controls">
           <div className="assistant-response__controls">
             <Link className="assistant-expand" to={fullPath} state={returnState} aria-label="Open Assistant" onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}><Maximize2 size={16} aria-hidden="true"/></Link>
@@ -60,7 +61,7 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
         </div>
         {source?<Link className="assistant-source-link" to={source.href} onClick={chat.close}>{sourceTitle}<ArrowRight size={17} aria-hidden="true"/></Link>:null}
         {conversation.pending?<span className="assistant-demo-note">Checking your school records…</span>:null}
-      </div>}
+      </div></AssistantElectricBorder>}
       <AssistantComposer onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </section>
   </>;

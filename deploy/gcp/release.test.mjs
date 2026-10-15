@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guard, assertRuntime, verify, verifyPhoto } from './release.mjs';
+import { guard, assertRuntime, verify, verifyPhoto, resolveImageDigest } from './release.mjs';
 
 const now = Date.parse('2026-10-09T00:00:00Z');
 const env = { GITHUB_REPOSITORY: 'EduveraIITA/Eduvera', GITHUB_REF: 'refs/heads/Stage', GITHUB_SHA: 'a'.repeat(40), GCP_PROJECT_ID: 'eduera-511111', GCP_REGION: 'asia-south1', GCP_SERVICE: 'eduvera-stage', GCP_PHOTO_SERVICE: 'eduvera-stage-photo', GCP_MIGRATION_JOB: 'eduvera-stage-migrate', GCP_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web', GCP_PHOTO_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance', GCP_TRIAL_DEPLOY_UNTIL: '2026-11-08T00:00:00Z' };
@@ -89,4 +89,43 @@ test('Telegram deployment requires Secret Manager bindings and verified webhook 
   assert.equal(check(),'old');
   assert.throws(()=>check({secret:false}));
   assert.throws(()=>check({auto:'false'}));
+});
+
+test('a fresh deployment runner resolves both pushed commit tags through Artifact Registry', () => {
+  const calls = [];
+  const images = [env.GCP_IMAGE, env.GCP_PHOTO_IMAGE];
+  const digests = ['sha256:' + '1'.repeat(64), 'sha256:' + '2'.repeat(64)];
+  const execute = (command, args, options) => {
+    const index = calls.length;
+    calls.push({ command, args, options });
+    return digests[index] + '\n';
+  };
+  assert.deepEqual(images.map(image => resolveImageDigest(image, env.GITHUB_SHA, execute)),
+    images.map((image, index) => `${image}@${digests[index]}`));
+  assert.deepEqual(calls, images.map(image => ({
+    command: 'gcloud',
+    args: ['artifacts', 'docker', 'images', 'describe', `${image}:${env.GITHUB_SHA}`,
+      '--project=eduera-511111', '--format=value(image_summary.digest)', '--quiet'],
+    options: { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+  })));
+});
+test('release image lookup rejects unexpected repositories and non-commit tags before execution', () => {
+  const execute = () => assert.fail('Invalid image references must not reach the registry');
+  for (const image of ['', 'other/image', env.GCP_IMAGE + '/other', env.GCP_IMAGE + '@sha256:' + '1'.repeat(64)]) {
+    assert.throws(() => resolveImageDigest(image, env.GITHUB_SHA, execute), /Unexpected release image repository/);
+  }
+  for (const sha of [undefined, '', 'latest', 'a'.repeat(39), 'A'.repeat(40), 'a'.repeat(41)]) {
+    assert.throws(() => resolveImageDigest(env.GCP_IMAGE, sha, execute), /full release SHA/);
+  }
+});
+test('missing images, denied registry access and malformed digests fail closed', () => {
+  const digest = 'sha256:' + 'a'.repeat(64);
+  for (const output of ['', 'null', 'latest', 'sha256:abc', 'sha512:' + 'a'.repeat(64),
+    'sha256:' + 'A'.repeat(64), env.GCP_IMAGE + '@' + digest, digest + '\n' + digest]) {
+    assert.throws(() => resolveImageDigest(env.GCP_IMAGE, env.GITHUB_SHA, () => output), /valid pushed immutable image digest/);
+  }
+  for (const message of ['Image not found', 'Permission denied']) {
+    const failure = new Error(message);
+    assert.throws(() => resolveImageDigest(env.GCP_IMAGE, env.GITHUB_SHA, () => { throw failure; }), error => error === failure);
+  }
 });

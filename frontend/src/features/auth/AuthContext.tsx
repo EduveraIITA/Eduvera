@@ -104,6 +104,7 @@ export interface AuthContextValue extends AuthState {
   portals: Portal[];
   hasPortal: (portal: Portal) => boolean;
   login: (input: LoginInput) => Promise<{ challengeToken: string | null; demoProfileSwitcher?: boolean }>;
+  googleLogin: (credential: string) => Promise<{ challengeToken: string | null }>;
   completeMfa: (challengeToken: string, code: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   enterDemo: (persona: DemoPersona) => Promise<void>;
@@ -289,6 +290,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadProfile, queryClient],
   );
 
+  const googleLogin = useCallback(async (credential: string) => {
+    const response = await authMutation<AuthResponse | MfaChallengeResponse>("/api/v1/auth/google/", { credential });
+    if ("mfa_required" in response) return { challengeToken: response.challenge_token };
+    window.localStorage.removeItem(LOGGED_OUT_KEY);
+    window.localStorage.removeItem(LOGGED_OUT_DEMO_MODE_KEY);
+    await loadProfile(response);
+    queryClient.clear();
+    return { challengeToken: null };
+  }, [loadProfile, queryClient]);
+
   const completeMfa = useCallback(async (challengeToken: string, code: string) => {
     const response = await authMutation<AuthResponse>("/api/v1/auth/mfa/login/", { challenge_token: challengeToken, code });
     window.localStorage.removeItem(LOGGED_OUT_KEY);
@@ -367,6 +378,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       portals,
       hasPortal: (portal) => portals.includes(portal),
       login,
+      googleLogin,
       completeMfa,
       register,
       enterDemo,
@@ -374,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       refresh,
     }),
-    [completeMfa, enterDemo, enterPublicDemo, login, logout, portals, refresh, register, state],
+    [googleLogin, completeMfa, enterDemo, enterPublicDemo, login, logout, portals, refresh, register, state],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -397,6 +409,7 @@ export function authDestination(auth: Pick<AuthContextValue, "status" | "portals
   if (auth.portals.includes("parent")) return "/parent/home";
   if (auth.portals.includes("student")) return "/student";
   if (auth.portals.includes("teacher")) {
+    if (auth.memberships.filter(m=>m.role==="staff").every(m=>!m.permissions?.length)) return "/workspace";
     const gateOnly=auth.memberships.some(m=>m.role==="staff"&&m.permissions?.includes("gate.manage")&&m.permissions.every(p=>p==="gate.manage"));
     return gateOnly ? "/gate" : "/teacher";
   }

@@ -1,3 +1,4 @@
+import { PoweredBy } from "../../features/school/PoweredBy";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
@@ -245,7 +246,7 @@ export function ParentShell({
         </div>
       </header>
 
-      <main className="parent-main" inert={assistantOpen}>{children}</main>
+      <main className="parent-main" inert={assistantOpen}>{children}{active === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
       {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal: "parent", pageTitle: pageLabel, studentId: currentChildId }} /> : null}
 
       {!(assistantEnabled && chat.fullPage) ? <nav className="parent-bottom-nav" aria-label="Parent portal navigation">

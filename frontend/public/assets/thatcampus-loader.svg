@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="ThatCampus loading">
+  <title>ThatCampus is loading</title>
+  <desc>A blue central hub pops in, three short straight spokes grow outward with bubble-pop dots, the completed network rotates once, then the spokes retract one by one before repeating.</desc>
+  <defs>
+    <radialGradient id="bubble" cx="25%" cy="17%" r="88%">
+      <stop offset="0%" stop-color="#77C2FF" />
+      <stop offset="48%" stop-color="#268BFF" />
+      <stop offset="100%" stop-color="#075BEA" />
+    </radialGradient>
+  </defs>
+  <g id="network">
+    <animateTransform attributeName="transform" type="rotate" additive="replace" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.305;0.6;1" keySplines="0 0 1 1;0.55 0 0.28 1;0 0 1 1" values="0 32 32;0 32 32;360 32 32;360 32 32" />
+    <line x1="32" y1="32" x2="32" y2="32" stroke="#4C96FF" stroke-width="2.35" stroke-linecap="round">
+      <animate attributeName="x2" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.065;0.11;0.824;0.8725;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;43.69757;43.69757;32;32" />
+      <animate attributeName="y2" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.065;0.11;0.824;0.8725;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;17.0278;17.0278;32;32" />
+    </line>
+    <line x1="32" y1="32" x2="32" y2="32" stroke="#4C96FF" stroke-width="2.35" stroke-linecap="round">
+      <animate attributeName="x2" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.135;0.18;0.744;0.7925;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;39.11753;39.11753;32;32" />
+      <animate attributeName="y2" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.135;0.18;0.744;0.7925;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;49.61649;49.61649;32;32" />
+    </line>
+    <line x1="32" y1="32" x2="32" y2="32" stroke="#4C96FF" stroke-width="2.35" stroke-linecap="round">
+      <animate attributeName="x2" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.205;0.25;0.664;0.7125;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;13.18491;13.18491;32;32" />
+      <animate attributeName="y2" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.205;0.25;0.664;0.7125;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;29.35571;29.35571;32;32" />
+    </line>
+    <circle cx="32" cy="32" r="0" fill="url(#bubble)">
+      <animate attributeName="cx" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.065;0.11;0.824;0.8725;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;43.69757;43.69757;32;32" />
+      <animate attributeName="cy" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.065;0.11;0.824;0.8725;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;17.0278;17.0278;32;32" />
+      <animate attributeName="r" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.1;0.1275;0.15;0.8;0.8675;1" keySplines="0 0 1 1;0.22 0.8 0.28 1;0.1 0 0.5 1;0 0 1 1;0.55 0 0.9 0.45;0 0 1 1" values="0;0;4.5;3.55;3.55;0;0" />
+    </circle>
+    <circle cx="32" cy="32" r="0" fill="url(#bubble)">
+      <animate attributeName="cx" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.135;0.18;0.744;0.7925;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;39.11753;39.11753;32;32" />
+      <animate attributeName="cy" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.135;0.18;0.744;0.7925;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;49.61649;49.61649;32;32" />
+      <animate attributeName="r" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.17;0.1975;0.22;0.72;0.7875;1" keySplines="0 0 1 1;0.22 0.8 0.28 1;0.1 0 0.5 1;0 0 1 1;0.55 0 0.9 0.45;0 0 1 1" values="0;0;4.5;3.55;3.55;0;0" />
+    </circle>
+    <circle cx="32" cy="32" r="0" fill="url(#bubble)">
+      <animate attributeName="cx" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.205;0.25;0.664;0.7125;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;13.18491;13.18491;32;32" />
+      <animate attributeName="cy" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.205;0.25;0.664;0.7125;1" keySplines="0 0 1 1;0.18 0.76 0.28 1;0 0 1 1;0.42 0 0.58 1;0 0 1 1" values="32;32;29.35571;29.35571;32;32" />
+      <animate attributeName="r" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.24;0.2675;0.29;0.64;0.7075;1" keySplines="0 0 1 1;0.22 0.8 0.28 1;0.1 0 0.5 1;0 0 1 1;0.55 0 0.9 0.45;0 0 1 1" values="0;0;4.5;3.55;3.55;0;0" />
+    </circle>
+  </g>
+  <circle id="hub" cx="32" cy="32" r="0" fill="url(#bubble)">
+    <animate attributeName="r" dur="2s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.008;0.0375;0.0575;0.94;0.985;1" keySplines="0 0 1 1;0.15 0.75 0.35 1;0.20 0 0.60 1;0 0 1 1;0.55 0 0.85 0.4;0 0 1 1" values="0;0;5;4.05;4.05;0;0" />
+  </circle>
+</svg>

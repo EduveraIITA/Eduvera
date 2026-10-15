@@ -7,6 +7,7 @@ vi.mock('../src/config.js', () => ({config: () => mocks.settings}));
 vi.mock('nodemailer', () => ({default: {createTransport: mocks.createTransport}}));
 import { deliverInvitation, invitationEmailFailure } from '../src/common/invitation-email.js';
 import { invitationLogo } from '../src/common/invitation-logo.js';
+import { deliverAccountAction } from '../src/common/account-email.js';
 import { invitationTemplate } from '../src/common/invitation-template.js';
 import { sendTransactionalEmail } from '../src/common/email-transport.js';
 const invitation = {email: 'recipient@example.test', token: 'private-code', expires_at: '2099-10-04T00:00:00Z'};
@@ -119,4 +120,15 @@ describe('invitation SMTP delivery', () => {
     // PNG IHDR color type 6 carries alpha; the old app icon was opaque RGB.
     expect(Buffer.from(invitationLogo.content,'base64')[25]).toBe(6);
   });
+});
+
+it('uses the invitation layout for password reset without exposing an invitation code', async () => {
+  await deliverAccountAction({email: invitation.email, token: 'reset-private-token', purpose: 'password_reset', expiresAt: new Date('2099-10-04T00:00:00Z')});
+  const message = mocks.sendMail.mock.calls[0]![0];
+  expect(message.html).toContain('Reset password');
+  expect(message.html).toContain('/reset-password?token=reset-private-token');
+  expect(message.html).toContain('email-section');
+  expect(message.html).toContain('linear-gradient(#ffffff,#ffffff)');
+  expect(message.html).not.toContain('INVITATION CODE');
+  expect(message.html).not.toContain('>ThatCampus</span>');
 });

@@ -1,5 +1,43 @@
 # Authorized Stage gatekeeper provisioning
 
+## New gate.demo account — 15 October 2026
+
+The owner explicitly superseded the proposed assignment to `kavita.staff`: create
+a new user instead and leave Kavita unchanged. The fixed-target maintenance path
+`[provision-gatekeeper] [new-gate-demo]` creates only `gate.demo` in Cambridge (`cis`),
+with an active non-teaching profile and a Gatekeeper role containing exactly
+institution-scoped `gate.manage`. Account, membership, binding, audits and access
+outbox event commit together after scope verification. Existing usernames cause
+rollback; no existing account, password or assignment is updated.
+
+The trusted runner generates the initial password and passes only its salted
+application-compatible scrypt hash to the private execution. It emits an
+RSA-OAEP/AES-GCM encrypted credential packet to GitHub logs before execution, so a
+later failure cannot lose the credential. Delivery is permitted only after the
+private account operation succeeds. The password never enters Cloud Run arguments
+or logs; the hash and encoded program are masked in runner logs. This avoids the
+previous Cloud Logging read-permission blocker without changing IAM. The private
+recipient key stays outside Git. On failure, inspect the first encrypted packet
+and execution result before retrying; never reset an existing account.
+
+The normal Verify gate, trusted workflow identity, private migration job and
+persisted runtime configuration remain. Public-demo sessions remain read-only.
+All 19 local deployment contracts and backend typecheck/lint pass. The native
+PostgreSQL regression covers successful creation, credential verification, gate-only
+scope, refusal to overwrite, outbox evidence and unchanged Kavita records. Hosted
+CI passed: all 827 backend tests (including the native new-user regression),
+client builds, mobile shards and deployment contracts. PR #43 merged as
+`8a6a8547fb284414e1207267e5cca4a0d847471e`. Stage workflow `38743814034`
+successfully executed the private operation `eduvera-stage-migrate-kfzd4` at
+13:38:50 UTC on 15 October. It verified the new `gate.demo` account, Gatekeeper
+role and only `gate.manage`; existing users including `kavita.staff` and the
+persisted migration-job configuration were unchanged. The encrypted credential
+packet was privately decrypted and delivered in `Gate_Demo_Credentials.txt`;
+no password or private key is stored in the repository. Use regular credential
+login; this does not add a public-demo persona or change read-only demo access.
+
+## Earlier gatekeeper.review operation — 14 October 2026
+
 On 14 October 2026 the user explicitly approved creation of `gatekeeper.review`
 with only Manage In & Out access, then requested a direct database entry after
 browser authentication was declined. This authorizes the bounded maintenance

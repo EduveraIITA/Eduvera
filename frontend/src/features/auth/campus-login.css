@@ -1,0 +1,88 @@
+.campus-login {
+  --campus-blue: #2563eb;
+  --campus-ink: #182032;
+  --campus-muted: #536078;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  position: relative;
+  isolation: isolate;
+  padding: 0;
+  color: var(--campus-ink);
+  background: radial-gradient(ellipse at 50% 22%, #d5e4fa 0%, transparent 48%), radial-gradient(ellipse at 89% 58%, #c9f2ff 0%, transparent 48%), #f7f7ff;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+}
+.campus-login *, .campus-login *::before, .campus-login *::after { box-sizing: border-box; }
+.campus-login a { color: #134eb7; text-decoration: none; }
+.campus-login a:hover { text-decoration: underline; }
+.campus-login :is(a, button, summary):focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; }
+.campus-login__frame { position: relative; z-index: 1; min-height: 100dvh; display: flex; flex-direction: column; }
+.campus-login__topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 64px; padding: 12px 44px; background: rgb(252 251 255 / 45%); }
+.campus-login__brand { display: flex; align-items: center; gap: 12px; color: var(--campus-ink) !important; }
+.campus-login__brand > span:last-child { display: grid; gap: 2px; }
+.campus-login__brand strong { font-size: 17px; font-weight: 750; line-height: 1.2; }
+.campus-login__brand small { font-size: 10px; letter-spacing: .06em; }
+.campus-login__brand-icon { display: grid; place-items: center; width: 36px; height: 36px; color: #fff; border-radius: 8px; background: linear-gradient(145deg,#397dd8,#1456ce); box-shadow: 0 4px 12px #2862c52b; }
+.campus-login__top-actions { display: flex; align-items: center; gap: 28px; font-size: 12px; }
+.campus-login__access { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: #eef1fc; }
+.campus-login__access svg { color: #147c8d; }
+.campus-login__help { position: relative; }
+.campus-login__help summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.campus-login__help > div { position: absolute; right: 0; top: 100%; width: min(300px, 80vw); padding: 20px; border: 1px solid #dce4ef; border-radius: 12px; background: white; box-shadow: 0 12px 32px #254d7926; line-height: 1.6; }
+.campus-login__help p { margin: 8px 0; }
+.campus-login__stage { position: relative; flex: 1; display: grid; place-items: center; padding: 24px; }
+.campus-login__center { position: relative; z-index: 1; width: min(100%, 380px); }
+.campus-login__card { padding: 24px; border: 1px solid rgb(255 255 255 / 80%); border-radius: 12px; background: rgb(251 253 255 / 65%); box-shadow: 0 12px 40px #4c78bf1a; }
+.campus-login__heading { text-align: center; margin-bottom: 20px; }
+.campus-login__heading h1 { margin: 0 0 8px; color: var(--campus-ink); font-size: 24px; letter-spacing: -.045em; line-height: 1.25; font-weight: 750; }
+.campus-login__heading p { max-width: 300px; margin: 0 auto; color: #424d62; font-size: 13px; line-height: 1.6; }
+.campus-login .auth-form { display: flex; flex-direction: column; gap: 14px; margin: 0; }
+.campus-login .auth-field { display: flex; flex-direction: column; gap: 7px; color: var(--campus-ink); font-size: 12px; font-weight: 500; }
+.campus-login .auth-input-wrap { position: relative; display: flex; align-items: center; height: 46px; border: 1px solid transparent; border-radius: 8px; color: #65718a; background: #f0f1fd; }
+.campus-login .auth-input-wrap:focus-within { border-color: #7099f1; box-shadow: 0 0 0 3px #2563eb17; background: #fff; }
+.campus-login .auth-input-wrap > svg { position: absolute; left: 14px; pointer-events: none; }
+.campus-login .auth-input-wrap input { width: 100%; min-width: 0; height: 100%; padding: 0 42px; border: 0; outline: 0; border-radius: inherit; color: var(--campus-ink); background: transparent; font: inherit; font-size: 14px; }
+.campus-login .auth-input-wrap input::placeholder { color: #68748b; opacity: 1; }
+.campus-login .auth-input-wrap button { position: absolute; right: 0; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #65718a; cursor: pointer; }
+.campus-login .auth-login-forgot { align-self: flex-end; font-size: 12px; padding: 8px 0; margin: -12px 0 0; font-weight: 600; }
+.campus-login .auth-primary-button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 46px; padding: 12px 16px; border: 0; border-radius: 8px; background: var(--campus-blue); color: #fff; box-shadow: 0 6px 16px #2563eb30; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.campus-login .auth-primary-button:hover:not(:disabled) { background: #1d54cc; }
+.campus-login .auth-primary-button:disabled { opacity: .65; cursor: wait; }
+.campus-login .auth-alert { display: flex; align-items: flex-start; gap: 8px; padding: 12px; color: #941c24; background: #fff0f1; border: 1px solid #f4c2c7; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+.campus-login .auth-alert svg { flex-shrink: 0; }
+.campus-login .auth-text-button { min-height: 44px; padding: 8px; border: 0; background: transparent; color: #134eb7; cursor: pointer; font: inherit; font-size: 13px; }
+.campus-login .auth-verification-intro { display: flex; gap: 10px; color: #33425d; font-size: 13px; line-height: 1.5; }
+.campus-login .auth-verification-intro p { margin: 6px 0 0; }
+.campus-login__links { margin-top: 16px; padding: 4px 8px; border-radius: 8px; background: rgb(243 245 255 / 45%); text-align: center; }
+.campus-login .auth-invite-link, .campus-login .auth-switch { margin: 0; padding: 6px 0; color: #536078; font-size: 12px; line-height: 1.6; }
+.campus-login .auth-switch { border-top: 1px solid #e9edf7; }
+.campus-login .auth-invite-link a, .campus-login .auth-switch a { display: inline-flex; align-items: center; min-height: 32px; padding: 0; margin: 0; font-weight: 600; }
+.campus-login .google-sign-in { margin: 0 0 16px !important; }
+.campus-login .google-sign-in__divider { order: 5; margin-top: 6px; font-size: 11px !important; }
+.campus-login__assurance { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0 0; color: #425470; font-size: 11px; }
+.campus-login__assurance svg { color: #187a8a; }
+.campus-login__footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 60px; padding: 12px 44px;  color: #536078; background: rgb(252 251 255 / 45%); font-size: 11px; }
+.campus-login__footer nav { display: flex; gap: 20px; }
+.campus-login__footer a { display: inline-flex; align-items: center; min-height: 36px; color: #414d63; }
+@media (max-width: 650px) {
+  .campus-login { padding: 0; }
+  .campus-login__frame { min-height: 100dvh; border: 0; border-radius: 0; }
+  .campus-login__topbar { padding: max(12px, env(safe-area-inset-top)) 20px 12px; border-radius: 0; }
+  .campus-login__access { display: none; }
+  .campus-login__brand strong { font-size: 15px; }
+  .campus-login__stage { padding: 20px 16px; }
+  .campus-login__card { padding: 20px; }
+  .campus-login__heading h1 { font-size: 24px; }
+  .campus-login .auth-input-wrap { height: 46px; }
+  .campus-login .auth-input-wrap input { font-size: 16px; }
+  .campus-login .auth-primary-button { min-height: 46px; }
+  .campus-login__footer { justify-content: center; padding: 16px 20px max(16px, env(safe-area-inset-bottom)); text-align: center; border-radius: 0; }
+}
+
+/* Reuse the original transparent Home-page brand asset. */
+.campus-login__brand-logo { display: block; width: 104px; height: 62px; object-fit: contain; flex-shrink: 0; }
+@media (max-width: 650px) { .campus-login__brand { gap: 8px; } .campus-login__brand-logo { width: 88px; height: 52px; } .campus-login__brand small { font-size: 9px; } }
+
+/* Keep one decorative animation behind the complete viewport and all controls. */
+.campus-login > .threads-background { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; z-index: 0; }
+@media (prefers-contrast: more) { .campus-login__card { background: rgb(251 253 255 / 95%); } }

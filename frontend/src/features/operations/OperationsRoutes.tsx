@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
+import { ThatCampusLoader } from "../../components/ThatCampusLoader";
 import { schoolDateToday } from "../../lib/schoolTime";
 import {
   PrincipalHomePage,
@@ -17,7 +18,7 @@ import { ApiError } from "../../lib/api";
 import { useAuth } from "../auth/AuthContext";
 import { useAttention } from "../attention/useAttention";
 import { ScopedStaffHomePage } from "../auth/ScopedStaffHomePage";
-import { currentStaffMembership, hasStaffPermission } from "../auth/staffAccess";
+import { currentStaffMembership, hasStaffPermission, isGateOnlyMember } from "../auth/staffAccess";
 import {
   applyQueuedCapture,
   attendanceDeviceId,
@@ -131,12 +132,7 @@ async function submitAttendanceWithContinuity(
 }
 
 function Loading() {
-  return (
-    <div className="route-loader" role="status">
-      <span className="route-loader__mark" />
-      <span>Loading live school data...</span>
-    </div>
-  );
+  return <ThatCampusLoader />;
 }
 
 function Failure({ error }: { error: Error }) {
@@ -163,6 +159,7 @@ export function TeacherHomeRoute() {
   const auth = useAuth();
   const member = currentStaffMembership(auth.memberships);
   if (!member) return null;
+  if (isGateOnlyMember(member)) return <Navigate to="/gate" replace />;
   if (!hasStaffPermission(member, "timetable.view")) return <ScopedStaffHomePage member={member} />;
   return <TeachingDayHomeRoute />;
 }

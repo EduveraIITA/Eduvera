@@ -3,14 +3,10 @@ import { AlertTriangle, RefreshCw, ShieldAlert } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../../lib/api";
+import { ThatCampusLoader } from "../../components/ThatCampusLoader";
 
 export function ScreenLoading() {
-  return (
-    <div className="route-loader" role="status" aria-live="polite">
-      <span className="route-loader__mark" aria-hidden="true" />
-      <span>Syncing school records...</span>
-    </div>
-  );
+  return <ThatCampusLoader label="Syncing school records…" />;
 }
 
 interface LiveRouteErrorProps {

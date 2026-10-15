@@ -1,0 +1,32 @@
+.gate-approval-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-feature); background: var(--edura-surface); color: var(--edura-ink); box-shadow: var(--edura-shadow-raised); animation: gate-approval-enter 180ms ease-out both; }
+.gate-approval-dialog::backdrop { background: rgb(11 28 48 / 42%); backdrop-filter: blur(4px); }
+.gate-approval-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gate-approval-eyebrow { display: flex; align-items: center; gap: 6px; color: var(--edura-brand); font-size: 10px; font-weight: 800; letter-spacing: .05em; }
+.gate-approval-close { display: grid; width: 44px; height: 44px; flex-shrink: 0; place-items: center; border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-ink-muted); }
+.gate-approval-avatar { display: grid; width: 72px; height: 72px; margin: 16px auto; place-items: center; border-radius: 24px; background: var(--edura-brand-soft); color: var(--edura-brand); }
+.gate-approval-dialog h2 { margin: 20px 0 12px; font-size: 23px; line-height: 1.3; letter-spacing: -.04em; text-align: center; }
+.gate-approval-name { margin: 0; overflow-wrap: anywhere; font-size: 18px; font-weight: 800; text-align: center; }
+.gate-approval-school { margin: 8px 0 20px; font-size: 11px; line-height: 1.6; color: var(--edura-ink-muted); text-align: center; }
+.gate-approval-dialog dl { display: grid; gap: 14px; margin: 0; padding: 16px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); }
+.gate-approval-dialog dt { margin-bottom: 6px; color: var(--edura-ink-muted); font-size: 10px; font-weight: 700; }
+.gate-approval-dialog dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; font-weight: 600; }
+.gate-approval-wait { display: flex; align-items: flex-start; justify-content: center; gap: 6px; margin: 16px 0; color: var(--edura-ink-muted); font-size: 11px; line-height: 1.7; }
+.gate-approval-wait svg { flex-shrink: 0; margin-top: 1px; }
+.gate-approval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+.gate-approval-actions button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 48px; padding: 12px; border: 1px solid transparent; border-radius: var(--edura-radius-control); font-size: 13px; font-weight: 800; }
+.gate-approval-actions .gate-approval-decline { border-color: var(--edura-border); background: var(--edura-surface); color: var(--edura-danger); }
+.gate-approval-approve { background: var(--edura-brand); color: white; }
+.gate-approval-later { display: block; min-height: 44px; width: 100%; margin-top: 8px; background: transparent; color: var(--edura-ink-muted); font-size: 12px; font-weight: 700; }
+.gate-approval-error { padding: 12px; border-radius: var(--edura-radius-control); background: var(--edura-danger-soft); color: var(--edura-danger); font-size: 12px; line-height: 1.6; }
+.gate-approval-error p { margin: 0; }
+.gate-approval-retry { display: block; min-height: 44px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--edura-danger); border-radius: var(--edura-radius-control); background: var(--edura-surface); color: var(--edura-danger); font-size: 12px; font-weight: 700; }
+.gate-approval-result { position: relative; padding-top: 44px; text-align: center; animation: gate-approval-enter 180ms ease-out both; }
+.gate-approval-result > .gate-approval-close { position: absolute; top: 0; right: 0; }
+.gate-approval-result-mark { display: grid; width: 80px; height: 80px; margin: 8px auto 24px; place-items: center; border-radius: 50%; background: var(--edura-brand-soft); color: var(--edura-brand); animation: gate-approval-settle 360ms cubic-bezier(.2,.8,.2,1) both; }
+.gate-approval-result--deny .gate-approval-result-mark { background: var(--edura-danger-soft); color: var(--edura-danger); }
+.gate-approval-result-mark svg { stroke-dasharray: 70; stroke-dashoffset: 0; animation: gate-approval-draw 380ms ease-out 80ms both; }
+@keyframes gate-approval-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes gate-approval-settle { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
+@keyframes gate-approval-draw { from { stroke-dashoffset: 70; } to { stroke-dashoffset: 0; } }
+@media(prefers-reduced-motion:reduce) { .gate-approval-dialog,.gate-approval-result,.gate-approval-result-mark,.gate-approval-result-mark svg { animation: none; } }
+@media(max-width:480px) { .gate-approval-dialog { margin: auto auto 16px; padding: 20px; }.gate-approval-dialog h2 { font-size: 21px; } }

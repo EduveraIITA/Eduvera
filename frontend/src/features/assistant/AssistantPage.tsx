@@ -15,12 +15,14 @@ import { requestAssistantReopen } from './useDemoChat';
 import type { AssistantContext, AssistantPortal } from './context';
 import { browserHistoryIndex, previousPortalLocation } from '../navigation/portalHistory';
 import { samePortalHref } from '../navigation/portalReturnState';
+import { ThatCampusLoader } from '../../components/ThatCampusLoader';
+import { AssistantElectricBorder } from './AssistantElectricBorder';
 import './assistant.css';
 
 export default function AssistantPage({portal}:{portal:AssistantPortal}) {
   const proFeatures=useProFeatures();
   const fallback=portal==='parent'?'/parent/home':'/'+portal;
-  if(proFeatures.isPending)return <main className="route-loader" aria-busy="true"><p role="status">Loading…</p></main>;
+  if(proFeatures.isPending)return <ThatCampusLoader label="Opening ThatCampus AI…"/>;
   if(!proFeatures.enabled)return <Navigate to={fallback} replace/>;
   return <AssistantPageContent portal={portal}/>;
 }
@@ -81,12 +83,15 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
     {conversation.accessDenied?<p className="agent-caption">Ask your school administrator to enable “Use AI assistance” for your role.</p>:null}
     {conversation.status&&!conversation.status.ready?<p role="status" className="agent-error">{conversation.status.local?'The local model is unavailable. Ask the server administrator to check Ollama and the configured model.':'The configured model is unavailable. Check the server’s model and provider settings.'}</p>:null}
     {conversation.loading?<p role="status">Loading your conversation…</p>:conversation.runs.length?<ol className="assistant-conversation" aria-label="Conversation">
-      {conversation.runs.map(run=><li key={run.id} data-agent-run={run.id}>
-        <div className="assistant-question"><span className="sr-only">You: </span>{run.question}</div>
-        <div className="assistant-full-reply assistant-response__content"><span className="sr-only">Assistant response: </span>
+      {conversation.runs.map(run=>{
+        const reply=<div className="assistant-full-reply assistant-response__content"><span className="sr-only">Assistant response: </span>
           <AgentReply run={run} busy={conversation.busy} onDecide={(id,decision)=>void conversation.decide(id,decision)}/>
-        </div>
-      </li>)}
+        </div>;
+        return <li key={run.id} data-agent-run={run.id}>
+          <div className="assistant-question"><span className="sr-only">You: </span>{run.question}</div>
+          {run.id===latest?.id?<AssistantElectricBorder>{reply}</AssistantElectricBorder>:reply}
+        </li>;
+      })}
     </ol>:<div className="assistant-page__empty"><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
     <div ref={end} className="assistant-page__end"/>
     <div className="assistant-page__composer" ref={footer}>

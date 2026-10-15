@@ -1,3 +1,4 @@
+import { PoweredBy } from "./PoweredBy";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, BookOpen, Building2, CalendarDays, CalendarX2, CheckCircle2, ChevronRight, ChevronsUpDown, ClipboardCheck, GraduationCap, Headset, Home, LogOut, Moon, Settings, Shield, Sun, User, Wallet } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -186,6 +187,7 @@ export function Shell() {
           {p === "teacher" ? <span className="nav-i" aria-disabled="true" title="Only leadership and families can open the timetable"><CalendarDays size={20} strokeWidth={2} /><span>Timetable</span></span> : null}
         </nav>
 
+        <PoweredBy />
         <HelpButton>
           <b>Front office</b>
           <span>Attendance, leave and timetable questions go to the school office. Decisions about leave are made by leadership and recorded against a name.</span>

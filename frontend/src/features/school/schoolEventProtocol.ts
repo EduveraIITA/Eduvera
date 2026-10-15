@@ -33,6 +33,7 @@ const RESTRICTED_CARE_EVENT_TYPES = [
 ] as const;
 
 export const SCHOOL_EVENT_TYPES = [
+  "gate.visitor.updated",
   "departure.updated",
   "transport.updated",
   "staff.access.updated",
@@ -68,6 +69,7 @@ export const SCHOOL_EVENT_TYPES = [
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
 
 export const REFRESH_TARGETS = [
+  "gate",
   "departure",
   "staff.access",
   "staff-operations",
@@ -147,6 +149,7 @@ function eventDefaults<T extends readonly SchoolEventType[]>(
 }
 
 const defaultsByType = {
+  "gate.visitor.updated": ["gate", "notifications"],
   "departure.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "transport.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "staff.access.updated": ["staff.access","teacher.home","teacher.attendance","principal.home"],
@@ -200,6 +203,9 @@ const defaultsByType = {
 } satisfies Record<SchoolEventType, readonly RefreshTarget[]>;
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
+  { queryKey: ["gate"] },
+  { queryKey: ["gate-admin"] },
+  { queryKey: ["gate-approvals"] },
   { queryKey: ["departure"] },
   { queryKey: ["analytics"] },
   { queryKey: ["staff-operations"] },
@@ -308,6 +314,7 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "staff-operations":
     case "principal.staff":
     case "teacher.leave": return [{ queryKey: ["staff-operations"] }];
+    case "gate": return [{ queryKey: ["gate"] }, { queryKey: ["gate-admin"] }, { queryKey: ["gate-approvals"] }];
     case "governance": return [{ queryKey: ["governance"] }];
     case "restricted-care": return [{ queryKey: ["restricted-care"] }];
     case "institution-activation": return [{ queryKey: ["institution-activation"] }];
