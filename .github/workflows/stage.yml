@@ -16,10 +16,43 @@ permissions:
   contents: read
 
 jobs:
-  # Tests use disposable PostgreSQL, never the live Stage database.
-  verify:
-    name: Verify
+  contracts:
+    name: Security and deployment contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Repository secret scan
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.27.2
+        env:
+          # The scanner runs in a container with a different repository owner.
+          # Without this it may report success after scanning zero commits.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: /github/workspace
+        with:
+          args: git --redact --verbose .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Google Cloud deployment contract tests
+        run: node --test deploy/gcp/*.test.mjs
+      - name: Matrix private configuration contracts
+        run: |
+          python3 -m unittest discover -s deploy/matrix -p 'test_*.py' -v
+          python3 deploy/matrix/generate-config.py --server-name chat.example.test
+          docker compose -f deploy/matrix/compose.yaml config --quiet
+
+  # Tests use disposable PostgreSQL, never the live Stage database.
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17-bookworm
@@ -43,37 +76,18 @@ jobs:
       DEMO_MODE: "true"
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Repository secret scan
-        uses: docker://ghcr.io/gitleaks/gitleaks:v8.27.2
-        env:
-          # The scanner runs in a container with a different repository owner.
-          # Without this it may report success after scanning zero commits.
-          GIT_CONFIG_COUNT: "1"
-          GIT_CONFIG_KEY_0: safe.directory
-          GIT_CONFIG_VALUE_0: /github/workspace
-        with:
-          args: git --redact --verbose .
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: "**/package-lock.json"
+          cache-dependency-path: backend/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Google Cloud deployment contract tests
-        run: node --test deploy/gcp/*.test.mjs
-      - name: Matrix private configuration contracts
-        run: |
-          python3 -m unittest discover -s deploy/matrix -p 'test_*.py' -v
-          python3 deploy/matrix/generate-config.py --server-name chat.example.test
-          docker compose -f deploy/matrix/compose.yaml config --quiet
       - name: Backend · install, typecheck, lint, build
         working-directory: backend
         run: |
-          npm ci
+          npm ci --prefer-offline --no-audit --no-fund
           npm run typecheck
           npm run lint
           npm run build
@@ -90,21 +104,67 @@ jobs:
           node --import tsx src/database/seed-access-roles.ts
       - name: Backend · integration tests
         working-directory: backend
-        run: npm test
-      - name: Mobile app · install, typecheck, lint, build, test
+        run: npm run test:ci
+
+  clients:
+    name: Build · ${{ matrix.directory }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        directory: [frontend, frontend-desktop]
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Lint mobile app
+        if: matrix.directory == 'frontend'
+        run: npm run lint
+      # Both build scripts include tsc -b: a separate typecheck repeats that work.
+      - run: npm run build
+
+  mobile-tests:
+    name: Mobile tests · ${{ matrix.shard }}/3
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
         working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npm test -- --shard=${{ matrix.shard }}/3
+
+  # Keep the existing required check name; fail closed on failed/cancelled jobs.
+  verify:
+    name: Verify
+    needs: [contracts, backend, clients, mobile-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every verification job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          npm ci
-          npm run typecheck
-          npm run lint
-          npm run build
-          npm test
-      - name: Desktop dashboard · install, typecheck, build
-        working-directory: frontend-desktop
-        run: |
-          npm ci
-          npm run typecheck
-          npm run build
+          node -e 'const jobs = Object.values(JSON.parse(process.env.RESULTS)); if (!jobs.every(job => job.result === "success")) process.exit(1)'
 
   google-cloud:
     name: Google Cloud Stage
