@@ -1,3 +1,4 @@
+import Threads from "./Threads";
 import type { ReactNode } from "react";
 import { BookOpenCheck, GraduationCap, ShieldCheck, UsersRound, CalendarDays } from "lucide-react";
 import "./campus-login.css";
@@ -19,6 +20,7 @@ export function CampusLoginLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="campus-login__stage">
+        <Threads />
         <div className="campus-login__badge campus-login__badge--one"><CalendarDays size={17} aria-hidden="true" /><span>Attendance &amp; timetables</span></div>
         <div className="campus-login__badge campus-login__badge--two"><ShieldCheck size={17} aria-hidden="true" /><span>Role-based access</span></div>
         <div className="campus-login__badge campus-login__badge--three"><BookOpenCheck size={20} aria-hidden="true" /><span>Campus workspace<small>Your school day, connected</small></span></div>
