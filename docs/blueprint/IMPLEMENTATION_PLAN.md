@@ -6871,3 +6871,7 @@ Owner supplied a visible Stitch login screenshot after ZIP access failed. Recrea
 Existing password login, Google credentials/nonce flow, MFA, errors, invitation, registration and reset routes are retained. Google is first, using its official rendered button. Help Center opens real account guidance. Decorative badges describe actual portal capabilities rather than invent uptime, response speed, library hours or compliance. The unsupported remember-device checkbox is omitted. Responsive rules retain the login at phone widths and remove peripheral badges where space is limited.
 
 Updated existing login branding/title expectations. Local execution and browser inspection are unavailable; hosted builds/tests and public release verification remain required. Screenshot matching and device acceptance are not claimed as tested.
+
+## Original ThatCampus logo on login — 16 October 2026
+
+Owner clarified that login must use the same original stacked ThatCampus logo as Home, supplying the navy/blue wordmark reference. Both login clients now reuse /assets/thatcampus-logo.png (the existing Home attribution asset) in the header and above Welcome back, replacing the generic graduation-cap icons and separate typed wordmark. Uses object-fit: contain and responsive dimensions; retains the latest Threads background, authentication flows and other concurrent changes. Hosted build/release checks are pending; no visual device acceptance is claimed.
