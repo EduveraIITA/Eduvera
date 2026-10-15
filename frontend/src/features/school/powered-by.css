@@ -9,7 +9,7 @@
 @media (max-width: 1000px) { .operations-sidebar > .powered-by { display: none; } }
 @media print { .powered-by { display: none; } }
 
-/* A brief reflection every nine seconds; branding remains still. */
+/* Brighter reflection and breathing halo; branding remains stationary. */
 .powered-by__ribbon { position: relative; isolation: isolate; overflow: hidden; }
 .powered-by__ribbon > * { position: relative; z-index: 1; }
 .powered-by__ribbon::before {
@@ -17,23 +17,29 @@
   position: absolute;
   z-index: 0;
   inset: -50% auto -50% 0;
-  width: 45%;
+  width: 55%;
   pointer-events: none;
   opacity: 0;
-  background: linear-gradient(105deg, transparent, rgb(255 255 255 / 80%), transparent);
+  background: linear-gradient(105deg, transparent 5%, rgb(151 204 255 / 35%) 25%, #fff 50%, rgb(206 183 255 / 45%) 70%, transparent 95%);
   transform: translateX(-160%) skewX(-18deg);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .powered-by__ribbon { animation: powered-by-glow 9s ease-in-out infinite; }
-  .powered-by__ribbon::before { animation: powered-by-reflection 9s ease-in-out infinite; }
+  .powered-by__ribbon { animation: powered-by-glow 4s ease-in-out infinite; }
+  .powered-by__ribbon::before { animation: powered-by-reflection 4s ease-in-out infinite; }
 }
 @keyframes powered-by-reflection {
-  0%, 76% { opacity: 0; transform: translateX(-160%) skewX(-18deg); }
-  79% { opacity: .7; }
-  92% { opacity: .7; }
-  96%, 100% { opacity: 0; transform: translateX(340%) skewX(-18deg); }
+  0% { opacity: 0; transform: translateX(-160%) skewX(-18deg); }
+  8% { opacity: 1; }
+  40% { opacity: 1; }
+  52%, 100% { opacity: 0; transform: translateX(300%) skewX(-18deg); }
 }
 @keyframes powered-by-glow {
-  0%, 76%, 100% { box-shadow: 0 2px 8px rgb(24 55 112 / 4%); }
-  86% { box-shadow: 0 2px 12px rgb(76 125 245 / 16%), 0 0 5px rgb(131 161 255 / 10%); }
+  0%, 100% {
+    border-color: #d5e3ff;
+    box-shadow: 0 2px 10px rgb(72 120 240 / 12%), 0 0 6px rgb(134 110 255 / 10%);
+  }
+  30%, 45% {
+    border-color: #a9caff;
+    box-shadow: 0 3px 18px rgb(65 126 255 / 32%), 0 0 12px rgb(143 112 255 / 24%), inset 0 0 8px rgb(255 255 255 / 80%);
+  }
 }

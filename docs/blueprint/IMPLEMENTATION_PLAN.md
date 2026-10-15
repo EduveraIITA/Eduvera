@@ -6843,3 +6843,7 @@ Validation: both frontend production builds and targeted ESLint passed; git diff
 ### Subtle attribution reflection — 15 October 2026
 
 Owner approved a soft reflection and blue glow on the compact post-login ribbon in both clients. Identical CSS adds a brief sweep every nine seconds, behind the stationary text and logo, clipped to the pill with a non-interactive decorative pseudo-element. Animation only runs with prefers-reduced-motion: no-preference; reduced-motion users retain the static ribbon. No size, placement or auth changes. Prior compact-ribbon release d44652ea211389001f986fb551319adaf99b4443 passed Stage application promotion and public verification in run 38778851119. Animation change awaits hosted build checks and deployment; local execution is unavailable, so no visual acceptance is claimed.
+
+### Stronger ribbon animation — 15 October 2026
+
+Owner requested a more visible reflection and glow on both web/app ribbons. Increased the sweep frequency from nine to four seconds, starting immediately, with a wider white/cyan/lilac reflection and stronger smoothly breathing blue/violet halo and border. Text/logo remain stationary above the effect. Reduced-motion fallback, pill dimensions and placements remain intact. Previous reflection release fd7ae93aa721329ba209b9cac32e876b1b3e7502 passed all Stage checks and application public verification in run 38781089465. This CSS adjustment awaits hosted validation/deployment; local execution and visual review are unavailable.
