@@ -1,13 +1,17 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { sql } from "kysely";
+import { sql, type Transaction } from "kysely";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
+import type { Database } from "../database/types.js";
+import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import { SchoolService } from "../school/school.service.js";
 import {
@@ -45,6 +49,13 @@ import {
   adminSummary,
 } from "./day-plan.queries.js";
 import { planEvent } from "./events.js";
+
+interface DayPlanProjectionRow {
+  id:string; period_number:number; starts_at:string; ends_at:string; title:string;
+  slot_type:"class"|"break"|"activity"; room:string; cancelled:boolean;
+  subject_id:string|null; subject_name:string|null; subject_code:string|null;
+  teacher_user_id:string|null; space_id:string|null; space_name:string|null; space_revision:number|null;
+}
 const baselineHash = (rows: PlanPeriod[]) =>
   createHash("sha256")
     .update(
@@ -62,6 +73,7 @@ export class DayPlanService {
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
     private readonly school: SchoolService,
+    @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
   ) {}
   options(user: AuthUser, schoolId: string, date: string) {
     return planOptions(
@@ -135,7 +147,7 @@ export class DayPlanService {
     input: { school_id: string; idempotency_key: string },
     identity: unknown,
     role: "staff" | "admin",
-    run: (db: PlanDb) => Promise<T>,
+    run: (db: Transaction<Database>) => Promise<T>,
   ): Promise<T> {
     const hash = createHash("sha256")
       .update(JSON.stringify(identity))
@@ -187,6 +199,67 @@ export class DayPlanService {
       throw new ConflictException(
         "This plan changed. Reload the latest revision before continuing.",
       );
+  }
+  private async projectPublishedPlan(
+    db: Transaction<Database>,
+    req: AuthenticatedRequest,
+    plan: Plan,
+    version: number,
+    revision: number,
+  ) {
+    if (!this.temporal) return;
+    const context = (await sql<{
+      timezone:string; class_label:string; published_at:Date|string;
+    }>`SELECT school.timezone,concat('Class ',section.grade,section.section) AS class_label,
+        plan_version.published_at
+      FROM day_plans plan
+      JOIN schools school ON school.id=plan.school_id
+      JOIN class_sections section ON section.id=plan.class_section_id
+      JOIN day_plan_versions plan_version ON plan_version.plan_id=plan.id AND plan_version.version=${version}
+      WHERE plan.id=${plan.id}::uuid`.execute(db)).rows[0];
+    if (!context) throw new ConflictException("The published daily plan could not be projected.");
+    const rows = (await sql<DayPlanProjectionRow>`SELECT period.id,period.period_number,period.starts_at::text,
+        period.ends_at::text,period.title,period.slot_type,period.room,period.cancelled,
+        period.subject_id,subject.name AS subject_name,subject.code AS subject_code,
+        membership.user_id AS teacher_user_id,space.id AS space_id,space.name AS space_name,
+        space.revision AS space_revision
+      FROM day_plan_periods period
+      LEFT JOIN subjects subject ON subject.id=period.subject_id
+      LEFT JOIN school_memberships membership ON membership.id=period.teacher_membership_id
+      LEFT JOIN campus_spaces space ON space.id=period.space_id
+      WHERE period.plan_id=${plan.id}::uuid AND period.version=${version}
+      ORDER BY period.period_number`.execute(db)).rows;
+    await this.temporal.recordPublishedDayPlan(db, {
+      school_id: plan.school_id,
+      actor_user_id: req.authUser.id,
+      plan_id: plan.id,
+      plan_version: version,
+      plan_revision: revision,
+      date: String(plan.date),
+      timezone: context.timezone,
+      published_at: new Date(context.published_at).toISOString(),
+      class_section: {
+        kind: "class", domain: "academic_structure", domain_id: plan.class_section_id,
+        label: context.class_label, lifecycle_state: "active", source_revision: 1, metadata: {},
+      },
+      periods: rows.map((row) => ({
+        period_id: row.id, period_number: row.period_number, starts_at: row.starts_at,
+        ends_at: row.ends_at, title: row.title, slot_type: row.slot_type, cancelled: row.cancelled,
+        teacher_user_id: row.teacher_user_id,
+        subject: row.subject_id ? {
+          kind: "subject", domain: "academic_structure", domain_id: row.subject_id,
+          label: row.subject_name ?? row.subject_code ?? row.title,
+          lifecycle_state: "active" as const, source_revision: 1, metadata: { code: row.subject_code },
+        } : null,
+        space: row.space_id ? {
+          kind: "space", domain: "campus_topology", domain_id: row.space_id,
+          label: row.space_name ?? row.room, lifecycle_state: "active" as const,
+          source_revision: row.space_revision ?? 1, metadata: {},
+        } : null,
+        room_snapshot: row.room,
+      })),
+      correlation_id: req.requestId,
+    });
   }
   private async editableDay(
     db: PlanDb,
@@ -430,6 +503,7 @@ export class DayPlanService {
           )
         ).rows.map((r) => r.student_id);
         await this.school.refreshSubjectAttendance(db, recorded);
+        await this.projectPublishedPlan(db, req, plan, plan.draft_version, plan.revision + 1);
         await audit(db, req, plan, "published", {
           version: plan.draft_version,
           reason: version.reason,

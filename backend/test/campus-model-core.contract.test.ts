@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   acceptedCampusModelChangeSchema,
+  calendarClosureProjectionSchema,
   campusModelObservationSchema,
   campusModelRelationshipSchema,
   campusTemporalContextQuerySchema,
   publishedScheduleProjectionSchema,
+  publishedDayPlanProjectionSchema,
 } from "../src/campus-model-core/contracts.js";
 
 const schoolId = "00000000-0000-4000-8000-000000000001";
@@ -146,6 +148,50 @@ describe("Campus Model Core contracts", () => {
     expect(query.at).not.toBe(query.recorded_as_of);
   });
 
+  it("models closures as plan changes rather than observations", () => {
+    const closure = calendarClosureProjectionSchema.parse({
+      school_id: schoolId,
+      actor_user_id: actorId,
+      institution: { kind: "institution", domain: "institutions", domain_id: schoolId, label: "ThatCampus", lifecycle_state: "active", source_revision: 1 },
+      action: "created",
+      source_record_id: "00000000-0000-4000-8000-000000000012",
+      source_revision: 1,
+      dates: ["2026-10-19"],
+      timezone: "Asia/Kolkata",
+      label: "Local holiday",
+      closure_kind: "local_holiday",
+      occurred_at: "2026-10-16T08:30:00.000Z",
+      correlation_id: "00000000-0000-4000-8000-000000000013",
+    });
+    expect(closure.action).toBe("created");
+    expect(closure).not.toHaveProperty("observed_at");
+  });
+
+  it("accepts a dated replacement plan with explicit cancellations", () => {
+    const plan = publishedDayPlanProjectionSchema.parse({
+      school_id: schoolId,
+      actor_user_id: actorId,
+      plan_id: "00000000-0000-4000-8000-000000000014",
+      plan_version: 2,
+      plan_revision: 4,
+      date: "2026-10-19",
+      timezone: "Asia/Kolkata",
+      published_at: "2026-10-16T08:30:00.000Z",
+      class_section: { kind: "class", domain: "academic_structure", domain_id: campusId, label: "Class 6A", lifecycle_state: "active", source_revision: 1 },
+      periods: [{
+        period_id: "00000000-0000-4000-8000-000000000015",
+        period_number: 1,
+        starts_at: "09:00:00",
+        ends_at: "09:45:00",
+        title: "Mathematics",
+        slot_type: "class",
+        cancelled: true,
+      }],
+      correlation_id: "00000000-0000-4000-8000-000000000016",
+    });
+    expect(plan.periods[0]?.cancelled).toBe(true);
+  });
+
   it("keeps model-core persistence out of the campus-topology feature", () => {
     const source = readFileSync(new URL("../src/institution-setup/institution-setup.service.ts", import.meta.url), "utf8");
     expect(source).toContain("CAMPUS_MODEL_CORE_PORT");
@@ -163,5 +209,13 @@ describe("Campus Model Core contracts", () => {
     const source = readFileSync(new URL("../src/schedule-planning/schedule-planning.service.ts", import.meta.url), "utf8");
     expect(source).toContain("TEMPORAL_CONTEXT_PORT");
     expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
+  });
+
+  it("keeps daily-plan and calendar reconciliation behind the temporal context port", () => {
+    for (const relative of ["../src/day-plans/day-plan.service.ts", "../src/school/school.service.ts"]) {
+      const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+      expect(source).toContain("TEMPORAL_CONTEXT_PORT");
+      expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
+    }
   });
 });

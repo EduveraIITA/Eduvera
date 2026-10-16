@@ -179,7 +179,7 @@ schedule occurrence identity, supersession lineage, idempotent replay, `asOf` co
 resolution and source-backed state assertions. This is target architecture only at
 this checkpoint.
 
-The first implementation slice is now present locally on the digital-twin branch.
+The temporal implementation slices are now present locally on the digital-twin branch.
 Migration `104_campus_model_temporal_runtime.sql` adds a private, tenant-constrained
 event journal and rebuildable schedule-occurrence projection. Schedule publication
 uses `TemporalContextPort` in the same database transaction to register the schedule,
@@ -187,15 +187,20 @@ period and related identities, retain an idempotent plan event, and expand expec
 occurrences in the institution timezone. A typed `resolveAt` query returns planned
 context with source, revision, valid interval and recording time for a human agent or
 connected entity. Existing published schedules are backfilled without creating
-attendance or location observations.
+attendance or location observations. Calendar-closure creation and removal and daily
+plan publication now use the same port in their owning transactions. Closures cancel
+matching expectations without erasing history; closure removal restores only
+unblocked expectations; and a published daily plan supersedes recurring occurrences
+for the same class/date with explicit dated replacements.
 
-Verified evidence: backend build and focused lint pass; 12 focused core/migration
+Verified evidence: backend build and focused lint pass; 15 focused core/migration
 contract tests pass; migration 104 completes under transaction validation and is
 applied to the loopback development database; a disposable runtime verification
-created one dated occurrence, resolved exactly one `expected`/`planned` assertion for
-its human agent, and removed the fixture. The current local database contained no
-pre-existing published recurring versions to backfill. Post-publication closure and
-daily-plan projection updates, observation fusion, contradiction ownership, movement
+verified the full recurring expectation → closure cancellation → closure removal
+restoration → daily-plan supersession/replacement sequence, then resolved the dated
+replacement from its retained `timetable.day_plan_published` source and removed the
+fixture. The current local database contained no pre-existing published recurring
+versions to backfill. Observation fusion, contradiction ownership, movement
 resolution and campus-wide replay remain open and must not be represented as
 implemented.
 

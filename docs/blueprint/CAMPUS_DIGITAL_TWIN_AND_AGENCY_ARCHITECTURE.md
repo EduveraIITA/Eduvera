@@ -467,9 +467,14 @@ closures and published daily-plan overrides. Existing published versions are saf
 backfilled. The `resolveAt` contract can resolve an expected context for a human
 agent or connected class/subject/space at an explicit effective instant and optional
 recording-time cutoff. It returns source event, revision, validity interval and
-`planned` certainty; it does not report presence. Closure/day-plan changes after the
-initial projection, general replay tooling, observation fusion, contradictions and
-inferred state remain subsequent Phase 2A work.
+`planned` certainty; it does not report presence. Calendar closures now cancel
+matching expected occurrences without deleting history, and removing a closure
+restores only occurrences that are no longer blocked by another closure. Publishing
+a daily plan supersedes the recurring occurrences for the same class and date and
+projects the dated replacement periods. Each transition retains an idempotent source
+event and executes in the owning domain transaction. General replay tooling,
+observation fusion, contradiction ownership and inferred state remain subsequent
+Phase 2A work.
 
 ### Phase 3 - Agents and authority
 

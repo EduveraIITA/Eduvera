@@ -157,6 +157,52 @@ export const campusTemporalContextQuerySchema = z.object({
   ]),
 }).strict();
 
+export const calendarClosureProjectionSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  institution: campusModelEntitySchema,
+  action: z.enum(["created", "removed"]),
+  source_record_id: z.string().uuid(),
+  source_revision: z.number().int().positive(),
+  dates: z.array(z.iso.date()).min(1).max(31),
+  timezone: timezoneSchema,
+  label: z.string().trim().min(1).max(160),
+  closure_kind: z.enum(["public_holiday", "local_holiday", "emergency_closure"]),
+  occurred_at: z.string().datetime({ offset: true }),
+  correlation_id: z.string().uuid(),
+}).strict();
+
+export const publishedDayPlanPeriodSchema = z.object({
+  period_id: z.string().uuid(),
+  period_number: z.number().int().min(1).max(24),
+  starts_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  ends_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  title: z.string().trim().min(1).max(120),
+  slot_type: z.enum(["class", "break", "activity"]),
+  cancelled: z.boolean(),
+  subject: campusModelEntitySchema.nullable().default(null),
+  teacher_user_id: z.string().uuid().nullable().default(null),
+  space: campusModelEntitySchema.nullable().default(null),
+  room_snapshot: z.string().trim().max(80).default(""),
+}).strict().refine((value) => value.ends_at > value.starts_at, {
+  path: ["ends_at"],
+  message: "Period end must follow its start.",
+});
+
+export const publishedDayPlanProjectionSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  plan_id: z.string().uuid(),
+  plan_version: z.number().int().positive(),
+  plan_revision: z.number().int().positive(),
+  date: z.iso.date(),
+  timezone: timezoneSchema,
+  published_at: z.string().datetime({ offset: true }),
+  class_section: campusModelEntitySchema,
+  periods: z.array(publishedDayPlanPeriodSchema).max(24),
+  correlation_id: z.string().uuid(),
+}).strict();
+
 export type CampusModelEntitySnapshot = z.infer<typeof campusModelEntitySchema>;
 export type CampusModelRelationshipSnapshot = z.infer<typeof campusModelRelationshipSchema>;
 export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChangeSchema>;
@@ -164,3 +210,5 @@ export type CampusModelObservation = z.infer<typeof campusModelObservationSchema
 export type CampusModelObservationTransition = z.infer<typeof campusModelObservationTransitionSchema>;
 export type PublishedScheduleProjection = z.infer<typeof publishedScheduleProjectionSchema>;
 export type CampusTemporalContextQuery = z.infer<typeof campusTemporalContextQuerySchema>;
+export type CalendarClosureProjection = z.infer<typeof calendarClosureProjectionSchema>;
+export type PublishedDayPlanProjection = z.infer<typeof publishedDayPlanProjectionSchema>;

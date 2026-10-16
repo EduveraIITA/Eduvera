@@ -17,6 +17,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from "../campus-model-core/observation-ingress.port.js";
+import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
@@ -355,6 +356,7 @@ export class SchoolService {
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
     @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
+    @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
   ) {}
 
   private async familyHomeActions(
@@ -3679,6 +3681,24 @@ export class SchoolService {
         label: data.label, kind: data.kind, reason: data.reason,
         created_by: user.id, updated_by: user.id,
       }))).returning(["id", "date", "is_instructional", "label", "kind", "reason", "revision"]).execute();
+      const school = await tx.selectFrom("schools").select(["name", "timezone"]).where("id", "=", membership.school_id).executeTakeFirstOrThrow();
+      await this.temporal?.recordCalendarClosure(tx, {
+        school_id: membership.school_id,
+        actor_user_id: user.id,
+        institution: {
+          kind: "institution", domain: "institutions", domain_id: membership.school_id,
+          label: school.name, lifecycle_state: "active", source_revision: 1, metadata: {},
+        },
+        action: "created",
+        source_record_id: rows[0]!.id,
+        source_revision: rows[0]!.revision,
+        dates,
+        timezone: school.timezone,
+        label: data.label,
+        closure_kind: data.kind,
+        occurred_at: new Date().toISOString(),
+        correlation_id: request.requestId,
+      });
       await tx.insertInto("audit_events").values({
         action: "school_calendar.closure.created", actor_id: user.id, school_id: membership.school_id,
         target_type: "school_calendar_range", target_id: rows[0]!.id,
@@ -3749,7 +3769,7 @@ export class SchoolService {
       await lockSchedule(tx, membership.school_id);
       const current = await tx.selectFrom("school_calendar_days").selectAll()
         .where("school_id", "=", membership.school_id).where("date", "=", date).forUpdate().executeTakeFirst();
-      if (!current || current.is_instructional) throw new NotFoundException("School closure not found.");
+      if (!current || current.is_instructional || current.kind === "instructional_override") throw new NotFoundException("School closure not found.");
       if (current.revision !== data.expected_revision) throw new ConflictException("This school-calendar date changed in another session. Refresh and try again.");
       const attendanceConflict = await sql<{ found: boolean }>`
         SELECT EXISTS (
@@ -3763,6 +3783,24 @@ export class SchoolService {
       `.execute(tx);
       if (attendanceConflict.rows[0]?.found) throw new ConflictException("Attendance exists for this date, so the closure cannot be removed here.");
       await tx.deleteFrom("school_calendar_days").where("id", "=", current.id).execute();
+      const school = await tx.selectFrom("schools").select(["name", "timezone"]).where("id", "=", membership.school_id).executeTakeFirstOrThrow();
+      await this.temporal?.recordCalendarClosure(tx, {
+        school_id: membership.school_id,
+        actor_user_id: user.id,
+        institution: {
+          kind: "institution", domain: "institutions", domain_id: membership.school_id,
+          label: school.name, lifecycle_state: "active", source_revision: 1, metadata: {},
+        },
+        action: "removed",
+        source_record_id: current.id,
+        source_revision: current.revision,
+        dates: [date],
+        timezone: school.timezone,
+        label: current.label || "School closure",
+        closure_kind: current.kind,
+        occurred_at: new Date().toISOString(),
+        correlation_id: request.requestId,
+      });
       await tx.insertInto("audit_events").values({
         action: "school_calendar.closure.removed", actor_id: user.id, school_id: membership.school_id,
         target_type: "school_calendar_day", target_id: current.id,

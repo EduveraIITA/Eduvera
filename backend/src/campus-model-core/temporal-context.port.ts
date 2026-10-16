@@ -1,6 +1,11 @@
 import type { Transaction } from "kysely";
 import type { Database } from "../database/types.js";
-import type { CampusTemporalContextQuery, PublishedScheduleProjection } from "./contracts.js";
+import type {
+  CalendarClosureProjection,
+  CampusTemporalContextQuery,
+  PublishedDayPlanProjection,
+  PublishedScheduleProjection,
+} from "./contracts.js";
 
 export const TEMPORAL_CONTEXT_PORT = Symbol("TEMPORAL_CONTEXT_PORT");
 
@@ -8,6 +13,13 @@ export interface ScheduleProjectionReceipt {
   event_id: string;
   schedule_entity_id: string;
   occurrence_count: number;
+  replayed: boolean;
+}
+
+export interface PlanReconciliationReceipt {
+  event_id: string;
+  affected_occurrence_count: number;
+  replacement_occurrence_count: number;
   replayed: boolean;
 }
 
@@ -37,8 +49,8 @@ export interface CampusTemporalAssertion {
   recorded_at: Date | string;
   source: {
     event_id: string;
-    event_type: "timetable.schedule_published";
-    source_domain: "timetable";
+    event_type: "timetable.schedule_published" | "timetable.day_plan_published";
+    source_domain: "timetable" | "day_plan";
     source_record_id: string;
     source_revision: number;
   };
@@ -52,5 +64,13 @@ export interface TemporalContextPort {
     transaction: Transaction<Database>,
     input: PublishedScheduleProjection,
   ): Promise<ScheduleProjectionReceipt>;
+  recordCalendarClosure(
+    transaction: Transaction<Database>,
+    input: CalendarClosureProjection,
+  ): Promise<PlanReconciliationReceipt>;
+  recordPublishedDayPlan(
+    transaction: Transaction<Database>,
+    input: PublishedDayPlanProjection,
+  ): Promise<PlanReconciliationReceipt>;
   resolveAt(input: CampusTemporalContextQuery): Promise<CampusTemporalAssertion[]>;
 }
