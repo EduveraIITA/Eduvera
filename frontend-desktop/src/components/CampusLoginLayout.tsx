@@ -1,11 +1,11 @@
-import Threads from "./Threads";
+import LoginTopography from "./LoginTopography";
 import type { ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import "./campus-login.css";
 
 export function CampusLoginLayout({ children }: { children: ReactNode }) {
   return <div className="campus-login">
-    <Threads />
+    <LoginTopography />
     <div className="campus-login__frame">
       <header className="campus-login__topbar">
         <a className="campus-login__brand" href="/" aria-label="ThatCampus portal">

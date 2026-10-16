@@ -1,5 +1,31 @@
 # Login Threads rendering — 16 October 2026
 
+## Current background: Topography
+
+At the user's request, both login layouts now render React Bits Topography
+instead of Threads. The upstream JavaScript/CSS source and its MIT + Commons
+Clause license are colocated with a TypeScript declaration. Source:
+https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/Topography
+
+The shared login preset uses the requested 22 contours, elevation 1, foreground
+0.2, tilt 32 degrees, forward travel at 0.25, lift hover and pulse clicks. Thin
+0.75px theme-blue contours use light mode and reduced opacity/glow so the existing
+translucent form stays readable. The full-viewport gradient, login-only shell
+width override and positive background layering remain in place.
+
+Local changes add render-readiness reporting, safe context loss/restoration,
+rotation and visual-viewport resize listeners, and live reduced-motion updates.
+Rendering is capped at 1920px and 1.5 million pixels. Animated SVG contour maps
+remain visible when WebGL is unavailable or lost; reduced motion pauses them.
+
+Validation: both production builds and changed TypeScript lint passed. Browser
+checks passed both login routes at phone, iPad portrait/landscape and desktop
+sizes, verifying edge-to-edge background, no overflow, moving WebGL rendering,
+unavailable-WebGL fallback, contour morphing and reduced-motion pause. Physical
+iPad verification and this release's deployment verification are still pending.
+
+## Prior implementation history
+
 The user reported a blank iPad background despite passing Chromium viewport checks.
 Both login clients now put the background on layer 0 and content on layer 1,
 avoiding a negative canvas layer. An animated SVG thread fallback is visible

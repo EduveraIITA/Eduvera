@@ -85,5 +85,5 @@
 @media (max-width: 650px) { .campus-login__brand { gap: 8px; } .campus-login__brand-logo { width: 88px; height: 52px; } .campus-login__brand small { font-size: 9px; } }
 
 /* Keep one decorative animation behind the complete viewport and all controls. */
-.campus-login > .threads-background { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; z-index: 0; background: radial-gradient(ellipse at 50% 22%, #d5e4fa 0%, transparent 48%), radial-gradient(ellipse at 89% 58%, #c9f2ff 0%, transparent 48%), #f7f7ff; }
+.campus-login > .topography-background { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; z-index: 0; background: radial-gradient(ellipse at 50% 22%, #d5e4fa 0%, transparent 48%), radial-gradient(ellipse at 89% 58%, #c9f2ff 0%, transparent 48%), #f7f7ff; }
 @media (prefers-contrast: more) { .campus-login__card { background: rgb(251 253 255 / 95%); } }

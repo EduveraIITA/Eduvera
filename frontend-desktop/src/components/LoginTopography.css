@@ -1,0 +1,4 @@
+.topography-background { overflow: hidden; pointer-events: none; }
+.topography-background > .topography-container, .topography-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.topography-fallback { pointer-events: none; }
+.topography-container:has(.topography-canvas[data-ready="true"]) + .topography-fallback { display: none; }
