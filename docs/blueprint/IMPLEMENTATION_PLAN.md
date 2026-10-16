@@ -2,7 +2,9 @@
 
 Baseline: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md), accepted
 16 October 2026. [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md)
-is its normative backend/model companion. The repository-root `School_Operations_Blueprint.pdf`
+is its normative backend/model companion, and [ThatCampus operating
+experience](THATCAMPUS_OPERATING_EXPERIENCE.md) is the normative user-facing
+interaction/workflow companion. The repository-root `School_Operations_Blueprint.pdf`
 v1.0 is historical provenance and is no longer the primary product authority.
 
 This is the implementation record, not a claim that the entire blueprint is complete.
@@ -47,6 +49,15 @@ decisions cannot be replaced by synthetic software tests.
   runtime semantics, domain invariants and non-weakenable safety/privacy floors.
   Missing/invalid configuration fails closed or uses its explicit human fallback; it
   never enables an undocumented automation default.
+- Product decision, 16 October 2026: the real-campus interface follows the ThatCampus
+  Operating Experience contract. Overview/Today is a projection ordered as Now, Needs
+  attention, Next and a restrained automatic-history section; it never becomes a
+  second editor. Operational communication is rendered as Request, Task or Offer,
+  while informational Updates remain in Notifications. Navigation stays stable by
+  role, parent indicators are derived from real unresolved descendants, and ordinary
+  users see domain language rather than agent/model machinery. Every domain workspace
+  shows truthful state, one primary next action, automation explanation and a safe
+  correction/escalation route where applicable.
 
 - Preserve the existing blue/mint palette, Plus Jakarta Sans, shared app bars, child switching,
   mobile navigation and existing React UX. Extend established components and semantic tokens.

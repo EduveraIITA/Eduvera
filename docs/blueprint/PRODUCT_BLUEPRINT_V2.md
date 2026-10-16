@@ -242,6 +242,11 @@ Detailed topology decisions live in [Institution and campus replica model](INSTI
 
 ## 8. User experience architecture
 
+The normative interaction and workflow contract is [ThatCampus operating
+experience](THATCAMPUS_OPERATING_EXPERIENCE.md). It translates the hidden model and
+agent runtime into role-specific campus language, attention, automation explanations,
+domain workspaces and acceptance scenarios.
+
 ### 8.1 Stable, role-specific navigation
 
 Daily navigation is built from current capability and permission manifests. It remains stable for a working context. An event can create a badge or action but must not unpredictably reorder the navigation.

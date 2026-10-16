@@ -662,6 +662,10 @@ Domain modules emit accepted business events through the existing transactional 
 
 ## 10. Frontend contract: domain language only
 
+Detailed shell, attention, work-item, automation-explanation, domain-workspace and
+workflow behaviour is normative in [ThatCampus operating
+experience](THATCAMPUS_OPERATING_EXPERIENCE.md).
+
 The model architecture must make the existing product simpler, not expose more configuration.
 
 Frontend rules:

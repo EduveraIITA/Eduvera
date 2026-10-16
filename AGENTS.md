@@ -53,6 +53,11 @@
   human fallback; it never activates a hidden default automation.
 - Preserve the established theme, shared headers, navigation, and UX. Blueprint v2
   guides capabilities and architecture; it is not permission to redesign the app.
+- Read `docs/blueprint/THATCAMPUS_OPERATING_EXPERIENCE.md` before changing shared
+  navigation, Today/Overview, Requests, Notifications, attention/badges, Operating
+  rules or a domain workspace. Treat Today as a projection, keep Requests/Tasks/Offers
+  distinct from informational Updates, and preserve one authoritative domain action
+  path rather than creating duplicate editors.
 - Prefer substantial, end-to-end workflows with real database relationships,
   authorization, audit/event handling, and tests over isolated cosmetic features.
 - Reduce operator burden through bounded automation. Routine automatic actions must
