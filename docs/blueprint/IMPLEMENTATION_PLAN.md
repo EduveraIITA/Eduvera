@@ -156,6 +156,30 @@ This section records direction and incomplete local work. It does not claim a
 complete digital twin, autonomous campus operation, multi-campus release or deployed
 behavior.
 
+### Accepted temporal-runtime direction - 16 October 2026
+
+The next core foundation is an event-derived temporal runtime, not another setup or
+domain UI. Versioned timetable definitions and concrete dated occurrences become
+first-class model contexts. Published schedules establish expected state and may
+trigger versioned Operating rules; human/device/integration captures establish
+observed evidence; owning domains establish accepted decisions; rebuildable
+projections may expose bounded inferences with provenance, freshness and uncertainty.
+
+In particular, a timetable may place a teacher in Room 201 and a gate reader may
+observe a valid campus check-in, but the combination does not prove that the teacher
+is physically in Room 201. The context resolver must report expected, observed,
+accepted and inferred dimensions separately, expire stale evidence and surface
+contradictions as owned work. Missing observations never become absence. Commands and
+delivery outcomes never become evidence of physical execution without a later
+observation or explicit owning-domain decision.
+
+Before connecting further domains, implement and verify the Phase 2A contracts in
+`CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md`: typed event/effective/recorded time,
+schedule occurrence identity, supersession lineage, idempotent replay, `asOf` context
+resolution and source-backed state assertions. This is target architecture only at
+this checkpoint; the current core does not yet provide schedule expansion, movement
+resolution, sensor fusion or campus-wide replay.
+
 ## Active delivery: connected student lifecycle — 16 October 2026 (local)
 
 The first connected-student lifecycle slice extends the existing student profile rather than creating

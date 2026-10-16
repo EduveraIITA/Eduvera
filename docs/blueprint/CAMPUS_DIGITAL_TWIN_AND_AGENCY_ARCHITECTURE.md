@@ -94,6 +94,43 @@ These are separate dimensions:
 
 No single mutable `status` field represents the whole campus or child. A learner may be expected in class, observed at a gate, accepted absent for one subject session, and assigned an unresolved follow-up at the same time.
 
+### 3.4 Event-derived runtime state
+
+The operational state of the twin is derived from an ordered history of typed events; it is not maintained by screens silently overwriting a current-state row. The history contains four different kinds of evidence:
+
+- **plan events:** a published timetable, event, trip, duty or closure establishes what is expected;
+- **observation events:** an identified human, device or integration reports something it directly observed;
+- **decision events:** the owning domain accepts, rejects, corrects or reconciles observations under its invariants;
+- **command outcomes:** an authorized action was requested and reached an explicit outcome, without implying that the real-world action occurred.
+
+Every event retains institution, subject/context identities, event time, effective time where applicable, recording time, source/actor, causation/correlation, schema version and provenance. Corrections supersede prior evidence; they do not delete or rewrite it. Materialized current-state projections are disposable and rebuildable from authoritative domain events plus retained observation envelopes.
+
+Configuration such as a campus, room or person identity originates in an authorized domain command. Dynamic claims such as presence, participation, movement or occupancy require observations and domain reconciliation. A command, timetable expectation, missing observation or elapsed deadline never manufactures a real-world fact.
+
+### 3.5 Timetable and operational time are first-class
+
+The timetable is a first-class model context rather than a display-only feature. It consists of versioned schedule definitions and concrete dated occurrences. An occurrence identifies its interval, participants/cohort, responsible staff, subject/activity, campus/space, source schedule version and exception/closure context.
+
+The occurrence engine expands only the bounded time windows required by consumers and accounts for term dates, teaching days, holidays, closures, substitutions, room moves, one-day changes and cancellations. Published versions create expectations; later versions do not silently rewrite previously effective expectations or historical observations.
+
+Schedules may trigger rule evaluation and establish expected state, but they do not prove presence. For example, a timetable can say that a teacher is expected in Room 201 from 9:00 to 9:45. A valid gate check-in can support that the teacher is on campus. Unless a sufficiently specific observation exists, the model must describe Room 201 as an **expected location**, not the teacher's known location. A check-out, approved leave, substitution or contradictory fresh observation changes or invalidates that inference.
+
+### 3.6 Provenance-aware state resolution
+
+Cross-domain queries resolve a typed state assertion instead of returning an unexplained value. Each assertion contains:
+
+- subject and context;
+- asserted value and state dimension (`expected`, `observed`, `accepted` or `inferred`);
+- valid/effective interval and `asOf` recording time;
+- contributing event and rule-version references;
+- source kind, freshness and confidence/quality classification;
+- contradictions, unresolved evidence and expiry;
+- responsible owning domain and available correction path.
+
+Inference is bounded and explainable. It may combine accepted check-in/check-out, effective timetable occurrences, approved leave, substitutions and fresh sensor observations. It must never turn silence into absence or an expectation into a confirmed physical location. Conflicting or stale evidence produces `unknown` or an owned exception, not false precision.
+
+This distinction applies to all future live-campus projections, including 2D/3D views. A visual marker must visibly distinguish scheduled, last observed, accepted and inferred position and must expire when its evidence is no longer fresh.
+
 ## 4. Domain truth remains authoritative
 
 The model core connects domains; it does not erase them.
@@ -409,6 +446,18 @@ commands and attendance observations are combined by a core-owned read projectio
 and exposed to administrators as **Recent activity** in campus language. Registered
 device and integration ingress, event-level correlation for attendance acceptance,
 and the wider cross-domain command set remain Phase 2 work.
+
+### Phase 2A - Temporal runtime and schedule context
+
+- register schedule definitions, versions and dated occurrences as first-class model contexts;
+- consume published timetable, exception, closure, substitution and cancellation events idempotently;
+- add a provider-neutral event journal contract with event/effective/recorded time and supersession lineage;
+- implement rebuildable state projections and an `asOf` context resolver;
+- return provenance, freshness, certainty and contradiction evidence with every dynamic state assertion;
+- keep expected location and observed presence separate in storage, APIs and UI copy;
+- create owned exceptions for material contradictions rather than resolving them silently.
+
+Exit: for a selected teacher, learner, class, room or resource, an authorized caller can ask what was planned, observed, accepted and inferred at a given time and receive a source-backed answer. Replaying the same events produces the same projection, and no timetable entry or missing observation is presented as proof of physical presence.
 
 ### Phase 3 - Agents and authority
 
