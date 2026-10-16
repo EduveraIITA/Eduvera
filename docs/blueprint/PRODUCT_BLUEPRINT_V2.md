@@ -162,6 +162,11 @@ knowledge of a person's location from sparse observations.
 
 ## 5. Model-core separation
 
+The detailed implementation contract is [ThatCampus Model Core
+blueprint](THATCAMPUS_MODEL_CORE_BLUEPRINT.md). It defines the core capabilities,
+primitives, domain-adapter boundary, configured reaction runtime, simulation contract,
+failure semantics and acceptance gates.
+
 The Campus Model Core is a separate backend module with versioned ports, APIs and events. It owns cross-domain identity, temporal relationships, normalized observation/command envelopes, agent authority evidence, coordination hand-offs and projections. It mediates the operational thread between agents and domains; it is not an after-the-fact analytics mirror.
 
 It does not own attendance decisions, timetable validity, finance allocation, examination rules, communication consent, safeguarding outcomes or user interface composition.

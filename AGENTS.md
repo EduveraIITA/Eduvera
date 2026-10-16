@@ -22,6 +22,10 @@
   authoritative rules and records; frontend features call domain APIs and use only
   domain-specific language. Never expose model-core persistence or graph concepts
   directly to UI code.
+- Read `docs/blueprint/THATCAMPUS_MODEL_CORE_BLUEPRINT.md` before adding a core
+  primitive, domain adapter, event/observation/message/command schema, projection,
+  automation runtime or simulation feature. Extend the reviewed contracts rather than
+  creating a workflow-specific parallel runtime.
 - Treat the Campus Model Core as the operating coordination kernel, not an
   after-the-fact analytics mirror. Every real person who acts through the app or an
   approved channel maps to one stable human agent linked to their person/account

@@ -4,6 +4,10 @@ Status: accepted product and architecture direction, 16 October 2026
 Owner decision: ThatCampus is a digital twin of a living campus, not an ERP catalogue.
 Blueprint basis: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md). The v1 PDF is historical provenance only.
 
+Detailed capability, primitive, runtime, domain-adapter, simulation, reliability and
+delivery requirements are normative in [ThatCampus Model Core
+blueprint](THATCAMPUS_MODEL_CORE_BLUEPRINT.md).
+
 ## 1. Decision
 
 ThatCampus will maintain a trustworthy, time-aware digital representation of the parts of a campus needed to coordinate education and daily operations. Real-world plans, observations, decisions and outcomes flow into that representation. Authorized people, devices, integrations and bounded software agents act through it, and their commands flow back into the campus through ordinary domain workflows.

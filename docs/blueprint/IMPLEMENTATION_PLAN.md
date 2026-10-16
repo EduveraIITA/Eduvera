@@ -2,7 +2,9 @@
 
 Baseline: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md), accepted
 16 October 2026. [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md)
-is its normative backend/model companion, and [ThatCampus operating
+is its normative backend/model companion. [ThatCampus Model Core
+blueprint](THATCAMPUS_MODEL_CORE_BLUEPRINT.md) is the detailed core capability and
+delivery contract, and [ThatCampus operating
 experience](THATCAMPUS_OPERATING_EXPERIENCE.md) is the normative user-facing
 interaction/workflow companion. The repository-root `School_Operations_Blueprint.pdf`
 v1.0 is historical provenance and is no longer the primary product authority.
