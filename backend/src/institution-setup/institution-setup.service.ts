@@ -164,7 +164,7 @@ export class InstitutionSetupService {
     await this.requireAdmin(user, schoolId);
     const school = await this.db.selectFrom("schools").select(["id", "name", "code", "timezone", "institution_kind"]).where("id", "=", schoolId).executeTakeFirst();
     if (!school) throw new NotFoundException("Institution not found.");
-    const [campuses, spaces, resourceTypes, holdings, classes, staff, history] = await Promise.all([
+    const [campuses, spaces, resourceTypes, holdings, classes, staff, history, activity] = await Promise.all([
       this.db.selectFrom("institution_campuses").selectAll().where("school_id", "=", schoolId).orderBy("is_primary", "desc").orderBy("name").execute(),
       this.db.selectFrom("campus_spaces").selectAll().where("school_id", "=", schoolId).orderBy("name").execute(),
       this.db.selectFrom("campus_resource_types").selectAll().where("school_id", "=", schoolId).orderBy("name").execute(),
@@ -185,6 +185,7 @@ export class InstitutionSetupService {
           AND assignment.is_primary AND assignment.effective_from<=current_date AND (assignment.effective_until IS NULL OR assignment.effective_until>=current_date)
         WHERE profile.school_id=${schoolId}::uuid ORDER BY profile.first_name,profile.last_name`.execute(this.db).then((result) => result.rows),
       this.db.selectFrom("institution_setup_audits").selectAll().where("school_id", "=", schoolId).orderBy("created_at", "desc").limit(20).execute(),
+      this.campusModel.recentActivity(schoolId),
     ]);
     const activeCampuses = campuses.filter((item) => item.status === "active");
     const locatedClasses = classes.filter((item) => item.home_space_id).length;
@@ -196,7 +197,7 @@ export class InstitutionSetupService {
       { key: "classes", label: "Class campuses", complete: classes.length === 0 || assignedClasses === classes.length, detail: `${assignedClasses}/${classes.length} assigned` },
       { key: "staff", label: "Staff campuses", complete: staff.length === 0 || locatedStaff === staff.length, detail: `${locatedStaff}/${staff.length} assigned` },
     ];
-    return { school, campuses, spaces, resource_types: resourceTypes, holdings, classes, staff, history, readiness,
+    return { school, campuses, spaces, resource_types: resourceTypes, holdings, classes, staff, history, activity, readiness,
       summary: { campuses: activeCampuses.length, spaces: spaces.filter((item) => item.status === "active").length,
         resources: holdings.filter((item) => item.state !== "retired").reduce((sum, item) => sum + item.quantity, 0),
         classes: classes.length, classes_with_home_space: locatedClasses, staff: staff.length, complete: readiness.every((item) => item.complete) } };

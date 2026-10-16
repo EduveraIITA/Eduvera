@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { acceptedCampusModelChangeSchema, campusModelRelationshipSchema } from "../src/campus-model-core/contracts.js";
+import { acceptedCampusModelChangeSchema, campusModelObservationSchema, campusModelRelationshipSchema } from "../src/campus-model-core/contracts.js";
 
 const schoolId = "00000000-0000-4000-8000-000000000001";
 const actorId = "00000000-0000-4000-8000-000000000002";
@@ -78,9 +78,38 @@ describe("Campus Model Core contracts", () => {
     expect(result.target).toBeNull();
   });
 
+  it("accepts source-rich attendance evidence without treating it as domain truth", () => {
+    const observation = campusModelObservationSchema.parse({
+      school_id: schoolId,
+      actor_user_id: actorId,
+      kind: "attendance.status_observed",
+      subject: { kind: "student", domain: "people", domain_id: institutionId, label: "Aarav Sharma", lifecycle_state: "active", source_revision: 1 },
+      context: { kind: "class", domain: "academic_structure", domain_id: campusId, label: "Class 6A", lifecycle_state: "active", source_revision: 2 },
+      source_type: "attendance.capture",
+      source_ref: "00000000-0000-4000-8000-000000000007",
+      source_record_id: "00000000-0000-4000-8000-000000000008",
+      observed_at: "2026-10-16T03:30:00.000Z",
+      received_at: "2026-10-16T03:31:00.000Z",
+      evidence_refs: ["attendance_capture_batch:00000000-0000-4000-8000-000000000007"],
+      payload: { attendance_status: "present" },
+      state: "pending",
+      idempotency_key: "attendance-observation:00000000-0000-4000-8000-000000000008",
+    });
+
+    expect(observation.state).toBe("pending");
+    expect(observation.source_type).toBe("attendance.capture");
+  });
+
   it("keeps model-core persistence out of the campus-topology feature", () => {
     const source = readFileSync(new URL("../src/institution-setup/institution-setup.service.ts", import.meta.url), "utf8");
     expect(source).toContain("CAMPUS_MODEL_CORE_PORT");
+    expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
+  });
+
+  it("keeps attendance behind the narrow observation ingress port", () => {
+    const source = readFileSync(new URL("../src/school/school.service.ts", import.meta.url), "utf8");
+    expect(source).toContain("OBSERVATION_INGRESS_PORT");
+    expect(source).not.toContain("CAMPUS_MODEL_CORE_PORT");
     expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
   });
 });

@@ -3,8 +3,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { createReadStream } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
@@ -14,6 +16,7 @@ import type { FastifyRequest } from "fastify";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
+import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from "../campus-model-core/observation-ingress.port.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
@@ -348,7 +351,11 @@ function encodeNotificationCursor(row: { created_at: Date | string; id: string }
 
 @Injectable()
 export class SchoolService {
-  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly events: SchoolEventService,
+    @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
+  ) {}
 
   private async familyHomeActions(
     user: AuthUser,
@@ -2738,6 +2745,12 @@ export class SchoolService {
       if (batch.status === "accepted" || batch.status === "rejected") return;
       const now = new Date();
       await tx.updateTable("attendance_capture_batches").set({ status: "quarantined", updated_at: now }).where("id", "=", batchId).execute();
+      await this.observationIngress?.transitionObservations(tx, {
+        school_id: batch.school_id,
+        source_type: "attendance.capture",
+        source_ref: batch.id,
+        state: "quarantined",
+      });
       await tx.insertInto("attendance_reconciliation_cases").values({
         school_id: batch.school_id,
         batch_id: batch.id,
@@ -2861,7 +2874,7 @@ export class SchoolService {
         created_at: now,
         updated_at: now,
       }).returningAll().executeTakeFirstOrThrow();
-      await tx.insertInto("attendance_observations").values(data.records.map((record) => ({
+      const observations = await tx.insertInto("attendance_observations").values(data.records.map((record) => ({
         batch_id: created.id,
         school_id: section.school_id,
         student_id: record.student_id,
@@ -2874,7 +2887,67 @@ export class SchoolService {
         recorded_at: now,
         recorded_by: user.id,
         source: data.source,
-      }))).execute();
+      }))).returning(["id", "student_id", "observed_status", "observed_at"]).execute();
+      if (this.observationIngress) {
+        const [studentRows, classRow] = await Promise.all([
+          tx.selectFrom("students as student")
+            .innerJoin("school_people as person", "person.id", "student.person_id")
+            .select([
+              "student.id", "student.admission_number", "person.first_name", "person.last_name",
+              "person.revision as person_revision",
+            ])
+            .where("student.school_id", "=", section.school_id)
+            .where("student.id", "in", data.records.map((record) => record.student_id))
+            .execute(),
+          tx.selectFrom("class_sections")
+            .select(["id", "grade", "section", "revision"])
+            .where("id", "=", data.class_section_id)
+            .executeTakeFirstOrThrow(),
+        ]);
+        const students = new Map(studentRows.map((student) => [student.id, student]));
+        await this.observationIngress.recordObservations(tx, observations.map((observation) => {
+          const student = students.get(observation.student_id);
+          if (!student) throw new ConflictException("The attendance student could not be connected to the campus model.");
+          return {
+            school_id: section.school_id,
+            actor_user_id: user.id,
+            kind: "attendance.status_observed",
+            subject: {
+              kind: "student",
+              domain: "people",
+              domain_id: student.id,
+              label: `${student.first_name} ${student.last_name}`.trim() || student.admission_number,
+              lifecycle_state: "active" as const,
+              source_revision: student.person_revision,
+              metadata: { admission_number: student.admission_number },
+            },
+            context: {
+              kind: "class",
+              domain: "academic_structure",
+              domain_id: classRow.id,
+              label: `Class ${classRow.grade}${classRow.section}`,
+              lifecycle_state: "active" as const,
+              source_revision: classRow.revision,
+              metadata: {},
+            },
+            source_type: "attendance.capture",
+            source_ref: created.id,
+            source_record_id: observation.id,
+            observed_at: new Date(observation.observed_at).toISOString(),
+            received_at: now.toISOString(),
+            evidence_refs: [`attendance_capture_batch:${created.id}`],
+            payload: {
+              attendance_status: observation.observed_status,
+              attendance_date: data.date,
+              capture_source: data.source,
+            },
+            schema_version: 1,
+            state: "pending" as const,
+            idempotency_key: `attendance-observation:${observation.id}`,
+            domain_event_id: null,
+          };
+        }));
+      }
       return created;
     });
     if (batch.status !== "pending") return this.attendanceCaptureResult(batch.id);
@@ -3009,6 +3082,12 @@ export class SchoolService {
         accepted_at: new Date(),
         updated_at: new Date(),
       }).where("id", "=", batch.id).execute();
+      await this.observationIngress?.transitionObservations(tx, {
+        school_id: section.school_id,
+        source_type: "attendance.capture",
+        source_ref: batch.id,
+        state: "accepted",
+      });
       await tx.insertInto("audit_events").values({
         action: "attendance.capture.accepted",
         actor_id: user.id,
@@ -3092,6 +3171,12 @@ export class SchoolService {
           status: "rejected", resolved_by: user.id, resolved_at: now,
           resolution_note: data.reason, updated_at: now,
         }).where("id", "=", review.batch_id).where("status", "=", "quarantined").execute();
+        await this.observationIngress?.transitionObservations(tx, {
+          school_id: membership.school_id,
+          source_type: "attendance.capture",
+          source_ref: review.batch_id,
+          state: "rejected",
+        });
         await tx.insertInto("audit_events").values({
           action: "attendance.capture.rejected", actor_id: user.id, school_id: membership.school_id,
           target_type: "attendance_capture_batch", target_id: review.batch_id,
@@ -3162,6 +3247,12 @@ export class SchoolService {
         status: "accepted", accepted_submission_id: submission.id, accepted_at: now,
         resolved_by: user.id, resolved_at: now, resolution_note: data.reason, updated_at: now,
       }).where("id", "=", review.batch_id).execute();
+      await this.observationIngress?.transitionObservations(tx, {
+        school_id: membership.school_id,
+        source_type: "attendance.capture",
+        source_ref: review.batch_id,
+        state: "accepted",
+      });
       await tx.updateTable("attendance_reconciliation_cases").set({
         state: "accepted", decided_by: user.id, decided_at: now,
         decision_note: data.reason, updated_at: now,

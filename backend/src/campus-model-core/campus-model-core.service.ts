@@ -1,16 +1,30 @@
 import { ConflictException, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import type { Database } from "../database/types.js";
-import type { CampusModelChangeReceipt, CampusModelCorePort } from "./campus-model-core.port.js";
-import { acceptedCampusModelChangeSchema, type AcceptedCampusModelChange } from "./contracts.js";
+import { DatabaseService } from "../database/database.service.js";
+import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort } from "./campus-model-core.port.js";
+import type { ObservationIngressPort } from "./observation-ingress.port.js";
+import {
+  acceptedCampusModelChangeSchema,
+  campusModelObservationSchema,
+  campusModelObservationTransitionSchema,
+  type AcceptedCampusModelChange,
+  type CampusModelEntitySnapshot,
+  type CampusModelObservation,
+  type CampusModelObservationTransition,
+} from "./contracts.js";
 
 interface EntityRow { id: string; domain: string; domain_id: string }
 interface AgentRow { id: string }
 interface RelationshipRow { id: string; target_entity_id: string; effective_from: Date | string }
 interface CommandRow { id: string; command_type: string; target_entity_id: string | null; actor_agent_id: string }
+interface ObservationRow { id: string; request_hash: string }
 
 @Injectable()
-export class CampusModelCoreService implements CampusModelCorePort {
+export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort {
+  constructor(private readonly db: DatabaseService) {}
+
   async recordAcceptedChange(
     transaction: Transaction<Database>,
     rawInput: AcceptedCampusModelChange,
@@ -20,37 +34,7 @@ export class CampusModelCoreService implements CampusModelCorePort {
     const entities = new Map<string, string>();
 
     for (const snapshot of input.entities) {
-      const result = await sql<EntityRow>`
-        INSERT INTO campus_model_entities(
-          school_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
-        ) VALUES (
-          ${input.school_id}::uuid,${snapshot.kind},${snapshot.domain},${snapshot.domain_id},
-          ${snapshot.label},${snapshot.lifecycle_state},${snapshot.source_revision},
-          ${JSON.stringify(snapshot.metadata)}::jsonb
-        )
-        ON CONFLICT(school_id,domain,domain_id) DO UPDATE SET
-          kind=EXCLUDED.kind,
-          label=EXCLUDED.label,
-          lifecycle_state=EXCLUDED.lifecycle_state,
-          source_revision=EXCLUDED.source_revision,
-          metadata=EXCLUDED.metadata,
-          revision=CASE
-            WHEN campus_model_entities.kind IS DISTINCT FROM EXCLUDED.kind
-              OR campus_model_entities.label IS DISTINCT FROM EXCLUDED.label
-              OR campus_model_entities.lifecycle_state IS DISTINCT FROM EXCLUDED.lifecycle_state
-              OR campus_model_entities.source_revision IS DISTINCT FROM EXCLUDED.source_revision
-              OR campus_model_entities.metadata IS DISTINCT FROM EXCLUDED.metadata
-            THEN campus_model_entities.revision+1 ELSE campus_model_entities.revision END,
-          updated_at=CASE
-            WHEN campus_model_entities.kind IS DISTINCT FROM EXCLUDED.kind
-              OR campus_model_entities.label IS DISTINCT FROM EXCLUDED.label
-              OR campus_model_entities.lifecycle_state IS DISTINCT FROM EXCLUDED.lifecycle_state
-              OR campus_model_entities.source_revision IS DISTINCT FROM EXCLUDED.source_revision
-              OR campus_model_entities.metadata IS DISTINCT FROM EXCLUDED.metadata
-            THEN now() ELSE campus_model_entities.updated_at END
-        RETURNING id,domain,domain_id`.execute(transaction);
-      const entity = result.rows[0];
-      if (!entity) throw new ConflictException("The campus model could not register this domain record.");
+      const entity = await this.upsertEntity(transaction, input.school_id, snapshot);
       entities.set(this.key(entity), entity.id);
     }
 
@@ -117,6 +101,126 @@ export class CampusModelCoreService implements CampusModelCorePort {
       ) ON CONFLICT(command_id,sequence) DO NOTHING`.execute(transaction);
 
     return { command_id: command.id, target_entity_id: targetEntityId, actor_agent_id: actor.id, relationship_ids: relationshipIds };
+  }
+
+  async recordObservations(
+    transaction: Transaction<Database>,
+    rawObservations: CampusModelObservation[],
+  ): Promise<string[]> {
+    const observations = rawObservations.map((item) => campusModelObservationSchema.parse(item));
+    const ids: string[] = [];
+    for (const observation of observations) {
+      const actor = await this.ensureHumanAgent(transaction, observation.school_id, observation.actor_user_id);
+      const subject = await this.upsertEntity(transaction, observation.school_id, observation.subject);
+      const context = observation.context
+        ? await this.upsertEntity(transaction, observation.school_id, observation.context)
+        : null;
+      const requestHash = createHash("sha256").update(JSON.stringify(observation)).digest("hex");
+      const inserted = (await sql<ObservationRow>`INSERT INTO campus_model_observations(
+          school_id,kind,subject_entity_id,context_entity_id,captured_by_agent_id,source_type,
+          source_ref,source_record_id,observed_at,received_at,evidence_refs,payload,schema_version,
+          state,idempotency_key,request_hash,domain_event_id
+        ) VALUES (
+          ${observation.school_id}::uuid,${observation.kind},${subject.id}::uuid,${context?.id ?? null}::uuid,
+          ${actor.id}::uuid,${observation.source_type},${observation.source_ref},${observation.source_record_id},
+          ${observation.observed_at}::timestamptz,${observation.received_at}::timestamptz,
+          ${observation.evidence_refs}::text[],${JSON.stringify(observation.payload)}::jsonb,
+          ${observation.schema_version},${observation.state},${observation.idempotency_key},${requestHash},
+          ${observation.domain_event_id}::uuid
+        ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+        RETURNING id,request_hash`.execute(transaction)).rows[0];
+      if (inserted) {
+        ids.push(inserted.id);
+        continue;
+      }
+      const existing = (await sql<ObservationRow>`SELECT id,request_hash FROM campus_model_observations
+        WHERE school_id=${observation.school_id}::uuid AND idempotency_key=${observation.idempotency_key}
+        FOR UPDATE`.execute(transaction)).rows[0];
+      if (!existing || existing.request_hash !== requestHash) {
+        throw new ConflictException("This observation key was already used for different evidence.");
+      }
+      ids.push(existing.id);
+    }
+    return ids;
+  }
+
+  async transitionObservations(
+    transaction: Transaction<Database>,
+    rawInput: CampusModelObservationTransition,
+  ): Promise<number> {
+    const input = campusModelObservationTransitionSchema.parse(rawInput);
+    const result = await transaction.updateTable("campus_model_observations")
+      .set({ state: input.state })
+      .where("school_id", "=", input.school_id)
+      .where("source_type", "=", input.source_type)
+      .where("source_ref", "=", input.source_ref)
+      .where("state", "!=", "superseded")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows ?? 0);
+  }
+
+  async recentActivity(schoolId: string, limit = 12): Promise<CampusModelActivity[]> {
+    const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    return (await sql<CampusModelActivity>`
+      SELECT * FROM (
+        SELECT command.id::text AS id,'setup'::text AS kind,command.command_type AS action,
+          target.label AS subject_label,1::int AS item_count,command.state,
+          command.requested_at AS occurred_at,actor.label AS actor_label
+        FROM campus_model_commands command
+        LEFT JOIN campus_model_entities target ON target.id=command.target_entity_id
+        JOIN campus_model_agents actor ON actor.id=command.actor_agent_id
+        WHERE command.school_id=${schoolId}::uuid AND command.source_domain='campus_topology'
+        UNION ALL
+        SELECT observation.source_ref AS id,'attendance'::text AS kind,
+          'attendance.capture'::text AS action,context.label AS subject_label,
+          count(*)::int AS item_count,observation.state,max(observation.received_at) AS occurred_at,
+          actor.label AS actor_label
+        FROM campus_model_observations observation
+        LEFT JOIN campus_model_entities context ON context.id=observation.context_entity_id
+        JOIN campus_model_agents actor ON actor.id=observation.captured_by_agent_id
+        WHERE observation.school_id=${schoolId}::uuid
+          AND observation.source_type='attendance.capture'
+        GROUP BY observation.source_ref,context.label,observation.state,actor.label
+      ) connected_activity
+      ORDER BY occurred_at DESC,id DESC
+      LIMIT ${safeLimit}
+    `.execute(this.db)).rows;
+  }
+
+  private async upsertEntity(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    snapshot: CampusModelEntitySnapshot,
+  ): Promise<EntityRow> {
+    const result = await sql<EntityRow>`
+      INSERT INTO campus_model_entities(
+        school_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
+      ) VALUES (
+        ${schoolId}::uuid,${snapshot.kind},${snapshot.domain},${snapshot.domain_id},
+        ${snapshot.label},${snapshot.lifecycle_state},${snapshot.source_revision},
+        ${JSON.stringify(snapshot.metadata)}::jsonb
+      )
+      ON CONFLICT(school_id,domain,domain_id) DO UPDATE SET
+        kind=EXCLUDED.kind,label=EXCLUDED.label,lifecycle_state=EXCLUDED.lifecycle_state,
+        source_revision=EXCLUDED.source_revision,metadata=EXCLUDED.metadata,
+        revision=CASE
+          WHEN campus_model_entities.kind IS DISTINCT FROM EXCLUDED.kind
+            OR campus_model_entities.label IS DISTINCT FROM EXCLUDED.label
+            OR campus_model_entities.lifecycle_state IS DISTINCT FROM EXCLUDED.lifecycle_state
+            OR campus_model_entities.source_revision IS DISTINCT FROM EXCLUDED.source_revision
+            OR campus_model_entities.metadata IS DISTINCT FROM EXCLUDED.metadata
+          THEN campus_model_entities.revision+1 ELSE campus_model_entities.revision END,
+        updated_at=CASE
+          WHEN campus_model_entities.kind IS DISTINCT FROM EXCLUDED.kind
+            OR campus_model_entities.label IS DISTINCT FROM EXCLUDED.label
+            OR campus_model_entities.lifecycle_state IS DISTINCT FROM EXCLUDED.lifecycle_state
+            OR campus_model_entities.source_revision IS DISTINCT FROM EXCLUDED.source_revision
+            OR campus_model_entities.metadata IS DISTINCT FROM EXCLUDED.metadata
+          THEN now() ELSE campus_model_entities.updated_at END
+      RETURNING id,domain,domain_id`.execute(transaction);
+    const entity = result.rows[0];
+    if (!entity) throw new ConflictException("The campus model could not register this domain record.");
+    return entity;
   }
 
   private key(reference: { domain: string; domain_id: string }): string {

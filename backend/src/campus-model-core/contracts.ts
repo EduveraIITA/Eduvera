@@ -77,6 +77,34 @@ export const acceptedCampusModelChangeSchema = z.object({
   }
 });
 
+export const campusModelObservationSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  kind: z.string().trim().min(3).max(100),
+  subject: campusModelEntitySchema,
+  context: campusModelEntitySchema.nullable().default(null),
+  source_type: z.string().trim().regex(/^[a-z][a-z0-9_.-]{1,39}$/),
+  source_ref: z.string().trim().min(1).max(200).nullable().default(null),
+  source_record_id: z.string().trim().min(1).max(200),
+  observed_at: z.string().datetime({ offset: true }),
+  received_at: z.string().datetime({ offset: true }),
+  evidence_refs: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  schema_version: z.number().int().positive().default(1),
+  state: z.enum(["pending", "accepted", "rejected", "quarantined", "superseded"]),
+  idempotency_key: z.string().trim().min(8).max(240),
+  domain_event_id: z.string().uuid().nullable().default(null),
+}).strict();
+
+export const campusModelObservationTransitionSchema = z.object({
+  school_id: z.string().uuid(),
+  source_type: z.string().trim().regex(/^[a-z][a-z0-9_.-]{1,39}$/),
+  source_ref: z.string().trim().min(1).max(200),
+  state: z.enum(["accepted", "rejected", "quarantined", "superseded"]),
+}).strict();
+
 export type CampusModelEntitySnapshot = z.infer<typeof campusModelEntitySchema>;
 export type CampusModelRelationshipSnapshot = z.infer<typeof campusModelRelationshipSchema>;
 export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChangeSchema>;
+export type CampusModelObservation = z.infer<typeof campusModelObservationSchema>;
+export type CampusModelObservationTransition = z.infer<typeof campusModelObservationTransitionSchema>;

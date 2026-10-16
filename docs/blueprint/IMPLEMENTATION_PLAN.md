@@ -114,6 +114,33 @@ actions and safe-area padding. Browser checks at 320, 390, 768, 1024 and 1440 px
 no horizontal overflow, and the reviewed routes emitted no console warnings/errors;
 physical owner-device review remains open.
 
+### Observation and trace spine — first vertical slice (16 October 2026)
+
+Migration 103 and the typed Campus Model Core port now connect the existing immutable
+attendance-capture evidence to stable student, class and human-agent identities.
+Creation is atomic with the source attendance observation and uses a SHA-256 request
+hash plus institution-scoped idempotency key. Acceptance, quarantine and rejection
+remain decisions of the attendance continuity workflow; the model core only mirrors
+that decided evidence state. Migration backfill connected 203 existing attendance
+observations and 204 student identities in the loopback preview database without
+inventing missing attendance facts.
+
+The model core owns the combined recent-activity projection; the institution setup
+domain consumes it through the port and does not query or write model tables. The
+Campus & spaces screen presents the latest setup changes and attendance captures in
+ordinary campus language with actor, time, class, count and review state. The screen
+does not expose digital-twin, graph, command-envelope or projection terminology.
+
+Verified evidence on this branch: backend TypeScript build and targeted ESLint pass;
+the focused CampusReplicaManager tests pass; the local migration applied; source and
+model observation counts match at 203; the signed-in mobile-width preview renders six
+recent class attendance captures with no raw model terminology. The generic migration
+runner remains blocked by a pre-existing checksum mismatch for migration 047 in this
+shared development database, so migration 103 was applied transactionally and recorded
+with its checksum independently. This does not resolve or overwrite migration 047.
+Registered device/integration ingress, richer causation/correlation and Phase 3
+authority binding remain open.
+
 Verified local evidence: backend typecheck/build pass; the focused Campus Model Core
 contract and architecture suite passes 4/4; focused campus/admin/catalog frontend tests
 pass 7/7; targeted frontend lint and Vite production bundling pass after the visual

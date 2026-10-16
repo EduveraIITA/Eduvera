@@ -30,6 +30,7 @@ const setup = (): InstitutionSetup => ({
   holdings: [],
   classes: [{ id: "class-1", grade: "6", section: "A", academic_year: "2026-27", class_revision: 1, placement_id: "placement-1", campus_id: "campus-1", home_space_id: "space-1", home_space_name: "Room 204", placement_revision: 1, effective_from: "2026-04-01", effective_until: null }],
   staff: [{ id: "staff-1", first_name: "Kavita", last_name: "Mehta", staff_code: "T001", designation: "Teacher", status: "active", assignment_id: "assignment-1", campus_id: "campus-1", assignment_revision: 1, effective_from: "2026-04-01", effective_until: null }],
+  activity: [{ id: "activity-1", kind: "setup", action: "space.created", subject_label: "Room 204", item_count: 1, state: "accepted", occurred_at: "2026-10-16T09:00:00.000Z", actor_label: "Ananya Yadav" }],
   readiness: [
     { key: "campus", label: "Campus", complete: true, detail: "1 active" },
     { key: "spaces", label: "Spaces", complete: true, detail: "1 mapped" },
@@ -54,6 +55,8 @@ describe("campus setup", () => {
     expect(screen.getAllByText("Room 204")).toHaveLength(2);
     expect(screen.getByText("Class 6A")).toBeVisible();
     expect(screen.getByText("Kavita Mehta")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Recent activity" })).toBeVisible();
+    expect(screen.getByText("Room 204 added")).toBeVisible();
     expect(screen.queryByText(/digital twin/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/model core/i)).not.toBeInTheDocument();
   });

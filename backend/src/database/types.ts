@@ -194,7 +194,7 @@ export interface CampusModelObservationTable {
   source_ref: string | null; source_record_id: string; observed_at: Timestamp; received_at: Timestamp;
   evidence_refs: Generated<string[]>; payload: Json; schema_version: Generated<number>;
   state: Generated<"pending" | "accepted" | "rejected" | "quarantined" | "superseded">;
-  idempotency_key: string; domain_event_id: string | null; created_at: Timestamp;
+  idempotency_key: string; request_hash: string; domain_event_id: string | null; created_at: Timestamp;
 }
 export interface CampusModelCommandTable {
   id: Generated<string>; school_id: string; command_type: string; target_entity_id: string | null;

@@ -2175,6 +2175,37 @@
   cursor: pointer;
 }
 
+.campus-replica__activity li {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  padding-right: 14px;
+}
+
+.campus-replica__activity-state {
+  min-width: 64px;
+  max-width: 88px;
+  padding: 5px 8px;
+  overflow: hidden;
+  border-radius: var(--thatcampus-radius-pill);
+  color: var(--thatcampus-positive);
+  background: var(--thatcampus-positive-soft);
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.campus-replica__activity-state:is(.is-pending, .is-quarantined) {
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
+}
+
+.campus-replica__activity-state.is-rejected {
+  color: var(--thatcampus-danger);
+  background: var(--thatcampus-danger-soft);
+}
+
 .campus-replica__rows {
   margin: 0;
   padding: 0;

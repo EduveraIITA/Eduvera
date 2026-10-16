@@ -399,6 +399,17 @@ Exit: one tutor/learner and a multi-branch fixture both form a navigable connect
 
 Exit: an attendance observation and a campus-setup move can be traced from source through accepted outcome without the core deciding domain truth.
 
+Implementation checkpoint (16 October 2026): the first Phase 2 slice is delivered on
+the campus-digital-twin branch. Immutable attendance-capture observations enter the
+core through the typed port in the same transaction as their source evidence. Their
+state follows the attendance domain's later accepted, quarantined or rejected
+decision; the core does not decide attendance. Existing evidence is backfilled with
+stable student/class/actor identity, provenance and idempotency hashes. Campus setup
+commands and attendance observations are combined by a core-owned read projection
+and exposed to administrators as **Recent activity** in campus language. Registered
+device and integration ingress, event-level correlation for attendance acceptance,
+and the wider cross-domain command set remain Phase 2 work.
+
 ### Phase 3 - Agents and authority
 
 - register human, device, integration and deterministic software agents;
