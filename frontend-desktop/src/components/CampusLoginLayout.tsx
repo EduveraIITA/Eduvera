@@ -1,11 +1,13 @@
+import { useLoginTheme } from "./useLoginTheme";
 import LoginTopography from "./LoginTopography";
 import type { ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import "./campus-login.css";
 
 export function CampusLoginLayout({ children }: { children: ReactNode }) {
-  return <div className="campus-login">
-    <LoginTopography />
+  const dark = useLoginTheme();
+  return <div className="campus-login" data-login-theme={dark ? "dark" : "light"}>
+    <LoginTopography dark={dark} />
     <div className="campus-login__frame">
       <header className="campus-login__topbar">
         <a className="campus-login__brand" href="/" aria-label="ThatCampus portal">

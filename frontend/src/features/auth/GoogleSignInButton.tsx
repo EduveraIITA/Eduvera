@@ -1,3 +1,4 @@
+import { useLoginTheme } from "./useLoginTheme";
 import { useEffect, useRef, useState } from "react";
 
 type GoogleApi = {
@@ -27,6 +28,7 @@ export function GoogleSignInButton({ onCredential, onError, disabled = false }: 
   onError: (message: string) => void;
   disabled?: boolean;
 }) {
+  const dark = useLoginTheme();
   const host = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onCredential, onError });
   const [retry, setRetry] = useState(0);
@@ -59,7 +61,7 @@ export function GoogleSignInButton({ onCredential, onError, disabled = false }: 
           },
         });
         host.current.replaceChildren();
-        window.google.accounts.id.renderButton(host.current, { type: "standard", theme: "outline", size: "large", text: "continue_with", shape: "rectangular", width: Math.min(400, host.current.clientWidth || 300) });
+        window.google.accounts.id.renderButton(host.current, { type: "standard", theme: dark ? "filled_black" : "outline", size: "large", text: "continue_with", shape: "rectangular", width: Math.min(400, host.current.clientWidth || 300) });
         setState("ready");
       } catch {
         if (!cancelled) setState("error");
@@ -67,7 +69,7 @@ export function GoogleSignInButton({ onCredential, onError, disabled = false }: 
     }
     void start();
     return () => { cancelled = true; controller.abort(); };
-  }, [retry]);
+  }, [retry, dark]);
   if (state === "disabled") return null;
   return <div className="google-sign-in" style={{ display: "grid", gap: 12, marginTop: 16 }}>
     <div className="google-sign-in__divider" style={{ display: "flex", alignItems: "center", gap: 12, color: "#64748b", fontSize: 12 }}><span style={{ height: 1, background: "#e2e8f0", flex: 1 }} />or sign in with email<span style={{ height: 1, background: "#e2e8f0", flex: 1 }} /></div>

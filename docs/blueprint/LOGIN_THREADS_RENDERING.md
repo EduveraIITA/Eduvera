@@ -60,3 +60,7 @@ smoothly using SVG animation, with non-scaling 0.65px strokes. Reduced motion
 pauses both SVG morphing and the existing drift. Local browser checks verified
 edge-to-edge colour, no horizontal overflow, WebGL movement, fallback shape
 changes and reduced-motion pause. Physical iPad verification remains outstanding.
+
+## Dark appearance — 16 October 2026
+
+Both login clients now follow the system color scheme and explicit root data-theme overrides, including live changes. Topography changes from blue ink in light mode to luminous periwinkle contours in dark mode. The full viewport, translucent card, controls, help panel and SVG fallback share that preference; Google uses its dark button variant. Local production builds and targeted ESLint pass. Browser checks cover 390×844, 768×1024, 1024×768 and 1366×1024, system/explicit preference changes and no-WebGL fallback. Physical iPad validation remains with the user.

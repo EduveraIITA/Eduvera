@@ -16,7 +16,7 @@ const contours = centers.flatMap(([cx, cy], group) => Array.from({ length: 24 },
   return { from: contour(cx, cy, r, group), to: contour(cx, cy, r, group + 0.8), key: `${group}-${index}` };
 }));
 
-export default function LoginTopography() {
+export default function LoginTopography({ dark = false }: { dark?: boolean }) {
   const fallbackRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -29,11 +29,11 @@ export default function LoginTopography() {
     return () => motion.removeEventListener("change", update);
   }, []);
   return <div className="topography-background" aria-hidden="true">
-    <Topography color="#4f7cff" lineCount={22} lineWidth={0.75} elevation={1} foreground={0.2}
-      tilt={32} speed={0.25} direction="forward" glow={0.4} depthOfField={0.3} fog={0.2}
-      hoverEffect="lift" clickEffect="pulse" lightMode opacity={0.55} intro={false} dpr={1.25} />
+    <Topography color={dark ? "#7c9cff" : "#4f7cff"} lineCount={22} lineWidth={0.75} elevation={1} foreground={0.2}
+      tilt={32} speed={0.25} direction="forward" glow={dark ? 0.65 : 0.4} depthOfField={0.3} fog={0.2}
+      hoverEffect="lift" clickEffect="pulse" lightMode={!dark} opacity={dark ? 0.8 : 0.55} intro={false} dpr={1.25} />
     <svg ref={fallbackRef} className="topography-fallback" viewBox="0 0 1600 1000" preserveAspectRatio="none" focusable="false">
-      <g fill="none" stroke="#4f7cff" strokeWidth="0.7" opacity="0.28">
+      <g fill="none" stroke={dark ? "#7c9cff" : "#4f7cff"} strokeWidth="0.7" opacity={dark ? 0.45 : 0.28}>
         {contours.map(({ from, to, key }) => <path key={key} d={from} vectorEffect="non-scaling-stroke">
           <animate attributeName="d" values={`${from};${to};${from}`} dur="16s" repeatCount="indefinite"
             calcMode="spline" keyTimes="0;0.5;1" keySplines="0.42 0 0.58 1;0.42 0 0.58 1" />
