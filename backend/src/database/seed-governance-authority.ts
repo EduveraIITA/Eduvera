@@ -4,12 +4,60 @@ import { Pool } from "pg";
 import { postgresClientConnectionConfig } from "./connection-policy.js";
 import { demoId } from "./seed-operations.js";
 
-export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean) {
-  if (!demoMode) return { skipped: "Demo mode is disabled" };
+export interface GovernanceAuthorityDemoSeedOptions {
+  demoMode: boolean;
+  explicitOptIn: boolean;
+  environment: string;
+}
+
+const allowedDemoEnvironments = new Set(["development", "local", "test"]);
+
+export function assertGovernanceAuthorityDemoSeedAllowed(
+  options: GovernanceAuthorityDemoSeedOptions,
+) {
+  if (!options.demoMode) {
+    throw new Error("Governance authority demo seeding requires DEMO_MODE=true.");
+  }
+  if (!options.explicitOptIn) {
+    throw new Error("Governance authority demo seeding requires SEED_GOVERNANCE_AUTHORITY=true.");
+  }
+  const environment = options.environment.trim().toLowerCase();
+  if (!allowedDemoEnvironments.has(environment)) {
+    throw new Error("Governance authority demo seeding is limited to development, local or test environments.");
+  }
+}
+
+export function selectExactDemoPersonIdentity(
+  personIds: string[],
+  fallbackPersonId: string,
+  description: string,
+) {
+  const exactPersonIds = [...new Set(personIds)];
+  if (exactPersonIds.length > 1) {
+    throw new Error(`The ${description} account is linked to more than one campus person.`);
+  }
+  return exactPersonIds[0] ?? fallbackPersonId;
+}
+
+function assertAbsentOrExactFixture(
+  row: { exact: boolean } | undefined,
+  description: string,
+) {
+  if (row && !row.exact) {
+    throw new Error(`The existing ${description} differs from the approved demo authority evidence.`);
+  }
+}
+
+export async function seedGovernanceAuthorityDemo(
+  pool: Pool,
+  options: GovernanceAuthorityDemoSeedOptions,
+) {
+  assertGovernanceAuthorityDemoSeedAllowed(options);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const scope = (await client.query(`SELECT school.id,principal.id principal_id,teacher.id teacher_id
+    const scope = (await client.query(`SELECT school.id,principal.id principal_id,teacher.id teacher_id,
+        teacher_profile.id teacher_profile_id,teacher_profile.person_id teacher_person_id
       FROM schools school
       JOIN users principal ON principal.username='meera.principal' AND principal.is_active
       JOIN school_memberships principal_membership ON principal_membership.school_id=school.id
@@ -17,6 +65,10 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
       JOIN users teacher ON teacher.username='kavita.staff' AND teacher.is_active
       JOIN school_memberships teacher_membership ON teacher_membership.school_id=school.id
         AND teacher_membership.user_id=teacher.id AND teacher_membership.role='staff' AND teacher_membership.is_active
+      JOIN staff_profiles teacher_profile ON teacher_profile.school_id=school.id
+        AND teacher_profile.user_id=teacher.id AND teacher_profile.status='active'
+      JOIN school_people teacher_person ON teacher_person.school_id=school.id
+        AND teacher_person.id=teacher_profile.person_id
       WHERE school.code='cis'`)).rows[0];
     if (!scope) {
       await client.query("ROLLBACK");
@@ -24,8 +76,48 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
     }
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [scope.id]);
 
+    // Migration 107 may have run before the demo accounts existed (clean install),
+    // or it may already have retained an account endpoint/appointment (upgrade or
+    // partially seeded install). In either ordering, reuse the explicit person
+    // evidence for Meera. Never create a second person for the same account.
+    const principalPersonEvidence = (await client.query(`SELECT DISTINCT evidence.person_id
+      FROM (
+        SELECT agent.person_id
+        FROM campus_model_agent_endpoints endpoint
+        JOIN campus_model_agents agent ON agent.id=endpoint.agent_id AND agent.school_id=endpoint.school_id
+        WHERE endpoint.school_id=$1 AND endpoint.endpoint_kind='account'
+          AND endpoint.provider='thatcampus' AND endpoint.user_id=$2
+          AND agent.agent_kind='human' AND agent.person_id IS NOT NULL
+        UNION ALL
+        SELECT appointment.person_id
+        FROM institution_governance_appointments appointment
+        WHERE appointment.school_id=$1 AND appointment.linked_user_id=$2
+      ) evidence
+      JOIN school_people person ON person.school_id=$1 AND person.id=evidence.person_id
+      ORDER BY evidence.person_id`, [scope.id, scope.principal_id])).rows as Array<{ person_id: string }>;
+    const principalPersonId = selectExactDemoPersonIdentity(
+      principalPersonEvidence.map((row) => row.person_id),
+      demoId("governance-person-meera-kapoor"),
+      "Meera Principal demo",
+    );
+
     const officialSource = demoId("governance-source-cbse-affiliation");
     const localSource = demoId("governance-source-cis-management-scheme");
+    const existingLocalSource = (await client.query(`SELECT (
+        id=$2 AND title='Cambridge International School management scheme'
+        AND source_kind='governing_instrument' AND issuer='Cambridge International School Management'
+        AND jurisdiction='Karnataka, India' AND reference='CIS-GOV-2026-01'
+        AND provision='Demo management and delegation schedule'
+        AND evidence_reference='Illustrative demo governance record'
+        AND verification_state='verified' AND effective_from='2026-04-01'::date
+        AND effective_until IS NULL AND verified_by=$3 AND created_by=$3
+      ) AS exact FROM institution_authority_sources
+      WHERE school_id=$1 AND code='cis_management_scheme'`, [
+      scope.id,
+      localSource,
+      scope.principal_id,
+    ])).rows[0] as { exact: boolean } | undefined;
+    assertAbsentOrExactFixture(existingLocalSource, "Cambridge demo management source");
     await client.query(`INSERT INTO institution_authority_sources(
       id,school_id,code,title,source_kind,issuer,jurisdiction,reference,provision,evidence_reference,
       verification_state,effective_from,verified_by,verified_at,created_by
@@ -40,27 +132,55 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
       title=EXCLUDED.title,issuer=EXCLUDED.issuer,jurisdiction=EXCLUDED.jurisdiction,
       reference=EXCLUDED.reference,provision=EXCLUDED.provision,evidence_reference=EXCLUDED.evidence_reference,
       verification_state=EXCLUDED.verification_state,effective_from=EXCLUDED.effective_from,
-      verified_by=EXCLUDED.verified_by,verified_at=EXCLUDED.verified_at`,
+      verified_by=EXCLUDED.verified_by
+    WHERE (
+      institution_authority_sources.title,institution_authority_sources.issuer,
+      institution_authority_sources.jurisdiction,institution_authority_sources.reference,
+      institution_authority_sources.provision,institution_authority_sources.evidence_reference,
+      institution_authority_sources.verification_state,institution_authority_sources.effective_from,
+      institution_authority_sources.verified_by
+    ) IS DISTINCT FROM (
+      EXCLUDED.title,EXCLUDED.issuer,EXCLUDED.jurisdiction,EXCLUDED.reference,
+      EXCLUDED.provision,EXCLUDED.evidence_reference,EXCLUDED.verification_state,
+      EXCLUDED.effective_from,EXCLUDED.verified_by
+    )`,
     [officialSource, localSource, scope.id, scope.principal_id]);
 
     const people = [
-      { id: demoId("governance-person-meera-kapoor"), first: "Meera", last: "Kapoor", email: "meera.kapoor@example.test" },
+      { id: principalPersonId, first: "Meera", last: "Kapoor", email: "meera.kapoor@example.test" },
       { id: demoId("governance-person-ramesh-malhotra"), first: "Ramesh", last: "Malhotra", email: "ramesh.malhotra@example.test" },
-      { id: demoId("governance-person-kavita-mehta"), first: "Kavita", last: "Mehta", email: "kavita.mehta@example.test" },
     ];
     for (const person of people) await client.query(`INSERT INTO school_people(id,school_id,first_name,last_name,contact_email)
       VALUES($1,$2,$3,$4,$5) ON CONFLICT(school_id,id) DO UPDATE SET
-      first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,contact_email=EXCLUDED.contact_email`,
+      first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,contact_email=EXCLUDED.contact_email
+      WHERE (school_people.first_name,school_people.last_name,school_people.contact_email)
+        IS DISTINCT FROM (EXCLUDED.first_name,EXCLUDED.last_name,EXCLUDED.contact_email)`,
     [person.id, scope.id, person.first, person.last, person.email]);
 
     const principalOffice = demoId("governance-office-principal");
     const managerOffice = demoId("governance-office-manager");
+    const existingPrincipalOffice = (await client.query(`SELECT (
+        id=$2 AND title='Principal'
+        AND purpose='Lead academic and administrative operations within the applicable scheme and delegations.'
+        AND authority_source_id=$3 AND status='active' AND created_by=$4
+      ) AS exact FROM institution_governance_offices
+      WHERE school_id=$1 AND code='principal'`, [
+      scope.id,
+      principalOffice,
+      localSource,
+      scope.principal_id,
+    ])).rows[0] as { exact: boolean } | undefined;
+    assertAbsentOrExactFixture(existingPrincipalOffice, "Cambridge demo Principal office");
     await client.query(`INSERT INTO institution_governance_offices(id,school_id,code,title,purpose,authority_source_id,status,created_by)
       VALUES
       ($1,$3,'principal','Principal','Lead academic and administrative operations within the applicable scheme and delegations.',$4,'active',$5),
       ($2,$3,'manager','Manager / correspondent','Connect management, the School Management Committee and the head of school within recorded authority.',$4,'active',$5)
       ON CONFLICT(school_id,code) DO UPDATE SET title=EXCLUDED.title,purpose=EXCLUDED.purpose,
-        authority_source_id=EXCLUDED.authority_source_id,status='active'`,
+        authority_source_id=EXCLUDED.authority_source_id,status='active'
+      WHERE (
+        institution_governance_offices.title,institution_governance_offices.purpose,
+        institution_governance_offices.authority_source_id,institution_governance_offices.status
+      ) IS DISTINCT FROM (EXCLUDED.title,EXCLUDED.purpose,EXCLUDED.authority_source_id,'active')`,
     [principalOffice, managerOffice, scope.id, localSource, scope.principal_id]);
 
     const managementBody = demoId("governance-body-management");
@@ -70,7 +190,11 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
       ($1,$3,'management_entity','Management entity','Exercise the management powers and final decisions recorded in the governing instruments.',$4,true,'active',$5),
       ($2,$3,'school_management_committee','School Management Committee','Review and decide school matters within the applicable CBSE, government and institution rules.',$6,true,'active',$5)
       ON CONFLICT(school_id,code) DO UPDATE SET title=EXCLUDED.title,purpose=EXCLUDED.purpose,
-        authority_source_id=EXCLUDED.authority_source_id,status='active'`,
+        authority_source_id=EXCLUDED.authority_source_id,status='active'
+      WHERE (
+        institution_governance_bodies.title,institution_governance_bodies.purpose,
+        institution_governance_bodies.authority_source_id,institution_governance_bodies.status
+      ) IS DISTINCT FROM (EXCLUDED.title,EXCLUDED.purpose,EXCLUDED.authority_source_id,'active')`,
     [managementBody, smcBody, scope.id, localSource, scope.principal_id, officialSource]);
 
     const seats = [
@@ -82,7 +206,15 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
       id,school_id,body_id,code,title,seat_kind,voting_right,qualifying_office_id,required,term_months,status,sort_order,created_by
     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,true,$9,'active',$10,$11)
       ON CONFLICT(school_id,body_id,code) DO UPDATE SET title=EXCLUDED.title,seat_kind=EXCLUDED.seat_kind,
-        voting_right=EXCLUDED.voting_right,qualifying_office_id=EXCLUDED.qualifying_office_id,status='active',sort_order=EXCLUDED.sort_order`,
+        voting_right=EXCLUDED.voting_right,qualifying_office_id=EXCLUDED.qualifying_office_id,status='active',sort_order=EXCLUDED.sort_order
+      WHERE (
+        institution_governance_seats.title,institution_governance_seats.seat_kind,
+        institution_governance_seats.voting_right,institution_governance_seats.qualifying_office_id,
+        institution_governance_seats.status,institution_governance_seats.sort_order
+      ) IS DISTINCT FROM (
+        EXCLUDED.title,EXCLUDED.seat_kind,EXCLUDED.voting_right,EXCLUDED.qualifying_office_id,
+        'active',EXCLUDED.sort_order
+      )`,
     [seat.id, scope.id, smcBody, seat.code, seat.title, seat.kind, seat.vote, seat.office, seat.kind === "ex_officio" ? null : 36, seat.order, scope.principal_id]);
 
     const appointments = [
@@ -90,16 +222,51 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
       { id: demoId("governance-appointment-manager"), office: managerOffice, seat: null, person: people[1]!.id, user: null, kind: "appointed", source: localSource, evidence: "CIS/APPT/MANAGER/2026" },
       { id: demoId("governance-appointment-smc-principal"), office: null, seat: seats[0]!.id, person: people[0]!.id, user: scope.principal_id, kind: "ex_officio", source: officialSource, evidence: "Ex-officio through Principal office" },
       { id: demoId("governance-appointment-smc-chair"), office: null, seat: seats[1]!.id, person: people[1]!.id, user: null, kind: "nominated", source: localSource, evidence: "CIS/SMC/NOM/2026-01" },
-      { id: demoId("governance-appointment-smc-teacher"), office: null, seat: seats[2]!.id, person: people[2]!.id, user: scope.teacher_id, kind: "nominated", source: localSource, evidence: "CIS/SMC/NOM/2026-02" },
+      { id: demoId("governance-appointment-smc-teacher"), office: null, seat: seats[2]!.id, person: scope.teacher_person_id, user: scope.teacher_id, kind: "nominated", source: localSource, evidence: "CIS/SMC/NOM/2026-02" },
     ];
+    const existingPrincipalAppointment = (await client.query(`SELECT (
+        office_id=$3 AND seat_id IS NULL AND person_id=$4 AND linked_user_id=$5
+        AND appointment_kind='appointed' AND starts_on='2026-04-01'::date
+        AND ends_on='2029-03-31'::date AND status='active'
+        AND authority_source_id=$6 AND evidence_reference='CIS/APPT/PRINCIPAL/2026'
+        AND created_by=$5
+      ) AS exact FROM institution_governance_appointments
+      WHERE school_id=$1 AND id=$2`, [
+      scope.id,
+      demoId("governance-appointment-principal"),
+      principalOffice,
+      principalPersonId,
+      scope.principal_id,
+      localSource,
+    ])).rows[0] as { exact: boolean } | undefined;
+    assertAbsentOrExactFixture(existingPrincipalAppointment, "Cambridge demo Principal appointment");
     for (const appointment of appointments) await client.query(`INSERT INTO institution_governance_appointments(
       id,school_id,office_id,seat_id,person_id,linked_user_id,appointment_kind,starts_on,ends_on,status,
       authority_source_id,evidence_reference,created_by
     ) VALUES($1,$2,$3,$4,$5,$6,$7,'2026-04-01','2029-03-31','active',$8,$9,$10)
       ON CONFLICT(id) DO UPDATE SET person_id=EXCLUDED.person_id,linked_user_id=EXCLUDED.linked_user_id,
-        status='active',authority_source_id=EXCLUDED.authority_source_id,evidence_reference=EXCLUDED.evidence_reference`,
+        status='active',authority_source_id=EXCLUDED.authority_source_id,evidence_reference=EXCLUDED.evidence_reference
+      WHERE (
+        institution_governance_appointments.person_id,institution_governance_appointments.linked_user_id,
+        institution_governance_appointments.status,institution_governance_appointments.authority_source_id,
+        institution_governance_appointments.evidence_reference
+      ) IS DISTINCT FROM (
+        EXCLUDED.person_id,EXCLUDED.linked_user_id,'active',EXCLUDED.authority_source_id,
+        EXCLUDED.evidence_reference
+      )`,
     [appointment.id, scope.id, appointment.office, appointment.seat, appointment.person, appointment.user,
       appointment.kind, appointment.source, appointment.evidence, scope.principal_id]);
+
+    const teacherIdentity = (await client.query(`SELECT appointment.id
+      FROM institution_governance_appointments appointment
+      JOIN staff_profiles profile ON profile.school_id=appointment.school_id
+        AND profile.person_id=appointment.person_id AND profile.user_id=appointment.linked_user_id
+      WHERE appointment.school_id=$1 AND appointment.id=$2
+        AND profile.id=$3 AND appointment.linked_user_id=$4`,
+    [scope.id, demoId("governance-appointment-smc-teacher"), scope.teacher_profile_id, scope.teacher_id])).rows;
+    if (teacherIdentity.length !== 1) {
+      throw new Error("Kavita's governance appointment must reuse her exact staff person and linked account.");
+    }
 
     const classTeacherType = (await client.query(`SELECT id FROM staff_responsibility_types
       WHERE school_id=$1 AND code='class_teacher'`, [scope.id])).rows[0]?.id;
@@ -118,7 +285,16 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
        '{"currency":"INR","maximum_minor_units":2500000,"period":"2026-27"}'::jsonb,'2026-04-01','active',$6)
       ON CONFLICT(school_id,code) DO UPDATE SET title=EXCLUDED.title,authority_source_id=EXCLUDED.authority_source_id,
         powers=EXCLUDED.powers,matter_codes=EXCLUDED.matter_codes,limit_summary=EXCLUDED.limit_summary,
-        conditions=EXCLUDED.conditions,status='active'`,
+        conditions=EXCLUDED.conditions,status='active'
+      WHERE (
+        institution_authority_mandates.title,institution_authority_mandates.authority_source_id,
+        institution_authority_mandates.powers,institution_authority_mandates.matter_codes,
+        institution_authority_mandates.limit_summary,institution_authority_mandates.conditions,
+        institution_authority_mandates.status
+      ) IS DISTINCT FROM (
+        EXCLUDED.title,EXCLUDED.authority_source_id,EXCLUDED.powers,EXCLUDED.matter_codes,
+        EXCLUDED.limit_summary,EXCLUDED.conditions,'active'
+      )`,
     [attendanceMandate, principalConcessionMandate, scope.id, localSource, classTeacherType, scope.principal_id, principalOffice]);
 
     const rules = [
@@ -139,7 +315,21 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
         decision_mode=EXCLUDED.decision_mode,decision_office_id=EXCLUDED.decision_office_id,
         decision_body_id=EXCLUDED.decision_body_id,standing_mandate_id=EXCLUDED.standing_mandate_id,
         authority_source_ids=EXCLUDED.authority_source_ids,conditions_summary=EXCLUDED.conditions_summary,
-        material_fields=EXCLUDED.material_fields,status='confirmed'`,
+        material_fields=EXCLUDED.material_fields,status='confirmed'
+      WHERE (
+        institution_decision_matter_rules.title,institution_decision_matter_rules.category,
+        institution_decision_matter_rules.initiation_summary,institution_decision_matter_rules.review_summary,
+        institution_decision_matter_rules.decision_summary,institution_decision_matter_rules.execution_summary,
+        institution_decision_matter_rules.decision_mode,institution_decision_matter_rules.decision_office_id,
+        institution_decision_matter_rules.decision_body_id,institution_decision_matter_rules.standing_mandate_id,
+        institution_decision_matter_rules.authority_source_ids,institution_decision_matter_rules.conditions_summary,
+        institution_decision_matter_rules.material_fields,institution_decision_matter_rules.status
+      ) IS DISTINCT FROM (
+        EXCLUDED.title,EXCLUDED.category,EXCLUDED.initiation_summary,EXCLUDED.review_summary,
+        EXCLUDED.decision_summary,EXCLUDED.execution_summary,EXCLUDED.decision_mode,
+        EXCLUDED.decision_office_id,EXCLUDED.decision_body_id,EXCLUDED.standing_mandate_id,
+        EXCLUDED.authority_source_ids,EXCLUDED.conditions_summary,EXCLUDED.material_fields,'confirmed'
+      )`,
     [rule.id, scope.id, rule.code, rule.title, rule.category, rule.initiate, rule.review, rule.decide,
       rule.execute, rule.mode, rule.office, rule.body, rule.mandate, rule.sources, rule.conditions, rule.fields, scope.principal_id]);
 
@@ -154,15 +344,20 @@ export async function seedGovernanceAuthorityDemo(pool: Pool, demoMode: boolean)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.env.DEMO_MODE !== "true") throw new Error("Governance authority demo seeding requires DEMO_MODE=true");
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
   const environment = process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? "development";
+  const options = {
+    demoMode: process.env.DEMO_MODE === "true",
+    explicitOptIn: process.env.SEED_GOVERNANCE_AUTHORITY === "true",
+    environment,
+  };
+  assertGovernanceAuthorityDemoSeedAllowed(options);
   const connection = postgresClientConnectionConfig(process.env.DATABASE_URL, {
     name: "DATABASE_URL", purpose: "migrations", requireRemoteTls: environment === "stage" || environment === "production",
   });
   const pool = new Pool({ ...connection, max: 1, application_name: "omnischool_governance_authority_demo" });
   try {
-    process.stdout.write(`Governance authority demo seed: ${JSON.stringify(await seedGovernanceAuthorityDemo(pool, true))}\n`);
+    process.stdout.write(`Governance authority demo seed: ${JSON.stringify(await seedGovernanceAuthorityDemo(pool, options))}\n`);
   } finally {
     await pool.end();
   }

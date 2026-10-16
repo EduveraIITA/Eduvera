@@ -1,6 +1,7 @@
 import { ConflictException, Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql, type Transaction } from "kysely";
+import { z } from "zod";
 import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort, CampusOperationalSignal } from "./campus-model-core.port.js";
@@ -12,6 +13,14 @@ import type {
 } from "./coordination-runtime.port.js";
 import type { ObservationIngressPort } from "./observation-ingress.port.js";
 import type { ObservationCapability, ObservationSource, ObservationSourceRegistryPort, RegisterObservationSource } from "./observation-source-registry.port.js";
+import type {
+  HumanAgentEndpointLinkReceipt,
+  HumanAgentEndpointCloseReceipt,
+  HumanAgentEndpointReplaceReceipt,
+  HumanAgentIdentityPort,
+  HumanAgentIdentityResolution,
+  NonActingHumanAgentReason,
+} from "./human-agent-identity.port.js";
 import type {
   CampusTemporalAssertion,
   PlanReconciliationReceipt,
@@ -27,7 +36,13 @@ import {
   calendarClosureProjectionSchema,
   publishedDayPlanProjectionSchema,
   publishedScheduleProjectionSchema,
+  coordinationRecipientAgentRefSchema,
   coordinationRecipientSelectorConfigSchema,
+  humanAgentAccountEndpointLinkSchema,
+  humanAgentAccountEndpointCloseSchema,
+  humanAgentAccountEndpointReplaceSchema,
+  humanAgentAccountResolutionSchema,
+  humanAgentPersonResolutionSchema,
   operationalMessageOutcomeSchema,
   recipientOperationalMessageResponseSchema,
   type AcceptedCoordinationEvent,
@@ -38,14 +53,78 @@ import {
   type CampusTemporalContextQuery,
   type CalendarClosureProjection,
   type CoordinationRecipientAgentRef,
+  type HumanAgentAccountEndpointLink,
+  type HumanAgentAccountEndpointClose,
+  type HumanAgentAccountEndpointReplace,
+  type HumanAgentAccountResolution,
+  type HumanAgentPersonResolution,
   type PublishedDayPlanProjection,
   type PublishedScheduleProjection,
   type OperationalMessageOutcome,
   type RecipientOperationalMessageResponse,
 } from "./contracts.js";
 
+const uuid = z.string().uuid();
+
 interface EntityRow { id: string; domain: string; domain_id: string }
 interface AgentRow { id: string }
+interface HumanAgentEndpointRow {
+  agent_id: string;
+  school_id: string;
+  person_id: string;
+  label: string;
+  endpoint_id: string;
+  user_id: string;
+  effective_from: Date | string;
+  effective_until: Date | string | null;
+}
+interface HumanAgentEndpointDiagnosticRow {
+  agent_id: string;
+  person_id: string;
+  user_id: string;
+  endpoint_active: boolean;
+  account_active: boolean;
+  membership_active: boolean;
+  profile_linked: boolean;
+}
+interface ExistingHumanAgentEndpointRow {
+  id: string;
+  agent_id: string;
+  person_id: string;
+  status: "active" | "suspended" | "revoked";
+  same_effective_from: boolean;
+  same_effective_until: boolean;
+  same_source: boolean;
+  same_metadata: boolean;
+}
+interface HumanAgentEndpointTransitionTargetRow {
+  endpoint_id: string;
+  agent_id: string;
+  person_id: string;
+  user_id: string;
+  status: "active" | "suspended" | "revoked";
+  effective_from: Date | string;
+  effective_until: Date | string | null;
+  revision: number;
+}
+interface HumanAgentEndpointTransitionRow {
+  id: string;
+  endpoint_id: string;
+  agent_id: string;
+  transition_kind: "ended" | "revoked";
+  next_status: "active" | "suspended" | "revoked";
+  effective_at: Date | string;
+  resulting_endpoint_revision: number;
+  request_hash: string;
+}
+interface HumanAgentBootstrapAccountRow {
+  is_active: boolean;
+  active_member: boolean;
+}
+interface ExplicitPersonCandidateRow {
+  person_id: string;
+  source_kinds: string[];
+}
 interface RelationshipRow { id: string; target_entity_id: string; effective_from: Date | string }
 interface CommandRow { id: string; command_type: string; target_entity_id: string | null; actor_agent_id: string }
 interface ObservationRow { id: string; request_hash: string }
@@ -149,8 +228,366 @@ interface TemporalAssertionRow {
 }
 
 @Injectable()
-export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort, CoordinationRuntimePort {
+export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort, CoordinationRuntimePort, HumanAgentIdentityPort {
   constructor(private readonly db: DatabaseService) {}
+
+  async resolveAccountEndpoint(
+    transaction: Transaction<Database>,
+    rawInput: HumanAgentAccountResolution,
+  ): Promise<HumanAgentIdentityResolution> {
+    const input = humanAgentAccountResolutionSchema.parse(rawInput);
+    return this.resolveAccountEndpointIn(transaction, input.school_id, input.user_id, input.at);
+  }
+
+  async resolvePersonAgent(
+    transaction: Transaction<Database>,
+    rawInput: HumanAgentPersonResolution,
+  ): Promise<HumanAgentIdentityResolution> {
+    const input = humanAgentPersonResolutionSchema.parse(rawInput);
+    const person = (await sql<{ id: string }>`SELECT id FROM school_people
+      WHERE school_id=${input.school_id}::uuid AND id=${input.person_id}::uuid
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (!person) return this.nonActing(input.school_id, null, null, null, "person_not_found");
+
+    const agent = (await sql<{ id: string }>`SELECT id FROM campus_model_agents
+      WHERE school_id=${input.school_id}::uuid AND agent_kind='human' AND person_id=${input.person_id}::uuid
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (!agent) return this.nonActing(input.school_id, input.person_id, null, null, "agent_not_registered");
+
+    const endpoint = (await sql<{ user_id: string }>`SELECT user_id FROM campus_model_agent_endpoints
+      WHERE school_id=${input.school_id}::uuid AND agent_id=${agent.id}::uuid
+        AND endpoint_kind='account' AND user_id IS NOT NULL
+        AND effective_from<=${input.at}::timestamptz
+        AND (effective_until IS NULL OR effective_until>${input.at}::timestamptz)
+      ORDER BY status='active' DESC,effective_from DESC,id DESC LIMIT 1
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (!endpoint) {
+      const hasHistory = (await sql<{ found: boolean }>`SELECT EXISTS(
+        SELECT 1 FROM campus_model_agent_endpoints
+        WHERE school_id=${input.school_id}::uuid AND agent_id=${agent.id}::uuid
+          AND endpoint_kind='account'
+      ) AS found`.execute(transaction)).rows[0]!.found;
+      return this.nonActing(
+        input.school_id,
+        input.person_id,
+        null,
+        agent.id,
+        hasHistory ? "endpoint_inactive" : "account_not_linked",
+      );
+    }
+    return this.resolveAccountEndpointIn(transaction, input.school_id, endpoint.user_id, input.at);
+  }
+
+  async linkAccountEndpoint(
+    transaction: Transaction<Database>,
+    rawInput: HumanAgentAccountEndpointLink,
+  ): Promise<HumanAgentEndpointLinkReceipt> {
+    const input = humanAgentAccountEndpointLinkSchema.parse(rawInput);
+    const actorAccess = (await sql<{ active_member: boolean; active_admin: boolean }>`SELECT
+      EXISTS(
+        SELECT 1 FROM school_memberships membership JOIN users actor ON actor.id=membership.user_id
+        WHERE membership.school_id=${input.school_id}::uuid AND membership.user_id=${input.actor_user_id}::uuid
+          AND membership.is_active AND actor.is_active
+      ) AS active_member,
+      EXISTS(
+        SELECT 1 FROM school_memberships membership JOIN users actor ON actor.id=membership.user_id
+        WHERE membership.school_id=${input.school_id}::uuid AND membership.user_id=${input.actor_user_id}::uuid
+          AND membership.role='admin' AND membership.is_active AND actor.is_active
+      ) AS active_admin`.execute(transaction)).rows[0]!;
+    if (!actorAccess.active_member) {
+      throw new ConflictException("The identity-linking operator is not active in this institution.");
+    }
+    if (input.actor_user_id !== input.user_id && !actorAccess.active_admin) {
+      throw new ConflictException("Only the account owner or an active institution administrator can link this identity.");
+    }
+
+    const target = (await sql<{ label: string; linked: boolean }>`WITH explicit_person AS (
+        SELECT student.person_id FROM students student
+        WHERE student.school_id=${input.school_id}::uuid AND student.user_id=${input.user_id}::uuid
+        UNION
+        SELECT profile.person_id FROM parents parent
+        JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+        WHERE profile.school_id=${input.school_id}::uuid AND parent.user_id=${input.user_id}::uuid
+        UNION
+        SELECT profile.person_id FROM staff_profiles profile
+        WHERE profile.school_id=${input.school_id}::uuid AND profile.user_id=${input.user_id}::uuid
+        UNION
+        SELECT appointment.person_id FROM institution_governance_appointments appointment
+        WHERE appointment.school_id=${input.school_id}::uuid
+          AND appointment.linked_user_id=${input.user_id}::uuid
+      ) SELECT
+        COALESCE(NULLIF(trim(concat_ws(' ',person.first_name,person.last_name)),''),'Campus person') AS label,
+        account.is_active
+        AND EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id=person.id)
+        AND NOT EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id<>person.id)
+        AND EXISTS(
+          SELECT 1 FROM school_memberships membership
+          WHERE membership.school_id=person.school_id AND membership.user_id=account.id AND membership.is_active
+            AND (
+              membership.role='admin'
+              OR (membership.role='staff' AND EXISTS(
+                SELECT 1 FROM staff_profiles profile WHERE profile.school_id=person.school_id
+                  AND profile.user_id=account.id AND profile.person_id=person.id AND profile.status='active'
+              ))
+              OR (membership.role='student' AND EXISTS(
+                SELECT 1 FROM students student WHERE student.school_id=person.school_id
+                  AND student.user_id=account.id AND student.person_id=person.id
+              ))
+              OR (membership.role='guardian' AND EXISTS(
+                SELECT 1 FROM parents parent
+                JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+                WHERE profile.school_id=person.school_id AND parent.user_id=account.id
+                  AND profile.person_id=person.id
+              ))
+            )
+        ) AS linked
+      FROM school_people person CROSS JOIN users account
+      WHERE person.school_id=${input.school_id}::uuid AND person.id=${input.person_id}::uuid
+        AND account.id=${input.user_id}::uuid
+      FOR SHARE OF person,account`.execute(transaction)).rows[0];
+    if (!target) throw new ConflictException("The selected person or account does not exist.");
+    if (!target.linked) {
+      throw new ConflictException("The account needs an active institution membership linked to this person profile.");
+    }
+
+    const existing = (await sql<ExistingHumanAgentEndpointRow>`SELECT endpoint.id,endpoint.agent_id,
+        agent.person_id,endpoint.status,
+        endpoint.effective_from=${input.effective_from}::timestamptz AS same_effective_from,
+        endpoint.effective_until IS NOT DISTINCT FROM ${input.effective_until}::timestamptz AS same_effective_until,
+        (endpoint.source_domain=${input.source_domain} AND endpoint.source_record_id=${input.source_record_id}
+          AND endpoint.source_revision=${input.source_revision}) AS same_source,
+        endpoint.metadata=${JSON.stringify(input.metadata)}::jsonb AS same_metadata
+      FROM campus_model_agent_endpoints endpoint
+      JOIN campus_model_agents agent ON agent.id=endpoint.agent_id AND agent.school_id=endpoint.school_id
+      WHERE endpoint.school_id=${input.school_id}::uuid AND endpoint.endpoint_kind='account'
+        AND endpoint.provider='thatcampus' AND endpoint.user_id=${input.user_id}::uuid
+        AND (
+          (endpoint.source_domain=${input.source_domain}
+            AND endpoint.source_record_id=${input.source_record_id}
+            AND endpoint.source_revision=${input.source_revision})
+          OR (
+            endpoint.effective_from<=${input.effective_from}::timestamptz
+            AND (endpoint.effective_until IS NULL OR endpoint.effective_until>${input.effective_from}::timestamptz)
+          )
+        )
+      ORDER BY
+        (endpoint.source_domain=${input.source_domain}
+          AND endpoint.source_record_id=${input.source_record_id}
+          AND endpoint.source_revision=${input.source_revision}) DESC,
+        endpoint.effective_from DESC,endpoint.id DESC
+      LIMIT 1 FOR UPDATE OF endpoint,agent`.execute(transaction)).rows[0];
+    if (existing && existing.person_id !== input.person_id) {
+      throw new ConflictException("This campus account is already linked to a different person.");
+    }
+    if (existing) {
+      if (!existing.same_effective_from || !existing.same_effective_until
+        || !existing.same_source || !existing.same_metadata) {
+        throw new ConflictException("The account endpoint already exists with different identity evidence or dates.");
+      }
+      if (existing.status !== "active") {
+        throw new ConflictException("A suspended or revoked account endpoint cannot be reactivated by replaying its link.");
+      }
+      const resolved = await this.resolveAccountEndpointIn(
+        transaction,
+        input.school_id,
+        input.user_id,
+        input.effective_from,
+      );
+      if (!resolved.acting) throw new ConflictException("The existing account endpoint is not currently able to act.");
+      return { ...resolved, replayed: true };
+    }
+
+    const agent = (await sql<{ id: string }>`INSERT INTO campus_model_agents(
+        school_id,agent_kind,person_id,label,status
+      ) VALUES (${input.school_id}::uuid,'human',${input.person_id}::uuid,${target.label},'active')
+      ON CONFLICT(school_id,person_id) WHERE agent_kind='human' DO UPDATE SET
+        label=EXCLUDED.label,
+        revision=CASE WHEN campus_model_agents.label IS DISTINCT FROM EXCLUDED.label
+          THEN campus_model_agents.revision+1 ELSE campus_model_agents.revision END,
+        updated_at=CASE WHEN campus_model_agents.label IS DISTINCT FROM EXCLUDED.label
+          THEN now() ELSE campus_model_agents.updated_at END
+      RETURNING id`.execute(transaction)).rows[0];
+    if (!agent) throw new ConflictException("The human agent identity could not be retained.");
+
+    const inserted = (await sql<{ id: string }>`INSERT INTO campus_model_agent_endpoints(
+        school_id,agent_id,endpoint_kind,provider,user_id,status,effective_from,effective_until,
+        source_domain,source_record_id,source_revision,linked_by_user_id,metadata
+      ) VALUES (
+        ${input.school_id}::uuid,${agent.id}::uuid,'account','thatcampus',${input.user_id}::uuid,'active',
+        ${input.effective_from}::timestamptz,${input.effective_until}::timestamptz,
+        ${input.source_domain},${input.source_record_id},${input.source_revision},
+        ${input.actor_user_id}::uuid,${JSON.stringify(input.metadata)}::jsonb
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!inserted) throw new ConflictException("The account endpoint could not be linked.");
+    const resolved = await this.resolveAccountEndpointIn(
+      transaction,
+      input.school_id,
+      input.user_id,
+      input.effective_from,
+    );
+    if (!resolved.acting) throw new ConflictException("The linked account endpoint is not able to act.");
+    return { ...resolved, replayed: false };
+  }
+
+  async closeAccountEndpoint(
+    transaction: Transaction<Database>,
+    rawInput: HumanAgentAccountEndpointClose,
+  ): Promise<HumanAgentEndpointCloseReceipt> {
+    const input = humanAgentAccountEndpointCloseSchema.parse(rawInput);
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    await sql`SELECT pg_advisory_xact_lock(hashtext(
+      'campus-human-endpoint-transition:'||${input.school_id}::text||':'||${input.idempotency_key}
+    ))`.execute(transaction);
+
+    const replay = (await sql<HumanAgentEndpointTransitionRow & { person_id: string; user_id: string }>`SELECT
+        transition.id,transition.endpoint_id,transition.agent_id,transition.transition_kind,
+        transition.next_status,transition.effective_at,transition.resulting_endpoint_revision,
+        transition.request_hash,agent.person_id,endpoint.user_id
+      FROM campus_model_agent_endpoint_transitions transition
+      JOIN campus_model_agent_endpoints endpoint
+        ON endpoint.id=transition.endpoint_id AND endpoint.school_id=transition.school_id
+      JOIN campus_model_agents agent
+        ON agent.id=transition.agent_id AND agent.school_id=transition.school_id
+      WHERE transition.school_id=${input.school_id}::uuid
+        AND transition.idempotency_key=${input.idempotency_key}
+      FOR SHARE OF transition,endpoint,agent`.execute(transaction)).rows[0];
+    if (replay) {
+      if (replay.request_hash !== requestHash || replay.endpoint_id !== input.endpoint_id
+        || replay.transition_kind !== input.disposition) {
+        throw new ConflictException("This endpoint transition key was already used for different work.");
+      }
+      return {
+        endpoint_id: replay.endpoint_id,
+        agent_id: replay.agent_id,
+        person_id: replay.person_id,
+        user_id: replay.user_id,
+        status: replay.next_status,
+        effective_until: replay.effective_at,
+        revision: replay.resulting_endpoint_revision,
+        transition_id: replay.id,
+        disposition: replay.transition_kind,
+        replayed: true,
+      };
+    }
+
+    const actorAccess = (await sql<{ active_member: boolean; active_admin: boolean }>`SELECT
+      EXISTS(
+        SELECT 1 FROM school_memberships membership JOIN users actor ON actor.id=membership.user_id
+        WHERE membership.school_id=${input.school_id}::uuid
+          AND membership.user_id=${input.actor_user_id}::uuid
+          AND membership.is_active AND actor.is_active
+      ) AS active_member,
+      EXISTS(
+        SELECT 1 FROM school_memberships membership JOIN users actor ON actor.id=membership.user_id
+        WHERE membership.school_id=${input.school_id}::uuid
+          AND membership.user_id=${input.actor_user_id}::uuid
+          AND membership.role='admin' AND membership.is_active AND actor.is_active
+      ) AS active_admin`.execute(transaction)).rows[0]!;
+    if (!actorAccess.active_member) {
+      throw new ConflictException("The identity-linking operator is not active in this institution.");
+    }
+
+    const target = (await sql<HumanAgentEndpointTransitionTargetRow>`SELECT
+        endpoint.id AS endpoint_id,endpoint.agent_id,agent.person_id,endpoint.user_id,
+        endpoint.status,endpoint.effective_from,endpoint.effective_until,endpoint.revision
+      FROM campus_model_agent_endpoints endpoint
+      JOIN campus_model_agents agent ON agent.id=endpoint.agent_id AND agent.school_id=endpoint.school_id
+      WHERE endpoint.school_id=${input.school_id}::uuid AND endpoint.id=${input.endpoint_id}::uuid
+        AND endpoint.endpoint_kind='account' AND endpoint.provider='thatcampus'
+        AND endpoint.user_id IS NOT NULL AND agent.agent_kind='human'
+      FOR UPDATE OF endpoint,agent`.execute(transaction)).rows[0];
+    if (!target) throw new ConflictException("The account endpoint was not found in this institution.");
+    if (target.user_id !== input.actor_user_id && !actorAccess.active_admin) {
+      throw new ConflictException("Only the account owner or an active institution administrator can close this identity endpoint.");
+    }
+    if (target.revision !== input.expected_revision) {
+      throw new ConflictException("This account endpoint changed. Refresh before continuing.");
+    }
+    if (target.status === "revoked") {
+      throw new ConflictException("A revoked account endpoint cannot be changed.");
+    }
+    const effectiveAt = Date.parse(input.effective_at);
+    if (effectiveAt <= new Date(target.effective_from).getTime()) {
+      throw new ConflictException("The account endpoint must end after it became effective.");
+    }
+    if (target.effective_until && effectiveAt > new Date(target.effective_until).getTime()) {
+      throw new ConflictException("The account endpoint already ends before this transition.");
+    }
+    if (input.disposition === "revoked" && effectiveAt > Date.now()) {
+      throw new ConflictException("Schedule a normal endpoint end for a future account replacement; revocation is immediate.");
+    }
+
+    const nextStatus = input.disposition === "revoked" ? "revoked" : target.status;
+    const updated = (await sql<{ revision: number }>`UPDATE campus_model_agent_endpoints SET
+        status=${nextStatus},effective_until=${input.effective_at}::timestamptz,
+        revision=revision+1,updated_at=now()
+      WHERE school_id=${input.school_id}::uuid AND id=${input.endpoint_id}::uuid
+        AND revision=${input.expected_revision}
+      RETURNING revision`.execute(transaction)).rows[0];
+    if (!updated) throw new ConflictException("This account endpoint changed. Refresh before continuing.");
+
+    const transition = (await sql<{ id: string }>`INSERT INTO campus_model_agent_endpoint_transitions(
+        school_id,endpoint_id,agent_id,transition_kind,previous_status,next_status,
+        previous_effective_until,effective_at,resulting_endpoint_revision,reason,
+        source_domain,source_record_id,source_revision,actor_user_id,idempotency_key,request_hash
+      ) VALUES (
+        ${input.school_id}::uuid,${target.endpoint_id}::uuid,${target.agent_id}::uuid,
+        ${input.disposition},${target.status},${nextStatus},${target.effective_until}::timestamptz,
+        ${input.effective_at}::timestamptz,${updated.revision},${input.reason},${input.source_domain},
+        ${input.source_record_id},${input.source_revision},${input.actor_user_id}::uuid,
+        ${input.idempotency_key},${requestHash}
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!transition) throw new ConflictException("The account endpoint transition could not be retained.");
+    return {
+      endpoint_id: target.endpoint_id,
+      agent_id: target.agent_id,
+      person_id: target.person_id,
+      user_id: target.user_id,
+      status: nextStatus,
+      effective_until: input.effective_at,
+      revision: updated.revision,
+      transition_id: transition.id,
+      disposition: input.disposition,
+      replayed: false,
+    };
+  }
+
+  async replaceAccountEndpoint(
+    transaction: Transaction<Database>,
+    rawInput: HumanAgentAccountEndpointReplace,
+  ): Promise<HumanAgentEndpointReplaceReceipt> {
+    const input = humanAgentAccountEndpointReplaceSchema.parse(rawInput);
+    const closed = await this.closeAccountEndpoint(transaction, {
+      school_id: input.school_id,
+      endpoint_id: input.current_endpoint_id,
+      actor_user_id: input.actor_user_id,
+      expected_revision: input.current_expected_revision,
+      effective_at: input.effective_at,
+      disposition: input.current_disposition,
+      reason: input.reason,
+      source_domain: input.source_domain,
+      source_record_id: input.source_record_id,
+      source_revision: input.source_revision,
+      idempotency_key: `${input.idempotency_key}:close`,
+    });
+    const linked = await this.linkAccountEndpoint(transaction, {
+      school_id: input.school_id,
+      person_id: closed.person_id,
+      user_id: input.replacement_user_id,
+      actor_user_id: input.actor_user_id,
+      effective_from: input.effective_at,
+      effective_until: null,
+      source_domain: input.source_domain,
+      source_record_id: input.source_record_id,
+      source_revision: input.source_revision,
+      metadata: {
+        ...input.metadata,
+        replacement_for_endpoint_id: input.current_endpoint_id,
+        replacement_reason: input.reason,
+      },
+    });
+    return { closed, linked, replayed: closed.replayed && linked.replayed };
+  }
 
   async recordAcceptedChange(
     transaction: Transaction<Database>,
@@ -396,15 +833,13 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         message_id: string;
         behaviour_version_id: string;
         subscription_id: string;
-        agent_kind: "human" | "team" | "device" | "integration" | "software";
-        user_id: string | null;
-        external_ref: string | null;
+        recipient_agent_id: string;
+        selector_snapshot: unknown;
       }>`SELECT reaction.id AS reaction_id,message.id AS message_id,
-          reaction.behaviour_version_id,reaction.subscription_id,recipient.agent_kind,
-          recipient.user_id,recipient.external_ref
+          reaction.behaviour_version_id,reaction.subscription_id,
+          reaction.recipient_agent_id,reaction.selector_snapshot
         FROM campus_model_reactions reaction
         JOIN campus_model_operational_messages message ON message.reaction_id=reaction.id
-        JOIN campus_model_agents recipient ON recipient.id=reaction.recipient_agent_id
         WHERE reaction.school_id=${input.school_id}::uuid AND reaction.trigger_event_id=${event.id}::uuid
         ORDER BY reaction.created_at,reaction.id`.execute(transaction)).rows;
       if (existing.length > 0) {
@@ -416,15 +851,19 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
           reaction_ids: existing.map((item) => item.reaction_id),
           message_ids: existing.map((item) => item.message_id),
           deliveries: existing.map((item) => {
-            let recipient: CoordinationRecipientAgentRef;
-            if (item.agent_kind === "human") {
-              recipient = { agent_kind: "human", user_id: item.user_id! };
-            } else {
-              if (item.agent_kind === "team") {
-                throw new ConflictException("Team work cannot be replayed until dated membership is available.");
-              }
-              recipient = { agent_kind: item.agent_kind, external_ref: item.external_ref! };
+            const snapshot = item.selector_snapshot as {
+              input?: { recipient_agents?: unknown[]; resolved_recipient_agent_ids?: unknown[] };
+            };
+            const resolvedIds = snapshot.input?.resolved_recipient_agent_ids;
+            const originalRecipients = snapshot.input?.recipient_agents;
+            if (!Array.isArray(resolvedIds) || !Array.isArray(originalRecipients)) {
+              throw new ConflictException("The retained reaction does not contain its original recipient evidence.");
             }
+            const recipientIndex = resolvedIds.findIndex((agentId) => agentId === item.recipient_agent_id);
+            if (recipientIndex < 0 || recipientIndex >= originalRecipients.length) {
+              throw new ConflictException("The retained reaction recipient does not match its selector evidence.");
+            }
+            const recipient = coordinationRecipientAgentRefSchema.parse(originalRecipients[recipientIndex]);
             return { reaction_id: item.reaction_id, message_id: item.message_id, recipient };
           }),
           replayed: true,
@@ -518,7 +957,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       resolvedRecipients.push(recipient);
     }
     const resolvedRecipientIds = resolvedRecipients.map((recipient) => recipient.id);
-    const recipients = (await sql<AuthorizedRecipientRow>`SELECT agent.id,agent.user_id,agent.agent_kind,agent.external_ref
+    const recipients = (await sql<AuthorizedRecipientRow>`SELECT agent.id,NULL::uuid AS user_id,agent.agent_kind,agent.external_ref
       FROM campus_model_agents agent
       WHERE agent.school_id=${input.school_id}::uuid
         AND agent.id=ANY(${resolvedRecipientIds}::uuid[])
@@ -580,7 +1019,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         scope_entity_id: scope?.id ?? null,
       },
     };
-    const recipientUsers = new Map(recipients.map((recipient) => [recipient.id, recipient.user_id]));
+    const recipientUsers = new Map(resolvedRecipients.map((recipient) => [recipient.id, recipient.user_id]));
     const recipientRefs = new Map(resolvedRecipients.map((recipient, index) => [recipient.id, input.selector_input.recipient_agents[index]!]));
     const reactionIds: string[] = [];
     const messageIds: string[] = [];
@@ -641,21 +1080,34 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       if (!message) throw new ConflictException("The operational message could not be queued.");
 
       const dispatchKey = `campus-model:message:${message.id}:queued`;
+      const dispatchAudience = recipientUsers.get(recipientAgentId)
+        ? [recipientUsers.get(recipientAgentId)!]
+        : [];
+      const dispatchPayload = {
+        message_id: message.id,
+        reaction_id: reaction.id,
+        message_kind: match.message_kind,
+        state: "queued",
+        correlation_id: input.correlation_id,
+        source_outbox_event_id: input.source_outbox_event_id,
+      };
       const dispatch = (await sql<{ id: string }>`INSERT INTO event_outbox(
           school_id,event_type,aggregate_type,aggregate_id,audience_user_ids,payload,idempotency_key
         ) VALUES (
           ${input.school_id}::uuid,'campus.coordination.message_queued','campus_operational_message',
-          ${message.id}::uuid,${recipientUsers.get(recipientAgentId) ? [recipientUsers.get(recipientAgentId)!] : []}::uuid[],
-          ${JSON.stringify({
-            message_id: message.id,
-            reaction_id: reaction.id,
-            message_kind: match.message_kind,
-            state: "queued",
-            correlation_id: input.correlation_id,
-            source_outbox_event_id: input.source_outbox_event_id,
-          })}::jsonb,${dispatchKey}
+          ${message.id}::uuid,${dispatchAudience}::uuid[],${JSON.stringify(dispatchPayload)}::jsonb,${dispatchKey}
         ) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id`.execute(transaction)).rows[0]
-        ?? (await sql<{ id: string }>`SELECT id FROM event_outbox WHERE idempotency_key=${dispatchKey}`.execute(transaction)).rows[0];
+        ?? (await sql<{ id: string }>`SELECT id FROM event_outbox
+          WHERE idempotency_key=${dispatchKey}
+            AND school_id=${input.school_id}::uuid
+            AND event_type='campus.coordination.message_queued'
+            AND aggregate_type='campus_operational_message'
+            AND aggregate_id=${message.id}::uuid
+            AND audience_user_ids=${dispatchAudience}::uuid[]
+            AND payload=${JSON.stringify(dispatchPayload)}::jsonb
+            AND notification_user_ids='{}'::uuid[]
+            AND notification_payload IS NULL
+          FOR UPDATE`.execute(transaction)).rows[0];
       if (!dispatch) throw new ConflictException("The operational message dispatch could not be retained.");
       await sql`UPDATE campus_model_operational_messages
         SET dispatch_outbox_event_id=${dispatch.id}::uuid,updated_at=now()
@@ -690,10 +1142,17 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       FROM campus_model_operational_message_outcomes outcome
       JOIN campus_model_operational_messages message
         ON message.id=outcome.message_id AND message.school_id=outcome.school_id
+      JOIN campus_model_reactions reaction
+        ON reaction.id=message.reaction_id AND reaction.school_id=message.school_id
+      JOIN campus_model_events event
+        ON event.id=reaction.trigger_event_id AND event.school_id=reaction.school_id
       WHERE outcome.school_id=${input.school_id}::uuid
         AND outcome.idempotency_key=${input.idempotency_key}
-        AND outcome.state='responded' AND message.correlation_id=${input.correlation_id}::uuid
-        AND message.recipient_agent_id=${recipient.id}::uuid`.execute(transaction)).rows[0];
+        AND outcome.state='responded' AND message.id=${input.message_id}::uuid
+        AND message.correlation_id=${input.correlation_id}::uuid
+        AND message.recipient_agent_id=${recipient.id}::uuid
+        AND event.source_record_id=${input.expected_source_record_id}
+        AND event.source_revision=${input.expected_source_revision}`.execute(transaction)).rows[0];
     if (replay) {
       return this.recordMessageOutcome(transaction, {
         school_id: input.school_id,
@@ -709,21 +1168,61 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       });
     }
 
-    const open = (await sql<{ message_id: string; state: OperationalMessageRow["state"]; source_revision: number }>`SELECT
-        message.id AS message_id,message.state,event.source_revision
+    const message = (await sql<{
+      message_id: string;
+      state: OperationalMessageRow["state"];
+      source_record_id: string;
+      source_revision: number;
+      selector_snapshot: unknown;
+    }>`SELECT
+        message.id AS message_id,message.state,event.source_record_id,event.source_revision,
+        reaction.selector_snapshot
       FROM campus_model_operational_messages message
       JOIN campus_model_reactions reaction ON reaction.id=message.reaction_id AND reaction.school_id=message.school_id
       JOIN campus_model_events event ON event.id=reaction.trigger_event_id AND event.school_id=reaction.school_id
-      WHERE message.school_id=${input.school_id}::uuid AND message.correlation_id=${input.correlation_id}::uuid
+      WHERE message.school_id=${input.school_id}::uuid AND message.id=${input.message_id}::uuid
+        AND message.correlation_id=${input.correlation_id}::uuid
         AND message.recipient_agent_id=${recipient.id}::uuid
         AND message.state IN ('queued','delivered','acknowledged')
-      ORDER BY message.created_at,message.id
-      FOR UPDATE OF message`.execute(transaction)).rows;
-    if (open.length === 0) throw new ConflictException("No open operational request matches this recipient and correlation.");
-    if (open.length !== 1) throw new ConflictException("More than one open operational request matches this recipient and correlation.");
-    const message = open[0]!;
+      FOR UPDATE OF message`.execute(transaction)).rows[0];
+    if (!message) throw new ConflictException("No open operational request matches this message, recipient and correlation.");
+    if (message.source_record_id !== input.expected_source_record_id) {
+      throw new ConflictException("The operational request does not belong to this source record.");
+    }
     if (message.source_revision !== input.expected_source_revision) {
       throw new ConflictException("The source record changed. Refresh before responding to this request.");
+    }
+    const selectorSnapshot = message.selector_snapshot as {
+      config?: unknown;
+      input?: { scope_entity_id?: unknown };
+    };
+    const selector = coordinationRecipientSelectorConfigSchema.safeParse(selectorSnapshot.config);
+    if (!selector.success) {
+      throw new ConflictException("The operational request has invalid authority evidence.");
+    }
+    const scopeEntityId = selectorSnapshot.input?.scope_entity_id;
+    if (scopeEntityId !== null && scopeEntityId !== undefined
+      && (typeof scopeEntityId !== "string" || !uuid.safeParse(scopeEntityId).success)) {
+      throw new ConflictException("The operational request has invalid scope evidence.");
+    }
+    const currentAuthorityGrants = (await sql<{ id: string }>`SELECT authority.id
+      FROM campus_model_agent_authorities authority
+      WHERE authority.school_id=${input.school_id}::uuid
+        AND authority.agent_id=${recipient.id}::uuid
+        AND authority.capability=${selector.data.required_capability}
+        AND authority.revoked_at IS NULL
+        AND authority.effective_from<=CURRENT_TIMESTAMP
+        AND (authority.effective_until IS NULL OR authority.effective_until>CURRENT_TIMESTAMP)
+        AND (
+          (${selector.data.scope_mode}='institution' AND authority.scope_entity_id IS NULL)
+          OR (${selector.data.scope_mode}='event_scope' AND (
+            authority.scope_entity_id IS NULL
+            OR authority.scope_entity_id=${scopeEntityId ?? null}::uuid
+          ))
+        )
+      FOR SHARE OF authority`.execute(transaction)).rows;
+    if (currentAuthorityGrants.length === 0) {
+      throw new ConflictException("The assigned recipient no longer has the capability required by this request.");
     }
 
     if (message.state === "queued") {
@@ -820,8 +1319,9 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     if (input.actor) {
       actorAgent = await this.resolveAgentReference(transaction, input.school_id, input.actor) ?? null;
       if (!actorAgent) throw new ConflictException("The responding agent is not active in this institution.");
-      if (actorAgent.id !== message.recipient_agent_id) {
-        throw new ConflictException("Only the assigned recipient can acknowledge or respond to this work.");
+      const senderMayCancel = input.state === "cancelled" && actorAgent.id === message.sender_agent_id;
+      if (actorAgent.id !== message.recipient_agent_id && !senderMayCancel) {
+        throw new ConflictException("Only the assigned recipient may act on this work, except that its original sender may cancel it.");
       }
     }
     if (input.source_outbox_event_id) {
@@ -1201,8 +1701,15 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
       LEFT JOIN campus_model_entities subject_entity ON subject_entity.id=occurrence.subject_entity_id
       LEFT JOIN campus_model_entities space_entity ON space_entity.id=occurrence.space_entity_id
+      LEFT JOIN campus_model_agent_endpoints account_endpoint
+        ON account_endpoint.school_id=occurrence.school_id
+        AND account_endpoint.agent_id=occurrence.responsible_agent_id
+        AND account_endpoint.endpoint_kind='account' AND account_endpoint.provider='thatcampus'
+        AND account_endpoint.user_id=${humanUserId}::uuid
+        AND account_endpoint.effective_from<=${input.at}::timestamptz
+        AND (account_endpoint.effective_until IS NULL OR account_endpoint.effective_until>${input.at}::timestamptz)
       LEFT JOIN campus_model_agents agent ON agent.id=occurrence.responsible_agent_id
-        AND agent.user_id=${humanUserId}::uuid
+        AND agent.id=account_endpoint.agent_id
       LEFT JOIN campus_model_entities queried_entity ON queried_entity.school_id=occurrence.school_id
         AND queried_entity.domain=${entityDomain} AND queried_entity.domain_id=${entityDomainId}
       WHERE occurrence.school_id=${input.school_id}::uuid AND occurrence.state='expected'
@@ -1341,23 +1848,21 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     schoolId: string,
     reference: CoordinationRecipientAgentRef,
   ): Promise<AuthorizedRecipientRow | undefined> {
-    return reference.agent_kind === "human"
-      ? (await sql<AuthorizedRecipientRow>`SELECT id,user_id,agent_kind,external_ref
-          FROM campus_model_agents agent
-          WHERE agent.school_id=${schoolId}::uuid AND agent.agent_kind='human'
-            AND agent.user_id=${reference.user_id}::uuid AND agent.status='active'
-            AND EXISTS (
-              SELECT 1 FROM users actor
-              JOIN school_memberships membership ON membership.user_id=actor.id
-              WHERE actor.id=agent.user_id AND actor.is_active
-                AND membership.school_id=agent.school_id AND membership.is_active
-            )
-          FOR SHARE OF agent`.execute(transaction)).rows[0]
-      : (await sql<AuthorizedRecipientRow>`SELECT id,user_id,agent_kind,external_ref
-          FROM campus_model_agents
-          WHERE school_id=${schoolId}::uuid AND agent_kind=${reference.agent_kind}
-            AND external_ref=${reference.external_ref} AND status='active'
-          FOR SHARE`.execute(transaction)).rows[0];
+    if (reference.agent_kind === "human") {
+      const resolved = await this.resolveOrProvisionHumanAgent(
+        transaction,
+        schoolId,
+        reference.user_id,
+      );
+      return resolved.acting
+        ? { id: resolved.agent_id, user_id: resolved.user_id, agent_kind: "human", external_ref: null }
+        : undefined;
+    }
+    return (await sql<AuthorizedRecipientRow>`SELECT id,NULL::uuid AS user_id,agent_kind,external_ref
+      FROM campus_model_agents
+      WHERE school_id=${schoolId}::uuid AND agent_kind=${reference.agent_kind}
+        AND external_ref=${reference.external_ref} AND status='active'
+      FOR SHARE`.execute(transaction)).rows[0];
   }
 
   private async upsertEntity(
@@ -1411,26 +1916,264 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     schoolId: string,
     userId: string,
   ): Promise<AgentRow> {
-    const result = await sql<AgentRow>`
-      INSERT INTO campus_model_agents(school_id,agent_kind,user_id,label,status)
-      SELECT ${schoolId}::uuid,'human',actor.id,
-        COALESCE(NULLIF(trim(concat_ws(' ',actor.first_name,actor.last_name)),''),actor.username),
-        CASE WHEN actor.is_active THEN 'active' ELSE 'revoked' END
-      FROM users actor WHERE actor.id=${userId}::uuid AND EXISTS (
-        SELECT 1 FROM school_memberships membership
-        WHERE membership.school_id=${schoolId}::uuid
-          AND membership.user_id=actor.id AND membership.is_active
-      )
-      ON CONFLICT(school_id,user_id) WHERE agent_kind='human' DO UPDATE SET
-        label=EXCLUDED.label,status=EXCLUDED.status,
-        revision=CASE WHEN campus_model_agents.label IS DISTINCT FROM EXCLUDED.label
-          OR campus_model_agents.status IS DISTINCT FROM EXCLUDED.status
-          THEN campus_model_agents.revision+1 ELSE campus_model_agents.revision END,
-        updated_at=now()
-      RETURNING id`.execute(transaction);
-    const agent = result.rows[0];
-    if (!agent) throw new ConflictException("The acting user could not be registered as a campus agent.");
-    return agent;
+    const resolved = await this.resolveOrProvisionHumanAgent(transaction, schoolId, userId);
+    if (!resolved.acting) {
+      throw new ConflictException(this.humanAgentResolutionMessage(resolved.reason));
+    }
+    return { id: resolved.agent_id };
+  }
+
+  private async resolveOrProvisionHumanAgent(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    userId: string,
+  ): Promise<HumanAgentIdentityResolution> {
+    const now = new Date().toISOString();
+    let resolved = await this.resolveAccountEndpointIn(transaction, schoolId, userId, now);
+    if (resolved.acting || resolved.reason !== "account_not_linked") return resolved;
+
+    await sql`SELECT pg_advisory_xact_lock(hashtext(
+      'campus-human-agent:'||${schoolId}::text||':'||${userId}::text
+    ))`.execute(transaction);
+    resolved = await this.resolveAccountEndpointIn(transaction, schoolId, userId, now);
+    if (resolved.acting || resolved.reason !== "account_not_linked") return resolved;
+
+    const account = (await sql<HumanAgentBootstrapAccountRow>`SELECT
+        account.is_active,
+        EXISTS(SELECT 1 FROM school_memberships membership
+          WHERE membership.school_id=${schoolId}::uuid AND membership.user_id=account.id
+            AND membership.is_active) AS active_member
+      FROM users account WHERE account.id=${userId}::uuid FOR SHARE`.execute(transaction)).rows[0];
+    if (!account) return this.nonActing(schoolId, null, userId, null, "account_not_linked");
+    if (!account.is_active) return this.nonActing(schoolId, null, userId, null, "account_inactive");
+    if (!account.active_member) return this.nonActing(schoolId, null, userId, null, "membership_inactive");
+
+    const candidates = (await sql<ExplicitPersonCandidateRow>`SELECT person_id,
+        array_agg(source_kind ORDER BY source_kind)::text[] AS source_kinds
+      FROM (
+        SELECT student.person_id,'student_profile'::text AS source_kind FROM students student
+        WHERE student.school_id=${schoolId}::uuid AND student.user_id=${userId}::uuid
+        UNION ALL
+        SELECT profile.person_id,'guardian_profile'::text FROM parents parent
+        JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+        WHERE profile.school_id=${schoolId}::uuid AND parent.user_id=${userId}::uuid
+        UNION ALL
+        SELECT profile.person_id,'staff_profile'::text FROM staff_profiles profile
+        WHERE profile.school_id=${schoolId}::uuid AND profile.user_id=${userId}::uuid
+        UNION ALL
+        SELECT appointment.person_id,'governance_appointment'::text
+        FROM institution_governance_appointments appointment
+        WHERE appointment.school_id=${schoolId}::uuid AND appointment.linked_user_id=${userId}::uuid
+      ) candidate GROUP BY person_id ORDER BY person_id`.execute(transaction)).rows;
+    if (candidates.length > 1) {
+      throw new ConflictException("The campus account is explicitly linked to more than one person; review it before acting.");
+    }
+
+    const personId = candidates[0]?.person_id;
+    if (!personId) {
+      // The Model Core never manufactures People-domain identity. Auth/People must
+      // establish an explicit account-to-person record before this account can act.
+      return this.nonActing(schoolId, null, userId, null, "profile_unlinked");
+    }
+
+    const mayAct = (await sql<{ found: boolean }>`SELECT EXISTS(
+      SELECT 1 FROM school_memberships membership
+      WHERE membership.school_id=${schoolId}::uuid AND membership.user_id=${userId}::uuid
+        AND membership.is_active AND (
+          membership.role='admin'
+          OR (membership.role='staff' AND EXISTS(
+            SELECT 1 FROM staff_profiles profile
+            WHERE profile.school_id=membership.school_id AND profile.user_id=membership.user_id
+              AND profile.person_id=${personId}::uuid AND profile.status='active'
+          ))
+          OR (membership.role='student' AND EXISTS(
+            SELECT 1 FROM students student
+            WHERE student.school_id=membership.school_id AND student.user_id=membership.user_id
+              AND student.person_id=${personId}::uuid
+          ))
+          OR (membership.role='guardian' AND EXISTS(
+            SELECT 1 FROM parents parent
+            JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+            WHERE profile.school_id=membership.school_id AND parent.user_id=membership.user_id
+              AND profile.person_id=${personId}::uuid
+          ))
+        )
+    ) AS found`.execute(transaction)).rows[0]!.found;
+    if (!mayAct) return this.nonActing(schoolId, personId, userId, null, "profile_unlinked");
+
+    const linked = await this.linkAccountEndpoint(transaction, {
+      school_id: schoolId,
+      person_id: personId,
+      user_id: userId,
+      actor_user_id: userId,
+      effective_from: now,
+      effective_until: null,
+      source_domain: "auth",
+      source_record_id: userId,
+      source_revision: 1,
+      metadata: { bootstrap: "explicit_identity", identity_sources: candidates[0]!.source_kinds },
+    });
+    return linked;
+  }
+
+  private async resolveAccountEndpointIn(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    userId: string,
+    at: string,
+  ): Promise<HumanAgentIdentityResolution> {
+    const resolved = (await sql<HumanAgentEndpointRow>`WITH explicit_person AS (
+        SELECT student.person_id FROM students student
+        WHERE student.school_id=${schoolId}::uuid AND student.user_id=${userId}::uuid
+        UNION
+        SELECT profile.person_id FROM parents parent
+        JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+        WHERE profile.school_id=${schoolId}::uuid AND parent.user_id=${userId}::uuid
+        UNION
+        SELECT profile.person_id FROM staff_profiles profile
+        WHERE profile.school_id=${schoolId}::uuid AND profile.user_id=${userId}::uuid
+        UNION
+        SELECT appointment.person_id FROM institution_governance_appointments appointment
+        WHERE appointment.school_id=${schoolId}::uuid AND appointment.linked_user_id=${userId}::uuid
+      ) SELECT
+        agent.id AS agent_id,agent.school_id,agent.person_id,agent.label,
+        endpoint.id AS endpoint_id,endpoint.user_id,endpoint.effective_from,endpoint.effective_until
+      FROM campus_model_agent_endpoints endpoint
+      JOIN campus_model_agents agent ON agent.id=endpoint.agent_id AND agent.school_id=endpoint.school_id
+      JOIN users account ON account.id=endpoint.user_id
+      WHERE endpoint.school_id=${schoolId}::uuid AND endpoint.endpoint_kind='account'
+        AND endpoint.provider='thatcampus' AND endpoint.user_id=${userId}::uuid
+        AND (
+          endpoint.status='active'
+          OR (endpoint.status='revoked' AND EXISTS(
+            SELECT 1 FROM campus_model_agent_endpoint_transitions transition
+            WHERE transition.school_id=endpoint.school_id AND transition.endpoint_id=endpoint.id
+              AND transition.transition_kind='revoked' AND transition.effective_at>${at}::timestamptz
+          ))
+        )
+        AND agent.agent_kind='human' AND agent.status='active'
+        AND endpoint.effective_from<=${at}::timestamptz
+        AND (endpoint.effective_until IS NULL OR endpoint.effective_until>${at}::timestamptz)
+        AND account.is_active
+        AND NOT EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id<>agent.person_id)
+        AND EXISTS (
+          SELECT 1 FROM users member_account
+          JOIN school_memberships membership ON membership.user_id=member_account.id
+          WHERE member_account.id=endpoint.user_id
+            AND membership.school_id=endpoint.school_id AND membership.user_id=endpoint.user_id
+            AND membership.is_active
+            AND (
+              membership.role='admin'
+              OR (membership.role='staff' AND EXISTS(
+                SELECT 1 FROM staff_profiles profile
+                WHERE profile.school_id=endpoint.school_id AND profile.user_id=endpoint.user_id
+                  AND profile.person_id=agent.person_id AND profile.status='active'
+              ))
+              OR (membership.role='student' AND EXISTS(
+                SELECT 1 FROM students student
+                WHERE student.school_id=endpoint.school_id AND student.user_id=endpoint.user_id
+                  AND student.person_id=agent.person_id
+              ))
+              OR (membership.role='guardian' AND EXISTS(
+                SELECT 1 FROM parents parent
+                JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+                WHERE profile.school_id=endpoint.school_id AND parent.user_id=endpoint.user_id
+                  AND profile.person_id=agent.person_id
+              ))
+            )
+        )
+      ORDER BY endpoint.effective_from DESC,endpoint.id DESC LIMIT 1
+      FOR SHARE OF endpoint,agent,account`.execute(transaction)).rows[0];
+    if (resolved) return { acting: true, ...resolved };
+
+    const diagnostic = (await sql<HumanAgentEndpointDiagnosticRow>`WITH explicit_person AS (
+        SELECT student.person_id FROM students student
+        WHERE student.school_id=${schoolId}::uuid AND student.user_id=${userId}::uuid
+        UNION
+        SELECT profile.person_id FROM parents parent
+        JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+        WHERE profile.school_id=${schoolId}::uuid AND parent.user_id=${userId}::uuid
+        UNION
+        SELECT profile.person_id FROM staff_profiles profile
+        WHERE profile.school_id=${schoolId}::uuid AND profile.user_id=${userId}::uuid
+        UNION
+        SELECT appointment.person_id FROM institution_governance_appointments appointment
+        WHERE appointment.school_id=${schoolId}::uuid AND appointment.linked_user_id=${userId}::uuid
+      ) SELECT
+        agent.id AS agent_id,agent.person_id,endpoint.user_id,
+        ((endpoint.status='active' OR (endpoint.status='revoked' AND EXISTS(
+            SELECT 1 FROM campus_model_agent_endpoint_transitions transition
+            WHERE transition.school_id=endpoint.school_id AND transition.endpoint_id=endpoint.id
+              AND transition.transition_kind='revoked' AND transition.effective_at>${at}::timestamptz
+          ))) AND agent.status='active'
+          AND endpoint.effective_from<=${at}::timestamptz
+          AND (endpoint.effective_until IS NULL OR endpoint.effective_until>${at}::timestamptz)) AS endpoint_active,
+        account.is_active AS account_active,
+        EXISTS(SELECT 1 FROM school_memberships membership
+          WHERE membership.school_id=endpoint.school_id AND membership.user_id=endpoint.user_id
+            AND membership.is_active) AS membership_active,
+        NOT EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id<>agent.person_id)
+        AND EXISTS(
+          SELECT 1 FROM school_memberships membership
+          WHERE membership.school_id=endpoint.school_id AND membership.user_id=endpoint.user_id
+            AND membership.is_active
+            AND (
+              membership.role='admin'
+              OR (membership.role='staff' AND EXISTS(
+                SELECT 1 FROM staff_profiles profile
+                WHERE profile.school_id=endpoint.school_id AND profile.user_id=endpoint.user_id
+                  AND profile.person_id=agent.person_id AND profile.status='active'
+              ))
+              OR (membership.role='student' AND EXISTS(
+                SELECT 1 FROM students student
+                WHERE student.school_id=endpoint.school_id AND student.user_id=endpoint.user_id
+                  AND student.person_id=agent.person_id
+              ))
+              OR (membership.role='guardian' AND EXISTS(
+                SELECT 1 FROM parents parent
+                JOIN guardian_school_profiles profile ON profile.guardian_id=parent.id
+                WHERE profile.school_id=endpoint.school_id AND parent.user_id=endpoint.user_id
+                  AND profile.person_id=agent.person_id
+              ))
+            )
+        ) AS profile_linked
+      FROM campus_model_agent_endpoints endpoint
+      JOIN campus_model_agents agent ON agent.id=endpoint.agent_id AND agent.school_id=endpoint.school_id
+      JOIN users account ON account.id=endpoint.user_id
+      WHERE endpoint.school_id=${schoolId}::uuid AND endpoint.endpoint_kind='account'
+        AND endpoint.provider='thatcampus' AND endpoint.user_id=${userId}::uuid
+      ORDER BY endpoint.effective_from DESC,endpoint.id DESC LIMIT 1
+      FOR SHARE OF endpoint,agent,account`.execute(transaction)).rows[0];
+    if (!diagnostic) return this.nonActing(schoolId, null, userId, null, "account_not_linked");
+    let reason: NonActingHumanAgentReason;
+    if (!diagnostic.account_active) reason = "account_inactive";
+    else if (!diagnostic.membership_active) reason = "membership_inactive";
+    else if (!diagnostic.profile_linked) reason = "profile_unlinked";
+    else reason = "endpoint_inactive";
+    return this.nonActing(schoolId, diagnostic.person_id, userId, diagnostic.agent_id, reason);
+  }
+
+  private nonActing(
+    schoolId: string,
+    personId: string | null,
+    userId: string | null,
+    agentId: string | null,
+    reason: NonActingHumanAgentReason,
+  ): HumanAgentIdentityResolution {
+    return { acting: false, school_id: schoolId, person_id: personId, user_id: userId, agent_id: agentId, reason };
+  }
+
+  private humanAgentResolutionMessage(reason: NonActingHumanAgentReason): string {
+    const messages: Record<NonActingHumanAgentReason, string> = {
+      person_not_found: "The campus person could not be found.",
+      agent_not_registered: "This person is not registered as an acting campus agent.",
+      account_not_linked: "The account is not linked to a campus person agent.",
+      endpoint_inactive: "The account endpoint is not active at this time.",
+      account_inactive: "The linked account is inactive.",
+      membership_inactive: "The linked account has no active institution membership.",
+      profile_unlinked: "The account membership is not linked to the required campus person profile.",
+    };
+    return messages[reason];
   }
 
   private async requireAuthorizedExternalAgent(

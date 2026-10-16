@@ -66,12 +66,22 @@ function timeLabel(value: string | null, timezone: string) {
   }).format(date);
 }
 
-function RequestRow({ item, timezone, returnTo }: { item: RequestInboxItem; timezone: string; returnTo: string }) {
+function actionHref(item: RequestInboxItem, portal: RequestPortal) {
+  if (item.kind !== "staff_leave_review") return item.href;
+  const target = new URL(item.href, window.location.origin);
+  target.pathname = "/work/staff-leave";
+  if (!target.searchParams.has("request")) target.searchParams.set("request", item.source_id);
+  target.searchParams.set("context", portal);
+  return `${target.pathname}${target.search}${target.hash}`;
+}
+
+function RequestRow({ item, timezone, returnTo, portal }: { item: RequestInboxItem; timezone: string; returnTo: string; portal: RequestPortal }) {
   const meta = categoryMeta[item.category];
   const Icon = meta.icon;
   const due = timeLabel(item.due_at, timezone);
+  const href = actionHref(item, portal);
   return (
-    <Link className={`request-row request-row--${item.priority}`} to={item.href} state={portalReturnState(returnTo, item.href)}>
+    <Link className={`request-row request-row--${item.priority}`} to={href} state={portalReturnState(returnTo, href)}>
       <span className="request-row__icon" aria-hidden="true"><Icon size={19} /></span>
       <span className="request-row__body">
         <span className="request-row__eyebrow">
@@ -121,7 +131,7 @@ export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
         if (!items.length) return null;
         return <section className={`request-stack request-stack--${stack.id}`} key={stack.id} aria-labelledby={`request-stack-${stack.id}`}>
           <header><h2 id={`request-stack-${stack.id}`}>{stack.title}</h2><span aria-label={`${items.length} ${items.length === 1 ? "item" : "items"}`}>{items.length}</span></header>
-          <div className="request-stack__list">{items.map((item) => <RequestRow key={item.id} item={item} timezone={data.scope.timezone} returnTo={returnTo} />)}</div>
+          <div className="request-stack__list">{items.map((item) => <RequestRow key={item.id} item={item} timezone={data.scope.timezone} returnTo={returnTo} portal={data.portal} />)}</div>
         </section>;
       })}
     </div> : <section className="requests-empty" role="status"><BookOpenCheck size={28} aria-hidden="true" /><h2>Nothing needs your attention</h2><p>{category === "all" ? "New requests will appear here when you need to respond." : `There are no ${categoryMeta[category].label.toLowerCase()} requests right now.`}</p></section>}

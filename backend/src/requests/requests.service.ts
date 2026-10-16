@@ -1,9 +1,22 @@
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
-import { sql } from "kysely";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
+import { sql, type Transaction } from "kysely";
 import { z } from "zod";
 import { attendanceWorkspace, type AttendanceClassWorkspace } from "../attendance/attendance-workspace.js";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
+import type { Database } from "../database/types.js";
+import {
+  GOVERNANCE_DECISION_AUTHORITY_PORT,
+  type GovernanceDecisionAuthorityPort,
+} from "../governance/decision-authority.port.js";
 import { effectiveSchoolAccess } from "../roles/authorization.js";
 import { safeguardingReportAttentionHref } from "../chat/chat-links.js";
 export { safeguardingReportAttentionHref } from "../chat/chat-links.js";
@@ -249,7 +262,36 @@ export function principalAttendanceExceptionItems(
 
 @Injectable()
 export class RequestsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Optional()
+    @Inject(GOVERNANCE_DECISION_AUTHORITY_PORT)
+    private readonly decisionAuthority?: GovernanceDecisionAuthorityPort,
+  ) {}
+
+  private async canReviewStaffLeave(
+    user: AuthUser,
+    schoolId: string,
+    transaction: Transaction<Database>,
+  ): Promise<boolean> {
+    const decisionAuthority = this.decisionAuthority;
+    if (!decisionAuthority) return false;
+    try {
+      await decisionAuthority.assertDecisionAuthority(
+        transaction,
+        schoolId,
+        "staff_leave_decision",
+        user.id,
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException
+        || error instanceof ConflictException
+        || error instanceof NotFoundException) return false;
+      throw error;
+    }
+  }
 
   async canReadCommunication(user: AuthUser, schoolId: string): Promise<boolean> {
     const access = await effectiveSchoolAccess(this.db, user.id, schoolId, "messages.view");
@@ -1312,12 +1354,39 @@ export class RequestsService {
     ];
   }
 
+  private async staffLeaveDecisionItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
+    return this.db.transaction().execute(async (transaction) => {
+      const canReview = await this.canReviewStaffLeave(user, scope.school_id, transaction);
+      if (!canReview) return [];
+      const result = await sql<StaffActionRow>`
+        SELECT request.id,concat(profile.first_name,' ',profile.last_name,' · ',policy.name)::text AS title,
+          concat(to_char(request.starts_on,'DD Mon'),'–',to_char(request.ends_on,'DD Mon'),' · ',request.reason)::text AS detail,
+          'Leave decision needed'::text AS status_label,request.starts_on AS due_at,
+          request.submitted_at AS occurs_at,request.created_at,
+          (request.starts_on<=((now() AT TIME ZONE ${scope.timezone})::date+1))::boolean AS urgent,
+          profile.designation AS subject_label
+        FROM staff_leave_requests request
+        JOIN staff_profiles profile ON profile.id=request.staff_profile_id
+        JOIN staff_leave_policies policy ON policy.id=request.policy_id
+        WHERE request.school_id=${scope.school_id}::uuid AND request.status='submitted'
+        ORDER BY request.starts_on,request.id
+      `.execute(transaction);
+      return result.rows.map((row) => this.item(row, {
+        kind: "staff_leave_review",
+        category: "leave",
+        action_label: "Review leave",
+        href: `/work/staff-leave?school=${encodeURIComponent(scope.school_id)}&request=${encodeURIComponent(row.id)}`,
+      }));
+    });
+  }
+
   private async teacherItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
-    const [profile, canReadCommunication] = await Promise.all([
+    const [profile, canReadCommunication, leave] = await Promise.all([
       this.db.selectFrom("staff_profiles").select("id")
         .where("school_id", "=", scope.school_id).where("user_id", "=", user.id)
         .where("status", "=", "active").executeTakeFirst(),
       this.canReadCommunication(user, scope.school_id),
+      this.staffLeaveDecisionItems(user, scope),
     ]);
     const [notices, assignments, coverage, trips, swaps, assessments, policies] = await Promise.all([
       canReadCommunication ? sql<StaffActionRow>`
@@ -1439,10 +1508,13 @@ export class RequestsService {
       ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap", category: "transport", action_label: "Respond", href: `/teacher/transport?swap=${encodeURIComponent(row.id)}` })),
       ...assessments.rows.map((row) => this.item(row, { kind: "assessment_work", category: "academics", action_label: "Open assessment", href: `/teacher/assessments?assessment=${encodeURIComponent(row.id)}` })),
       ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: `/teacher/policies?policy=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
+      ...leave,
     ];
   }
 
   private async principalItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
+    return this.db.transaction().execute(async (transaction) => {
+    const canReviewStaffLeave = await this.canReviewStaffLeave(user, scope.school_id, transaction);
     const [notices, noticeExceptions, leave, departure, swaps, fees, policies, assessments, continuity, concerns] = await Promise.all([
       sql<StaffActionRow>`
         SELECT notice.id,notice.title,
@@ -1458,7 +1530,7 @@ export class RequestsService {
           AND notice.status='published' AND notice.response_mode<>'information' AND recipient.responded_at IS NULL
           AND (notice.due_at IS NULL OR notice.due_at>=now())
         ORDER BY notice.due_at,notice.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT notice.id,notice.title,
           concat_ws(' · ',
@@ -1475,7 +1547,7 @@ export class RequestsService {
         HAVING count(*) FILTER (WHERE latest.status='failed')>0
           OR (notice.response_mode<>'information' AND notice.due_at<now() AND count(*) FILTER (WHERE recipient.responded_at IS NULL)>0)
         ORDER BY notice.due_at NULLS LAST,notice.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT request.id,concat(profile.first_name,' ',profile.last_name,' · ',policy.name)::text AS title,
           concat(to_char(request.starts_on,'DD Mon'),'–',to_char(request.ends_on,'DD Mon'),' · ',request.reason)::text AS detail,
@@ -1487,8 +1559,9 @@ export class RequestsService {
         JOIN staff_profiles profile ON profile.id=request.staff_profile_id
         JOIN staff_leave_policies policy ON policy.id=request.policy_id
         WHERE request.school_id=${scope.school_id}::uuid AND request.status='submitted'
+          AND ${canReviewStaffLeave}
         ORDER BY request.starts_on,request.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT request.id,concat(person.first_name,' ',person.last_name)::text AS title,
           concat('Change to ',replace(request.requested_mode,'_',' '),' · ',request.reason)::text AS detail,
@@ -1503,7 +1576,7 @@ export class RequestsService {
         LEFT JOIN class_sections section ON section.id=enrollment.class_section_id
         WHERE request.school_id=${scope.school_id}::uuid AND request.status='submitted'
         ORDER BY request.service_date,request.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT swap.id,'Transport duty change'::text AS title,
           concat(requester.first_name,' ',requester.last_name,' ↔ ',target.first_name,' ',target.last_name,' · ',swap.reason)::text AS detail,
@@ -1518,7 +1591,7 @@ export class RequestsService {
         JOIN transport_routes route ON route.id=trip.route_id
         WHERE swap.school_id=${scope.school_id}::uuid AND swap.status='accepted'
         ORDER BY trip.service_date,swap.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT request.id,invoice.id AS target_id,concat('Payment review · ',invoice.reference)::text AS title,
           concat(person.first_name,' ',person.last_name,' · ',request.note)::text AS detail,
@@ -1532,7 +1605,7 @@ export class RequestsService {
         LEFT JOIN fee_review_decisions decision ON decision.request_id=request.id
         WHERE request.school_id=${scope.school_id}::uuid AND decision.id IS NULL
         ORDER BY invoice.due_on,request.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT version.id,family.id AS target_id,version.title,version.summary AS detail,
           'Policy review needed'::text AS status_label,version.review_due_on AS due_at,
@@ -1543,7 +1616,7 @@ export class RequestsService {
         JOIN institution_policy_families family ON family.id=version.family_id
         WHERE version.school_id=${scope.school_id}::uuid AND version.status='in_review'
         ORDER BY version.submitted_at,version.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT assessment.id,assessment.title,
           concat('Class ',section.grade,section.section,' · ',subject.name)::text AS detail,
@@ -1556,7 +1629,7 @@ export class RequestsService {
         JOIN subjects subject ON subject.id=assessment.subject_id
         WHERE assessment.school_id=${scope.school_id}::uuid AND assessment.status='submitted'
         ORDER BY assessment.scheduled_at NULLS LAST,assessment.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT review.id,'Attendance entry needs review'::text AS title,review.reason AS detail,
           'Reconciliation needed'::text AS status_label,batch.date AS due_at,
@@ -1567,7 +1640,7 @@ export class RequestsService {
         JOIN class_sections section ON section.id=batch.class_section_id
         WHERE review.school_id=${scope.school_id}::uuid AND review.state='open'
         ORDER BY review.opened_at,review.id
-      `.execute(this.db),
+      `.execute(transaction),
       sql<StaffActionRow>`
         SELECT report.id,'Student concern report'::text AS title,report.reason AS detail,
           CASE report.status WHEN 'open' THEN 'Review needed' ELSE 'Follow-up needed' END::text AS status_label,
@@ -1578,12 +1651,12 @@ export class RequestsService {
         JOIN chat_conversations conversation ON conversation.id=message.conversation_id
         WHERE conversation.school_id=${scope.school_id}::uuid AND report.status IN ('open','under_review')
         ORDER BY (report.status='open') DESC,report.created_at,report.id
-      `.execute(this.db),
+      `.execute(transaction),
     ]);
     return [
       ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/principal/notices/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
       ...noticeExceptions.rows.map((row) => this.item(row, { kind: "notice_exception", category: "communication", action_label: "Review notice", href: principalNoticeAttentionHref(row.id) }, "urgent")),
-      ...leave.rows.map((row) => this.item(row, { kind: "staff_leave_review", category: "leave", action_label: "Review leave", href: `/principal/staff?section=leave&request=${encodeURIComponent(row.id)}` })),
+      ...leave.rows.map((row) => this.item(row, { kind: "staff_leave_review", category: "leave", action_label: "Review leave", href: `/work/staff-leave?school=${encodeURIComponent(scope.school_id)}&request=${encodeURIComponent(row.id)}` })),
       ...departure.rows.map((row) => this.item(row, { kind: "departure_change", category: "transport", action_label: "Review change", href: `/principal/departure?section=requests&request=${encodeURIComponent(row.id)}` })),
       ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap_approval", category: "transport", action_label: "Review duty change", href: `/principal/departure?section=roster&swap=${encodeURIComponent(row.id)}` })),
       ...fees.rows.map((row) => this.item(row, { kind: "fee_review", category: "finance", action_label: "Review payment", href: `/principal/fees?view=review&review=${encodeURIComponent(row.id)}` })),
@@ -1592,5 +1665,6 @@ export class RequestsService {
       ...continuity.rows.map((row) => this.item(row, { kind: "attendance_reconciliation", category: "attendance", action_label: "Review entry", href: `/principal/attendance?review_case=${encodeURIComponent(row.id)}` }, "urgent")),
       ...concerns.rows.map((row) => this.item(row, { kind: "student_concern", category: "care", action_label: "Review concern", href: safeguardingReportAttentionHref("principal", row.id) })),
     ];
+    });
   }
 }

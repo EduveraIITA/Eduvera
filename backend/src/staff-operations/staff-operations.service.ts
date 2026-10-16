@@ -1,5 +1,6 @@
 import { issueInvitationCode } from '../common/invitation-code.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
@@ -7,6 +8,7 @@ import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { accessRoleCatalogue, staffRoleAssignments } from "../roles/access-roles.service.js";
 import { roleOptions } from "../roles/scoped-role-policy.js";
+import { StaffLeaveModelBridgeService } from "./staff-leave-model-bridge.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type MembershipRole = "staff" | "admin";
@@ -60,13 +62,85 @@ const coveragePolicyInput = z.object({
   supervisor_staff_profile_id: uuid.nullable().default(null),
   expected_revision: z.number().int().nonnegative(),
 });
-export { profileInput, policyInput, assignmentInput, coveragePolicyInput };
+const requestLeaveInput = z.object({
+  policy_id: uuid,
+  starts_on: date,
+  ends_on: date,
+  portion: z.enum(["full_day", "first_half", "second_half"]).default("full_day"),
+  reason: z.string().trim().min(8).max(1000),
+  handover_note: z.string().trim().max(1000).default(""),
+  command_id: uuid,
+}).strict();
+const decideLeaveInput = z.object({
+  decision: z.enum(["approved", "rejected"]),
+  note: z.string().trim().max(1000).default(""),
+  expected_revision: z.number().int().positive(),
+  command_id: uuid,
+}).strict();
+const withdrawLeaveInput = z.object({
+  expected_revision: z.number().int().positive(),
+  command_id: uuid,
+}).strict();
+
+type StaffLeaveCommandType = "submit" | "decide" | "withdraw";
+type RetainedOutboxEvent = {
+  id: string;
+  school_id: string;
+  event_type: string;
+  aggregate_type: string;
+  aggregate_id: string;
+  payload_matches: boolean;
+  audience_matches: boolean;
+  notification_users_match: boolean;
+  notification_payload_matches: boolean;
+};
+type StaffLeaveCommandEvidence = {
+  correlation_id: string;
+  causation_event_id: string | null;
+  authority_receipt: Record<string, unknown> | null;
+  coordination_receipt: Record<string, unknown> | null;
+};
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, canonicalJson(nested)]));
+  }
+  return value;
+}
+
+export function staffLeaveCommandHash(operation: StaffLeaveCommandType, targetRequestId: string | null, input: unknown) {
+  return createHash("sha256").update(JSON.stringify(canonicalJson({ operation, target_request_id: targetRequestId, input }))).digest("hex");
+}
+
+export function assertRetainedStaffLeaveOutbox(
+  retained: RetainedOutboxEvent | undefined,
+  expected: Omit<RetainedOutboxEvent, "id" | "payload_matches" | "audience_matches" | "notification_users_match" | "notification_payload_matches">,
+) {
+  if (!retained || retained.school_id !== expected.school_id || retained.event_type !== expected.event_type
+    || retained.aggregate_type !== expected.aggregate_type || retained.aggregate_id !== expected.aggregate_id
+    || !retained.payload_matches || !retained.audience_matches
+    || !retained.notification_users_match || !retained.notification_payload_matches) {
+    throw new ConflictException("The retained outbox key belongs to different event details.");
+  }
+  return retained.id;
+}
+
+export {
+  profileInput, policyInput, assignmentInput, coveragePolicyInput,
+  requestLeaveInput, decideLeaveInput, withdrawLeaveInput,
+};
 
 @Injectable()
 export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
   private coverageTimer?: ReturnType<typeof setInterval>;
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly staffLeaveModel: StaffLeaveModelBridgeService,
+  ) {}
 
   onModuleInit() {
     this.coverageTimer = setInterval(() => {
@@ -92,6 +166,27 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
     return this.membership(user, schoolId, ["admin"], db);
   }
 
+  private async canReviewStaffLeave(
+    user: AuthUser,
+    schoolId: string,
+    transaction: Transaction<Database>,
+  ) {
+    try {
+      await this.staffLeaveModel.assertDecisionAuthority(
+        transaction,
+        schoolId,
+        user.id,
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException
+        || error instanceof ConflictException
+        || error instanceof NotFoundException) return false;
+      throw error;
+    }
+  }
+
   private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetId: string, metadata: Record<string, unknown> = {}) {
     await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
       VALUES (${schoolId}::uuid,${user.id}::uuid,${action},${targetId}::uuid,${JSON.stringify(metadata)}::jsonb)`.execute(db);
@@ -99,12 +194,120 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
 
   private async enqueue(db: Transaction<Database>, schoolId: string, requestId: string, event: string, audience: string[], notificationUsers: string[], notification: Record<string, unknown> | null, payload: Record<string, unknown>, aggregateType = "staff_leave_request") {
     const revision = typeof payload.revision === "number" ? payload.revision : 1;
-    await db.insertInto("event_outbox").values({
+    const idempotencyKey = `${event}:${requestId}:${revision}`;
+    const exactAudience = [...new Set(audience)].sort();
+    const exactNotificationUsers = [...new Set(notificationUsers)].sort();
+    const inserted = await db.insertInto("event_outbox").values({
       school_id: schoolId, event_type: event, aggregate_type: aggregateType, aggregate_id: requestId,
-      audience_user_ids: [...new Set(audience)], payload,
-      idempotency_key: `${event}:${requestId}:${revision}`,
-      notification_user_ids: [...new Set(notificationUsers)], notification_payload: notification as any,
-    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
+      audience_user_ids: exactAudience, payload,
+      idempotency_key: idempotencyKey,
+      notification_user_ids: exactNotificationUsers, notification_payload: notification as any,
+    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing())
+      .returning("id").executeTakeFirst();
+    if (inserted) return inserted.id;
+    const retained = (await sql<RetainedOutboxEvent>`SELECT id,school_id,event_type,aggregate_type,aggregate_id,
+        payload=${JSON.stringify(payload)}::jsonb AS payload_matches,
+        audience_user_ids=${exactAudience}::uuid[] AS audience_matches,
+        notification_user_ids=${exactNotificationUsers}::uuid[] AS notification_users_match,
+        notification_payload IS NOT DISTINCT FROM ${notification ? JSON.stringify(notification) : null}::jsonb
+          AS notification_payload_matches
+      FROM event_outbox WHERE idempotency_key=${idempotencyKey} FOR UPDATE`.execute(db)).rows[0];
+    return assertRetainedStaffLeaveOutbox(retained, {
+      school_id: schoolId,
+      event_type: event,
+      aggregate_type: aggregateType,
+      aggregate_id: requestId,
+    });
+  }
+
+  private async priorLeaveCommand<T>(
+    db: Transaction<Database>,
+    schoolId: string,
+    actorId: string,
+    commandId: string,
+    commandType: StaffLeaveCommandType,
+    requestHash: string,
+  ) {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`staff-leave:${schoolId}:${actorId}:${commandId}`},0))`.execute(db);
+    const prior = (await sql<{
+      command_type: StaffLeaveCommandType;
+      request_hash: string;
+      result: T;
+      target_request_id: string;
+      outbox_event_id: string;
+      correlation_id: string;
+      causation_event_id: string | null;
+      authority_receipt: Record<string, unknown> | null;
+      coordination_receipt: Record<string, unknown> | null;
+    }>`SELECT command_type,request_hash,result,target_request_id,outbox_event_id,
+        correlation_id,causation_event_id,authority_receipt,coordination_receipt
+      FROM staff_leave_commands
+      WHERE school_id=${schoolId}::uuid AND actor_id=${actorId}::uuid AND command_id=${commandId}::uuid`.execute(db)).rows[0];
+    if (!prior) return null;
+    if (prior.command_type !== commandType || prior.request_hash !== requestHash) {
+      throw new ConflictException("This command ID was already used for different leave details.");
+    }
+    return prior;
+  }
+
+  private async saveLeaveCommand(
+    db: Transaction<Database>,
+    schoolId: string,
+    actorId: string,
+    commandId: string,
+    commandType: StaffLeaveCommandType,
+    targetRequestId: string,
+    requestHash: string,
+    result: unknown,
+    outboxEventId: string,
+    evidence: StaffLeaveCommandEvidence,
+  ) {
+    await sql`INSERT INTO staff_leave_commands(
+        school_id,actor_id,command_id,command_type,target_request_id,request_hash,result,outbox_event_id,
+        correlation_id,causation_event_id,authority_receipt,coordination_receipt
+      ) VALUES(
+        ${schoolId}::uuid,${actorId}::uuid,${commandId}::uuid,${commandType},${targetRequestId}::uuid,
+        ${requestHash},${JSON.stringify(result)}::jsonb,${outboxEventId}::uuid,
+        ${evidence.correlation_id}::uuid,${evidence.causation_event_id}::uuid,
+        ${evidence.authority_receipt ? JSON.stringify(evidence.authority_receipt) : null}::jsonb,
+        ${evidence.coordination_receipt ? JSON.stringify(evidence.coordination_receipt) : null}::jsonb
+      )`.execute(db);
+  }
+
+  private async leaveSubmissionTrace(
+    db: Transaction<Database>,
+    schoolId: string,
+    requestId: string,
+  ) {
+    const rows = (await sql<{
+      correlation_id: string;
+      authority_receipt: Record<string, unknown>;
+      coordination_receipt: Record<string, unknown>;
+    }>`SELECT correlation_id,authority_receipt,coordination_receipt
+      FROM staff_leave_commands
+      WHERE school_id=${schoolId}::uuid AND target_request_id=${requestId}::uuid
+        AND command_type='submit'
+      FOR SHARE`.execute(db)).rows;
+    if (rows.length !== 1) {
+      throw new ConflictException("The staff-leave coordination trace is missing or ambiguous.");
+    }
+    const eventId = rows[0]!.coordination_receipt?.event_id;
+    if (typeof eventId !== "string" || !uuid.safeParse(eventId).success) {
+      throw new ConflictException("The staff-leave coordination event is not available.");
+    }
+    const messageIds = rows[0]!.coordination_receipt?.message_ids;
+    const originalOwnerId = rows[0]!.authority_receipt?.user_id;
+    if (!Array.isArray(messageIds) || messageIds.length !== 1
+      || typeof messageIds[0] !== "string" || !uuid.safeParse(messageIds[0]).success
+      || typeof originalOwnerId !== "string" || !uuid.safeParse(originalOwnerId).success) {
+      throw new ConflictException("The staff-leave coordination recipient trace is not available.");
+    }
+    return {
+      correlation_id: rows[0]!.correlation_id,
+      causation_event_id: eventId,
+      message_id: messageIds[0],
+      original_owner_user_id: originalOwnerId,
+    };
   }
 
   async reconcileCoverageDeadlines(schoolId?: string) {
@@ -291,22 +494,24 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
 
   async workspace(user: AuthUser, schoolId: string, focusedRequestId?: string) {
     if (focusedRequestId) uuid.parse(focusedRequestId);
-    const member = await this.membership(user, schoolId, ["admin", "staff"]);
     await this.reconcileCoverageDeadlines(schoolId);
+    return this.db.transaction().execute(async (db) => {
+    const member = await this.membership(user, schoolId, ["admin", "staff"], db);
+    const canReviewStaffLeave = await this.canReviewStaffLeave(user, schoolId, db);
     const [accessRoles, roleAssignments] = await Promise.all([
-      member.role === "admin" ? accessRoleCatalogue(this.db, schoolId) : Promise.resolve([]),
-      staffRoleAssignments(this.db, schoolId, member.role === "staff" ? user.id : undefined),
+      member.role === "admin" ? accessRoleCatalogue(db, schoolId) : Promise.resolve([]),
+      staffRoleAssignments(db, schoolId, member.role === "staff" ? user.id : undefined),
     ]);
     const access = { access_roles: accessRoles, role_assignments: roleAssignments,
       ...(member.role === "admin" ? { role_options: roleOptions() } : {}) };
     const yearResult = await sql<{ academic_year: string }>`SELECT academic_year FROM academic_terms
-      WHERE school_id=${schoolId}::uuid ORDER BY is_active DESC,(CURRENT_DATE BETWEEN starts_on AND ends_on) DESC,starts_on DESC LIMIT 1`.execute(this.db);
+      WHERE school_id=${schoolId}::uuid ORDER BY is_active DESC,(CURRENT_DATE BETWEEN starts_on AND ends_on) DESC,starts_on DESC LIMIT 1`.execute(db);
     const academicYear = yearResult.rows[0]?.academic_year ?? "";
     const coveragePolicyResult = await sql`SELECT policy.*,
         supervisor.first_name AS supervisor_first_name,supervisor.last_name AS supervisor_last_name
       FROM staff_coverage_policies policy
       LEFT JOIN staff_profiles supervisor ON supervisor.id=policy.supervisor_staff_profile_id
-      WHERE policy.school_id=${schoolId}::uuid`.execute(this.db);
+      WHERE policy.school_id=${schoolId}::uuid`.execute(db);
     const coveragePolicy = coveragePolicyResult.rows[0] ?? {
       school_id: schoolId,
       enabled: false,
@@ -319,7 +524,7 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       revision: 0,
     };
     const policies = await sql`SELECT * FROM staff_leave_policies WHERE school_id=${schoolId}::uuid
-      AND (${academicYear}='' OR academic_year=${academicYear}) ORDER BY is_active DESC,name`.execute(this.db);
+      AND (${academicYear}='' OR academic_year=${academicYear}) ORDER BY is_active DESC,name`.execute(db);
     const requests = await sql`SELECT r.*,p.name AS policy_name,p.code AS policy_code,
         profile.first_name,profile.last_name,profile.staff_code,profile.designation,profile.user_id,
         COALESCE((SELECT count(*)::int FROM generate_series(r.starts_on,r.ends_on,interval '1 day') day
@@ -335,15 +540,15 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       FROM staff_leave_requests r JOIN staff_profiles profile ON profile.id=r.staff_profile_id
       JOIN staff_leave_policies p ON p.id=r.policy_id
       WHERE r.school_id=${schoolId}::uuid
-        AND (${member.role}='admin' OR profile.user_id=${user.id}::uuid)
-      ORDER BY (r.id=${focusedRequestId ?? null}::uuid) DESC,(r.status='submitted') DESC,r.starts_on DESC,r.created_at DESC LIMIT 100`.execute(this.db);
+        AND (${canReviewStaffLeave} OR profile.user_id=${user.id}::uuid)
+      ORDER BY (r.id=${focusedRequestId ?? null}::uuid) DESC,(r.status='submitted') DESC,r.starts_on DESC,r.created_at DESC LIMIT 100`.execute(db);
 
     const responsibilityTypes = await sql`SELECT type.*,
         COALESCE((SELECT count(*)::int FROM staff_responsibility_assignments assignment
           WHERE assignment.responsibility_type_id=type.id AND assignment.status IN ('offered','active')),0) AS active_assignment_count
       FROM staff_responsibility_types type
       WHERE type.school_id=${schoolId}::uuid AND (${member.role}='admin' OR type.is_active)
-      ORDER BY type.is_active DESC,type.category,type.name`.execute(this.db);
+      ORDER BY type.is_active DESC,type.category,type.name`.execute(db);
     const assignments = await sql<any>`SELECT assignment.*,type.code AS type_code,type.name AS type_name,type.category,type.scope_kind,
         type.description,type.access_summary,type.requires_acceptance,type.restricted,
         profile.first_name,profile.last_name,profile.staff_code,profile.designation,profile.user_id,profile_user.avatar_url,
@@ -363,13 +568,25 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           profile.user_id=${user.id}::uuid
           AND (assignment.status<>'offered' OR profile.status='active')
         ))
-      ORDER BY (assignment.status='offered') DESC,(assignment.status='active') DESC,assignment.starts_on,assignment.created_at DESC`.execute(this.db);
-    const coverageTasks = await sql`SELECT task.*,
+      ORDER BY (assignment.status='offered') DESC,(assignment.status='active') DESC,assignment.starts_on,assignment.created_at DESC`.execute(db);
+    const coverageTasks = await sql`SELECT
+        task.id,task.school_id,task.leave_request_id,task.absent_staff_profile_id,
+        task.replacement_staff_profile_id,task.responsibility_assignment_id,
+        task.source_schedule_id,task.class_section_id,task.subject_id,task.duty_date,
+        task.period_number,task.starts_at,task.ends_at,task.title,task.location,task.status,
+        CASE WHEN ${canReviewStaffLeave} OR absent.user_id=${user.id}::uuid
+            OR replacement.user_id=${user.id}::uuid
+          THEN task.handover_note ELSE '' END AS handover_note,
+        task.assigned_by,task.offered_at,task.responded_at,task.response_note,task.revision,
+        task.fallback_kind,task.fallback_label,task.fallback_supervisor_staff_profile_id,
+        task.resolution_policy_revision,task.resolved_at,task.created_at,task.updated_at,
         absent.first_name AS absent_first_name,absent.last_name AS absent_last_name,absent.designation AS absent_designation,
         replacement.first_name AS replacement_first_name,replacement.last_name AS replacement_last_name,replacement.user_id AS replacement_user_id,
         fallback_supervisor.first_name AS fallback_supervisor_first_name,fallback_supervisor.last_name AS fallback_supervisor_last_name,
         CASE WHEN section.id IS NULL THEN '' ELSE 'Class ' || section.grade || section.section END AS class_name,
-        subject.name AS subject_name,leave_request.reason AS leave_reason
+        subject.name AS subject_name,
+        CASE WHEN ${canReviewStaffLeave} OR absent.user_id=${user.id}::uuid
+          THEN leave_request.reason ELSE NULL END AS leave_reason
       FROM staff_coverage_tasks task
       JOIN staff_profiles absent ON absent.id=task.absent_staff_profile_id
       LEFT JOIN staff_profiles replacement ON replacement.id=task.replacement_staff_profile_id
@@ -382,38 +599,41 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           replacement.user_id=${user.id}::uuid
           AND (task.status<>'offered' OR replacement.status='active')
         ))
-      ORDER BY task.duty_date,task.starts_at NULLS LAST,task.period_number NULLS LAST`.execute(this.db);
+      ORDER BY task.duty_date,task.starts_at NULLS LAST,task.period_number NULLS LAST`.execute(db);
     if (member.role === "staff") {
       const profile = await sql`SELECT profile.*,u.avatar_url FROM staff_profiles profile LEFT JOIN users u ON u.id=profile.user_id
-        WHERE profile.school_id=${schoolId}::uuid AND profile.user_id=${user.id}::uuid`.execute(this.db);
+        WHERE profile.school_id=${schoolId}::uuid AND profile.user_id=${user.id}::uuid`.execute(db);
       if (!profile.rows[0]) throw new NotFoundException("Your staff profile is not ready. Ask the school office to complete onboarding.");
       const balances = await sql`SELECT p.id AS policy_id,p.code,p.name,p.annual_allowance,p.carry_forward_limit,p.requires_document_after_days,
           p.is_paid,p.is_statutory,p.academic_year,
           COALESCE((SELECT sum(a.days) FROM staff_leave_balance_adjustments a WHERE a.staff_profile_id=${(profile.rows[0] as { id: string }).id}::uuid AND a.policy_id=p.id),0) AS adjustments,
           COALESCE((SELECT sum(r.requested_days) FROM staff_leave_requests r WHERE r.staff_profile_id=${(profile.rows[0] as { id: string }).id}::uuid AND r.policy_id=p.id AND r.status='approved'),0) AS used,
           COALESCE((SELECT sum(r.requested_days) FROM staff_leave_requests r WHERE r.staff_profile_id=${(profile.rows[0] as { id: string }).id}::uuid AND r.policy_id=p.id AND r.status='submitted'),0) AS pending
-        FROM staff_leave_policies p WHERE p.school_id=${schoolId}::uuid AND p.academic_year=${academicYear} AND p.is_active ORDER BY p.name`.execute(this.db);
-      return { ...access, mode: "staff", academic_year: academicYear, profile: profile.rows[0], policies: policies.rows, balances: balances.rows, requests: requests.rows, coverage_policy: coveragePolicy, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows };
+        FROM staff_leave_policies p WHERE p.school_id=${schoolId}::uuid AND p.academic_year=${academicYear} AND p.is_active ORDER BY p.name`.execute(db);
+      return { ...access, mode: "staff", can_review_staff_leave: canReviewStaffLeave, academic_year: academicYear, profile: profile.rows[0], policies: policies.rows, balances: balances.rows, requests: requests.rows, coverage_policy: coveragePolicy, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows };
     }
 
     const profiles = await sql`SELECT profile.*,u.avatar_url,
         count(item.id)::int AS onboarding_total,count(item.completed_at)::int AS onboarding_complete,
-        COALESCE((SELECT count(*)::int FROM staff_leave_requests r WHERE r.staff_profile_id=profile.id AND r.status='submitted'),0) AS pending_requests
+        CASE WHEN ${canReviewStaffLeave} THEN
+          COALESCE((SELECT count(*)::int FROM staff_leave_requests r WHERE r.staff_profile_id=profile.id AND r.status='submitted'),0)
+        ELSE 0 END AS pending_requests
       FROM staff_profiles profile LEFT JOIN users u ON u.id=profile.user_id
       LEFT JOIN staff_onboarding_items item ON item.staff_profile_id=profile.id
-      WHERE profile.school_id=${schoolId}::uuid GROUP BY profile.id,u.avatar_url ORDER BY profile.status,profile.first_name,profile.last_name`.execute(this.db);
+      WHERE profile.school_id=${schoolId}::uuid GROUP BY profile.id,u.avatar_url ORDER BY profile.status,profile.first_name,profile.last_name`.execute(db);
     const items = await sql`SELECT item.* FROM staff_onboarding_items item JOIN staff_profiles profile ON profile.id=item.staff_profile_id
-      WHERE profile.school_id=${schoolId}::uuid ORDER BY item.staff_profile_id,item.label`.execute(this.db);
+      WHERE profile.school_id=${schoolId}::uuid ORDER BY item.staff_profile_id,item.label`.execute(db);
     const balances = await sql`SELECT profile.id AS staff_profile_id,p.id AS policy_id,p.name,p.code,p.annual_allowance,
         COALESCE((SELECT sum(a.days) FROM staff_leave_balance_adjustments a WHERE a.staff_profile_id=profile.id AND a.policy_id=p.id),0) AS adjustments,
         COALESCE((SELECT sum(r.requested_days) FROM staff_leave_requests r WHERE r.staff_profile_id=profile.id AND r.policy_id=p.id AND r.status='approved'),0) AS used,
         COALESCE((SELECT sum(r.requested_days) FROM staff_leave_requests r WHERE r.staff_profile_id=profile.id AND r.policy_id=p.id AND r.status='submitted'),0) AS pending
       FROM staff_profiles profile CROSS JOIN staff_leave_policies p
-      WHERE profile.school_id=${schoolId}::uuid AND p.school_id=${schoolId}::uuid AND p.academic_year=${academicYear} AND p.is_active`.execute(this.db);
-    const classes = await sql`SELECT id,'Class ' || grade || section AS name FROM class_sections WHERE school_id=${schoolId}::uuid AND academic_year=${academicYear} ORDER BY grade,section`.execute(this.db);
-    const subjects = await sql`SELECT id,name FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(this.db);
-    const events = await sql`SELECT id,title,starts_at,ends_at FROM campus_events WHERE school_id=${schoolId}::uuid AND status IN ('draft','published') AND ends_at >= now() - interval '1 day' ORDER BY starts_at LIMIT 100`.execute(this.db);
-    return { ...access, mode: "admin", academic_year: academicYear, profiles: profiles.rows, onboarding_items: items.rows, policies: policies.rows, balances: balances.rows, requests: requests.rows, coverage_policy: coveragePolicy, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows, references: { classes: classes.rows, subjects: subjects.rows, events: events.rows } };
+      WHERE profile.school_id=${schoolId}::uuid AND p.school_id=${schoolId}::uuid AND p.academic_year=${academicYear} AND p.is_active`.execute(db);
+    const classes = await sql`SELECT id,'Class ' || grade || section AS name FROM class_sections WHERE school_id=${schoolId}::uuid AND academic_year=${academicYear} ORDER BY grade,section`.execute(db);
+    const subjects = await sql`SELECT id,name FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(db);
+    const events = await sql`SELECT id,title,starts_at,ends_at FROM campus_events WHERE school_id=${schoolId}::uuid AND status IN ('draft','published') AND ends_at >= now() - interval '1 day' ORDER BY starts_at LIMIT 100`.execute(db);
+    return { ...access, mode: "admin", can_review_staff_leave: canReviewStaffLeave, academic_year: academicYear, profiles: profiles.rows, onboarding_items: items.rows, policies: policies.rows, balances: balances.rows, requests: requests.rows, coverage_policy: coveragePolicy, work_types: responsibilityTypes.rows, responsibility_types: responsibilityTypes.rows, assignments: assignments.rows, coverage_tasks: coverageTasks.rows, references: { classes: classes.rows, subjects: subjects.rows, events: events.rows } };
+    });
   }
 
 
@@ -645,11 +865,15 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async requestLeave(user: AuthUser, schoolId: string, body: unknown) {
-    const data = z.object({ policy_id: uuid, starts_on: date, ends_on: date, portion: z.enum(["full_day", "first_half", "second_half"]).default("full_day"), reason: z.string().trim().min(8).max(1000), handover_note: z.string().trim().max(1000).default("") }).parse(body);
-    if (data.ends_on < data.starts_on) throw new BadRequestException("Leave end date cannot be before the start date.");
-    if (data.portion !== "full_day" && data.starts_on !== data.ends_on) throw new BadRequestException("Half-day leave must use one date.");
+    const data = requestLeaveInput.parse(body);
+    const { command_id: commandId, ...commandInput } = data;
+    const requestHash = staffLeaveCommandHash("submit", null, commandInput);
     return this.db.transaction().execute(async (db) => {
       await this.membership(user, schoolId, ["staff"], db);
+      const prior = await this.priorLeaveCommand<Record<string, unknown>>(db, schoolId, user.id, commandId, "submit", requestHash);
+      if (prior) return prior.result;
+      if (data.ends_on < data.starts_on) throw new BadRequestException("Leave end date cannot be before the start date.");
+      if (data.portion !== "full_day" && data.starts_on !== data.ends_on) throw new BadRequestException("Half-day leave must use one date.");
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${schoolId}:${user.id}`},0))`.execute(db);
       const profile = await db.selectFrom("staff_profiles").selectAll().where("school_id", "=", schoolId).where("user_id", "=", user.id).where("status", "!=", "inactive").executeTakeFirst();
       if (!profile) throw new NotFoundException("Your active staff profile is not ready.");
@@ -675,14 +899,19 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         COALESCE((SELECT sum(days) FROM staff_leave_balance_adjustments WHERE staff_profile_id=${profile.id}::uuid AND policy_id=${policy.id}::uuid),0) AS adjustments`.execute(db);
       const available = Number(policy.annual_allowance) + Number(totals.rows[0]!.adjustments) - Number(totals.rows[0]!.used) - Number(totals.rows[0]!.pending);
       if (requestedDays > available) throw new BadRequestException(`Only ${available.toFixed(1)} days are available under ${policy.name}.`);
+      const occurredAt = new Date();
+      const decisionOwner = await this.staffLeaveModel.resolveDecisionOwner(
+        db,
+        schoolId,
+        occurredAt,
+      );
       const request = await db.insertInto("staff_leave_requests").values({ school_id: schoolId, staff_profile_id: profile.id, policy_id: policy.id, starts_on: data.starts_on, ends_on: data.ends_on, portion: data.portion, requested_days: requestedDays.toFixed(2), reason: data.reason, handover_note: data.handover_note }).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_leave_request_audits").values({ school_id: schoolId, request_id: request.id, actor_id: user.id, action: "submitted", from_status: null, to_status: "submitted" }).execute();
-      const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      await this.enqueue(db, schoolId, request.id, "staff.leave.submitted", [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), {
+      const outboxEventId = await this.enqueue(db, schoolId, request.id, "staff.leave.submitted", [user.id, decisionOwner.user_id], [decisionOwner.user_id], {
         kind: "leave",
         title: "Staff leave needs review",
         body: `${profile.first_name} ${profile.last_name} requested ${requestedDays} day${requestedDays === 1 ? "" : "s"}.`,
-        admin_link: `/principal/staff?section=leave&request=${request.id}&request_revision=${request.revision}`,
+        link: `/work/staff-leave?school=${schoolId}&request=${request.id}&request_revision=${request.revision}`,
         attention_eligible: true,
         attention_portal: "principal",
         attention_module: "staff",
@@ -692,21 +921,64 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         attention_topic_key: `staff-leave-review:${request.id}`,
         attention_subject_label: `${profile.first_name} ${profile.last_name}`.trim(),
       }, { school_id: schoolId, status: request.status, revision: request.revision });
-      await this.audit(db, user, schoolId, "staff.leave.submitted", request.id, { requested_days: requestedDays, policy_id: policy.id });
+      const coordination = await this.staffLeaveModel.publishSubmitted(db, {
+        school_id: schoolId,
+        actor_user_id: user.id,
+        request: { ...request, staff_profile_revision: profile.revision },
+        source_outbox_event_id: outboxEventId,
+        command_id: commandId,
+        occurred_at: occurredAt.toISOString(),
+        decision_owner: decisionOwner,
+      });
+      await this.audit(db, user, schoolId, "staff.leave.submitted", request.id, {
+        requested_days: requestedDays,
+        policy_id: policy.id,
+        command_id: commandId,
+        source_outbox_event_id: outboxEventId,
+        correlation_id: commandId,
+        coordination_event_id: coordination.event_id,
+        behaviour_version_id: coordination.behaviour_version_id,
+        subscription_id: coordination.subscription_id,
+        decision_rule_id: decisionOwner.rule.id,
+        decision_appointment_id: decisionOwner.appointment.id,
+      });
+      await this.saveLeaveCommand(db, schoolId, user.id, commandId, "submit", request.id, requestHash, request, outboxEventId, {
+        correlation_id: commandId,
+        causation_event_id: null,
+        authority_receipt: decisionOwner as unknown as Record<string, unknown>,
+        coordination_receipt: coordination as unknown as Record<string, unknown>,
+      });
       return request;
     });
   }
 
   async decideLeave(user: AuthUser, schoolId: string, requestId: string, body: unknown) {
     uuid.parse(requestId);
-    const data = z.object({ decision: z.enum(["approved", "rejected"]), note: z.string().trim().max(1000).default(""), expected_revision: z.number().int().positive() }).parse(body);
+    const data = decideLeaveInput.parse(body);
+    const { command_id: commandId, ...commandInput } = data;
+    const requestHash = staffLeaveCommandHash("decide", requestId, commandInput);
     return this.db.transaction().execute(async (db) => {
-      await this.principal(user, schoolId, db);
+      await this.membership(user, schoolId, ["admin", "staff"], db);
+      const prior = await this.priorLeaveCommand<Record<string, unknown>>(db, schoolId, user.id, commandId, "decide", requestHash);
+      if (prior) return prior.result;
+      const occurredAt = new Date();
+      const decisionAuthority = await this.staffLeaveModel.assertDecisionAuthority(
+        db,
+        schoolId,
+        user.id,
+        occurredAt,
+      );
       const request = await db.selectFrom("staff_leave_requests").selectAll().where("id", "=", requestId).where("school_id", "=", schoolId).forUpdate().executeTakeFirst();
       if (!request) throw new NotFoundException();
       if (request.status !== "submitted") throw new ConflictException("This leave request has already been decided.");
       if (request.revision !== data.expected_revision) throw new ConflictException("This request changed. Refresh before deciding.");
       if (data.decision === "rejected" && data.note.length < 4) throw new BadRequestException("Add a short reason when declining leave.");
+      const submissionTrace = await this.leaveSubmissionTrace(db, schoolId, request.id);
+      if (submissionTrace.original_owner_user_id !== decisionAuthority.user_id) {
+        throw new ConflictException(
+          "The staff-leave decision owner changed after submission. Rerouting is not available yet; an administrator must restore or correct the route before this request can be decided.",
+        );
+      }
       const profile = await db.selectFrom("staff_profiles").selectAll().where("id", "=", request.staff_profile_id).executeTakeFirstOrThrow();
       if (data.decision === "approved") {
         const policy = await db.selectFrom("staff_leave_policies").selectAll().where("id", "=", request.policy_id).executeTakeFirstOrThrow();
@@ -725,9 +997,8 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           CROSS JOIN LATERAL effective_school_schedule(${schoolId}::uuid,day::date) schedule
           WHERE schedule.teacher_user_id=${profile.user_id}::uuid AND schedule.slot_type='class'`.execute(db);
       const coverageCount = coverage.rows[0]?.affected ?? 0;
-      const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      const audience = [...admins.rows.map((row) => row.user_id), ...(profile.user_id ? [profile.user_id] : [])];
-      await this.enqueue(db, schoolId, request.id, `staff.leave.${data.decision}`, audience, profile.user_id ? [profile.user_id] : [], {
+      const audience = [decisionAuthority.user_id, ...(profile.user_id ? [profile.user_id] : [])];
+      const outboxEventId = await this.enqueue(db, schoolId, request.id, `staff.leave.${data.decision}`, audience, profile.user_id ? [profile.user_id] : [], {
         kind: "leave",
         title: `Leave ${data.decision}`,
         body: data.decision === "approved" ? `${request.requested_days} day(s) approved. ${coverageCount} timetable period(s) need coverage.` : data.note,
@@ -747,8 +1018,42 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         affected_periods: coverageCount,
         refresh: ["principal.staff", "teacher.leave", "principal.timetable", "notifications", "attention"],
       });
-      await this.audit(db, user, schoolId, `staff.leave.${data.decision}`, request.id, { requested_days: request.requested_days, affected_periods: coverageCount, note: data.note });
-      return { ...updated, affected_periods: coverageCount };
+      const coordination = await this.staffLeaveModel.recordDecisionResponse(db, {
+        school_id: schoolId,
+        actor_user_id: user.id,
+        decision: data.decision,
+        message_id: submissionTrace.message_id,
+        request_id: request.id,
+        source_revision: request.revision,
+        resulting_revision: updated.revision,
+        affected_periods: coverageCount,
+        source_outbox_event_id: outboxEventId,
+        correlation_id: submissionTrace.correlation_id,
+        command_id: commandId,
+        occurred_at: occurredAt.toISOString(),
+        decision_authority: decisionAuthority,
+      });
+      const result = { ...updated, affected_periods: coverageCount };
+      await this.audit(db, user, schoolId, `staff.leave.${data.decision}`, request.id, {
+        requested_days: request.requested_days,
+        affected_periods: coverageCount,
+        note: data.note,
+        command_id: commandId,
+        source_outbox_event_id: outboxEventId,
+        correlation_id: submissionTrace.correlation_id,
+        causation_event_id: submissionTrace.causation_event_id,
+        message_id: coordination.message_id,
+        message_outcome_id: coordination.outcome_id,
+        decision_rule_id: decisionAuthority.rule.id,
+        decision_appointment_id: decisionAuthority.appointment.id,
+      });
+      await this.saveLeaveCommand(db, schoolId, user.id, commandId, "decide", request.id, requestHash, result, outboxEventId, {
+        correlation_id: submissionTrace.correlation_id,
+        causation_event_id: submissionTrace.causation_event_id,
+        authority_receipt: decisionAuthority as unknown as Record<string, unknown>,
+        coordination_receipt: coordination as unknown as Record<string, unknown>,
+      });
+      return result;
     });
   }
 
@@ -832,19 +1137,66 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
 
   async withdrawLeave(user: AuthUser, schoolId: string, requestId: string, body: unknown) {
     uuid.parse(requestId);
-    const data = z.object({ expected_revision: z.number().int().positive() }).parse(body);
+    const data = withdrawLeaveInput.parse(body);
+    const { command_id: commandId, ...commandInput } = data;
+    const requestHash = staffLeaveCommandHash("withdraw", requestId, commandInput);
     return this.db.transaction().execute(async (db) => {
       await this.membership(user, schoolId, ["staff"], db);
+      const prior = await this.priorLeaveCommand<Record<string, unknown>>(db, schoolId, user.id, commandId, "withdraw", requestHash);
+      if (prior) return prior.result;
       const request = await sql<{ id: string; revision: number; status: string; staff_profile_id: string }>`SELECT r.id,r.revision,r.status,r.staff_profile_id FROM staff_leave_requests r JOIN staff_profiles profile ON profile.id=r.staff_profile_id
         WHERE r.id=${requestId}::uuid AND r.school_id=${schoolId}::uuid AND profile.user_id=${user.id}::uuid FOR UPDATE`.execute(db);
       const current = request.rows[0];
       if (!current) throw new NotFoundException();
       if (current.status !== "submitted" || current.revision !== data.expected_revision) throw new ConflictException("Only the latest pending request can be withdrawn.");
+      const occurredAt = new Date();
+      const submissionTrace = await this.leaveSubmissionTrace(db, schoolId, requestId);
       const updated = await db.updateTable("staff_leave_requests").set({ status: "withdrawn", updated_at: new Date() }).where("id", "=", requestId).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_leave_request_audits").values({ school_id: schoolId, request_id: requestId, actor_id: user.id, action: "withdrawn", from_status: "submitted", to_status: "withdrawn" }).execute();
-      const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      await this.enqueue(db, schoolId, requestId, "staff.leave.withdrawn", [user.id, ...admins.rows.map((row) => row.user_id)], [], null, { school_id: schoolId, status: "withdrawn", revision: updated.revision });
-      await this.audit(db, user, schoolId, "staff.leave.withdrawn", requestId);
+      const outboxEventId = await this.enqueue(
+        db,
+        schoolId,
+        requestId,
+        "staff.leave.withdrawn",
+        [user.id, submissionTrace.original_owner_user_id],
+        [submissionTrace.original_owner_user_id],
+        {
+          kind: "leave",
+          title: "Leave request withdrawn",
+          body: "A pending staff leave request was withdrawn by its requester.",
+          attention_eligible: false,
+        },
+        { school_id: schoolId, status: "withdrawn", revision: updated.revision },
+      );
+      const coordination = await this.staffLeaveModel.cancelSubmittedRequest(db, {
+        school_id: schoolId,
+        actor_user_id: user.id,
+        message_id: submissionTrace.message_id,
+        source_outbox_event_id: outboxEventId,
+        command_id: commandId,
+        occurred_at: occurredAt.toISOString(),
+      });
+      await this.audit(db, user, schoolId, "staff.leave.withdrawn", requestId, {
+        command_id: commandId,
+        source_outbox_event_id: outboxEventId,
+        correlation_id: submissionTrace.correlation_id,
+        causation_event_id: submissionTrace.causation_event_id,
+        message_id: coordination.message_id,
+        message_outcome_id: coordination.outcome_id,
+        cancellation_authority: "original_message_sender",
+        original_recipient_user_id: submissionTrace.original_owner_user_id,
+      });
+      await this.saveLeaveCommand(db, schoolId, user.id, commandId, "withdraw", requestId, requestHash, updated, outboxEventId, {
+        correlation_id: submissionTrace.correlation_id,
+        causation_event_id: submissionTrace.causation_event_id,
+        authority_receipt: {
+          cancellation_authority: "original_message_sender",
+          requester_user_id: user.id,
+          original_recipient_user_id: submissionTrace.original_owner_user_id,
+          message_id: submissionTrace.message_id,
+        },
+        coordination_receipt: coordination as unknown as Record<string, unknown>,
+      });
       return updated;
     });
   }

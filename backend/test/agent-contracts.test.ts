@@ -107,6 +107,28 @@ describe('agent capability boundary',()=>{
     expect(cap.schema.safeParse({...input,confirmed:true}).success).toBe(false);
     expect(cap.request!(input,{...scope,portal:'parent',studentId:child},child).body).toEqual({student_id:child});
   });
+  it('keeps staff-leave command IDs server-owned and stable across every agent mutation',()=>{
+    const commandId='c7169af8-adb8-4342-8d64-7f2131c32348';
+    const request=CAPABILITIES.find(cap=>cap.name==='request_staff_leave')!;
+    const decide=CAPABILITIES.find(cap=>cap.name==='decide_staff_leave')!;
+    const withdraw=CAPABILITIES.find(cap=>cap.name==='withdraw_staff_leave')!;
+    const modelArguments=new Map([
+      [request,{policy_id:child,starts_on:'2030-04-08',ends_on:'2030-04-08',portion:'full_day',reason:'Family medical appointment',handover_note:''}],
+      [decide,{record_id:child,decision:'approved',note:'Cover arranged'}],
+      [withdraw,{record_id:child}],
+    ]);
+    for(const [capability,arguments_] of modelArguments) {
+      expect(capabilityTool(capability).parameters.properties).not.toHaveProperty('command_id');
+      expect(capability.parseArguments!(arguments_)).toBeDefined();
+      expect(()=>capability.parseArguments!({...arguments_,command_id:school})).toThrow();
+    }
+    expect(request.request!({body:{policy_id:child,starts_on:'2030-04-08',ends_on:'2030-04-08',portion:'full_day',reason:'Family medical appointment',handover_note:''}},scope,commandId).body)
+      .toMatchObject({command_id:commandId});
+    expect(decide.request!({id:child,body:{decision:'approved',note:'Cover arranged',expected_revision:2}},scope,commandId).body)
+      .toMatchObject({command_id:commandId});
+    expect(withdraw.request!({id:child,body:{expected_revision:2}},scope,commandId).body)
+      .toMatchObject({command_id:commandId});
+  });
   it('rejects unobserved identifiers and unsafe screen links',()=>{
     expect(()=>assertKnownIds({id:child},new Set([school]))).toThrow(/Read/);
     for(const path of ['https://example.com','//evil','/api/v1/auth','/principal\\evil'])expect(()=>assertLocalScreen(path)).toThrow();

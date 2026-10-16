@@ -4,6 +4,7 @@ import { COORDINATION_RUNTIME_PORT } from "./coordination-runtime.port.js";
 import { OBSERVATION_INGRESS_PORT } from "./observation-ingress.port.js";
 import { OBSERVATION_SOURCE_REGISTRY_PORT } from "./observation-source-registry.port.js";
 import { CampusModelCoreService } from "./campus-model-core.service.js";
+import { HUMAN_AGENT_IDENTITY_PORT } from "./human-agent-identity.port.js";
 import { TEMPORAL_CONTEXT_PORT } from "./temporal-context.port.js";
 
 @Module({
@@ -14,6 +15,7 @@ import { TEMPORAL_CONTEXT_PORT } from "./temporal-context.port.js";
     { provide: OBSERVATION_SOURCE_REGISTRY_PORT, useExisting: CampusModelCoreService },
     { provide: TEMPORAL_CONTEXT_PORT, useExisting: CampusModelCoreService },
     { provide: COORDINATION_RUNTIME_PORT, useExisting: CampusModelCoreService },
+    { provide: HUMAN_AGENT_IDENTITY_PORT, useExisting: CampusModelCoreService },
   ],
   exports: [
     CAMPUS_MODEL_CORE_PORT,
@@ -21,6 +23,7 @@ import { TEMPORAL_CONTEXT_PORT } from "./temporal-context.port.js";
     OBSERVATION_SOURCE_REGISTRY_PORT,
     TEMPORAL_CONTEXT_PORT,
     COORDINATION_RUNTIME_PORT,
+    HUMAN_AGENT_IDENTITY_PORT,
   ],
 })
 export class CampusModelCoreModule {}

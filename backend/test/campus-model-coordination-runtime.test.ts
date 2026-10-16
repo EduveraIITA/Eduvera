@@ -6,6 +6,7 @@ import {
   coordinationRecipientAgentRefSchema,
   coordinationRecipientSelectorConfigSchema,
   operationalMessageOutcomeSchema,
+  recipientOperationalMessageResponseSchema,
 } from "../src/campus-model-core/contracts.js";
 
 const schoolId = "00000000-0000-4000-8000-000000000001";
@@ -152,6 +153,26 @@ describe("Campus Model Core coordination contracts", () => {
       idempotency_key: "message-responded:event-2",
     }).state).toBe("responded");
   });
+
+  it("binds a recipient response to one exact message and source record", () => {
+    const parsed = recipientOperationalMessageResponseSchema.parse({
+      school_id: schoolId,
+      message_id: messageId,
+      correlation_id: "00000000-0000-4000-8000-000000000006",
+      recipient: { agent_kind: "human", user_id: recipientId },
+      actor: { agent_kind: "human", user_id: recipientId },
+      expected_source_record_id: "00000000-0000-4000-8000-000000000007",
+      expected_source_revision: 1,
+      source_outbox_event_id: outboxId,
+      code: "leave_approved",
+      explanation: "The current configured owner approved this leave request.",
+      response: { decision: "approved" },
+      occurred_at: "2026-10-16T10:02:00.000Z",
+      idempotency_key: "message-response:exact-source",
+    });
+    expect(parsed.message_id).toBe(messageId);
+    expect(parsed.expected_source_record_id).toBe("00000000-0000-4000-8000-000000000007");
+  });
 });
 
 describe("Campus Model Core coordination migration", () => {
@@ -211,6 +232,11 @@ describe("Campus Model Core coordination architecture", () => {
     expect(service).toContain("authority.capability=${selector.required_capability}");
     expect(service).toContain("Every selected recipient must be active and authorized");
     expect(service).toContain("authority.effective_from<=CURRENT_TIMESTAMP");
+    expect(service).toContain("The assigned recipient no longer has the capability required by this request.");
+    expect(service).toContain("FOR SHARE OF authority");
+    expect(service).toContain("message.id=${input.message_id}::uuid");
+    expect(service).toContain("event.source_record_id=${input.expected_source_record_id}");
+    expect(service).toContain("reaction.selector_snapshot");
     expect(service).toContain("JOIN school_memberships membership");
     expect(service).toContain("reference.user_id");
     expect(service).toContain("reference.external_ref");
@@ -221,6 +247,10 @@ describe("Campus Model Core coordination architecture", () => {
     expect(service).toContain("source_outbox_event_id");
     expect(service).toContain("ON CONFLICT(school_id,idempotency_key) DO NOTHING");
     expect(service).toContain("campus.coordination.message_queued");
+    expect(service).toContain("audience_user_ids=${dispatchAudience}::uuid[]");
+    expect(service).toContain("notification_payload IS NULL");
     expect(service).toContain("This message outcome key was already used for a different result");
+    expect(service).toContain("senderMayCancel");
+    expect(service).toContain("its original sender may cancel it");
   });
 });

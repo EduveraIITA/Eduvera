@@ -142,6 +142,7 @@ const FamilyFeesPage = lazy(async () => ({ default: (await import("./features/of
 const PrincipalStaffRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).PrincipalStaffRoute }));
 const TeacherLeaveRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).TeacherLeaveRoute }));
 const TeacherResponsibilitiesRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).TeacherResponsibilitiesRoute }));
+const AuthorizedStaffLeaveDecisionRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).AuthorizedStaffLeaveDecisionRoute }));
 const PrincipalGovernanceRoute = lazy(async () => ({ default: (await import("./features/governance/GovernanceRoutes")).PrincipalGovernanceRoute }));
 const ParentPoliciesRoute = lazy(async () => ({ default: (await import("./features/governance/GovernanceRoutes")).ParentPoliciesRoute }));
 const StudentPoliciesRoute = lazy(async () => ({ default: (await import("./features/governance/GovernanceRoutes")).StudentPoliciesRoute }));
@@ -234,6 +235,7 @@ export function App() {
               <Route path="/teacher/students" element={<PortalOnly portal="teacher"><PeoplePage /></PortalOnly>} />
               <Route path="/teacher/students/import" element={<PortalOnly portal="teacher"><PeopleImportPage /></PortalOnly>} />
               <Route path="/workspace" element={<AuthenticatedOnly><WorkspaceUnavailablePage /></AuthenticatedOnly>} />
+              <Route path="/work/staff-leave" element={<AuthenticatedOnly><AuthorizedStaffLeaveDecisionRoute /></AuthenticatedOnly>} />
               {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`assistant-${portal}`} path={`/${portal}/assistant`} element={<PortalOnly portal={portal}><AssistantPage portal={portal} /></PortalOnly>} />)}
               {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`analytics-redirect-${portal}`} path={`/${portal}/analytics/*`} element={<PortalOnly portal={portal}><LegacyAnalyticsRedirect /></PortalOnly>} />)}
               {(["principal", "teacher", "parent", "student"] as const).map(portal => <Route key={`insights-${portal}`} path={`/${portal}/insights`} element={<PortalOnly portal={portal}><AnalyticsPage portal={portal} /></PortalOnly>} />)}

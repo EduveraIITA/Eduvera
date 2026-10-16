@@ -6,7 +6,14 @@ import * as event from '../campus-events/contracts.js';
 import * as operations from '../operations/schemas.js';
 import { cycleInput, assessmentInput, resultsInput, actionInput } from '../assessments/assessments.service.js';
 import { schemeInput, subjectPlanInput, revisionInput, generateInput, commentInput } from '../academic-reports/academic-reports.service.js';
-import { coveragePolicyInput, profileInput, policyInput } from '../staff-operations/staff-operations.service.js';
+import {
+  coveragePolicyInput,
+  decideLeaveInput,
+  policyInput,
+  profileInput,
+  requestLeaveInput,
+  withdrawLeaveInput,
+} from '../staff-operations/staff-operations.service.js';
 import { feeRequestSchema, feeDecisionSchema } from '../operations/fee-review.service.js';
 import { createSchema as followupInput } from '../coordination/coordination.service.js';
 import type { ToolDefinition } from './providers.js';
@@ -72,7 +79,7 @@ function write(name: string, title: string, domain: string, portals: Portal[], b
   // Hide session scope and server-generated idempotency from model-written fields.
   const json = z.toJSONSchema(bodySchema, { io: 'input', unrepresentable: 'any' }) as any;
   const shape = bodySchema instanceof z.ZodObject ? bodySchema.shape : {};
-  const publicShape = Object.fromEntries(Object.entries(shape).filter(([key]) => !['school_id', 'student_id', 'idempotency_key', 'client_id'].includes(key) || (key === 'student_id' && !options.student)));
+  const publicShape = Object.fromEntries(Object.entries(shape).filter(([key]) => !['school_id', 'student_id', 'idempotency_key', 'command_id', 'client_id'].includes(key) || (key === 'student_id' && !options.student)));
   if (name==='save_repeating_timetable') publicShape.periods=z.array(z.object({...schedule.period.shape,id:uuid.optional()}).strict()).max(168);
   const body = z.object(publicShape).strict();
   const serverRevision=options.id && !!publicShape.expected_revision && name!=='report_comment';
@@ -89,7 +96,8 @@ function write(name: string, title: string, domain: string, portals: Portal[], b
     }, description: `${title}. Returns the app's result or a review of the requested change.`, ...(options.permission ? { permission: options.permission } : {}),
     request: (i, s, commandId) => {
       const data = { ...i.body, ...(options.scoped || json.properties?.school_id ? { school_id: s.schoolId } : {}), ...(options.student && json.properties?.student_id ? familyQuery(s) : {}),
-        ...(json.properties?.idempotency_key ? { idempotency_key: commandId } : {}) };
+        ...(json.properties?.idempotency_key ? { idempotency_key: commandId } : {}),
+        ...(json.properties?.command_id ? { command_id: commandId } : {}) };
       if (name==='save_repeating_timetable') data.periods=data.periods.map((period:any,index:number)=>{
         const digest=createHash('sha256').update(`${commandId??''}:${index}`).digest('hex');
         return {...period,id:period.id??`${digest.slice(0,8)}-${digest.slice(8,12)}-4${digest.slice(13,16)}-a${digest.slice(17,20)}-${digest.slice(20,32)}`};
@@ -224,9 +232,9 @@ read('school_insights', 'Principal attention and decision-support indicators', '
 read('staff_workspace', 'Staff directory, responsibilities, leave and cover', 'staff', staff, empty, (_,s) => schoolPath(s,'staff/workspace'), (_,s) => screenPath(s,s.portal === 'teacher' ? 'responsibilities' : 'staff'), () => ({}));
 write('create_staff_profile','Create a staff profile','staff',['principal'],profileInput,(_,s)=>schoolPath(s,'staff/profiles'),'staff');
 write('create_staff_leave_policy','Create a staff leave policy','staff',['principal'],policyInput,(_,s)=>schoolPath(s,'staff/leave-policies'),'staff');
-write('request_staff_leave','Apply for staff leave','staff',['teacher'],z.object({policy_id:uuid,starts_on:date,ends_on:date,portion:z.enum(['full_day','first_half','second_half']).default('full_day'),reason:z.string().min(8).max(1000),handover_note:z.string().max(1000).default('')}),(_,s)=>schoolPath(s,'staff/leave-requests'),'leave');
-write('decide_staff_leave','Review staff leave','staff',['principal'],z.object({decision:z.enum(['approved','rejected']),note:z.string().max(1000),expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/leave-requests/${i.id}/decision`),'staff',{id:true});
-write('withdraw_staff_leave','Withdraw my staff leave request','staff',['teacher'],z.object({expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/leave-requests/${i.id}/withdraw`),'leave',{id:true});
+write('request_staff_leave','Apply for staff leave','staff',['teacher'],requestLeaveInput,(_,s)=>schoolPath(s,'staff/leave-requests'),'leave');
+write('decide_staff_leave','Review staff leave','staff',['principal'],decideLeaveInput,(i,s)=>schoolPath(s,`staff/leave-requests/${i.id}/decision`),'staff',{id:true});
+write('withdraw_staff_leave','Withdraw my staff leave request','staff',['teacher'],withdrawLeaveInput,(i,s)=>schoolPath(s,`staff/leave-requests/${i.id}/withdraw`),'leave',{id:true});
 write('respond_to_responsibility','Accept or decline an assigned responsibility','staff',['teacher'],z.object({decision:z.enum(['accepted','declined']),note:z.string().max(500),expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/responsibilities/${i.id}/response`),'responsibilities',{id:true});
 write('assign_cover','Assign a replacement for an open coverage task','staff',['principal'],z.object({replacement_staff_profile_id:uuid,note:z.string().max(500),expected_revision:z.number().int().positive()}),(i,s)=>schoolPath(s,`staff/coverage-tasks/${i.id}/assign`),'staff',{id:true});
 write('set_cover_fallback_policy','Set the deadline and automatic fallback for unfilled leave cover','staff',['principal'],coveragePolicyInput,(_,s)=>schoolPath(s,'staff/coverage-policy'),(_,s)=>screenPath(s,'staff',{section:'policies'}),{method:'PATCH'});

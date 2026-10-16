@@ -63,4 +63,26 @@ describe("RequestInboxView", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/parent/urgent");
     expect(screen.getByTestId("return-to")).toHaveTextContent("/parent/requests?student_id=student&category=transport");
   });
+
+  it("opens staff leave decisions through the role-neutral action route", () => {
+    const leave: RequestInboxItem = {
+      ...item("staff-leave", "high", "leave", "Kavita Mehta · Casual leave"),
+      kind: "staff_leave_review",
+      source_id: "10000000-0000-4000-a000-000000000001",
+      href: "/work/staff-leave?school=school-1&request=10000000-0000-4000-a000-000000000001",
+    };
+    const teacherData: RequestInboxResponse = {
+      ...data,
+      portal: "teacher",
+      summary: { total: 1, urgent: 0, high: 1, normal: 0, categories: { leave: 1 } },
+      items: [leave],
+    };
+
+    render(<MemoryRouter><RequestInboxView data={teacherData} /></MemoryRouter>);
+
+    expect(screen.getByRole("link", { name: /Kavita Mehta/ })).toHaveAttribute(
+      "href",
+      "/work/staff-leave?school=school-1&request=10000000-0000-4000-a000-000000000001&context=teacher",
+    );
+  });
 });

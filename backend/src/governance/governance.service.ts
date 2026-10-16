@@ -5,6 +5,12 @@ import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import type {
+  GovernanceAuthoritySourceReceipt,
+  GovernanceDecisionAuthorityPort,
+  GovernanceDecisionAuthorityReceipt,
+  GovernanceDecisionMatter,
+} from "./decision-authority.port.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type MemberRole = "admin" | "staff" | "guardian" | "student";
@@ -49,8 +55,46 @@ const authorityDraftInput = z.object({
   authority_reference: z.string().trim().max(240).default(""),
 });
 
+interface DecisionAuthorityAppointmentCandidate {
+  id: string;
+  revision: number;
+  person_id: string;
+  linked_user_id: string | null;
+  starts_on: string;
+  ends_on: string | null;
+  status: "proposed" | "active" | "future" | "suspended" | "ended";
+  appointment_kind: "appointed" | "elected" | "nominated" | "ex_officio" | "acting";
+  authority_source_id: string | null;
+  evidence_reference: string;
+}
+
+function dateInInclusiveInterval(dateValue: string, from: string | null, until: string | null) {
+  return (from === null || from <= dateValue) && (until === null || dateValue <= until);
+}
+
+function dateInTimeZone(value: Date, timeZone: string) {
+  if (Number.isNaN(value.getTime())) throw new BadRequestException("Authority evaluation time is invalid.");
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    if (!values.year || !values.month || !values.day) throw new Error("Incomplete date");
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    throw new ConflictException("The institution timezone is invalid, so decision authority cannot be evaluated.");
+  }
+}
+
+function unavailableDecisionAuthority(message: string): never {
+  throw new ConflictException(message);
+}
+
 @Injectable()
-export class GovernanceService {
+export class GovernanceService implements GovernanceDecisionAuthorityPort {
   constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   private async memberships(user: AuthUser, schoolId: string, db: Db = this.db) {
@@ -64,6 +108,214 @@ export class GovernanceService {
   private async admin(user: AuthUser, schoolId: string, db: Db = this.db) {
     const memberRoles = await this.memberships(user, schoolId, db);
     if (!memberRoles.includes("admin")) throw new ForbiddenException("Institution administrator access is required.");
+  }
+
+  async resolveDecisionOwner(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    matterCode: GovernanceDecisionMatter,
+    at: Date,
+  ): Promise<GovernanceDecisionAuthorityReceipt> {
+    uuid.parse(schoolId);
+    const evaluatedAt = new Date(at.getTime());
+    if (Number.isNaN(evaluatedAt.getTime())) throw new BadRequestException("Authority evaluation time is invalid.");
+
+    const school = await transaction.selectFrom("schools")
+      .select(["id", "timezone"])
+      .where("id", "=", schoolId)
+      .forShare()
+      .executeTakeFirst();
+    if (!school) throw new NotFoundException("Institution was not found.");
+    const effectiveDate = dateInTimeZone(evaluatedAt, school.timezone);
+
+    const rules = await transaction.selectFrom("institution_decision_matter_rules")
+      .selectAll()
+      .where("school_id", "=", schoolId)
+      .where("code", "=", matterCode)
+      .forShare()
+      .execute();
+    const effectiveRules = rules.filter((rule) => rule.status === "confirmed"
+      && rule.effective_from !== null
+      && dateInInclusiveInterval(effectiveDate, rule.effective_from, rule.effective_until));
+    if (effectiveRules.length === 0) {
+      return unavailableDecisionAuthority("No confirmed decision route is effective for staff leave.");
+    }
+    if (effectiveRules.length !== 1) {
+      return unavailableDecisionAuthority("More than one decision route is effective for staff leave.");
+    }
+    const rule = effectiveRules[0]!;
+    if (!["individual", "delegated"].includes(rule.decision_mode)
+      || !rule.decision_office_id
+      || rule.decision_body_id) {
+      return unavailableDecisionAuthority("Staff leave requires one configured individual or delegated decision owner.");
+    }
+
+    const office = await transaction.selectFrom("institution_governance_offices")
+      .selectAll()
+      .where("school_id", "=", schoolId)
+      .where("id", "=", rule.decision_office_id)
+      .forShare()
+      .executeTakeFirst();
+    if (!office || office.status !== "active") {
+      return unavailableDecisionAuthority("The configured staff-leave decision office is not active.");
+    }
+
+    const appointments = await transaction.selectFrom("institution_governance_appointments as appointment")
+      .select([
+        "appointment.id",
+        "appointment.revision",
+        "appointment.person_id",
+        "appointment.linked_user_id",
+        "appointment.starts_on",
+        "appointment.ends_on",
+        "appointment.status",
+        "appointment.appointment_kind",
+        "appointment.authority_source_id",
+        "appointment.evidence_reference",
+      ])
+      .where("appointment.school_id", "=", schoolId)
+      .where("appointment.office_id", "=", office.id)
+      .forShare()
+      .execute() as DecisionAuthorityAppointmentCandidate[];
+    const effectiveAppointments = appointments.filter((appointment) => appointment.status === "active"
+      && dateInInclusiveInterval(effectiveDate, appointment.starts_on, appointment.ends_on));
+    if (effectiveAppointments.length === 0) {
+      return unavailableDecisionAuthority("The staff-leave decision office has no effective officeholder.");
+    }
+    if (effectiveAppointments.length !== 1) {
+      return unavailableDecisionAuthority("The staff-leave decision office has ambiguous effective officeholders.");
+    }
+    const appointment = effectiveAppointments[0]!;
+    if (!appointment.linked_user_id) {
+      return unavailableDecisionAuthority("The staff-leave decision officeholder is not linked to one active institution account.");
+    }
+    const person = await transaction.selectFrom("school_people")
+      .select(["id", "revision"])
+      .where("school_id", "=", schoolId)
+      .where("id", "=", appointment.person_id)
+      .forShare()
+      .executeTakeFirst();
+    const linkedUser = await transaction.selectFrom("users")
+      .select(["id", "is_active"])
+      .where("id", "=", appointment.linked_user_id)
+      .where("is_active", "=", true)
+      .forShare()
+      .executeTakeFirst();
+    const activeMemberships = await transaction.selectFrom("school_memberships")
+      .select(["id", "role", "is_active"])
+      .where("school_id", "=", schoolId)
+      .where("user_id", "=", appointment.linked_user_id)
+      .where("is_active", "=", true)
+      .forShare()
+      .execute();
+    if (!person || !linkedUser || activeMemberships.length === 0) {
+      return unavailableDecisionAuthority("The staff-leave decision officeholder is not linked to one active institution account.");
+    }
+
+    const authoritySourceIds = [...new Set([
+      ...rule.authority_source_ids,
+      office.authority_source_id,
+      appointment.authority_source_id,
+    ].filter((sourceId): sourceId is string => sourceId !== null))];
+    if (authoritySourceIds.length === 0) {
+      return unavailableDecisionAuthority("The staff-leave decision route has no authority source.");
+    }
+    const sources = await transaction.selectFrom("institution_authority_sources")
+      .select([
+        "id",
+        "revision",
+        "source_kind",
+        "reference",
+        "provision",
+        "evidence_reference",
+        "verification_state",
+        "effective_from",
+        "effective_until",
+        "verified_by",
+        "verified_at",
+      ])
+      .where("school_id", "=", schoolId)
+      .where("id", "in", authoritySourceIds)
+      .forShare()
+      .execute();
+    const effectiveSources = sources.filter((source) => ["verified", "self_attested"].includes(source.verification_state)
+      && source.effective_from !== null
+      && dateInInclusiveInterval(effectiveDate, source.effective_from, source.effective_until));
+    if (sources.length !== authoritySourceIds.length || effectiveSources.length !== authoritySourceIds.length) {
+      return unavailableDecisionAuthority("The staff-leave decision route has missing, unconfirmed or expired authority evidence.");
+    }
+    const sourceReceipts = effectiveSources
+      .map((source) => ({
+        id: source.id,
+        revision: source.revision,
+        source_kind: source.source_kind,
+        reference: source.reference,
+        provision: source.provision,
+        evidence_reference: source.evidence_reference,
+        verification_state: source.verification_state as GovernanceAuthoritySourceReceipt["verification_state"],
+        effective_from: source.effective_from!,
+        effective_until: source.effective_until,
+        verified_by: source.verified_by,
+        verified_at: source.verified_at?.toISOString() ?? null,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+
+    return {
+      school_id: schoolId,
+      matter_code: matterCode,
+      evaluated_at: evaluatedAt.toISOString(),
+      effective_date: effectiveDate,
+      institution_timezone: school.timezone,
+      decision_mode: rule.decision_mode as GovernanceDecisionAuthorityReceipt["decision_mode"],
+      user_id: appointment.linked_user_id,
+      account: { id: linkedUser.id, is_active: true },
+      memberships: activeMemberships
+        .map((membership) => ({ id: membership.id, role: membership.role, is_active: true as const }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      person: { id: person.id, revision: person.revision },
+      office: {
+        id: office.id,
+        revision: office.revision,
+        status: "active",
+        authority_source_id: office.authority_source_id,
+      },
+      appointment: {
+        id: appointment.id,
+        revision: appointment.revision,
+        status: "active",
+        appointment_kind: appointment.appointment_kind,
+        starts_on: appointment.starts_on,
+        ends_on: appointment.ends_on,
+        authority_source_id: appointment.authority_source_id,
+        evidence_reference: appointment.evidence_reference,
+      },
+      rule: {
+        id: rule.id,
+        revision: rule.revision,
+        status: "confirmed",
+        decision_mode: rule.decision_mode as GovernanceDecisionAuthorityReceipt["decision_mode"],
+        effective_from: rule.effective_from!,
+        effective_until: rule.effective_until,
+        conditions_summary: rule.conditions_summary,
+        authority_source_ids: [...rule.authority_source_ids].sort(),
+      },
+      sources: sourceReceipts,
+    };
+  }
+
+  async assertDecisionAuthority(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    matterCode: GovernanceDecisionMatter,
+    userId: string,
+    at: Date,
+  ): Promise<GovernanceDecisionAuthorityReceipt> {
+    uuid.parse(userId);
+    const authority = await this.resolveDecisionOwner(transaction, schoolId, matterCode, at);
+    if (authority.user_id !== userId) {
+      throw new ForbiddenException("The current officeholder must decide this staff-leave request.");
+    }
+    return authority;
   }
 
   private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetType: "regulatory_profile" | "policy_version" | "policy_acknowledgement" | "authority_setup" | "authority_source" | "office" | "body" | "seat" | "appointment" | "mandate" | "decision_rule", targetId: string | null, metadata: Record<string, unknown> = {}) {

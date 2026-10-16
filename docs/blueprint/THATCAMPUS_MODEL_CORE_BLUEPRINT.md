@@ -315,6 +315,35 @@ An agent endpoint represents one account, app session, device credential, provid
 identity or external channel through which an agent can act or receive delivery. Its
 suspension, revocation, scope and delivery health are separate from the stable agent.
 
+#### 5.6.1 Human-agent lifecycle
+
+The human identity lifecycle is explicit and event-driven; it is not inferred from a
+matching name, phone number or email address.
+
+```text
+People creates person
+ -> Auth/People explicitly links account endpoint
+ -> Core creates or resolves one institution-scoped human agent
+ -> dated endpoint becomes active
+ -> authorized actions resolve person + agent + current endpoint
+ -> endpoint may be suspended, revoked or replaced without replacing the agent
+ -> person merge/split is a reviewed People operation with retained lineage
+ -> retirement closes current endpoints and authority without deleting history
+```
+
+Account and external-channel endpoints use `pending`, `active`, `suspended`,
+`revoked`, `expired` and `replaced` states with effective and recorded time. Every
+transition retains actor, reason, source event, previous revision and idempotency key.
+An exact replay is read-only and cannot reactivate a suspended or revoked endpoint.
+Historical trace rendering uses the endpoint/recipient snapshot recorded at the time;
+new work uses the currently effective endpoint.
+
+Person merge/split never happens inside the Core. People supplies the reviewed
+decision and mapping; the Core appends alias/supersession lineage, rejects ambiguous
+current resolution and preserves the original signer on historical evidence. A team
+agent likewise has dated membership; queue claim records both the team and concrete
+human agent. A concrete response never becomes an unattributed team action.
+
 ### 5.7 Authority evidence
 
 Authority is purpose-specific, scoped and effective-dated. It references the owning
@@ -555,6 +584,31 @@ cross-domain automation until the core has correlated it. A core or projection o
 must not lose an accepted domain action, and recovery must not repeat its material
 effect.
 
+### 8.5 Minimum material-workflow trace
+
+A workflow is model-mediated only when one correlation trace can prove every
+applicable link below. Merely copying the final domain row into a projection does not
+qualify.
+
+```text
+identified actor command or registered-source observation
+ -> current identity endpoint + purpose-specific authority receipt
+ -> effective behaviour + OperatingRuleRef + temporal-context snapshot
+ -> owning-domain transaction, audit and outbox event
+ -> accepted model event + matched subscription + resolved recipient
+ -> durable typed message/work item
+ -> identified recipient response or agent command
+ -> fresh authority/revision/invariant check in the owning domain
+ -> retained domain outcome + resulting event
+ -> next owner, physical-evidence wait, correction path or terminal closure
+```
+
+Every material link carries institution, trace/correlation, causation, source
+aggregate/revision, idempotency key, effective time, recorded time and schema version.
+Restricted fields remain in the owning domain; messages and projections carry only
+the references and minimum data required by the recipient. A partially connected
+workflow is reported as such and names the first missing link.
+
 ## 9. Operational mailbox and work ownership
 
 The mailbox is durable coordination state for agents and teams. It supports:
@@ -577,6 +631,15 @@ Work may be owned by a team, but claim and response name the concrete agent. A
 recipient can see a message without owning or having authority to execute it.
 External-channel responses reauthenticate or use a narrowly scoped, expiring signed
 protocol; channel possession alone grants no authority.
+
+When recipient authority changes while a message is open, the original message is
+not silently reassigned. A configured protocol may cancel and reissue it to the newly
+resolved owner while retaining one correlation trace, the previous recipient and the
+reason/effective time of transfer. Until that protocol succeeds, the old recipient
+cannot act, the new recipient does not inherit an unaddressed action, and a visible
+coordination exception names the correction owner. The original sender may cancel a
+still-pending request when the owning domain permits it even if decision authority has
+rotated; cancellation does not grant decision authority.
 
 ## 10. Command routing
 
@@ -705,6 +768,39 @@ for the institution. A migration of an existing hard-coded behavior may create a
 explicit visible configuration snapshot with provenance, but must not leave the
 runtime with an undocumented fallback.
 
+### 14.4 Required configuration references
+
+Every execution snapshots typed references rather than only a display label:
+
+```text
+OperatingRuleRef {
+  rule_id, rule_version_id, rule_kind, configuration_hash,
+  effective_from, effective_until, scope, authority_source,
+  fallback_owner_selector, correction_owner_selector
+}
+
+BehaviourActivationRef {
+  behaviour_id, version_id, configuration_hash,
+  validation_receipt_id, rehearsal_run_id,
+  approval_receipt_id, activation_receipt_id,
+  effective_from, effective_until
+}
+
+RecipientResolutionReceipt {
+  selector_key, selector_version, evaluated_at,
+  subject_ref, context_ref, candidate_count,
+  selected_agent_refs, rejected_candidate_codes,
+  authority_receipt_ids, configuration_hash
+}
+```
+
+References are immutable snapshots or content-addressed links to immutable versions.
+Activation is rejected if a dependency is missing, draft, expired, superseded,
+cross-tenant or outside the behaviour interval. Recipient selection must be declared
+(`individual`, `officeholder`, `team_queue`, `relationship`, `resource_duty` or a
+reviewed domain resolver); arbitrary SQL, “all admins” and code-level default
+recipients are forbidden.
+
 ## 15. Authority and governance
 
 ### 15.1 Identity parity
@@ -746,6 +842,28 @@ imply the other. Recipient visibility and prior approval are not execution autho
 | A5 | coordinate a human-only/physical step without deciding it |
 
 The labels describe ceilings, not automatic permission.
+
+### 15.4 First-institution bootstrap ceremony
+
+An empty institution cannot authorize itself through a hidden seed. Bootstrap is a
+separate, audited ceremony:
+
+1. Auth verifies the founding account and creates an institution invitation/claim.
+2. People creates the founding person and explicitly links that account.
+3. A bootstrap grant, limited to campus setup and governance establishment, creates
+   the first human agent and expires at a fixed time or completion boundary.
+4. The founder records the institution's first authority source, office/role and
+   appointment using reviewed governance commands.
+5. A different approver is required where the institution's governance pack requires
+   separation of duties; otherwise the retained bootstrap exception states why a
+   single founder was allowed.
+6. Behaviour and Operating-rule templates are installed only as visible drafts. The
+   authorized officeholder validates, rehearses, approves and activates them.
+7. Successful handover revokes the bootstrap grant. Failure leaves the institution
+   in setup-only mode with recovery evidence, never an implicit super-admin.
+
+Demo/local fixtures may abbreviate the ceremony only behind explicit demo flags and
+must identify their synthetic provenance. They are not production defaults.
 
 ## 16. Simulation and what-if analysis
 
@@ -793,6 +911,31 @@ human behavior or physical certainty.
 Required reference rehearsals include staff-cover response windows, timetable/room
 reallocation, gate staffing/load, examination publication delay, transport disruption
 and attendance-finalization rule change.
+
+### 16.5 Execution-context seam
+
+Live and scenario execution share contracts but never implicit infrastructure. Every
+runtime entry point receives an execution context equivalent to:
+
+```text
+ExecutionContext {
+  mode: live | rehearsal | simulation | replay,
+  namespace_id, institution_id, run_id,
+  clock, deterministic_seed,
+  identity_resolver, authority_resolver,
+  configuration_snapshot, domain_executor_registry,
+  message_dispatcher, evidence_store, side_effect_policy
+}
+```
+
+`live` may address approved production domain executors and channels. `rehearsal` and
+`simulation` use snapshot/fake domain executors and a sink-only dispatcher;
+`side_effect_policy` must make production recipients, credentials and commands
+unaddressable. `replay` can rebuild projections or re-evaluate a bounded trace but
+cannot redispatch external messages or repeat domain writes. Wall-clock reads,
+`CURRENT_TIMESTAMP`, random IDs and provider calls behind simulation-capable logic
+must come from the context or a declared adapter. A domain without a deterministic
+scenario executor returns `unsupported`; the runtime never guesses its result.
 
 ## 17. Domain adapter contract
 
@@ -1008,6 +1151,15 @@ domain state and the permitted correction or escalation route.
   permitted lineage skeleton.
 - Domain extraction/microservice boundaries may change transport, not contracts.
 
+Temporal truth is bitemporal where later knowledge changes interpretation. Plan and
+occurrence corrections append version/supersession records with `valid_from`,
+`valid_until`, `recorded_at` and `superseded_at`; they do not overwrite the only copy
+of a prior expectation. `resolveAt(effectiveInstant, recordedAsOf)` uses the supplied
+recorded boundary for both source selection and freshness, never the process clock.
+Aggregate sequence plus source revision detect gaps and out-of-order delivery.
+Privacy retention may redact payload while preserving the minimum authorized lineage
+skeleton and redaction evidence.
+
 Replay is authorized, dry-runnable and bounded by event/trace/tenant/time range. It
 tracks progress, cancellation, poison-event quarantine and schema upcasting. It MUST
 NOT silently resend an external message, repeat a domain write, replace historical
@@ -1117,7 +1269,19 @@ slice:
 - a provider-neutral coordination port that verifies the source outbox event, fails
   closed without one effective approved configuration, resolves only explicit
   domain-facing agent references, rechecks current capability/scope, and records
-  queued Request/Task/Offer/Update evidence or an unmatched exception atomically.
+  queued Request/Task/Offer/Update evidence or an unmatched exception atomically;
+- person-stable human agents from migration 107, with explicit People-owned identity,
+  dated account/external-channel endpoints, audited idempotent close/revoke/replace
+  transitions, historical recipient snapshots and no name/email/phone matching;
+- purpose-specific `staff_leave_decision` authority resolution with an effective
+  officeholder, confirmed rule/source evidence, current account/membership checks and
+  a retained privacy-minimized decision receipt;
+- the first bounded staff-leave vertical segment: exact governance-owner resolution,
+  configured one-recipient Request publication in the owning domain transaction,
+  actor-scoped command receipts, exact-message response binding, current authority
+  and capability rechecks, correlated decision outcomes, private reason/handover
+  exclusion from core payloads, exact-owner read filtering and original-sender
+  cancellation of the retained Request.
 
 Not yet implemented at this checkpoint:
 
@@ -1128,7 +1292,9 @@ Not yet implemented at this checkpoint:
 - mailbox query/claim/reassign/channel-delivery APIs and dated team membership;
 - general authority resolution from roles/appointments;
 - idempotent domain command router across workflows;
-- staff leave/coverage model mediation;
+- configured staff-leave rerouting/transfer when the officeholder changes after
+  submission (decision currently fails closed rather than guessing a recipient);
+- coverage offer/acceptance/fallback model mediation;
 - accepted cover as effective timetable substitution;
 - role-specific Today composition from the shared model;
 - automation explanation API;
@@ -1138,8 +1304,15 @@ Not yet implemented at this checkpoint:
 
 Known transitional mismatches that later slices MUST remove:
 
-- current human agents are keyed by `user_id`, not yet by person-stable identity with
-  dated account/channel endpoints;
+- Auth/People onboarding and live Agent Channels link/revoke are not yet connected to
+  the new endpoint lifecycle; an unlinked acting account fails closed and an external
+  channel can become stale until those adapters are delivered;
+- missing staff-leave routing rolls back the domain transaction and its in-transaction
+  coordination exception, so the failure is safe but not yet a durable owned
+  configuration case;
+- the live runtime still binds directly to production database/time/dispatch
+  dependencies; the required `ExecutionContext` simulation/rehearsal/replay seam is a
+  contract, not yet executable isolation;
 - `recordAcceptedChange` records an already accepted topology result and is not the
   general pre-domain authority/command gateway;
 - some operational-signal queries still join enrollment/student domain tables rather

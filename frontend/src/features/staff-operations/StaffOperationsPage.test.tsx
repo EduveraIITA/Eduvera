@@ -4,11 +4,12 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation, useNavigationType } from "react-router-dom";
-import { StaffOperationsPage } from "./StaffOperationsPage";
-import { saveCoveragePolicy, type AdminStaffWorkspace, type CoverageTask, type ResponsibilityAssignment, type StaffLeaveRequest, type StaffProfile, type TeacherStaffWorkspace } from "./api";
+import { AuthorizedStaffLeaveDecisionPage, StaffOperationsPage } from "./StaffOperationsPage";
+import { decideStaffLeave, saveCoveragePolicy, type AdminStaffWorkspace, type CoverageTask, type ResponsibilityAssignment, type StaffLeaveRequest, type StaffProfile, type TeacherStaffWorkspace } from "./api";
 import { saveAccessRole, assignAccessRole, type AccessRole, type RoleOptions, type RoleAssignment } from "./access-api";
+import { clearPendingStaffLeaveCommandsForTests } from "./pendingLeaveCommand";
 vi.mock("./access-api", async (original) => ({...(await original<typeof import("./access-api")>()),saveAccessRole:vi.fn(),assignAccessRole:vi.fn()}));
-vi.mock("./api", async (original) => ({...(await original<typeof import("./api")>()),saveCoveragePolicy:vi.fn()}));
+vi.mock("./api", async (original) => ({...(await original<typeof import("./api")>()),saveCoveragePolicy:vi.fn(),decideStaffLeave:vi.fn()}));
 vi.mock("../attention/AttentionOpenAcknowledgement",()=>({AttentionOpenAcknowledgement:()=> <output data-testid="attention-opened"/>}));
 
 vi.mock("../roles/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../roles/api")>()), getRoles: vi.fn(), assignProfiles: vi.fn() }));
@@ -36,13 +37,86 @@ function NavigationProbe() {
 }
 
 function renderPage(data: AdminStaffWorkspace | TeacherStaffWorkspace, portal: "principal" | "teacher", staffProfileId?: string, path = "/") {
-  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /><NavigationProbe /></MemoryRouter></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} actorId="actor-1" teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /><NavigationProbe /></MemoryRouter></QueryClientProvider>);
 }
 
-beforeEach(() => undefined);
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+beforeEach(() => clearPendingStaffLeaveCommandsForTests());
+afterEach(() => { cleanup(); clearPendingStaffLeaveCommandsForTests(); vi.clearAllMocks(); });
 
 describe("StaffOperationsPage", () => {
+  it("reuses a decision command after response loss and a page reload", async () => {
+    const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    vi.mocked(decideStaffLeave).mockRejectedValueOnce(new TypeError("network interrupted"));
+    renderPage(data, "principal", undefined, "/principal/staff?section=leave");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(decideStaffLeave).toHaveBeenCalledTimes(1));
+    const firstCommandId = vi.mocked(decideStaffLeave).mock.calls[0]?.[2].command_id;
+
+    cleanup();
+    vi.mocked(decideStaffLeave).mockResolvedValueOnce({ ...request, status: "approved", revision: 2 });
+    renderPage(data, "principal", undefined, "/principal/staff?section=leave");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(decideStaffLeave).toHaveBeenCalledTimes(2));
+
+    expect(vi.mocked(decideStaffLeave).mock.calls[1]?.[2].command_id).toBe(firstCommandId);
+  });
+
+  it("lets a non-admin decision owner use the existing leave decision card", () => {
+    const ownerProfile = { ...profile, id: "owner-profile", user_id: "decision-owner", first_name: "Rohan", last_name: "Sen" };
+    const data: TeacherStaffWorkspace = {
+      mode: "staff",
+      academic_year: "2026-27",
+      profile: ownerProfile,
+      policies: [policy],
+      balances: [],
+      requests: [request],
+      work_types: [],
+      responsibility_types: [],
+      assignments: [],
+      coverage_tasks: [],
+      can_review_staff_leave: true,
+    };
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <AuthorizedStaffLeaveDecisionPage
+            portal="teacher"
+            schoolId="school-1"
+            schoolName="Cambridge International School"
+            actorId="decision-owner"
+            requestId={request.id}
+            data={data}
+            refresh={vi.fn().mockResolvedValue(undefined)}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Leave request" })).toBeVisible();
+    expect(screen.getByText("Family medical appointment")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
+    expect(screen.queryByText(/days available before decision/)).not.toBeInTheDocument();
+
+    cleanup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <AuthorizedStaffLeaveDecisionPage
+            portal="teacher"
+            schoolId="school-1"
+            actorId="decision-owner"
+            requestId={request.id}
+            data={{ ...data, can_review_staff_leave: false }}
+            refresh={vi.fn().mockResolvedValue(undefined)}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("heading", { name: "Leave request unavailable" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
   it("gives the teacher balances, request history and an application form", async () => {
     const data: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [] };
     renderPage(data, "teacher");
@@ -139,7 +213,7 @@ describe("StaffOperationsPage", () => {
 
   it("shows scoped responsibility offers to staff and on the selected staff record", async () => {
     const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [assignment], coverage_tasks: [] };
-    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><StaffOperationsPage portal="teacher" teacherView="responsibilities" schoolId="school-1" schoolName="Cambridge International School" data={teacher} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><StaffOperationsPage portal="teacher" actorId="actor-1" teacherView="responsibilities" schoolId="school-1" schoolName="Cambridge International School" data={teacher} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
     expect(screen.getByRole("heading", { name: "My work", level: 1 })).toBeVisible();
     expect(screen.getByText("Inter-house debate · 10 Oct 2026")).toBeVisible();
     expect(screen.getByRole("button", { name: "Accept" })).toBeVisible();

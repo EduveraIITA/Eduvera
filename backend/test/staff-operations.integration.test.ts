@@ -14,15 +14,21 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
   const suffix = randomUUID();
   const password = "Str0ng!RiverPebbles2026";
   const adminEmail = `staff.admin.${suffix}@example.test`;
+  const otherAdminEmail = `staff.other-admin.${suffix}@example.test`;
   const teacherEmail = `teacher.${suffix}@example.test`;
   const replacementEmail = `replacement.${suffix}@example.test`;
   const adminCookies = new Map<string, string>();
+  const otherAdminCookies = new Map<string, string>();
   const teacherCookies = new Map<string, string>();
   const replacementCookies = new Map<string, string>();
   let server: ChildProcess;
   let schoolId: string;
   let adminId: string;
+  let otherAdminId: string;
   let teacherId: string;
+  let principalAgentId: string;
+  let authorityRuleId: string;
+  let behaviourId: string;
   let sectionId: string;
   let profileId: string;
   let replacementProfileId: string;
@@ -44,12 +50,88 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
   beforeAll(async () => {
     const admin = await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Meera','Kapoor','admin') RETURNING id", [`admin.${suffix}`, adminEmail, await hashPassword(password)]);
     adminId=admin.rows[0].id;
+    const otherAdmin = await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Arun','Office','admin') RETURNING id", [`other-admin.${suffix}`, otherAdminEmail, await hashPassword(password)]);
+    otherAdminId=otherAdmin.rows[0].id;
     const teacher = await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Kavita','Mehta','staff') RETURNING id", [`teacher.${suffix}`, teacherEmail, await hashPassword(password)]);
     const replacement = await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Rohan','Sen','staff') RETURNING id", [`replacement.${suffix}`, replacementEmail, await hashPassword(password)]);
     teacherId = teacher.rows[0].id;
     const school = await pool.query("INSERT INTO schools(name,code) VALUES('Staff Test School',$1) RETURNING id", [`staff-${suffix.slice(0, 12)}`]);
     schoolId = school.rows[0].id;
-    await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$4,'admin'),($2,$4,'staff'),($3,$4,'staff')", [admin.rows[0].id, teacherId, replacement.rows[0].id, schoolId]);
+    await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$5,'admin'),($2,$5,'staff'),($3,$5,'staff'),($4,$5,'admin')", [admin.rows[0].id, teacherId, replacement.rows[0].id, otherAdminId, schoolId]);
+
+    const authority = (await pool.query(`WITH person AS (
+        INSERT INTO school_people(school_id,first_name,last_name,contact_email)
+        VALUES($1,'Meera','Kapoor',$3) RETURNING id
+      ), source AS (
+        INSERT INTO institution_authority_sources(
+          school_id,code,title,source_kind,reference,provision,evidence_reference,
+          verification_state,effective_from,verified_by,verified_at,created_by
+        ) VALUES($1,'staff_leave_test_authority','Staff leave test authority','appointment_order',
+          'TEST-PRINCIPAL','Staff leave decisions','test:principal','verified',current_date,$2,now(),$2)
+        RETURNING id
+      ), office AS (
+        INSERT INTO institution_governance_offices(
+          school_id,code,title,purpose,authority_source_id,status,created_by
+        ) SELECT $1,'principal','Principal','Decide staff leave requests.',source.id,'active',$2
+          FROM source RETURNING id,authority_source_id
+      ), appointment AS (
+        INSERT INTO institution_governance_appointments(
+          school_id,office_id,person_id,linked_user_id,appointment_kind,starts_on,status,
+          authority_source_id,evidence_reference,created_by
+        ) SELECT $1,office.id,person.id,$2,'appointed',current_date,'active',source.id,
+          'test:principal',$2 FROM office,person,source RETURNING id,person_id
+      ), decision_rule AS (
+        INSERT INTO institution_decision_matter_rules(
+          school_id,code,title,category,decision_summary,execution_summary,decision_mode,
+          decision_office_id,authority_source_ids,conditions_summary,material_fields,
+          status,effective_from,created_by
+        ) SELECT $1,'staff_leave_decision','Staff leave decision','people',
+          'The current Principal decides.','Staff Operations records the decision.',
+          'individual',office.id,ARRAY[source.id]::uuid[],'Current officeholder only.',
+          ARRAY['staff_profile','starts_on','ends_on']::text[],'confirmed',current_date,$2
+          FROM office,source RETURNING id
+      ) SELECT person.id AS person_id,source.id AS source_id,office.id AS office_id,
+          appointment.id AS appointment_id,decision_rule.id AS rule_id
+        FROM person,source,office,appointment,decision_rule`, [schoolId, adminId, adminEmail])).rows[0];
+    const principalAgent = (await pool.query(`INSERT INTO campus_model_agents(
+        school_id,agent_kind,person_id,label,status
+      ) VALUES($1,'human',$2,'Meera Kapoor','active') RETURNING id`, [schoolId, authority.person_id])).rows[0];
+    principalAgentId = principalAgent.id;
+    authorityRuleId = authority.rule_id;
+    await pool.query(`INSERT INTO campus_model_agent_endpoints(
+        school_id,agent_id,endpoint_kind,provider,user_id,status,effective_from,
+        source_domain,source_record_id,source_revision,linked_by_user_id
+      ) VALUES($1,$2,'account','thatcampus',$3,'active',now()-interval '1 minute',
+        'governance',$4,1,$3)`, [schoolId, principalAgent.id, adminId, authority.appointment_id]);
+    await pool.query(`INSERT INTO campus_model_agent_authorities(
+        school_id,agent_id,capability,effective_from,grant_source,grant_reference_id,
+        approved_by,operating_rule_version_ref
+      ) VALUES($1,$2,'staff_leave:decide',now()-interval '1 minute',
+        'governance_decision_rule',$3,$4,'staff_leave_decision:test')`, [schoolId, principalAgent.id, authority.rule_id, adminId]);
+    const behaviour = (await pool.query(`INSERT INTO campus_model_behaviour_versions(
+        school_id,behaviour_key,version,status,effective_from,configuration,
+        configuration_schema_version,created_by_agent_id,approved_by_agent_id,approved_at
+      ) VALUES($1,'staff_leave_decision_routing',1,'approved',now()-interval '1 minute',
+        $2::jsonb,1,$3,$3,now()-interval '1 minute') RETURNING id`, [
+      schoolId,
+      JSON.stringify({ matter_code: "staff_leave_decision", selector_key: "leave_decision_owner" }),
+      principalAgent.id,
+    ])).rows[0];
+    behaviourId = behaviour.id;
+    await pool.query(`INSERT INTO campus_model_event_subscriptions(
+        school_id,behaviour_version_id,subscription_key,source_domain,event_type,
+        reaction_kind,message_kind,message_schema_version,recipient_selector,
+        response_due_after_seconds,expires_after_seconds,max_attempts,retry_after_seconds,priority
+      ) VALUES($1,$2,'staff_leave_submitted_to_decision_owner','staff_operations',
+        'staff.leave.submitted','staff_leave_decision_review','request',1,$3::jsonb,
+        172800,604800,3,3600,7)`, [schoolId, behaviour.id, JSON.stringify({
+      mode: "explicit_authorized_agents",
+      selector_key: "leave_decision_owner",
+      required_capability: "staff_leave:decide",
+      scope_mode: "institution",
+      min_recipients: 1,
+      max_recipients: 1,
+    })]);
     const term = await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,is_active) VALUES($1,'2030-31','Term 1','2030-04-01','2031-03-31',true) RETURNING id", [schoolId]);
     const section = await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2030-31','7','A') RETURNING id", [schoolId]); sectionId=section.rows[0].id;
     const subject = await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'MAT','Mathematics','Maths') RETURNING id", [schoolId]);
@@ -60,6 +142,8 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     expect(ready).toBe(true);
     await request(adminCookies, "auth/csrf/");
     expect((await request(adminCookies, "auth/login/", { identifier: adminEmail, password })).status).toBe(200);
+    await request(otherAdminCookies, "auth/csrf/");
+    expect((await request(otherAdminCookies, "auth/login/", { identifier: otherAdminEmail, password })).status).toBe(200);
   });
 
   afterAll(async () => { server?.kill("SIGTERM"); await pool.end(); });
@@ -114,20 +198,160 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     });
   });
 
+  it("rolls back leave submission when the configured coordination route is unavailable", async () => {
+    await pool.query("UPDATE campus_model_behaviour_versions SET status='retired',retired_at=now() WHERE id=$1", [behaviourId]);
+    const commandId = randomUUID();
+    const reason = `Route rollback ${commandId}`;
+    try {
+      const blocked = await request(teacherCookies, staffPath("leave-requests"), {
+        policy_id: policyId,
+        starts_on: "2030-04-10",
+        ends_on: "2030-04-10",
+        portion: "full_day",
+        reason,
+        handover_note: "This private note must roll back with the request.",
+        command_id: commandId,
+      });
+      expect(blocked.status).toBe(409);
+      expect((await pool.query("SELECT count(*)::int total FROM staff_leave_requests WHERE school_id=$1 AND reason=$2", [schoolId, reason])).rows[0].total).toBe(0);
+      expect((await pool.query("SELECT count(*)::int total FROM staff_leave_commands WHERE school_id=$1 AND command_id=$2", [schoolId, commandId])).rows[0].total).toBe(0);
+    } finally {
+      await pool.query("UPDATE campus_model_behaviour_versions SET status='approved',retired_at=NULL WHERE id=$1", [behaviourId]);
+    }
+  });
+
   it("submits, exposes timetable impact, approves and updates the balance", async () => {
-    const leave = await request(teacherCookies, staffPath("leave-requests"), { policy_id: policyId, starts_on: "2030-04-08", ends_on: "2030-04-08", portion: "full_day", reason: "Family medical appointment", handover_note: "Period 1 needs cover" });
+    const submitCommandId = randomUUID();
+    const leaveInput = { policy_id: policyId, starts_on: "2030-04-08", ends_on: "2030-04-08", portion: "full_day", reason: "Family medical appointment", handover_note: "Period 1 needs cover", command_id: submitCommandId };
+    const leave = await request(teacherCookies, staffPath("leave-requests"), leaveInput);
     expect(leave.status).toBe(201); requestId = leave.data.id;
+    const replayedLeave = await request(teacherCookies, staffPath("leave-requests"), leaveInput);
+    expect(replayedLeave.status).toBe(201);
+    expect(replayedLeave.data).toMatchObject({ id: requestId, status: "submitted", revision: leave.data.revision });
+    const sameCorrelationLeave = await request(replacementCookies, staffPath("leave-requests"), {
+      ...leaveInput,
+      starts_on: "2030-04-11",
+      ends_on: "2030-04-11",
+      reason: "Second requester using the same client command UUID",
+      handover_note: "Private second requester handover",
+    });
+    expect(sameCorrelationLeave.status).toBe(201);
+    expect(sameCorrelationLeave.data.id).not.toBe(requestId);
+    expect((await request(teacherCookies, staffPath("leave-requests"), { ...leaveInput, reason: "A different family medical appointment" })).status).toBe(409);
+    expect((await pool.query("SELECT count(*)::int total FROM staff_leave_commands WHERE school_id=$1 AND actor_id=$2 AND command_id=$3", [schoolId, teacherId, submitCommandId])).rows[0].total).toBe(1);
+    expect((await pool.query("SELECT count(*)::int total FROM event_outbox WHERE aggregate_id=$1 AND event_type='staff.leave.submitted'", [requestId])).rows[0].total).toBe(1);
+    const modelTrace = (await pool.query(`SELECT event.correlation_id,event.payload,message.payload AS message_payload,
+        endpoint.user_id AS recipient_user_id
+      FROM campus_model_events event
+      JOIN campus_model_reactions reaction ON reaction.trigger_event_id=event.id
+      JOIN campus_model_operational_messages message ON message.reaction_id=reaction.id
+      JOIN campus_model_agent_endpoints endpoint ON endpoint.agent_id=message.recipient_agent_id
+        AND endpoint.endpoint_kind='account' AND endpoint.provider='thatcampus'
+        AND endpoint.status='active' AND endpoint.effective_from<=now()
+        AND (endpoint.effective_until IS NULL OR endpoint.effective_until>now())
+      WHERE event.school_id=$1 AND event.source_record_id=$2`, [schoolId, requestId])).rows[0];
+    expect(modelTrace).toMatchObject({ correlation_id: submitCommandId, recipient_user_id: adminId });
+    expect(JSON.stringify(modelTrace)).not.toMatch(/Family medical appointment|Period 1 needs cover|reason|handover/i);
+    const otherAdminView = await request(otherAdminCookies, staffPath("workspace"));
+    expect(otherAdminView.status).toBe(200);
+    expect(otherAdminView.data.requests).not.toContainEqual(expect.objectContaining({ id: requestId }));
+    const otherAdminRequests = await request(otherAdminCookies, "requests/?portal=principal");
+    expect(otherAdminRequests.status).toBe(200);
+    expect(otherAdminRequests.data.items).not.toContainEqual(expect.objectContaining({
+      kind: "staff_leave_review",
+      source_id: requestId,
+    }));
+    expect(JSON.stringify(otherAdminRequests.data)).not.toContain("Family medical appointment");
+    expect((await request(otherAdminCookies, staffPath(`leave-requests/${requestId}/decision`), {
+      decision: "approved", note: "Attempted by a technical administrator",
+      expected_revision: leave.data.revision, command_id: randomUUID(),
+    })).status).toBe(403);
     const adminView = await request(adminCookies, staffPath("workspace"));
     expect(adminView.data.requests).toContainEqual(expect.objectContaining({ id: requestId, status: "submitted", affected_periods: 1 }));
     const queued = adminView.data.requests.find((item: { id: string }) => item.id === requestId);
-    const approved = await request(adminCookies, staffPath(`leave-requests/${requestId}/decision`), { decision: "approved", note: "Cover arranged", expected_revision: queued.revision });
+    const decisionCommandId = randomUUID();
+    const decisionInput = { decision: "approved", note: "Cover arranged", expected_revision: queued.revision, command_id: decisionCommandId };
+    await pool.query(`UPDATE campus_model_agent_authorities SET revoked_at=now(),revoked_by=$2
+      WHERE school_id=$1 AND agent_id=$3 AND capability='staff_leave:decide' AND revoked_at IS NULL`,
+    [schoolId, adminId, principalAgentId]);
+    const blockedByRevocation = await request(adminCookies, staffPath(`leave-requests/${requestId}/decision`), {
+      ...decisionInput,
+      command_id: randomUUID(),
+    });
+    expect(blockedByRevocation.status).toBe(409);
+    expect((await pool.query("SELECT status,revision FROM staff_leave_requests WHERE id=$1", [requestId])).rows[0])
+      .toMatchObject({ status: "submitted", revision: leave.data.revision });
+    await pool.query(`INSERT INTO campus_model_agent_authorities(
+        school_id,agent_id,capability,effective_from,grant_source,grant_reference_id,
+        approved_by,operating_rule_version_ref
+      ) VALUES($1,$2,'staff_leave:decide',now(),
+        'governance_decision_rule',$3,$4,'staff_leave_decision:test:replacement')`,
+    [schoolId, principalAgentId, authorityRuleId, adminId]);
+    const approved = await request(adminCookies, staffPath(`leave-requests/${requestId}/decision`), decisionInput);
     expect(approved.status).toBe(201);
     expect(approved.data).toMatchObject({ status: "approved", affected_periods: 1 });
+    const otherAdminAfterDecision = await request(otherAdminCookies, staffPath("workspace"));
+    expect(otherAdminAfterDecision.data.requests).not.toContainEqual(expect.objectContaining({ id: requestId }));
+    expect(otherAdminAfterDecision.data.coverage_tasks.find((item: { leave_request_id: string }) => item.leave_request_id === requestId))
+      .toMatchObject({ leave_reason: null, handover_note: "" });
+    const operationalMessage = (await pool.query(`SELECT message.state,outcome.state AS outcome_state,
+        outcome.response FROM campus_model_operational_messages message
+      JOIN campus_model_reactions reaction ON reaction.id=message.reaction_id
+      JOIN campus_model_events event ON event.id=reaction.trigger_event_id
+      LEFT JOIN campus_model_operational_message_outcomes outcome ON outcome.message_id=message.id
+        AND outcome.state='responded'
+      WHERE event.school_id=$1 AND event.source_record_id=$2`, [schoolId, requestId])).rows[0];
+    expect(operationalMessage).toMatchObject({ state: "responded", outcome_state: "responded" });
+    expect(operationalMessage.response).toMatchObject({ decision: "approved", resulting_revision: approved.data.revision });
+    const replayedDecision = await request(adminCookies, staffPath(`leave-requests/${requestId}/decision`), decisionInput);
+    expect(replayedDecision.status).toBe(201);
+    expect(replayedDecision.data).toMatchObject({ id: requestId, status: "approved", affected_periods: 1, revision: approved.data.revision });
+    expect((await request(adminCookies, staffPath(`leave-requests/${requestId}/decision`), { ...decisionInput, note: "Different decision details" })).status).toBe(409);
+    const secondWithdrawal = await request(
+      replacementCookies,
+      staffPath(`leave-requests/${sameCorrelationLeave.data.id}/withdraw`),
+      { expected_revision: sameCorrelationLeave.data.revision, command_id: randomUUID() },
+    );
+    expect(secondWithdrawal.data).toMatchObject({ id: sameCorrelationLeave.data.id, status: "withdrawn" });
     const teacherView = await request(teacherCookies, staffPath("workspace"));
     expect(teacherView.data.requests).toContainEqual(expect.objectContaining({ id: requestId, status: "approved" }));
     expect(Number(teacherView.data.balances.find((item: { policy_id: string }) => item.policy_id === policyId).used)).toBe(1);
     expect(teacherView.data.coverage_tasks).toContainEqual(expect.objectContaining({ leave_request_id: requestId, status: "open" }));
-    expect((await request(teacherCookies, staffPath(`leave-requests/${requestId}/withdraw`), { expected_revision: approved.data.revision })).status).toBe(409);
+    expect((await request(teacherCookies, staffPath(`leave-requests/${requestId}/withdraw`), { expected_revision: approved.data.revision, command_id: randomUUID() })).status).toBe(409);
+
+    const withdrawable = await request(teacherCookies, staffPath("leave-requests"), {
+      policy_id: policyId, starts_on: "2030-04-09", ends_on: "2030-04-09", portion: "full_day",
+      reason: "Family follow-up appointment", handover_note: "No scheduled class", command_id: randomUUID(),
+    });
+    expect(withdrawable.status).toBe(201);
+    const withdrawCommandId = randomUUID();
+    const withdrawInput = { expected_revision: withdrawable.data.revision, command_id: withdrawCommandId };
+    await pool.query("UPDATE institution_decision_matter_rules SET status='retired' WHERE id=$1", [authorityRuleId]);
+    let withdrawn: { status: number; data: any };
+    try {
+      withdrawn = await request(teacherCookies, staffPath(`leave-requests/${withdrawable.data.id}/withdraw`), withdrawInput);
+    } finally {
+      await pool.query("UPDATE institution_decision_matter_rules SET status='confirmed' WHERE id=$1", [authorityRuleId]);
+    }
+    expect(withdrawn.data).toMatchObject({ id: withdrawable.data.id, status: "withdrawn" });
+    const cancelledMessage = (await pool.query(`SELECT message.state,outcome.state AS outcome_state,
+        actor_endpoint.user_id AS actor_user_id
+      FROM campus_model_operational_messages message
+      JOIN campus_model_reactions reaction ON reaction.id=message.reaction_id
+      JOIN campus_model_events event ON event.id=reaction.trigger_event_id
+      LEFT JOIN campus_model_operational_message_outcomes outcome ON outcome.message_id=message.id
+        AND outcome.state='cancelled'
+      LEFT JOIN campus_model_agent_endpoints actor_endpoint ON actor_endpoint.agent_id=outcome.actor_agent_id
+        AND actor_endpoint.endpoint_kind='account' AND actor_endpoint.provider='thatcampus'
+      WHERE event.school_id=$1 AND event.source_record_id=$2`, [schoolId, withdrawable.data.id])).rows[0];
+    expect(cancelledMessage).toMatchObject({
+      state: "cancelled",
+      outcome_state: "cancelled",
+      actor_user_id: teacherId,
+    });
+    const replayedWithdrawal = await request(teacherCookies, staffPath(`leave-requests/${withdrawable.data.id}/withdraw`), withdrawInput);
+    expect(replayedWithdrawal.data).toMatchObject({ id: withdrawable.data.id, status: "withdrawn", revision: withdrawn.data.revision });
+    expect((await request(teacherCookies, staffPath(`leave-requests/${withdrawable.data.id}/withdraw`), { ...withdrawInput, expected_revision: withdrawn.data.revision })).status).toBe(409);
   });
 
   it("records the configured fallback decision without claiming classroom delivery", async () => {

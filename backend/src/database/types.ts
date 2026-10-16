@@ -113,7 +113,7 @@ export interface NotificationTable {
 }
 export interface SchoolContactTable { id: Generated<string>; school_id: string; label: string; name: string; phone: Generated<string>; email: Generated<string>; availability: Generated<string>; priority: Generated<number> }
 export interface StaffProfileTable {
-  id: Generated<string>; school_id: string; user_id: string | null; staff_code: string;
+  id: Generated<string>; school_id: string; user_id: string | null; person_id: Generated<string>; staff_code: string;
   first_name: string; last_name: Generated<string>; email: string; phone: Generated<string>;
   staff_kind: "teaching" | "non_teaching"; designation: string; department: Generated<string>;
   employment_type: "full_time" | "part_time" | "contract"; joined_on: DateOnly;
@@ -177,7 +177,7 @@ export interface CampusModelRelationshipTable {
 }
 export interface CampusModelAgentTable {
   id: Generated<string>; school_id: string; agent_kind: "human" | "team" | "device" | "integration" | "software";
-  user_id: string | null; external_ref: string | null; label: string;
+  user_id: string | null; person_id: Generated<string | null>; external_ref: string | null; label: string;
   status: Generated<"active" | "suspended" | "revoked">; metadata: Json;
   revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;
 }
@@ -187,6 +187,81 @@ export interface CampusModelAgentAuthorityTable {
   grant_source: string; grant_reference_id: string; approved_by: string | null;
   operating_rule_version_ref: string | null; constraints: Json; revoked_at: NullableTimestamp;
   revoked_by: string | null; created_at: Timestamp;
+}
+export interface CampusModelAgentEndpointTable {
+  id: Generated<string>; school_id: string; agent_id: string;
+  endpoint_kind: "account" | "external_channel"; provider: string;
+  user_id: string | null; external_subject: string | null;
+  status: "active" | "suspended" | "revoked";
+  effective_from: Timestamp; effective_until: NullableTimestamp;
+  source_domain: string; source_record_id: string; source_revision: number;
+  linked_by_user_id: string | null; metadata: Generated<Json>; revision: Generated<number>;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusModelAgentEndpointTransitionTable {
+  id: Generated<string>; school_id: string; endpoint_id: string; agent_id: string;
+  transition_kind: "ended" | "revoked";
+  previous_status: "active" | "suspended" | "revoked";
+  next_status: "active" | "suspended" | "revoked";
+  previous_effective_until: NullableTimestamp; effective_at: Timestamp;
+  resulting_endpoint_revision: number; reason: string;
+  source_domain: string; source_record_id: string; source_revision: number;
+  actor_user_id: string; idempotency_key: string; request_hash: string;
+  created_at: Timestamp;
+}
+export interface CampusModelBehaviourVersionTable {
+  id: Generated<string>; school_id: string; behaviour_key: string; version: number;
+  status: "draft" | "approved" | "retired";
+  effective_from: Timestamp; effective_until: NullableTimestamp;
+  configuration: Json; configuration_schema_version: number;
+  created_by_agent_id: string; approved_by_agent_id: string | null;
+  approved_at: NullableTimestamp; created_at: Timestamp; retired_at: NullableTimestamp;
+}
+export interface CampusModelEventSubscriptionTable {
+  id: Generated<string>; school_id: string; behaviour_version_id: string;
+  subscription_key: string; source_domain: string; event_type: string; reaction_kind: string;
+  message_kind: "request" | "task" | "offer" | "update";
+  message_schema_version: number; recipient_selector: Json;
+  response_due_after_seconds: number | null; expires_after_seconds: number | null;
+  max_attempts: number; retry_after_seconds: number | null; priority: number;
+  created_at: Timestamp;
+}
+export interface CampusModelReactionTable {
+  id: Generated<string>; school_id: string; trigger_event_id: string;
+  source_outbox_event_id: string; behaviour_version_id: string; subscription_id: string;
+  recipient_agent_id: string; reaction_kind: string;
+  state: "queued" | "delivered" | "acknowledged" | "completed" | "expired" | "cancelled" | "dead_letter";
+  selector_snapshot: Json; behaviour_snapshot: Json; correlation_id: string;
+  causation_event_id: string | null; attempt_count: number; max_attempts: number;
+  next_attempt_at: NullableTimestamp; response_due_at: NullableTimestamp; expires_at: NullableTimestamp;
+  idempotency_key: string; request_hash: string; created_at: Timestamp; updated_at: Timestamp;
+  completed_at: NullableTimestamp;
+}
+export interface CampusModelCoordinationExceptionTable {
+  id: Generated<string>; school_id: string; trigger_event_id: string; source_outbox_event_id: string;
+  exception_code: "configuration_missing" | "configuration_invalid" | "selector_invalid" | "recipient_unresolved" | "recipient_unauthorized";
+  status: "open" | "resolved"; selector_key: string; explanation: string; details: Json;
+  correlation_id: string; created_at: Timestamp; resolved_at: NullableTimestamp;
+  resolved_by_agent_id: string | null;
+}
+export interface CampusModelOperationalMessageTable {
+  id: Generated<string>; school_id: string; reaction_id: string; sender_agent_id: string;
+  recipient_agent_id: string; owner_agent_id: string;
+  message_kind: "request" | "task" | "offer" | "update";
+  state: "queued" | "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
+  subject: string; summary: string; payload: Json; schema_version: number;
+  correlation_id: string; causation_event_id: string | null; source_outbox_event_id: string;
+  dispatch_outbox_event_id: string | null; response_due_at: NullableTimestamp; expires_at: NullableTimestamp;
+  queued_at: Timestamp; delivered_at: NullableTimestamp; acknowledged_at: NullableTimestamp;
+  responded_at: NullableTimestamp; expired_at: NullableTimestamp; cancelled_at: NullableTimestamp;
+  dead_lettered_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp;
+}
+export interface CampusModelOperationalMessageOutcomeTable {
+  id: Generated<string>; school_id: string; message_id: string; sequence: number;
+  state: "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
+  actor_agent_id: string | null; source_outbox_event_id: string | null; code: string;
+  explanation: string; response: Json | null; occurred_at: Timestamp;
+  idempotency_key: string; request_hash: string; created_at: Timestamp;
 }
 export interface CampusModelObservationTable {
   id: Generated<string>; school_id: string; kind: string; subject_entity_id: string;
@@ -210,16 +285,24 @@ export interface CampusModelCommandOutcomeTable {
   code: string; explanation: string; resulting_entity_id: string | null;
   resulting_revision: number | null; domain_event_id: string | null; metadata: Json; recorded_at: Timestamp;
 }
+export interface StaffLeaveCommandTable {
+  id: Generated<string>; school_id: string; actor_id: string; command_id: string;
+  command_type: "submit" | "decide" | "withdraw"; target_request_id: string;
+  request_hash: string; result: Json; outbox_event_id: string;
+  correlation_id: string; causation_event_id: string | null;
+  authority_receipt: Json; coordination_receipt: Json; created_at: Timestamp;
+}
 export interface CampusModelProjectionCheckpointTable {
   consumer: string; last_delivery_sequence: Generated<number>; last_event_id: string | null; updated_at: Timestamp;
 }
 export interface CampusModelEventTable {
-  id: Generated<string>; school_id: string; event_kind: "plan" | "observation" | "decision" | "command_outcome";
+  id: Generated<string>; school_id: string; event_kind: "plan" | "observation" | "decision" | "command_outcome" | "domain_event";
   event_type: string; subject_entity_id: string; context_entity_id: string | null; actor_agent_id: string | null;
   source_domain: string; source_record_id: string; source_revision: number; event_at: Timestamp;
   effective_from: Timestamp; effective_until: NullableTimestamp; recorded_at: Timestamp;
   correlation_id: string; causation_event_id: string | null; supersedes_event_id: string | null;
   provenance: Json; payload: Json; schema_version: Generated<number>; idempotency_key: string; request_hash: string;
+  source_outbox_event_id: string | null;
 }
 export interface CampusModelScheduleOccurrenceTable {
   id: Generated<string>; school_id: string; source_event_id: string; schedule_entity_id: string;
@@ -704,6 +787,14 @@ export interface Database {
   campus_model_relationships: CampusModelRelationshipTable;
   campus_model_agents: CampusModelAgentTable;
   campus_model_agent_authorities: CampusModelAgentAuthorityTable;
+  campus_model_agent_endpoints: CampusModelAgentEndpointTable;
+  campus_model_agent_endpoint_transitions: CampusModelAgentEndpointTransitionTable;
+  campus_model_behaviour_versions: CampusModelBehaviourVersionTable;
+  campus_model_event_subscriptions: CampusModelEventSubscriptionTable;
+  campus_model_reactions: CampusModelReactionTable;
+  campus_model_coordination_exceptions: CampusModelCoordinationExceptionTable;
+  campus_model_operational_messages: CampusModelOperationalMessageTable;
+  campus_model_operational_message_outcomes: CampusModelOperationalMessageOutcomeTable;
   campus_model_observations: CampusModelObservationTable;
   campus_model_commands: CampusModelCommandTable;
   campus_model_command_outcomes: CampusModelCommandOutcomeTable;
@@ -716,6 +807,7 @@ export interface Database {
   staff_leave_balance_adjustments: StaffLeaveBalanceAdjustmentTable;
   staff_leave_requests: StaffLeaveRequestTable;
   staff_leave_request_audits: StaffLeaveRequestAuditTable;
+  staff_leave_commands: StaffLeaveCommandTable;
   staff_responsibility_types: StaffResponsibilityTypeTable;
   school_custom_role_duties: SchoolCustomRoleDutyTable;
   school_access_exceptions: SchoolAccessExceptionTable;

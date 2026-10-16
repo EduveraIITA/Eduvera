@@ -36,6 +36,7 @@ import {
   withdrawStaffLeave,
   type AdminStaffWorkspace,
   type CoverageTask,
+  type LeaveBalance,
   type LeavePolicy,
   type ResponsibilityAssignment,
   type StaffLeaveRequest,
@@ -43,6 +44,12 @@ import {
   type StaffWorkspace,
   type TeacherStaffWorkspace,
 } from "./api";
+import {
+  clearPendingStaffLeaveCommand,
+  isDefinitiveStaffLeaveFailure,
+  pendingStaffLeaveCommand,
+  type StaffLeaveCommandScope,
+} from "./pendingLeaveCommand";
 import { AccessRolesPanel } from "./AccessRolesPanel";
 import { MyRoleAssignments, StaffRoleAssignments } from "./StaffRoleAssignments";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
@@ -71,7 +78,6 @@ const expectedRevision = (value: string | null) => {
   const revision = Number(value);
   return Number.isInteger(revision) && revision > 0 ? revision : null;
 };
-
 function useAttentionFocus(sourceId: string | null) {
   useEffect(() => {
     if (!sourceId) return;
@@ -92,6 +98,7 @@ export function StaffOperationsPage({
   refresh,
   teacherView = "leave",
   staffProfileId,
+  actorId,
 }: {
   portal: "principal" | "teacher";
   schoolId: string;
@@ -100,6 +107,7 @@ export function StaffOperationsPage({
   refresh: () => Promise<void>;
   teacherView?: "leave" | "responsibilities";
   staffProfileId?: string;
+  actorId: string;
 }) {
   if (portal === "teacher" && data.mode === "staff")
     return teacherView === "responsibilities" ? (
@@ -115,6 +123,7 @@ export function StaffOperationsPage({
         schoolName={schoolName}
         data={data}
         refresh={refresh}
+        actorId={actorId}
       />
     );
   if (portal === "principal" && data.mode === "admin")
@@ -132,9 +141,61 @@ export function StaffOperationsPage({
         schoolName={schoolName}
         data={data}
         refresh={refresh}
+        actorId={actorId}
       />
     );
   return null;
+}
+
+export function AuthorizedStaffLeaveDecisionPage({
+  portal,
+  schoolId,
+  schoolName,
+  actorId,
+  requestId,
+  data,
+  refresh,
+}: {
+  portal: "principal" | "teacher";
+  schoolId: string;
+  schoolName?: string;
+  actorId: string;
+  requestId: string;
+  data: StaffWorkspace;
+  refresh: () => Promise<void>;
+}) {
+  const request = data.can_review_staff_leave === true
+    ? data.requests.find((item) => item.id === requestId)
+    : undefined;
+  useAttentionFocus(requestId);
+  return (
+    <OperationsShell
+      portal={portal}
+      active="more"
+      title="Leave request"
+      schoolName={schoolName}
+      backTo={`/${portal}/requests`}
+    >
+      <div className="staff-page staff-page--teacher">
+        {request ? (
+          <LeaveReview
+            schoolId={schoolId}
+            actorId={actorId}
+            data={data}
+            refresh={refresh}
+            focusRequestId={requestId}
+            onlyRequestId={requestId}
+          />
+        ) : (
+          <section className="staff-panel staff-profile-missing" role="alert">
+            <h2>Leave request unavailable</h2>
+            <p>This request was resolved, reassigned, or is no longer yours to review.</p>
+            <Link className="staff-secondary" to={`/${portal}/requests`}>Back to requests</Link>
+          </section>
+        )}
+      </div>
+    </OperationsShell>
+  );
 }
 
 function PrincipalStaffPage({
@@ -142,11 +203,13 @@ function PrincipalStaffPage({
   schoolName,
   data,
   refresh,
+  actorId,
 }: {
   schoolId: string;
   schoolName?: string;
   data: AdminStaffWorkspace;
   refresh: () => Promise<void>;
+  actorId: string;
 }) {
   const [params, setParams] = useSearchParams();
   const focusRequestId = params.get("request");
@@ -217,7 +280,7 @@ function PrincipalStaffPage({
           <AccessRolesPanel schoolId={schoolId} data={data} refresh={refresh} />
         ) : section === "leave" ? (
           <div className="staff-leave-layout">
-            <LeaveReview schoolId={schoolId} data={data} refresh={refresh} focusRequestId={focusRequestId} />
+            <LeaveReview schoolId={schoolId} actorId={actorId} data={data} refresh={refresh} focusRequestId={focusRequestId} />
             <CoverageBoard schoolId={schoolId} data={data} refresh={refresh} focusCoverageId={focusCoverageId} />
           </div>
         ) : (
@@ -964,19 +1027,26 @@ function CoverageBoard({
 
 function LeaveReview({
   schoolId,
+  actorId,
   data,
   refresh,
   focusRequestId,
+  onlyRequestId,
 }: {
   schoolId: string;
-  data: AdminStaffWorkspace;
+  actorId: string;
+  data: Pick<StaffWorkspace, "requests" | "balances">;
   refresh: () => Promise<void>;
   focusRequestId?: string | null;
+  onlyRequestId?: string;
 }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const pending = data.requests.filter((request) => request.status === "submitted");
-  const decided = data.requests.filter((request) => request.status !== "submitted");
+  const visibleRequests = onlyRequestId
+    ? data.requests.filter((request) => request.id === onlyRequestId)
+    : data.requests;
+  const pending = visibleRequests.filter((request) => request.status === "submitted");
+  const decided = visibleRequests.filter((request) => request.status !== "submitted");
   async function decide(
     request: StaffLeaveRequest,
     decision: "approved" | "rejected",
@@ -984,14 +1054,34 @@ function LeaveReview({
   ) {
     setBusy(request.id);
     setError("");
+    const input = {
+      decision,
+      note: note.trim(),
+      expected_revision: request.revision,
+    } as const;
+    const commandScope: StaffLeaveCommandScope = {
+      schoolId,
+      actorId,
+      operation: "decide",
+      targetId: request.id,
+    };
+    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
     try {
+      command = await pendingStaffLeaveCommand(commandScope, input);
       await decideStaffLeave(schoolId, request.id, {
-        decision,
-        note,
-        expected_revision: request.revision,
+        ...input,
+        command_id: command.commandId,
       });
-      await refresh();
+      clearPendingStaffLeaveCommand(commandScope, command);
+      try {
+        await refresh();
+      } catch {
+        setError("The decision was saved, but the latest status could not be loaded. Refresh this page before acting again.");
+      }
     } catch (cause) {
+      if (command && isDefinitiveStaffLeaveFailure(cause)) {
+        clearPendingStaffLeaveCommand(commandScope, command);
+      }
       setError((cause as Error).message);
     } finally {
       setBusy("");
@@ -1048,7 +1138,7 @@ function LeaveRequestCard({
   onDecide,
 }: {
   request: StaffLeaveRequest;
-  balance?: AdminStaffWorkspace["balances"][number];
+  balance?: LeaveBalance;
   busy: boolean;
   focused?: boolean;
   onDecide: (
@@ -1120,10 +1210,10 @@ function LeaveRequestCard({
           </strong>{" "}
           {coverageDecision}
         </span>
-        <span>
+        {balance ? <span>
           <Scale size={17} />
           <strong>{days(available)} days</strong> available before decision
-        </span>
+        </span> : null}
       </div>
       <p>{request.reason}</p>
       {request.handover_note ? (
@@ -1811,11 +1901,13 @@ function TeacherLeavePage({
   schoolName,
   data,
   refresh,
+  actorId,
 }: {
   schoolId: string;
   schoolName?: string;
   data: TeacherStaffWorkspace;
   refresh: () => Promise<void>;
+  actorId: string;
 }) {
   const navigate=useNavigate();
   const [params,setParams]=useSearchParams();
@@ -1859,18 +1951,38 @@ function TeacherLeavePage({
     setBusy("new");
     setError("");
     const form = new FormData(event.currentTarget);
+    const input = {
+      policy_id: formValue(form, "policy_id"),
+      starts_on: formValue(form, "starts_on"),
+      ends_on: formValue(form, "ends_on"),
+      portion: formValue(form, "portion"),
+      reason: formValue(form, "reason"),
+      handover_note: formValue(form, "handover_note"),
+    };
+    const commandScope: StaffLeaveCommandScope = {
+      schoolId,
+      actorId,
+      operation: "submit",
+      targetId: "new-request",
+    };
+    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
     try {
+      command = await pendingStaffLeaveCommand(commandScope, input);
       await submitStaffLeave(schoolId, {
-        policy_id: formValue(form, "policy_id"),
-        starts_on: formValue(form, "starts_on"),
-        ends_on: formValue(form, "ends_on"),
-        portion: formValue(form, "portion"),
-        reason: formValue(form, "reason"),
-        handover_note: formValue(form, "handover_note"),
+        ...input,
+        command_id: command.commandId,
       });
+      clearPendingStaffLeaveCommand(commandScope, command);
       setOpen(false);
-      await refresh();
+      try {
+        await refresh();
+      } catch {
+        setError("Your leave request was submitted, but the latest status could not be loaded. Refresh this page before submitting again.");
+      }
     } catch (cause) {
+      if (command && isDefinitiveStaffLeaveFailure(cause)) {
+        clearPendingStaffLeaveCommand(commandScope, command);
+      }
       setError((cause as Error).message);
     } finally {
       setBusy("");
@@ -1879,10 +1991,27 @@ function TeacherLeavePage({
   async function withdraw(request: StaffLeaveRequest) {
     setBusy(request.id);
     setError("");
+    const material = { expected_revision: request.revision };
+    const commandScope: StaffLeaveCommandScope = {
+      schoolId,
+      actorId,
+      operation: "withdraw",
+      targetId: request.id,
+    };
+    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
     try {
-      await withdrawStaffLeave(schoolId, request.id, request.revision);
-      await refresh();
+      command = await pendingStaffLeaveCommand(commandScope, material);
+      await withdrawStaffLeave(schoolId, request.id, request.revision, command.commandId);
+      clearPendingStaffLeaveCommand(commandScope, command);
+      try {
+        await refresh();
+      } catch {
+        setError("The request was withdrawn, but the latest status could not be loaded. Refresh this page before acting again.");
+      }
     } catch (cause) {
+      if (command && isDefinitiveStaffLeaveFailure(cause)) {
+        clearPendingStaffLeaveCommand(commandScope, command);
+      }
       setError((cause as Error).message);
     } finally {
       setBusy("");

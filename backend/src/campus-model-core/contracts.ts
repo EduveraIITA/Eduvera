@@ -249,6 +249,69 @@ export const coordinationRecipientAgentRefSchema = z.discriminatedUnion("agent_k
   }).strict(),
 ]);
 
+export const humanAgentAccountEndpointLinkSchema = z.object({
+  school_id: z.string().uuid(),
+  person_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  effective_from: z.string().datetime({ offset: true }),
+  effective_until: z.string().datetime({ offset: true }).nullable().default(null),
+  source_domain: identifier,
+  source_record_id: z.string().trim().min(1).max(160),
+  source_revision: z.number().int().positive(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+}).strict().superRefine((value, context) => {
+  if (value.effective_until && Date.parse(value.effective_until) <= Date.parse(value.effective_from)) {
+    context.addIssue({
+      code: "custom",
+      path: ["effective_until"],
+      message: "Account endpoint end must be after its start.",
+    });
+  }
+});
+
+export const humanAgentAccountEndpointCloseSchema = z.object({
+  school_id: z.string().uuid(),
+  endpoint_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  expected_revision: z.number().int().positive(),
+  effective_at: z.string().datetime({ offset: true }),
+  disposition: z.enum(["ended", "revoked"]),
+  reason: z.string().trim().min(3).max(500),
+  source_domain: identifier,
+  source_record_id: z.string().trim().min(1).max(160),
+  source_revision: z.number().int().positive(),
+  idempotency_key: z.string().trim().min(8).max(220),
+}).strict();
+
+export const humanAgentAccountEndpointReplaceSchema = z.object({
+  school_id: z.string().uuid(),
+  current_endpoint_id: z.string().uuid(),
+  replacement_user_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  current_expected_revision: z.number().int().positive(),
+  effective_at: z.string().datetime({ offset: true }),
+  current_disposition: z.enum(["ended", "revoked"]).default("ended"),
+  reason: z.string().trim().min(3).max(500),
+  source_domain: identifier,
+  source_record_id: z.string().trim().min(1).max(160),
+  source_revision: z.number().int().positive(),
+  idempotency_key: z.string().trim().min(8).max(200),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+}).strict();
+
+export const humanAgentAccountResolutionSchema = z.object({
+  school_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  at: z.string().datetime({ offset: true }),
+}).strict();
+
+export const humanAgentPersonResolutionSchema = z.object({
+  school_id: z.string().uuid(),
+  person_id: z.string().uuid(),
+  at: z.string().datetime({ offset: true }),
+}).strict();
+
 export const acceptedCoordinationEventSchema = z.object({
   school_id: z.string().uuid(),
   source_outbox_event_id: z.string().uuid(),
@@ -329,9 +392,11 @@ export const operationalMessageOutcomeSchema = z.object({
 
 export const recipientOperationalMessageResponseSchema = z.object({
   school_id: z.string().uuid(),
+  message_id: z.string().uuid(),
   correlation_id: z.string().uuid(),
   recipient: coordinationRecipientAgentRefSchema,
   actor: coordinationRecipientAgentRefSchema,
+  expected_source_record_id: z.string().uuid(),
   expected_source_revision: z.number().int().positive(),
   source_outbox_event_id: z.string().uuid(),
   code: identifier,
@@ -352,6 +417,11 @@ export type CalendarClosureProjection = z.infer<typeof calendarClosureProjection
 export type PublishedDayPlanProjection = z.infer<typeof publishedDayPlanProjectionSchema>;
 export type CoordinationRecipientSelectorConfig = z.infer<typeof coordinationRecipientSelectorConfigSchema>;
 export type CoordinationRecipientAgentRef = z.infer<typeof coordinationRecipientAgentRefSchema>;
+export type HumanAgentAccountEndpointLink = z.infer<typeof humanAgentAccountEndpointLinkSchema>;
+export type HumanAgentAccountEndpointClose = z.infer<typeof humanAgentAccountEndpointCloseSchema>;
+export type HumanAgentAccountEndpointReplace = z.infer<typeof humanAgentAccountEndpointReplaceSchema>;
+export type HumanAgentAccountResolution = z.infer<typeof humanAgentAccountResolutionSchema>;
+export type HumanAgentPersonResolution = z.infer<typeof humanAgentPersonResolutionSchema>;
 export type AcceptedCoordinationEvent = z.infer<typeof acceptedCoordinationEventSchema>;
 export type OperationalMessageState = z.infer<typeof operationalMessageStateSchema>;
 export type OperationalMessageOutcome = z.infer<typeof operationalMessageOutcomeSchema>;

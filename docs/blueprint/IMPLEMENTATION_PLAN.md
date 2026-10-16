@@ -228,16 +228,44 @@ resolution requires active institution membership and current configured capabil
 Team routing deliberately fails closed until dated membership and claim semantics
 exist.
 
-This is not yet a full agent runtime or a connected staff-leave workflow. It has no
-administration API, filter language, durable lease/retry worker, mailbox query,
-channel-delivery adapter or general roles/governance authority projection. Existing
-domain outbox events, notification delivery, Requests and AI/channel transcript remain
-adapters, not substitutes for the spine. The next horizontal work must establish the
-explicit `staff_leave_decision` governance route and current human authority, then
-route leave submission -> configured decision-owner Request -> freshly authorized
-domain decision -> correlated response/outcome. Coverage offers and effective
-timetable substitution remain a later connected step; leave, staffing and timetable
-records stay authoritative throughout.
+Migration 107 now makes a human agent stable by institution person rather than login.
+It backfills only explicit student, guardian, staff and governance relationships,
+adds dated account/external-channel endpoints and audited idempotent endpoint
+close/revoke/replace operations, and preserves the originally addressed recipient on
+coordination replay. Exact replay cannot reactivate a suspended or revoked endpoint.
+The Core no longer creates a missing People identity lazily: an unlinked account fails
+closed until the owning Auth/People workflow supplies the explicit relation. The
+remaining identity gates are that Auth/People onboarding and live Agent Channels
+link/revoke changes do not yet publish through this lifecycle, dated team membership
+is absent, and a purpose-specific identity-management authority is not yet exposed.
+
+This is not yet a full agent runtime. The first bounded, domain-owned staff-leave
+bridge is now implemented locally through migration 108 and
+`StaffLeaveModelBridgeService`. Submission resolves the exact effective
+`staff_leave_decision` officeholder, commits the authoritative leave request, domain
+outbox event, configured core event and exactly one durable Request in the same
+transaction, and rolls the transaction back if authority or approved routing is
+missing or ambiguous. The core payload excludes the private leave reason and handover
+note. The exact decision owner is rechecked at execution time, including a locked
+current capability grant, and the decision, response and outcome share retained
+correlation/causation evidence. Command receipts and outbox collision checks preserve
+actor-scoped idempotent retries. Staff Operations and Requests expose private leave
+text only to the requester or exact current decision owner; technical administrators
+do not inherit review access merely from the admin role. The original requester can
+cancel the exact durable Request after the decision route changes or disappears.
+
+This remains a bounded first segment, not a complete leave-and-cover workflow.
+Approve/reject deliberately fails closed if the governance officeholder changes after
+submission; configured rerouting and transfer evidence are not yet implemented.
+Coverage offer/acceptance, effective timetable substitution and physical delivery
+evidence are not yet model-mediated. A role-neutral `/work/staff-leave` action surface
+is implemented locally and reuses the domain review card for either a staff or admin
+officeholder; it fails closed unless the workspace confirms current decision
+authority. Owner-device acceptance remains open. The runtime also has no
+administration API, filter language, durable lease/retry worker,
+mailbox query or channel-delivery adapter. Existing domain outbox events, notification
+delivery, Requests and AI/channel transcript remain adapters, not substitutes for the
+spine. Leave, staffing and timetable records stay authoritative throughout.
 
 Verified local evidence for this bounded foundation: backend build and targeted ESLint
 pass; 32 focused coordination/core/migration tests pass; migration 106 passed
@@ -245,6 +273,17 @@ transaction-only PostgreSQL validation and was rolled back rather than applied. 
 tests verify no installed default behaviour, explicit recipient selection, current
 authority checks, idempotency evidence, distinct message states and fail-closed team
 queues. Runtime domain integration and physical operator acceptance remain open.
+
+Verified local evidence for the staff-leave segment: backend build and focused ESLint
+pass; 92 focused backend contract tests pass, with the four database-only governance
+tests skipped in the ordinary no-test-database run. Thirty focused frontend route,
+authority, reload/retry and idempotency tests pass with focused lint. In a separate
+loopback-only disposable PostgreSQL database, migrations 106, 107 and 108 applied
+transactionally; governance authority passed 4/4 integration tests, Staff Operations
+passed 12/12 integration tests, and the real identity service passed link, resolve,
+revoke, exact-replay and inactive-resolution checks. The disposable database was
+dropped and the shared development database remained unmigrated. This proves the
+bounded software trace, not physical operator acceptance or full MC-2 completion.
 
 The same gap applies to behaviour configuration: current domain services contain a
 mixture of explicit Operating rules and code-owned workflow routing. Phase 3 must
