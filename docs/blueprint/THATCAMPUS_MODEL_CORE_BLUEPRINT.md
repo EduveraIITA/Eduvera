@@ -1110,14 +1110,22 @@ slice:
 - typed ports for registry/topology change, observations, source registration and
   temporal context;
 - combined recent activity and bounded contradiction signals;
-- domain-language Campus setup consumers.
+- domain-language Campus setup consumers;
+- a local, bounded coordination-runtime foundation in migration 106: private
+  behaviour versions, exact event subscriptions, idempotent reactions, operational
+  messages, distinct message outcomes and visible coordination exceptions;
+- a provider-neutral coordination port that verifies the source outbox event, fails
+  closed without one effective approved configuration, resolves only explicit
+  domain-facing agent references, rechecks current capability/scope, and records
+  queued Request/Task/Offer/Update evidence or an unmatched exception atomically.
 
 Not yet implemented at this checkpoint:
 
-- behaviour-version registry/runtime;
-- event subscription matching;
-- durable reaction leases/attempts;
-- typed operational mailbox;
+- the complete validate/rehearse/approve/schedule/activate behaviour lifecycle and
+  administration API;
+- safe filter language, general selectors, durable worker leases/heartbeats,
+  retry/expiry/dead-letter execution and loop/fan-out budgets;
+- mailbox query/claim/reassign/channel-delivery APIs and dated team membership;
 - general authority resolution from roles/appointments;
 - idempotent domain command router across workflows;
 - staff leave/coverage model mediation;

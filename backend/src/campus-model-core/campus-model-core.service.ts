@@ -4,6 +4,12 @@ import { sql, type Transaction } from "kysely";
 import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort, CampusOperationalSignal } from "./campus-model-core.port.js";
+import type {
+  CoordinationExceptionCode,
+  CoordinationPublishReceipt,
+  CoordinationRuntimePort,
+  OperationalMessageOutcomeReceipt,
+} from "./coordination-runtime.port.js";
 import type { ObservationIngressPort } from "./observation-ingress.port.js";
 import type { ObservationCapability, ObservationSource, ObservationSourceRegistryPort, RegisterObservationSource } from "./observation-source-registry.port.js";
 import type {
@@ -14,20 +20,28 @@ import type {
 } from "./temporal-context.port.js";
 import {
   acceptedCampusModelChangeSchema,
+  acceptedCoordinationEventSchema,
   campusModelObservationSchema,
   campusModelObservationTransitionSchema,
   campusTemporalContextQuerySchema,
   calendarClosureProjectionSchema,
   publishedDayPlanProjectionSchema,
   publishedScheduleProjectionSchema,
+  coordinationRecipientSelectorConfigSchema,
+  operationalMessageOutcomeSchema,
+  recipientOperationalMessageResponseSchema,
+  type AcceptedCoordinationEvent,
   type AcceptedCampusModelChange,
   type CampusModelEntitySnapshot,
   type CampusModelObservation,
   type CampusModelObservationTransition,
   type CampusTemporalContextQuery,
   type CalendarClosureProjection,
+  type CoordinationRecipientAgentRef,
   type PublishedDayPlanProjection,
   type PublishedScheduleProjection,
+  type OperationalMessageOutcome,
+  type RecipientOperationalMessageResponse,
 } from "./contracts.js";
 
 interface EntityRow { id: string; domain: string; domain_id: string }
@@ -56,6 +70,59 @@ interface ResolvedObservationRow {
   context_kind: string | null;
 }
 interface EventRow { id: string; request_hash: string }
+interface OutboxEventRow {
+  id: string;
+  event_type: string;
+  aggregate_id: string;
+}
+interface CoordinationSubscriptionRow {
+  behaviour_version_id: string;
+  behaviour_key: string;
+  behaviour_version: number;
+  behaviour_configuration: unknown;
+  configuration_schema_version: number;
+  subscription_id: string;
+  subscription_key: string;
+  reaction_kind: string;
+  message_kind: "request" | "task" | "offer" | "update";
+  message_schema_version: number;
+  recipient_selector: unknown;
+  response_due_after_seconds: number | null;
+  expires_after_seconds: number | null;
+  max_attempts: number;
+  retry_after_seconds: number | null;
+  priority: number;
+}
+interface AuthorizedRecipientRow {
+  id: string;
+  user_id: string | null;
+  agent_kind: "human" | "team" | "device" | "integration" | "software";
+  external_ref: string | null;
+}
+interface ReactionRow {
+  id: string;
+  request_hash: string;
+}
+interface OperationalMessageRow {
+  id: string;
+  reaction_id: string;
+  state: "queued" | "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
+  recipient_agent_id: string;
+  sender_agent_id: string;
+  correlation_id: string;
+  recipient_agent_kind: "human" | "team" | "device" | "integration" | "software";
+  selector_snapshot: unknown;
+}
+interface OperationalMessageOutcomeRow {
+  id: string;
+  message_id: string;
+  state: "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
+  request_hash: string;
+}
+interface CoordinationExceptionRow {
+  id: string;
+  exception_code: CoordinationExceptionCode;
+}
 interface TemporalAssertionRow {
   assertion_id: string;
   occurrence_id: string;
@@ -82,7 +149,7 @@ interface TemporalAssertionRow {
 }
 
 @Injectable()
-export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort {
+export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort, CoordinationRuntimePort {
   constructor(private readonly db: DatabaseService) {}
 
   async recordAcceptedChange(
@@ -281,6 +348,525 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       .where("state", "!=", "superseded")
       .executeTakeFirst();
     return Number(result.numUpdatedRows ?? 0);
+  }
+
+  async publishAcceptedEvent(
+    transaction: Transaction<Database>,
+    rawInput: AcceptedCoordinationEvent,
+  ): Promise<CoordinationPublishReceipt> {
+    const input = acceptedCoordinationEventSchema.parse(rawInput);
+    const sourceOutbox = (await sql<OutboxEventRow>`SELECT id,event_type,aggregate_id::text AS aggregate_id
+      FROM event_outbox
+      WHERE id=${input.source_outbox_event_id}::uuid AND school_id=${input.school_id}::uuid
+      FOR KEY SHARE`.execute(transaction)).rows[0];
+    if (!sourceOutbox || sourceOutbox.event_type !== input.event_type || sourceOutbox.aggregate_id !== input.source_record_id) {
+      throw new ConflictException("The accepted domain event does not match its source outbox record.");
+    }
+
+    const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
+    const subject = await this.upsertEntity(transaction, input.school_id, input.subject);
+    const context = input.context ? await this.upsertEntity(transaction, input.school_id, input.context) : null;
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const insertedEvent = (await sql<EventRow>`INSERT INTO campus_model_events(
+        school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
+        source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
+        correlation_id,causation_event_id,provenance,payload,schema_version,idempotency_key,
+        request_hash,source_outbox_event_id
+      ) VALUES (
+        ${input.school_id}::uuid,${input.event_kind},${input.event_type},${subject.id}::uuid,
+        ${context?.id ?? null}::uuid,${actor.id}::uuid,${input.source_domain},${input.source_record_id},
+        ${input.source_revision},${input.occurred_at}::timestamptz,${input.effective_from}::timestamptz,
+        ${input.effective_until}::timestamptz,${input.correlation_id}::uuid,
+        ${input.causation_event_id}::uuid,
+        ${JSON.stringify({ source: "event_outbox", source_outbox_event_id: input.source_outbox_event_id })}::jsonb,
+        ${JSON.stringify(input.payload)}::jsonb,1,${input.idempotency_key},${requestHash},
+        ${input.source_outbox_event_id}::uuid
+      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      RETURNING id,request_hash`.execute(transaction)).rows[0];
+    const event = insertedEvent ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!event || event.request_hash !== requestHash) {
+      throw new ConflictException("This coordination event key was already used for different work.");
+    }
+
+    if (!insertedEvent) {
+      const existing = (await sql<{
+        reaction_id: string;
+        message_id: string;
+        behaviour_version_id: string;
+        subscription_id: string;
+        agent_kind: "human" | "team" | "device" | "integration" | "software";
+        user_id: string | null;
+        external_ref: string | null;
+      }>`SELECT reaction.id AS reaction_id,message.id AS message_id,
+          reaction.behaviour_version_id,reaction.subscription_id,recipient.agent_kind,
+          recipient.user_id,recipient.external_ref
+        FROM campus_model_reactions reaction
+        JOIN campus_model_operational_messages message ON message.reaction_id=reaction.id
+        JOIN campus_model_agents recipient ON recipient.id=reaction.recipient_agent_id
+        WHERE reaction.school_id=${input.school_id}::uuid AND reaction.trigger_event_id=${event.id}::uuid
+        ORDER BY reaction.created_at,reaction.id`.execute(transaction)).rows;
+      if (existing.length > 0) {
+        return {
+          status: "matched",
+          event_id: event.id,
+          behaviour_version_id: existing[0]!.behaviour_version_id,
+          subscription_id: existing[0]!.subscription_id,
+          reaction_ids: existing.map((item) => item.reaction_id),
+          message_ids: existing.map((item) => item.message_id),
+          deliveries: existing.map((item) => {
+            let recipient: CoordinationRecipientAgentRef;
+            if (item.agent_kind === "human") {
+              recipient = { agent_kind: "human", user_id: item.user_id! };
+            } else {
+              if (item.agent_kind === "team") {
+                throw new ConflictException("Team work cannot be replayed until dated membership is available.");
+              }
+              recipient = { agent_kind: item.agent_kind, external_ref: item.external_ref! };
+            }
+            return { reaction_id: item.reaction_id, message_id: item.message_id, recipient };
+          }),
+          replayed: true,
+        };
+      }
+      const existingException = (await sql<CoordinationExceptionRow>`SELECT id,exception_code
+        FROM campus_model_coordination_exceptions
+        WHERE school_id=${input.school_id}::uuid AND trigger_event_id=${event.id}::uuid`.execute(transaction)).rows[0];
+      if (existingException) {
+        return {
+          status: "unmatched",
+          event_id: event.id,
+          exception_id: existingException.id,
+          exception_code: existingException.exception_code,
+          reaction_ids: [],
+          message_ids: [],
+          replayed: true,
+        };
+      }
+    }
+
+    const matches = (await sql<CoordinationSubscriptionRow>`SELECT
+        behaviour.id AS behaviour_version_id,behaviour.behaviour_key,
+        behaviour.version AS behaviour_version,behaviour.configuration AS behaviour_configuration,
+        behaviour.configuration_schema_version,subscription.id AS subscription_id,
+        subscription.subscription_key,subscription.reaction_kind,subscription.message_kind,
+        subscription.message_schema_version,subscription.recipient_selector,
+        subscription.response_due_after_seconds,subscription.expires_after_seconds,
+        subscription.max_attempts,subscription.retry_after_seconds,subscription.priority
+      FROM campus_model_behaviour_versions behaviour
+      JOIN campus_model_event_subscriptions subscription
+        ON subscription.behaviour_version_id=behaviour.id AND subscription.school_id=behaviour.school_id
+      WHERE behaviour.school_id=${input.school_id}::uuid AND behaviour.status='approved'
+        AND behaviour.effective_from<=${input.occurred_at}::timestamptz
+        AND (behaviour.effective_until IS NULL OR behaviour.effective_until>${input.occurred_at}::timestamptz)
+        AND subscription.source_domain=${input.source_domain}
+        AND subscription.event_type=${input.event_type}
+        AND subscription.recipient_selector->>'selector_key'=${input.selector_input.selector_key}
+      FOR SHARE OF behaviour,subscription`.execute(transaction)).rows;
+    if (matches.length === 0) {
+      return this.recordCoordinationException(transaction, input, event.id, "configuration_missing",
+        "No approved Operating-rule behaviour is active for this campus event.",
+        { source_domain: input.source_domain, event_type: input.event_type, selector_key: input.selector_input.selector_key });
+    }
+    if (matches.length !== 1) {
+      return this.recordCoordinationException(transaction, input, event.id, "configuration_invalid",
+        "More than one Operating-rule behaviour matches this campus event. Retire the overlap before replaying it.",
+        { matching_behaviour_version_ids: matches.map((item) => item.behaviour_version_id) });
+    }
+    const match = matches[0]!;
+    const parsedSelector = coordinationRecipientSelectorConfigSchema.safeParse(match.recipient_selector);
+    if (!parsedSelector.success) {
+      return this.recordCoordinationException(transaction, input, event.id, "configuration_invalid",
+        "The approved behaviour has an invalid recipient selector.",
+        { behaviour_version_id: match.behaviour_version_id, subscription_id: match.subscription_id });
+    }
+    const selector = parsedSelector.data;
+    if (selector.selector_key !== input.selector_input.selector_key) {
+      return this.recordCoordinationException(transaction, input, event.id, "selector_invalid",
+        "The supplied recipient selector does not match the approved behaviour.",
+        { behaviour_version_id: match.behaviour_version_id, subscription_id: match.subscription_id });
+    }
+    if (input.selector_input.recipient_agents.length < selector.min_recipients
+      || input.selector_input.recipient_agents.length > selector.max_recipients) {
+      return this.recordCoordinationException(transaction, input, event.id, "selector_invalid",
+        "The selected recipient count is outside the approved behaviour.",
+        { minimum: selector.min_recipients, maximum: selector.max_recipients, selected: input.selector_input.recipient_agents.length });
+    }
+    if (selector.scope_mode === "event_scope" && !input.selector_input.scope) {
+      return this.recordCoordinationException(transaction, input, event.id, "selector_invalid",
+        "This approved behaviour requires an explicit campus scope.",
+        { behaviour_version_id: match.behaviour_version_id, subscription_id: match.subscription_id });
+    }
+    if (selector.scope_mode === "institution" && input.selector_input.scope) {
+      return this.recordCoordinationException(transaction, input, event.id, "selector_invalid",
+        "This approved behaviour is institution-scoped and cannot accept a narrower selector scope.",
+        { behaviour_version_id: match.behaviour_version_id, subscription_id: match.subscription_id });
+    }
+    const scope = input.selector_input.scope
+      ? await this.upsertEntity(transaction, input.school_id, input.selector_input.scope)
+      : null;
+
+    const resolvedRecipients: AuthorizedRecipientRow[] = [];
+    for (const recipientRef of input.selector_input.recipient_agents) {
+      const recipient = await this.resolveAgentReference(transaction, input.school_id, recipientRef);
+      if (!recipient) {
+        return this.recordCoordinationException(transaction, input, event.id, "recipient_unresolved",
+          "An explicitly selected recipient does not resolve to an active campus agent.",
+          { recipient: recipientRef });
+      }
+      resolvedRecipients.push(recipient);
+    }
+    const resolvedRecipientIds = resolvedRecipients.map((recipient) => recipient.id);
+    const recipients = (await sql<AuthorizedRecipientRow>`SELECT agent.id,agent.user_id,agent.agent_kind,agent.external_ref
+      FROM campus_model_agents agent
+      WHERE agent.school_id=${input.school_id}::uuid
+        AND agent.id=ANY(${resolvedRecipientIds}::uuid[])
+        AND agent.status='active' AND EXISTS (
+          SELECT 1 FROM campus_model_agent_authorities authority
+          WHERE authority.agent_id=agent.id AND authority.school_id=agent.school_id
+            AND authority.capability=${selector.required_capability}
+            AND authority.revoked_at IS NULL
+            AND authority.effective_from<=CURRENT_TIMESTAMP
+            AND (authority.effective_until IS NULL OR authority.effective_until>CURRENT_TIMESTAMP)
+            AND (
+              (${selector.scope_mode}='institution' AND authority.scope_entity_id IS NULL)
+              OR (${selector.scope_mode}='event_scope' AND (authority.scope_entity_id IS NULL OR authority.scope_entity_id=${scope?.id ?? null}::uuid))
+            )
+        )
+      ORDER BY agent.id
+      FOR SHARE OF agent`.execute(transaction)).rows;
+    if (recipients.length !== resolvedRecipientIds.length) {
+      return this.recordCoordinationException(transaction, input, event.id, "recipient_unauthorized",
+        "Every selected recipient must be active and authorized by the approved behaviour scope.",
+        { required_capability: selector.required_capability, scope_entity_id: scope?.id ?? null });
+    }
+
+    const queuedAt = new Date().toISOString();
+    const responseDueAt = match.response_due_after_seconds === null
+      ? null
+      : new Date(Date.parse(queuedAt) + match.response_due_after_seconds * 1_000).toISOString();
+    const expiresAt = match.expires_after_seconds === null
+      ? null
+      : new Date(Date.parse(queuedAt) + match.expires_after_seconds * 1_000).toISOString();
+    if (responseDueAt && expiresAt && Date.parse(responseDueAt) > Date.parse(expiresAt)) {
+      return this.recordCoordinationException(transaction, input, event.id, "configuration_invalid",
+        "The approved behaviour has a response deadline after its expiry.",
+        { behaviour_version_id: match.behaviour_version_id, subscription_id: match.subscription_id });
+    }
+    const behaviourSnapshot = {
+      behaviour_key: match.behaviour_key,
+      version: match.behaviour_version,
+      configuration_schema_version: match.configuration_schema_version,
+      configuration: match.behaviour_configuration,
+      subscription: {
+        subscription_key: match.subscription_key,
+        reaction_kind: match.reaction_kind,
+        message_kind: match.message_kind,
+        message_schema_version: match.message_schema_version,
+        response_due_after_seconds: match.response_due_after_seconds,
+        expires_after_seconds: match.expires_after_seconds,
+        max_attempts: match.max_attempts,
+        retry_after_seconds: match.retry_after_seconds,
+        priority: match.priority,
+      },
+    };
+    const selectorSnapshot = {
+      config: selector,
+      input: {
+        selector_key: input.selector_input.selector_key,
+        recipient_agents: input.selector_input.recipient_agents,
+        resolved_recipient_agent_ids: resolvedRecipientIds,
+        scope_entity_id: scope?.id ?? null,
+      },
+    };
+    const recipientUsers = new Map(recipients.map((recipient) => [recipient.id, recipient.user_id]));
+    const recipientRefs = new Map(resolvedRecipients.map((recipient, index) => [recipient.id, input.selector_input.recipient_agents[index]!]));
+    const reactionIds: string[] = [];
+    const messageIds: string[] = [];
+    const deliveries: Array<{
+      reaction_id: string;
+      message_id: string;
+      recipient: (typeof input.selector_input.recipient_agents)[number];
+    }> = [];
+
+    for (const recipientAgentId of resolvedRecipientIds) {
+      const reactionIdempotencyKey = `coordination-reaction:${event.id}:${match.subscription_id}:${recipientAgentId}`;
+      const reactionRequestHash = createHash("sha256").update(JSON.stringify({
+        event_id: event.id,
+        behaviour_version_id: match.behaviour_version_id,
+        subscription_id: match.subscription_id,
+        recipient_agent_id: recipientAgentId,
+        selector: selectorSnapshot,
+        message: input.message,
+      })).digest("hex");
+      const insertedReaction = (await sql<ReactionRow>`INSERT INTO campus_model_reactions(
+          school_id,trigger_event_id,source_outbox_event_id,behaviour_version_id,subscription_id,
+          recipient_agent_id,reaction_kind,state,selector_snapshot,behaviour_snapshot,correlation_id,
+          causation_event_id,attempt_count,max_attempts,next_attempt_at,response_due_at,expires_at,
+          idempotency_key,request_hash
+        ) VALUES (
+          ${input.school_id}::uuid,${event.id}::uuid,${input.source_outbox_event_id}::uuid,
+          ${match.behaviour_version_id}::uuid,${match.subscription_id}::uuid,${recipientAgentId}::uuid,
+          ${match.reaction_kind},'queued',${JSON.stringify(selectorSnapshot)}::jsonb,
+          ${JSON.stringify(behaviourSnapshot)}::jsonb,${input.correlation_id}::uuid,
+          ${event.id}::uuid,0,${match.max_attempts},${queuedAt}::timestamptz,
+          ${responseDueAt}::timestamptz,${expiresAt}::timestamptz,
+          ${reactionIdempotencyKey},${reactionRequestHash}
+        ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+        RETURNING id,request_hash`.execute(transaction)).rows[0];
+      const reaction = insertedReaction ?? (await sql<ReactionRow>`SELECT id,request_hash
+        FROM campus_model_reactions
+        WHERE school_id=${input.school_id}::uuid AND idempotency_key=${reactionIdempotencyKey}
+        FOR UPDATE`.execute(transaction)).rows[0];
+      if (!reaction || reaction.request_hash !== reactionRequestHash) {
+        throw new ConflictException("This reaction key was already used for different work.");
+      }
+
+      const insertedMessage = (await sql<{ id: string }>`INSERT INTO campus_model_operational_messages(
+          school_id,reaction_id,sender_agent_id,recipient_agent_id,owner_agent_id,message_kind,state,
+          subject,summary,payload,schema_version,correlation_id,causation_event_id,
+          source_outbox_event_id,response_due_at,expires_at,queued_at
+        ) VALUES (
+          ${input.school_id}::uuid,${reaction.id}::uuid,${actor.id}::uuid,${recipientAgentId}::uuid,
+          ${recipientAgentId}::uuid,${match.message_kind},'queued',${input.message.subject},
+          ${input.message.summary},${JSON.stringify(input.message.payload)}::jsonb,
+          ${match.message_schema_version},${input.correlation_id}::uuid,${event.id}::uuid,
+          ${input.source_outbox_event_id}::uuid,${responseDueAt}::timestamptz,
+          ${expiresAt}::timestamptz,${queuedAt}::timestamptz
+        ) ON CONFLICT(reaction_id) DO NOTHING RETURNING id`.execute(transaction)).rows[0];
+      const message = insertedMessage ?? (await sql<{ id: string }>`SELECT id
+        FROM campus_model_operational_messages WHERE reaction_id=${reaction.id}::uuid
+        FOR UPDATE`.execute(transaction)).rows[0];
+      if (!message) throw new ConflictException("The operational message could not be queued.");
+
+      const dispatchKey = `campus-model:message:${message.id}:queued`;
+      const dispatch = (await sql<{ id: string }>`INSERT INTO event_outbox(
+          school_id,event_type,aggregate_type,aggregate_id,audience_user_ids,payload,idempotency_key
+        ) VALUES (
+          ${input.school_id}::uuid,'campus.coordination.message_queued','campus_operational_message',
+          ${message.id}::uuid,${recipientUsers.get(recipientAgentId) ? [recipientUsers.get(recipientAgentId)!] : []}::uuid[],
+          ${JSON.stringify({
+            message_id: message.id,
+            reaction_id: reaction.id,
+            message_kind: match.message_kind,
+            state: "queued",
+            correlation_id: input.correlation_id,
+            source_outbox_event_id: input.source_outbox_event_id,
+          })}::jsonb,${dispatchKey}
+        ) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id`.execute(transaction)).rows[0]
+        ?? (await sql<{ id: string }>`SELECT id FROM event_outbox WHERE idempotency_key=${dispatchKey}`.execute(transaction)).rows[0];
+      if (!dispatch) throw new ConflictException("The operational message dispatch could not be retained.");
+      await sql`UPDATE campus_model_operational_messages
+        SET dispatch_outbox_event_id=${dispatch.id}::uuid,updated_at=now()
+        WHERE id=${message.id}::uuid AND school_id=${input.school_id}::uuid
+          AND (dispatch_outbox_event_id IS NULL OR dispatch_outbox_event_id=${dispatch.id}::uuid)`.execute(transaction);
+      reactionIds.push(reaction.id);
+      messageIds.push(message.id);
+      deliveries.push({ reaction_id: reaction.id, message_id: message.id, recipient: recipientRefs.get(recipientAgentId)! });
+    }
+
+    return {
+      status: "matched",
+      event_id: event.id,
+      behaviour_version_id: match.behaviour_version_id,
+      subscription_id: match.subscription_id,
+      reaction_ids: reactionIds,
+      message_ids: messageIds,
+      deliveries,
+      replayed: false,
+    };
+  }
+
+  async recordRecipientResponse(
+    transaction: Transaction<Database>,
+    rawInput: RecipientOperationalMessageResponse,
+  ): Promise<OperationalMessageOutcomeReceipt> {
+    const input = recipientOperationalMessageResponseSchema.parse(rawInput);
+    const recipient = await this.resolveAgentReference(transaction, input.school_id, input.recipient);
+    if (!recipient) throw new ConflictException("The assigned recipient is not active in this institution.");
+
+    const replay = (await sql<{ message_id: string }>`SELECT message.id AS message_id
+      FROM campus_model_operational_message_outcomes outcome
+      JOIN campus_model_operational_messages message
+        ON message.id=outcome.message_id AND message.school_id=outcome.school_id
+      WHERE outcome.school_id=${input.school_id}::uuid
+        AND outcome.idempotency_key=${input.idempotency_key}
+        AND outcome.state='responded' AND message.correlation_id=${input.correlation_id}::uuid
+        AND message.recipient_agent_id=${recipient.id}::uuid`.execute(transaction)).rows[0];
+    if (replay) {
+      return this.recordMessageOutcome(transaction, {
+        school_id: input.school_id,
+        message_id: replay.message_id,
+        state: "responded",
+        actor: input.actor,
+        source_outbox_event_id: input.source_outbox_event_id,
+        code: input.code,
+        explanation: input.explanation,
+        response: input.response,
+        occurred_at: input.occurred_at,
+        idempotency_key: input.idempotency_key,
+      });
+    }
+
+    const open = (await sql<{ message_id: string; state: OperationalMessageRow["state"]; source_revision: number }>`SELECT
+        message.id AS message_id,message.state,event.source_revision
+      FROM campus_model_operational_messages message
+      JOIN campus_model_reactions reaction ON reaction.id=message.reaction_id AND reaction.school_id=message.school_id
+      JOIN campus_model_events event ON event.id=reaction.trigger_event_id AND event.school_id=reaction.school_id
+      WHERE message.school_id=${input.school_id}::uuid AND message.correlation_id=${input.correlation_id}::uuid
+        AND message.recipient_agent_id=${recipient.id}::uuid
+        AND message.state IN ('queued','delivered','acknowledged')
+      ORDER BY message.created_at,message.id
+      FOR UPDATE OF message`.execute(transaction)).rows;
+    if (open.length === 0) throw new ConflictException("No open operational request matches this recipient and correlation.");
+    if (open.length !== 1) throw new ConflictException("More than one open operational request matches this recipient and correlation.");
+    const message = open[0]!;
+    if (message.source_revision !== input.expected_source_revision) {
+      throw new ConflictException("The source record changed. Refresh before responding to this request.");
+    }
+
+    if (message.state === "queued") {
+      await this.recordMessageOutcome(transaction, {
+        school_id: input.school_id,
+        message_id: message.message_id,
+        state: "delivered",
+        actor: null,
+        source_outbox_event_id: null,
+        code: "delivered_by_domain_response",
+        explanation: "The assigned recipient responded through the authoritative domain workflow.",
+        response: null,
+        occurred_at: input.occurred_at,
+        idempotency_key: `${input.idempotency_key}:delivery`,
+      });
+    }
+    return this.recordMessageOutcome(transaction, {
+      school_id: input.school_id,
+      message_id: message.message_id,
+      state: "responded",
+      actor: input.actor,
+      source_outbox_event_id: input.source_outbox_event_id,
+      code: input.code,
+      explanation: input.explanation,
+      response: input.response,
+      occurred_at: input.occurred_at,
+      idempotency_key: input.idempotency_key,
+    });
+  }
+
+  async recordMessageOutcome(
+    transaction: Transaction<Database>,
+    rawInput: OperationalMessageOutcome,
+  ): Promise<OperationalMessageOutcomeReceipt> {
+    const input = operationalMessageOutcomeSchema.parse(rawInput);
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const existingOutcome = (await sql<OperationalMessageOutcomeRow>`SELECT id,message_id,state,request_hash
+      FROM campus_model_operational_message_outcomes
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
+    if (existingOutcome) {
+      if (existingOutcome.message_id !== input.message_id || existingOutcome.state !== input.state || existingOutcome.request_hash !== requestHash) {
+        throw new ConflictException("This message outcome key was already used for a different result.");
+      }
+      const reaction = (await sql<{ reaction_id: string }>`SELECT reaction_id FROM campus_model_operational_messages
+        WHERE id=${input.message_id}::uuid AND school_id=${input.school_id}::uuid`.execute(transaction)).rows[0];
+      if (!reaction) throw new ConflictException("The operational message was not found.");
+      return {
+        message_id: input.message_id,
+        reaction_id: reaction.reaction_id,
+        state: input.state,
+        outcome_id: existingOutcome.id,
+        replayed: true,
+      };
+    }
+
+    const message = (await sql<OperationalMessageRow>`SELECT message.id,message.reaction_id,message.state,
+        message.recipient_agent_id,message.sender_agent_id,message.correlation_id,
+        recipient.agent_kind AS recipient_agent_kind,reaction.selector_snapshot
+      FROM campus_model_operational_messages message
+      JOIN campus_model_agents recipient ON recipient.id=message.recipient_agent_id AND recipient.school_id=message.school_id
+      JOIN campus_model_reactions reaction ON reaction.id=message.reaction_id AND reaction.school_id=message.school_id
+      WHERE message.id=${input.message_id}::uuid AND message.school_id=${input.school_id}::uuid
+      FOR UPDATE OF message`.execute(transaction)).rows[0];
+    if (!message) throw new ConflictException("The operational message was not found.");
+    const concurrentOutcome = (await sql<OperationalMessageOutcomeRow>`SELECT id,message_id,state,request_hash
+      FROM campus_model_operational_message_outcomes
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
+    if (concurrentOutcome) {
+      if (concurrentOutcome.message_id !== input.message_id || concurrentOutcome.state !== input.state || concurrentOutcome.request_hash !== requestHash) {
+        throw new ConflictException("This message outcome key was already used for a different result.");
+      }
+      return {
+        message_id: input.message_id,
+        reaction_id: message.reaction_id,
+        state: input.state,
+        outcome_id: concurrentOutcome.id,
+        replayed: true,
+      };
+    }
+    const allowed: Record<OperationalMessageRow["state"], OperationalMessageOutcome["state"][]> = {
+      queued: ["delivered", "expired", "cancelled", "dead_letter"],
+      delivered: ["acknowledged", "responded", "expired", "cancelled", "dead_letter"],
+      acknowledged: ["responded", "expired", "cancelled", "dead_letter"],
+      responded: [],
+      expired: [],
+      cancelled: [],
+      dead_letter: [],
+    };
+    if (!allowed[message.state].includes(input.state)) {
+      throw new ConflictException(`A ${message.state} message cannot transition to ${input.state}.`);
+    }
+
+    let actorAgent: AuthorizedRecipientRow | null = null;
+    if (input.actor) {
+      actorAgent = await this.resolveAgentReference(transaction, input.school_id, input.actor) ?? null;
+      if (!actorAgent) throw new ConflictException("The responding agent is not active in this institution.");
+      if (actorAgent.id !== message.recipient_agent_id) {
+        throw new ConflictException("Only the assigned recipient can acknowledge or respond to this work.");
+      }
+    }
+    if (input.source_outbox_event_id) {
+      const source = (await sql<{ id: string }>`SELECT id FROM event_outbox
+        WHERE id=${input.source_outbox_event_id}::uuid AND school_id=${input.school_id}::uuid
+        FOR KEY SHARE`.execute(transaction)).rows[0];
+      if (!source) throw new ConflictException("The message outcome source event does not belong to this institution.");
+    }
+
+    const sequence = (await sql<{ sequence: number }>`SELECT COALESCE(max(sequence),0)::int+1 AS sequence
+      FROM campus_model_operational_message_outcomes
+      WHERE school_id=${input.school_id}::uuid AND message_id=${input.message_id}::uuid`.execute(transaction)).rows[0]!.sequence;
+    const outcome = (await sql<{ id: string }>`INSERT INTO campus_model_operational_message_outcomes(
+        school_id,message_id,sequence,state,actor_agent_id,source_outbox_event_id,code,
+        explanation,response,occurred_at,idempotency_key,request_hash
+      ) VALUES (
+        ${input.school_id}::uuid,${input.message_id}::uuid,${sequence},${input.state},
+        ${actorAgent?.id ?? null}::uuid,${input.source_outbox_event_id}::uuid,${input.code},
+        ${input.explanation},${input.response ? JSON.stringify(input.response) : null}::jsonb,
+        ${input.occurred_at}::timestamptz,${input.idempotency_key},${requestHash}
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!outcome) throw new ConflictException("The operational message outcome could not be retained.");
+
+    await sql`UPDATE campus_model_operational_messages SET
+        state=${input.state},updated_at=now(),
+        delivered_at=CASE WHEN ${input.state}='delivered' THEN ${input.occurred_at}::timestamptz ELSE delivered_at END,
+        acknowledged_at=CASE WHEN ${input.state}='acknowledged' THEN ${input.occurred_at}::timestamptz ELSE acknowledged_at END,
+        responded_at=CASE WHEN ${input.state}='responded' THEN ${input.occurred_at}::timestamptz ELSE responded_at END,
+        expired_at=CASE WHEN ${input.state}='expired' THEN ${input.occurred_at}::timestamptz ELSE expired_at END,
+        cancelled_at=CASE WHEN ${input.state}='cancelled' THEN ${input.occurred_at}::timestamptz ELSE cancelled_at END,
+        dead_lettered_at=CASE WHEN ${input.state}='dead_letter' THEN ${input.occurred_at}::timestamptz ELSE dead_lettered_at END
+      WHERE id=${input.message_id}::uuid AND school_id=${input.school_id}::uuid`.execute(transaction);
+    const reactionState = input.state === "responded" ? "completed" : input.state;
+    await sql`UPDATE campus_model_reactions SET state=${reactionState},updated_at=now(),
+        completed_at=CASE WHEN ${input.state} IN ('responded','expired','cancelled','dead_letter')
+          THEN ${input.occurred_at}::timestamptz ELSE completed_at END
+      WHERE id=${message.reaction_id}::uuid AND school_id=${input.school_id}::uuid`.execute(transaction);
+
+    return {
+      message_id: input.message_id,
+      reaction_id: message.reaction_id,
+      state: input.state,
+      outcome_id: outcome.id,
+      replayed: false,
+    };
   }
 
   async recentActivity(schoolId: string, limit = 12): Promise<CampusModelActivity[]> {
@@ -718,6 +1304,62 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     })));
   }
 
+  private async recordCoordinationException(
+    transaction: Transaction<Database>,
+    input: AcceptedCoordinationEvent,
+    triggerEventId: string,
+    exceptionCode: CoordinationExceptionCode,
+    explanation: string,
+    details: Record<string, unknown>,
+  ): Promise<CoordinationPublishReceipt> {
+    const inserted = (await sql<CoordinationExceptionRow>`INSERT INTO campus_model_coordination_exceptions(
+        school_id,trigger_event_id,source_outbox_event_id,exception_code,status,selector_key,
+        explanation,details,correlation_id
+      ) VALUES (
+        ${input.school_id}::uuid,${triggerEventId}::uuid,${input.source_outbox_event_id}::uuid,
+        ${exceptionCode},'open',${input.selector_input.selector_key},${explanation},
+        ${JSON.stringify(details)}::jsonb,${input.correlation_id}::uuid
+      ) ON CONFLICT(trigger_event_id) DO NOTHING RETURNING id,exception_code`.execute(transaction)).rows[0];
+    const retained = inserted ?? (await sql<CoordinationExceptionRow>`SELECT id,exception_code
+      FROM campus_model_coordination_exceptions
+      WHERE school_id=${input.school_id}::uuid AND trigger_event_id=${triggerEventId}::uuid
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!retained) throw new ConflictException("The coordination exception could not be retained.");
+    return {
+      status: "unmatched",
+      event_id: triggerEventId,
+      exception_id: retained.id,
+      exception_code: retained.exception_code,
+      reaction_ids: [],
+      message_ids: [],
+      replayed: !inserted,
+    };
+  }
+
+  private async resolveAgentReference(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    reference: CoordinationRecipientAgentRef,
+  ): Promise<AuthorizedRecipientRow | undefined> {
+    return reference.agent_kind === "human"
+      ? (await sql<AuthorizedRecipientRow>`SELECT id,user_id,agent_kind,external_ref
+          FROM campus_model_agents agent
+          WHERE agent.school_id=${schoolId}::uuid AND agent.agent_kind='human'
+            AND agent.user_id=${reference.user_id}::uuid AND agent.status='active'
+            AND EXISTS (
+              SELECT 1 FROM users actor
+              JOIN school_memberships membership ON membership.user_id=actor.id
+              WHERE actor.id=agent.user_id AND actor.is_active
+                AND membership.school_id=agent.school_id AND membership.is_active
+            )
+          FOR SHARE OF agent`.execute(transaction)).rows[0]
+      : (await sql<AuthorizedRecipientRow>`SELECT id,user_id,agent_kind,external_ref
+          FROM campus_model_agents
+          WHERE school_id=${schoolId}::uuid AND agent_kind=${reference.agent_kind}
+            AND external_ref=${reference.external_ref} AND status='active'
+          FOR SHARE`.execute(transaction)).rows[0];
+  }
+
   private async upsertEntity(
     transaction: Transaction<Database>,
     schoolId: string,
@@ -774,7 +1416,11 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       SELECT ${schoolId}::uuid,'human',actor.id,
         COALESCE(NULLIF(trim(concat_ws(' ',actor.first_name,actor.last_name)),''),actor.username),
         CASE WHEN actor.is_active THEN 'active' ELSE 'revoked' END
-      FROM users actor WHERE actor.id=${userId}::uuid
+      FROM users actor WHERE actor.id=${userId}::uuid AND EXISTS (
+        SELECT 1 FROM school_memberships membership
+        WHERE membership.school_id=${schoolId}::uuid
+          AND membership.user_id=actor.id AND membership.is_active
+      )
       ON CONFLICT(school_id,user_id) WHERE agent_kind='human' DO UPDATE SET
         label=EXCLUDED.label,status=EXCLUDED.status,
         revision=CASE WHEN campus_model_agents.label IS DISTINCT FROM EXCLUDED.label

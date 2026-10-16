@@ -227,6 +227,120 @@ export const publishedDayPlanProjectionSchema = z.object({
   correlation_id: z.string().uuid(),
 }).strict();
 
+export const coordinationRecipientSelectorConfigSchema = z.object({
+  selector_key: identifier,
+  mode: z.literal("explicit_authorized_agents"),
+  required_capability: z.string().trim().min(3).max(120),
+  scope_mode: z.enum(["institution", "event_scope"]),
+  min_recipients: z.number().int().min(1).max(100),
+  max_recipients: z.number().int().min(1).max(100),
+}).strict().refine((value) => value.max_recipients >= value.min_recipients, {
+  path: ["max_recipients"],
+  message: "Maximum recipients must not be lower than minimum recipients.",
+});
+
+export const coordinationRecipientAgentRefSchema = z.discriminatedUnion("agent_kind", [
+  z.object({ agent_kind: z.literal("human"), user_id: z.string().uuid() }).strict(),
+  z.object({
+    // Team queues require dated membership and claim semantics. Keep them out of
+    // the public coordination contract until that authority adapter exists.
+    agent_kind: z.enum(["device", "integration", "software"]),
+    external_ref: z.string().trim().min(1).max(160),
+  }).strict(),
+]);
+
+export const acceptedCoordinationEventSchema = z.object({
+  school_id: z.string().uuid(),
+  source_outbox_event_id: z.string().uuid(),
+  event_kind: z.literal("domain_event"),
+  event_type: z.string().trim().min(3).max(120),
+  subject: campusModelEntitySchema,
+  context: campusModelEntitySchema.nullable().default(null),
+  actor_user_id: z.string().uuid(),
+  occurred_at: z.string().datetime({ offset: true }),
+  effective_from: z.string().datetime({ offset: true }),
+  effective_until: z.string().datetime({ offset: true }).nullable().default(null),
+  source_domain: identifier,
+  source_record_id: z.string().trim().min(1).max(160),
+  source_revision: z.number().int().positive(),
+  correlation_id: z.string().uuid(),
+  causation_event_id: z.string().uuid().nullable().default(null),
+  idempotency_key: z.string().trim().min(8).max(240),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  message: z.object({
+    subject: z.string().trim().min(1).max(200),
+    summary: z.string().trim().min(1).max(1_000),
+    payload: z.record(z.string(), z.unknown()).default({}),
+  }).strict(),
+  selector_input: z.object({
+    selector_key: identifier,
+    // user_id/external_ref is a domain-facing endpoint reference. The runtime
+    // resolves it to the private, stable Campus Model agent identity.
+    recipient_agents: z.array(coordinationRecipientAgentRefSchema).min(1).max(100),
+    scope: campusModelEntitySchema.nullable().default(null),
+  }).strict(),
+}).strict().superRefine((value, context) => {
+  if (value.effective_until && Date.parse(value.effective_until) <= Date.parse(value.effective_from)) {
+    context.addIssue({ code: "custom", path: ["effective_until"], message: "Event end must be after its start." });
+  }
+  const recipientKeys = value.selector_input.recipient_agents.map((recipient) => recipient.agent_kind === "human"
+    ? `human:${recipient.user_id}`
+    : `${recipient.agent_kind}:${recipient.external_ref}`);
+  if (new Set(recipientKeys).size !== recipientKeys.length) {
+    context.addIssue({ code: "custom", path: ["selector_input", "recipient_agents"], message: "Recipient agents must be unique." });
+  }
+});
+
+export const operationalMessageStateSchema = z.enum([
+  "queued",
+  "delivered",
+  "acknowledged",
+  "responded",
+  "expired",
+  "cancelled",
+  "dead_letter",
+]);
+
+export const operationalMessageOutcomeSchema = z.object({
+  school_id: z.string().uuid(),
+  message_id: z.string().uuid(),
+  state: operationalMessageStateSchema.exclude(["queued"]),
+  actor: coordinationRecipientAgentRefSchema.nullable().default(null),
+  source_outbox_event_id: z.string().uuid().nullable().default(null),
+  code: identifier,
+  explanation: z.string().trim().min(3).max(500),
+  response: z.record(z.string(), z.unknown()).nullable().default(null),
+  occurred_at: z.string().datetime({ offset: true }),
+  idempotency_key: z.string().trim().min(8).max(240),
+}).strict().superRefine((value, context) => {
+  if (["acknowledged", "responded"].includes(value.state) && !value.actor) {
+    context.addIssue({ code: "custom", path: ["actor"], message: "Identify the agent acknowledging or responding to the work." });
+  }
+  if (value.state === "responded" && !value.source_outbox_event_id) {
+    context.addIssue({ code: "custom", path: ["source_outbox_event_id"], message: "A domain response must retain its source outbox event." });
+  }
+  if (value.state === "responded" && !value.response) {
+    context.addIssue({ code: "custom", path: ["response"], message: "A responded message requires its typed response payload." });
+  }
+  if (value.state !== "responded" && value.response) {
+    context.addIssue({ code: "custom", path: ["response"], message: "Only a responded message can carry a response payload." });
+  }
+});
+
+export const recipientOperationalMessageResponseSchema = z.object({
+  school_id: z.string().uuid(),
+  correlation_id: z.string().uuid(),
+  recipient: coordinationRecipientAgentRefSchema,
+  actor: coordinationRecipientAgentRefSchema,
+  expected_source_revision: z.number().int().positive(),
+  source_outbox_event_id: z.string().uuid(),
+  code: identifier,
+  explanation: z.string().trim().min(3).max(500),
+  response: z.record(z.string(), z.unknown()),
+  occurred_at: z.string().datetime({ offset: true }),
+  idempotency_key: z.string().trim().min(8).max(220),
+}).strict();
+
 export type CampusModelEntitySnapshot = z.infer<typeof campusModelEntitySchema>;
 export type CampusModelRelationshipSnapshot = z.infer<typeof campusModelRelationshipSchema>;
 export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChangeSchema>;
@@ -236,3 +350,9 @@ export type PublishedScheduleProjection = z.infer<typeof publishedScheduleProjec
 export type CampusTemporalContextQuery = z.infer<typeof campusTemporalContextQuerySchema>;
 export type CalendarClosureProjection = z.infer<typeof calendarClosureProjectionSchema>;
 export type PublishedDayPlanProjection = z.infer<typeof publishedDayPlanProjectionSchema>;
+export type CoordinationRecipientSelectorConfig = z.infer<typeof coordinationRecipientSelectorConfigSchema>;
+export type CoordinationRecipientAgentRef = z.infer<typeof coordinationRecipientAgentRefSchema>;
+export type AcceptedCoordinationEvent = z.infer<typeof acceptedCoordinationEventSchema>;
+export type OperationalMessageState = z.infer<typeof operationalMessageStateSchema>;
+export type OperationalMessageOutcome = z.infer<typeof operationalMessageOutcomeSchema>;
+export type RecipientOperationalMessageResponse = z.infer<typeof recipientOperationalMessageResponseSchema>;

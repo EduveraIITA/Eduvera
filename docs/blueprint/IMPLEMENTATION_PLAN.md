@@ -216,16 +216,35 @@ coverage hand-off -> accepted substitution/fallback -> effective timetable conte
 because it exercises human-to-human coordination without weakening the existing
 leave, staffing or timetable invariants.
 
-The current core also does **not** yet implement the accepted first-class event
-subscription, reaction-instance or typed operational agent-mailbox contracts. Existing
-domain outbox events, notification delivery, requests and the AI assistant/channel
-transcript are useful adapters but are not substitutes for that coordination spine.
-The next agent-runtime slice must add these provider-neutral contracts and then route
-the staff-leave workflow through: leave event -> Principal/team reaction and request
-message -> typed decision command -> domain outcome -> coverage-coordinator reaction
-and offers -> accepted substitute/fallback -> timetable exception outcome. The owning
-leave, staffing and timetable records remain authoritative throughout. This paragraph
-records target work, not implemented or production-ready behavior.
+The first bounded coordination-runtime foundation is now implemented locally in
+migration 106 and the provider-neutral `CoordinationRuntimePort`. It retains approved
+behaviour versions and exact event subscriptions, verifies every accepted source
+outbox event, creates idempotent per-recipient reactions and typed operational
+messages, keeps queued/delivered/acknowledged/responded/expired/cancelled/dead-letter
+states distinct, and records a visible unmatched exception when configuration or
+authority is absent. It installs no behaviour, subscription, role or fallback. Public
+ports use domain-facing agent references rather than private core IDs; human
+resolution requires active institution membership and current configured capability.
+Team routing deliberately fails closed until dated membership and claim semantics
+exist.
+
+This is not yet a full agent runtime or a connected staff-leave workflow. It has no
+administration API, filter language, durable lease/retry worker, mailbox query,
+channel-delivery adapter or general roles/governance authority projection. Existing
+domain outbox events, notification delivery, Requests and AI/channel transcript remain
+adapters, not substitutes for the spine. The next horizontal work must establish the
+explicit `staff_leave_decision` governance route and current human authority, then
+route leave submission -> configured decision-owner Request -> freshly authorized
+domain decision -> correlated response/outcome. Coverage offers and effective
+timetable substitution remain a later connected step; leave, staffing and timetable
+records stay authoritative throughout.
+
+Verified local evidence for this bounded foundation: backend build and targeted ESLint
+pass; 32 focused coordination/core/migration tests pass; migration 106 passed
+transaction-only PostgreSQL validation and was rolled back rather than applied. The
+tests verify no installed default behaviour, explicit recipient selection, current
+authority checks, idempotency evidence, distinct message states and fail-closed team
+queues. Runtime domain integration and physical operator acceptance remain open.
 
 The same gap applies to behaviour configuration: current domain services contain a
 mixture of explicit Operating rules and code-owned workflow routing. Phase 3 must
