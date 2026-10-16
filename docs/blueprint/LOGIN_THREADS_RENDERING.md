@@ -22,7 +22,13 @@ Validation: both production builds and changed TypeScript lint passed. Browser
 checks passed both login routes at phone, iPad portrait/landscape and desktop
 sizes, verifying edge-to-edge background, no overflow, moving WebGL rendering,
 unavailable-WebGL fallback, contour morphing and reduced-motion pause. Physical
-iPad verification and this release's deployment verification are still pending.
+iPad verification remains outstanding. This version deployed successfully in
+https://github.com/EduveraIITA/Eduvera/actions/runs/38859310286
+Live checks on app.thatcampus.com passed both login routes, phone/iPad/desktop
+viewport coverage, moving WebGL rendering and animated fallback contours. A
+focused reduced-motion check confirmed the SVG pauses and resumes; it waits for
+animationsPaused() before comparing geometry to avoid an asynchronous media-event
+race in the initial assertion.
 
 ## Prior implementation history
 
