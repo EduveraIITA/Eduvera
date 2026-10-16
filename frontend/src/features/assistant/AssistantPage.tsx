@@ -17,6 +17,7 @@ import { browserHistoryIndex, previousPortalLocation } from '../navigation/porta
 import { samePortalHref } from '../navigation/portalReturnState';
 import { ThatCampusLoader } from '../../components/ThatCampusLoader';
 import { AssistantElectricBorder } from './AssistantElectricBorder';
+import { AssistantIcon } from './AssistantIcon';
 import './assistant.css';
 
 export default function AssistantPage({portal}:{portal:AssistantPortal}) {
@@ -92,7 +93,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
           {run.id===latest?.id?<AssistantElectricBorder>{reply}</AssistantElectricBorder>:reply}
         </li>;
       })}
-    </ol>:<div className="assistant-page__empty"><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
+    </ol>:<div className="assistant-page__empty"><AssistantIcon size={48}/><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
     <div ref={end} className="assistant-page__end"/>
     <div className="assistant-page__composer" ref={footer}>
       {conversation.pending||conversation.awaiting?<p role="status">{conversation.pending?latest?.progress+'…':'Review the pending action above.'}</p>:null}

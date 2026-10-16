@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ArrowRight, Maximize2, MessageCircle, X } from 'lucide-react';
+import { ArrowRight, Maximize2, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import type { AssistantContext } from './context';
 import type { DemoChatControl } from './useDemoChat';
@@ -10,12 +10,13 @@ import { AssistantText } from './AssistantText';
 import { AgentChart } from './AgentChart';
 import { ActionReviewNotice } from './AgentReply';
 import { AssistantElectricBorder } from './AssistantElectricBorder';
+import { AssistantIcon } from './AssistantIcon';
 import './assistant.css';
 
 export function AssistantTab({chat,className='',sidebar=false}:{chat:DemoChatControl;className?:string;sidebar?:boolean}) {
   return <button type="button" className={'assistant-tab '+(sidebar?'assistant-tab--sidebar ':'')+className+(chat.active?' is-active':'')}
     aria-label="Assistant" aria-current={chat.fullPage?'page':undefined} aria-expanded={chat.fullPage?undefined:chat.open} aria-controls={chat.open?chat.id:undefined} onClick={chat.toggle}>
-    <MessageCircle size={22} strokeWidth={chat.active?2.25:1.9} aria-hidden="true"/><span>Assistant</span>
+    <AssistantIcon size={26}/><span>Assistant</span>
   </button>;
 }
 export function AssistantPanel({chat,context}:{chat:DemoChatControl;context:AssistantContext}) {
@@ -48,6 +49,7 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
     <section id={chat.id} ref={panel} className="assistant-dock" tabIndex={-1} aria-label="Assistant">
       {approval?<ActionReviewNotice action={approval} to={fullPath} state={returnState} onClose={chat.close} onOpen={event=>navigate.fromLink(event,fullPath,{state:returnState})}/>:<AssistantElectricBorder><div className="assistant-response">
         <header aria-label="Assistant controls">
+          <AssistantIcon size={24}/>
           <div className="assistant-response__controls">
             <Link className="assistant-expand" to={fullPath} state={returnState} aria-label="Open Assistant" onClick={event=>navigate.fromLink(event,fullPath,{state:returnState})}><Maximize2 size={16} aria-hidden="true"/></Link>
             <button type="button" aria-label="Close Assistant" onClick={chat.close}><X size={18} aria-hidden="true"/></button>
