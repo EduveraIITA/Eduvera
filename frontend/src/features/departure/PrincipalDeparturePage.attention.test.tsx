@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
 import PrincipalDeparturePage from "./PrincipalDeparturePage";
-import { getDepartureWorkspace, type AdminDeparture, type TransportTrip } from "./api";
+import { decideDutySwap, getDepartureWorkspace, type AdminDeparture, type TransportTrip } from "./api";
+import { clearPendingTransportCommandsForTests } from "./pendingTransportCommand";
 
 vi.mock("../../pages/operations/OperationsShell",()=>({OperationsShell:({children}:{children:ReactNode})=><main>{children}</main>}));
 vi.mock("../attention/AttentionOpenAcknowledgement",()=>({AttentionOpenAcknowledgement:()=> <output data-testid="attention-opened"/>}));
-vi.mock("../auth/AuthContext",()=>({useAuth:()=>({user:{active_school_id:"school-1"},memberships:[{role:"admin",school_id:"school-1"}],refresh:vi.fn()})}));
-vi.mock("./api",async original=>({...await original<typeof import("./api")>(),getDepartureWorkspace:vi.fn()}));
+vi.mock("../auth/AuthContext",()=>({useAuth:()=>({user:{id:"admin-1",active_school_id:"school-1"},memberships:[{role:"admin",school_id:"school-1"}],refresh:vi.fn()})}));
+vi.mock("./api",async original=>({...await original<typeof import("./api")>(),getDepartureWorkspace:vi.fn(),decideDutySwap:vi.fn()}));
 
 const trip:TransportTrip={
   id:"trip-1",school_id:"school-1",route_id:"route-1",service_date:"2026-12-20",direction:"from_institution",
@@ -34,7 +35,7 @@ function show(path:string){
 }
 
 beforeEach(()=>vi.mocked(getDepartureWorkspace).mockResolvedValue(workspace));
-afterEach(()=>{cleanup();vi.clearAllMocks();});
+afterEach(()=>{cleanup();clearPendingTransportCommandsForTests();vi.clearAllMocks();});
 
 describe("principal departure attention destinations",()=>{
   it("loads and focuses an exact historical departure plan",async()=>{
@@ -86,5 +87,24 @@ describe("principal departure attention destinations",()=>{
     show("/principal/departure?section=roster&swap=swap-1&swap_revision=3&attention_notification_id=10000000-0000-4000-a000-000000000001");
     expect(await screen.findByText(/changed after the alert/i)).toBeVisible();
     expect(screen.queryByTestId("attention-opened")).not.toBeInTheDocument();
+  });
+
+  it("reuses the school decision command after a response is lost and the page reloads",async()=>{
+    vi.mocked(getDepartureWorkspace).mockResolvedValue({...workspace,swaps:[acceptedSwap]});
+    vi.mocked(decideDutySwap).mockRejectedValueOnce(new TypeError("response lost")).mockResolvedValueOnce({status:"approved"});
+    const path="/principal/departure?section=roster&swap=swap-1";
+    show(path);
+    const firstApprove=await screen.findByRole("button",{name:"Approve"});
+    firstApprove.click();
+    await waitFor(()=>expect(decideDutySwap).toHaveBeenCalledTimes(1));
+    const firstCommand=(vi.mocked(decideDutySwap).mock.calls[0]?.[2] as {command_id:string}).command_id;
+    expect(firstCommand).toMatch(/^[0-9a-f-]{36}$/i);
+
+    cleanup();
+    show(path);
+    const retryApprove=await screen.findByRole("button",{name:"Approve"});
+    retryApprove.click();
+    await waitFor(()=>expect(decideDutySwap).toHaveBeenCalledTimes(2));
+    expect((vi.mocked(decideDutySwap).mock.calls[1]?.[2] as {command_id:string}).command_id).toBe(firstCommand);
   });
 });

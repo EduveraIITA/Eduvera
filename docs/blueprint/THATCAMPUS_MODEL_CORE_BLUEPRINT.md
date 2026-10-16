@@ -1065,6 +1065,31 @@ authorized human handover decision + observation -> accepted outcome
 
 Software coordinates but does not manufacture collection authority or physical proof.
 
+### 19.7 Transport duty cover or exchange
+
+```text
+Assigned collector human agent
+ -> RequestDutyChange command with actor-scoped command identity
+ -> Departure & Transport validates the dated trip, assignee, operating window and target
+ -> transport.duty_change.requested event
+ -> configured exact-colleague reaction + typed Offer message
+ -> invited colleague sends AcceptDutyOffer or RejectDutyOffer command
+ -> current message recipient, capability, trip revisions and conflicts are rechecked
+ -> rejection records the Offer response and Update; no approval request is created
+ -> acceptance records the Offer response and transport.duty_change.accepted event
+ -> configured exact-officeholder reaction + typed Request message
+ -> current officeholder sends ApproveDutyChange or DeclineDutyChange command
+ -> authority, exact message recipient, window, trips, assignees and conflicts are rechecked
+ -> Departure & Transport atomically changes both assignments for an exchange, or neither
+ -> final domain event, message outcome, audit evidence and Updates share one correlation
+```
+
+The Offer and Request are coordination evidence, not transport truth. The transport
+domain owns the swap, trip revisions and assignments. A successful reassignment does
+not prove that a journey started, a learner boarded, a vehicle moved or a handover
+occurred. Private reasons and response/decision notes remain in authorized transport
+records and are not copied into generic core event or mailbox payloads.
+
 ## 20. Security and privacy
 
 - tenant identity participates in keys/foreign references where practical;
@@ -1281,7 +1306,14 @@ slice:
   actor-scoped command receipts, exact-message response binding, current authority
   and capability rechecks, correlated decision outcomes, private reason/handover
   exclusion from core payloads, exact-owner read filtering and original-sender
-  cancellation of the retained Request.
+  cancellation of the retained Request;
+- a second bounded transport-duty vertical segment through migration 109: an exact
+  colleague Offer followed, only after acceptance, by one exact governance-owner
+  Request; actor-scoped replay-safe request/response/decision commands; current
+  recipient, authority, trip revision, assignee, conflict and operating-window
+  rechecks; privacy-minimal core payloads; exact-owner Requests projection; and the
+  existing domain-atomic cover/exchange reassignment rather than duplicated core
+  transport state.
 
 Not yet implemented at this checkpoint:
 
@@ -1294,6 +1326,11 @@ Not yet implemented at this checkpoint:
 - idempotent domain command router across workflows;
 - configured staff-leave rerouting/transfer when the officeholder changes after
   submission (decision currently fails closed rather than guessing a recipient);
+- configured transport-duty offer/decision rerouting when either recipient changes
+  after publication (response currently fails closed rather than inheriting work);
+- production administration for transport-duty behaviour versions, response timing,
+  expiry and fallback; the Cambridge configuration is an explicit guarded demo seed,
+  never a runtime default;
 - coverage offer/acceptance/fallback model mediation;
 - accepted cover as effective timetable substitution;
 - role-specific Today composition from the shared model;
@@ -1310,6 +1347,9 @@ Known transitional mismatches that later slices MUST remove:
 - missing staff-leave routing rolls back the domain transaction and its in-transaction
   coordination exception, so the failure is safe but not yet a durable owned
   configuration case;
+- missing transport-duty routing has the same safe rollback limitation: no duty
+  change is committed, but an independently durable configuration case is not yet
+  retained outside the rolled-back transaction;
 - the live runtime still binds directly to production database/time/dispatch
   dependencies; the required `ExecutionContext` simulation/rehearsal/replay seam is a
   contract, not yet executable isolation;

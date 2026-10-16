@@ -293,6 +293,30 @@ export class RequestsService {
     }
   }
 
+  private async canReviewTransportDutyChange(
+    user: AuthUser,
+    schoolId: string,
+    transaction: Transaction<Database>,
+  ): Promise<boolean> {
+    const decisionAuthority = this.decisionAuthority;
+    if (!decisionAuthority) return false;
+    try {
+      await decisionAuthority.assertDecisionAuthority(
+        transaction,
+        schoolId,
+        "transport_duty_change_decision",
+        user.id,
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException
+        || error instanceof ConflictException
+        || error instanceof NotFoundException) return false;
+      throw error;
+    }
+  }
+
   async canReadCommunication(user: AuthUser, schoolId: string): Promise<boolean> {
     const access = await effectiveSchoolAccess(this.db, user.id, schoolId, "messages.view");
     return access.role === "admin" || access.sources.length > 0;
@@ -1515,6 +1539,7 @@ export class RequestsService {
   private async principalItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
     return this.db.transaction().execute(async (transaction) => {
     const canReviewStaffLeave = await this.canReviewStaffLeave(user, scope.school_id, transaction);
+    const canReviewTransportDutyChange = await this.canReviewTransportDutyChange(user, scope.school_id, transaction);
     const [notices, noticeExceptions, leave, departure, swaps, fees, policies, assessments, continuity, concerns] = await Promise.all([
       sql<StaffActionRow>`
         SELECT notice.id,notice.title,
@@ -1590,6 +1615,7 @@ export class RequestsService {
         JOIN transport_trips trip ON trip.id=swap.requester_trip_id
         JOIN transport_routes route ON route.id=trip.route_id
         WHERE swap.school_id=${scope.school_id}::uuid AND swap.status='accepted'
+          AND ${canReviewTransportDutyChange}
         ORDER BY trip.service_date,swap.id
       `.execute(transaction),
       sql<StaffActionRow>`

@@ -127,6 +127,9 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       .executeTakeFirst();
     if (!school) throw new NotFoundException("Institution was not found.");
     const effectiveDate = dateInTimeZone(evaluatedAt, school.timezone);
+    const decisionLabel = matterCode === "staff_leave_decision"
+      ? "staff leave"
+      : "transport duty change";
 
     const rules = await transaction.selectFrom("institution_decision_matter_rules")
       .selectAll()
@@ -138,16 +141,16 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       && rule.effective_from !== null
       && dateInInclusiveInterval(effectiveDate, rule.effective_from, rule.effective_until));
     if (effectiveRules.length === 0) {
-      return unavailableDecisionAuthority("No confirmed decision route is effective for staff leave.");
+      return unavailableDecisionAuthority(`No confirmed decision route is effective for ${decisionLabel}.`);
     }
     if (effectiveRules.length !== 1) {
-      return unavailableDecisionAuthority("More than one decision route is effective for staff leave.");
+      return unavailableDecisionAuthority(`More than one decision route is effective for ${decisionLabel}.`);
     }
     const rule = effectiveRules[0]!;
     if (!["individual", "delegated"].includes(rule.decision_mode)
       || !rule.decision_office_id
       || rule.decision_body_id) {
-      return unavailableDecisionAuthority("Staff leave requires one configured individual or delegated decision owner.");
+      return unavailableDecisionAuthority(`${decisionLabel === "staff leave" ? "Staff leave" : "Transport duty change"} requires one configured individual or delegated decision owner.`);
     }
 
     const office = await transaction.selectFrom("institution_governance_offices")
@@ -157,7 +160,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       .forShare()
       .executeTakeFirst();
     if (!office || office.status !== "active") {
-      return unavailableDecisionAuthority("The configured staff-leave decision office is not active.");
+      return unavailableDecisionAuthority(`The configured ${decisionLabel} decision office is not active.`);
     }
 
     const appointments = await transaction.selectFrom("institution_governance_appointments as appointment")
@@ -180,14 +183,14 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
     const effectiveAppointments = appointments.filter((appointment) => appointment.status === "active"
       && dateInInclusiveInterval(effectiveDate, appointment.starts_on, appointment.ends_on));
     if (effectiveAppointments.length === 0) {
-      return unavailableDecisionAuthority("The staff-leave decision office has no effective officeholder.");
+      return unavailableDecisionAuthority(`The ${decisionLabel} decision office has no effective officeholder.`);
     }
     if (effectiveAppointments.length !== 1) {
-      return unavailableDecisionAuthority("The staff-leave decision office has ambiguous effective officeholders.");
+      return unavailableDecisionAuthority(`The ${decisionLabel} decision office has ambiguous effective officeholders.`);
     }
     const appointment = effectiveAppointments[0]!;
     if (!appointment.linked_user_id) {
-      return unavailableDecisionAuthority("The staff-leave decision officeholder is not linked to one active institution account.");
+      return unavailableDecisionAuthority(`The ${decisionLabel} decision officeholder is not linked to one active institution account.`);
     }
     const person = await transaction.selectFrom("school_people")
       .select(["id", "revision"])
@@ -209,7 +212,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       .forShare()
       .execute();
     if (!person || !linkedUser || activeMemberships.length === 0) {
-      return unavailableDecisionAuthority("The staff-leave decision officeholder is not linked to one active institution account.");
+      return unavailableDecisionAuthority(`The ${decisionLabel} decision officeholder is not linked to one active institution account.`);
     }
 
     const authoritySourceIds = [...new Set([
@@ -218,7 +221,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       appointment.authority_source_id,
     ].filter((sourceId): sourceId is string => sourceId !== null))];
     if (authoritySourceIds.length === 0) {
-      return unavailableDecisionAuthority("The staff-leave decision route has no authority source.");
+      return unavailableDecisionAuthority(`The ${decisionLabel} decision route has no authority source.`);
     }
     const sources = await transaction.selectFrom("institution_authority_sources")
       .select([
@@ -242,7 +245,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       && source.effective_from !== null
       && dateInInclusiveInterval(effectiveDate, source.effective_from, source.effective_until));
     if (sources.length !== authoritySourceIds.length || effectiveSources.length !== authoritySourceIds.length) {
-      return unavailableDecisionAuthority("The staff-leave decision route has missing, unconfirmed or expired authority evidence.");
+      return unavailableDecisionAuthority(`The ${decisionLabel} decision route has missing, unconfirmed or expired authority evidence.`);
     }
     const sourceReceipts = effectiveSources
       .map((source) => ({
@@ -313,7 +316,9 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
     uuid.parse(userId);
     const authority = await this.resolveDecisionOwner(transaction, schoolId, matterCode, at);
     if (authority.user_id !== userId) {
-      throw new ForbiddenException("The current officeholder must decide this staff-leave request.");
+      throw new ForbiddenException(matterCode === "staff_leave_decision"
+        ? "The current officeholder must decide this staff-leave request."
+        : "The current officeholder must decide this transport duty change.");
     }
     return authority;
   }

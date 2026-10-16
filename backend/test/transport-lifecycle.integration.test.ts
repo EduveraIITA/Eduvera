@@ -57,7 +57,27 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     return result.rows[0].timezone;
   }
   const rider=(state:string,revision=1,note="Observed by assigned staff")=>({state,expected_revision:revision,note});
-  beforeAll(()=>{db=new DatabaseService();service=new DepartureCoordinationService(db,new SchoolEventService(db));});
+  beforeAll(()=>{
+    db=new DatabaseService();
+    const authority=(userId:string)=>({user_id:userId,rule:{id:randomUUID()},appointment:{id:randomUUID()}});
+    const bridge={
+      publishRequested:()=>Promise.resolve({status:"matched",event_id:randomUUID(),behaviour_version_id:randomUUID(),subscription_id:randomUUID(),reaction_ids:[randomUUID()],message_ids:[randomUUID()],deliveries:[],replayed:false}),
+      trace:()=>Promise.resolve({event_id:null,correlation_id:randomUUID(),message_id:randomUUID()}),
+      resolveDecisionOwner:async(_tx:unknown,schoolId:string)=>{
+        const owner=(await pool.query("SELECT user_id FROM school_memberships WHERE school_id=$1 AND role='admin' AND is_active LIMIT 1",[schoolId])).rows[0];
+        return authority(owner.user_id as string);
+      },
+      assertDecisionAuthority:async(_tx:unknown,schoolId:string,userId:string)=>{
+        const owner=(await pool.query("SELECT user_id FROM school_memberships WHERE school_id=$1 AND role='admin' AND is_active AND user_id=$2",[schoolId,userId])).rows[0];
+        if(!owner)throw new Error("not current owner");
+        return authority(userId);
+      },
+      recordTargetResponse:()=>Promise.resolve({message_id:randomUUID(),reaction_id:randomUUID(),state:"responded",outcome_id:randomUUID(),replayed:false}),
+      publishAccepted:()=>Promise.resolve({status:"matched",event_id:randomUUID(),behaviour_version_id:randomUUID(),subscription_id:randomUUID(),reaction_ids:[randomUUID()],message_ids:[randomUUID()],deliveries:[],replayed:false}),
+      recordDecisionResponse:()=>Promise.resolve({message_id:randomUUID(),reaction_id:randomUUID(),state:"responded",outcome_id:randomUUID(),replayed:false}),
+    };
+    service=new DepartureCoordinationService(db,new SchoolEventService(db),bridge as any);
+  });
   afterAll(async()=>{await db?.destroy();await pool.end();});
 
   it("loads exact plan and trip targets outside the default operations window",async()=>{
@@ -220,29 +240,85 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
   it("transfers duty only after colleague acceptance and school approval, then removes the previous collector's write access",async()=>{
     const f=await fixture();await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     await departureIn(f.trip.id,60);
-    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague covering assigned duty"});
-    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:1,note:"Approved cover"})).rejects.toThrow(/colleague/);
-    await service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1});
-    await service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Cover confirmed with both staff"});
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague covering assigned duty",command_id:randomUUID()});
+    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:1,note:"Approved cover",command_id:randomUUID()})).rejects.toThrow(/colleague/);
+    await service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1,command_id:randomUUID()});
+    await service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Cover confirmed with both staff",command_id:randomUUID()});
     await expect(service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:3})).rejects.toThrow(/assigned/);
     await departureIn(f.trip.id,0);
     expect((await service.tripAction(f.admin,f.trip.id,"boarding",{expected_revision:3})).state).toBe("boarding");
+  });
+
+  it("replays each duty-change command exactly once and rejects command payload collisions",async()=>{
+    const f=await fixture();await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
+    await departureIn(f.trip.id,60);
+    const requestCommand=randomUUID();
+    const requestInput={requester_trip_id:f.trip.id,request_type:"cover" as const,target_user_id:f.admin.id,reason:"Colleague covering assigned duty",command_id:requestCommand};
+    const request=await service.requestDutySwap(f.collector,requestInput);
+    expect((await service.requestDutySwap(f.collector,requestInput)).id).toBe(request.id);
+    await expect(service.requestDutySwap(f.collector,{...requestInput,reason:"A different cover request"})).rejects.toThrow(/command ID/);
+
+    const responseCommand=randomUUID();
+    const responseInput={decision:"accepted" as const,expected_revision:1,note:"I can cover",command_id:responseCommand};
+    const accepted=await service.respondDutySwap(f.admin,request.id,responseInput);
+    expect((await service.respondDutySwap(f.admin,request.id,responseInput)).revision).toBe(accepted.revision);
+    await expect(service.respondDutySwap(f.admin,request.id,{...responseInput,decision:"rejected"})).rejects.toThrow(/command ID/);
+
+    const decisionCommand=randomUUID();
+    const decisionInput={decision:"approved" as const,expected_revision:2,note:"Cover confirmed with both staff",command_id:decisionCommand};
+    const approved=await service.decideDutySwap(f.admin,f.school,request.id,decisionInput);
+    expect((await service.decideDutySwap(f.admin,f.school,request.id,decisionInput)).revision).toBe(approved.revision);
+    await expect(service.decideDutySwap(f.admin,f.school,request.id,{...decisionInput,note:"Changed approval evidence"})).rejects.toThrow(/command ID/);
+
+    expect((await pool.query("SELECT count(*)::int total FROM transport_duty_change_commands WHERE school_id=$1 AND target_swap_id=$2",[f.school,request.id])).rows[0].total).toBe(3);
   });
 
   it("rejects revoked replacement staff at approval and blocks future boarding",async()=>{
     const f=await fixture();const backup=await actor("staff");await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff')",[f.school,backup.id]);
     await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     await departureIn(f.trip.id,60);
-    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:backup.id,reason:"Proposed cover"});
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:backup.id,reason:"Proposed cover",command_id:randomUUID()});
     const inbox=await service.collectorWorkspace(backup);expect(inbox.trips).toHaveLength(0);expect(inbox.swaps.some(swap=>swap.id===request.id)).toBe(true);
     await expect(service.collectorWorkspace(f.parent)).rejects.toThrow(/staff/);
-    await service.respondDutySwap(backup,request.id,{decision:"accepted",expected_revision:1});
+    await service.respondDutySwap(backup,request.id,{decision:"accepted",expected_revision:1,command_id:randomUUID()});
     await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2",[f.school,backup.id]);
-    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Approved cover"})).rejects.toThrow(/active/);
+    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Approved cover",command_id:randomUUID()})).rejects.toThrow(/active/);
     const future=(await pool.query("SELECT ($1::date+1)::text AS day",[f.day])).rows[0].day;
     const trip=await service.createTrip(f.admin,f.school,{route_id:f.route.id,service_date:future,direction:"from_institution",assigned_collector_user_id:f.collector.id,scheduled_departure_time:"15:30"});
     await service.tripAction(f.collector,trip.id,"accept",{expected_revision:1});
     await expect(service.tripAction(f.collector,trip.id,"boarding",{expected_revision:2})).rejects.toThrow(/service date/);
+  });
+
+  it("does not let a colleague accept an offer after its source trip changed",async()=>{
+    const f=await fixture();const backup=await actor("staff");
+    await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff')",[f.school,backup.id]);
+    await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
+    await departureIn(f.trip.id,60);
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:backup.id,reason:"Proposed cover",command_id:randomUUID()});
+    await pool.query("UPDATE transport_trips SET revision=revision+1 WHERE id=$1",[f.trip.id]);
+
+    await expect(service.respondDutySwap(backup,request.id,{decision:"accepted",expected_revision:1,command_id:randomUUID()}))
+      .rejects.toThrow(/trip or collector authority changed/);
+    expect((await pool.query("SELECT status FROM transport_duty_swap_requests WHERE id=$1",[request.id])).rows[0].status).toBe("submitted");
+  });
+
+  it("keeps both exchange assignments unchanged when either trip changed before approval",async()=>{
+    const f=await fixture();const colleague=await actor("staff");
+    await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff')",[f.school,colleague.id]);
+    await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
+    await departureIn(f.trip.id,60);
+    const targetDay=(await pool.query("SELECT ($1::date+1)::text AS day",[f.day])).rows[0].day as string;
+    const targetTrip=await service.createTrip(f.admin,f.school,{route_id:f.route.id,service_date:targetDay,direction:"from_institution",assigned_collector_user_id:colleague.id,scheduled_departure_time:"15:30"});
+    await service.tripAction(colleague,targetTrip.id,"accept",{expected_revision:1});
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"exchange",target_user_id:colleague.id,target_trip_id:targetTrip.id,reason:"Mutual duty exchange",command_id:randomUUID()});
+    await service.respondDutySwap(colleague,request.id,{decision:"accepted",expected_revision:1,command_id:randomUUID()});
+    await pool.query("UPDATE transport_trips SET revision=revision+1 WHERE id=$1",[targetTrip.id]);
+
+    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Approve mutual exchange",command_id:randomUUID()}))
+      .rejects.toThrow(/colleague's trip changed/);
+    const assignments=(await pool.query("SELECT id,assigned_collector_user_id FROM transport_trips WHERE id=ANY($1::uuid[]) ORDER BY id",[[f.trip.id,targetTrip.id]])).rows;
+    expect(assignments.find(item=>item.id===f.trip.id)?.assigned_collector_user_id).toBe(f.collector.id);
+    expect(assignments.find(item=>item.id===targetTrip.id)?.assigned_collector_user_id).toBe(colleague.id);
   });
 
   it("loads an exact live duty request older than the ordinary 30-day inbox window",async()=>{
@@ -250,7 +326,7 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff')",[f.school,backup.id]);
     await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
     await departureIn(f.trip.id,60);
-    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:backup.id,reason:"Long-planned colleague cover"});
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:backup.id,reason:"Long-planned colleague cover",command_id:randomUUID()});
     await pool.query("UPDATE transport_duty_swap_requests SET created_at=now()-interval '31 days' WHERE id=$1",[request.id]);
 
     expect((await service.collectorWorkspace(backup)).swaps.some(swap=>swap.id===request.id)).toBe(false);
@@ -272,24 +348,24 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     await departureIn(f.trip.id,30,timezone);
     const openWindow=(await service.collectorWorkspace(f.collector)).trips.find(trip=>trip.id===f.trip.id)!;
     expect(openWindow.controls_available).toBe(true);expect(openWindow.duty_change_available).toBe(false);
-    await expect(service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Last minute cover"})).rejects.toThrow(/institution's journey operating window/);
+    await expect(service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Last minute cover",command_id:randomUUID()})).rejects.toThrow(/institution's journey operating window/);
     expect((await service.tripAction(f.collector,f.trip.id,"boarding",{expected_revision:2})).state).toBe("boarding");
   });
 
   it("expires an outstanding duty invitation at the cutoff without changing the assignee",async()=>{
     const f=await fixture();await departureIn(f.trip.id,60);await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
-    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague cover"});
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague cover",command_id:randomUUID()});
     await departureIn(f.trip.id,29);
     expect((await service.collectorWorkspace(f.admin)).swaps.find(swap=>swap.id===request.id)?.self_service_open).toBe(false);
-    await expect(service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1})).rejects.toThrow(/institution's journey operating window/);
+    await expect(service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1,command_id:randomUUID()})).rejects.toThrow(/institution's journey operating window/);
     expect((await pool.query("SELECT assigned_collector_user_id FROM transport_trips WHERE id=$1",[f.trip.id])).rows[0].assigned_collector_user_id).toBe(f.collector.id);
   });
 
   it("requires school reassignment instead of approving a self-service swap after cutoff",async()=>{
     const f=await fixture();await departureIn(f.trip.id,60);await service.tripAction(f.collector,f.trip.id,"accept",{expected_revision:1});
-    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague cover"});
-    await service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1});await departureIn(f.trip.id,29);
-    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Late approval"})).rejects.toThrow(/institution's journey operating window/);
+    const request=await service.requestDutySwap(f.collector,{requester_trip_id:f.trip.id,request_type:"cover",target_user_id:f.admin.id,reason:"Colleague cover",command_id:randomUUID()});
+    await service.respondDutySwap(f.admin,request.id,{decision:"accepted",expected_revision:1,command_id:randomUUID()});await departureIn(f.trip.id,29);
+    await expect(service.decideDutySwap(f.admin,f.school,request.id,{decision:"approved",expected_revision:2,note:"Late approval",command_id:randomUUID()})).rejects.toThrow(/institution's journey operating window/);
     expect((await service.assignTripCollector(f.admin,f.school,f.trip.id,{collector_user_id:f.admin.id,expected_revision:2,note:"Urgent cover verified by school"})).assigned_collector_user_id).toBe(f.admin.id);
   });
 

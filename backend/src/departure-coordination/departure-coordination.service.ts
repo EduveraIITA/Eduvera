@@ -1,22 +1,40 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { sql, type Transaction } from "kysely";
+import { createHash } from "node:crypto";
+import { sql, type Selectable, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
-import type { Database, DepartureMode } from "../database/types.js";
+import type { Database, DepartureMode, TransportDutySwapRequestTable } from "../database/types.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import { assertActiveSchoolStaffMember, hasScopedSchoolPermission } from "../roles/authorization.js";
 import { assertRiderTransition, assertTripTransition } from "./journey-rules.js";
+import { TransportDutyModelBridgeService } from "./transport-duty-model-bridge.service.js";
 
 const uuid=z.string().uuid();
 const date=z.iso.date();
 const mode=z.enum(["guardian_pickup","authorized_collector","independent_departure","school_transport","external_transport"]);
 const direction=z.enum(["to_institution","from_institution"]);
 type Db=DatabaseService|Transaction<Database>;
+type TransportDutyCommandType="request"|"respond"|"decide";
+
+function canonicalJson(value:unknown):unknown {
+  if(Array.isArray(value)) return value.map(canonicalJson);
+  if(value&&typeof value==="object") return Object.fromEntries(Object.entries(value as Record<string,unknown>)
+    .sort(([left],[right])=>left.localeCompare(right)).map(([key,nested])=>[key,canonicalJson(nested)]));
+  return value;
+}
+
+export function transportDutyCommandHash(operation:TransportDutyCommandType,targetSwapId:string|null,input:unknown) {
+  return createHash("sha256").update(JSON.stringify(canonicalJson({operation,target_swap_id:targetSwapId,input}))).digest("hex");
+}
 
 @Injectable()
 export class DepartureCoordinationService {
-  constructor(private readonly db:DatabaseService,private readonly events:SchoolEventService) {}
+  constructor(
+    private readonly db:DatabaseService,
+    private readonly events:SchoolEventService,
+    private readonly transportDutyModel:TransportDutyModelBridgeService,
+  ) {}
 
   private async membership(user:AuthUser,schoolId:string,admin=false) {
     uuid.parse(schoolId);
@@ -170,6 +188,70 @@ export class DepartureCoordinationService {
     const action=typeof extra.action==="string"?extra.action:"updated";
     const eventVersion=typeof candidate==="string"||typeof candidate==="number"||typeof candidate==="boolean"?candidate:Date.now();
     await this.events.enqueueUserEvent(db,{schoolId,eventType:type,aggregateType:targetType,aggregateId:targetId,audienceUserIds:audience,payload:{...extra,refresh:["departure","parent.home","principal.home","teacher.home","attention"]},idempotencyKey:`${type}:${targetType}:${targetId}:${studentId??"trip"}:${action}:${eventVersion}`});
+  }
+
+  private async enqueueDutyDomainEvent(
+    tx:Transaction<Database>,
+    input:{schoolId:string;swapId:string;eventType:string;revision:number;audience:string[];status:string},
+  ) {
+    const audience=[...new Set(input.audience)].sort();
+    const payload={duty_change_id:input.swapId,status:input.status,revision:input.revision,
+      refresh:["departure","teacher.home","principal.home","attention"]};
+    const idempotencyKey=`transport-duty-domain:${input.swapId}:${input.eventType}:${input.revision}`;
+    const inserted=(await sql<{id:string}>`INSERT INTO event_outbox(
+        school_id,event_type,aggregate_type,aggregate_id,audience_user_ids,payload,idempotency_key
+      ) VALUES(
+        ${input.schoolId}::uuid,${input.eventType},'transport_duty_swap',${input.swapId}::uuid,
+        ${audience}::uuid[],${JSON.stringify(payload)}::jsonb,${idempotencyKey}
+      ) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id`.execute(tx)).rows[0];
+    if(inserted)return inserted.id;
+    const retained=(await sql<{id:string}>`SELECT id FROM event_outbox
+      WHERE school_id=${input.schoolId}::uuid AND idempotency_key=${idempotencyKey}
+        AND event_type=${input.eventType} AND aggregate_type='transport_duty_swap'
+        AND aggregate_id=${input.swapId}::uuid AND audience_user_ids=${audience}::uuid[]
+        AND payload=${JSON.stringify(payload)}::jsonb
+        AND notification_user_ids='{}'::uuid[] AND notification_payload IS NULL
+      FOR UPDATE`.execute(tx)).rows[0];
+    if(!retained)throw new ConflictException("The retained transport duty event belongs to different work.");
+    return retained.id;
+  }
+
+  private async priorDutyCommand<T>(
+    tx:Transaction<Database>,schoolId:string,actorId:string,commandId:string,
+    commandType:TransportDutyCommandType,requestHash:string,
+  ) {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`transport-duty:${schoolId}:${actorId}:${commandId}`},0))`.execute(tx);
+    const prior=(await sql<{
+      command_type:TransportDutyCommandType;request_hash:string;result:T;target_swap_id:string;
+      outbox_event_id:string;correlation_id:string;causation_event_id:string|null;
+      authority_receipt:Record<string,unknown>|null;coordination_receipt:Record<string,unknown>;
+    }>`SELECT command_type,request_hash,result,target_swap_id,outbox_event_id,correlation_id,
+        causation_event_id,authority_receipt,coordination_receipt
+      FROM transport_duty_change_commands
+      WHERE school_id=${schoolId}::uuid AND actor_id=${actorId}::uuid AND command_id=${commandId}::uuid`.execute(tx)).rows[0];
+    if(!prior)return null;
+    if(prior.command_type!==commandType||prior.request_hash!==requestHash) {
+      throw new ConflictException("This command ID was already used for different transport duty details.");
+    }
+    return prior;
+  }
+
+  private async saveDutyCommand(
+    tx:Transaction<Database>,input:{schoolId:string;actorId:string;commandId:string;
+      commandType:TransportDutyCommandType;swapId:string;requestHash:string;result:unknown;
+      outboxEventId:string;correlationId:string;causationEventId:string|null;
+      authorityReceipt:Record<string,unknown>|null;coordinationReceipt:Record<string,unknown>},
+  ) {
+    await sql`INSERT INTO transport_duty_change_commands(
+        school_id,actor_id,command_id,command_type,target_swap_id,request_hash,result,outbox_event_id,
+        correlation_id,causation_event_id,authority_receipt,coordination_receipt
+      ) VALUES(
+        ${input.schoolId}::uuid,${input.actorId}::uuid,${input.commandId}::uuid,${input.commandType},
+        ${input.swapId}::uuid,${input.requestHash},${JSON.stringify(input.result)}::jsonb,
+        ${input.outboxEventId}::uuid,${input.correlationId}::uuid,${input.causationEventId}::uuid,
+        ${input.authorityReceipt?JSON.stringify(input.authorityReceipt):null}::jsonb,
+        ${JSON.stringify(input.coordinationReceipt)}::jsonb
+      )`.execute(tx);
   }
 
   private async familyStudent(user:AuthUser,requested?:string,db:Db=this.db,learner=false) {
@@ -475,9 +557,19 @@ export class DepartureCoordinationService {
   }
 
   async requestDutySwap(user:AuthUser,body:unknown) {
-    const input=z.object({requester_trip_id:uuid,request_type:z.enum(["cover","exchange"]),target_user_id:uuid,target_trip_id:uuid.nullable().optional(),reason:z.string().trim().min(3).max(500)}).parse(body);
+    const input=z.object({requester_trip_id:uuid,request_type:z.enum(["cover","exchange"]),target_user_id:uuid,target_trip_id:uuid.nullable().optional(),reason:z.string().trim().min(3).max(500),command_id:uuid}).strict().parse(body);
+    const {command_id:commandId,...commandInput}=input;
+    const requestHash=transportDutyCommandHash("request",null,commandInput);
     return this.db.transaction().execute(async tx=>{
-      const trip=await this.operatingTrip(tx,user,input.requester_trip_id); if(trip.assigned_collector_user_id!==user.id) throw new ForbiddenException("Only the current assignee can request a duty change."); if(trip.state!=="planned"||trip.roster_frozen_at) throw new ConflictException("A journey cannot be transferred after boarding opens."); if(trip.collector_assignment_status!=="accepted") throw new ConflictException("Accept this duty before requesting a change."); if(input.target_user_id===user.id) throw new BadRequestException("Choose another staff member."); await this.assertTripStaff(tx,trip.school_id,input.target_user_id,"replacement collector");
+      const reference=await tx.selectFrom("transport_trips").select("school_id").where("id","=",input.requester_trip_id).executeTakeFirst();
+      if(!reference)throw new NotFoundException("Trip not found.");
+      await this.lockSchool(tx,reference.school_id);
+      await this.assertTripStaff(tx,reference.school_id,user.id);
+      const prior=await this.priorDutyCommand<Selectable<TransportDutySwapRequestTable>>(tx,reference.school_id,user.id,commandId,"request",requestHash);
+      if(prior)return prior.result;
+      const trip=await tx.selectFrom("transport_trips").selectAll().where("school_id","=",reference.school_id).where("id","=",input.requester_trip_id).forUpdate().executeTakeFirstOrThrow();
+      if(trip.assigned_collector_user_id!==user.id||!await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id)) throw new ForbiddenException("Only the current assignee can request a duty change.");
+      if(trip.state!=="planned"||trip.roster_frozen_at) throw new ConflictException("A journey cannot be transferred after boarding opens."); if(trip.collector_assignment_status!=="accepted") throw new ConflictException("Accept this duty before requesting a change."); if(input.target_user_id===user.id) throw new BadRequestException("Choose another staff member."); await this.assertTripStaff(tx,trip.school_id,input.target_user_id,"replacement collector");
       let targetRevision:number|null=null;
       await this.assertDutyChangeWindow(tx,trip.id);
       if(input.request_type==="exchange"){
@@ -485,49 +577,119 @@ export class DepartureCoordinationService {
         await this.assertDutyChangeWindow(tx,input.target_trip_id);
       }else if(input.target_trip_id) throw new BadRequestException("A cover request does not exchange another trip.");
       const row=await tx.insertInto("transport_duty_swap_requests").values({school_id:trip.school_id,request_type:input.request_type,requester_trip_id:trip.id,target_trip_id:input.request_type==="exchange"?input.target_trip_id??null:null,requester_user_id:user.id,target_user_id:input.target_user_id,requester_trip_revision:trip.revision,target_trip_revision:targetRevision,reason:input.reason}).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,trip.school_id,user.id,"duty_swap.requested","transport_duty_swap",row.id,{request_type:row.request_type,requester_trip_id:trip.id,target_trip_id:row.target_trip_id});
+      const sourceOutboxEventId=await this.enqueueDutyDomainEvent(tx,{schoolId:trip.school_id,swapId:row.id,
+        eventType:"transport.duty_change.requested",revision:row.revision,
+        audience:[row.requester_user_id,row.target_user_id],status:row.status});
+      const coordination=await this.transportDutyModel.publishRequested(tx,{
+        school_id:trip.school_id,actor_user_id:user.id,change:row,
+        requester_trip_revision:trip.revision,source_outbox_event_id:sourceOutboxEventId,
+        correlation_id:commandId,occurred_at:new Date().toISOString(),
+      });
+      await this.audit(tx,trip.school_id,user.id,"duty_swap.requested","transport_duty_swap",row.id,{request_type:row.request_type,requester_trip_id:trip.id,target_trip_id:row.target_trip_id,command_id:commandId,source_outbox_event_id:sourceOutboxEventId,coordination_event_id:coordination.event_id,behaviour_version_id:coordination.behaviour_version_id,subscription_id:coordination.subscription_id});
       await this.enqueueTransportStaffAttention(tx,{schoolId:trip.school_id,recipientUserIds:[row.target_user_id],portal:"teacher",
         sourceKind:"transport_swap",sourceId:row.id,sourceRevision:row.revision,title:"Duty change needs your response",
         body:row.request_type==="exchange"?"A colleague requested a journey exchange.":"A colleague asked you to cover a journey.",
         link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:"requested"});
-      await this.emit(tx,trip.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:"requested"}); return row;
+      await this.emit(tx,trip.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:"requested"});
+      await this.saveDutyCommand(tx,{schoolId:trip.school_id,actorId:user.id,commandId,commandType:"request",swapId:row.id,requestHash,result:row,outboxEventId:sourceOutboxEventId,correlationId:commandId,causationEventId:null,authorityReceipt:null,coordinationReceipt:coordination as unknown as Record<string,unknown>});
+      return row;
     });
   }
 
   async respondDutySwap(user:AuthUser,swapId:string,body:unknown) {
-    const input=z.object({decision:z.enum(["accepted","rejected"]),expected_revision:z.number().int().positive(),note:z.string().trim().max(500).default("")}).parse(body);
+    const input=z.object({decision:z.enum(["accepted","rejected"]),expected_revision:z.number().int().positive(),note:z.string().trim().max(500).default(""),command_id:uuid}).strict().parse(body);
+    const {command_id:commandId,...commandInput}=input;
+    const requestHash=transportDutyCommandHash("respond",swapId,commandInput);
     return this.db.transaction().execute(async tx=>{
       uuid.parse(swapId);
       const reference=await tx.selectFrom("transport_duty_swap_requests").select("school_id").where("id","=",swapId).where("target_user_id","=",user.id).executeTakeFirst();
       if(!reference) throw new NotFoundException("Duty request not found.");
       await this.lockSchool(tx,reference.school_id); await this.assertTripStaff(tx,reference.school_id,user.id);
+      const prior=await this.priorDutyCommand<Selectable<TransportDutySwapRequestTable>>(tx,reference.school_id,user.id,commandId,"respond",requestHash);
+      if(prior)return prior.result;
       const swap=await tx.selectFrom("transport_duty_swap_requests").selectAll().where("id","=",swapId).forUpdate().executeTakeFirst(); if(!swap) throw new NotFoundException("Duty request not found."); if(swap.target_user_id!==user.id) throw new ForbiddenException("Only the requested colleague can respond."); if(swap.status!=="submitted"||swap.revision!==input.expected_revision) throw new ConflictException("This duty request has already changed.");
+      const requesterTrip=await tx.selectFrom("transport_trips").selectAll()
+        .where("school_id","=",swap.school_id).where("id","=",swap.requester_trip_id)
+        .forUpdate().executeTakeFirst();
+      if(!requesterTrip
+        || requesterTrip.state!=="planned"
+        || requesterTrip.roster_frozen_at
+        || requesterTrip.revision!==swap.requester_trip_revision
+        || requesterTrip.assigned_collector_user_id!==swap.requester_user_id
+        || requesterTrip.collector_assignment_status!=="accepted"
+        || !await hasScopedSchoolPermission(tx,swap.requester_user_id,swap.school_id,"departure.collect","trip",requesterTrip.id)) {
+        throw new ConflictException("The original trip or collector authority changed after this offer. Create a new duty request.");
+      }
+      let targetTrip:typeof requesterTrip|undefined;
+      if(swap.request_type==="exchange") {
+        targetTrip=await tx.selectFrom("transport_trips").selectAll()
+          .where("school_id","=",swap.school_id).where("id","=",swap.target_trip_id!)
+          .forUpdate().executeTakeFirst();
+        if(!targetTrip
+          || targetTrip.state!=="planned"
+          || targetTrip.roster_frozen_at
+          || targetTrip.revision!==swap.target_trip_revision
+          || targetTrip.assigned_collector_user_id!==swap.target_user_id
+          || targetTrip.collector_assignment_status!=="accepted"
+          || !await hasScopedSchoolPermission(tx,swap.target_user_id,swap.school_id,"departure.collect","trip",targetTrip.id)) {
+          throw new ConflictException("The colleague's trip or collector authority changed after this offer. Create a new duty request.");
+        }
+      }
       await this.assertDutyChangeWindow(tx,swap.requester_trip_id);
       if(swap.target_trip_id) await this.assertDutyChangeWindow(tx,swap.target_trip_id);
+      if(input.decision==="accepted") {
+        const involvedTripIds=targetTrip?[requesterTrip.id,targetTrip.id]:[requesterTrip.id];
+        await this.assertNoTripDutyConflict(tx,swap.school_id,swap.target_user_id,requesterTrip.service_date,requesterTrip.scheduled_departure_time,involvedTripIds);
+        if(targetTrip) await this.assertNoTripDutyConflict(tx,swap.school_id,swap.requester_user_id,targetTrip.service_date,targetTrip.scheduled_departure_time,involvedTripIds);
+      }
+      const offerTrace=await this.transportDutyModel.trace(tx,swap.school_id,swap.id,"transport.duty_change.requested",swap.revision);
+      const occurredAt=new Date();
+      const decisionOwner=input.decision==="accepted"
+        ? await this.transportDutyModel.resolveDecisionOwner(tx,swap.school_id,occurredAt)
+        : null;
       const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,response_note:input.note,target_responded_at:new Date(),revision:swap.revision+1,updated_at:new Date()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,swap.school_id,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{request_type:row.request_type});
+      const sourceOutboxEventId=await this.enqueueDutyDomainEvent(tx,{schoolId:swap.school_id,swapId:row.id,
+        eventType:`transport.duty_change.${input.decision}`,revision:row.revision,
+        audience:[row.requester_user_id,row.target_user_id,...(decisionOwner?[decisionOwner.user_id]:[])],status:row.status});
+      const offerResponse=await this.transportDutyModel.recordTargetResponse(tx,{
+        school_id:swap.school_id,actor_user_id:user.id,change:row,message_id:offerTrace.message_id,
+        source_revision:swap.revision,decision:input.decision,source_outbox_event_id:sourceOutboxEventId,
+        correlation_id:offerTrace.correlation_id,command_id:commandId,occurred_at:occurredAt.toISOString(),
+      });
+      const decisionRequest=decisionOwner?await this.transportDutyModel.publishAccepted(tx,{
+        school_id:swap.school_id,actor_user_id:user.id,change:row,
+        source_outbox_event_id:sourceOutboxEventId,correlation_id:offerTrace.correlation_id,
+        causation_event_id:offerTrace.event_id,occurred_at:occurredAt.toISOString(),decision_owner:decisionOwner,
+      }):null;
+      await this.audit(tx,swap.school_id,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{request_type:row.request_type,command_id:commandId,source_outbox_event_id:sourceOutboxEventId,offer_message_id:offerResponse.message_id,offer_outcome_id:offerResponse.outcome_id,decision_owner_user_id:decisionOwner?.user_id??null,decision_rule_id:decisionOwner?.rule.id??null,decision_message_id:decisionRequest?.message_ids[0]??null});
       await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:[row.requester_user_id],portal:"teacher",
         sourceKind:"transport_swap_response",sourceId:row.id,sourceRevision:row.revision,
         title:`Duty change ${input.decision}`,body:input.note||`Your colleague ${input.decision} the duty change request.`,
         link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
-      if(input.decision==="accepted") {
-        const admins=(await sql<{user_id:string}>`SELECT membership.user_id FROM school_memberships membership
-          JOIN users account ON account.id=membership.user_id AND account.is_active AND account.role='admin'
-          WHERE membership.school_id=${swap.school_id}::uuid AND membership.role='admin' AND membership.is_active`.execute(tx)).rows;
-        await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:admins.map(item=>item.user_id),portal:"principal",
+      if(decisionOwner) {
+        await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:[decisionOwner.user_id],portal:"principal",
           sourceKind:"transport_swap_approval",sourceId:row.id,sourceRevision:row.revision,
           title:"Duty change needs approval",body:"Two staff members agreed a transport duty change. Review it before the journey.",
           link:`/principal/departure?section=roster&swap=${row.id}&swap_revision=${row.revision}`,action:"accepted"});
       }
-      await this.emit(tx,swap.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision}); return row;
+      await this.emit(tx,swap.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision});
+      await this.saveDutyCommand(tx,{schoolId:swap.school_id,actorId:user.id,commandId,commandType:"respond",swapId:row.id,requestHash,result:row,outboxEventId:sourceOutboxEventId,correlationId:offerTrace.correlation_id,causationEventId:offerTrace.event_id,authorityReceipt:decisionOwner as unknown as Record<string,unknown>|null,coordinationReceipt:{offer_response:offerResponse,decision_request:decisionRequest}});
+      return row;
     });
   }
 
   async decideDutySwap(user:AuthUser,schoolId:string,swapId:string,body:unknown) {
-    await this.membership(user,schoolId,true); const input=z.object({decision:z.enum(["approved","declined_by_school"]),expected_revision:z.number().int().positive(),note:z.string().trim().min(3).max(500)}).parse(body);
+    await this.membership(user,schoolId,true); const input=z.object({decision:z.enum(["approved","declined_by_school"]),expected_revision:z.number().int().positive(),note:z.string().trim().min(3).max(500),command_id:uuid}).strict().parse(body);
+    const {command_id:commandId,...commandInput}=input;
+    const requestHash=transportDutyCommandHash("decide",swapId,commandInput);
     return this.db.transaction().execute(async tx=>{
       await this.managedWrite(tx,user,schoolId);
+      const prior=await this.priorDutyCommand<Selectable<TransportDutySwapRequestTable>>(tx,schoolId,user.id,commandId,"decide",requestHash);
+      if(prior)return prior.result;
+      const occurredAt=new Date();
+      const decisionAuthority=await this.transportDutyModel.assertDecisionAuthority(tx,schoolId,user.id,occurredAt);
       const swap=await tx.selectFrom("transport_duty_swap_requests").selectAll().where("school_id","=",schoolId).where("id","=",swapId).forUpdate().executeTakeFirst(); if(!swap) throw new NotFoundException("Duty request not found."); if(swap.status!=="accepted"||swap.revision!==input.expected_revision) throw new ConflictException("The colleague must accept the current request before school approval.");
+      const decisionTrace=await this.transportDutyModel.trace(tx,schoolId,swap.id,"transport.duty_change.accepted",swap.revision);
       const requesterTrip=await tx.selectFrom("transport_trips").selectAll().where("school_id","=",schoolId).where("id","=",swap.requester_trip_id).forUpdate().executeTakeFirstOrThrow(); if(requesterTrip.state!=="planned"||requesterTrip.roster_frozen_at||requesterTrip.revision!==swap.requester_trip_revision) throw new ConflictException("The original trip changed after this request. Create a new duty request.");
       let targetTrip:typeof requesterTrip|undefined;
       if(swap.request_type==="exchange") { targetTrip=await tx.selectFrom("transport_trips").selectAll().where("school_id","=",schoolId).where("id","=",swap.target_trip_id!).forUpdate().executeTakeFirstOrThrow(); if(targetTrip.state!=="planned"||targetTrip.roster_frozen_at||targetTrip.revision!==swap.target_trip_revision||targetTrip.assigned_collector_user_id!==swap.target_user_id) throw new ConflictException("The colleague's trip changed after this request. Create a new duty request."); }
@@ -542,12 +704,23 @@ export class DepartureCoordinationService {
         if(targetTrip) await tx.updateTable("transport_trips").set({assigned_collector_user_id:swap.requester_user_id,collector_assignment_status:"accepted",assignment_accepted_at:new Date(),assignment_declined_at:null,assignment_note:`Approved exchange request ${swap.id}`,revision:targetTrip.revision+1,updated_at:new Date()}).where("id","=",targetTrip.id).execute();
       }
       const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,decided_by:user.id,decided_at:new Date(),decision_note:input.note,revision:swap.revision+1,updated_at:new Date()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(tx,schoolId,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{requester_trip_id:row.requester_trip_id,target_trip_id:row.target_trip_id});
+      const sourceOutboxEventId=await this.enqueueDutyDomainEvent(tx,{schoolId,swapId:row.id,
+        eventType:`transport.duty_change.${input.decision}`,revision:row.revision,
+        audience:[row.requester_user_id,row.target_user_id,decisionAuthority.user_id],status:row.status});
+      const coordination=await this.transportDutyModel.recordDecisionResponse(tx,{
+        school_id:schoolId,actor_user_id:user.id,change:row,message_id:decisionTrace.message_id,
+        source_revision:swap.revision,decision:input.decision,source_outbox_event_id:sourceOutboxEventId,
+        correlation_id:decisionTrace.correlation_id,command_id:commandId,occurred_at:occurredAt.toISOString(),
+        authority:decisionAuthority,
+      });
+      await this.audit(tx,schoolId,user.id,`duty_swap.${input.decision}`,"transport_duty_swap",row.id,{requester_trip_id:row.requester_trip_id,target_trip_id:row.target_trip_id,command_id:commandId,source_outbox_event_id:sourceOutboxEventId,correlation_id:decisionTrace.correlation_id,causation_event_id:decisionTrace.event_id,message_id:coordination.message_id,message_outcome_id:coordination.outcome_id,decision_rule_id:decisionAuthority.rule.id,decision_appointment_id:decisionAuthority.appointment.id});
       await this.enqueueTransportStaffAttention(tx,{schoolId,recipientUserIds:[row.requester_user_id,row.target_user_id],portal:"teacher",
         sourceKind:"transport_swap_decision",sourceId:row.id,sourceRevision:row.revision,
         title:`Duty change ${input.decision==="approved"?"approved":"declined"}`,body:input.note,
         link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
-      await this.emit(tx,schoolId,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision}); return row;
+      await this.emit(tx,schoolId,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision});
+      await this.saveDutyCommand(tx,{schoolId,actorId:user.id,commandId,commandType:"decide",swapId:row.id,requestHash,result:row,outboxEventId:sourceOutboxEventId,correlationId:decisionTrace.correlation_id,causationEventId:decisionTrace.event_id,authorityReceipt:decisionAuthority as unknown as Record<string,unknown>,coordinationReceipt:coordination as unknown as Record<string,unknown>});
+      return row;
     });
   }
 

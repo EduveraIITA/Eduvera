@@ -8,8 +8,10 @@ import {
   generateTransportTrips,
   refreshTransportRoster,
   type AdminDeparture,
+  type DutySwap,
   type TransportTrip,
 } from "./api";
+import { executePendingTransportCommand } from "./pendingTransportCommand";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
 const indiaToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
@@ -21,7 +23,7 @@ const dateLabel=(value:string)=>new Intl.DateTimeFormat("en-IN",{weekday:"short"
 const timeLabel=(value:string)=>new Intl.DateTimeFormat("en-IN",{hour:"numeric",minute:"2-digit"}).format(new Date(`2020-01-01T${value.slice(0,5)}:00`));
 const directionLabel=(value:string)=>value==="to_institution"?"To institution":"From institution";
 
-export function TransportDutyPlanner({schoolId,data,focusSwapId,focusTripId}:{schoolId:string;data:AdminDeparture;focusSwapId?:string|null;focusTripId?:string|null}){
+export function TransportDutyPlanner({schoolId,actorId,data,focusSwapId,focusTripId}:{schoolId:string;actorId:string;data:AdminDeparture;focusSwapId?:string|null;focusTripId?:string|null}){
   const client=useQueryClient();
   const focusedTrip=focusTripId?data.trips.find(trip=>trip.id===focusTripId):undefined;
   const focusedTripSourceId=focusedTrip?.id;
@@ -54,6 +56,16 @@ export function TransportDutyPlanner({schoolId,data,focusSwapId,focusTripId}:{sc
 
   const prepareWeek=()=>run.mutate(async()=>{const result=await generateTransportTrips(schoolId,{from_date:dates[0],to_date:dates[6]}) as {created_count?:number;existing_count?:number};setMessage(`${result.created_count??0} trips prepared · ${result.existing_count??0} already existed`);return result;});
   const createPattern=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const form=new FormData(event.currentTarget);run.mutate(async()=>{const result=await createTransportServicePattern(schoolId,{route_id:read(form,"route_id"),label:read(form,"label"),direction:read(form,"direction"),weekdays:form.getAll("weekdays").map(Number),departure_time:read(form,"departure_time"),primary_collector_user_id:read(form,"primary"),backup_collector_user_id:read(form,"backup")||null,valid_from:read(form,"valid_from"),valid_until:read(form,"valid_until")||null});setShowPattern(false);setMessage("Service pattern saved. Prepare a week when the roster is ready.");return result;});};
+  const decideSwap=(swap:DutySwap,decision:"approved"|"declined_by_school")=>{
+    if(!actorId){setError("Your signed-in account could not be confirmed. Reload before deciding this duty change.");return;}
+    const note=decision==="approved"?"Duty change approved by school operations":"School operations did not approve this change";
+    const material={decision,expected_revision:swap.revision,note};
+    run.mutate(()=>executePendingTransportCommand(
+      {schoolId,actorId,operation:"decide",targetId:swap.id},
+      material,
+      commandId=>decideDutySwap(schoolId,swap.id,{...material,command_id:commandId}),
+    ));
+  };
 
   return <section className="departure-panel departure-duty-planner">
     <header><div><span>Duty planner</span><h2>Weekly trips and rosters</h2></div><CalendarDays size={22}/></header>
@@ -83,7 +95,7 @@ export function TransportDutyPlanner({schoolId,data,focusSwapId,focusTripId}:{sc
 
     {assignmentTrip?<form className="departure-form departure-inline-assignment" onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);run.mutate(()=>assignTripCollector(schoolId,assignmentTrip.id,{collector_user_id:read(form,"collector"),backup_collector_user_id:read(form,"backup")||null,expected_revision:assignmentTrip.revision,note:read(form,"note")}));}}><div className="departure-span"><strong>Assign {assignmentTrip.route_name}</strong><small>{dateLabel(assignmentTrip.service_date)} · {timeLabel(assignmentTrip.scheduled_departure_time)}</small></div><label>Primary<select name="collector" defaultValue={assignmentTrip.assigned_collector_user_id}>{data.collectors.map(person=><option value={person.id} key={person.id}>{person.name}</option>)}</select></label><label>Backup<select name="backup" defaultValue={assignmentTrip.backup_collector_user_id??""}><option value="">No backup</option>{data.collectors.map(person=><option value={person.id} key={person.id}>{person.name}</option>)}</select></label><label className="departure-span">Reason<input name="note" defaultValue="Duty assigned by transport operations" minLength={3} required/></label><div className="departure-form-actions"><button type="button" onClick={()=>setAssignmentTrip(null)}>Cancel</button><button className="departure-primary">Send assignment</button></div></form>:null}
 
-    {data.swaps.length?<div className="departure-swap-queue"><h3>Duty changes</h3>{data.swaps.map(swap=>{const focused=swap.id===focusSwapId;return <article key={swap.id} id={`attention-duty-swap-${swap.id}`} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><Repeat2/><div><strong>{swap.requester_name} → {swap.target_name}</strong><small>{swap.requester_route_name} · {dateLabel(swap.requester_service_date)}{swap.request_type==="exchange"?` ↔ ${swap.target_route_name} · ${dateLabel(swap.target_service_date!)}`:" · cover"}</small><p>{swap.reason}</p></div><span className={`departure-state departure-state--${swap.status}`}>{swap.status}</span>{swap.status==="accepted"?<div><button type="button" disabled={run.isPending} onClick={()=>run.mutate(()=>decideDutySwap(schoolId,swap.id,{decision:"declined_by_school",expected_revision:swap.revision,note:"School operations did not approve this change"}))}>Decline</button><button type="button" className="departure-primary" disabled={run.isPending} onClick={()=>run.mutate(()=>decideDutySwap(schoolId,swap.id,{decision:"approved",expected_revision:swap.revision,note:"Duty change approved by school operations"}))}><Check/>Approve</button></div>:<small>Waiting for colleague</small>}</article>})}</div>:null}
+    {data.swaps.length?<div className="departure-swap-queue"><h3>Duty changes</h3>{data.swaps.map(swap=>{const focused=swap.id===focusSwapId;return <article key={swap.id} id={`attention-duty-swap-${swap.id}`} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><Repeat2/><div><strong>{swap.requester_name} → {swap.target_name}</strong><small>{swap.requester_route_name} · {dateLabel(swap.requester_service_date)}{swap.request_type==="exchange"?` ↔ ${swap.target_route_name} · ${dateLabel(swap.target_service_date!)}`:" · cover"}</small><p>{swap.reason}</p></div><span className={`departure-state departure-state--${swap.status}`}>{swap.status}</span>{swap.status==="accepted"?<div><button type="button" disabled={run.isPending} onClick={()=>decideSwap(swap,"declined_by_school")}>Decline</button><button type="button" className="departure-primary" disabled={run.isPending} onClick={()=>decideSwap(swap,"approved")}><Check/>Approve</button></div>:<small>Waiting for colleague</small>}</article>})}</div>:null}
     {message?<p className="departure-success" role="status">{message}</p>:null}{error?<p className="departure-error" role="alert">{error}</p>:null}
   </section>;
 }

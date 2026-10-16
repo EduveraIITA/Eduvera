@@ -8,10 +8,11 @@ import { useAuth } from "../auth/AuthContext";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
-import { getCollectorDeparture, requestDutySwap, respondDutySwap, tripAction, updateRider } from "./api";
+import { getCollectorDeparture, requestDutySwap, respondDutySwap, tripAction, updateRider, type DutySwap } from "./api";
 import { CollectorRideCard } from "./CollectorRideCard";
 import { JourneyCancel } from "./JourneyCancel";
 import { JourneyRoster } from "./JourneyRoster";
+import { executePendingTransportCommand } from "./pendingTransportCommand";
 import { useJourneyTracking } from "./useJourneyTracking";
 import "./departure.css";
 
@@ -29,7 +30,28 @@ export default function CollectorJourneyPage(){
   useEffect(()=>{if(!opensAt)return;const delay=new Date(opensAt).getTime()-Date.now();if(delay<0||delay>2_147_000_000)return;const timer=window.setTimeout(()=>void refetch(),delay+100);return()=>window.clearTimeout(timer);},[opensAt,refetch]);
   useEffect(()=>{if(!focusedSwapId)return;const frame=window.requestAnimationFrame(()=>{const target=document.getElementById(`attention-transport-swap-${focusedSwapId}`);target?.scrollIntoView?.({behavior:"smooth",block:"center"});target?.focus({preventScroll:true});});return()=>window.cancelAnimationFrame(frame);},[focusedSwapId,data?.swaps.length]);
 
-  const submitSwap=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!trip)return;const form=new FormData(event.currentTarget);mutation.mutate(()=>requestDutySwap({requester_trip_id:trip.id,request_type:swapType,target_user_id:formValue(form,"target_user"),target_trip_id:swapType==="exchange"?formValue(form,"target_trip"):null,reason:formValue(form,"reason")}),{onSuccess:()=>setShowSwap(false)});};
+  const actorId=auth.user?.id??"";
+  const submitSwap=(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    if(!trip||!actorId)return;
+    const form=new FormData(event.currentTarget);
+    const material={requester_trip_id:trip.id,request_type:swapType,target_user_id:formValue(form,"target_user"),target_trip_id:swapType==="exchange"?formValue(form,"target_trip"):null,reason:formValue(form,"reason")};
+    mutation.mutate(()=>executePendingTransportCommand(
+      {schoolId:trip.school_id,actorId,operation:"request",targetId:trip.id},
+      material,
+      commandId=>requestDutySwap({...material,command_id:commandId}),
+    ),{onSuccess:()=>setShowSwap(false)});
+  };
+  const respondToSwap=(swap:DutySwap,decision:"accepted"|"rejected")=>{
+    if(!actorId)return;
+    const note=decision==="accepted"?"Duty change accepted for school approval":"Unable to take this duty";
+    const material={decision,expected_revision:swap.revision,note};
+    mutation.mutate(()=>executePendingTransportCommand(
+      {schoolId:swap.school_id,actorId,operation:"respond",targetId:swap.id},
+      material,
+      commandId=>respondDutySwap(swap.id,{...material,command_id:commandId}),
+    ));
+  };
 
   if(query.isPending)return <ScreenLoading/>;if(query.error||!data)return <LiveRouteError error={query.error??new Error("Assigned journeys are unavailable.")} onRetry={query.refetch}/>;
   const focusedSwapRecord=focusedSwapId?data.swaps.find(swap=>swap.id===focusedSwapId):undefined;
@@ -47,7 +69,7 @@ export default function CollectorJourneyPage(){
     ?<AttentionTargetUnavailable message="This duty change changed after the alert was created. It was not marked as opened."/>:null;
   const staleSwap=focusedSwapId&&!focusedSwapRecord?<section className="departure-attention-state" role="alert"><strong>Duty change unavailable</strong><p>This request is no longer available to your account.</p></section>:null;
   const focusedSwapHistory=focusedSwapRecord&&!focusedSwap?<section className="departure-panel departure-swap-history"><div className="departure-swap-queue"><article id={`attention-transport-swap-${focusedSwapRecord.id}`} tabIndex={-1} className="is-attention-target"><Repeat2/><div><strong>{focusedRevisionMatches?focusedSwapRecord.status==="declined_by_school"?"Duty change declined":`Duty change ${focusedSwapRecord.status}`:"Duty change updated"}</strong><small>{focusedSwapRecord.requester_route_name} · {focusedSwapRecord.requester_service_date}{focusedSwapRecord.target_route_name?` ↔ ${focusedSwapRecord.target_route_name}`:""}</small><p>{!focusedRevisionMatches?"This request changed after this notification.":focusedSwapRecord.decision_note||focusedSwapRecord.response_note||focusedSwapRecord.reason}</p></div></article></div></section>:null;
-  const coverRequests=data.swaps.some(swap=>swap.target_user_id===auth.user?.id&&swap.status==="submitted"&&swap.self_service_open===true)?<section className="departure-panel"><header><div><h2>Cover requests</h2></div><Repeat2/></header><div className="departure-swap-queue">{data.swaps.filter(swap=>swap.target_user_id===auth.user?.id&&swap.status==="submitted"&&swap.self_service_open===true).map(swap=>{const focused=swap.id===focusedSwapId;return <article key={swap.id} id={`attention-transport-swap-${swap.id}`} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><Repeat2/><div><strong>{swap.requester_name} requests {swap.request_type}</strong><small>{swap.requester_route_name} · {swap.requester_service_date}{swap.target_route_name?` ↔ ${swap.target_route_name}`:""}</small><p>{swap.reason}</p></div><div><button type="button" disabled={mutation.isPending} onClick={()=>mutation.mutate(()=>respondDutySwap(swap.id,{decision:"rejected",expected_revision:swap.revision,note:"Unable to take this duty"}))}>Decline</button><button type="button" className="departure-primary" disabled={mutation.isPending} onClick={()=>mutation.mutate(()=>respondDutySwap(swap.id,{decision:"accepted",expected_revision:swap.revision,note:"Duty change accepted for school approval"}))}>Accept</button></div></article>})}</div></section>:null;
+  const coverRequests=data.swaps.some(swap=>swap.target_user_id===auth.user?.id&&swap.status==="submitted"&&swap.self_service_open===true)?<section className="departure-panel"><header><div><h2>Cover requests</h2></div><Repeat2/></header><div className="departure-swap-queue">{data.swaps.filter(swap=>swap.target_user_id===auth.user?.id&&swap.status==="submitted"&&swap.self_service_open===true).map(swap=>{const focused=swap.id===focusedSwapId;return <article key={swap.id} id={`attention-transport-swap-${swap.id}`} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><Repeat2/><div><strong>{swap.requester_name} requests {swap.request_type}</strong><small>{swap.requester_route_name} · {swap.requester_service_date}{swap.target_route_name?` ↔ ${swap.target_route_name}`:""}</small><p>{swap.reason}</p></div><div><button type="button" disabled={mutation.isPending} onClick={()=>respondToSwap(swap,"rejected")}>Decline</button><button type="button" className="departure-primary" disabled={mutation.isPending} onClick={()=>respondToSwap(swap,"accepted")}>Accept</button></div></article>})}</div></section>:null;
   if(!tripId)return <OperationsShell portal="teacher" active="more" title="My rides" backTo="/teacher/more">{attentionState}<div className="departure-page departure-page--collector"><MyRides trips={data.trips}/>{staleSwap}{focusedSwapHistory}{coverRequests}{!data.trips.length?<section className="departure-panel departure-empty"><Bus size={28}/><h2>No assigned rides</h2><p>Rides appear here when the school assigns your duty.</p></section>:null}{error?<p className="departure-error" role="alert">{error}</p>:null}</div></OperationsShell>;
   return <OperationsShell portal="teacher" active="more" title="Transport & departure" schoolName={trip?.school_name??auth.memberships.find(item=>item.role==="staff")?.school_name} backTo="/teacher/transport">{attentionState}<div className="departure-page departure-page--collector">
 

@@ -5,8 +5,9 @@ import { MemoryRouter,Route,Routes } from "react-router-dom";
 import { afterEach,beforeEach,describe,expect,it,vi } from "vitest";
 import type { CollectorDeparture,CollectorTrip } from "./api";
 import CollectorJourneyPage from "./CollectorJourneyPage";
-const api=vi.hoisted(()=>({getCollectorDeparture:vi.fn()}));
-vi.mock("./api",async()=>({...await vi.importActual("./api"),getCollectorDeparture:api.getCollectorDeparture}));
+import { clearPendingTransportCommandsForTests } from "./pendingTransportCommand";
+const api=vi.hoisted(()=>({getCollectorDeparture:vi.fn(),requestDutySwap:vi.fn(),respondDutySwap:vi.fn()}));
+vi.mock("./api",async()=>({...await vi.importActual("./api"),getCollectorDeparture:api.getCollectorDeparture,requestDutySwap:api.requestDutySwap,respondDutySwap:api.respondDutySwap}));
 vi.mock("../auth/AuthContext",()=>({useAuth:()=>({user:{id:"staff"},memberships:[]})}));
 vi.mock("../attention/AttentionOpenAcknowledgement",()=>({AttentionOpenAcknowledgement:()=> <output data-testid="attention-opened"/>}));
 vi.mock("../../pages/operations/OperationsShell",()=>({OperationsShell:({children,title}:{children:ReactNode;title:string})=><main><h1>{title}</h1>{children}</main>}));
@@ -17,7 +18,7 @@ const data:CollectorDeparture={trips:[trip],swaps:[],swap_candidates:[],colleagu
 const coverSwap:CollectorDeparture["swaps"][number]={id:"swap-1",school_id:"school",request_type:"cover",requester_trip_id:"trip",target_trip_id:null,requester_user_id:"other",target_user_id:"staff",requester_trip_revision:2,target_trip_revision:null,reason:"Medical appointment",status:"submitted",response_note:"",decision_note:"",revision:1,requester_service_date:"2026-10-09",requester_departure_time:"15:30",requester_route_name:"South route",target_service_date:null,target_departure_time:null,target_route_name:null,requester_name:"Leena Bose",target_name:"Kavita Mehta",self_service_open:true};
 function view(path="/teacher/transport/trip") {const client=new QueryClient({defaultOptions:{queries:{retry:false}}});return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/teacher/transport" element={<CollectorJourneyPage/>}/><Route path="/teacher/transport/:tripId" element={<CollectorJourneyPage/>}/></Routes></MemoryRouter></QueryClientProvider>);}
 beforeEach(()=>api.getCollectorDeparture.mockResolvedValue(data));
-afterEach(()=>{cleanup();vi.clearAllMocks();});
+afterEach(()=>{cleanup();clearPendingTransportCommandsForTests();vi.clearAllMocks();});
 describe("staff ride navigation and timing",()=>{
   it("replaces the dropdown with dated ride links and a separate detail page",async()=>{view("/teacher/transport");expect(await screen.findByRole("heading",{name:"My rides"})).toBeVisible();expect(screen.getByRole("region",{name:"Today"})).toBeVisible();expect(screen.queryByRole("combobox")).not.toBeInTheDocument();fireEvent.click(screen.getByRole("link",{name:/15:30 South route/}));expect(await screen.findByRole("heading",{name:"Transport & departure"})).toBeVisible();});
   it("keeps controls hidden before the operating window",async()=>{view();expect(await screen.findByRole("button",{name:"Request a duty change"})).toBeVisible();expect(screen.queryByRole("button",{name:"Open boarding"})).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Cancel journey"})).not.toBeInTheDocument();});
@@ -28,4 +29,41 @@ describe("staff ride navigation and timing",()=>{
   it("renders and acknowledges an exact historical final decision",async()=>{api.getCollectorDeparture.mockResolvedValue({...data,swaps:[{...coverSwap,status:"approved",revision:3,self_service_open:false,decision_note:"Approved by operations"}]});view("/teacher/transport?swap=swap-1&swap_revision=3&attention_notification_id=10000000-0000-4000-a000-000000000001");expect(await screen.findByText("Duty change approved")).toBeVisible();expect(screen.getByText("Approved by operations")).toBeVisible();expect(screen.getByTestId("attention-opened")).toBeInTheDocument();});
   it("shows a truthful state for an answered or unavailable cover request",async()=>{view("/teacher/transport?swap=closed-swap");expect(await screen.findByRole("alert")).toHaveTextContent("Duty change unavailable");expect(document.querySelector(".departure-swap-queue .is-attention-target")).not.toBeInTheDocument();});
   it("keeps terminal rides read-only",async()=>{api.getCollectorDeparture.mockResolvedValue({...data,trips:[{...trip,state:"completed",duty_change_available:false}]});view();expect(await screen.findByRole("heading",{name:"South route"})).toBeVisible();expect(screen.queryByRole("region",{name:"Journey actions"})).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"Request a duty change"})).not.toBeInTheDocument();});
+  it("reuses the request command after a response is lost and the page reloads",async()=>{
+    const requestData={...data,colleagues:[{school_id:"school",id:"colleague",name:"Leena Bose"}]};
+    api.getCollectorDeparture.mockResolvedValue(requestData);
+    api.requestDutySwap.mockRejectedValueOnce(new TypeError("response lost")).mockResolvedValueOnce({status:"submitted"});
+    view();
+    fireEvent.click(await screen.findByRole("button",{name:"Request a duty change"}));
+    fireEvent.change(screen.getByLabelText("Colleague"),{target:{value:"colleague"}});
+    fireEvent.change(screen.getByLabelText("Reason"),{target:{value:"Medical appointment"}});
+    fireEvent.click(screen.getByRole("button",{name:"Send to colleague"}));
+    await waitFor(()=>expect(api.requestDutySwap).toHaveBeenCalledTimes(1));
+    const firstCommand=(api.requestDutySwap.mock.calls[0]?.[0] as {command_id:string}).command_id;
+    expect(firstCommand).toMatch(/^[0-9a-f-]{36}$/i);
+
+    cleanup();
+    view();
+    fireEvent.click(await screen.findByRole("button",{name:"Request a duty change"}));
+    fireEvent.change(screen.getByLabelText("Colleague"),{target:{value:"colleague"}});
+    fireEvent.change(screen.getByLabelText("Reason"),{target:{value:"Medical appointment"}});
+    fireEvent.click(screen.getByRole("button",{name:"Send to colleague"}));
+    await waitFor(()=>expect(api.requestDutySwap).toHaveBeenCalledTimes(2));
+    expect((api.requestDutySwap.mock.calls[1]?.[0] as {command_id:string}).command_id).toBe(firstCommand);
+  });
+  it("reuses the response command after a response is lost and the page reloads",async()=>{
+    api.getCollectorDeparture.mockResolvedValue({...data,swaps:[coverSwap]});
+    api.respondDutySwap.mockRejectedValueOnce(new TypeError("response lost")).mockResolvedValueOnce({status:"accepted"});
+    view("/teacher/transport?swap=swap-1");
+    fireEvent.click(await screen.findByRole("button",{name:"Accept"}));
+    await waitFor(()=>expect(api.respondDutySwap).toHaveBeenCalledTimes(1));
+    const firstCommand=(api.respondDutySwap.mock.calls[0]?.[1] as {command_id:string}).command_id;
+    expect(firstCommand).toMatch(/^[0-9a-f-]{36}$/i);
+
+    cleanup();
+    view("/teacher/transport?swap=swap-1");
+    fireEvent.click(await screen.findByRole("button",{name:"Accept"}));
+    await waitFor(()=>expect(api.respondDutySwap).toHaveBeenCalledTimes(2));
+    expect((api.respondDutySwap.mock.calls[1]?.[1] as {command_id:string}).command_id).toBe(firstCommand);
+  });
 });

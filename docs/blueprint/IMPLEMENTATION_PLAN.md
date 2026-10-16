@@ -267,6 +267,49 @@ mailbox query or channel-delivery adapter. Existing domain outbox events, notifi
 delivery, Requests and AI/channel transcript remain adapters, not substitutes for the
 spine. Leave, staffing and timetable records stay authoritative throughout.
 
+The second bounded coordination segment now connects existing transport-duty cover
+and exchange operations through migration 109 and
+`TransportDutyModelBridgeService`. It does not introduce a parallel transport
+workflow or new UI. The assigned collector's replay-safe command creates the
+authoritative domain request and one private typed Offer for the explicitly selected
+colleague. A rejection closes that Offer without creating school work. An acceptance
+records the exact Offer response and creates one typed Request for the effective
+`transport_duty_change_decision` officeholder; unrelated administrators do not receive
+the actionable notification or Requests item. The officeholder's replay-safe decision
+is bound to that exact Request and the existing transport transaction changes both
+trip assignments for an exchange, or neither.
+
+The transport adapter rechecks current human-agent capability, governance authority,
+message recipient, trip/offer revisions, assignees, duty conflicts and the configured
+journey window. Private request reasons and response/decision notes remain in the
+authorized transport domain; the core retains identifiers, revisions, route-to-action
+and minimum explanation only. The existing Teacher Transport and Principal Transport
+& departure screens remain the sole action surfaces and now retain a command identity
+across a mobile reload or ambiguous network response. The resulting assignment is a
+plan/responsibility fact only; it is not evidence of trip start, vehicle movement,
+boarding, learner location or physical handover.
+
+This transport segment is also bounded. The Cambridge behaviour, capability and
+governance configuration is an explicit guarded demo seed, not a production default.
+There is no administration UI for activating or rehearsing those versions, and a
+changed colleague or officeholder fails closed rather than silently inheriting an old
+Offer/Request. Missing routing rolls back the domain command safely, but the resulting
+configuration exception is not yet retained outside that rolled-back transaction.
+Physical transport observations and handover evidence remain separate later slices.
+
+Verified local evidence for the transport-duty segment: backend build and focused
+lint pass; 42 focused backend coordination, governance, Requests, idempotency and seed
+contract tests pass; and 26 focused frontend transport/leave retry tests pass with
+focused lint. In a disposable PostgreSQL clone of the full local database, migrations
+106 through 109 applied transactionally and the transport lifecycle passed 24/24
+integration tests, including exact command replay, stale-offer rejection and atomic
+exchange rollback. The guarded transport demo seed ran twice without duplication and
+retained one decision rule, two exact event subscriptions and 20 explicitly linked
+demo response/decision authorities. The disposable databases were dropped and the
+shared local database remained at migration 105. This evidence proves the bounded
+software path; it does not constitute physical transport acceptance or production
+behaviour-configuration readiness.
+
 Verified local evidence for this bounded foundation: backend build and targeted ESLint
 pass; 32 focused coordination/core/migration tests pass; migration 106 passed
 transaction-only PostgreSQL validation and was rolled back rather than applied. The

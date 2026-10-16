@@ -3,7 +3,7 @@ import type { Database } from "../database/types.js";
 
 export const GOVERNANCE_DECISION_AUTHORITY_PORT = Symbol("GOVERNANCE_DECISION_AUTHORITY_PORT");
 
-export type GovernanceDecisionMatter = "staff_leave_decision";
+export type GovernanceDecisionMatter = "staff_leave_decision" | "transport_duty_change_decision";
 export type GovernanceDecisionMode = "individual" | "delegated";
 
 export interface GovernanceAuthoritySourceReceipt {

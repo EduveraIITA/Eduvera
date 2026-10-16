@@ -81,7 +81,7 @@ export default function PrincipalDeparturePage(){
 
     {section?.id==="requests"&&!panel?<section className="departure-panel"><div className="departure-request-list">{data.requests.length?data.requests.map(request=>{const focused=request.id===focusedRequestId;return <article key={request.id} id={`attention-departure-request-${request.id}`} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><div><strong>{request.student_name}</strong><span>{request.service_date} · {modeLabel(request.requested_mode)}</span><p>{request.reason}</p></div><DepartureRequestReview request={request} data={data} pending={run.isPending} onDecide={(decision,note)=>run.mutateAsync(()=>decideDepartureRequest(schoolId,request.id,{decision,expected_revision:request.revision,note}))}/></article>}):<p className="departure-empty">No requests awaiting review.</p>}</div></section>:null}
 
-    {section?.id==="roster"&&!panel&&!tripTargetWrongSection?<TransportDutyPlanner schoolId={schoolId} data={data} focusSwapId={focusedSwapId} focusTripId={focusedTripId}/>:null}
+    {section?.id==="roster"&&!panel&&!tripTargetWrongSection?<TransportDutyPlanner schoolId={schoolId} actorId={auth.user?.id??""} data={data} focusSwapId={focusedSwapId} focusTripId={focusedTripId}/>:null}
 
     {section?.id==="settings"&&!panel?<section className="departure-panel"><div className="departure-action-grid">
       <Link to={`/principal/administration?school=${schoolId}&section=rules&rule=departure`}><ShieldCheck/><span><strong>Operating rules</strong><small>Modes, cutoff and privacy</small></span><ChevronRight/></Link>

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Transaction } from "kysely";
+import { describe, expect, it, vi } from "vitest";
 import {
   attendanceDeclineAttentionHref,
   attendanceRegisterRequestItems,
@@ -22,7 +26,12 @@ import {
   sortRequestItems,
   summarizeRequestItems,
   teachingAssignmentAttentionHref,
+  RequestsService,
 } from "../src/requests/requests.service.js";
+import type { AuthUser } from "../src/common/request.js";
+import type { DatabaseService } from "../src/database/database.service.js";
+import type { Database } from "../src/database/types.js";
+import type { GovernanceDecisionAuthorityPort } from "../src/governance/decision-authority.port.js";
 import type { AttendanceClassWorkspace } from "../src/attendance/attendance-workspace.js";
 import type { RequestInboxItem } from "../src/requests/requests.types.js";
 
@@ -46,6 +55,44 @@ function item(id: string, priority: RequestInboxItem["priority"], dueAt: string,
 }
 
 describe("request inbox projection", () => {
+  it("shows transport duty approvals only to the exact configured decision owner", async () => {
+    const transaction = {} as Transaction<Database>;
+    const ownerId = "10000000-0000-4000-8000-000000000001";
+    const schoolId = "20000000-0000-4000-8000-000000000002";
+    const assertDecisionAuthority = vi.fn().mockResolvedValue({});
+    const authority = { assertDecisionAuthority } as unknown as GovernanceDecisionAuthorityPort;
+    const service = new RequestsService({} as DatabaseService, authority);
+    const probe = service as unknown as {
+      canReviewTransportDutyChange(
+        user: AuthUser,
+        schoolId: string,
+        transaction: Transaction<Database>,
+      ): Promise<boolean>;
+    };
+
+    await expect(probe.canReviewTransportDutyChange({ id: ownerId } as AuthUser, schoolId, transaction))
+      .resolves.toBe(true);
+    expect(assertDecisionAuthority).toHaveBeenCalledWith(
+      transaction,
+      schoolId,
+      "transport_duty_change_decision",
+      ownerId,
+      expect.any(Date),
+    );
+
+    assertDecisionAuthority.mockRejectedValueOnce(new ForbiddenException("Not the current owner."));
+    await expect(probe.canReviewTransportDutyChange({ id: "30000000-0000-4000-8000-000000000003" } as AuthUser, schoolId, transaction))
+      .resolves.toBe(false);
+
+    assertDecisionAuthority.mockRejectedValueOnce(new ConflictException("No configured owner."));
+    await expect(probe.canReviewTransportDutyChange({ id: ownerId } as AuthUser, schoolId, transaction))
+      .resolves.toBe(false);
+
+    const source = readFileSync(resolve(process.cwd(), "src/requests/requests.service.ts"), "utf8");
+    expect(source).toContain("const canReviewTransportDutyChange = await this.canReviewTransportDutyChange(user, scope.school_id, transaction)");
+    expect(source).toContain("AND ${canReviewTransportDutyChange}");
+  });
+
   it("links a diary acknowledgement to its dated item", () => {
     expect(parentDiaryAttentionHref("student/1", "diary item", "2026-10-09"))
       .toBe("/parent/diary?student_id=student%2F1&date=2026-10-09&diary_item=diary%20item");
