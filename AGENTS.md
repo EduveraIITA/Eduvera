@@ -22,6 +22,14 @@
   authoritative rules and records; frontend features call domain APIs and use only
   domain-specific language. Never expose model-core persistence or graph concepts
   directly to UI code.
+- Treat the Campus Model Core as the operating coordination kernel, not an
+  after-the-fact analytics mirror. Every real person who acts through the app or an
+  approved channel maps to one stable human agent linked to their person/account
+  identity. Material workflows must retain a model-mediated chain from typed agent
+  command or observation through current authority/rule/context evaluation, owning
+  domain execution and evidence, correlated outcome, and explicit next-agent
+  hand-off. Do not bypass domain invariants or replace typed evidence with a generic
+  graph/ERP schema.
 - Preserve the established theme, shared headers, navigation, and UX. Blueprint v2
   guides capabilities and architecture; it is not permission to redesign the app.
 - Prefer substantial, end-to-end workflows with real database relationships,

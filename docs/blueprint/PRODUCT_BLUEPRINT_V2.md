@@ -35,6 +35,14 @@ When another capability is activated, ThatCampus reuses existing identities and 
 
 The backend uses a digital-twin and agent-based architecture. The frontend never exposes that machinery. Users see language and workflows native to their role and institution: Attendance, Exam, Class, Room, Staff, Transport, Request and Operating rules.
 
+The model is the campus operating thread, not a reporting copy beside the product.
+Every person who acts in ThatCampus or through an approved external channel is linked
+to a stable digital human agent. Their intent enters the model as a typed command or
+observation, is executed by the authoritative domain under current authority and
+rules, returns as a correlated outcome, and may create owned work for the next human,
+team, device or software agent. Domain screens remain simple and familiar; this
+agent-to-agent coordination is backend architecture.
+
 ### 2.4 Precise truth and visible uncertainty
 
 Expected, observed, accepted and derived states are distinct. Missing data is not a negative fact. A gate scan is not classroom attendance. Message delivery is not acknowledgement. A completed task is not proof that a physical event occurred.
@@ -105,6 +113,12 @@ Humans, teams, registered devices, approved integrations and bounded software ag
 
 Actions flow back into the campus as typed commands. An accepted command can create a task, message, schedule change, device instruction or other domain outcome. Delivery/readiness and physical execution remain distinct until later evidence closes the loop.
 
+Every material hand-off is durable: initiator, intended recipient/owner, authority,
+scope, plan/effective time, rule version, delivery, response, decision, execution
+outcome, correction and provenance remain connected. This evidence depth must support
+complex campus management even when ThatCampus deliberately avoids ERP-like setup
+screens and terminology.
+
 The normative technical contract is [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md).
 
 ### 4.6 Future spatial visualization
@@ -119,7 +133,7 @@ knowledge of a person's location from sparse observations.
 
 ## 5. Model-core separation
 
-The Campus Model Core is a separate backend module with versioned ports, APIs and events. It owns cross-domain identity, temporal relationships, normalized observation/command envelopes, agent authority evidence and projections.
+The Campus Model Core is a separate backend module with versioned ports, APIs and events. It owns cross-domain identity, temporal relationships, normalized observation/command envelopes, agent authority evidence, coordination hand-offs and projections. It mediates the operational thread between agents and domains; it is not an after-the-fact analytics mirror.
 
 It does not own attendance decisions, timetable validity, finance allocation, examination rules, communication consent, safeguarding outcomes or user interface composition.
 

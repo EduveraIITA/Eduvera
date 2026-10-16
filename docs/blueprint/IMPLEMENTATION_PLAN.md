@@ -18,6 +18,14 @@ decisions cannot be replaced by synthetic software tests.
   zero to the full campus without duplicate people, classes, places or resources. The
   backend Campus Model Core remains a separate API/contract-driven module; domain
   services retain authoritative state and the frontend uses only domain-specific language.
+- Product clarification, 16 October 2026: the Campus Model Core is the operating
+  coordination kernel, not an after-the-fact projection. Every real person who acts
+  through the product or an approved channel must map to one stable human agent linked
+  to their person/account identity. Material work follows a traceable agent command or
+  observation -> authority/rule/context resolution -> owning-domain execution ->
+  correlated outcome/evidence -> next-agent hand-off loop. Typed domain records and
+  invariants remain authoritative; the model connects and drives them rather than
+  replacing them with a generic ERP schema.
 
 - Preserve the existing blue/mint palette, Plus Jakarta Sans, shared app bars, child switching,
   mobile navigation and existing React UX. Extend established components and semantic tokens.
@@ -155,6 +163,24 @@ the shared dirty checkout; those files were not deleted or modified by this slic
 This section records direction and incomplete local work. It does not claim a
 complete digital twin, autonomous campus operation, multi-campus release or deployed
 behavior.
+
+### Model-mediated workflow gap - 16 October 2026
+
+The current core foundation registers identities, authority, temporal plans,
+observations, commands and outcomes, but several existing workflows still execute
+entirely inside their domain service and only notify or project afterward. Staff leave
+and coverage are a concrete example: they have strong typed records, revision checks,
+audits, outbox events, attention and Operating-rule fallbacks, but their human actions
+do not yet enter through a stable model-agent command and approved leave/substitution
+does not yet supersede the affected temporal occurrences in the model.
+
+Do not call such workflows fully digital-twin-driven. Horizontal migrations must wrap
+the existing domain command—not duplicate it—so actor identity, authority, causation,
+rule version, domain outcome and next-agent ownership are recorded atomically or by a
+durable idempotent bridge. First priority is staff leave -> authorized decision ->
+coverage hand-off -> accepted substitution/fallback -> effective timetable context,
+because it exercises human-to-human coordination without weakening the existing
+leave, staffing or timetable invariants.
 
 ### Delivery-shape decision - 16 October 2026
 

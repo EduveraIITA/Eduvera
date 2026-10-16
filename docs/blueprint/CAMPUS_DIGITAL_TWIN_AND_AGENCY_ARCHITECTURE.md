@@ -15,6 +15,32 @@ The architecture has two deliberately different faces:
 
 Users must never need to understand graph terminology, twin identities, command envelopes or agent runtimes to operate the product. The conceptual model is infrastructure. The product remains a set of clear, role-appropriate campus workflows.
 
+### Actor parity and model-mediated operation
+
+Every real person who acts through ThatCampus or an approved channel has one stable
+human-agent identity linked to the corresponding person and account/channel
+identities. A person may exist in the campus model without being an agent—for example
+a young learner with no acting account—but the moment a person submits, decides,
+records, acknowledges or performs work, the action must name their concrete digital
+agent. The same rule applies to registered devices, integrations, teams and software
+automation. Shared roles may own a queue; they never replace the concrete actor in
+the evidence trail.
+
+The Campus Model Core is therefore the coordination kernel, not an analytics sidecar.
+User intent enters as a typed agent command. The core resolves current identity,
+authority, scope, temporal context and applicable Operating-rule version, then routes
+the command to the owning domain executor. The domain revalidates its invariants and
+commits the authoritative business record. Its correlated outcome and evidence return
+to the core in the same transaction or through a durable, idempotent inbox/outbox.
+The core then updates temporal context and routes the next work to the responsible
+agents through domain-native screens or approved external channels. Their responses
+enter the same loop as new commands or observations.
+
+This does not make the core a generic ERP database and does not weaken domain
+boundaries. It makes the model the mandatory operational thread connecting actors,
+plans, evidence, decisions and outcomes. A feature is not model-integrated merely
+because it periodically copies a final row into a projection.
+
 ### Registered observation-source authority
 
 Devices and integrations are explicit campus actors, never identities inferred from
@@ -38,22 +64,28 @@ The core is consumed through versioned contracts:
 3. transactional domain events and durable inbox/outbox delivery for asynchronous projection;
 4. connector adapters for observations from approved external systems and devices.
 
-The following dependency direction is mandatory:
+The target dependency and execution direction is mandatory:
 
 ```text
-web/mobile screen
+domain-native screen / approved channel / registered device
         |
         v
-domain API (attendance, timetable, people, transport, ...)
+authenticated agent + typed command/observation gateway
         |
-        +----> domain service and authoritative domain tables
+        v
+Campus Model Core coordination kernel
+  identity + authority + temporal context + rule/version + causation
         |
-        +----> Campus Model Core port/API
-                     |
-                     +----> identity + temporal relationships
-                     +----> observation/command/outcome envelopes
-                     +----> agent authority evaluation
-                     +----> projection subscriptions
+        v
+owning domain executor (attendance, timetable, people, transport, ...)
+  invariant checks + authoritative typed records + evidence
+        |
+        v
+correlated outcome/event -> Campus Model Core
+        |
+        +----> updated temporal/provenance projections
+        +----> next owned work routed to human/team/software agents
+        +----> domain-native UI and approved external-channel delivery
 ```
 
 Prohibited dependencies:
@@ -161,6 +193,15 @@ The model core connects domains; it does not erase them.
 
 Each domain owns its validation, state machine, authorization and relational constraints. The core stores canonical references and the cross-domain digital thread needed for explanation, coordination and projections.
 
+Authoritative evidence must be sufficiently expressive to operate a complex campus
+without falling back to untraceable notes or hidden application state. For each
+material workflow this includes stable actor and subject identity, authority and
+scope, plan/effective/observed/recorded time, source and evidence references, input
+and resulting revisions, correlation and causation, rule version, decision rationale,
+delivery and acknowledgement state, exceptions, corrections/supersession, and the
+explicit next owner. Domains may add stricter evidence; they may not omit this common
+operational lineage.
+
 ## 5. Agent-based operating model
 
 An **agent** is an identified actor capable of proposing or issuing a command. It is not synonymous with AI.
@@ -173,9 +214,19 @@ Supported agent kinds:
 - **integration:** approved SIS, calendar, payment, transport or messaging connector;
 - **software agent:** deterministic automation or optional model-assisted orchestration operating inside a bounded capability contract.
 
-Rooms, classes, resources and students without an acting account are model entities, not agents merely because they exist.
+Rooms, classes and passive resources are model entities, not agents merely because
+they exist. A person without an acting identity remains a person entity. Once that
+person acts through an account or approved channel, the registry links that person to
+one stable human agent rather than creating a new workflow-local actor.
 
 Every action records the concrete acting principal. A team may own work, but completion still records the human/device/software actor that performed it.
+
+Agent-to-agent coordination is explicit. A command may create an owned work item for
+another agent; delivery is not acceptance, acceptance is not execution, and execution
+is not physical proof without the required outcome or observation. Each hand-off
+retains the originating command, responsible agent/team, delivery state, response
+deadline, response command and terminal outcome so the complete coordination chain
+can be replayed and explained.
 
 ### 5.1 Authority contract
 
