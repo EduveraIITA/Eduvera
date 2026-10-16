@@ -57,6 +57,36 @@
   --edura-shadow-raised: 0 14px 36px rgba(15, 23, 42, 0.13);
   --edura-motion: 220ms cubic-bezier(0.16, 1, 0.3, 1);
   --edura-page-gutter: 16px;
+
+  /* ThatCampus is the current product name. Keep these aliases centralized so
+     renamed feature styles inherit the established visual system while older
+     screens migrate without a mixed or transparent interface. */
+  --thatcampus-canvas: var(--edura-canvas);
+  --thatcampus-surface: var(--edura-surface);
+  --thatcampus-surface-soft: var(--edura-surface-soft);
+  --thatcampus-surface-strong: var(--edura-surface-strong);
+  --thatcampus-ink: var(--edura-ink);
+  --thatcampus-ink-secondary: var(--edura-ink-secondary);
+  --thatcampus-ink-muted: var(--edura-ink-muted);
+  --thatcampus-border: var(--edura-border);
+  --thatcampus-brand: var(--edura-brand);
+  --thatcampus-brand-bright: var(--edura-brand-bright);
+  --thatcampus-feature-gradient: var(--edura-feature-gradient);
+  --thatcampus-brand-soft: var(--edura-brand-soft);
+  --thatcampus-positive: var(--edura-positive);
+  --thatcampus-positive-soft: var(--edura-positive-soft);
+  --thatcampus-warning: var(--edura-warning);
+  --thatcampus-warning-soft: var(--edura-warning-soft);
+  --thatcampus-danger: var(--edura-danger);
+  --thatcampus-danger-soft: var(--edura-danger-soft);
+  --thatcampus-radius-control: var(--edura-radius-control);
+  --thatcampus-radius-card: var(--edura-radius-card);
+  --thatcampus-radius-feature: var(--edura-radius-feature);
+  --thatcampus-radius-pill: var(--edura-radius-pill);
+  --thatcampus-shadow-card: var(--edura-shadow-card);
+  --thatcampus-shadow-raised: var(--edura-shadow-raised);
+  --thatcampus-motion: var(--edura-motion);
+  --thatcampus-page-gutter: var(--edura-page-gutter);
 }
 
 * {

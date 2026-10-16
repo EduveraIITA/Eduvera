@@ -105,14 +105,19 @@ architecture regression rejects direct model-table access from the topology serv
 The administrator UI now uses only campus language: Campus & spaces, buildings,
 classrooms, equipment, class locations and people. It does not present the internal
 model, graph or twin terminology, and it reports connected records rather than a
-mandatory whole-institution completion percentage. The established mobile shell,
-focused edit sheet, loading/error/empty states and touch targets are retained. A
-390 px browser review confirmed no horizontal overflow; physical owner-device review
-remains open.
+mandatory whole-institution completion percentage. The setup home uses the app's
+compact grouped-list hierarchy instead of dashboard-like blocks. A centralized
+`--thatcampus-*` compatibility layer now resolves the established theme tokens during
+the brand migration, preventing transparent cards and sheets. Focused editors use an
+opaque bottom sheet, contextual title/help, full-width bounded controls, sticky equal
+actions and safe-area padding. Browser checks at 320, 390, 768, 1024 and 1440 px found
+no horizontal overflow, and the reviewed routes emitted no console warnings/errors;
+physical owner-device review remains open.
 
 Verified local evidence: backend typecheck/build pass; the focused Campus Model Core
 contract and architecture suite passes 4/4; focused campus/admin/catalog frontend tests
-pass 7/7; targeted frontend lint and Vite production bundling pass. The persistent
+pass 7/7; targeted frontend lint and Vite production bundling pass after the visual
+repair. The persistent
 model projection contains institution/campus/space/class/staff identities with current
 `part_of`, `located_in`, `home_space` and `assigned_to` relationships and zero detected
 cross-tenant relationships. The main preview, database/event readiness and private
