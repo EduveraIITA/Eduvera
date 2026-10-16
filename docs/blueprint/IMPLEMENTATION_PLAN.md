@@ -156,6 +156,16 @@ This section records direction and incomplete local work. It does not claim a
 complete digital twin, autonomous campus operation, multi-campus release or deployed
 behavior.
 
+### Delivery-shape decision - 16 October 2026
+
+Digital-twin delivery must proceed as useful horizontal campus workflows rather than
+an infrastructure spear that repeatedly deepens one adapter or one core abstraction.
+After a minimum contract exists, each substantial slice should cross the necessary
+plan, observation, accepted-domain, authorization, explanation, correction and UI
+boundaries far enough to reduce real operator burden. This does not weaken domain
+ownership or justify a generic control panel. It prevents model infrastructure from
+growing without a domain-language use path that administrators can validate.
+
 ### Accepted temporal-runtime direction - 16 October 2026
 
 The next core foundation is an event-derived temporal runtime, not another setup or
@@ -201,6 +211,13 @@ agents; this is an internal contract and does not yet expose an unauthenticated 
 or biometric ingestion endpoint. Entity `resolveAt` results may contain both expected
 schedule assertions and direct observations, whose freshness is explicitly
 `point_in_time` so a gate entry is not presented as continuous location truth.
+The first horizontal consumer is included in the existing Campus setup workspace:
+current timetable occurrences and enrollment are cross-checked with the latest
+accepted same-day gate movement and accepted attendance evidence. Only explicit exit
+evidence can create a signal. A present/late observation recorded after that exit is
+routed to Attendance; otherwise the expected-after-exit cross-check is routed to
+Gate. The UI calls these **Signals to review**, explains that no attendance or absence
+decision is made automatically, and stays hidden when there is nothing to review.
 
 Verified evidence: backend build and focused lint pass; 20 focused core/migration
 contract tests pass; migration 104 completes under transaction validation and is
@@ -215,6 +232,15 @@ local database contained no pre-existing published recurring versions to backfil
 Authenticated external device adapters, freshness rules, contradiction ownership,
 movement inference and campus-wide replay remain open and must not be represented as
 implemented.
+
+Horizontal-slice verification: a disposable, rolled-back runtime fixture joined a
+current Mathematics occurrence, active enrollment, accepted gate exit and later
+accepted present observation into exactly one Attendance-owned
+`attendance_after_exit` signal. Three focused Campus setup UI tests pass, including
+the no-automatic-conclusion copy. The focused frontend test is green; the full
+frontend TypeScript build remains blocked by unrelated duplicate untracked test files
+with names ending in ` 2.tsx` / ` 3.tsx`, which are outside this slice and were not
+modified or deleted.
 
 ## Active delivery: connected student lifecycle — 16 October 2026 (local)
 

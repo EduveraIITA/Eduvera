@@ -38,6 +38,7 @@ export interface InstitutionSetup {
   classes: Array<{ id: string; grade: string; section: string; academic_year: string; class_revision: number; placement_id: string | null; campus_id: string | null; home_space_id: string | null; home_space_name: string | null; placement_revision: number | null; effective_from: string | null; effective_until: string | null }>;
   staff: Array<{ id: string; first_name: string; last_name: string; staff_code: string; designation: string; status: string; assignment_id: string | null; campus_id: string | null; assignment_revision: number | null; effective_from: string | null; effective_until: string | null }>;
   activity: Array<{ id: string; kind: "setup" | "attendance"; action: string; subject_label: string | null; item_count: number; state: string; occurred_at: string; actor_label: string }>;
+  signals: Array<{ id: string; kind: "expected_after_exit" | "attendance_after_exit"; severity: "review" | "important"; owner: "gate" | "attendance"; student_id: string; person_label: string; class_label: string; activity_label: string; gate_label: string; gate_observed_at: string; expected_from: string; expected_until: string; attendance_status: string | null }>;
   readiness: Array<{ key: string; label: string; complete: boolean; detail: string }>;
   summary: { campuses: number; spaces: number; resources: number; classes: number; classes_with_home_space: number; staff: number; complete: boolean };
 }

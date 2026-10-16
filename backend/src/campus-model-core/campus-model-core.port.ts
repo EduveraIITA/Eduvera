@@ -20,10 +20,26 @@ export interface CampusModelActivity {
   occurred_at: Date | string;
   actor_label: string;
 }
+export interface CampusOperationalSignal {
+  id: string;
+  kind: "expected_after_exit" | "attendance_after_exit";
+  severity: "review" | "important";
+  owner: "gate" | "attendance";
+  student_id: string;
+  person_label: string;
+  class_label: string;
+  activity_label: string;
+  gate_label: string;
+  gate_observed_at: Date | string;
+  expected_from: Date | string;
+  expected_until: Date | string;
+  attendance_status: string | null;
+}
 export interface CampusModelCorePort {
   recordAcceptedChange(
     transaction: Transaction<Database>,
     input: AcceptedCampusModelChange,
   ): Promise<CampusModelChangeReceipt>;
   recentActivity(schoolId: string, limit?: number): Promise<CampusModelActivity[]>;
+  operationalSignals(schoolId: string, at?: string, limit?: number): Promise<CampusOperationalSignal[]>;
 }

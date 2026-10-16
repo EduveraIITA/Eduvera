@@ -1,0 +1,46 @@
+.campus-replica__signals li {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  padding-right: 14px;
+}
+
+.campus-replica__signals .campus-replica__row-icon {
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
+}
+
+.campus-replica__signals .campus-replica__activity-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.campus-replica__activity-state.is-signal-review {
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
+}
+
+.campus-replica__activity-state.is-signal-important {
+  color: var(--thatcampus-danger);
+  background: color-mix(in srgb, var(--thatcampus-danger) 10%, white);
+}
+
+.campus-replica__signal-note {
+  margin: 0;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--thatcampus-line);
+  color: var(--thatcampus-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 380px) {
+  .campus-replica__signals li {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .campus-replica__signals .campus-replica__activity-state {
+    grid-column: 2;
+    width: fit-content;
+  }
+}

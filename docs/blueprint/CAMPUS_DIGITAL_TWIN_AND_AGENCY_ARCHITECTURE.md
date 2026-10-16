@@ -479,8 +479,14 @@ gate events are normalized with explicit import provenance. The capture contract
 identify a human, device or integration without making a device impersonate a user.
 `resolveAt` now returns direct attendance/gate evidence beside plan assertions for a
 connected entity, but labels every observation as point-in-time evidence rather than
-continuous presence. General replay tooling, authenticated external sensor adapters,
-contradiction ownership and inferred state remain subsequent Phase 2A work.
+continuous presence. The first horizontal operational use now combines current
+timetable expectations, active enrollment, the latest accepted same-day gate record
+and accepted attendance evidence. Administrators see only bounded **Signals to
+review** in campus language. A signal names whether Gate or Attendance owns the
+cross-check, but never changes attendance or infers absence automatically. These
+signals are rebuildable read results, not yet durable contradiction cases. General
+replay tooling, authenticated external sensor adapters, durable case ownership and
+inferred state remain subsequent work across Phases 2A and 5.
 
 ### Phase 3 - Agents and authority
 

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { CampusReplicaManager } from "./CampusReplicaManager";
 import { getInstitutionSetup, type InstitutionSetup } from "./api";
 
@@ -31,6 +32,7 @@ const setup = (): InstitutionSetup => ({
   classes: [{ id: "class-1", grade: "6", section: "A", academic_year: "2026-27", class_revision: 1, placement_id: "placement-1", campus_id: "campus-1", home_space_id: "space-1", home_space_name: "Room 204", placement_revision: 1, effective_from: "2026-04-01", effective_until: null }],
   staff: [{ id: "staff-1", first_name: "Kavita", last_name: "Mehta", staff_code: "T001", designation: "Teacher", status: "active", assignment_id: "assignment-1", campus_id: "campus-1", assignment_revision: 1, effective_from: "2026-04-01", effective_until: null }],
   activity: [{ id: "activity-1", kind: "setup", action: "space.created", subject_label: "Room 204", item_count: 1, state: "accepted", occurred_at: "2026-10-16T09:00:00.000Z", actor_label: "Ananya Yadav" }],
+  signals: [],
   readiness: [
     { key: "campus", label: "Campus", complete: true, detail: "1 active" },
     { key: "spaces", label: "Spaces", complete: true, detail: "1 mapped" },
@@ -42,7 +44,7 @@ const setup = (): InstitutionSetup => ({
 
 function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><CampusReplicaManager schoolId="school-1" /></QueryClientProvider>);
+  return render(<MemoryRouter><QueryClientProvider client={client}><CampusReplicaManager schoolId="school-1" /></QueryClientProvider></MemoryRouter>);
 }
 
 describe("campus setup", () => {
@@ -71,5 +73,17 @@ describe("campus setup", () => {
     expect(within(dialog).getByRole("heading", { name: "Add space" })).toHaveFocus();
     expect(within(dialog).getByLabelText("Campus")).toHaveValue("campus-1");
     expect(within(dialog).getByLabelText("Space name")).toBeVisible();
+  });
+
+  it("presents cross-domain evidence as a review signal rather than an automatic conclusion", async () => {
+    const data = setup();
+    data.signals = [{ id: "signal-1", kind: "attendance_after_exit", severity: "important", owner: "attendance", student_id: "student-1", person_label: "Aarav Sharma", class_label: "Class 6A", activity_label: "Mathematics", gate_label: "Main gate", gate_observed_at: "2026-10-16T08:50:00.000Z", expected_from: "2026-10-16T09:00:00.000Z", expected_until: "2026-10-16T09:45:00.000Z", attendance_status: "present" }];
+    vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    show();
+
+    expect(await screen.findByRole("heading", { name: "Signals to review" })).toBeVisible();
+    expect(screen.getByText("Aarav Sharma has records to cross-check")).toBeVisible();
+    expect(screen.getByText(/does not change attendance or infer absence/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Attendance" })).toHaveAttribute("href", "/principal/attendance");
   });
 });

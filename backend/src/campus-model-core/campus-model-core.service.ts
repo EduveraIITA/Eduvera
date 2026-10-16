@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
-import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort } from "./campus-model-core.port.js";
+import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort, CampusOperationalSignal } from "./campus-model-core.port.js";
 import type { ObservationIngressPort } from "./observation-ingress.port.js";
 import type {
   CampusTemporalAssertion,
@@ -246,6 +246,65 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         GROUP BY observation.source_ref,context.label,observation.state,actor.label
       ) connected_activity
       ORDER BY occurred_at DESC,id DESC
+      LIMIT ${safeLimit}
+    `.execute(this.db)).rows;
+  }
+
+  async operationalSignals(schoolId: string, at = new Date().toISOString(), limit = 20): Promise<CampusOperationalSignal[]> {
+    const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    const atInstant = new Date(at);
+    if (Number.isNaN(atInstant.getTime())) throw new ConflictException("Use a valid instant for campus signals.");
+    return (await sql<CampusOperationalSignal>`
+      WITH school_clock AS (
+        SELECT timezone FROM schools WHERE id=${schoolId}::uuid
+      ), latest_gate AS (
+        SELECT DISTINCT ON (observation.subject_entity_id)
+          observation.id,observation.subject_entity_id,observation.observed_at,
+          observation.payload->>'direction' AS direction,
+          COALESCE(NULLIF(observation.payload->>'gate',''),'Campus gate') AS gate_label
+        FROM campus_model_observations observation CROSS JOIN school_clock
+        WHERE observation.school_id=${schoolId}::uuid
+          AND observation.kind='movement.gate_observed' AND observation.state='accepted'
+          AND observation.observed_at<=${atInstant.toISOString()}::timestamptz
+          AND observation.received_at<=${atInstant.toISOString()}::timestamptz
+          AND (observation.observed_at AT TIME ZONE school_clock.timezone)::date=
+              (${atInstant.toISOString()}::timestamptz AT TIME ZONE school_clock.timezone)::date
+        ORDER BY observation.subject_entity_id,observation.observed_at DESC,observation.received_at DESC,observation.id DESC
+      )
+      SELECT concat(occurrence.id::text,':',student.id::text,':',gate.id::text) AS id,
+        CASE WHEN attendance.observation_id IS NOT NULL THEN 'attendance_after_exit' ELSE 'expected_after_exit' END AS kind,
+        CASE WHEN attendance.observation_id IS NOT NULL THEN 'important' ELSE 'review' END AS severity,
+        CASE WHEN attendance.observation_id IS NOT NULL THEN 'attendance' ELSE 'gate' END AS owner,
+        student.id::text AS student_id,student_entity.label AS person_label,
+        class_entity.label AS class_label,occurrence.title AS activity_label,
+        gate.gate_label,gate.observed_at AS gate_observed_at,
+        occurrence.starts_at AS expected_from,occurrence.ends_at AS expected_until,
+        attendance.attendance_status
+      FROM campus_model_schedule_occurrences occurrence
+      JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=class_entity.domain_id::uuid AND enrollment.is_active
+      JOIN students student ON student.id=enrollment.student_id AND student.school_id=occurrence.school_id
+      JOIN campus_model_entities student_entity ON student_entity.school_id=student.school_id
+        AND student_entity.domain='people' AND student_entity.domain_id=student.id::text
+      JOIN latest_gate gate ON gate.subject_entity_id=student_entity.id AND gate.direction='out'
+      LEFT JOIN LATERAL (
+        SELECT observation.id AS observation_id,observation.payload->>'attendance_status' AS attendance_status
+        FROM campus_model_observations observation
+        WHERE observation.school_id=occurrence.school_id AND observation.subject_entity_id=student_entity.id
+          AND observation.context_entity_id=occurrence.class_entity_id
+          AND observation.kind='attendance.status_observed' AND observation.state='accepted'
+          AND observation.observed_at>=gate.observed_at
+          AND observation.observed_at<=${atInstant.toISOString()}::timestamptz
+          AND observation.received_at<=${atInstant.toISOString()}::timestamptz
+          AND observation.observed_at<occurrence.ends_at
+          AND observation.payload->>'attendance_status' IN ('present','late')
+        ORDER BY observation.observed_at DESC,observation.received_at DESC LIMIT 1
+      ) attendance ON true
+      WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.state='expected'
+        AND occurrence.starts_at<=${atInstant.toISOString()}::timestamptz
+        AND occurrence.ends_at>${atInstant.toISOString()}::timestamptz
+      ORDER BY CASE WHEN attendance.observation_id IS NOT NULL THEN 0 ELSE 1 END,
+        occurrence.starts_at,student_entity.label,student.id
       LIMIT ${safeLimit}
     `.execute(this.db)).rows;
   }

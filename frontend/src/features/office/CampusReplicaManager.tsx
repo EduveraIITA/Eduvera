@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, Building2, Check, ChevronRight, CircleDot, ClipboardCheck, Computer, Edit3, FlaskConical, GraduationCap, History, MapPin, Plus, UsersRound, X } from "lucide-react";
+import { Boxes, Building2, Check, ChevronRight, CircleAlert, CircleDot, ClipboardCheck, Computer, Edit3, FlaskConical, GraduationCap, History, MapPin, Plus, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 import { createAsset, createCampus, createResourceType, createSpace, getInstitutionSetup, placeClass, placeStaff, updateAsset, updateCampus, updateResourceType, updateSpace, type CampusResourceHolding, type CampusResourceType, type CampusSpace, type InstitutionCampus, type InstitutionSetup } from "./api";
+import "./campus-operational-signals.css";
 
 type Editor = { kind: "campus"; value?: InstitutionCampus } | { kind: "space"; value?: CampusSpace } |
   { kind: "asset"; value?: CampusResourceHolding } | { kind: "resourceType"; value?: CampusResourceType } | { kind: "class"; value: InstitutionSetup["classes"][number] } |
@@ -24,6 +26,9 @@ function activityTitle(item: InstitutionSetup["activity"][number]) {
   return `${item.subject_label ?? "Campus setup"} ${verb}`;
 }
 const activityState = (state: string) => state === "quarantined" || state === "review_required" ? "Needs review" : state === "pending" ? "Processing" : state === "rejected" || state === "failed" ? "Rejected" : "Recorded";
+const signalTitle = (item: InstitutionSetup["signals"][number]) => item.kind === "attendance_after_exit"
+  ? `${item.person_label} has records to cross-check`
+  : `${item.person_label} is expected in ${item.activity_label}`;
 
 export function CampusReplicaManager({ schoolId, compact = false }: { schoolId: string; compact?: boolean }) {
   const query = useQuery({ queryKey: ["institution-setup", schoolId], queryFn: () => getInstitutionSetup(schoolId), enabled: Boolean(schoolId) });
@@ -60,6 +65,14 @@ export function CampusReplicaManager({ schoolId, compact = false }: { schoolId: 
     <ReplicaGroup icon={UsersRound} title="People" detail={`${staff.length}/${data.staff.length} based here`}>
       {staff.length ? <ul className="campus-replica__rows">{staff.map((item) => <li key={item.id}><span className="campus-replica__row-badge is-person">{item.first_name[0]}{item.last_name[0]}</span><div><strong>{item.first_name} {item.last_name}</strong><small>{item.designation}</small></div><button type="button" onClick={() => setEditor({ kind: "staff", value: item })} aria-label={`Assign ${item.first_name} ${item.last_name}`}><ChevronRight size={18}/></button></li>)}</ul> : <EmptyLine text={data.staff.length ? "No staff are based at this campus yet." : "Staff added in People & roles will appear here."}/>} {data.staff.some((item) => !item.campus_id) ? <button className="campus-replica__unassigned" type="button" onClick={() => setEditor({ kind: "staff", value: data.staff.find((item) => !item.campus_id)! })}>{data.staff.filter((item) => !item.campus_id).length} staff need a campus <ChevronRight size={16}/></button> : null}
     </ReplicaGroup>
+    {data.signals.length ? <ReplicaGroup icon={CircleAlert} title="Signals to review" detail="Evidence needs a person’s judgement">
+      <ul className="campus-replica__rows campus-replica__signals">{data.signals.map((item) => <li key={item.id}>
+        <span className="campus-replica__row-icon"><CircleAlert size={17}/></span>
+        <div><strong>{signalTitle(item)}</strong><small>{item.class_label} · Last gate record: left through {item.gate_label} at {activityTime(item.gate_observed_at)}</small></div>
+        <Link className={`campus-replica__activity-state is-signal-${item.severity}`} to={item.owner === "attendance" ? "/principal/attendance" : "/principal/gate"}>{item.owner === "attendance" ? "Attendance" : "Gate"}</Link>
+      </li>)}</ul>
+      <p className="campus-replica__signal-note">ThatCampus does not change attendance or infer absence from these signals.</p>
+    </ReplicaGroup> : null}
     <ReplicaGroup icon={History} title="Recent activity" detail="Traceable changes and observations">
       {data.activity.length ? <ul className="campus-replica__rows campus-replica__activity">{data.activity.slice(0, 6).map((item) => <li key={`${item.kind}:${item.id}`}>
         <span className="campus-replica__row-icon">{item.kind === "attendance" ? <ClipboardCheck size={17}/> : <History size={16}/>}</span>
