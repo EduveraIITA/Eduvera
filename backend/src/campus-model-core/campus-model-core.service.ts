@@ -34,6 +34,26 @@ interface AgentRow { id: string }
 interface RelationshipRow { id: string; target_entity_id: string; effective_from: Date | string }
 interface CommandRow { id: string; command_type: string; target_entity_id: string | null; actor_agent_id: string }
 interface ObservationRow { id: string; request_hash: string }
+interface ResolvedObservationRow {
+  assertion_id: string;
+  kind: string;
+  state: "pending" | "accepted" | "quarantined";
+  payload: unknown;
+  observed_at: Date | string;
+  received_at: Date | string;
+  source_type: string;
+  source_ref: string | null;
+  source_record_id: string;
+  captured_by_agent_id: string;
+  captured_by_kind: "human" | "team" | "device" | "integration" | "software";
+  captured_by_label: string;
+  subject_entity_id: string;
+  subject_label: string;
+  subject_kind: string;
+  context_entity_id: string | null;
+  context_label: string | null;
+  context_kind: string | null;
+}
 interface EventRow { id: string; request_hash: string }
 interface TemporalAssertionRow {
   assertion_id: string;
@@ -149,7 +169,11 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const observations = rawObservations.map((item) => campusModelObservationSchema.parse(item));
     const ids: string[] = [];
     for (const observation of observations) {
-      const actor = await this.ensureHumanAgent(transaction, observation.school_id, observation.actor_user_id);
+      const actor = observation.captured_by
+        ? observation.captured_by.kind === "human"
+          ? await this.ensureHumanAgent(transaction, observation.school_id, observation.captured_by.user_id)
+          : await this.ensureExternalAgent(transaction, observation.school_id, observation.captured_by)
+        : await this.ensureHumanAgent(transaction, observation.school_id, observation.actor_user_id!);
       const subject = await this.upsertEntity(transaction, observation.school_id, observation.subject);
       const context = observation.context
         ? await this.upsertEntity(transaction, observation.school_id, observation.context)
@@ -487,7 +511,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       ORDER BY occurrence.starts_at,occurrence.period_entity_id
     `.execute(this.db)).rows;
 
-    return rows.map((row) => ({
+    const expected: CampusTemporalAssertion[] = rows.map((row) => ({
       assertion_id: row.assertion_id,
       dimension: "expected",
       assertion_type: "scheduled_context",
@@ -522,6 +546,56 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       freshness: row.current ? "current" : "historical",
       contradictions: [],
     }));
+
+    if (input.subject.type !== "entity") return expected;
+    const observed = (await sql<ResolvedObservationRow>`
+      SELECT DISTINCT ON (observation.subject_entity_id,observation.kind)
+        observation.id::text AS assertion_id,observation.kind,observation.state,observation.payload,
+        observation.observed_at,observation.received_at,observation.source_type,observation.source_ref,
+        observation.source_record_id,agent.id::text AS captured_by_agent_id,
+        agent.agent_kind AS captured_by_kind,agent.label AS captured_by_label,
+        subject.id::text AS subject_entity_id,subject.label AS subject_label,subject.kind AS subject_kind,
+        context.id::text AS context_entity_id,context.label AS context_label,context.kind AS context_kind
+      FROM campus_model_entities queried
+      JOIN campus_model_observations observation ON observation.school_id=queried.school_id
+        AND (observation.subject_entity_id=queried.id OR observation.context_entity_id=queried.id)
+      JOIN campus_model_entities subject ON subject.id=observation.subject_entity_id
+      LEFT JOIN campus_model_entities context ON context.id=observation.context_entity_id
+      JOIN campus_model_agents agent ON agent.id=observation.captured_by_agent_id
+      WHERE queried.school_id=${input.school_id}::uuid AND queried.domain=${input.subject.domain}
+        AND queried.domain_id=${input.subject.domain_id}
+        AND observation.observed_at<=${input.at}::timestamptz
+        AND observation.received_at<=${recordedAsOf}::timestamptz
+        AND observation.state IN ('pending','accepted','quarantined')
+      ORDER BY observation.subject_entity_id,observation.kind,observation.observed_at DESC,observation.received_at DESC,observation.id DESC
+    `.execute(this.db)).rows;
+
+    return expected.concat(observed.map((row): CampusTemporalAssertion => ({
+      assertion_id: row.assertion_id,
+      dimension: row.state === "accepted" ? "accepted" : "observed",
+      assertion_type: "direct_observation",
+      subject: { type: "entity", id: row.subject_entity_id, label: row.subject_label, kind: row.subject_kind },
+      context: row.context_entity_id ? {
+        entity_id: row.context_entity_id,
+        label: row.context_label!,
+        kind: row.context_kind!,
+      } : null,
+      observation: { kind: row.kind, state: row.state, payload: row.payload },
+      observed_at: row.observed_at,
+      recorded_at: row.received_at,
+      source: {
+        observation_id: row.assertion_id,
+        source_type: row.source_type,
+        source_ref: row.source_ref,
+        source_record_id: row.source_record_id,
+        captured_by_agent_id: row.captured_by_agent_id,
+        captured_by_kind: row.captured_by_kind,
+        captured_by_label: row.captured_by_label,
+      },
+      certainty: row.state === "accepted" ? "accepted" : row.state === "pending" ? "observed" : "unverified",
+      freshness: "point_in_time",
+      contradictions: [],
+    })));
   }
 
   private async upsertEntity(
@@ -590,6 +664,26 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       RETURNING id`.execute(transaction);
     const agent = result.rows[0];
     if (!agent) throw new ConflictException("The acting user could not be registered as a campus agent.");
+    return agent;
+  }
+
+  private async ensureExternalAgent(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    source: { kind: "device" | "integration"; external_ref: string; label: string; metadata: Record<string, unknown> },
+  ): Promise<AgentRow> {
+    const result = await sql<AgentRow>`
+      INSERT INTO campus_model_agents(school_id,agent_kind,external_ref,label,status,metadata)
+      VALUES (${schoolId}::uuid,${source.kind},${source.external_ref},${source.label},'active',${JSON.stringify(source.metadata)}::jsonb)
+      ON CONFLICT(school_id,agent_kind,external_ref) WHERE external_ref IS NOT NULL DO UPDATE SET
+        label=EXCLUDED.label,metadata=EXCLUDED.metadata,
+        revision=CASE WHEN campus_model_agents.label IS DISTINCT FROM EXCLUDED.label
+          OR campus_model_agents.metadata IS DISTINCT FROM EXCLUDED.metadata
+          THEN campus_model_agents.revision+1 ELSE campus_model_agents.revision END,
+        updated_at=now()
+      RETURNING id`.execute(transaction);
+    const agent = result.rows[0];
+    if (!agent) throw new ConflictException("The observation source could not be registered as a campus agent.");
     return agent;
   }
 

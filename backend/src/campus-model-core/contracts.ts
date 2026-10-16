@@ -77,9 +77,26 @@ export const acceptedCampusModelChangeSchema = z.object({
   }
 });
 
+export const campusObservationCaptureAgentSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("human"), user_id: z.string().uuid() }).strict(),
+  z.object({
+    kind: z.literal("device"),
+    external_ref: z.string().trim().min(1).max(160),
+    label: z.string().trim().min(1).max(200),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+  }).strict(),
+  z.object({
+    kind: z.literal("integration"),
+    external_ref: z.string().trim().min(1).max(160),
+    label: z.string().trim().min(1).max(200),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+  }).strict(),
+]);
+
 export const campusModelObservationSchema = z.object({
   school_id: z.string().uuid(),
-  actor_user_id: z.string().uuid(),
+  actor_user_id: z.string().uuid().optional(),
+  captured_by: campusObservationCaptureAgentSchema.optional(),
   kind: z.string().trim().min(3).max(100),
   subject: campusModelEntitySchema,
   context: campusModelEntitySchema.nullable().default(null),
@@ -94,7 +111,14 @@ export const campusModelObservationSchema = z.object({
   state: z.enum(["pending", "accepted", "rejected", "quarantined", "superseded"]),
   idempotency_key: z.string().trim().min(8).max(240),
   domain_event_id: z.string().uuid().nullable().default(null),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (!value.actor_user_id && !value.captured_by) {
+    context.addIssue({ code: "custom", path: ["captured_by"], message: "Identify the human, device or integration that captured this observation." });
+  }
+  if (value.actor_user_id && value.captured_by) {
+    context.addIssue({ code: "custom", path: ["captured_by"], message: "Use either actor_user_id or captured_by, not both." });
+  }
+});
 
 export const campusModelObservationTransitionSchema = z.object({
   school_id: z.string().uuid(),

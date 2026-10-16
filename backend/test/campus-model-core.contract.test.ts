@@ -108,6 +108,33 @@ describe("Campus Model Core contracts", () => {
     expect(observation.source_type).toBe("attendance.capture");
   });
 
+  it("accepts identified device evidence without impersonating a human operator", () => {
+    const observation = campusModelObservationSchema.parse({
+      school_id: schoolId,
+      captured_by: {
+        kind: "device",
+        external_ref: "main-gate-reader-1",
+        label: "Main gate reader",
+        metadata: { provider: "approved-connector" },
+      },
+      kind: "movement.gate_observed",
+      subject: { kind: "student", domain: "people", domain_id: institutionId, label: "Aarav Sharma", lifecycle_state: "active", source_revision: 1 },
+      context: null,
+      source_type: "gate.movement",
+      source_ref: "device-event-100",
+      source_record_id: "device-event-100",
+      observed_at: "2026-10-16T03:30:00.000Z",
+      received_at: "2026-10-16T03:30:01.000Z",
+      evidence_refs: ["connector:main-gate-reader-1"],
+      payload: { direction: "in", gate: "Main gate" },
+      state: "pending",
+      idempotency_key: "gate-observation:device-event-100",
+    });
+
+    expect(observation.captured_by?.kind).toBe("device");
+    expect(observation).not.toHaveProperty("actor_user_id");
+  });
+
   it("keeps published timetable expectations distinct from observations", () => {
     const schedule = publishedScheduleProjectionSchema.parse({
       school_id: schoolId,
@@ -217,5 +244,11 @@ describe("Campus Model Core contracts", () => {
       expect(source).toContain("TEMPORAL_CONTEXT_PORT");
       expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
     }
+  });
+
+  it("keeps accepted gate evidence behind the observation ingress port", () => {
+    const source = readFileSync(new URL("../src/gate/gate.service.ts", import.meta.url), "utf8");
+    expect(source).toContain("OBSERVATION_INGRESS_PORT");
+    expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
   });
 });

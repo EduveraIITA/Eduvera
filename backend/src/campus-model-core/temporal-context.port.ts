@@ -23,7 +23,7 @@ export interface PlanReconciliationReceipt {
   replayed: boolean;
 }
 
-export interface CampusTemporalAssertion {
+export interface ExpectedTemporalAssertion {
   assertion_id: string;
   dimension: "expected";
   assertion_type: "scheduled_context";
@@ -58,6 +58,44 @@ export interface CampusTemporalAssertion {
   freshness: "current" | "historical";
   contradictions: [];
 }
+
+export interface ObservedTemporalAssertion {
+  assertion_id: string;
+  dimension: "observed" | "accepted";
+  assertion_type: "direct_observation";
+  subject: {
+    type: "entity";
+    id: string;
+    label: string;
+    kind: string;
+  };
+  context: {
+    entity_id: string;
+    label: string;
+    kind: string;
+  } | null;
+  observation: {
+    kind: string;
+    state: "pending" | "accepted" | "quarantined";
+    payload: unknown;
+  };
+  observed_at: Date | string;
+  recorded_at: Date | string;
+  source: {
+    observation_id: string;
+    source_type: string;
+    source_ref: string | null;
+    source_record_id: string;
+    captured_by_agent_id: string;
+    captured_by_kind: "human" | "team" | "device" | "integration" | "software";
+    captured_by_label: string;
+  };
+  certainty: "observed" | "accepted" | "unverified";
+  freshness: "point_in_time";
+  contradictions: [];
+}
+
+export type CampusTemporalAssertion = ExpectedTemporalAssertion | ObservedTemporalAssertion;
 
 export interface TemporalContextPort {
   recordPublishedSchedule(

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
@@ -8,6 +8,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { hasScopedSchoolPermission } from '../roles/authorization.js';
 import { hashPassword } from '../auth/password.js';
 import { SchoolEventService } from '../school/school-event.service.js';
+import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from '../campus-model-core/observation-ingress.port.js';
 import { assertGateTransition, assertPassUsable, gateTokenHash, newGateToken } from './gate.rules.js';
 type Db=DatabaseService|Transaction<Database>;
 interface Person {id:string;name:string;avatar_url:string;admission_number:string;class_label:string;direction:string|null;plan_id:string|null;plan_revision:number|null;plan_state:string|null;mode:string|null;authority_id:string|null;collector_name:string|null;collector_photo:string|null}
@@ -21,7 +22,11 @@ function visitorView(v:VisitorRecord) {
 }
 @Injectable()
 export class GateService {
- constructor(private readonly db:DatabaseService,private readonly events:SchoolEventService) {}
+ constructor(
+  private readonly db:DatabaseService,
+  private readonly events:SchoolEventService,
+  @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress:ObservationIngressPort,
+ ) {}
  private async access(user:AuthUser,school:string,db:Db=this.db) {
   z.uuid().parse(school);
   if(!await hasScopedSchoolPermission(db,user.id,school,'gate.manage','institution',school)) throw new ForbiddenException('Manage In & Out permission is required.');
@@ -180,7 +185,30 @@ export class GateService {
     await tx.updateTable('departure_plans').set({state:'completed',revision:plan.revision+1,updated_at:new Date()}).where('id','=',plan.id).execute();
     await sql`UPDATE gate_qr_passes SET used_at=now() WHERE id=${p.id}::uuid`.execute(tx);
    }
-   const row=await tx.insertInto('gate_events').values({student_id:b.student_id,direction:b.direction,gate:b.gate,source:'gatekeeper',device_reference:'',occurred_at:new Date(),recorded_by:user.id,command_id:b.command_id}).returning('id').executeTakeFirstOrThrow();
+   const observedAt=new Date();
+   const row=await tx.insertInto('gate_events').values({student_id:b.student_id,direction:b.direction,gate:b.gate,source:'gatekeeper',device_reference:'',occurred_at:observedAt,recorded_by:user.id,command_id:b.command_id}).returning('id').executeTakeFirstOrThrow();
+   const student=await tx.selectFrom('students as student')
+    .innerJoin('school_people as person','person.id','student.person_id')
+    .select(['student.id','student.admission_number','person.first_name','person.last_name','person.revision'])
+    .where('student.school_id','=',school).where('student.id','=',b.student_id).executeTakeFirstOrThrow();
+   await this.observationIngress.recordObservations(tx,[{
+    school_id:school,
+    captured_by:{kind:'human',user_id:user.id},
+    kind:'movement.gate_observed',
+    subject:{kind:'student',domain:'people',domain_id:student.id,label:`${student.first_name} ${student.last_name}`.trim()||student.admission_number,lifecycle_state:'active',source_revision:student.revision,metadata:{admission_number:student.admission_number}},
+    context:null,
+    source_type:'gate.movement',
+    source_ref:b.command_id,
+    source_record_id:row.id,
+    observed_at:observedAt.toISOString(),
+    received_at:new Date().toISOString(),
+    evidence_refs:[`gate_event:${row.id}`],
+    payload:{direction:b.direction,gate:b.gate,capture_source:'gatekeeper',identity_verified:true,evidence_scope:'campus_boundary'},
+    schema_version:1,
+    state:'accepted',
+    idempotency_key:`gate-observation:${row.id}`,
+    domain_event_id:null,
+   }]);
    await this.audit(tx,user,school,b.direction,row.id);
    const guardians=(await sql<{user_id:string}>`SELECT DISTINCT p.user_id FROM parents p JOIN guardian_relationships gr ON gr.guardian_id=p.id JOIN school_memberships m ON m.user_id=p.user_id AND m.school_id=gr.school_id AND m.role='guardian' AND m.is_active WHERE gr.student_id=${b.student_id}::uuid AND gr.school_id=${school}::uuid AND p.user_id IS NOT NULL`.execute(tx)).rows.map(g=>g.user_id);
    await this.events.enqueueUserEvent(tx,{schoolId:school,eventType:'departure.updated',aggregateType:'gate_event',aggregateId:row.id,audienceUserIds:guardians,idempotencyKey:`gate:${row.id}`,payload:{student_id:b.student_id,direction:b.direction},notificationUserIds:guardians,notificationPayload:{kind:'general',title:b.direction==='in'?'Student entered school':'Student left school',body:`${person.name} ${b.direction==='in'?'entered':'left'} through ${b.gate}.`,link:`/parent/departure?student_id=${b.student_id}`,metadata:{school_id:school,student_id:b.student_id}}});

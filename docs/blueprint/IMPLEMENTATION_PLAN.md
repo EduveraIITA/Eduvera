@@ -191,17 +191,29 @@ attendance or location observations. Calendar-closure creation and removal and d
 plan publication now use the same port in their owning transactions. Closures cancel
 matching expectations without erasing history; closure removal restores only
 unblocked expectations; and a published daily plan supersedes recurring occurrences
-for the same class/date with explicit dated replacements.
+for the same class/date with explicit dated replacements. Migration
+`105_campus_model_gate_observations.sql` connects accepted gate movements to the
+immutable observation spine, backfills retained gate history with honest import
+provenance, and adds context-time lookup support. New gate movements record their
+normalized observation in the same transaction as the owning gate event. The
+observation envelope now supports identified human, device and integration capture
+agents; this is an internal contract and does not yet expose an unauthenticated device
+or biometric ingestion endpoint. Entity `resolveAt` results may contain both expected
+schedule assertions and direct observations, whose freshness is explicitly
+`point_in_time` so a gate entry is not presented as continuous location truth.
 
-Verified evidence: backend build and focused lint pass; 15 focused core/migration
+Verified evidence: backend build and focused lint pass; 20 focused core/migration
 contract tests pass; migration 104 completes under transaction validation and is
 applied to the loopback development database; a disposable runtime verification
 verified the full recurring expectation → closure cancellation → closure removal
 restoration → daily-plan supersession/replacement sequence, then resolved the dated
 replacement from its retained `timetable.day_plan_published` source and removed the
-fixture. The current local database contained no pre-existing published recurring
-versions to backfill. Observation fusion, contradiction ownership, movement
-resolution and campus-wide replay remain open and must not be represented as
+fixture. Migration 105 is applied to the loopback development database and normalized
+9,429 retained gate events. A direct resolver verification returned the latest gate
+evidence as an `accepted` / `point_in_time` assertion from `gate.movement`. The current
+local database contained no pre-existing published recurring versions to backfill.
+Authenticated external device adapters, freshness rules, contradiction ownership,
+movement inference and campus-wide replay remain open and must not be represented as
 implemented.
 
 ## Active delivery: connected student lifecycle — 16 October 2026 (local)

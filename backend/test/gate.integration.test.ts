@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll,beforeAll,describe,expect,it,vi } from 'vitest';
 import { DatabaseService } from '../src/database/database.service.js';
+import { CampusModelCoreService } from '../src/campus-model-core/campus-model-core.service.js';
 import { GateService } from '../src/gate/gate.service.js';
 import type { SchoolEventService } from '../src/school/school-event.service.js';
 import { verifyPassword } from '../src/auth/password.js';
@@ -17,7 +18,7 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
  async function query(text:string,values:unknown[]=[]){return (await pool.query(text,values)).rows[0];}
  beforeAll(async()=>{
   pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:1});
-  db=new DatabaseService();service=new GateService(db,events as unknown as SchoolEventService);
+  db=new DatabaseService();service=new GateService(db,events as unknown as SchoolEventService,new CampusModelCoreService(db));
   const tag=randomUUID();school=(await query("INSERT INTO schools(name,code) VALUES('Gate test',$1) RETURNING id",[tag.slice(0,20)])).id;
   otherSchool=(await query("INSERT INTO schools(name,code) VALUES('Other gate',$1) RETURNING id",['o'+tag.slice(0,20)])).id;
   admin=await query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Gate','Admin','admin') RETURNING *",[tag,tag+'@example.test']);

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DatabaseService } from '../src/database/database.service.js';
+import { CampusModelCoreService } from '../src/campus-model-core/campus-model-core.service.js';
 import { GateService } from '../src/gate/gate.service.js';
 import { SchoolEventService } from '../src/school/school-event.service.js';
 import type { AuthUser } from '../src/common/request.js';
@@ -14,7 +15,7 @@ suite('visitor approval delivery and current host authority',()=>{
  async function query(text:string,values:unknown[]=[]){return (await pool.query(text,values)).rows[0];}
  const request=()=>({name:'Visitor Test',phone:'9876543210',purpose:'Document delivery',host_user_id:host.id,request_id:randomUUID()});
  beforeAll(async()=>{
-  pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:1});db=new DatabaseService();events=new SchoolEventService(db);gate=new GateService(db,events);
+  pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:1});db=new DatabaseService();events=new SchoolEventService(db);gate=new GateService(db,events,new CampusModelCoreService(db));
   school=(await query("INSERT INTO schools(name,code) VALUES('Approval test',$1) RETURNING id",[randomUUID().slice(0,20)])).id;
   otherSchool=(await query("INSERT INTO schools(name,code) VALUES('Other approval test',$1) RETURNING id",[randomUUID().slice(0,20)])).id;
   async function account(role:'admin'|'staff'){

@@ -472,9 +472,15 @@ matching expected occurrences without deleting history, and removing a closure
 restores only occurrences that are no longer blocked by another closure. Publishing
 a daily plan supersedes the recurring occurrences for the same class and date and
 projects the dated replacement periods. Each transition retains an idempotent source
-event and executes in the owning domain transaction. General replay tooling,
-observation fusion, contradiction ownership and inferred state remain subsequent
-Phase 2A work.
+event and executes in the owning domain transaction. Migration 105 and the existing
+`ObservationIngressPort` add the next bounded observation slice. Accepted student
+gate movements are retained atomically with their gate-domain record, and historical
+gate events are normalized with explicit import provenance. The capture contract can
+identify a human, device or integration without making a device impersonate a user.
+`resolveAt` now returns direct attendance/gate evidence beside plan assertions for a
+connected entity, but labels every observation as point-in-time evidence rather than
+continuous presence. General replay tooling, authenticated external sensor adapters,
+contradiction ownership and inferred state remain subsequent Phase 2A work.
 
 ### Phase 3 - Agents and authority
 
