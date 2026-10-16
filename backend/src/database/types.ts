@@ -213,6 +213,22 @@ export interface CampusModelCommandOutcomeTable {
 export interface CampusModelProjectionCheckpointTable {
   consumer: string; last_delivery_sequence: Generated<number>; last_event_id: string | null; updated_at: Timestamp;
 }
+export interface CampusModelEventTable {
+  id: Generated<string>; school_id: string; event_kind: "plan" | "observation" | "decision" | "command_outcome";
+  event_type: string; subject_entity_id: string; context_entity_id: string | null; actor_agent_id: string | null;
+  source_domain: string; source_record_id: string; source_revision: number; event_at: Timestamp;
+  effective_from: Timestamp; effective_until: NullableTimestamp; recorded_at: Timestamp;
+  correlation_id: string; causation_event_id: string | null; supersedes_event_id: string | null;
+  provenance: Json; payload: Json; schema_version: Generated<number>; idempotency_key: string; request_hash: string;
+}
+export interface CampusModelScheduleOccurrenceTable {
+  id: Generated<string>; school_id: string; source_event_id: string; schedule_entity_id: string;
+  period_entity_id: string; class_entity_id: string; subject_entity_id: string | null;
+  responsible_agent_id: string | null; space_entity_id: string | null; occurrence_date: DateOnly;
+  starts_at: Timestamp; ends_at: Timestamp; title: string; slot_type: "class" | "break" | "activity";
+  room_snapshot: Generated<string>; state: Generated<"expected" | "cancelled" | "superseded">;
+  source_revision: number; projected_at: Timestamp;
+}
 export interface StaffOnboardingItemTable {
   id: Generated<string>; school_id: string; staff_profile_id: string;
   item_key: "identity" | "service_contract" | "qualifications" | "emergency_contact" | "account_access";
@@ -692,6 +708,8 @@ export interface Database {
   campus_model_commands: CampusModelCommandTable;
   campus_model_command_outcomes: CampusModelCommandOutcomeTable;
   campus_model_projection_checkpoints: CampusModelProjectionCheckpointTable;
+  campus_model_events: CampusModelEventTable;
+  campus_model_schedule_occurrences: CampusModelScheduleOccurrenceTable;
   staff_profiles: StaffProfileTable;
   staff_onboarding_items: StaffOnboardingItemTable;
   staff_leave_policies: StaffLeavePolicyTable;

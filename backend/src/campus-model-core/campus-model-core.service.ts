@@ -5,14 +5,23 @@ import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort } from "./campus-model-core.port.js";
 import type { ObservationIngressPort } from "./observation-ingress.port.js";
+import type {
+  CampusTemporalAssertion,
+  ScheduleProjectionReceipt,
+  TemporalContextPort,
+} from "./temporal-context.port.js";
 import {
   acceptedCampusModelChangeSchema,
   campusModelObservationSchema,
   campusModelObservationTransitionSchema,
+  campusTemporalContextQuerySchema,
+  publishedScheduleProjectionSchema,
   type AcceptedCampusModelChange,
   type CampusModelEntitySnapshot,
   type CampusModelObservation,
   type CampusModelObservationTransition,
+  type CampusTemporalContextQuery,
+  type PublishedScheduleProjection,
 } from "./contracts.js";
 
 interface EntityRow { id: string; domain: string; domain_id: string }
@@ -20,9 +29,32 @@ interface AgentRow { id: string }
 interface RelationshipRow { id: string; target_entity_id: string; effective_from: Date | string }
 interface CommandRow { id: string; command_type: string; target_entity_id: string | null; actor_agent_id: string }
 interface ObservationRow { id: string; request_hash: string }
+interface EventRow { id: string; request_hash: string }
+interface TemporalAssertionRow {
+  assertion_id: string;
+  occurrence_id: string;
+  schedule_version_id: string;
+  class_entity_id: string;
+  class_label: string;
+  subject_entity_id: string | null;
+  subject_label: string | null;
+  space_entity_id: string | null;
+  space_label: string | null;
+  title: string;
+  slot_type: "class" | "break" | "activity";
+  starts_at: Date | string;
+  ends_at: Date | string;
+  recorded_at: Date | string;
+  event_id: string;
+  source_record_id: string;
+  source_revision: number;
+  queried_subject_id: string;
+  queried_subject_label: string;
+  current: boolean;
+}
 
 @Injectable()
-export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort {
+export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, TemporalContextPort {
   constructor(private readonly db: DatabaseService) {}
 
   async recordAcceptedChange(
@@ -185,6 +217,177 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       ORDER BY occurred_at DESC,id DESC
       LIMIT ${safeLimit}
     `.execute(this.db)).rows;
+  }
+
+  async recordPublishedSchedule(
+    transaction: Transaction<Database>,
+    rawInput: PublishedScheduleProjection,
+  ): Promise<ScheduleProjectionReceipt> {
+    const input = publishedScheduleProjectionSchema.parse(rawInput);
+    const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
+    const schedule = await this.upsertEntity(transaction, input.school_id, {
+      kind: "schedule",
+      domain: "timetable",
+      domain_id: input.schedule_version_id,
+      label: `${input.class_section.label} timetable`,
+      lifecycle_state: "active",
+      source_revision: input.schedule_revision,
+      metadata: { starts_on: input.starts_on, ends_on: input.ends_on, timezone: input.timezone },
+    });
+    const classEntity = await this.upsertEntity(transaction, input.school_id, input.class_section);
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const idempotencyKey = `timetable.schedule-published:${input.schedule_version_id}:${input.schedule_revision}`;
+    const inserted = (await sql<EventRow>`INSERT INTO campus_model_events(
+        school_id,event_kind,event_type,subject_entity_id,actor_agent_id,source_domain,
+        source_record_id,source_revision,event_at,effective_from,effective_until,
+        correlation_id,causation_event_id,provenance,payload,schema_version,idempotency_key,request_hash
+      ) VALUES (
+        ${input.school_id}::uuid,'plan','timetable.schedule_published',${schedule.id}::uuid,${actor.id}::uuid,
+        'timetable',${input.schedule_version_id},${input.schedule_revision},${input.published_at}::timestamptz,
+        (${input.starts_on}::date::timestamp AT TIME ZONE ${input.timezone}),
+        ((${input.ends_on}::date+1)::timestamp AT TIME ZONE ${input.timezone}),
+        ${input.correlation_id}::uuid,${input.causation_event_id}::uuid,
+        ${JSON.stringify({ source: "schedule_versions", captured_by: "schedule-planning" })}::jsonb,
+        ${JSON.stringify({ starts_on: input.starts_on, ends_on: input.ends_on, timezone: input.timezone, period_count: input.periods.length })}::jsonb,
+        1,${idempotencyKey},${requestHash}
+      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING RETURNING id,request_hash`.execute(transaction)).rows[0];
+
+    const event = inserted ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
+    if (!event || event.request_hash !== requestHash) {
+      throw new ConflictException("This timetable publication key was already used for different plan evidence.");
+    }
+    if (!inserted) {
+      const existing = (await sql<{ count: number }>`SELECT count(*)::int AS count
+        FROM campus_model_schedule_occurrences WHERE school_id=${input.school_id}::uuid
+          AND source_event_id=${event.id}::uuid AND state='expected'`.execute(transaction)).rows[0]?.count ?? 0;
+      return { event_id: event.id, schedule_entity_id: schedule.id, occurrence_count: existing, replayed: true };
+    }
+
+    let occurrenceCount = 0;
+    for (const period of input.periods) {
+      const periodEntity = await this.upsertEntity(transaction, input.school_id, {
+        kind: "schedule_period",
+        domain: "timetable",
+        domain_id: period.period_id,
+        label: period.title,
+        lifecycle_state: "active",
+        source_revision: input.schedule_revision,
+        metadata: { weekday: period.weekday, period_number: period.period_number, slot_type: period.slot_type },
+      });
+      const subjectEntity = period.subject
+        ? await this.upsertEntity(transaction, input.school_id, period.subject)
+        : null;
+      const spaceEntity = period.space
+        ? await this.upsertEntity(transaction, input.school_id, period.space)
+        : null;
+      const responsibleAgent = period.teacher_user_id
+        ? await this.ensureHumanAgent(transaction, input.school_id, period.teacher_user_id)
+        : null;
+      const result = await sql<{ id: string }>`INSERT INTO campus_model_schedule_occurrences(
+          school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+          subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+          title,slot_type,room_snapshot,state,source_revision
+        )
+        SELECT ${input.school_id}::uuid,${event.id}::uuid,${schedule.id}::uuid,${periodEntity.id}::uuid,
+          ${classEntity.id}::uuid,${subjectEntity?.id ?? null}::uuid,${responsibleAgent?.id ?? null}::uuid,
+          ${spaceEntity?.id ?? null}::uuid,day::date,
+          ((day::date+${period.starts_at}::time) AT TIME ZONE ${input.timezone}),
+          ((day::date+${period.ends_at}::time) AT TIME ZONE ${input.timezone}),
+          ${period.title},${period.slot_type},${period.room_snapshot},'expected',${input.schedule_revision}
+        FROM generate_series(${input.starts_on}::date,${input.ends_on}::date,'1 day') day
+        WHERE extract(isodow FROM day)=${period.weekday}
+          AND NOT EXISTS(
+            SELECT 1 FROM school_calendar_days closure
+            WHERE closure.school_id=${input.school_id}::uuid AND closure.date=day::date AND NOT closure.is_instructional
+          )
+          AND NOT EXISTS(
+            SELECT 1 FROM day_plans plan
+            WHERE plan.school_id=${input.school_id}::uuid AND plan.class_section_id=${input.class_section.domain_id}::uuid
+              AND plan.date=day::date AND plan.published_version IS NOT NULL
+          )
+        ON CONFLICT(school_id,period_entity_id,occurrence_date,source_revision) DO NOTHING
+        RETURNING id`.execute(transaction);
+      occurrenceCount += result.rows.length;
+    }
+
+    return { event_id: event.id, schedule_entity_id: schedule.id, occurrence_count: occurrenceCount, replayed: false };
+  }
+
+  async resolveAt(rawInput: CampusTemporalContextQuery): Promise<CampusTemporalAssertion[]> {
+    const input = campusTemporalContextQuerySchema.parse(rawInput);
+    const recordedAsOf = input.recorded_as_of ?? new Date().toISOString();
+    const entityDomain = input.subject.type === "entity" ? input.subject.domain : null;
+    const entityDomainId = input.subject.type === "entity" ? input.subject.domain_id : null;
+    const humanUserId = input.subject.type === "human_agent" ? input.subject.user_id : null;
+    const rows = (await sql<TemporalAssertionRow>`
+      SELECT occurrence.id::text AS assertion_id,occurrence.id::text AS occurrence_id,
+        schedule.domain_id AS schedule_version_id,class_entity.id::text AS class_entity_id,
+        class_entity.label AS class_label,subject_entity.id::text AS subject_entity_id,
+        subject_entity.label AS subject_label,space_entity.id::text AS space_entity_id,
+        space_entity.label AS space_label,occurrence.title,occurrence.slot_type,
+        occurrence.starts_at,occurrence.ends_at,event.recorded_at,event.id::text AS event_id,
+        event.source_record_id,event.source_revision,
+        CASE WHEN ${humanUserId}::uuid IS NOT NULL THEN agent.id::text ELSE queried_entity.id::text END AS queried_subject_id,
+        CASE WHEN ${humanUserId}::uuid IS NOT NULL THEN agent.label ELSE queried_entity.label END AS queried_subject_label,
+        now()>=occurrence.starts_at AND now()<occurrence.ends_at AS current
+      FROM campus_model_schedule_occurrences occurrence
+      JOIN campus_model_events event ON event.id=occurrence.source_event_id AND event.school_id=occurrence.school_id
+      JOIN campus_model_entities schedule ON schedule.id=occurrence.schedule_entity_id
+      JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
+      LEFT JOIN campus_model_entities subject_entity ON subject_entity.id=occurrence.subject_entity_id
+      LEFT JOIN campus_model_entities space_entity ON space_entity.id=occurrence.space_entity_id
+      LEFT JOIN campus_model_agents agent ON agent.id=occurrence.responsible_agent_id
+        AND agent.user_id=${humanUserId}::uuid
+      LEFT JOIN campus_model_entities queried_entity ON queried_entity.school_id=occurrence.school_id
+        AND queried_entity.domain=${entityDomain} AND queried_entity.domain_id=${entityDomainId}
+      WHERE occurrence.school_id=${input.school_id}::uuid AND occurrence.state='expected'
+        AND occurrence.starts_at<=${input.at}::timestamptz AND occurrence.ends_at>${input.at}::timestamptz
+        AND event.recorded_at<=${recordedAsOf}::timestamptz
+        AND (
+          (${humanUserId}::uuid IS NOT NULL AND agent.id IS NOT NULL)
+          OR (${humanUserId}::uuid IS NULL AND queried_entity.id IS NOT NULL AND queried_entity.id IN (
+            occurrence.class_entity_id,occurrence.subject_entity_id,occurrence.space_entity_id,occurrence.schedule_entity_id
+          ))
+        )
+      ORDER BY occurrence.starts_at,occurrence.period_entity_id
+    `.execute(this.db)).rows;
+
+    return rows.map((row) => ({
+      assertion_id: row.assertion_id,
+      dimension: "expected",
+      assertion_type: "scheduled_context",
+      subject: {
+        type: input.subject.type,
+        id: row.queried_subject_id,
+        label: row.queried_subject_label,
+      },
+      context: {
+        occurrence_id: row.occurrence_id,
+        schedule_version_id: row.schedule_version_id,
+        class_entity_id: row.class_entity_id,
+        class_label: row.class_label,
+        subject_entity_id: row.subject_entity_id,
+        subject_label: row.subject_label,
+        space_entity_id: row.space_entity_id,
+        space_label: row.space_label,
+        title: row.title,
+        slot_type: row.slot_type,
+      },
+      valid_from: row.starts_at,
+      valid_until: row.ends_at,
+      recorded_at: row.recorded_at,
+      source: {
+        event_id: row.event_id,
+        event_type: "timetable.schedule_published",
+        source_domain: "timetable",
+        source_record_id: row.source_record_id,
+        source_revision: row.source_revision,
+      },
+      certainty: "planned",
+      freshness: row.current ? "current" : "historical",
+      contradictions: [],
+    }));
   }
 
   private async upsertEntity(

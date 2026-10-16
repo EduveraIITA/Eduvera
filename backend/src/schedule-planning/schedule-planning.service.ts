@@ -1,8 +1,9 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import type { AuthenticatedRequest, AuthUser } from '../common/request.js';
 import { DatabaseService } from '../database/database.service.js';
+import type { Database } from '../database/types.js';
 import { SchoolEventService } from '../school/school-event.service.js';
 import { SchoolService } from '../school/school.service.js';
 import { authorize, activeTeachers, dayContext } from '../day-plans/repository.js';
@@ -10,10 +11,22 @@ import { lockSchedule } from '../day-plans/schedule.js';
 import type { PlanDb } from '../day-plans/contracts.js';
 import { uuid } from '../day-plans/contracts.js';
 import { action, start, save, year, localConflicts, type Version, type Period } from './contracts.js';
+import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from '../campus-model-core/temporal-context.port.js';
+
+interface PublishedScheduleProjectionRow extends Period {
+  school_id:string; timezone:string; published_at:Date|string; class_section_id:string;
+  class_label:string; subject_name:string|null; subject_code:string|null;
+  space_id:string|null; space_name:string|null; space_revision:number|null;
+}
 
 @Injectable()
 export class SchedulePlanningService {
-  constructor(private readonly db:DatabaseService,private readonly events:SchoolEventService,private readonly school:SchoolService) {}
+  constructor(
+    private readonly db:DatabaseService,
+    private readonly events:SchoolEventService,
+    private readonly school:SchoolService,
+    @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?:TemporalContextPort,
+  ) {}
 
   async screen(user:AuthUser,term?:string) {
     const memberships=await this.db.selectFrom('school_memberships').select('school_id').where('user_id','=',user.id).where('role','=','admin').where('is_active','=',true).execute();
@@ -35,7 +48,7 @@ export class SchedulePlanningService {
     return {...data,coverage,school_id:schoolId,versions:versions.map(v=>({...v,periods:periods.filter(p=>p.version_id===v.id)}))};
   }
 
-  private async command<T>(req:AuthenticatedRequest,input:{school_id:string;idempotency_key:string},identity:unknown,run:(db:PlanDb)=>Promise<T>) {
+  private async command<T>(req:AuthenticatedRequest,input:{school_id:string;idempotency_key:string},identity:unknown,run:(db:Transaction<Database>)=>Promise<T>) {
     const hash=createHash('sha256').update(JSON.stringify(identity)).digest('hex');
     return this.db.transaction().execute(async db=>{
       await sql`SET LOCAL statement_timeout='30s'`.execute(db);
@@ -53,6 +66,47 @@ export class SchedulePlanningService {
     await db.insertInto('audit_events').values({school_id:school,actor_id:req.authUser.id,action:`schedule.${kind}`,target_type:'schedule',target_id:id,request_id:req.requestId,ip_hash:null,metadata}).execute();
     const admins=(await db.selectFrom('school_memberships').select('user_id').where('school_id','=',school).where('role','=','admin').where('is_active','=',true).execute()).map(m=>m.user_id);
     await this.events.enqueueUserEvent(db,{schoolId:school,eventType:'timetable.updated',aggregateType:'schedule',aggregateId:id,audienceUserIds:admins,idempotencyKey:`schedule:${id}:${req.requestId}:${kind}`,payload:{refresh:['principal.timetable'],change_kind:kind}});
+  }
+  private async projectPublishedSchedule(db:Transaction<Database>,req:AuthenticatedRequest,id:string,revision:number) {
+    if(!this.temporal)return;
+    const rows=(await sql<PublishedScheduleProjectionRow>`
+      SELECT version.school_id,school.timezone,version.published_at,version.class_section_id,
+        concat('Class ',section.grade,section.section) AS class_label,
+        period.*,subject.name AS subject_name,subject.code AS subject_code,
+        space.id AS space_id,space.name AS space_name,space.revision AS space_revision
+      FROM schedule_versions version
+      JOIN schools school ON school.id=version.school_id
+      JOIN class_sections section ON section.id=version.class_section_id
+      JOIN schedule_periods period ON period.version_id=version.id
+      LEFT JOIN subjects subject ON subject.id=period.subject_id
+      LEFT JOIN campus_spaces space ON space.id=period.space_id
+      WHERE version.id=${id}::uuid
+      ORDER BY period.weekday,period.period_number
+    `.execute(db)).rows;
+    const first=rows[0];
+    if(!first)throw new ConflictException('The published timetable has no periods to project.');
+    const version=(await sql<{starts_on:string;ends_on:string}>`SELECT starts_on::text,ends_on::text FROM schedule_versions WHERE id=${id}::uuid`.execute(db)).rows[0]!;
+    await this.temporal.recordPublishedSchedule(db,{
+      school_id:first.school_id,
+      actor_user_id:req.authUser.id,
+      schedule_version_id:id,
+      schedule_revision:revision,
+      starts_on:version.starts_on,
+      ends_on:version.ends_on,
+      timezone:first.timezone,
+      published_at:new Date(first.published_at).toISOString(),
+      class_section:{kind:'class',domain:'academic_structure',domain_id:first.class_section_id,label:first.class_label,lifecycle_state:'active',source_revision:1,metadata:{}},
+      periods:rows.map(row=>({
+        period_id:row.id,weekday:row.weekday,period_number:row.period_number,
+        starts_at:row.starts_at,ends_at:row.ends_at,title:row.title,slot_type:row.slot_type,
+        teacher_user_id:row.teacher_user_id,
+        subject:row.subject_id?{kind:'subject',domain:'academic_structure',domain_id:row.subject_id,label:row.subject_name??row.subject_code??row.title,lifecycle_state:'active' as const,source_revision:1,metadata:{code:row.subject_code}}:null,
+        space:row.space_id?{kind:'space',domain:'campus_topology',domain_id:row.space_id,label:row.space_name??row.room,lifecycle_state:'active' as const,source_revision:row.space_revision??1,metadata:{}}:null,
+        room_snapshot:row.room,
+      })),
+      correlation_id:req.requestId,
+      causation_event_id:null,
+    });
   }
   private async draft(db:PlanDb,school:string,id:string,revision?:number) {
     uuid.parse(id);
@@ -154,6 +208,7 @@ export class SchedulePlanningService {
         FROM periods a JOIN periods b ON a.date=b.date AND a.id<>b.id AND a.starts_at<b.ends_at AND b.starts_at<a.ends_at
         WHERE a.class_section_id=${v.class_section_id}::uuid AND (a.class_section_id=b.class_section_id OR (a.teacher_user_id IS NOT NULL AND a.teacher_user_id=b.teacher_user_id) OR (a.slot_type<>'break' AND b.slot_type<>'break' AND trim(a.room)<>'' AND lower(trim(a.room))=lower(trim(b.room)))) LIMIT 1`.execute(db)).rows[0];
       if(conflict)throw new ConflictException(`Resolve the ${conflict.type} clash on ${conflict.date}, period ${conflict.period_number}, before publishing.`);
+      await this.projectPublishedSchedule(db,req,id,publishedRevision);
       await this.audit(db,req,v.school_id,id,'published',{starts_on:v.starts_on,ends_on:v.ends_on,revision:v.revision+1});
       await this.events.enqueueTimetableUpdate(db,{schoolId:v.school_id,classSectionId:v.class_section_id,slotId:id,requestId:req.requestId,action:'updated'});
       await sql`

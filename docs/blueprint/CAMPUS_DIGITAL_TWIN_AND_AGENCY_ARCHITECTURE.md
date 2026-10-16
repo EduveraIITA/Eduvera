@@ -459,6 +459,18 @@ and the wider cross-domain command set remain Phase 2 work.
 
 Exit: for a selected teacher, learner, class, room or resource, an authorized caller can ask what was planned, observed, accepted and inferred at a given time and receive a source-backed answer. Replaying the same events produces the same projection, and no timetable entry or missing observation is presented as proof of physical presence.
 
+Implementation checkpoint (16 October 2026): migration 104 and the private
+`TemporalContextPort` deliver the first Phase 2A slice. A newly published recurring
+timetable writes one idempotent `plan` event and expands its bounded date range into
+dated expected occurrences in the institution timezone, excluding already recorded
+closures and published daily-plan overrides. Existing published versions are safely
+backfilled. The `resolveAt` contract can resolve an expected context for a human
+agent or connected class/subject/space at an explicit effective instant and optional
+recording-time cutoff. It returns source event, revision, validity interval and
+`planned` certainty; it does not report presence. Closure/day-plan changes after the
+initial projection, general replay tooling, observation fusion, contradictions and
+inferred state remain subsequent Phase 2A work.
+
 ### Phase 3 - Agents and authority
 
 - register human, device, integration and deterministic software agents;

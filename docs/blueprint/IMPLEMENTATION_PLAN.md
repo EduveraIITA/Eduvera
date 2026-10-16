@@ -177,8 +177,27 @@ Before connecting further domains, implement and verify the Phase 2A contracts i
 `CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md`: typed event/effective/recorded time,
 schedule occurrence identity, supersession lineage, idempotent replay, `asOf` context
 resolution and source-backed state assertions. This is target architecture only at
-this checkpoint; the current core does not yet provide schedule expansion, movement
-resolution, sensor fusion or campus-wide replay.
+this checkpoint.
+
+The first implementation slice is now present locally on the digital-twin branch.
+Migration `104_campus_model_temporal_runtime.sql` adds a private, tenant-constrained
+event journal and rebuildable schedule-occurrence projection. Schedule publication
+uses `TemporalContextPort` in the same database transaction to register the schedule,
+period and related identities, retain an idempotent plan event, and expand expected
+occurrences in the institution timezone. A typed `resolveAt` query returns planned
+context with source, revision, valid interval and recording time for a human agent or
+connected entity. Existing published schedules are backfilled without creating
+attendance or location observations.
+
+Verified evidence: backend build and focused lint pass; 12 focused core/migration
+contract tests pass; migration 104 completes under transaction validation and is
+applied to the loopback development database; a disposable runtime verification
+created one dated occurrence, resolved exactly one `expected`/`planned` assertion for
+its human agent, and removed the fixture. The current local database contained no
+pre-existing published recurring versions to backfill. Post-publication closure and
+daily-plan projection updates, observation fusion, contradiction ownership, movement
+resolution and campus-wide replay remain open and must not be represented as
+implemented.
 
 ## Active delivery: connected student lifecycle — 16 October 2026 (local)
 

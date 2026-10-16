@@ -103,8 +103,64 @@ export const campusModelObservationTransitionSchema = z.object({
   state: z.enum(["accepted", "rejected", "quarantined", "superseded"]),
 }).strict();
 
+const timezoneSchema = z.string().trim().min(1).max(80).refine((value) => {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}, "Use a valid IANA timezone.");
+
+export const publishedSchedulePeriodSchema = z.object({
+  period_id: z.string().uuid(),
+  weekday: z.number().int().min(1).max(7),
+  period_number: z.number().int().min(1).max(24),
+  starts_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  ends_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  title: z.string().trim().min(1).max(120),
+  slot_type: z.enum(["class", "break", "activity"]),
+  subject: campusModelEntitySchema.nullable().default(null),
+  teacher_user_id: z.string().uuid().nullable().default(null),
+  space: campusModelEntitySchema.nullable().default(null),
+  room_snapshot: z.string().trim().max(80).default(""),
+}).strict().refine((value) => value.ends_at > value.starts_at, {
+  path: ["ends_at"],
+  message: "Period end must follow its start.",
+});
+
+export const publishedScheduleProjectionSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  schedule_version_id: z.string().uuid(),
+  schedule_revision: z.number().int().positive(),
+  starts_on: z.iso.date(),
+  ends_on: z.iso.date(),
+  timezone: timezoneSchema,
+  published_at: z.string().datetime({ offset: true }),
+  class_section: campusModelEntitySchema,
+  periods: z.array(publishedSchedulePeriodSchema).min(1).max(168),
+  correlation_id: z.string().uuid(),
+  causation_event_id: z.string().uuid().nullable().default(null),
+}).strict().refine((value) => value.ends_on >= value.starts_on, {
+  path: ["ends_on"],
+  message: "Schedule end must not precede its start.",
+});
+
+export const campusTemporalContextQuerySchema = z.object({
+  school_id: z.string().uuid(),
+  at: z.string().datetime({ offset: true }),
+  recorded_as_of: z.string().datetime({ offset: true }).optional(),
+  subject: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("entity"), domain: identifier, domain_id: z.string().trim().min(1).max(160) }).strict(),
+    z.object({ type: z.literal("human_agent"), user_id: z.string().uuid() }).strict(),
+  ]),
+}).strict();
+
 export type CampusModelEntitySnapshot = z.infer<typeof campusModelEntitySchema>;
 export type CampusModelRelationshipSnapshot = z.infer<typeof campusModelRelationshipSchema>;
 export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChangeSchema>;
 export type CampusModelObservation = z.infer<typeof campusModelObservationSchema>;
 export type CampusModelObservationTransition = z.infer<typeof campusModelObservationTransitionSchema>;
+export type PublishedScheduleProjection = z.infer<typeof publishedScheduleProjectionSchema>;
+export type CampusTemporalContextQuery = z.infer<typeof campusTemporalContextQuerySchema>;
