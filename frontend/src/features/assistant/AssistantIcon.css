@@ -3,15 +3,11 @@
   flex-shrink: 0;
   overflow: visible;
   vertical-align: middle;
-  filter: drop-shadow(0 0 3px rgb(0 139 255 / 28%));
   animation: assistant-icon-float 4s ease-in-out infinite;
 }
 @keyframes assistant-icon-float {
   0%, 100% { transform: translateY(0) rotate(-2deg); }
   50% { transform: translateY(-2px) rotate(2deg); }
-}
-.assistant-tab.is-active .assistant-brand-icon {
-  filter: drop-shadow(0 0 5px rgb(0 139 255 / 45%));
 }
 .assistant-response header > .assistant-brand-icon { margin-right: auto; margin-left: 2px; }
 .assistant-page__empty > .assistant-brand-icon { margin-bottom: 16px; }
