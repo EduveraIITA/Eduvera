@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -6,7 +7,6 @@ import {
   Check,
   ImageOff,
   ImagePlus,
-  LoaderCircle,
   ScanSearch,
   ScanFace,
   ShieldCheck,

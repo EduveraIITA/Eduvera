@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon } from "../../components/ThatCampusLoader";
 import { useId, useState, type FormEvent } from "react";
 import { Bot, RefreshCw, Send, Sparkles, X } from "lucide-react";
 
@@ -80,7 +81,7 @@ export function AttendanceCopilotSheet({ open, initialQuestion = promptSuggestio
           {state === "success" && <div className="copilot-answer" role="status"><Bot size={20} /><span><strong>Based on your live attendance</strong><p>{answer}</p></span></div>}
           {state === "error" && <div className="copilot-error" role="alert"><strong>{errorMessage || "Copilot couldn't answer just now."}</strong>{onAsk && <button type="button" onClick={() => void ask()}><RefreshCw size={15} />Retry</button>}</div>}
           <button className="primary-action" type="submit" disabled={!question.trim() || state === "loading"}>
-            {state === "loading" ? <><span className="button-spinner" />Checking attendance...</> : <><Send size={18} />{state === "success" ? "Ask another question" : "Ask Copilot"}</>}
+            {state === "loading" ? <><ThatCampusLoadingIcon size={18} />Checking attendance...</> : <><Send size={18} />{state === "success" ? "Ask another question" : "Ask Copilot"}</>}
           </button>
         </form>
       </section>

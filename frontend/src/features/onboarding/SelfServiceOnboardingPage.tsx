@@ -1,6 +1,7 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Clock3, GraduationCap, LoaderCircle, LogOut, ShieldCheck, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Clock3, GraduationCap, LogOut, ShieldCheck, UsersRound } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { SchoolBrand } from "../school/SchoolBrand";
