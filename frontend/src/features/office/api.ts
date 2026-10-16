@@ -32,6 +32,13 @@ export interface CampusResourceHolding {
   quantity: number; asset_tag: string | null; state: "available" | "unavailable" | "retired"; notes: string; revision: number;
   resource_type_name: string; category: CampusResourceType["category"]; tracking_mode: CampusResourceType["tracking_mode"]; unit_label: string;
 }
+export interface CampusObservationSource {
+  id: string; kind: "device" | "integration"; external_ref: string; label: string;
+  status: "active" | "suspended" | "revoked"; revision: number;
+  capabilities: Array<"observe:attendance.capture" | "observe:gate.movement">;
+  scope_entity_id: string | null; scope_domain: string | null; scope_domain_id: string | null; scope_label: string | null;
+  updated_at: string;
+}
 export interface InstitutionSetup {
   school: { id: string; name: string; code: string; timezone: string; institution_kind: string };
   campuses: InstitutionCampus[]; spaces: CampusSpace[]; resource_types: CampusResourceType[]; holdings: CampusResourceHolding[];
@@ -39,6 +46,7 @@ export interface InstitutionSetup {
   staff: Array<{ id: string; first_name: string; last_name: string; staff_code: string; designation: string; status: string; assignment_id: string | null; campus_id: string | null; assignment_revision: number | null; effective_from: string | null; effective_until: string | null }>;
   activity: Array<{ id: string; kind: "setup" | "attendance"; action: string; subject_label: string | null; item_count: number; state: string; occurred_at: string; actor_label: string }>;
   signals: Array<{ id: string; kind: "expected_after_exit" | "attendance_after_exit"; severity: "review" | "important"; owner: "gate" | "attendance"; student_id: string; person_label: string; class_label: string; activity_label: string; gate_label: string; gate_observed_at: string; expected_from: string; expected_until: string; attendance_status: string | null }>;
+  observation_sources: CampusObservationSource[];
   readiness: Array<{ key: string; label: string; complete: boolean; detail: string }>;
   summary: { campuses: number; spaces: number; resources: number; classes: number; classes_with_home_space: number; staff: number; complete: boolean };
 }
@@ -65,6 +73,8 @@ export const createAsset = (schoolId: string, values: object) => apiFetch<Campus
 export const updateAsset = (schoolId: string, id: string, values: object) => apiFetch<CampusResourceHolding>(schoolPath(schoolId, `institution-setup/assets/${id}`), { method: "PATCH", body: JSON.stringify(values) });
 export const placeClass = (schoolId: string, id: string, values: object) => apiFetch(schoolPath(schoolId, `institution-setup/classes/${id}/location`), { method: "PATCH", body: JSON.stringify(values) });
 export const placeStaff = (schoolId: string, id: string, values: object) => apiFetch(schoolPath(schoolId, `institution-setup/staff/${id}/campus`), { method: "POST", body: JSON.stringify(values) });
+export const registerObservationSource = (schoolId: string, values: object) => apiFetch<CampusObservationSource>(schoolPath(schoolId, "institution-setup/observation-sources"), { method: "POST", body: JSON.stringify(values) });
+export const setObservationSourceStatus = (schoolId: string, id: string, values: object) => apiFetch<CampusObservationSource>(schoolPath(schoolId, `institution-setup/observation-sources/${id}/status`), { method: "PATCH", body: JSON.stringify(values) });
 export type CatalogKind = "terms" | "classes" | "subjects";
 export type CatalogMutation = Record<string, unknown> & { expected_revision?: number; confirmed?: boolean; change_reason?: string };
 export const saveCatalog = (schoolId: string, kind: CatalogKind, values: CatalogMutation, id?: string) => apiFetch<Term | ClassSection | Subject>(schoolPath(schoolId, `catalog/${kind}${id ? `/${id}` : ""}`), { method: id ? "PATCH" : "POST", body: JSON.stringify(values) });

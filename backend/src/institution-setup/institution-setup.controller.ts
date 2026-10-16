@@ -62,4 +62,14 @@ export class InstitutionSetupController {
   placeStaff(@Req() request: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("staffProfileId") staffProfileId: string, @Body() body: unknown) {
     return this.setup.placeStaff(request.authUser, schoolId, staffProfileId, body, request);
   }
+
+  @Post("observation-sources/")
+  registerObservationSource(@Req() request: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Body() body: unknown) {
+    return this.setup.registerObservationSource(request.authUser, schoolId, body, request);
+  }
+
+  @Patch("observation-sources/:sourceId/status/")
+  setObservationSourceStatus(@Req() request: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("sourceId") sourceId: string, @Body() body: unknown) {
+    return this.setup.setObservationSourceStatus(request.authUser, schoolId, sourceId, body, request);
+  }
 }

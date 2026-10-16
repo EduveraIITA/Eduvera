@@ -33,6 +33,7 @@ const setup = (): InstitutionSetup => ({
   staff: [{ id: "staff-1", first_name: "Kavita", last_name: "Mehta", staff_code: "T001", designation: "Teacher", status: "active", assignment_id: "assignment-1", campus_id: "campus-1", assignment_revision: 1, effective_from: "2026-04-01", effective_until: null }],
   activity: [{ id: "activity-1", kind: "setup", action: "space.created", subject_label: "Room 204", item_count: 1, state: "accepted", occurred_at: "2026-10-16T09:00:00.000Z", actor_label: "Ananya Yadav" }],
   signals: [],
+  observation_sources: [],
   readiness: [
     { key: "campus", label: "Campus", complete: true, detail: "1 active" },
     { key: "spaces", label: "Spaces", complete: true, detail: "1 mapped" },
@@ -85,5 +86,18 @@ describe("campus setup", () => {
     expect(screen.getByText("Aarav Sharma has records to cross-check")).toBeVisible();
     expect(screen.getByText(/does not change attendance or infer absence/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Attendance" })).toHaveAttribute("href", "/principal/attendance");
+  });
+
+  it("shows registered sources with their authority and immediate lifecycle control", async () => {
+    const data = setup();
+    data.observation_sources = [{ id: "source-1", kind: "device", external_ref: "main-gate-01", label: "Main gate reader", status: "active", revision: 1, capabilities: ["observe:gate.movement"], scope_entity_id: "space-1", scope_domain: "campus_topology", scope_domain_id: "space-1", scope_label: "Room 204", updated_at: "2026-10-16T09:00:00.000Z" }];
+    vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    show();
+
+    expect(await screen.findByRole("heading", { name: "Devices & connections" })).toBeVisible();
+    expect(screen.getByText("Main gate reader")).toBeVisible();
+    expect(screen.getByText("Gate movement · Room 204")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeVisible();
+    expect(screen.getByText(/new device evidence stays pending/i)).toBeVisible();
   });
 });

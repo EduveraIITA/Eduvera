@@ -15,6 +15,18 @@ The architecture has two deliberately different faces:
 
 Users must never need to understand graph terminology, twin identities, command envelopes or agent runtimes to operate the product. The conceptual model is infrastructure. The product remains a set of clear, role-appropriate campus workflows.
 
+### Registered observation-source authority
+
+Devices and integrations are explicit campus actors, never identities inferred from
+incoming payloads. An administrator registers a stable source identity, grants only
+named observation capabilities, and scopes each grant to the institution or a
+connected campus entity. Source status and current authority are checked at ingress.
+Suspension stops new evidence without destroying history; revocation closes current
+authority and is terminal for that source identity. External evidence always begins
+as reviewable evidence rather than accepted domain truth. Operating-rule versions may
+explain the workflow applied after capture, but no Operating rule may silently create
+device authority or convert an unknown source into an active one.
+
 ## 2. Non-negotiable boundary: model core is separate and API-driven
 
 The campus-model core is an independently owned backend module. It is not embedded in React components, feature-specific controllers or database queries spread across the application.

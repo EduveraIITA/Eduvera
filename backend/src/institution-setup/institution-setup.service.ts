@@ -6,6 +6,7 @@ import { z } from "zod";
 import { AuditService } from "../common/audit.service.js";
 import type { AuthUser } from "../common/request.js";
 import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
+import { OBSERVATION_SOURCE_REGISTRY_PORT, type ObservationSourceRegistryPort } from "../campus-model-core/observation-source-registry.port.js";
 import type { CampusModelEntitySnapshot, CampusModelRelationshipSnapshot } from "../campus-model-core/contracts.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
@@ -59,6 +60,15 @@ const holdingCreate = z.object(holdingFields).strict();
 const holdingUpdate = z.object({ ...holdingFields, expected_revision: z.number().int().positive() }).strict();
 const placement = z.object({ campus_id: uuid, home_space_id: uuid.nullable().optional(), effective_from: z.string().date(), expected_current_revision: z.number().int().positive().nullable() }).strict();
 const staffPlacement = placement.omit({ home_space_id: true });
+const sourceCreate = z.object({
+  kind: z.enum(["device", "integration"]), external_ref: z.string().trim().min(3).max(160),
+  label: z.string().trim().min(2).max(200),
+  capabilities: z.array(z.enum(["observe:attendance.capture", "observe:gate.movement"])).min(1).max(2),
+  scope_type: z.enum(["institution", "campus", "space"]), scope_id: uuid.nullable().default(null),
+}).strict().superRefine((value, context) => {
+  if (value.scope_type !== "institution" && !value.scope_id) context.addIssue({ code: "custom", path: ["scope_id"], message: "Choose the campus or space this source can observe." });
+});
+const sourceState = z.object({ status: z.enum(["active", "suspended", "revoked"]), expected_revision: z.number().int().positive() }).strict();
 
 @Injectable()
 export class InstitutionSetupService {
@@ -66,6 +76,7 @@ export class InstitutionSetupService {
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
     @Inject(CAMPUS_MODEL_CORE_PORT) private readonly campusModel: CampusModelCorePort,
+    @Inject(OBSERVATION_SOURCE_REGISTRY_PORT) private readonly observationSources: ObservationSourceRegistryPort,
   ) {}
 
   private async requireAdmin(user: AuthUser, schoolId: string, db: Db = this.db) {
@@ -164,7 +175,7 @@ export class InstitutionSetupService {
     await this.requireAdmin(user, schoolId);
     const school = await this.db.selectFrom("schools").select(["id", "name", "code", "timezone", "institution_kind"]).where("id", "=", schoolId).executeTakeFirst();
     if (!school) throw new NotFoundException("Institution not found.");
-    const [campuses, spaces, resourceTypes, holdings, classes, staff, history, activity, signals] = await Promise.all([
+    const [campuses, spaces, resourceTypes, holdings, classes, staff, history, activity, signals, observationSources] = await Promise.all([
       this.db.selectFrom("institution_campuses").selectAll().where("school_id", "=", schoolId).orderBy("is_primary", "desc").orderBy("name").execute(),
       this.db.selectFrom("campus_spaces").selectAll().where("school_id", "=", schoolId).orderBy("name").execute(),
       this.db.selectFrom("campus_resource_types").selectAll().where("school_id", "=", schoolId).orderBy("name").execute(),
@@ -187,6 +198,7 @@ export class InstitutionSetupService {
       this.db.selectFrom("institution_setup_audits").selectAll().where("school_id", "=", schoolId).orderBy("created_at", "desc").limit(20).execute(),
       this.campusModel.recentActivity(schoolId),
       this.campusModel.operationalSignals(schoolId),
+      this.observationSources.listObservationSources(schoolId),
     ]);
     const activeCampuses = campuses.filter((item) => item.status === "active");
     const locatedClasses = classes.filter((item) => item.home_space_id).length;
@@ -198,10 +210,53 @@ export class InstitutionSetupService {
       { key: "classes", label: "Class campuses", complete: classes.length === 0 || assignedClasses === classes.length, detail: `${assignedClasses}/${classes.length} assigned` },
       { key: "staff", label: "Staff campuses", complete: staff.length === 0 || locatedStaff === staff.length, detail: `${locatedStaff}/${staff.length} assigned` },
     ];
-    return { school, campuses, spaces, resource_types: resourceTypes, holdings, classes, staff, history, activity, signals, readiness,
+    return { school, campuses, spaces, resource_types: resourceTypes, holdings, classes, staff, history, activity, signals, observation_sources: observationSources, readiness,
       summary: { campuses: activeCampuses.length, spaces: spaces.filter((item) => item.status === "active").length,
         resources: holdings.filter((item) => item.state !== "retired").reduce((sum, item) => sum + item.quantity, 0),
         classes: classes.length, classes_with_home_space: locatedClasses, staff: staff.length, complete: readiness.every((item) => item.complete) } };
+  }
+
+  async registerObservationSource(user: AuthUser, schoolId: string, body: unknown, request: Request) {
+    const data = sourceCreate.parse(body);
+    const row = await this.db.transaction().execute(async (db) => {
+      await this.requireAdmin(user, schoolId, db);
+      let scope: { domain: string; domain_id: string } | null = null;
+      if (data.scope_type === "campus") { await this.campus(schoolId, data.scope_id!, db); scope = { domain: "campus_topology", domain_id: data.scope_id! }; }
+      if (data.scope_type === "space") {
+        const item = await db.selectFrom("campus_spaces").select(["id", "campus_id"]).where("school_id", "=", schoolId).where("id", "=", data.scope_id!).executeTakeFirst();
+        if (!item) throw new NotFoundException("Space not found in this institution.");
+        scope = { domain: "campus_topology", domain_id: item.id };
+      }
+      const rule = (await sql<{ revision: number }>`SELECT revision FROM institution_operating_rules WHERE school_id=${schoolId}::uuid`.execute(db)).rows[0];
+      const created = await this.observationSources.registerObservationSource(db, { school_id: schoolId, actor_user_id: user.id,
+        kind: data.kind, external_ref: data.external_ref, label: data.label, capabilities: data.capabilities,
+        scope, operating_rule_version_ref: rule ? `institution-operating-rules:${rule.revision}` : null });
+      await this.sourceLifecycleEvent(db, schoolId, user.id, "observation_source.registered", created.id, request.requestId, { label: created.label, status: created.status });
+      return created;
+    });
+    await this.externalAudit("institution.setup.observation_source.registered", request, user, schoolId, "observation_source", row.id);
+    return row;
+  }
+
+  async setObservationSourceStatus(user: AuthUser, schoolId: string, sourceId: string, body: unknown, request: Request) {
+    const data = sourceState.parse(body);
+    const row = await this.db.transaction().execute(async (db) => {
+      await this.requireAdmin(user, schoolId, db);
+      const updated = await this.observationSources.setObservationSourceStatus(db, { school_id: schoolId, actor_user_id: user.id,
+        source_id: sourceId, status: data.status, expected_revision: data.expected_revision });
+      await this.sourceLifecycleEvent(db, schoolId, user.id, `observation_source.${data.status}`, updated.id, request.requestId, { label: updated.label, status: updated.status });
+      return updated;
+    });
+    await this.externalAudit(`institution.setup.observation_source.${data.status}`, request, user, schoolId, "observation_source", row.id);
+    return row;
+  }
+
+  private async sourceLifecycleEvent(db: Transaction<Database>, schoolId: string, actorId: string, action: string, targetId: string, requestId: string | undefined, metadata: Record<string, unknown>) {
+    await db.insertInto("institution_setup_audits").values({ school_id: schoolId, actor_id: actorId, action, target_type: "observation_source", target_id: targetId, metadata }).execute();
+    const audience = await db.selectFrom("school_memberships").select("user_id").where("school_id", "=", schoolId).where("role", "=", "admin").where("is_active", "=", true).execute();
+    await db.insertInto("event_outbox").values({ school_id: schoolId, event_type: "institution.setup.updated", aggregate_type: "observation_source", aggregate_id: targetId,
+      audience_user_ids: audience.map((item) => item.user_id), payload: { refresh: ["principal.administration"], action, ...metadata },
+      idempotency_key: `institution-setup:${requestId ?? randomUUID()}:${action}:${targetId}` }).execute();
   }
 
   async createCampus(user: AuthUser, schoolId: string, body: unknown, request: Request) {

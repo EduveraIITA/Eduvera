@@ -5,6 +5,7 @@ import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort, CampusOperationalSignal } from "./campus-model-core.port.js";
 import type { ObservationIngressPort } from "./observation-ingress.port.js";
+import type { ObservationCapability, ObservationSource, ObservationSourceRegistryPort, RegisterObservationSource } from "./observation-source-registry.port.js";
 import type {
   CampusTemporalAssertion,
   PlanReconciliationReceipt,
@@ -81,7 +82,7 @@ interface TemporalAssertionRow {
 }
 
 @Injectable()
-export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, TemporalContextPort {
+export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort {
   constructor(private readonly db: DatabaseService) {}
 
   async recordAcceptedChange(
@@ -169,10 +170,13 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const observations = rawObservations.map((item) => campusModelObservationSchema.parse(item));
     const ids: string[] = [];
     for (const observation of observations) {
+      if (observation.captured_by && observation.captured_by.kind !== "human" && observation.state === "accepted") {
+        throw new ConflictException("Device and integration evidence must be reviewed by its owning workflow before acceptance.");
+      }
       const actor = observation.captured_by
         ? observation.captured_by.kind === "human"
           ? await this.ensureHumanAgent(transaction, observation.school_id, observation.captured_by.user_id)
-          : await this.ensureExternalAgent(transaction, observation.school_id, observation.captured_by)
+          : await this.requireAuthorizedExternalAgent(transaction, observation.school_id, observation.captured_by, observation.source_type, observation.context)
         : await this.ensureHumanAgent(transaction, observation.school_id, observation.actor_user_id!);
       const subject = await this.upsertEntity(transaction, observation.school_id, observation.subject);
       const context = observation.context
@@ -205,6 +209,63 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       ids.push(existing.id);
     }
     return ids;
+  }
+
+  async listObservationSources(schoolId: string): Promise<ObservationSource[]> {
+    return this.listObservationSourcesIn(this.db, schoolId);
+  }
+
+  private async listObservationSourcesIn(executor: DatabaseService | Transaction<Database>, schoolId: string): Promise<ObservationSource[]> {
+    return (await sql<ObservationSource>`SELECT agent.id,agent.agent_kind AS kind,agent.external_ref,agent.label,
+        agent.status,agent.revision,agent.updated_at,scope.id AS scope_entity_id,scope.domain AS scope_domain,
+        scope.domain_id AS scope_domain_id,scope.label AS scope_label,
+        COALESCE(array_agg(authority.capability ORDER BY authority.capability)
+          FILTER (WHERE authority.id IS NOT NULL AND authority.revoked_at IS NULL),ARRAY[]::varchar[]) AS capabilities
+      FROM campus_model_agents agent
+      LEFT JOIN campus_model_agent_authorities authority ON authority.agent_id=agent.id
+        AND authority.school_id=agent.school_id AND authority.revoked_at IS NULL
+        AND authority.effective_from<=now() AND (authority.effective_until IS NULL OR authority.effective_until>now())
+      LEFT JOIN campus_model_entities scope ON scope.id=authority.scope_entity_id AND scope.school_id=agent.school_id
+      WHERE agent.school_id=${schoolId}::uuid AND agent.agent_kind IN ('device','integration')
+      GROUP BY agent.id,scope.id,scope.domain,scope.domain_id,scope.label
+      HAVING count(authority.id)>0
+      ORDER BY agent.status='active' DESC,agent.label`.execute(executor)).rows;
+  }
+
+  async registerObservationSource(transaction: Transaction<Database>, input: RegisterObservationSource): Promise<ObservationSource> {
+    const scope = input.scope ? (await sql<EntityRow & { label: string }>`SELECT id,domain,domain_id,label FROM campus_model_entities
+      WHERE school_id=${input.school_id}::uuid AND domain=${input.scope.domain} AND domain_id=${input.scope.domain_id}
+      FOR UPDATE`.execute(transaction)).rows[0] : null;
+    if (input.scope && !scope) throw new ConflictException("The selected campus scope is not connected yet.");
+    const existing = (await sql<{ id: string }>`SELECT id FROM campus_model_agents WHERE school_id=${input.school_id}::uuid
+      AND agent_kind=${input.kind} AND external_ref=${input.external_ref} FOR UPDATE`.execute(transaction)).rows[0];
+    if (existing) throw new ConflictException("This source ID is already registered.");
+    const agent = (await sql<{ id: string }>`INSERT INTO campus_model_agents(school_id,agent_kind,external_ref,label,status,metadata)
+      VALUES(${input.school_id}::uuid,${input.kind},${input.external_ref},${input.label},'active','{}'::jsonb)
+      RETURNING id`.execute(transaction)).rows[0];
+    if (!agent) throw new ConflictException("The source could not be registered.");
+    for (const capability of input.capabilities) {
+      await sql`INSERT INTO campus_model_agent_authorities(school_id,agent_id,capability,scope_entity_id,effective_from,
+        grant_source,grant_reference_id,approved_by,operating_rule_version_ref,constraints)
+        VALUES(${input.school_id}::uuid,${agent.id}::uuid,${capability},${scope?.id ?? null}::uuid,now(),
+          'institution_setup',${`observation-source:${agent.id}`},${input.actor_user_id}::uuid,
+          ${input.operating_rule_version_ref},'{}'::jsonb)`.execute(transaction);
+    }
+    return (await this.listObservationSourcesIn(transaction, input.school_id)).find((item) => item.id === agent.id)!;
+  }
+
+  async setObservationSourceStatus(transaction: Transaction<Database>, input: { school_id: string; actor_user_id: string; source_id: string; status: "active" | "suspended" | "revoked"; expected_revision: number }): Promise<ObservationSource> {
+    const current = (await sql<{ status: string }>`SELECT status FROM campus_model_agents WHERE id=${input.source_id}::uuid
+      AND school_id=${input.school_id}::uuid AND agent_kind IN ('device','integration') FOR UPDATE`.execute(transaction)).rows[0];
+    if (!current) throw new ConflictException("The device or connection was not found.");
+    if (current.status === "revoked" && input.status !== "revoked") throw new ConflictException("A revoked source cannot be reactivated. Register it again with a new source ID.");
+    const updated = (await sql<{ id: string }>`UPDATE campus_model_agents SET status=${input.status},revision=revision+1,updated_at=now()
+      WHERE id=${input.source_id}::uuid AND school_id=${input.school_id}::uuid AND revision=${input.expected_revision}
+      RETURNING id`.execute(transaction)).rows[0];
+    if (!updated) throw new ConflictException("This source changed. Refresh and review its latest state.");
+    if (input.status === "revoked") await sql`UPDATE campus_model_agent_authorities SET revoked_at=now(),revoked_by=${input.actor_user_id}::uuid
+      WHERE school_id=${input.school_id}::uuid AND agent_id=${input.source_id}::uuid AND revoked_at IS NULL`.execute(transaction);
+    return (await this.listObservationSourcesIn(transaction, input.school_id)).find((item) => item.id === input.source_id)!;
   }
 
   async transitionObservations(
@@ -726,23 +787,35 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     return agent;
   }
 
-  private async ensureExternalAgent(
+  private async requireAuthorizedExternalAgent(
     transaction: Transaction<Database>,
     schoolId: string,
     source: { kind: "device" | "integration"; external_ref: string; label: string; metadata: Record<string, unknown> },
+    sourceType: string,
+    context: CampusModelEntitySnapshot | null,
   ): Promise<AgentRow> {
-    const result = await sql<AgentRow>`
-      INSERT INTO campus_model_agents(school_id,agent_kind,external_ref,label,status,metadata)
-      VALUES (${schoolId}::uuid,${source.kind},${source.external_ref},${source.label},'active',${JSON.stringify(source.metadata)}::jsonb)
-      ON CONFLICT(school_id,agent_kind,external_ref) WHERE external_ref IS NOT NULL DO UPDATE SET
-        label=EXCLUDED.label,metadata=EXCLUDED.metadata,
-        revision=CASE WHEN campus_model_agents.label IS DISTINCT FROM EXCLUDED.label
-          OR campus_model_agents.metadata IS DISTINCT FROM EXCLUDED.metadata
-          THEN campus_model_agents.revision+1 ELSE campus_model_agents.revision END,
-        updated_at=now()
-      RETURNING id`.execute(transaction);
-    const agent = result.rows[0];
-    if (!agent) throw new ConflictException("The observation source could not be registered as a campus agent.");
+    if (!(["attendance.capture", "gate.movement"] as string[]).includes(sourceType)) {
+      throw new ConflictException("This observation type is not enabled for registered sources.");
+    }
+    const contextEntity = context ? (await sql<{ id: string }>`SELECT id FROM campus_model_entities
+      WHERE school_id=${schoolId}::uuid AND domain=${context.domain} AND domain_id=${context.domain_id}`.execute(transaction)).rows[0] : null;
+    const capability = `observe:${sourceType}` as ObservationCapability;
+    const agent = (await sql<AgentRow>`WITH RECURSIVE context_scope AS (
+        SELECT ${contextEntity?.id ?? null}::uuid AS id
+        UNION
+        SELECT relationship.target_entity_id FROM campus_model_relationships relationship
+        JOIN context_scope child ON child.id=relationship.source_entity_id
+        WHERE relationship.school_id=${schoolId}::uuid AND relationship.relation_type IN ('part_of','located_in','home_space')
+          AND relationship.effective_from<=now() AND relationship.effective_until IS NULL
+      )
+      SELECT agent.id FROM campus_model_agents agent
+      JOIN campus_model_agent_authorities authority ON authority.agent_id=agent.id AND authority.school_id=agent.school_id
+      WHERE agent.school_id=${schoolId}::uuid AND agent.agent_kind=${source.kind} AND agent.external_ref=${source.external_ref}
+        AND agent.status='active' AND authority.capability=${capability} AND authority.revoked_at IS NULL
+        AND authority.effective_from<=now() AND (authority.effective_until IS NULL OR authority.effective_until>now())
+        AND (authority.scope_entity_id IS NULL OR authority.scope_entity_id IN (SELECT id FROM context_scope))
+      LIMIT 1 FOR UPDATE OF agent`.execute(transaction)).rows[0];
+    if (!agent) throw new ConflictException("This device or connection is not active or is outside its approved scope.");
     return agent;
   }
 

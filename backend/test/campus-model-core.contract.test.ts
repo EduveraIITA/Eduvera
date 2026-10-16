@@ -251,4 +251,14 @@ describe("Campus Model Core contracts", () => {
     expect(source).toContain("OBSERVATION_INGRESS_PORT");
     expect(source).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
   });
+
+  it("requires external observations to use a pre-authorized source", () => {
+    const core = readFileSync(new URL("../src/campus-model-core/campus-model-core.service.ts", import.meta.url), "utf8");
+    const setup = readFileSync(new URL("../src/institution-setup/institution-setup.service.ts", import.meta.url), "utf8");
+    expect(core).toContain("requireAuthorizedExternalAgent");
+    expect(core).not.toContain("ensureExternalAgent");
+    expect(core).toContain("Device and integration evidence must be reviewed");
+    expect(setup).toContain("OBSERVATION_SOURCE_REGISTRY_PORT");
+    expect(setup).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
+  });
 });

@@ -219,6 +219,24 @@ routed to Attendance; otherwise the expected-after-exit cross-check is routed to
 Gate. The UI calls these **Signals to review**, explains that no attendance or absence
 decision is made automatically, and stays hidden when there is nothing to review.
 
+The next horizontal slice adds an administrator-owned **Devices & connections**
+lifecycle to Campus setup. A device or software connector must be registered with
+a stable source ID, narrow observation capabilities and an institution, campus or
+space scope before the model core will accept its evidence. Observation ingress no
+longer creates an active external actor merely because an unknown `external_ref`
+appears. It resolves a current active authority, checks the requested source type and
+connected scope, and rejects unknown, suspended, revoked or out-of-scope sources.
+Device and integration evidence cannot enter as accepted truth; it remains pending
+until the owning attendance or gate workflow reviews it.
+
+Administrators can pause and resume a source immediately or revoke it permanently.
+Registration and lifecycle changes are transactionally audited and published through
+the setup outbox; each authority retains the then-current institution Operating-rules
+revision as provenance. Revocation closes current grants and is intentionally
+irreversible for that source identity. This slice does not expose a public device
+ingestion endpoint, issue provider credentials, or claim that a camera/biometric
+adapter is production-ready.
+
 Verified evidence: backend build and focused lint pass; 20 focused core/migration
 contract tests pass; migration 104 completes under transaction validation and is
 applied to the loopback development database; a disposable runtime verification
