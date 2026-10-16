@@ -43,6 +43,15 @@ rules, returns as a correlated outcome, and may create owned work for the next h
 team, device or software agent. Domain screens remain simple and familiar; this
 agent-to-agent coordination is backend architecture.
 
+The coordination model is event-reactive. Accepted domain events match explicit,
+effective-dated subscriptions and create durable reactions for eligible agents. Those
+agents communicate through typed operational messages, contribute observations or
+issue commands; domain outcomes may trigger the next reaction. Sender, recipient,
+owner, delivery, acknowledgement, response, correlation, causation, authority,
+Operating-rule version, expiry, escalation and correction remain connected. These
+messages may be rendered as requests, tasks or external-channel prompts, but they are
+not the AI chat transcript and they do not bypass domain authority.
+
 ### 2.4 Precise truth and visible uncertainty
 
 Expected, observed, accepted and derived states are distinct. Missing data is not a negative fact. A gate scan is not classroom attendance. Message delivery is not acknowledgement. A completed task is not proof that a physical event occurred.
@@ -109,6 +118,21 @@ Domain services validate observations and commands against current authority, ru
 
 Humans, teams, registered devices, approved integrations and bounded software agents can propose or issue commands. Each acts through explicit capability and scope. “Agent” does not mean “AI”; deterministic software automation is preferred for routine operations.
 
+Agents react to immutable campus events through explicit subscriptions. A human agent
+reacts through the relevant campus workflow; a team owns a queue but a concrete actor
+signs the response; a device or integration reacts only within its registered
+capability; and a software agent acts only at its configured autonomy level. A
+subscription makes an agent eligible to react—it never grants authority.
+
+The core does not hard-code an agent's operating behaviour and no agent adapts its own
+production behaviour. Goals, subscriptions, reactions, recipients, timing,
+escalation, autonomy, permitted tools and optional model/context policy come from
+validated, versioned, effective-dated institution configuration and Operating rules.
+An agent may propose a change but cannot activate it; an authorized administrator must
+review, rehearse and publish a new version. Code retains domain invariants and
+non-weakenable safety/privacy floors. Missing configuration means no automation, not a
+hidden default.
+
 ### 4.5 Commands and outcomes
 
 Actions flow back into the campus as typed commands. An accepted command can create a task, message, schedule change, device instruction or other domain outcome. Delivery/readiness and physical execution remain distinct until later evidence closes the loop.
@@ -118,6 +142,11 @@ scope, plan/effective time, rule version, delivery, response, decision, executio
 outcome, correction and provenance remain connected. This evidence depth must support
 complex campus management even when ThatCampus deliberately avoids ERP-like setup
 screens and terminology.
+
+Granularity is purpose-bound. The model should capture enough event, relationship and
+message detail to coordinate, govern, explain and later simulate campus operation, but
+must not infer private human intent, present sparse observations as continuous
+location, or collect/retain data merely because a digital twin can represent it.
 
 The normative technical contract is [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md).
 

@@ -10,7 +10,7 @@ ThatCampus will maintain a trustworthy, time-aware digital representation of the
 
 The architecture has two deliberately different faces:
 
-- **Backend:** a typed campus-model core, explicit agents and authority, temporal relationships, observations, commands, outcomes, domain events and projections.
+- **Backend:** a typed campus-model core, explicit agents and authority, temporal relationships, observations, commands, outcomes, domain events, subscriptions, reactions, typed inter-agent messages and projections.
 - **Frontend:** familiar domain language and tasks such as Attendance, Timetable, Classes, Staff, Rooms, Transport, Fees, Requests and Operating rules.
 
 Users must never need to understand graph terminology, twin identities, command envelopes or agent runtimes to operate the product. The conceptual model is infrastructure. The product remains a set of clear, role-appropriate campus workflows.
@@ -35,6 +35,26 @@ to the core in the same transaction or through a durable, idempotent inbox/outbo
 The core then updates temporal context and routes the next work to the responsible
 agents through domain-native screens or approved external channels. Their responses
 enter the same loop as new commands or observations.
+
+Agents are event-reactive participants rather than labels attached to audit rows. A
+committed domain event may match effective subscriptions and create durable reaction
+instances for eligible agents. A reaction can communicate with another agent using a
+typed operational message, issue an authorized command, or contribute an observation.
+Every resulting message, command, outcome and later event remains in one correlation
+and causation trace. Human reactions enter through ordinary screens or approved
+channels; deterministic software reactions use the same authority and domain ports.
+Model-assisted reasoning may propose within a bounded capability, but it does not
+receive a parallel write path.
+
+The runtime itself is behaviour-neutral. It does not contain a hard-coded “Principal
+agent”, “leave agent” or “attendance agent” decision tree. Agent capabilities,
+subscriptions, reaction contracts, protocol recipients, timing, escalation, autonomy,
+tool access, context/memory policy and permitted model provider are resolved from
+validated, versioned and effective-dated institution configuration plus Operating
+rules. Every reaction snapshots those configuration versions. The core may hard-code
+contract schemas, deterministic delivery/execution semantics, domain invariants and
+non-weakenable security, privacy and safeguarding floors; it may not hard-code mutable
+campus operating choices.
 
 This does not make the core a generic ERP database and does not weaken domain
 boundaries. It makes the model the mandatory operational thread connecting actors,
@@ -228,7 +248,137 @@ retains the originating command, responsible agent/team, delivery state, respons
 deadline, response command and terminal outcome so the complete coordination chain
 can be replayed and explained.
 
-### 5.1 Authority contract
+### 5.1 Event-reactive runtime
+
+The core uses five different operational primitives. They must not be collapsed into
+one generic activity record:
+
+- **event:** an immutable fact that a plan, observation, decision or outcome was
+  recorded by its owning domain;
+- **subscription:** an effective-dated declaration that an eligible agent or team may
+  react to a named event schema within an explicit tenant, purpose and entity scope;
+- **reaction:** one durable evaluation of one event for one subscribed agent, retaining
+  the input context, rule/version, authority result, attempts, explanation and emitted
+  effects;
+- **message:** typed operational communication from one agent to another agent or
+  owned team queue;
+- **command:** a request to the owning domain to perform a state transition under its
+  current invariants and authority checks.
+
+The target execution loop is:
+
+```text
+domain transaction commits state + event
+ -> effective subscriptions are resolved idempotently
+ -> one reaction instance is scheduled per eligible agent/subscription
+ -> the agent receives current scoped context and its durable mailbox/work item
+ -> the reaction emits zero or more typed messages, observations or commands
+ -> the owning domain accepts, rejects, conflicts, expires or fails each command
+ -> correlated outcomes create subsequent events and reactions
+ -> the workflow closes, waits for evidence, escalates or is corrected explicitly
+```
+
+Delivery may be at least once; material effects must be idempotent. Ordering is
+guaranteed only where a protocol declares it, normally per aggregate or conversation.
+Reactions retain processing leases, attempt counts, bounded retry/backoff, expiry,
+dead-letter state and cancellation. Hop limits, repeated-causation detection and
+per-rule execution budgets prevent agent loops. A failed reaction never rewrites the
+committed domain event that triggered it.
+
+No production agent learns a new behaviour, changes a subscription, raises its
+autonomy, expands its tools or edits an Operating rule from its own experience. A
+deterministic or model-assisted agent may propose a configuration revision with
+evidence. It remains an inert draft until the authorized administrative workflow
+validates, rehearses and activates it. Missing, expired or invalid behaviour
+configuration fails closed or routes to the configured human owner; it never invokes
+a hidden code default.
+
+Human agents react when a person opens, acknowledges or acts on routed work. Team
+agents own queues but the concrete person or software agent that responds signs the
+reaction. Device and integration agents react only through their registered
+capabilities. Software agents may run deterministic rules automatically; optional
+model assistance is advisory or bounded by the same autonomy contract.
+
+### 5.2 Typed inter-agent communication
+
+Operational messages use versioned schemas and explicit interaction intents:
+`inform`, `request`, `propose`, `delegate`, `accept`, `reject`, `query`, `reply`,
+`escalate`, `acknowledge` and `cancel`. Each message records sender, recipient(s),
+current owner, conversation, correlation and causation, subject/context references,
+schema/version, authority or rule evidence, sent/deliver-after/expiry/response-due
+times, sensitivity/retention class and delivery/acknowledgement/response state.
+
+Message text is only a rendering of this protocol record. The same message may appear
+as a request card in the app, a task in a role queue, or a safely redacted Telegram or
+email prompt. It is not the AI-assistant chat transcript and it is not a generic badge
+notification. Channel delivery never changes its meaning, owner or authority. A human
+reply becomes a new typed message, command or observation after identity, scope and
+freshness checks; free text alone does not grant consent or approve a consequential
+action.
+
+An agent may hold explicit commitments, assigned work and source-backed assertions.
+The model must not invent a person's private goal, intention or location. Derived
+beliefs require provenance, confidence, freshness and expiry and remain distinct from
+accepted domain state.
+
+### 5.3 Reaction governance and useful granularity
+
+Every reaction rechecks current tenant membership, agent status, authority, target
+revision and emergency restrictions before emitting an effect. The applicable
+Operating-rule version is frozen as reaction evidence, while revocation and mandatory
+safety restrictions are evaluated fresh at command execution. Automatic reactions
+declare autonomy level, purpose, data scope, rate/execution budget, fallback owner,
+explanation, correction route and terminal escalation.
+
+The objective is maximum useful operational fidelity, not maximum collected data.
+Model an event, message or relationship at the granularity required to coordinate,
+govern, explain or simulate an authorized campus decision. Do not add continuous
+tracking, speculative mental state, broad message visibility or indefinite retention
+merely because the model can represent it. Privacy, safeguarding, consent, retention
+and purpose boundaries apply to subscriptions, message payloads and projections as
+strictly as to the owning domain record.
+
+The same contracts support later simulation in an isolated scenario namespace with a
+virtual clock, copied/synthetic starting state and simulated recipients. A simulation
+may run events, reactions and messages but cannot deliver to production channels,
+execute production commands or mutate live authority/evidence.
+
+### 5.4 Behaviour configuration contract
+
+An executable agent behaviour version declares:
+
+- eligible agent kind/capability and institution/campus/entity scope;
+- triggering event schema and subscription filter;
+- reaction contract and allowed output message/observation/command schemas;
+- permitted application tools and maximum autonomy level;
+- Operating-rule and authority requirements;
+- timing, ordering, retry, expiry, rate/execution budget and loop limits;
+- message recipient/owner resolution and privacy/minimum-disclosure policy;
+- fallback, escalation and human correction owner;
+- optional model/provider and context/memory policy for model-assisted proposals;
+- draft, validation, rehearsal, approval, activation and supersession evidence.
+
+Configuration is data but not arbitrary code. It is validated against code-owned
+schemas and non-weakenable domain/safety constraints before rehearsal and activation.
+Institution templates may seed configuration, but their copied version is visible and
+editable by an authorized administrator. In-flight reactions retain the behaviour and
+Operating-rule versions they received, except that revocation and emergency safety
+restrictions are always evaluated fresh.
+
+The four control layers remain distinct:
+
+| Layer | Question answered | Change path |
+| --- | --- | --- |
+| Authority grant | May this agent act on this target for this purpose now? | authorized role/assignment/device administration |
+| Behaviour configuration | Which event can this agent react to, what protocol/effects may it use, and where does work go next? | versioned validation, rehearsal and administrative activation |
+| Operating rule | Which institution-specific timing, threshold, fallback or automatic choice applies? | versioned institution rule governance |
+| Domain contract/invariant | Is the proposed state transition valid and safe? | reviewed application code and domain release process; never weakened by configuration |
+
+An installed capability pack is only a convenient source of behaviour and Operating
+rule templates. Installation creates explicit draft configuration for the institution;
+it does not introduce invisible compiled behaviour.
+
+### 5.5 Authority contract
 
 An authority assignment states:
 
@@ -246,7 +396,7 @@ Authority is purpose-specific. Read access, attendance entry, policy editing, mo
 
 Every command rechecks current membership, purpose-specific authority, tenant scope, target revision and applicable restrictions at execution time. Cached navigation, previous model context or an earlier approval is not authority.
 
-### 5.2 Autonomy levels
+### 5.6 Autonomy levels
 
 The platform uses the least autonomy that removes work safely:
 
@@ -354,6 +504,98 @@ The model core authenticates the envelope and resolves agent authority. The owni
 
 An outcome states accepted, rejected, conflicted, expired, queued-for-review or failed, with a machine code, safe explanation, resulting aggregate revision and domain event references. Accepted domain events are written with the state change in one transaction and include privacy class, actor, rule/policy version, correlation and causation.
 
+### 7.5 Event and subscription
+
+```ts
+type CampusEvent = {
+  id: string;
+  schoolId: string;
+  type: string;
+  aggregate: CampusEntityRef;
+  actorAgentId: string;
+  occurredAt: string;
+  effectiveAt: string;
+  recordedAt: string;
+  aggregateRevision: number;
+  schemaVersion: number;
+  privacyClass: string;
+  correlationId: string;
+  causationId?: string;
+  operatingRuleVersionId?: string;
+  payload: unknown;
+};
+
+type AgentSubscription = {
+  id: string;
+  schoolId: string;
+  subscriberAgentId: string;
+  eventType: string;
+  purpose: string;
+  scope: CampusEntityRef[];
+  filterSchemaVersion: number;
+  activeFrom: string;
+  activeUntil?: string;
+  reactionContract: string;
+  behaviourVersionId: string;
+  autonomyLevel: "A0" | "A1" | "A2" | "A3" | "A4" | "A5";
+  operatingRuleVersionId?: string;
+};
+```
+
+Subscriptions are constrained configuration, not arbitrary user-authored code. A
+subscription never grants authority; it only makes an already eligible agent a
+candidate to react. The reaction and any resulting command recheck authority.
+
+### 7.6 Reaction and agent message
+
+```ts
+type AgentReaction = {
+  id: string;
+  schoolId: string;
+  triggerEventId: string;
+  subscriptionId: string;
+  behaviourVersionId: string;
+  reactingAgentId: string;
+  state: "scheduled" | "leased" | "waiting" | "completed" | "failed" | "expired" | "cancelled" | "dead_letter";
+  attempt: number;
+  authorityDecisionRef?: string;
+  operatingRuleVersionId?: string;
+  explanation?: string;
+  startedAt?: string;
+  completedAt?: string;
+  producedMessageIds: string[];
+  producedCommandIds: string[];
+  producedObservationIds: string[];
+};
+
+type AgentMessage = {
+  id: string;
+  schoolId: string;
+  conversationId: string;
+  correlationId: string;
+  causationId: string;
+  kind: "inform" | "request" | "propose" | "delegate" | "accept" | "reject" | "query" | "reply" | "escalate" | "acknowledge" | "cancel";
+  senderAgentId: string;
+  recipientAgentIds: string[];
+  ownerAgentId?: string;
+  subject: CampusEntityRef;
+  context: CampusEntityRef[];
+  schemaVersion: number;
+  payload: unknown;
+  sentAt: string;
+  deliverAfter?: string;
+  expiresAt?: string;
+  responseDueAt?: string;
+  sensitivity: string;
+  retentionClass: string;
+  state: "queued" | "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
+};
+```
+
+Payload schemas are protocol-specific and validated before persistence or delivery.
+Large or restricted evidence remains in its owning domain and is referenced with the
+minimum disclosure needed by the recipient.
+
 ## 8. Initial persistence model
 
 PostgreSQL remains authoritative. Use relational columns and constraints for identity, time, tenant, state and authority; JSONB is limited to validated versioned payloads/metadata.
@@ -365,6 +607,12 @@ Proposed internal tables:
 - `campus_model_agents`: human/team/device/integration/software actor identity;
 - `campus_model_agent_authorities`: effective-dated capability and scope grants;
 - `campus_model_observations`: immutable normalized observation envelopes;
+- `campus_model_events`: provider-neutral event journal with event/effective/recorded time;
+- `campus_model_agent_subscriptions`: effective-dated, scope-bound reaction eligibility;
+- `campus_model_agent_behaviour_versions`: validated, approved and effective-dated
+  reaction/tool/protocol configuration with rehearsal and supersession evidence;
+- `campus_model_agent_reactions`: durable event-to-agent evaluations and attempt state;
+- `campus_model_agent_messages`: typed operational conversations, ownership and delivery state;
 - `campus_model_commands`: immutable command requests and execution state;
 - `campus_model_command_outcomes`: append-only attempts/outcomes;
 - `campus_model_projection_checkpoints`: idempotent projection consumption state.
@@ -388,6 +636,8 @@ The core exports narrow interfaces rather than repositories:
 - `EntityRegistryPort.register/supersede/resolve`;
 - `RelationshipPort.link/close/listAt`;
 - `ObservationIngressPort.capture`;
+- `EventReactionPort.publish/subscribe/replay`;
+- `AgentMailboxPort.send/claim/acknowledge/respond/escalate`;
 - `AgentAuthorityPort.evaluate/explain`;
 - `CommandRouterPort.issue/status/cancel`;
 - `ProjectionPort.getContext/getTimeline`.
@@ -557,8 +807,20 @@ inferred state remain subsequent work across Phases 2A and 5.
 - bind current roles/assignments and registered devices to effective-dated authority;
 - make authority explanations available to domain services;
 - distinguish institution administrator from Principal operational assignment.
+- add the provider-neutral event subscription, durable reaction and typed agent-mailbox
+  contracts with idempotent effects, ordering boundaries, retry/expiry/dead-letter,
+  loop limits and escalation;
+- route at least one human-to-human workflow through event -> reaction -> message ->
+  response command -> domain outcome -> follow-on event without using the AI chat
+  transcript as workflow state.
+- add versioned behaviour configuration and validation/rehearsal/activation contracts;
+  prove that the selected workflow changes timing, routing and automation only through
+  configuration, and fails closed when its active behaviour version is unavailable.
 
-Exit: revocation and scope changes take effect immediately; no implicit administrator-to-Principal authority remains for migrated workflows.
+Exit: revocation and scope changes take effect immediately; no implicit
+administrator-to-Principal authority remains for migrated workflows; and the selected
+workflow is replayable as a complete agent conversation/reaction trace without
+duplicating its authoritative domain records.
 
 ### Phase 4 - Operating-rule automation
 

@@ -26,6 +26,27 @@ decisions cannot be replaced by synthetic software tests.
   correlated outcome/evidence -> next-agent hand-off loop. Typed domain records and
   invariants remain authoritative; the model connects and drives them rather than
   replacing them with a generic ERP schema.
+- Product clarification, 16 October 2026: agents are event-reactive participants and
+  communicate through durable typed operational messages. Accepted domain events match
+  effective, purpose/scope-bound subscriptions and create reaction instances; a
+  reaction may send a message, contribute an observation or issue a command; the
+  owning domain outcome may trigger the next reaction. Delivery, acknowledgement,
+  acceptance, execution and physical evidence remain distinct. Agent messages are not
+  the AI chat transcript or generic notifications. The runtime must retain
+  correlation/causation, authority and rule evidence, idempotent effects, bounded
+  retry/expiry/dead-letter, ordering where declared, escalation, loop limits and a safe
+  correction path. Model only the operational granularity justified by purpose,
+  privacy and retention requirements.
+- Product clarification, 16 October 2026: the Campus Model Core is
+  behaviour-neutral. No agent has hard-coded goals, subscriptions, reactions,
+  recipients, timing, escalation, autonomy, tools or adaptive/learning behaviour.
+  These come only from validated, versioned, effective-dated institution configuration
+  and Operating rules, whose versions are retained on every reaction. An agent may
+  propose a configuration change but cannot self-activate it; authorized administration
+  must validate, rehearse and publish it. Code continues to own schemas, deterministic
+  runtime semantics, domain invariants and non-weakenable safety/privacy floors.
+  Missing/invalid configuration fails closed or uses its explicit human fallback; it
+  never enables an undocumented automation default.
 
 - Preserve the existing blue/mint palette, Plus Jakarta Sans, shared app bars, child switching,
   mobile navigation and existing React UX. Extend established components and semantic tokens.
@@ -181,6 +202,26 @@ durable idempotent bridge. First priority is staff leave -> authorized decision 
 coverage hand-off -> accepted substitution/fallback -> effective timetable context,
 because it exercises human-to-human coordination without weakening the existing
 leave, staffing or timetable invariants.
+
+The current core also does **not** yet implement the accepted first-class event
+subscription, reaction-instance or typed operational agent-mailbox contracts. Existing
+domain outbox events, notification delivery, requests and the AI assistant/channel
+transcript are useful adapters but are not substitutes for that coordination spine.
+The next agent-runtime slice must add these provider-neutral contracts and then route
+the staff-leave workflow through: leave event -> Principal/team reaction and request
+message -> typed decision command -> domain outcome -> coverage-coordinator reaction
+and offers -> accepted substitute/fallback -> timetable exception outcome. The owning
+leave, staffing and timetable records remain authoritative throughout. This paragraph
+records target work, not implemented or production-ready behavior.
+
+The same gap applies to behaviour configuration: current domain services contain a
+mixture of explicit Operating rules and code-owned workflow routing. Phase 3 must
+introduce a validated `behaviourVersion` contract before any new reactive automation
+is called agentic. The first migrated workflow must demonstrate that recipients,
+timing, fallback and autonomy change through an approved configuration version, that
+the reaction evidence retains that version, and that removing the active version
+fails closed. Existing domain invariants remain in code and are not made
+administrator-editable.
 
 ### Delivery-shape decision - 16 October 2026
 

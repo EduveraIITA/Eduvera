@@ -30,6 +30,27 @@
   domain execution and evidence, correlated outcome, and explicit next-agent
   hand-off. Do not bypass domain invariants or replace typed evidence with a generic
   graph/ERP schema.
+- Model material coordination as an event-reactive agent loop: an immutable typed
+  event is matched to effective subscriptions; an identified human, team, device,
+  integration or bounded software agent receives a durable typed message/work item;
+  its reaction emits a message, observation or command; the owning domain records the
+  outcome; and resulting events continue the trace. Delivery is not acknowledgement,
+  acknowledgement is not acceptance, and a command outcome is not physical evidence.
+  Treat operational agent messages as protocol records, not as the AI chat transcript
+  or a generic notification. Require correlation/causation, idempotent effects,
+  authority rechecks, rule/version evidence, retry/expiry/escalation/loop limits and a
+  human correction path. Use the finest granularity needed for an authorized campus
+  decision, not indiscriminate surveillance or inferred human intent.
+- Keep the model runtime behaviour-neutral. Do not hard-code an agent's goals,
+  subscriptions, reaction mapping, message recipient, timing, escalation, autonomy,
+  tool access or adaptive/learning behaviour in the core. All mutable behaviour comes
+  from validated, versioned, effective-dated institution configuration and Operating
+  rules, and every reaction snapshots the versions it used. Agents cannot rewrite or
+  self-activate their own configuration; proposed adaptations remain drafts until an
+  authorized administrator approves them. Code may enforce schemas, deterministic
+  execution semantics, domain invariants and non-weakenable safety/privacy floors.
+  Missing or invalid behaviour configuration fails closed or routes to its explicit
+  human fallback; it never activates a hidden default automation.
 - Preserve the established theme, shared headers, navigation, and UX. Blueprint v2
   guides capabilities and architecture; it is not permission to redesign the app.
 - Prefer substantial, end-to-end workflows with real database relationships,
