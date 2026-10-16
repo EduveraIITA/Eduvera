@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -15,7 +16,6 @@ import {
   FileInput,
   History,
   LockKeyhole,
-  LoaderCircle,
   Pencil,
   RefreshCw,
   Save,
@@ -1023,10 +1023,7 @@ export function TeacherAttendancePage({
               disabled={busy}
               onClick={() => void refreshLatest()}
             >
-              <RefreshCw
-                className={state === "refreshing" ? "spin" : ""}
-                size={16}
-              />
+              {state === "refreshing" ? <LoaderCircle size={16} /> : <RefreshCw size={16} />}
               Merge latest
             </button>
           </section>

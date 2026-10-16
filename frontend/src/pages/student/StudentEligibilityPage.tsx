@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon } from "../../components/ThatCampusLoader";
 import { useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -233,7 +234,7 @@ export function StudentEligibilityPage({
               </label>
               {formError && <p className="form-message form-message--error" id={formErrorId} role="alert">{formError}</p>}
               <button className={`primary-action primary-action--container ${submitState === "success" ? "is-success" : ""}`} type="submit" disabled={!file || !startDate || !endDate || startDate > endDate || submitState !== "idle"}>
-                {submitState === "loading" ? <><span className="button-spinner" />Submitting...</> : submitState === "success" ? <><Check size={18} />Document Uploaded!</> : "Confirm & Send for Approval"}
+                {submitState === "loading" ? <><ThatCampusLoadingIcon size={18} />Submitting...</> : submitState === "success" ? <><Check size={18} />Document Uploaded!</> : "Confirm & Send for Approval"}
               </button>
             </form>
           </section>

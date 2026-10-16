@@ -6951,3 +6951,7 @@ missing images or denied registry reads fail before migration. All 13 release
 contract tests and syntax checks pass locally, including three new regressions.
 Fresh hosted checks and deployment timing are pending; old runs do not validate
 this reconciled head. No security/runtime guards or provisioning paths were removed.
+
+## Loader visual update — 16 October 2026
+
+User-approved four-arm ThatCampus loader uses alternating logo blues, a fixed center gap, and a trailing arm that shrinks toward white. The final requested speed is a 2.667-second cycle. Shared route loading and inline loading indicators across authentication, activation, chat, notifications, onboarding, planner, attendance, leave and student submissions use this asset. Existing labels, control sizes, loading conditions and reduced-motion fallback remain. TypeScript and the shared loader test passed; production rollout is not yet verified.

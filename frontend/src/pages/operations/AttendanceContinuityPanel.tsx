@@ -1,6 +1,7 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, FileInput, LoaderCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, FileInput, } from "lucide-react";
 import type { AttendanceContinuityWorkspace, TeacherClassSummary } from "../../features/operations/api";
 import { registerLifecycleLabel } from "../../features/attendance/registerLifecycle";
 

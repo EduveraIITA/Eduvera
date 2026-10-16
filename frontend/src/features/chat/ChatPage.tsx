@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 /* eslint-disable */
 // @ts-nocheck
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -5,7 +6,6 @@ import {
   CheckCheck,
   FileText,
   Flag,
-  LoaderCircle,
   MessageCircle,
   MoreHorizontal,
   Paperclip,

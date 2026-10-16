@@ -1,6 +1,7 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleAlert, LoaderCircle, X } from 'lucide-react';
+import { CircleAlert, X } from 'lucide-react';
 import { deliveryPending, type ReadyInvitation } from './api';
 
 export function InvitationReceipt({invite,onClose}:{invite:ReadyInvitation;onClose:()=>void}) {

@@ -1,4 +1,5 @@
-import { ArrowRight, LoaderCircle, Sparkles } from "lucide-react";
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { applyQuickStart } from "./api";
 

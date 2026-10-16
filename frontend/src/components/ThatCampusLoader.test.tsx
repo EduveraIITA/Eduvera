@@ -11,7 +11,7 @@ describe("ThatCampusLoader", () => {
     expect(status).toHaveTextContent("Syncing school records…");
     expect(status.querySelector("img")).toHaveAttribute(
       "src",
-      "/assets/thatcampus-loader.svg",
+      "/assets/thatcampus-loader-fast.svg",
     );
   });
 });

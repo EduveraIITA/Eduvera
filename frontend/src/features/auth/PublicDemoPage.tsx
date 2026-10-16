@@ -1,5 +1,6 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useState } from "react";
-import { ArrowRight, GraduationCap, LoaderCircle, School, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { ArrowRight, GraduationCap, School, ShieldCheck, UserRound, UsersRound } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { authDestination, useAuth } from "./AuthContext";
 import "./public-demo.css";

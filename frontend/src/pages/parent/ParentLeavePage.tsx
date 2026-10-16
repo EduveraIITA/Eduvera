@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useEffect, useId, useMemo, useState, type ChangeEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -9,7 +10,6 @@ import {
   FileText,
   HelpCircle,
   History,
-  LoaderCircle,
   PenLine,
   Stethoscope,
   Trash2,
