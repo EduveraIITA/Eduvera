@@ -98,7 +98,7 @@
 }
 .campus-login[data-login-theme="dark"] :is(a, .auth-text-button) { color: #9db5ff; }
 .campus-login[data-login-theme="dark"] :is(.campus-login__topbar, .campus-login__footer) { background: rgb(11 18 32 / 45%); }
-.campus-login[data-login-theme="dark"] .campus-login__brand-logo { background: #f7f9ff; border-radius: 8px; }
+.campus-login[data-login-theme="dark"] .campus-login__brand-logo { filter: url(#campus-login-dark-logo); }
 .campus-login[data-login-theme="dark"] .campus-login__card { background: rgb(17 26 46 / 72%); border-color: rgb(148 163 184 / 22%); box-shadow: 0 12px 40px #0003; }
 .campus-login[data-login-theme="dark"] .campus-login__help > div { background: #141e34; border-color: #34425b; }
 .campus-login[data-login-theme="dark"] :is(.campus-login__access, .auth-input-wrap) { background: #1b2744; color: #a9b4cc; }
