@@ -1,5 +1,11 @@
 # THATCAMPUS — Flow Diagrams
 
+> Authority: [Product blueprint v2](docs/blueprint/PRODUCT_BLUEPRINT_V2.md) and its
+> [current normative contracts](docs/blueprint/README.md) take precedence. This
+> broader proposal contains historical and future design choices; it is not a
+> statement that every described stack, screen or workflow is implemented. Read
+> the current owning code and implementation evidence before extending it.
+
 **Document:** 04_FLOW_DIAGRAMS.md  
 **Format:** Mermaid  
 **Purpose:** Product and technical flows for Web + Android + iOS

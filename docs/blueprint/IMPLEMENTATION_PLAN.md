@@ -8299,3 +8299,25 @@ the extension and normalizes its schema before creating temporal digital-twin li
 evidence, rather than relying on environmental history. A replacement Stage run must
 still pass migration, candidate and public-revision verification before publication
 is claimed.
+
+## Repository authority reconciliation — 17 October 2026
+
+The owner requested that subsequent work use the new committed digital-twin direction.
+The active integration head inspected was `Stage` at `e1086b3`; `main` at `59879d7`
+still contained the v1-era root instructions. Root `AGENTS.md` on Stage already used
+Blueprint v2 and its normative companions. It now also names the integration-branch
+check, repository-wide scope and current contract index to prevent sessions from
+silently using an older default-branch document.
+
+Corrected two live entry-point conflicts: README still named the v1 PDF as the primary
+baseline, and the enrollment lifecycle header still named it as current authority.
+Root design/architecture/functionality/flow proposals now explicitly defer to v2;
+the annual-planning delivered-scope paragraph now reflects the already accepted
+14 October canonical calendar editor rather than the superseded separate editor.
+Historical release evidence remains unchanged.
+
+The contract index records how the requested teaching-preference workflow must
+integrate with current identity/coordination ports, canonical spaces, owned work,
+existing schedule drafts, temporal publication and coverage reconciliation. This is
+an implementation direction, not a delivered teacher-preference feature. The early
+unconnected solver/schema scratch work has not been registered, migrated or shipped.

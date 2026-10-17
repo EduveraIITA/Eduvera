@@ -1,8 +1,9 @@
 # Connected student enrollment lifecycle
 
 Status: locally implemented first slice; local migration and database verification pass; physical UI
-acceptance and deployment are pending. Blueprint authority: `School_Operations_Blueprint.pdf` v1.0, especially the
-capture-once people model, explicit authority, audit and event propagation requirements.
+acceptance and deployment are pending. Blueprint authority: [Product blueprint v2](PRODUCT_BLUEPRINT_V2.md), with the
+capture-once people model, explicit authority, audit and event propagation requirements
+retained by its People and enrollment contract. The v1 PDF is historical provenance.
 
 ## Product intent
 
