@@ -1,3 +1,20 @@
+-- Cloud environments created before the current migration baseline can have the
+-- migration ledger without pgcrypto still being installed. Temporal lineage
+-- uses digest() for immutable request evidence, so establish the extension in
+-- the owning migration instead of relying on historical database state.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_extension extension
+    JOIN pg_namespace namespace ON namespace.oid=extension.extnamespace
+    WHERE extension.extname='pgcrypto' AND namespace.nspname<>'public'
+  ) THEN
+    EXECUTE 'ALTER EXTENSION pgcrypto SET SCHEMA public';
+  END IF;
+END $$;
+
 -- Event-derived temporal runtime for the private Campus Model Core.
 -- Domain records remain authoritative; these tables retain normalized plan evidence
 -- and a rebuildable occurrence projection.

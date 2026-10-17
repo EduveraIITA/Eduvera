@@ -8287,3 +8287,15 @@ complete backend suite passes **147 files / 1107 tests**. This is local candidat
 evidence only. A new Stage run must still pass the clean-checkout matrix and complete
 Google Cloud/public revision verification before the digital-twin release is called
 published.
+
+[Stage run 39020260985](https://github.com/EduveraIITA/Eduvera/actions/runs/39020260985)
+cleared the complete clean-checkout verification matrix: security/deployment
+contracts, frontend and desktop builds, all three client test shards, **147 backend
+files / 1107 tests**, and all three release-image builds. Promotion stopped before a
+candidate revision was created because the long-lived Stage database keeps
+`pgcrypto` in its dedicated `extensions` schema while the historical baseline and
+fresh verification databases install it in `public`. Migration 104 now establishes
+the extension and normalizes its schema before creating temporal digital-twin lineage
+evidence, rather than relying on environmental history. A replacement Stage run must
+still pass migration, candidate and public-revision verification before publication
+is claimed.
