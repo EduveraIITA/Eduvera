@@ -748,6 +748,20 @@ import provenance.
 The UI-facing Today/Requests APIs are owned by application/domain composition modules,
 not by exposing core tables.
 
+The shared **Operating day** composition is the canonical UI boundary for Now/Next.
+It combines the environment-qualified effective schedule from the Core with
+authoritative domain state (for example attendance lifecycle and accepted gate
+points) without copying those records into the Core. It must respect the institution's
+configured attendance grain: one register per class/day for `daily_class`, one per
+effective timetable occurrence for `scheduled_session`, and no academic register for
+`none`. The same application composition executes through the request-selected Live
+or isolated Simulation data plane, uses the execution clock for its date and session
+state, and returns the environment marker, provenance and freshness. Role filtering is
+by stable human-agent responsibility; administrators see the institution-wide day.
+Campus View, Today and future operational surfaces should consume this boundary or a
+checkpointed projection derived from it instead of independently reconstructing a
+different school day.
+
 ## 14. Behaviour configuration and Operating rules
 
 ### 14.1 Separation

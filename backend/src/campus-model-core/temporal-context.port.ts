@@ -161,7 +161,50 @@ export interface ObservedTemporalAssertion {
 
 export type CampusTemporalAssertion = ExpectedTemporalAssertion | ObservedTemporalAssertion;
 
+export interface CampusOperatingDayOccurrence {
+  id: string;
+  occurrence_id: string;
+  occurrence_date: string;
+  period_number: number;
+  class_entity_id: string;
+  class_domain_id: string;
+  class_label: string;
+  period_domain_id: string;
+  subject_entity_id: string | null;
+  subject_label: string | null;
+  space_entity_id: string | null;
+  space_label: string | null;
+  responsible_agent_id: string | null;
+  responsible_agent_label: string | null;
+  title: string;
+  slot_type: "class" | "break" | "activity";
+  starts_at: Date | string;
+  ends_at: Date | string;
+  source_domain: "timetable" | "day_plan";
+  source_record_id: string;
+  source_revision: number;
+  change_kind:
+    | "published"
+    | "overridden"
+    | "closure_cancelled"
+    | "closure_restored"
+    | "day_plan_cancelled"
+    | "substituted"
+    | "substitution_cancelled"
+    | "source_changed"
+    | "source_removed"
+    | "projection_backfill";
+}
+
+export interface CampusOperatingDayQuery {
+  school_id: string;
+  date: string;
+  recorded_as_of: string;
+  responsible_agent_id?: string;
+}
+
 export interface TemporalContextPort {
+  listOperatingDay(input: CampusOperatingDayQuery): Promise<CampusOperatingDayOccurrence[]>;
   recordPublishedSchedule(
     transaction: Transaction<Database>,
     input: PublishedScheduleProjection,

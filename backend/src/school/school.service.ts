@@ -36,6 +36,8 @@ import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendan
 import { recordAttendanceModelObservations } from '../attendance/attendance-model-observation.js';
 import { findAttendanceStudents, studentAttendanceInput, studentAttendanceSearch } from '../attendance/student-attendance.js';
 import { operatingRules } from '../operating-rules/rules.js';
+import { OperatingDayService } from "../operating-day/operating-day.service.js";
+import { EXECUTION_CLOCK_PORT, type ExecutionClockPort } from "../campus-model-core/execution-clock.port.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type LeaveStatus = "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn";
@@ -503,6 +505,8 @@ export class SchoolService {
     @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commandGateway: DomainCommandGatewayPort,
     @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
     @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
+    @Optional() private readonly operatingDay?: OperatingDayService,
+    @Optional() @Inject(EXECUTION_CLOCK_PORT) private readonly executionClock?: ExecutionClockPort,
   ) {}
 
   private async parentFeeLedgerStatus(studentId: string, enrollment: EnrollmentContext): Promise<ParentFeeStatus> {
@@ -897,12 +901,14 @@ export class SchoolService {
   }
 
   private async schoolLocalDate(schoolId: string): Promise<string> {
-    const result = await sql<{ date: string }>`
-      SELECT (now() AT TIME ZONE timezone)::date::text AS date
-      FROM schools WHERE id=${schoolId}::uuid
-    `.execute(this.db);
-    if (!result.rows[0]?.date) throw new NotFoundException("School not found.");
-    return result.rows[0].date;
+    const school = await this.db.selectFrom("schools").select(["id", "timezone"])
+      .where("id", "=", schoolId).executeTakeFirst();
+    if (!school) throw new NotFoundException("School not found.");
+    if (this.executionClock) {
+      return this.executionClock.institutionDate({ institution_id: school.id, time_zone: school.timezone });
+    }
+    const result = await sql<{ date: string }>`SELECT (now() AT TIME ZONE ${school.timezone})::date::text AS date`.execute(this.db);
+    return result.rows[0]!.date;
   }
 
   async attendanceSummary(studentId: string, term: EnrollmentContext): Promise<{ total: number; present: number; absent: number; late: number; excused: number; half_day: number; percentage: number }> {
@@ -2389,9 +2395,10 @@ export class SchoolService {
         AND (${membership.role}='admin' OR ts.teacher_user_id=${user.id}::uuid)
       ORDER BY ts.weekday, ts.period_number, cs.grade, cs.section
     `.execute(this.db);
-    const [followupActions, eventActions] = await Promise.all([
+    const [followupActions, eventActions, operatingDay] = await Promise.all([
       this.followupHomeActions(user, "staff"),
       this.staffEventHomeActions(user, membership.school_id, "teacher"),
+      this.operatingDay?.project(user, membership.school_id, selectedDate) ?? Promise.resolve(null),
     ]);
     const registerActions: HomeAction[] = classes
       .filter((item) => item.can_mark !== false && !["submitted", "locked"].includes(item.submission_status))
@@ -2416,6 +2423,7 @@ export class SchoolService {
       weekly_timetable: weekly.rows.map((row) => ({ ...row, class_name: `Class ${row.grade}${row.section}`, weekday_label: weekdayLabels[row.weekday] })),
       home_actions: sortHomeActions(allHomeActions).slice(0, 6),
       more_attention: moreAttentionCounts(allHomeActions, "staff"),
+      operating_day: operatingDay,
     };
   }
 
@@ -3800,9 +3808,10 @@ export class SchoolService {
       absent: result.absent + Number(row.absent_count), late: result.late + Number(row.late_count),
       excused: result.excused + Number(row.excused_count),
     }), { students: 0, marked: 0, scored: 0, attending: 0, absent: 0, late: 0, excused: 0 });
-    const [followupActions, eventActions] = await Promise.all([
+    const [followupActions, eventActions, operatingDay] = await Promise.all([
       this.followupHomeActions(user, "staff"),
       this.staffEventHomeActions(user, membership.school_id, "principal"),
+      this.operatingDay?.project(user, membership.school_id, selectedDate) ?? Promise.resolve(null),
     ]);
     const pendingRegisters = dueRows
       .filter((row) => !["submitted", "locked"].includes(classContext.get(row.id)?.submission_status ?? "not_started"))
@@ -3850,6 +3859,7 @@ export class SchoolService {
       exceptions: exceptions.rows.map((row) => ({ ...row, name: `${row.first_name} ${row.last_name}`.trim(), class_name: `Class ${row.grade}${row.section}`, percentage: Number(row.percentage), threshold: Number(row.attendance_threshold) })),
       home_actions: sortHomeActions(allHomeActions).slice(0, 6),
       more_attention: moreAttentionCounts(allHomeActions, "staff"),
+      operating_day: operatingDay,
     };
   }
 

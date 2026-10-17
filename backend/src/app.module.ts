@@ -45,6 +45,7 @@ import { CampusViewModule } from "./campus-view/campus-view.module.js";
 import { CampusScenarioModule } from "./campus-scenarios/campus-scenario.module.js";
 import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.module.js";
 import { ExecutionEnvironmentInterceptor } from "./auth/execution-environment.interceptor.js";
+import { OperatingDayModule } from "./operating-day/operating-day.module.js";
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { ExecutionEnvironmentInterceptor } from "./auth/execution-environment.in
     CampusViewModule,
     CampusScenarioModule,
     CampusLabHostedModule,
+    OperatingDayModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

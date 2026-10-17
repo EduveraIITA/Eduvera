@@ -1,0 +1,22 @@
+.operating-day { display:grid; gap:12px; padding:16px; border:1px solid var(--border,#dbe2ef); border-radius:22px; background:#fff; box-shadow:0 8px 24px rgba(15,38,82,.06); }
+.operating-day > header { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:9px; }
+.operating-day > header > div { display:flex; min-width:0; align-items:center; gap:7px; color:var(--primary,#0754c7); }
+.operating-day h2 { overflow:hidden; margin:0; color:var(--ink,#10213a); font-size:17px; letter-spacing:-.02em; white-space:nowrap; text-overflow:ellipsis; }
+.operating-day > header > small { color:var(--muted,#667085); font-size:11px; }
+.operating-day__environment { padding:4px 7px; border-radius:999px; color:#1859b9; background:#eaf1ff; font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+.operating-day__environment.is-simulation { color:#7b4a00; background:#fff0c9; }
+.operating-day__sessions { display:grid; overflow:hidden; border:1px solid #e5eaf2; border-radius:16px; }
+.operating-day__session { display:grid; min-height:64px; padding:10px 12px; grid-template-columns:58px minmax(0,1fr) auto; align-items:center; gap:9px; color:inherit; text-decoration:none; }
+.operating-day__session + .operating-day__session { border-top:1px solid #edf0f5; }
+.operating-day__session time { color:#1557b8; font-size:12px; font-weight:800; }
+.operating-day__session > span { display:grid; min-width:0; gap:3px; }
+.operating-day__session strong { overflow:hidden; font-size:14px; white-space:nowrap; text-overflow:ellipsis; }
+.operating-day__session small { display:flex; min-width:0; flex-wrap:wrap; align-items:center; gap:4px 6px; color:#667085; font-size:11px; }
+.operating-day__session > svg { color:#1557b8; }
+.operating-day__empty { margin:0; padding:10px 2px; color:#667085; font-size:13px; }
+.operating-day > footer { display:flex; flex-wrap:wrap; gap:8px; }
+.operating-day > footer span { display:grid; min-width:112px; padding:8px 10px; flex:1; border-radius:12px; background:#f5f7fb; }
+.operating-day > footer strong { display:flex; align-items:center; gap:4px; color:#17243a; font-size:13px; }
+.operating-day > footer small { color:#748094; font-size:10px; }
+.operating-day__review { display:flex; padding:9px 11px; border-radius:12px; align-items:center; justify-content:space-between; color:#8a5700; background:#fff7df; font-size:12px; font-weight:750; text-decoration:none; }
+@media (max-width:420px) { .operating-day { padding:14px; border-radius:20px; } .operating-day > header { grid-template-columns:auto 1fr; } .operating-day > header > small { display:none; } }

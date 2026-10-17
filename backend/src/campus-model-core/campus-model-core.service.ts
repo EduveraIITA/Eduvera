@@ -32,6 +32,8 @@ import type {
   NonActingHumanAgentReason,
 } from "./human-agent-identity.port.js";
 import type {
+  CampusOperatingDayOccurrence,
+  CampusOperatingDayQuery,
   CampusTemporalAssertion,
   PlanReconciliationReceipt,
   ScheduleProjectionReceipt,
@@ -3813,6 +3815,56 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       freshness: "point_in_time",
       contradictions: [],
     })));
+  }
+
+  async listOperatingDay(rawInput: CampusOperatingDayQuery) {
+    const input = z.object({
+      school_id: z.string().uuid(),
+      date: z.string().date(),
+      recorded_as_of: z.string().datetime({ offset: true }),
+      responsible_agent_id: z.string().uuid().optional(),
+    }).strict().parse(rawInput);
+    const environmentNamespaceId = executionNamespaceForSchool(input.school_id, this.executionScope?.current());
+    return (await sql<CampusOperatingDayOccurrence>`
+      SELECT occurrence.id::text,occurrence.logical_occurrence_key::text AS occurrence_id,
+        occurrence.occurrence_date::text,occurrence.period_number,period_entity.domain_id AS period_domain_id,
+        class_entity.id::text AS class_entity_id,class_entity.domain_id AS class_domain_id,
+        class_entity.label AS class_label,subject_entity.id::text AS subject_entity_id,
+        subject_entity.label AS subject_label,space_entity.id::text AS space_entity_id,
+        space_entity.label AS space_label,occurrence.responsible_agent_id::text,
+        responsible.label AS responsible_agent_label,occurrence.title,occurrence.slot_type,
+        occurrence.starts_at,occurrence.ends_at,basis.source_domain,basis.source_record_id,
+        basis.source_revision,occurrence.change_kind
+      FROM campus_model_schedule_occurrences occurrence
+      JOIN campus_model_events basis ON basis.id=occurrence.basis_event_id
+        AND basis.school_id=occurrence.school_id
+        AND basis.realm_id=occurrence.realm_id
+        AND basis.environment_namespace_id=occurrence.environment_namespace_id
+      JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
+        AND class_entity.realm_id=occurrence.realm_id
+        AND class_entity.environment_namespace_id=occurrence.environment_namespace_id
+      JOIN campus_model_entities period_entity ON period_entity.id=occurrence.period_entity_id
+        AND period_entity.realm_id=occurrence.realm_id
+        AND period_entity.environment_namespace_id=occurrence.environment_namespace_id
+      LEFT JOIN campus_model_entities subject_entity ON subject_entity.id=occurrence.subject_entity_id
+        AND subject_entity.realm_id=occurrence.realm_id
+        AND subject_entity.environment_namespace_id=occurrence.environment_namespace_id
+      LEFT JOIN campus_model_entities space_entity ON space_entity.id=occurrence.space_entity_id
+        AND space_entity.realm_id=occurrence.realm_id
+        AND space_entity.environment_namespace_id=occurrence.environment_namespace_id
+      LEFT JOIN campus_model_agents responsible ON responsible.id=occurrence.responsible_agent_id
+        AND responsible.school_id=occurrence.school_id AND responsible.status='active'
+      WHERE occurrence.school_id=${input.school_id}::uuid
+        AND occurrence.environment_namespace_id=${environmentNamespaceId}
+        AND occurrence.occurrence_date=${input.date}::date
+        AND occurrence.state='expected'
+        AND occurrence.recorded_from<=${input.recorded_as_of}::timestamptz
+        AND (occurrence.recorded_until IS NULL OR occurrence.recorded_until>${input.recorded_as_of}::timestamptz)
+        AND (${input.responsible_agent_id ?? null}::uuid IS NULL
+          OR occurrence.responsible_agent_id=${input.responsible_agent_id ?? null}::uuid)
+      ORDER BY occurrence.starts_at,occurrence.period_number,class_entity.label,occurrence.id
+      LIMIT 500
+    `.execute(this.db)).rows;
   }
 
   private async recordCoordinationException(

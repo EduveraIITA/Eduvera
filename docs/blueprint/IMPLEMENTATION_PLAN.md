@@ -9001,3 +9001,30 @@ endpoint completeness, cross-address consistency and evidence-certification atom
 defect evidence and the still-open blueprint gates are recorded in
 `CORE_VERIFICATION_AUDIT_2026-10-17.md`. This is evidence for the implemented boundary, not a claim
 that the target Core or production release gates are complete.
+
+### Shared operating-day vertical slice — 17 October 2026 (local)
+
+The first MC-3 application composition is now implemented across timetable, Attendance,
+accepted gate evidence and cross-domain contradiction signals. `TemporalContextPort.listOperatingDay`
+owns the environment-qualified effective schedule query, including current substitution/cancellation
+lineage and exact timetable-period identity. The new domain-facing `OperatingDayService` composes that
+plan with authoritative records through the request-selected data plane and execution clock; it does
+not expose Core persistence to frontend code.
+
+Attendance is deliberately configuration-sensitive. `daily_class` produces one expected register per
+class/day, `scheduled_session` produces one per effective occurrence and joins the subject-session
+register by its canonical timetable slot, while `none` returns `not_required` and zero invented work.
+Staff receive only occurrences assigned to their stable human agent; administrators receive the whole
+institution day. The projection supplies Live/Simulation identity, Now/Next/completed state, gate totals,
+register progress, provenance/freshness and reviewable gate/schedule contradictions. It is available as
+`GET /api/v1/schools/:schoolId/operating-day` and is embedded in the existing teacher Today and Principal
+Overview responses and UI without replacing their established navigation or domain action screens.
+
+Verified evidence: backend TypeScript production build; focused projection tests **3/3**; PostgreSQL 17
+fresh migration and seed; database-backed daily/session/none repository integration **1/1**; Nest startup,
+administrator login and endpoint response against the disposable database; focused frontend component
+test **1/1**; and frontend production build. The integration test remains opt-in behind the existing
+isolated-database guard. The seed does not itself emit historical timetable events into the Core, so the
+fresh-seed endpoint correctly returned an empty modeled schedule; model backfill/convergence remains a
+separate open gate rather than being hidden by a legacy timetable fallback. Campus View still has its
+transitional allowlisted composition and must converge on this boundary/checkpoint before MC-3 is complete.

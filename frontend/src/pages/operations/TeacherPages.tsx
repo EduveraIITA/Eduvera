@@ -48,6 +48,7 @@ import "./attendance-register.css";
 import "./attendance-workspace.css";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
+import { OperatingDayNowNext } from "../../features/operating-day/OperatingDayNowNext";
 function time(value: string | null) {
   if (!value) return "No lesson";
   const [hour = "0", minute = "00"] = value.split(":");
@@ -163,6 +164,7 @@ export function TeacherHomePage({
             </div>
           )}
         </section>
+        <OperatingDayNowNext day={data.operating_day} />
         <HomeActionDeck actions={remainingActions.slice(0, 3)} title="Later" variant="quiet" />
         {data.classes.length ? <section className="operations-panel teacher-home__classes">
           <header>
