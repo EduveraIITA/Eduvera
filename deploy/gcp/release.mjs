@@ -76,7 +76,7 @@ export async function verify(origin, sha, request = fetch) {
   if (release.release_sha !== sha || release.environment !== 'stage') throw new Error('Wrong release or environment');
   if ((await (await get('/readyz')).json()).status !== 'ready') throw new Error('Database/events are not ready');
   if (!(await (await get('/')).text()).includes('<title>ThatCampus</title>')) throw new Error('Mobile app failed');
-  if (!(await (await get('/staff/')).text()).includes('<title>OmniSchool · Staff</title>')) throw new Error('Staff app failed');
+  if (!(await (await get('/staff/')).text()).includes('<title>ThatCampus · Staff</title>')) throw new Error('Staff app failed');
   for (const path of ['/assets/thatcampus-logo.png', '/manifest.webmanifest', '/api/schema']) await get(path);
   if ((await (await get('/api/v1/auth/session/')).json()).demo_mode !== false) throw new Error('Password-based development demo access must be disabled');
   if ((await request(`${origin}/api/v1/auth/demo-session/`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{"role":"admin"}',signal:AbortSignal.timeout(20000),redirect:'error'})).status !== 404) throw new Error('Demo authentication must reject public access');

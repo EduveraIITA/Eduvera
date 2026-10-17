@@ -143,3 +143,22 @@ test('missing images, denied registry access and malformed digests fail closed',
     assert.throws(() => resolveImageDigest(env.GCP_IMAGE, env.GITHUB_SHA, () => { throw failure; }), error => error === failure);
   }
 });
+
+ test('smoke check accepts actual app shells and rejects a wrong staff shell', async () => {
+  const { readFileSync } = await import('node:fs');
+  const mobile = readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+  const staff = readFileSync(new URL('../../frontend-desktop/index.html', import.meta.url), 'utf8');
+  const request = (staffHtml) => async url => {
+    const path = new URL(url).pathname;
+    if (path === '/releasez') return Response.json({ release_sha: env.GITHUB_SHA, environment: 'stage' });
+    if (path === '/readyz') return Response.json({ status: 'ready' });
+    if (path === '/') return new Response(mobile);
+    if (path === '/staff/') return new Response(staffHtml);
+    if (path === '/api/v1/auth/session/') return Response.json({ demo_mode: false });
+    if (path === '/api/v1/auth/demo-session/') return new Response(null, { status: 404 });
+    if (path === '/metrics') return new Response(null, { status: 401 });
+    return new Response('ok');
+  };
+  await verify('https://example.run.app', env.GITHUB_SHA, request(staff));
+  await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, request(mobile)), /Staff app failed/);
+});
