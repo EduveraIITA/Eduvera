@@ -7,6 +7,7 @@ precision highp float;
 in vec2 aPoint;
 uniform vec2 uResolution;
 uniform float uTime;
+uniform float uPixelRatio;
 out float vEdge;
 out float vAlpha;
 out float vIndex;
@@ -29,8 +30,8 @@ void main() {
   float perc = float(gl_InstanceID) / 159.0;
   float x = aPoint.x;
   float split = 0.04 + perc * 0.5;
-  float amp = smoothstep(split, max(0.7, split + 0.2), x) * 0.65;
-  float t = uTime / 10.0;
+  float amp = smoothstep(split, max(0.7, split + 0.2), x) * 0.8;
+  float t = uTime / 6.0;
   float n = mix(noise(vec2(t * 2.5, (x * 1.05 + perc) * 2.5)), noise(vec2(t * 3.5, (x * 1.05 + t) * 3.5)) / 1.5, x * 0.3);
   // Overscan the band and anchor its outer strands: waves must never expose
   // an empty wedge at any viewport edge, even during landscape rotation.
@@ -39,7 +40,7 @@ void main() {
   float c = 0.9063078, s = 0.4226183;
   vec2 frame = vec2(uResolution.x*c + uResolution.y*s, uResolution.x*s + uResolution.y*c) * 1.1;
   vec2 local = (vec2(x,y) - 0.5) * frame;
-  local.y += aPoint.y * 1.5;
+  local.y += aPoint.y * 0.65 * uPixelRatio;
   vec2 turned = vec2(local.x*c - local.y*s, local.x*s + local.y*c);
   gl_Position = vec4(turned / (uResolution * 0.5), 0.0, 1.0);
   vEdge = aPoint.y;
@@ -60,7 +61,18 @@ void main() {
 
 export default function Threads() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fallbackRef = useRef<SVGSVGElement>(null);
   const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => {
+      if (motion.matches) fallbackRef.current?.pauseAnimations?.();
+      else fallbackRef.current?.unpauseAnimations?.();
+    };
+    update();
+    motion.addEventListener("change", update);
+    return () => motion.removeEventListener("change", update);
+  }, []);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -100,6 +112,7 @@ export default function Threads() {
     gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
     const resolution = gl.getUniformLocation(program, "uResolution");
     const time = gl.getUniformLocation(program, "uTime");
+    const pixelRatio = gl.getUniformLocation(program, "uPixelRatio");
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let raf = 0, previous = 0, elapsed = 0, visible = true, lost = false;
     const draw = () => {
@@ -113,13 +126,14 @@ export default function Threads() {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.uniform2f(resolution, canvas.width, canvas.height);
       gl.uniform1f(time, elapsed);
+      gl.uniform1f(pixelRatio, canvas.width / Math.max(1, canvas.clientWidth));
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, (segments + 1) * 2, 160);
       canvas.dataset.ready = gl.getError() === gl.NO_ERROR ? "true" : "false";
     };
     const frame = (now: number) => {
       raf = 0;
       if (!visible || document.hidden || lost) { previous = 0; return; }
-      if (previous) elapsed += Math.min((now - previous) / 1000, 0.05) * 0.6;
+      if (previous) elapsed += Math.min((now - previous) / 1000, 0.05);
       previous = now;
       draw();
       if (!motion.matches) raf = requestAnimationFrame(frame);
@@ -178,12 +192,16 @@ export default function Threads() {
   }, [generation]);
   return <div className="threads-background" aria-hidden="true">
     <canvas ref={canvasRef} className="threads-canvas" />
-    <svg className="threads-fallback" viewBox="0 0 1600 1000" preserveAspectRatio="none" focusable="false">
-      <g fill="none" strokeWidth="1.2">
+    <svg ref={fallbackRef} className="threads-fallback" viewBox="0 0 1600 1000" preserveAspectRatio="none" focusable="false">
+      <g fill="none" strokeWidth="0.65" vectorEffect="non-scaling-stroke">
         {Array.from({ length: 100 }, (_, index) => {
           const y = -450 + index * 20;
-          return <path key={index} stroke={index % 3 === 0 ? "#9185d9" : "#609bea"}
-            d={`M -200 ${y + 380} C 350 ${y + 300}, 850 ${y - 180}, 1800 ${y + 100}`} />;
+          return <path key={index} vectorEffect="non-scaling-stroke" stroke={index % 3 === 0 ? "#9185d9" : "#609bea"}
+            d={`M -200 ${y + 380} C 350 ${y + 300}, 850 ${y - 180}, 1800 ${y + 100}`}>
+            <animate attributeName="d" dur={`${9 + (index % 4)}s`} begin={`${-(index % 4)}s`} repeatCount="indefinite"
+              values={`M -200 ${y + 380} C 350 ${y + 300}, 850 ${y - 180}, 1800 ${y + 100};M -200 ${y + 330} C 350 ${y + 120}, 850 ${y + 80}, 1800 ${y + 60};M -200 ${y + 380} C 350 ${y + 300}, 850 ${y - 180}, 1800 ${y + 100}`}
+              calcMode="spline" keyTimes="0;0.5;1" keySplines="0.42 0 0.58 1;0.42 0 0.58 1" />
+          </path>;
         })}
       </g>
     </svg>

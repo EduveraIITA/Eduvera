@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="448 192 640 640"
+     role="img" aria-labelledby="thatcampus-title thatcampus-description">
+  <title id="thatcampus-title">ThatCampus — living agent icon</title>
+  <desc id="thatcampus-description">Three existing blue spokes blink, tilt with curiosity, and settle over the gently breathing circular body.</desc>
+
+  <defs>
+    <linearGradient id="left-color" x1="505" y1="490" x2="690" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0077fc"/><stop offset="1" stop-color="#006cfc"/>
+    </linearGradient>
+    <linearGradient id="top-color" x1="768" y1="273" x2="768" y2="517" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0094fd"/><stop offset="1" stop-color="#007dfd"/>
+    </linearGradient>
+    <linearGradient id="right-color" x1="860" y1="568" x2="1018" y2="415" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0086fc"/><stop offset="1" stop-color="#0095fc"/>
+    </linearGradient>
+    <linearGradient id="body-color" x1="768" y1="574" x2="768" y2="740" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0055fc"/><stop offset="1" stop-color="#0056fc"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    /* Keep a static, original-shaped icon for motion-sensitive viewers. */
+    @media (prefers-reduced-motion: reduce) {
+      .turn, .blink, .breathe { transform: none !important; }
+    }
+  </style>
+
+  <!-- Transparent background; no glow or shadow. -->
+  <!-- Outer tip retracts toward the inner anchor, ALONG the diagonal. -->
+  <g transform="translate(664 562)">
+    <g class="turn" id="left-listens">
+      <animateTransform attributeName="transform" attributeType="XML" type="rotate" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.10000;0.13000;0.16000;0.20000;0.22500;0.26000;0.42000;0.48000;0.53000;0.59000;0.65000;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="0.00000;0.00000;3.20000;-0.70000;1.20000;0.00000;0.00000;0.00000;-2.90000;-2.20000;0.70000;0.00000;0.00000"/>
+      <g transform="rotate(45)">
+        <g class="blink" id="left-blinks">
+          <animateTransform attributeName="transform" attributeType="XML" type="scale" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.33400;0.35000;0.36200;0.38000;0.39500;0.71300;0.72600;0.73600;0.75600;0.76700;0.78000;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="1 1.00000;1 1.00000;1 0.67000;1 1.02400;1 1.00000;1 1.00000;1 1.00000;1 0.76000;1 1.01000;1 0.71000;1 1.02200;1 1.00000;1 1.00000"/>
+          <g transform="rotate(-45) translate(-664 -562)">
+            <path d="M565 410 C589 410 605 419 619 438 L685 524 C695 538 694 551 688 562 C677 579 664 583 647 574 L533 505 C507 489 501 462 515 436 C524 419 543 410 565 410 Z" fill="url(#left-color)"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(768 502)">
+    <g class="turn" id="center-listens">
+      <animateTransform attributeName="transform" attributeType="XML" type="rotate" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.11000;0.15000;0.19000;0.23000;0.26000;0.42000;0.50000;0.54000;0.60000;0.65000;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="0.00000;0.00000;0.90000;-0.90000;0.00000;0.00000;0.00000;1.20000;0.80000;-0.25000;0.00000;0.00000"/>
+      <g class="blink" id="center-blinks">
+        <animateTransform attributeName="transform" attributeType="XML" type="scale" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.33600;0.35200;0.36400;0.38200;0.39700;0.71500;0.72800;0.73800;0.75800;0.76900;0.78200;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="1 1.00000;1 1.00000;1 0.65000;1 1.02500;1 1.00000;1 1.00000;1 1.00000;1 0.75000;1 1.01000;1 0.70000;1 1.02200;1 1.00000;1 1.00000"/>
+        <g transform="translate(-768 -502)">
+          <path d="M768 273 C799 273 823 297 823 326 C823 335 820 352 818 365 L794 490 C790 508 782 517 768 517 C752 517 743 504 740 489 L716 365 C714 354 713 337 713 326 C713 297 737 273 768 273 Z" fill="url(#top-color)"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(872 562)">
+    <g class="turn" id="right-listens">
+      <animateTransform attributeName="transform" attributeType="XML" type="rotate" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.12000;0.17000;0.20000;0.23000;0.25000;0.26000;0.42000;0.51000;0.56000;0.61000;0.65000;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="0.00000;0.00000;-2.80000;0.60000;-0.80000;0.00000;0.00000;0.00000;3.20000;2.20000;-0.60000;0.00000;0.00000"/>
+      <g transform="rotate(-45)">
+        <g class="blink" id="right-blinks">
+          <animateTransform attributeName="transform" attributeType="XML" type="scale" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.33800;0.35400;0.36600;0.38400;0.39900;0.71700;0.73000;0.74000;0.76000;0.77100;0.78400;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="1 1.00000;1 1.00000;1 0.67000;1 1.02400;1 1.00000;1 1.00000;1 1.00000;1 0.76000;1 1.01000;1 0.71000;1 1.02200;1 1.00000;1 1.00000"/>
+          <g transform="rotate(45) translate(-872 -562)">
+            <path d="M971 410 C947 410 931 419 917 438 L851 524 C841 538 842 551 848 562 C859 579 872 583 889 574 L1003 505 C1029 489 1035 462 1021 436 C1012 419 993 410 971 410 Z" fill="url(#right-color)"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(768 657)">
+    <g class="breathe" id="body-breathes">
+      <animateTransform attributeName="transform" attributeType="XML" type="scale" dur="7.2s" repeatCount="indefinite" calcMode="spline" keyTimes="0.00000;0.06000;0.14000;0.29000;0.35000;0.49000;0.58000;0.69000;0.83000;0.93000;1.00000" keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1" values="1.00000 1.00000;1.00800 1.00800;1.00000 1.00000;1.00800 1.00800;1.00000 1.00000;1.00800 1.00800;1.00000 1.00000;1.00800 1.00800;1.00000 1.00000;1.00800 1.00800;1.00000 1.00000"/>
+      <circle r="83" fill="url(#body-color)"/>
+    </g>
+  </g>
+</svg>

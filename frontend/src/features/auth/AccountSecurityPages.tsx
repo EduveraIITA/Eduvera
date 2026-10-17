@@ -1,5 +1,6 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Clipboard, KeyRound, LoaderCircle, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clipboard, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";

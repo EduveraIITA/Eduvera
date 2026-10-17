@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -10,7 +11,6 @@ import {
   EyeOff,
   GraduationCap,
   KeyRound,
-  LoaderCircle,
   LockKeyhole,
   Mail,
   RefreshCw,

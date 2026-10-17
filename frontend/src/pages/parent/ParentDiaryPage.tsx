@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useEffect, useMemo, useState } from "react";
 import {
   Backpack,
@@ -8,7 +9,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  LoaderCircle,
   LockKeyhole,
   Paperclip,
   PenLine,

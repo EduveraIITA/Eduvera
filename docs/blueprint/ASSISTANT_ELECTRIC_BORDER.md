@@ -38,3 +38,11 @@ core. Use one 0.5px strand, low chaos and no flicker. A smooth travelling sine
 wave and matching slope derivative preserve the thin line while it moves;
 the existing travelling brightness crest remains. The static outline/halo now
 use the semantic brand token. Input stays unwrapped; latest response only.
+
+## Indigo glow refinement — 16 October 2026
+
+User requested more indigo to match the theme. Update the response-only core to
+#6366f1 and glow/halo to #4f46e5, increasing glow slightly from 0.9 to 1.05.
+Retain the 0.5px strand, smooth travelling wave, no flicker, static reduced-motion
+fallback and undecorated input. This is a color/preset change; Stage build and
+regression verification gate the deployment.

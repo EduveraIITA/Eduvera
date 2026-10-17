@@ -1,6 +1,7 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { type InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, LoaderCircle } from "lucide-react";
+import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { apiFetch } from "../../lib/api";

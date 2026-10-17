@@ -1,9 +1,10 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen, CalendarDays, CalendarOff, ChevronDown, ChevronLeft, ChevronRight,
-  Clock3, LoaderCircle, Plus, Repeat2, Settings2, UsersRound, X,
+  Clock3, Plus, Repeat2, Settings2, UsersRound, X,
 } from "lucide-react";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { SchoolCalendarSheet } from "../../pages/operations/TimetableBuilderSheets";

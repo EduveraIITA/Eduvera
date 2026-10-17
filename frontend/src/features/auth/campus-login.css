@@ -2,17 +2,19 @@
   --campus-blue: #2563eb;
   --campus-ink: #182032;
   --campus-muted: #536078;
+  --campus-background: var(--campus-background);
   box-sizing: border-box;
   min-height: 100dvh;
   position: relative;
   isolation: isolate;
   padding: 0;
   color: var(--campus-ink);
-  background: radial-gradient(ellipse at 50% 22%, #d5e4fa 0%, transparent 48%), radial-gradient(ellipse at 89% 58%, #c9f2ff 0%, transparent 48%), #f7f7ff;
+  background: var(--campus-background);
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   color-scheme: light;
 }
 .campus-login *, .campus-login *::before, .campus-login *::after { box-sizing: border-box; }
+.app-viewport:has(.campus-login) { width: 100%; max-width: none; overflow: visible; background: transparent; box-shadow: none; }
 .campus-login a { color: #134eb7; text-decoration: none; }
 .campus-login a:hover { text-decoration: underline; }
 .campus-login :is(a, button, summary):focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; }
@@ -84,5 +86,29 @@
 @media (max-width: 650px) { .campus-login__brand { gap: 8px; } .campus-login__brand-logo { width: 88px; height: 52px; } .campus-login__brand small { font-size: 9px; } }
 
 /* Keep one decorative animation behind the complete viewport and all controls. */
-.campus-login > .threads-background { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; z-index: 0; }
+.campus-login > .topography-background { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; z-index: 0; background: var(--campus-background); }
 @media (prefers-contrast: more) { .campus-login__card { background: rgb(251 253 255 / 95%); } }
+
+/* The same resolved preference drives the canvas and every login surface. */
+.campus-login[data-login-theme="dark"] {
+  --campus-ink: #e6ecff;
+  --campus-muted: #a9b4cc;
+  --campus-background: radial-gradient(ellipse at 50% 22%, #182b51 0%, transparent 52%), radial-gradient(ellipse at 89% 58%, #10333f 0%, transparent 52%), #0b1220;
+  color-scheme: dark;
+}
+.campus-login[data-login-theme="dark"] :is(a, .auth-text-button) { color: #9db5ff; }
+.campus-login[data-login-theme="dark"] :is(.campus-login__topbar, .campus-login__footer) { background: rgb(11 18 32 / 45%); }
+.campus-login[data-login-theme="dark"] .campus-login__brand-logo { filter: url(#campus-login-dark-logo); }
+.campus-login[data-login-theme="dark"] .campus-login__card { background: rgb(17 26 46 / 72%); border-color: rgb(148 163 184 / 22%); box-shadow: 0 12px 40px #0003; }
+.campus-login[data-login-theme="dark"] .campus-login__help > div { background: #141e34; border-color: #34425b; }
+.campus-login[data-login-theme="dark"] :is(.campus-login__access, .auth-input-wrap) { background: #1b2744; color: #a9b4cc; }
+.campus-login[data-login-theme="dark"] .auth-input-wrap:focus-within { background: #172238; border-color: #7c9cff; box-shadow: 0 0 0 3px #7c9cff26; }
+.campus-login[data-login-theme="dark"] :is(.auth-input-wrap input::placeholder, .auth-input-wrap button) { color: #a9b4cc; }
+.campus-login[data-login-theme="dark"] :is(.campus-login__heading p, .auth-verification-intro, .auth-invite-link, .auth-switch, .campus-login__assurance, .campus-login__footer) { color: #c3cce3; }
+.campus-login[data-login-theme="dark"] :is(.campus-login__access svg, .campus-login__assurance svg) { color: #65d5d2; }
+.campus-login[data-login-theme="dark"] .campus-login__links { background: rgb(27 39 68 / 45%); }
+.campus-login[data-login-theme="dark"] .auth-switch { border-color: #34425b; }
+.campus-login[data-login-theme="dark"] .auth-alert { color: #ffb4ab; background: #4a1c1c; border-color: #86423e; }
+.campus-login[data-login-theme="dark"] .google-sign-in__divider { color: #a9b4cc !important; }
+.campus-login[data-login-theme="dark"] .google-sign-in__divider > span { background: #34425b !important; }
+@media (prefers-contrast: more) { .campus-login[data-login-theme="dark"] .campus-login__card { background: #111a2e; } }

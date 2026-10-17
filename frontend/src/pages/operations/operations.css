@@ -1448,12 +1448,14 @@
     box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.055);
     backdrop-filter: blur(16px);
   }
-  .operations-mobile-nav a {
+  .operations-mobile-nav a,
+  .operations-mobile-nav .assistant-tab {
     position: relative;
     display: grid;
     min-width: 0;
     place-items: center;
     align-content: center;
+    grid-template-rows: 26px auto;
     gap: 2px;
     color: var(--op-muted);
     font-size: 11px;
@@ -1463,7 +1465,8 @@
   .operations-mobile-nav a.is-active {
     color: var(--op-blue);
   }
-  .operations-mobile-nav a span {
+  .operations-mobile-nav a span,
+  .operations-mobile-nav .assistant-tab > span {
     max-width: 100%;
     overflow: hidden;
     padding: 0 2px;

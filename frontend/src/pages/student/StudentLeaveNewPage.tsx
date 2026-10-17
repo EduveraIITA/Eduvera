@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon } from "../../components/ThatCampusLoader";
 import { useId, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -252,7 +253,7 @@ export function StudentLeaveNewPage({
         {error && <p className="form-message form-message--error" role="alert">{error}</p>}
         <div className="student-action-stack leave-submit-actions">
           <button className={`primary-action ${submitState === "success" ? "is-success" : ""}`} type="submit" disabled={submitState !== "idle"}>
-            {submitState === "loading" ? <><span className="button-spinner" />Routing to Parent...</> : submitState === "success" ? <><Check size={19} />Sent for Digital Signature!</> : <>Submit for Parent Verification <ArrowRight size={19} /></>}
+            {submitState === "loading" ? <><ThatCampusLoadingIcon size={18} />Routing to Parent...</> : submitState === "success" ? <><Check size={19} />Sent for Digital Signature!</> : <>Submit for Parent Verification <ArrowRight size={19} /></>}
           </button>
           <button className="quiet-action" type="button" onClick={saveDraft}><Save size={16} />{draftSaved ? "Draft Saved" : "Save Application as Draft"}</button>
         </div>

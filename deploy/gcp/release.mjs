@@ -91,6 +91,22 @@ export async function verifyPhoto(origin, request = fetch) {
   if (!health.model_files_present || health.accuracy_validated !== false || health.single_operator !== true) throw new Error('Photo-service safety or model health is not ready');
 }
 
+export function resolveImageDigest(image, sha, execute = execFileSync) {
+  if (![
+    'asia-south1-docker.pkg.dev/eduera-511111/eduera/web',
+    'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance',
+  ].includes(image)) throw new Error('Unexpected release image repository');
+  if (!/^[a-f0-9]{40}$/.test(sha ?? '')) throw new Error('A full release SHA is required');
+  // Builds and deployment run on separate runners. Resolve the pushed commit tag
+  // in Artifact Registry using the deploy runner's freshly authenticated identity.
+  const digest = execute('gcloud', [
+    'artifacts', 'docker', 'images', 'describe', `${image}:${sha}`,
+    '--project=eduera-511111', '--format=value(image_summary.digest)', '--quiet',
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
+  if (!/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error('Cannot find a valid pushed immutable image digest');
+  return `${image}@${digest}`;
+}
+
 async function deploy(env) {
   if (env.GCP_STAGE_DEPLOY_ENABLED !== 'true') throw new Error('Deployment has not been enabled');
   const flags = [`--project=${env.GCP_PROJECT_ID}`, `--region=${env.GCP_REGION}`, '--quiet'];
@@ -103,12 +119,8 @@ async function deploy(env) {
   // fail closed; the candidate smoke check verifies the new public path.
   const previous = assertRuntime(service, describe('jobs', env.GCP_MIGRATION_JOB), { allowPublicDemoBootstrap: true });
   const publicUrl = service.spec.template.spec.containers[0].env.find(item => item.name === 'PUBLIC_URL').value;
-  const imageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));
-  const image = imageInfo[0]?.RepoDigests?.find(digest => digest.startsWith(`${env.GCP_IMAGE}@sha256:`));
-  if (!image) throw new Error('Cannot find the pushed immutable image digest');
-  const photoImageInfo = JSON.parse(execFileSync('docker', ['image', 'inspect', `${env.GCP_PHOTO_IMAGE}:${env.GITHUB_SHA}`], { encoding: 'utf8' }));
-  const photoImage = photoImageInfo[0]?.RepoDigests?.find(digest => digest.startsWith(`${env.GCP_PHOTO_IMAGE}@sha256:`));
-  if (!photoImage) throw new Error('Cannot find the pushed immutable photo image digest');
+  const image = resolveImageDigest(env.GCP_IMAGE, env.GITHUB_SHA);
+  const photoImage = resolveImageDigest(env.GCP_PHOTO_IMAGE, env.GITHUB_SHA);
   gcloud(['run', 'jobs', 'update', env.GCP_MIGRATION_JOB, ...flags, `--image=${image}`]);
   gcloud(['run', 'jobs', 'execute', env.GCP_MIGRATION_JOB, ...flags, '--wait']);
   gcloud([

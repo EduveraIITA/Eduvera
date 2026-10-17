@@ -1,5 +1,6 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
-import { CalendarOff, Check, Copy, LoaderCircle, Save, Trash2, X } from "lucide-react";
+import { CalendarOff, Check, Copy, Save, Trash2, X } from "lucide-react";
 import type { CopyTimetableDayInput, CurriculumTargetInput, NewTimetableSlot, PrincipalTimetableResponse, SchoolClosureInput } from "../../features/operations/api";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";

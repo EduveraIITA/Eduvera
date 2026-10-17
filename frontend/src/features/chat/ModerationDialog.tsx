@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 /* eslint-disable */
 // @ts-nocheck
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,7 +11,6 @@ import {
   ChevronRight,
   Clock3,
   Flag,
-  LoaderCircle,
   LockKeyhole,
   MessageSquareText,
   ShieldAlert,

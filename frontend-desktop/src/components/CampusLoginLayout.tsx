@@ -1,16 +1,31 @@
-import Threads from "./Threads";
+import { useLoginTheme } from "./useLoginTheme";
+import LoginTopography from "./LoginTopography";
 import type { ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import "./campus-login.css";
 
 export function CampusLoginLayout({ children }: { children: ReactNode }) {
-  return <div className="campus-login">
-    <Threads />
+  const dark = useLoginTheme();
+  return <div className="campus-login" data-login-theme={dark ? "dark" : "light"}>
+    <LoginTopography dark={dark} />
+    {/* Preserve the original blue artwork; recolour only the navy lettering. */}
+    <svg width="0" height="0" aria-hidden="true" style={{ position: "absolute" }}>
+      <defs>
+        <filter id="campus-login-dark-logo" colorInterpolationFilters="sRGB">
+          <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 -1 0 1" />
+          <feComponentTransfer><feFuncA type="discrete" tableValues="0 0 1 1" /></feComponentTransfer>
+          <feComposite in2="SourceAlpha" operator="in" result="letterMask" />
+          <feFlood floodColor="#f0f3ff" />
+          <feComposite in2="letterMask" operator="in" result="whiteLetters" />
+          <feComposite in="SourceGraphic" in2="letterMask" operator="out" />
+          <feMerge><feMergeNode /><feMergeNode in="whiteLetters" /></feMerge>
+        </filter>
+      </defs>
+    </svg>
     <div className="campus-login__frame">
       <header className="campus-login__topbar">
         <a className="campus-login__brand" href="/" aria-label="ThatCampus portal">
           <img className="campus-login__brand-logo" src="/assets/thatcampus-logo.png" alt="ThatCampus" width="104" height="62" />
-          <span><small>PORTAL ACCESS</small></span>
         </a>
         <div className="campus-login__top-actions">
           <span className="campus-login__access"><ShieldCheck size={13} aria-hidden="true" />School portal</span>

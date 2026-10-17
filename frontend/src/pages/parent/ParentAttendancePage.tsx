@@ -1,3 +1,4 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,7 +7,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Flame,
-  LoaderCircle,
   MessageSquareText,
   MoreHorizontal,
   PlusCircle,

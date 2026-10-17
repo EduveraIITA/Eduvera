@@ -225,7 +225,7 @@
   background: rgba(248, 249, 255, 0.85);
 }
 
-.student-bottom-nav__item {
+.student-bottom-nav .student-bottom-nav__item {
   width: 60px;
   min-height: 48px;
   justify-content: center;

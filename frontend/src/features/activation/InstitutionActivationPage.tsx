@@ -1,5 +1,6 @@
+import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Circle, LoaderCircle, LockKeyhole, RefreshCw, Rocket, Settings2 } from "lucide-react";
+import { Check, Circle, LockKeyhole, RefreshCw, Rocket, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";

@@ -253,7 +253,7 @@
 }
 
 /* React Bits current stays close to the edge; decorative canvas never blocks input. */
-.assistant-electric-border { min-width: 0; box-shadow: 0 0 0 .35px color-mix(in srgb, var(--edura-brand) 30%, transparent), 0 0 12px color-mix(in srgb, var(--edura-brand) 16%, transparent); }
+.assistant-electric-border { --assistant-electric-glow: #4f46e5; min-width: 0; box-shadow: 0 0 0 .35px color-mix(in srgb, var(--assistant-electric-glow) 30%, transparent), 0 0 12px color-mix(in srgb, var(--assistant-electric-glow) 16%, transparent); }
 .assistant-electric-border > .electric-border__canvas { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .assistant-electric-border > .electric-border__canvas { display: none; }

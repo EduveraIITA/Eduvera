@@ -8239,3 +8239,7 @@ states instead of presenting an unexplained disabled form. Focused verification 
 backend typecheck/scoped lint and **16/16** scenario tests; frontend scoped lint and
 **14/14** planner/KPI-panel tests. Mobile owner validation remains open; no push or
 production deployment is claimed.
+
+## Loader visual update — 16 October 2026
+
+User-approved four-arm ThatCampus loader uses alternating logo blues, a fixed center gap, and a trailing arm that shrinks toward white. The final requested speed is a 2.667-second cycle. Shared route loading and inline loading indicators across authentication, activation, chat, notifications, onboarding, planner, attendance, leave and student submissions use this asset. Existing labels, control sizes, loading conditions and reduced-motion fallback remain. TypeScript and the shared loader test passed; production rollout is not yet verified.
