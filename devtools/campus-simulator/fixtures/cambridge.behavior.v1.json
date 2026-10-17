@@ -1,9 +1,9 @@
 {
-  "schema_version": 5,
-  "version": "cambridge.behavior.v5",
+  "schema_version": 6,
+  "version": "cambridge.behavior.v6",
   "school_code": "cis",
   "timezone": "Asia/Kolkata",
-  "source_label": "Cambridge development fixture v5",
+  "source_label": "Cambridge development fixture v6",
   "clock": {
     "mode": "compressed_school_day",
     "duration_seconds": 3600,
@@ -105,12 +105,12 @@
   ],
   "actions": [
     {
-      "id": "teacher-daily-attendance",
-      "type": "teacher_submit_daily_attendance",
+      "id": "teacher-attendance",
+      "type": "teacher_submit_attendance",
       "phase_mode": "lesson",
       "period_number": 1,
       "offset_ratio": 0.22,
-      "goal": "Exercise the current-day register during the first published teaching period."
+      "goal": "Exercise the attendance workflow selected by the institution's effective Operating rule during the first published teaching period."
     },
     {
       "id": "staff-guardian-message",

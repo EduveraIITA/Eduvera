@@ -4,7 +4,7 @@ import { DevelopmentActionRunner, deterministicUuid } from "../src/actions.mjs";
 import { createRoutineSchedule, loadBehaviorFixture } from "../src/model.mjs";
 
 const legacyOffsets = new Map([
-  ["teacher-daily-attendance", 600],
+  ["teacher-attendance", 600],
   ["staff-guardian-message", 1200],
   ["publish-acknowledgement", 300],
   ["guardian-acknowledgement", 900],
@@ -118,6 +118,122 @@ test("performs no action on a non-instructional day", async () => {
 
   await runner.tick(new Date("2026-10-16T03:40:00.000Z"));
   assert.equal(executions, 0);
+});
+
+test("the assigned teacher submits the same scheduled subject register shown to operators", async () => {
+  const behavior = await wallClockBehavior();
+  const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
+  const action = behavior.actions.find((item) => item.id === "teacher-attendance");
+  const adminCalls = [];
+  const actorCalls = [];
+  const actorRequestCalls = [];
+  const student = { id: "11111111-1111-4111-8111-111111111111", status: null };
+  const admin = {
+    async request(path) {
+      adminCalls.push(path);
+      return {
+        mode: "scheduled_session",
+        registers: [{
+          attendance_scope: "scheduled_session",
+          session_id: "22222222-2222-4222-8222-222222222222",
+          schedule_slot_id: "period-2026-10-16",
+          scheduled_teacher_id: "33333333-3333-4333-8333-333333333333",
+          scheduled_teacher_username: "priya.iyer",
+          assigned_teachers: ["Priya Iyer"],
+          period_number: 1,
+          submission_status: "not_started",
+          can_mark: true,
+        }],
+      };
+    },
+  };
+  const actorSession = async (identity) => {
+    actorCalls.push(identity);
+    return {
+      async request(path, options) {
+        actorRequestCalls.push({ path, options });
+        if (!options) return {
+          availability: { can_mark: true },
+          class: { id: "class-6a", name: "Class 6A" },
+          session: { subject_name: "English" },
+          register: { state: "draft", revision: 0, finalization_source: null },
+          roster: [student],
+        };
+        return { register: { state: "submitted", revision: 1 } };
+      },
+    };
+  };
+  const runner = new DevelopmentActionRunner({
+    sessions: { admin },
+    setup: { school: { id: "school-1" } },
+    behavior,
+    startedAt: new Date("2026-10-16T00:00:00.000Z"),
+    routine,
+    actorSession,
+    onActivity: () => undefined,
+  });
+
+  const result = await runner.execute(action);
+
+  assert.deepEqual(adminCalls, ["/api/v1/attendance-model/workspace?date=2026-10-16"]);
+  assert.deepEqual(actorCalls, [{ username: "priya.iyer", userId: "33333333-3333-4333-8333-333333333333", schoolId: "school-1" }]);
+  assert.deepEqual(actorRequestCalls.at(-1), {
+    path: "/api/v1/attendance-model/sessions/22222222-2222-4222-8222-222222222222/submit",
+    options: {
+      method: "POST",
+      headers: { "idempotency-key": "campus-lab-session-2026-10-16-22222222-2222-4222-8222-222222222222" },
+      body: {
+        expected_revision: 0,
+        reason: "Development-only Cambridge fixture rehearsal.",
+        records: [{ student_id: student.id, status: "present", remarks: "" }],
+      },
+    },
+  });
+  assert.equal(result.title, "Priya Iyer submitted Class 6A · English attendance");
+  assert.equal(result.target_path, "/principal/attendance?session_id=22222222-2222-4222-8222-222222222222&date=2026-10-16");
+});
+
+test("attendance rehearsal follows daily-class and disabled operating-rule modes", async () => {
+  const behavior = await wallClockBehavior();
+  const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
+  const action = behavior.actions.find((item) => item.id === "teacher-attendance");
+  const dailyCalls = [];
+  const dailyRunner = new DevelopmentActionRunner({
+    sessions: {
+      admin: { request: async () => ({ mode: "daily_class", registers: [] }) },
+      staff: { request: async (path, options) => {
+        dailyCalls.push({ path, options });
+        if (path.includes("/home/")) return { classes: [{ class_section_id: "class-6a", submission_status: "not_started", can_mark: true }] };
+        if (path.includes("/attendance/?")) return {
+          availability: { can_mark: true },
+          class: { id: "class-6a", name: "Class 6A" },
+          register: { state: "draft", revision: 0, finalization_source: null },
+          roster: [{ id: "11111111-1111-4111-8111-111111111111", status: null }],
+        };
+        return { register: { state: "submitted" } };
+      } },
+    },
+    setup: { school: { id: "school-1" } },
+    behavior,
+    startedAt: new Date("2026-10-16T00:00:00.000Z"),
+    routine,
+    onActivity: () => undefined,
+  });
+  const dailyResult = await dailyRunner.execute(action);
+  assert.equal(dailyCalls.at(-1).path, "/api/v1/teacher/attendance/bulk/");
+  assert.match(dailyResult.title, /daily attendance/);
+
+  const disabledRunner = new DevelopmentActionRunner({
+    sessions: { admin: { request: async () => ({ mode: "none", registers: [] }) } },
+    setup: { school: { id: "school-1" } },
+    behavior,
+    startedAt: new Date("2026-10-16T00:00:00.000Z"),
+    routine,
+    onActivity: () => undefined,
+  });
+  const disabledResult = await disabledRunner.execute(action);
+  assert.equal(disabledResult.state, "expected");
+  assert.match(disabledResult.title, /skipped by configuration/i);
 });
 
 test("an offered synthetic invigilator accepts through the real response command during school hours", async () => {

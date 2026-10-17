@@ -12,7 +12,7 @@ import {
 const processStartedAt = new Date("2026-10-16T00:00:00.000Z");
 
 const legacyOffsets = new Map([
-  ["teacher-daily-attendance", 600],
+  ["teacher-attendance", 600],
   ["staff-guardian-message", 1200],
   ["publish-acknowledgement", 300],
   ["guardian-acknowledgement", 900],
@@ -99,7 +99,7 @@ test("replays the real published Cambridge day through one configured one-hour c
   assert.equal(phaseAt(new Date("2026-10-16T10:12:00.000Z"), routine).period_number, 2);
   assert.equal(phaseAt(new Date("2026-10-16T11:00:00.000Z"), routine).id, "after-school-hours");
 
-  const attendance = behavior.actions.find((action) => action.id === "teacher-daily-attendance");
+  const attendance = behavior.actions.find((action) => action.id === "teacher-attendance");
   const dueAt = new Date(actionDueAt(attendance, routine)).getTime();
   assert.ok(dueAt > startedAt.getTime());
   assert.ok(dueAt < new Date(routine.phases[0].wall_ends_at).getTime());
@@ -150,10 +150,10 @@ test("reports actual campus-local time and phase-relative action windows", async
   assert.equal(simulatedAt(new Date("2026-10-16T03:30:00.000Z"), routine), "2026-10-16T09:00:00+05:30");
   assert.equal(simulatedAt(new Date("2026-10-16T10:00:00.000Z"), routine), "2026-10-16T15:30:00+05:30");
 
-  const attendance = behavior.actions.find((action) => action.id === "teacher-daily-attendance");
+  const attendance = behavior.actions.find((action) => action.id === "teacher-attendance");
   const notice = behavior.actions.find((action) => action.id === "publish-acknowledgement");
   const invigilation = behavior.reactions.find((reaction) => reaction.id === "accept-exam-invigilation");
-  assert.equal(behavior.version, "cambridge.behavior.v5");
+  assert.equal(behavior.version, "cambridge.behavior.v6");
   assert.equal(invigilation.event_type, "assessment.invigilation.offered");
   assert.equal(invigilation.decision, "accepted");
   assert.equal(actionDueAt(attendance, routine), "2026-10-16T03:40:00.000Z");
@@ -207,7 +207,7 @@ test("projects scheduled people only while the effective school day is open", as
   const administrator = open.zones.find((zone) => zone.space_id === "office").actors.find((person) => person.role === "admin");
   assert.equal(administrator.activity, "Coordinating campus operations");
   assert.equal(administrator.source, "cambridge_development_routine");
-  assert.equal(administrator.source_version, "cambridge.behavior.v5");
+  assert.equal(administrator.source_version, "cambridge.behavior.v6");
   assert.equal(administrator.valid_from, "2026-10-16T03:30:00.000Z");
   assert.equal(administrator.valid_until, "2026-10-16T04:15:00.000Z");
   assert.equal(open.unplaced[0].name, "Nina Rao");
@@ -270,14 +270,14 @@ test("places configured non-teaching staff only as expected simulation state", a
     state: "expected",
     basis: "expected_from_fixture",
     source: "cambridge_development_routine",
-    source_label: "Cambridge development fixture v5",
-    source_version: "cambridge.behavior.v5",
+    source_label: "Cambridge development fixture v6",
+    source_version: "cambridge.behavior.v6",
     valid_from: "2026-10-16T03:30:00.000Z",
     valid_until: "2026-10-16T04:15:00.000Z",
     generated_at: "2026-10-16T03:30:00.000Z",
   });
   assert.equal(gate.source, "cambridge_development_routine");
-  assert.equal(gate.source_version, "cambridge.behavior.v5");
+  assert.equal(gate.source_version, "cambridge.behavior.v6");
   assert.equal(gate.valid_from, "2026-10-16T03:30:00.000Z");
   assert.equal(gate.valid_until, "2026-10-16T04:15:00.000Z");
   assert.equal(open.activity.some((item) => item.state !== "expected"), false);

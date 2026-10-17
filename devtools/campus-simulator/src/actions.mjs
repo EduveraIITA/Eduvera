@@ -219,7 +219,7 @@ export class DevelopmentActionRunner {
       case "staff_guardian_message": return this.staffGuardianMessage(actionDefinition);
       case "admin_publish_notice": return this.adminPublishNotice(actionDefinition);
       case "parent_acknowledge_notice": return this.parentAcknowledgeNotice(actionDefinition);
-      case "teacher_submit_daily_attendance": return this.teacherSubmitDailyAttendance(actionDefinition);
+      case "teacher_submit_attendance": return this.teacherSubmitConfiguredAttendance(actionDefinition);
       default: throw new Error(`Unknown configured development action: ${actionDefinition.type}`);
     }
   }
@@ -314,6 +314,105 @@ export class DevelopmentActionRunner {
     });
   }
 
+  async teacherSubmitConfiguredAttendance(actionDefinition) {
+    const today = this.date;
+    const workspace = await this.sessions.admin.request(`/api/v1/attendance-model/workspace?date=${encodeURIComponent(today)}`);
+    if (workspace?.mode === "scheduled_session") return this.teacherSubmitSessionAttendance(actionDefinition, workspace);
+    if (workspace?.mode === "daily_class") return this.teacherSubmitDailyAttendance(actionDefinition);
+    return activity({
+      action: actionDefinition,
+      kind: "attendance",
+      title: "Attendance rehearsal skipped by configuration",
+      detail: "Academic attendance is disabled in the institution's effective Operating rule.",
+      state: "expected",
+      target_path: `/principal/attendance?date=${today}`,
+    });
+  }
+
+  async teacherSubmitSessionAttendance(actionDefinition, workspace) {
+    const today = this.date;
+    if (typeof this.actorSession !== "function") throw new Error("No fixture actor session factory is configured.");
+    const activeSlotIds = new Set(
+      (this.routine?.phases ?? [])
+        .filter((phase) => phase.mode === actionDefinition.phase_mode && phase.period_number === actionDefinition.period_number)
+        .flatMap((phase) => phase.active_slot_ids ?? []),
+    );
+    const candidates = (workspace?.registers ?? []).filter((item) => (
+      item.attendance_scope === "scheduled_session"
+      && item.period_number === actionDefinition.period_number
+      && activeSlotIds.has(item.schedule_slot_id)
+      && item.can_mark !== false
+      && !["submitted", "locked"].includes(item.submission_status)
+      && item.scheduled_teacher_id
+      && item.scheduled_teacher_username
+    ));
+    if (!candidates.length) {
+      return activity({
+        action: actionDefinition,
+        kind: "attendance",
+        title: "Attendance rehearsal skipped safely",
+        detail: "No open scheduled subject register with an identified assigned teacher exists in this active timetable period.",
+        state: "expected",
+        target_path: `/principal/attendance?date=${today}`,
+      });
+    }
+    let screen = null;
+    let actor = null;
+    let selected = null;
+    for (const candidate of candidates) {
+      const currentActor = await this.actorSession({
+        username: candidate.scheduled_teacher_username,
+        userId: candidate.scheduled_teacher_id,
+        schoolId: this.setup.school.id,
+      });
+      const current = await currentActor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}`);
+      const untouched = (current?.roster ?? []).every((student) => !student.status);
+      if (
+        current?.availability?.can_mark === true
+        && current?.register?.state === "draft"
+        && current?.register?.finalization_source !== "manual"
+        && untouched
+        && current.roster.length
+      ) {
+        screen = current;
+        actor = currentActor;
+        selected = candidate;
+        break;
+      }
+    }
+    if (!screen || !actor || !selected) {
+      return activity({
+        action: actionDefinition,
+        kind: "attendance",
+        title: "Attendance rehearsal left existing work unchanged",
+        detail: "Scheduled subject registers were closed, already contained decisions, or required a human workflow.",
+        state: "expected",
+        target_path: `/principal/attendance?date=${today}`,
+      });
+    }
+    const records = screen.roster.map((student) => ({
+      student_id: student.id,
+      status: attendanceStatus(student.id, this.behavior.attendance_ratios),
+      remarks: "",
+    }));
+    await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(selected.session_id)}/submit`, {
+      method: "POST",
+      headers: { "idempotency-key": `campus-lab-session-${today}-${selected.session_id}` },
+      body: {
+        expected_revision: Number(screen.register.revision ?? 0),
+        reason: "Development-only Cambridge fixture rehearsal.",
+        records,
+      },
+    });
+    return activity({
+      action: actionDefinition,
+      kind: "attendance",
+      title: `${selected.assigned_teachers?.[0] ?? "Assigned teacher"} submitted ${screen.class.name} · ${screen.session.subject_name} attendance`,
+      detail: `${records.length} dummy student decisions were recorded in the same scheduled subject register shown to campus operators.`,
+      target_path: `/principal/attendance?session_id=${selected.session_id}&date=${today}`,
+    });
+  }
+
   async teacherSubmitDailyAttendance(actionDefinition) {
     const today = this.date;
     const home = await this.sessions.staff.request(`/api/v1/screens/teacher/home/?date=${encodeURIComponent(today)}`);
@@ -323,9 +422,9 @@ export class DevelopmentActionRunner {
         action: actionDefinition,
         kind: "attendance",
         title: "Attendance rehearsal skipped safely",
-        detail: "No current-day unsubmitted daily register is assigned and open for the demo teacher.",
+        detail: "No current-day unsubmitted daily register is assigned and open for the configured demo teacher.",
         state: "expected",
-        target_path: `/teacher/attendance?date=${today}`,
+        target_path: `/principal/attendance?date=${today}`,
       });
     }
     let screen = null;
@@ -348,9 +447,9 @@ export class DevelopmentActionRunner {
         action: actionDefinition,
         kind: "attendance",
         title: "Attendance rehearsal left existing work unchanged",
-        detail: "Assigned registers were closed, already contained decisions, or required a human workflow.",
+        detail: "Daily registers were closed, already contained decisions, or required a human workflow.",
         state: "expected",
-        target_path: `/teacher/attendance?date=${today}`,
+        target_path: `/principal/attendance?date=${today}`,
       });
     }
     const records = screen.roster.map((student) => ({
@@ -360,7 +459,7 @@ export class DevelopmentActionRunner {
     }));
     await this.sessions.staff.request("/api/v1/teacher/attendance/bulk/", {
       method: "POST",
-      headers: { "idempotency-key": `campus-lab-${today}-${screen.class.id}` },
+      headers: { "idempotency-key": `campus-lab-daily-${today}-${screen.class.id}` },
       body: {
         class_section_id: screen.class.id,
         date: today,
@@ -372,9 +471,9 @@ export class DevelopmentActionRunner {
     return activity({
       action: actionDefinition,
       kind: "attendance",
-      title: `Demo teacher submitted ${screen.class.name} attendance`,
-      detail: `${records.length} dummy student decisions were recorded through the normal current-day attendance API.`,
-      target_path: `/teacher/attendance?class_section_id=${screen.class.id}&date=${today}`,
+      title: `Demo teacher submitted ${screen.class.name} daily attendance`,
+      detail: `${records.length} dummy student decisions were recorded in the configured daily class register.`,
+      target_path: `/principal/attendance?class_section_id=${screen.class.id}&date=${today}`,
     });
   }
 }

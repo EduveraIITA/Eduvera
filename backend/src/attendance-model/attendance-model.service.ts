@@ -157,6 +157,7 @@ export class AttendanceModelService {
     }
     await this.materialize(this.db, member.school_id, date);
     const result = await sql<any>`SELECT register.id AS session_id,register.class_section_id,
+        register.schedule_slot_id,register.scheduled_teacher_id,teacher.username AS scheduled_teacher_username,
         'Class '||section.grade||section.section AS class_name,section.grade,section.section,
         COALESCE(NULLIF(register.room,''),section.room_number) AS room_number,
         register.term_id,term.name AS term_name,term.academic_year,register.subject_id,subject.name AS subject_name,

@@ -333,7 +333,14 @@ normal query invalidation and domain screen update
 The development overlay adapter may poll the loopback runner or authenticated hosted
 proxy for ephemeral planned markers, the current real-time effective slot and runner health.
 Domain pages continue to fetch their authoritative timetable and other domain data
-from their normal APIs and react to the existing event bridge.
+from their normal APIs and react to the existing event bridge. The actor harness
+follows the institution's effective Operating rules. For
+academic attendance, `scheduled_session` selects an open register whose
+`schedule_slot_id` belongs to the configured active timetable phase, authenticates as
+that register's assigned synthetic teacher and submits the subject-session register.
+`daily_class` uses the daily class register; `none` performs no attendance action.
+The harness must not write one attendance model and describe it as completion of the
+other.
 
 To make Campus View and the normal timetable understandable together, a development
 build may add a separate **Rehearsal now** indication to a timetable row only when the

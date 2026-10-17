@@ -588,7 +588,7 @@ non-Cambridge institutions remain out of scope for Campus Lab. This historical
 checkpoint does not claim scenario-runtime evidence; the later isolated scenario
 slice below records its own implementation and acceptance limits.
 
-The Campus Lab activity projection now uses the versioned Cambridge v5 behaviour
+The Campus Lab activity projection now uses the versioned Cambridge v6 behaviour
 fixture. During an open school window it reconstructs a bounded expected-only receipt
 for each already-started effective timetable phase, so joining the local preview at
 mid-day shows the school-day sequence without replaying any missed material command.
@@ -8428,3 +8428,27 @@ loop material writes. Stopping remains durable and lets the separate hosted serv
 scale to zero. Focused simulator verification covers the exact one-hour bounds,
 source schedule identity, accelerated campus time, phase advancement and bounded
 action due instants. Stage deployment and owner mobile acceptance remain open.
+
+### Cambridge configured-attendance convergence — 17 October 2026 (local correction)
+
+Owner validation exposed that a Campus Lab receipt saying “Demo teacher submitted
+Class 6A attendance” did not change the principal's scheduled subject register. The
+receipt described a real write, but the runner had called the separate `daily_class`
+API while Cambridge's effective Operating rule and principal workspace use
+`scheduled_session`. Both attendance models remain valid product capabilities; the
+simulator selected the wrong one.
+
+Cambridge behaviour v6 now reads the effective attendance mode first. For
+`scheduled_session`, it resolves an open register from the normal attendance-model
+workspace, constrains it to a real `schedule_slot_id` in the active published period,
+starts a hosted fixture session for that register's exact assigned teacher, and
+submits `/attendance-model/sessions/:sessionId/submit`. For `daily_class`, it retains
+the daily register flow; for `none`, it records a visible no-action receipt. The
+existing owning-domain transaction retains roster validation, revision/idempotency,
+authorization, immutable evidence, Model Core command/outcome and outbox invalidation.
+No cache copying or compensating synchronization was added.
+
+Local verification: Campus Lab model/action tests pass **20/20**, including scheduled,
+daily-class and disabled-mode routing; backend TypeScript typecheck passes; and the
+focused attendance-model convergence suite passes **5/5**. Stage deployment and a
+fresh one-hour-run mobile validation remain open evidence gates.

@@ -9,7 +9,7 @@ function positiveNumber(value, label) {
 }
 
 export function validateBehaviorFixture(input) {
-  if (!input || input.schema_version !== 5 || input.version !== "cambridge.behavior.v5") {
+  if (!input || input.schema_version !== 6 || input.version !== "cambridge.behavior.v6") {
     throw new Error("Unsupported Cambridge behavior fixture version.");
   }
   if (input.school_code !== "cis" || input.timezone !== "Asia/Kolkata") {
