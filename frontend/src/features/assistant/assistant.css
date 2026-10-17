@@ -245,7 +245,7 @@
 .assistant-conversation li { display: grid; gap: 16px; }
 .assistant-question { justify-self: end; max-width: 88%; padding: 12px 16px; border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface-strong); color: var(--thatcampus-ink); font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-full-reply { padding: 0 4px; }
-.assistant-latest-reply { display: grid; gap: 12px; min-width: 0; }
+.assistant-latest-reply { display: grid; gap: 6px; min-width: 0; }
 .assistant-latest-reply__mark { display: flex; align-items: center; min-height: 36px; padding-left: 16px; }
 .assistant-page__empty { margin: 24px 0; font-size: 16px; line-height: 1.7; color: var(--thatcampus-ink-secondary); }
 .assistant-page__composer { --assistant-nav-height: 0px; padding-top: 16px; background: linear-gradient(to bottom, color-mix(in srgb,var(--thatcampus-canvas) 0%, transparent), var(--thatcampus-canvas) 18px); border-radius: var(--thatcampus-radius-card); }
