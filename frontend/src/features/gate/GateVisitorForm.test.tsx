@@ -20,9 +20,10 @@ it('submits direct entry without a host and approval with a host and photo',asyn
  render(<GateVisitorForm hosts={[{id:'host',name:'Meera'}]} hindi={false} busy={false} onSubmit={submit}/>);
  fireEvent.change(screen.getByLabelText('Visitor name'),{target:{value:'Visitor Test'}});
  fireEvent.change(screen.getByLabelText('Mobile number'),{target:{value:'9876543210'}});
- fireEvent.change(screen.getByLabelText('Purpose of visit'),{target:{value:'Document delivery'}});
+ expect(screen.getByLabelText('Purpose of visit (optional)')).not.toBeRequired();
  fireEvent.click(screen.getByRole('button',{name:'Record visitor entry'}));
  expect((submit.mock.calls[0][0] as FormData).get('host_user_id')).toBe('');
+ expect((submit.mock.calls[0][0] as FormData).get('purpose')).toBe('');
  fireEvent.change(screen.getByRole('combobox'),{target:{value:'host'}});
  fireEvent.click(screen.getByRole('button',{name:'Take photo'}));
  await waitFor(()=>expect(play).toHaveBeenCalled());

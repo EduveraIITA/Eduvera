@@ -106,7 +106,8 @@ function serviceFixture(options: {
       writes.push({ table, values });
       return builder;
     };
-    builder.onConflict = (callback: (conflict: unknown) => unknown) => {
+    builder.onConflict = (...args: unknown[]) => {
+      const callback = args[0] as (conflict: unknown) => unknown;
       const conflict: Record<string, (...args: unknown[]) => unknown> = {};
       conflict.column = () => conflict;
       conflict.doUpdateSet = () => conflict;
@@ -197,7 +198,7 @@ describe("authenticated session execution environment", () => {
 
   it("enters only a server-authorized, full-parity isolated run and persists the session binding", async () => {
     const fixture = serviceFixture();
-    const request = { ip: "127.0.0.1", requestId: "request-1" } as FastifyRequest;
+    const request = { ip: "127.0.0.1", requestId: "request-1" } as unknown as FastifyRequest;
     const result = await fixture.service.selectExecutionEnvironment(
       user,
       TOKEN_HASH,
@@ -361,7 +362,7 @@ describe("authenticated session execution environment", () => {
     await expect(guard.canActivate(context)).rejects.toMatchObject({ status: 410 });
     expect(request.executionEnvironmentView).toEqual(unavailable.view);
 
-    request.url = "/api/v1/auth/execution-environment/";
+    Object.defineProperty(request, "url", { value: "/api/v1/auth/execution-environment/", configurable: true });
     await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 

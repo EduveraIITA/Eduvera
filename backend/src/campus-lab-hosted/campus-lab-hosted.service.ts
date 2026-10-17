@@ -91,7 +91,7 @@ export class CampusLabHostedService {
     const enabled = body.enabled;
     const current = await this.controlState(schoolId);
     const clockMode = body.clock_mode === undefined ? current.clock_mode : body.clock_mode;
-    if (!["realtime", "1m", "15m", "60m"].includes(String(clockMode))) {
+    if (typeof clockMode !== "string" || !["realtime", "1m", "15m", "60m"].includes(clockMode)) {
       throw new ForbiddenException("Campus Lab clock mode must be realtime, 1m, 15m or 60m.");
     }
     let runId: string | null = null;

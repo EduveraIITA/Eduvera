@@ -96,7 +96,8 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   expect(events.enqueueUserEvent).toHaveBeenCalled();
  });
  it('requires visitor approval and allows QR check-in and checkout only in order',async()=>{
-  const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',purpose:'Meeting principal',host_user_id:admin.id});
+  const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',host_user_id:admin.id});
+  expect(visitor.purpose).toBe('');
   await expect(service.visitorAction(guard,school,visitor.id,'in')).rejects.toThrow(/not ready/);
   await expect(service.visitorAction(guard,school,visitor.id,'approve')).rejects.toThrow(/requested host/);
   await service.visitorAction(admin,school,visitor.id,'approve');

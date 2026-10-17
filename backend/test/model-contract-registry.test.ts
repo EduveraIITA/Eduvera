@@ -87,7 +87,7 @@ describe("realm model contract registry", () => {
     try {
       const resolved = await db.transaction().execute((transaction) => service.resolveObservationContracts(
         transaction,
-        { realm_id: realmId, environment_namespace_id: "live:school-1", environment_kind: "live" },
+        { realm_id: realmId, environment_namespace_id: "live:school-1", legacy_school_id: "school-1" },
         refs,
       ));
       expect(resolved).toMatchObject({
@@ -112,7 +112,7 @@ describe("realm model contract registry", () => {
     try {
       await expect(db.transaction().execute((transaction) => service.resolveObservationContracts(
         transaction,
-        { realm_id: realmId, environment_namespace_id: "live:school-1", environment_kind: "live" },
+        { realm_id: realmId, environment_namespace_id: "live:school-1", legacy_school_id: "school-1" },
         refs,
       ))).rejects.toThrow("not activated for this operational realm");
     } finally {

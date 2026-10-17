@@ -1,3 +1,4 @@
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { beforeAll,afterAll,describe,it,expect } from 'vitest';
@@ -19,7 +20,7 @@ const add=(d:string,n:number)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).t
 const rows=(title='Changed'):Period[]=>[{id:randomUUID(),weekday:1,period_number:1,starts_at:'18:00',ends_at:'18:30',subject_id:null,teacher_user_id:null,title,slot_type:'activity',room:''}];
 const begin=()=>service.start(req,{...cmd(),term_id:term,class_section_id:classId,starts_on:from,ends_on:to});
 beforeAll(async()=>{
-  db=new DatabaseService();const events=new SchoolEventService(db);coverage=createStaffCoverageReconciliationTestDouble();const schoolService=new SchoolService(db,events,coverage);service=new SchedulePlanningService(db,events,schoolService,coverage);
+  db=new DatabaseService();const events=new SchoolEventService(db);coverage=createStaffCoverageReconciliationTestDouble();const schoolService=new SchoolService(db,events,coverage,new CampusModelCoreService(db));service=new SchedulePlanningService(db,events,schoolService,coverage);
   const user=(await pool.query<AuthUser>("SELECT u.* FROM users u JOIN school_memberships m ON m.user_id=u.id JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1")).rows[0]!;
   school=(await pool.query("SELECT m.school_id FROM school_memberships m JOIN schools s ON s.id=m.school_id WHERE m.user_id=$1 AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1",[user.id])).rows[0].school_id;
   req={authUser:{...user,active_school_id:school},requestId:randomUUID(),ip:'127.0.0.1'} as AuthenticatedRequest;

@@ -1,3 +1,4 @@
+import type { ExecutionEffectBoundaryError } from "../src/campus-model-core/execution-effects.runtime.js";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ExecutionEffectIntent,
@@ -7,7 +8,6 @@ import type {
   SimulationExecutionEffectSink,
 } from "../src/campus-model-core/execution-effects.contracts.js";
 import { EXECUTION_EFFECT_KINDS } from "../src/campus-model-core/execution-effects.contracts.js";
-import type { ExecutionEffectBoundaryError } from "../src/campus-model-core/execution-effects.runtime.js";
 import {
   ExecutionEffectRouter,
   RunScopedInMemoryExecutionEffectSink,
@@ -177,7 +177,7 @@ describe("Campus Model Core external-effect boundary", () => {
     router.registerProductionPort(livePort("external_notification", execute));
 
     await expect(router.route(environment, intent(environment.namespace_id)))
-      .rejects.toMatchObject<Partial<ExecutionEffectBoundaryError>>({
+      .rejects.toMatchObject({
         code: "simulation_sink_set_missing",
       });
     expect(execute).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe("Campus Model Core external-effect boundary", () => {
     router.bindSimulationSinks({ environment, sinks });
 
     await expect(router.route(environment, intent(environment.namespace_id)))
-      .rejects.toMatchObject<Partial<ExecutionEffectBoundaryError>>({
+      .rejects.toMatchObject({
         code: "invalid_effect_receipt",
       });
   });
@@ -268,7 +268,7 @@ describe("Campus Model Core external-effect boundary", () => {
     router.bindSimulationSinks({ environment, sinks: simulationSinks(environment) });
 
     await expect(router.route(environment, intent("live:school-cis")))
-      .rejects.toMatchObject<Partial<ExecutionEffectBoundaryError>>({
+      .rejects.toMatchObject({
         code: "effect_environment_mismatch",
       });
   });
@@ -288,7 +288,7 @@ describe("Campus Model Core external-effect boundary", () => {
     expect(first.status).toBe("captured");
     expect(duplicate.status).toBe("deduplicated");
     await expect(router.route(environment, changed))
-      .rejects.toMatchObject<Partial<ExecutionEffectBoundaryError>>({
+      .rejects.toMatchObject({
         code: "effect_idempotency_conflict",
       });
   });
@@ -304,7 +304,7 @@ describe("Campus Model Core external-effect boundary", () => {
       production_ports_reachable: false,
     });
     await expect(router.route(environment, intent(environment.namespace_id)))
-      .rejects.toMatchObject<Partial<ExecutionEffectBoundaryError>>({
+      .rejects.toMatchObject({
         code: "simulation_sink_set_missing",
       });
   });

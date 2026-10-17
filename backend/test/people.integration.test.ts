@@ -1,3 +1,4 @@
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 import {randomUUID} from "node:crypto";
 import {Pool} from "pg";
 import {beforeAll,afterAll,describe,it,expect} from "vitest";
@@ -29,7 +30,7 @@ async function registerFixture(state:"submitted"|"draft"){
   return {section:id,register};
 }
 beforeAll(async()=>{
-  db=new DatabaseService();events=new SchoolEventService(db);people=new PeopleService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
+  db=new DatabaseService();events=new SchoolEventService(db);people=new PeopleService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble(),new CampusModelCoreService(db));
   authority=new GuardianAuthorityService(db,events);
   const row=(await pool.query("SELECT u.username,m.school_id FROM users u JOIN school_memberships m ON m.user_id=u.id JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1")).rows[0];
   admin=await account(row.username);schoolId=row.school_id;teacher=await account("kavita.staff");parent=await account("pooja.parent");

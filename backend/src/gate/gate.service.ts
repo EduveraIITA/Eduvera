@@ -272,7 +272,7 @@ export class GateService {
  }
  async visitor(user:AuthUser,school:string,body:unknown,upload?:VisitorPhotoUpload) {
   await this.access(user,school);
-  const b=z.object({name:z.string().trim().min(2).max(150),phone:z.string().trim().min(6).max(32),purpose:z.string().trim().min(3).max(300),host_user_id:z.preprocess(v=>v===''||v===undefined?null:v,z.uuid().nullable()),category:z.enum(['parent','vendor','delivery','guest']).default('guest'),request_id:z.uuid().optional()}).parse(body);
+  const b=z.object({name:z.string().trim().min(2).max(150),phone:z.string().trim().min(6).max(32),purpose:z.string().trim().max(300).optional().default(''),host_user_id:z.preprocess(v=>v===''||v===undefined?null:v,z.uuid().nullable()),category:z.enum(['parent','vendor','delivery','guest']).default('guest'),request_id:z.uuid().optional()}).parse(body);
   const photo=validateVisitorPhoto(upload);
   const requestId=b.request_id??randomUUID();
   return this.db.transaction().execute(async tx=>{await this.access(user,school,tx);
