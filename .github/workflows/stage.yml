@@ -102,6 +102,7 @@ jobs:
           npm run db:seed:departure
           npm run db:seed:governance-authority
           npm run db:seed:access-roles
+          npm run db:seed:human-agents
       - name: Backend · integration tests
         working-directory: backend
         run: npm run test:ci
