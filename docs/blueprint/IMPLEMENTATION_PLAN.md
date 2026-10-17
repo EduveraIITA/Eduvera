@@ -8300,6 +8300,15 @@ evidence, rather than relying on environmental history. A replacement Stage run 
 still pass migration, candidate and public-revision verification before publication
 is claimed.
 
+[Stage run 39021148594](https://github.com/EduveraIITA/Eduvera/actions/runs/39021148594)
+then passed the complete verification matrix, migration execution, photo-service
+deployment and zero-traffic candidate creation for `da8e7b2`. Its final smoke check
+correctly failed closed because the verifier still expected the retired
+`OmniSchool · Staff` document title even though the reviewed Stage branding serves
+`ThatCampus · Staff`. The verifier and its success-path contract now use the current
+brand. Promotion/public revision verification remains required before publication is
+claimed.
+
 ## Repository authority reconciliation — 17 October 2026
 
 The owner requested that subsequent work use the new committed digital-twin direction.

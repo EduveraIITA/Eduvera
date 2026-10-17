@@ -74,6 +74,20 @@ test('smoke check rejects a stale release and unexpected origins', async () => {
   await assert.rejects(verify('https://untrusted.example', env.GITHUB_SHA));
   await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, async () => new Response(JSON.stringify({ release_sha: 'wrong', environment: 'stage' }))));
 });
+test('smoke check accepts the current ThatCampus mobile and staff brands', async () => {
+  const request = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    if (path === '/releasez') return new Response(JSON.stringify({ release_sha: env.GITHUB_SHA, environment: 'stage' }));
+    if (path === '/readyz') return new Response(JSON.stringify({ status: 'ready' }));
+    if (path === '/') return new Response('<title>ThatCampus</title>');
+    if (path === '/staff/') return new Response('<title>ThatCampus · Staff</title>');
+    if (path === '/api/v1/auth/session/') return new Response(JSON.stringify({ demo_mode: false }));
+    if (path === '/api/v1/auth/demo-session/' && options.method === 'POST') return new Response('', { status: 404 });
+    if (path === '/metrics') return new Response('', { status: 401 });
+    return new Response('ok');
+  };
+  await verify('https://app.thatcampus.com', env.GITHUB_SHA, request);
+});
 test('photo smoke check requires models and explicit unvalidated status', async () => {
   await verifyPhoto('https://camera.run.app', async () => new Response(JSON.stringify({ model_files_present:true, accuracy_validated:false, single_operator:true })));
   await assert.rejects(verifyPhoto('https://camera.run.app', async () => new Response(JSON.stringify({ model_files_present:false, accuracy_validated:false, single_operator:true }))));
