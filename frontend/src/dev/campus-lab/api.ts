@@ -72,6 +72,7 @@ export interface CampusLabStatus {
   zones: CampusLabZone[];
   activity: CampusLabActivity[];
   errors?: string[];
+  control?: { enabled: boolean; changed_at: string; changed_by: "startup" | "administrator" };
 }
 
 export async function getCampusLabStatus(signal?: AbortSignal): Promise<CampusLabStatus> {
@@ -81,5 +82,16 @@ export async function getCampusLabStatus(signal?: AbortSignal): Promise<CampusLa
     signal,
   });
   if (!response.ok) throw new Error(response.status === 503 ? "The local campus rehearsal is starting." : "The local campus rehearsal is unavailable.");
+  return response.json() as Promise<CampusLabStatus>;
+}
+
+export async function setCampusLabEnabled(enabled: boolean): Promise<CampusLabStatus> {
+  const response = await fetch("/__campus-lab/control", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) throw new Error("The Cambridge simulation control is unavailable.");
   return response.json() as Promise<CampusLabStatus>;
 }

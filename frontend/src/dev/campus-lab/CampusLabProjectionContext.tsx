@@ -7,6 +7,7 @@ interface CampusLabProjectionState {
   status: CampusLabStatus | undefined;
   isPending: boolean;
   isError: boolean;
+  refetch: () => Promise<unknown>;
 }
 
 const CampusLabProjectionContext = createContext<CampusLabProjectionState | null>(null);
@@ -20,9 +21,13 @@ export default function CampusLabProjectionProvider({ children }: { children: Re
     refetchInterval: 2_000,
     retry: 1,
   });
-  return <CampusLabProjectionContext.Provider value={{ status: statusQuery.data, isPending: statusQuery.isPending, isError: statusQuery.isError }}>
+  return <CampusLabProjectionContext.Provider value={{ status: statusQuery.data, isPending: statusQuery.isPending, isError: statusQuery.isError, refetch: statusQuery.refetch }}>
     {children}
   </CampusLabProjectionContext.Provider>;
+}
+
+export function useOptionalCampusLabProjection() {
+  return useContext(CampusLabProjectionContext);
 }
 
 export function useCampusLabProjection() {

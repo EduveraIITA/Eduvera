@@ -29,7 +29,26 @@ function emptyStatus(startedAt, message = null) {
     zones: [],
     unplaced: [],
     activity: [],
+    control: { enabled: true, changed_at: new Date(startedAt).toISOString(), changed_by: "startup" },
     ...(message ? { errors: [message] } : {}),
+  };
+}
+
+function stoppedStatus(runtime) {
+  const base = emptyStatus(runtime.startedAt);
+  return {
+    ...base,
+    status: "paused",
+    generated_at: new Date().toISOString(),
+    school: runtime.data?.setup?.school ?? base.school,
+    phase: {
+      ...base.phase,
+      id: "operator_stopped",
+      label: "Simulation stopped",
+      description: "An administrator stopped the Cambridge development actors. No simulated actions will run until they are activated again.",
+      next_change_at: null,
+    },
+    control: runtime.control,
   };
 }
 
@@ -83,6 +102,7 @@ export class CampusSimulatorRuntime {
     this.intervals = [];
     this.refreshing = false;
     this.actorSessions = new Map();
+    this.control = { enabled: true, changed_at: this.startedAt.toISOString(), changed_by: "startup" };
   }
 
   snapshot() {
@@ -96,8 +116,13 @@ export class CampusSimulatorRuntime {
   }
 
   render() {
+    if (!this.control.enabled) {
+      this.status = stoppedStatus(this);
+      return;
+    }
     if (!this.data) {
       this.status = emptyStatus(this.startedAt, this.errors.at(-1) ?? null);
+      this.status.control = this.control;
       return;
     }
     this.status = buildStatusSnapshot({
@@ -113,6 +138,7 @@ export class CampusSimulatorRuntime {
       status: "running",
       routine: this.routine,
     });
+    this.status.control = this.control;
   }
 
   createSessions() {
@@ -215,8 +241,25 @@ export class CampusSimulatorRuntime {
     this.intervals = [];
   }
 
+  async setEnabled(enabled) {
+    const next = Boolean(enabled);
+    if (this.control.enabled === next) return this.snapshot();
+    this.control = { enabled: next, changed_at: new Date().toISOString(), changed_by: "administrator" };
+    if (!next) {
+      this.stop();
+      this.render();
+      return this.snapshot();
+    }
+    if (!this.data) await this.connect();
+    else await this.refresh();
+    this.startIntervals();
+    this.render();
+    await this.actionRunner?.tick(new Date());
+    return this.snapshot();
+  }
+
   async bootWithRetry({ retryMs = 5_000 } = {}) {
-    while (!this.data) {
+    while (!this.data && this.control.enabled) {
       try {
         await this.connect();
       } catch (error) {
@@ -227,6 +270,10 @@ export class CampusSimulatorRuntime {
           timer.unref?.();
         });
       }
+    }
+    if (!this.control.enabled) {
+      this.render();
+      return;
     }
     this.startIntervals();
     await this.actionRunner?.tick(new Date());

@@ -22,4 +22,14 @@
 .experimental-settings__lab > a small { color:var(--thatcampus-ink-secondary); font-size:12px; line-height:1.45; }
 .experimental-settings__lab > a > svg { justify-self:end; color:var(--thatcampus-brand); }
 .experimental-settings__lab > a:focus-visible { border-radius:10px; outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
-@media (max-width:600px) { .experimental-settings { padding:16px 24px 28px; } .experimental-settings > section { border-radius:16px; } }
+.experimental-settings__lab-control { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:16px; padding:16px 20px; border-bottom:1px solid var(--thatcampus-border); }
+.experimental-settings__lab-control > div { display:grid; gap:4px; }
+.experimental-settings__lab-control strong { font-size:15px; }
+.experimental-settings__lab-control small { color:var(--thatcampus-ink-secondary); font-size:12px; line-height:1.45; }
+.experimental-settings__lab-control button { display:inline-flex; min-height:44px; align-items:center; justify-content:center; gap:8px; padding:0 14px; border:1px solid var(--thatcampus-border); border-radius:12px; color:var(--thatcampus-brand); background:var(--thatcampus-surface); font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
+.experimental-settings__lab-control button.is-start { border-color:transparent; color:#fff; background:var(--thatcampus-brand); }
+.experimental-settings__lab-control button:disabled { cursor:not-allowed; opacity:.5; }
+.experimental-settings__lab-control button:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
+.experimental-settings__lab-control > p { grid-column:1/-1; color:var(--thatcampus-danger, #b42318); font-size:12px; }
+.experimental-settings__control-loading { padding:18px 20px; border-bottom:1px solid var(--thatcampus-border); color:var(--thatcampus-ink-secondary); font-size:12px; }
+@media (max-width:600px) { .experimental-settings { padding:16px 24px 28px; } .experimental-settings > section { border-radius:16px; } .experimental-settings__lab-control { grid-template-columns:1fr; } .experimental-settings__lab-control button { width:100%; } }

@@ -16,6 +16,7 @@ async function main() {
     port: configuration.port,
     proxyKey: configuration.proxyKey,
     getStatus: () => runtime.snapshot(),
+    setEnabled: (enabled) => runtime.setEnabled(enabled),
   });
   console.log(`[campus-lab] read-only status listening on 127.0.0.1:${configuration.port}`);
   void runtime.bootWithRetry();

@@ -4,7 +4,7 @@ import { startStatusServer } from "../src/status-server.mjs";
 
 const proxyKey = "status-test-key-123456789012345";
 
-test("serves read-only status only to the local proxy key", async (context) => {
+test("serves status and explicit control only to the local proxy key", async (context) => {
   const snapshot = {
     status: "running",
     generated_at: "2026-10-16T10:00:00.000Z",
@@ -15,7 +15,16 @@ test("serves read-only status only to the local proxy key", async (context) => {
     zones: [],
     activity: [],
   };
-  const server = await startStatusServer({ port: 0, proxyKey, getStatus: () => snapshot });
+  let enabled = true;
+  const server = await startStatusServer({
+    port: 0,
+    proxyKey,
+    getStatus: () => snapshot,
+    setEnabled: async (next) => {
+      enabled = next;
+      return { ...snapshot, control: { enabled: next } };
+    },
+  });
   context.after(() => new Promise((resolve) => server.close(resolve)));
   const address = server.address();
   const origin = `http://127.0.0.1:${address.port}`;
@@ -30,4 +39,21 @@ test("serves read-only status only to the local proxy key", async (context) => {
   const write = await fetch(`${origin}/status`, { method: "POST", headers: { "X-Campus-Lab-Key": proxyKey } });
   assert.equal(write.status, 405);
   assert.match((await write.json()).error, /read-only/);
+
+  assert.equal((await fetch(`${origin}/control`, { method: "POST" })).status, 401);
+  const control = await fetch(`${origin}/control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Campus-Lab-Key": proxyKey },
+    body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(control.status, 200);
+  assert.equal((await control.json()).control.enabled, false);
+  assert.equal(enabled, false);
+
+  const invalid = await fetch(`${origin}/control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Campus-Lab-Key": proxyKey },
+    body: JSON.stringify({ enabled: "yes" }),
+  });
+  assert.equal(invalid.status, 400);
 });

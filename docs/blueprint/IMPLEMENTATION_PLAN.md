@@ -8370,3 +8370,12 @@ Real-market cleanup is deferred. It may begin only after an explicit owner instr
 to clean for real market release, and must distinguish the removable development actor
 harness/fixture from permanent product capabilities such as Model Core coordination,
 Campus View and isolated what-if analysis.
+
+The owner also requested an explicit administrator control rather than an always-on
+local runner. Experimental settings now exposes **Activate simulation / Stop
+simulation** beside current Cambridge status. The authenticated same-origin
+development proxy is the only caller of the loopback control endpoint; the existing
+ephemeral proxy key is required. Stopping clears timers and projects zero simulated
+actors/actions without changing timetable or domain data. Activation reconnects or
+refreshes Cambridge and resumes from the real current instant, still respecting the
+instructional calendar and school-hours gate and never replaying missed actions.

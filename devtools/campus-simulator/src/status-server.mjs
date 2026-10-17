@@ -18,19 +18,55 @@ function send(response, statusCode, body) {
   response.end(payload);
 }
 
-export async function startStatusServer({ port, proxyKey, getStatus, host = "127.0.0.1" }) {
+async function readControlRequest(request) {
+  let body = "";
+  for await (const chunk of request) {
+    body += chunk;
+    if (body.length > 1_024) throw new Error("Control request is too large.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(body || "{}");
+  } catch {
+    throw new Error("Control request must be valid JSON.");
+  }
+  if (typeof parsed.enabled !== "boolean" || Object.keys(parsed).some((key) => key !== "enabled")) {
+    throw new Error("Control request must contain only a boolean enabled value.");
+  }
+  return parsed.enabled;
+}
+
+export async function startStatusServer({ port, proxyKey, getStatus, setEnabled, host = "127.0.0.1" }) {
   if (typeof getStatus !== "function") throw new Error("A status snapshot provider is required.");
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
     if (!secureEqual(request.headers["x-campus-lab-key"], proxyKey)) {
       send(response, 401, { error: "Campus Lab status requires the local development proxy." });
       return;
     }
-    if (request.method !== "GET") {
-      response.setHeader("allow", "GET");
-      send(response, 405, { error: "The Campus Lab status service is read-only." });
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (pathname === "/control") {
+      if (request.method !== "POST") {
+        response.setHeader("allow", "POST");
+        send(response, 405, { error: "Campus Lab control requires POST." });
+        return;
+      }
+      if (typeof setEnabled !== "function") {
+        send(response, 503, { error: "Campus Lab control is unavailable." });
+        return;
+      }
+      try {
+        const enabled = await readControlRequest(request);
+        send(response, 200, await setEnabled(enabled));
+      } catch (error) {
+        send(response, 400, { error: error instanceof Error ? error.message : "Invalid control request." });
+      }
       return;
     }
-    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (request.method !== "GET") {
+      response.setHeader("allow", "GET");
+      send(response, 405, { error: "The Campus Lab status service is read-only except for its explicit control endpoint." });
+      return;
+    }
     const snapshot = getStatus();
     if (pathname === "/status") {
       send(response, 200, snapshot);

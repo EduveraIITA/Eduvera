@@ -28,9 +28,12 @@ whether a particular hosted runtime has completed its safety gates.
 
 The owner decision for this harness is deliberately simple:
 
-- it starts with the managed local development server;
+- it is available with the managed local development server and starts active unless
+  an administrator explicitly stops it in Experimental settings;
 - it uses wall-clock time only;
-- it has no play, pause, fast-forward, speed, scrub or virtual-date controls;
+- it has one explicit **Activate simulation / Stop simulation** control for the
+  Cambridge actor process; it has no fast-forward, speed, scrub, replay or virtual-
+  date controls;
 - it resolves the current date in Cambridge's configured timezone and uses only that
   date's effective instructional schedule, including dated overrides, cancellations,
   holidays and closures;
@@ -206,12 +209,15 @@ already in the past are not replayed as catch-up work. A periodic refresh and ev
 institution-local date rollover re-resolve the calendar and effective daily schedule;
 a newly published closure or cancellation fails closed immediately.
 
-### 4.2 Continuous, not controllable
+### 4.2 Continuous real time with one bounded administrator control
 
 The runner evaluates the real campus-local instant automatically while the managed
 local preview is alive and stops with that preview. There is no user control to start,
-stop, replay, skip or accelerate the routine. Its process may stay healthy while the
-routine is paused, but paused means zero synthetic actors and zero domain actions. It
+replay, skip or accelerate the school clock. An administrator may stop or activate the
+entire Cambridge actor process from Experimental settings. Stopped means zero
+synthetic actors and zero synthetic actions; activation resumes evaluation at the real
+current instant and never catches up missed actions. Its process may stay healthy while
+the routine is paused, but paused means zero synthetic actors and zero domain actions. It
 becomes active only when real time enters an instructional date's operating window and
 returns to paused when that window ends. Institution-local midnight triggers a new
 calendar resolution; it does not wrap the prior day's end into a manufactured next
