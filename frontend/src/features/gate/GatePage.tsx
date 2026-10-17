@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Link } from 'react-router-dom';
-import { Check, QrCode, Search, UserRoundPlus, ArrowLeft, ShieldCheck, ArrowRight, Clock3, Languages } from 'lucide-react';
+import { Check, QrCode, Search, UserRoundPlus, ArrowLeft, ShieldCheck, ArrowRight, Clock3, Languages, Camera } from 'lucide-react';
 import { useAuth, authDestination } from '../auth/AuthContext';
 import { createGateVisitor, getGateStudent, gateCommand, getGateWorkspace, type GateStudent, type Visitor, type Workspace } from './api';
 import { GateFrame } from './GateFrame';
@@ -51,10 +51,12 @@ export default function GatePage(){
    {direction==='out'?<div className="gate-collector">{person.collector_photo?<img src={person.collector_photo} alt={person.collector_name??''}/>:null}<strong>{person.collector_name|| (language==='hi'?'स्वतंत्र निकास स्वीकृत':'Independent departure approved')}</strong>{person.mode!=='independent_departure'?<p>{person.collector_photo?t.pickup:t.verifyRecord}</p>:null}</div>:null}
    {allowed?<><label className="gate-verify"><input type="checkbox" checked={verified} onChange={e=>setVerified(e.target.checked)}/>{t.verify}</label><button className="gate-primary" disabled={!verified||busy} onClick={()=>void confirm()}>{direction==='in'?t.confirmIn:t.confirmOut}</button></>:null}
   </section>:mode==='home'?<>
+   <div className="gate-checkpoint-heading"><span><ShieldCheck size={16}/>{language==='hi'?'गेट चेकपॉइंट':'Gate checkpoint'}</span><h2>{language==='hi'?'प्रवेश और निकास सत्यापन':'Arrival & departure verification'}</h2><p>{language==='hi'?'छात्र या पिकअप पास स्कैन करें और पहचान जाँचें।':'Scan a student ID or pickup pass, then verify identity.'}</p></div>
+   <div className="gate-home-viewfinder" aria-label={language==='hi'?'QR स्कैनर':'QR scanner'}><div className="gate-home-camera-label"><Camera size={15}/>{language==='hi'?'स्कैन करने के लिए कैमरा खोलें':'Open camera to scan'}</div><div className="gate-home-target" aria-hidden="true"><QrCode size={56}/></div><p>{language==='hi'?'पास का QR फ्रेम में रखें':'Align the pass QR inside the frame'}</p></div>
    <div className="gate-actions">
     <button className="gate-action gate-action--scan" disabled={busy} onClick={()=>{setSuccess('');setMode('scan');}} aria-label={t.scan}><span className="gate-action-icon"><QrCode aria-hidden="true"/></span><span className="gate-action-copy"><strong>{t.scan}</strong><small>{language==='hi'?'छात्र या पिकअप पास स्कैन करें':'Student or pickup pass'}</small></span><ArrowRight className="gate-action-arrow" size={21} aria-hidden="true"/></button>
     <button className="gate-action" onClick={()=>{setSuccess('');setMode('search');}} aria-label={t.find}><span className="gate-action-icon"><Search aria-hidden="true"/></span><span className="gate-action-copy"><strong>{t.find}</strong><small>{language==='hi'?'नाम या प्रवेश संख्या से खोजें':'Search name or admission no.'}</small></span><ArrowRight className="gate-action-arrow" size={18} aria-hidden="true"/></button>
-    <button className="gate-action" onClick={()=>{setSuccess('');setMode('visitor');}} aria-label={t.visitor}><span className="gate-action-icon gate-action-icon--visitor"><UserRoundPlus aria-hidden="true"/></span><span className="gate-action-copy"><strong>{t.visitor}</strong><small>{language==='hi'?'जानकारी दर्ज करें और अनुमति माँगें':'Register and request approval'}</small></span><ArrowRight className="gate-action-arrow" size={18} aria-hidden="true"/></button>
+    <button className="gate-action" onClick={()=>{setSuccess('');setMode('visitor');}} aria-label={t.visitor}><span className="gate-action-icon gate-action-icon--visitor"><UserRoundPlus aria-hidden="true"/></span><span className="gate-action-copy"><strong>{t.visitor}</strong><small>{language==='hi'?'जानकारी दर्ज करें और अनुमति माँगें':'Record arrival or request approval'}</small></span><ArrowRight className="gate-action-arrow" size={18} aria-hidden="true"/></button>
    </div>
    <button className="gate-pending" onClick={()=>setMode('pending')}><Clock3 size={20} aria-hidden="true"/><span>{t.pending}</span><strong>{workspace.data?.pending??'—'}</strong><ArrowRight size={17} aria-hidden="true"/></button>
    <p className="gate-safety-note"><ShieldCheck size={17} aria-hidden="true"/>{language==='hi'?'दर्ज करने से पहले छात्र और लेने आए व्यक्ति की पहचान जाँचें।':'Check the student and collecting person before confirming.'}</p>
