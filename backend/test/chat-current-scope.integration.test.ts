@@ -48,7 +48,7 @@ suite("chat current relationship authorization", () => {
     const service = new ChatService(
       database,
       new SchoolEventService(database),
-      { record: async () => ({ event_id: randomUUID(), actor_agent_id: randomUUID(), audience_agent_ids: [], replayed: false }) } as any,
+      { record: () => Promise.resolve({ event_id: randomUUID(), actor_agent_id: randomUUID(), audience_agent_ids: [], replayed: false }) } as any,
     );
     const schoolA = randomUUID();
     const schoolB = randomUUID();

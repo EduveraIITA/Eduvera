@@ -1,3 +1,4 @@
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 import {randomUUID} from "node:crypto";
 import {Pool} from "pg";
 import {beforeAll,afterAll,describe,it,expect} from "vitest";
@@ -23,7 +24,7 @@ async function detail(id:string){return imports.detail(admin.authUser,id,schoolI
 async function commit(id:string){const current=await detail(id);return imports.commit(admin,id,{school_id:schoolId,expected_revision:current.revision,validation_token:current.review!.validation_token,verified:true});}
 async function count(){return (await pool.query('SELECT count(*)::int AS n FROM students WHERE school_id=$1',[schoolId])).rows[0].n as number;}
 beforeAll(async()=>{
-  db=new DatabaseService();const events=new SchoolEventService(db);imports=new PeopleImportService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
+  db=new DatabaseService();const events=new SchoolEventService(db);imports=new PeopleImportService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble(),new CampusModelCoreService(db));
   const users=(await pool.query<AuthUser>("SELECT * FROM users WHERE username IN ('kavita.staff','pooja.parent','meera.principal')")).rows;
   admin=req(users.find(u=>u.role==='admin')!);teacher=req(users.find(u=>u.username==='kavita.staff')!);parent=req(users.find(u=>u.username==='pooja.parent')!);
   schoolId=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Isolated import test school',$1,'Asia/Kolkata') RETURNING id",[`import-${randomUUID().slice(0,10)}`])).rows[0].id;

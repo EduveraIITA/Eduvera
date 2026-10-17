@@ -1,3 +1,4 @@
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -91,7 +92,7 @@ beforeAll(async () => {
   db = new DatabaseService();
   const events = new SchoolEventService(db);
   coverage = createStaffCoverageReconciliationTestDouble();
-  school = new SchoolService(db, events, coverage);
+  school = new SchoolService(db, events, coverage, new CampusModelCoreService(db));
   service = new DayPlanService(db, events, school, coverage);
   const users = (
     await pool.query<AuthUser>(

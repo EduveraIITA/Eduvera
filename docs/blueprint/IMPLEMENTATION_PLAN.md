@@ -9195,3 +9195,22 @@ NestJS application now redirects legacy `/staff` bookmarks to `/`; release verif
 checks that compatibility redirect and the responsive application shell. Historical
 desktop-build evidence above remains an accurate record of earlier checkpoints, not a
 current architecture claim.
+
+## 18 October 2026 — approved centered gate layout
+
+Owner approved the two-screen preview with language at top, Guest instead of Official
+Guest, and optional visit purpose. Centered the home action group with top breathing
+room, retained the shared shell/title language control, centered the icon-only camera
+and removable thumbnail, and kept four category pills on one row. Visitor purpose is
+optional in the form and authoritative domain validation (omitted values normalize to
+an empty string); host approval versus direct arrival remains unchanged.
+Frontend typecheck, focused ESLint and 15 gate/form tests passed. Portable Chromium
+fixtures verified gate-only and staff layouts at 320/768/1024/1440px, camera capture
+and decoded preview, with no page errors or horizontal overflow. Native iPhone camera
+acceptance remains owner review.
+The inherited Stage run 39063211812 was blocked by unrelated test type errors. Updated
+SchoolService test constructors to inject the real model command gateway, aligned
+contract registry fixtures and test-double types with current interfaces, retained
+all assertions, and corrected two existing lint findings. The 30 focused auth, effect
+isolation and registry tests pass; production backend build passes. Hosted integration
+and deployment remain separate release gates.

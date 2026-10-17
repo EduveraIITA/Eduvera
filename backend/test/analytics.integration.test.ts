@@ -1,3 +1,4 @@
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 import { randomUUID } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -24,6 +25,7 @@ suite("permission-scoped analytics against PostgreSQL", () => {
         db,
         {} as SchoolEventService,
         createStaffCoverageReconciliationTestDouble(),
+        new CampusModelCoreService(db),
       ),
     );
     const school = randomUUID(), otherSchool = randomUUID(), term = randomUUID(), classA = randomUUID(), classB = randomUUID();

@@ -14,7 +14,7 @@
 .gate-shell button { min-height: 44px; padding: 12px 16px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-control); background: var(--edura-surface); color: inherit; }
 .gate-shell button:disabled { cursor: not-allowed; }
 .gate-shell button:focus-visible, .gate-shell input:focus-visible, .gate-shell select:focus-visible { outline: 3px solid var(--edura-brand-bright); outline-offset: 3px; }
-.gate-shell .gate-language { display: flex; align-items: center; justify-content: center; gap: 7px; flex-shrink: 0; min-height: 44px; padding: 10px 12px; color: var(--edura-brand); background: var(--edura-surface); font-size: 12px; font-weight: 700; }
+.gate-language { display: flex; align-items: center; justify-content: center; gap: 7px; flex-shrink: 0; min-height: 44px; padding: 10px 12px; color: var(--edura-brand); background: var(--edura-surface); font-size: 12px; font-weight: 700; }
 .gate-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .gate-actions .gate-action { display: flex; align-items: center; gap: 14px; min-height: 112px; padding: 22px; border-radius: var(--edura-radius-card); text-align: left; box-shadow: var(--edura-shadow-card); transition: background var(--edura-motion), border-color var(--edura-motion); }
 .gate-action:hover { border-color: var(--edura-brand-bright); }
@@ -150,7 +150,7 @@
 .gate-visitor-empty p { margin: 0; font-size: 12px; line-height: 1.6; }
 @media(max-width:580px) { .gate-visitor-fields { grid-template-columns: 1fr; gap: 16px; }.gate-student-row { flex-wrap: wrap; }.gate-student-open { flex-basis: 100%; }.gate-shell .gate-quick-entry { width: 100%; }.gate-visitor-card { padding: 16px; }.gate-visitor-identity { flex-wrap: wrap; }.gate-visitor-identity > div { flex: 1; min-width: 0; }.gate-visitor-status { margin-left: 54px; }.gate-visitor-card footer { flex-wrap: wrap; }.gate-visitor-card footer p { flex-basis: 100%; }.gate-visitor-card footer button { width: 100%; } }
 /* Gate reference flows use the existing ThatCampus tokens in both themes. */
-.gate-photo-field { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.gate-photo-field { justify-content:center; display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
 .gate-photo-thumbnail { position:relative; width:76px; height:88px; }
 .gate-photo-thumbnail img { display:block; width:100%; height:100%; object-fit:cover; border-radius:12px; border:1px solid var(--edura-border); }
 .gate-shell .gate-photo-remove { position:absolute; top:-8px; right:-8px; display:grid; place-items:center; width:32px; height:32px; min-height:32px; padding:0; border-radius:50%; color:var(--edura-ink); background:var(--edura-surface); border:1px solid var(--edura-border); box-shadow:var(--edura-shadow-card); }
@@ -158,11 +158,11 @@
 .gate-photo-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .gate-photo-actions button { display:flex; align-items:center; gap:6px; font-size:12px; }
 .gate-form .gate-file-input { display:none; }
-.gate-category { margin:0; padding:0; border:0; display:flex; flex-wrap:wrap; gap:8px; }
+.gate-category { min-width:0; margin:0; padding:0; border:0; display:flex; flex-wrap:nowrap; gap:6px; }
 .gate-category legend { margin-bottom:10px; font-size:13px; font-weight:600; }
-.gate-category label { position:relative; flex:0 0 auto; min-width:0; }
+.gate-category label { position:relative; flex:1 1 0; min-width:0; }
 .gate-category input { position:absolute; opacity:0; width:1px; min-height:0; }
-.gate-category span { display:grid; place-items:center; min-height:36px; padding:7px 14px; border:1px solid transparent; border-radius:var(--edura-radius-pill); background:var(--edura-surface-soft); font-size:12px; }
+.gate-category span { display:grid; place-items:center; min-height:44px; padding:7px 4px; white-space:nowrap; border:1px solid transparent; border-radius:var(--edura-radius-pill); background:var(--edura-surface-soft); font-size:12px; }
 .gate-category input:checked + span { color:white; border-color:var(--edura-brand); background:var(--edura-brand); }
 .gate-category input:focus-visible + span { outline:3px solid var(--edura-brand-bright); outline-offset:3px; }
 .gate-form textarea { width:100%; min-width:0; resize:vertical; padding:12px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); color:var(--edura-ink); background:var(--edura-surface); font:inherit; }
@@ -184,4 +184,11 @@
 .gate-workspace .gate-person { border-radius:24px; }
 .gate-workspace .gate-collector { border:1px solid var(--edura-border); border-radius:16px; background:var(--edura-surface-soft); }
 
-.gate-language-footer { display:flex; justify-content:flex-end; margin-top:20px; }
+.gate-language-top { display:flex; justify-content:flex-end; margin-bottom:20px; }
+.gate-home-content { display:flex; flex-direction:column; justify-content:center; width:100%; max-width:600px; min-height:calc(100dvh - 260px); margin:28px auto 24px; }
+.gate-home-content .gate-actions { grid-template-columns:1fr; }
+.gate-visitor-form { max-width:600px; margin:20px auto 0; gap:16px; }
+.gate-visitor-heading { text-align:center; }
+.gate-visitor-form .gate-visitor-fields { grid-template-columns:1fr; gap:16px; }
+.gate-visitor-form .gate-photo-take { border-radius:50%; }
+.gate-language { border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); }
