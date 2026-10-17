@@ -5,7 +5,6 @@ export function VisitorPhotoCapture({hindi,busy,onChange,onProcessing}:{hindi:bo
  const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),generation=useRef(0);
  const [preview,setPreview]=useState(''),[error,setError]=useState('');
  const [open,setOpen]=useState(false),[ready,setReady]=useState(false),[saving,setSaving]=useState(false);
- useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview);},[preview]);
  useEffect(()=>()=>{generation.current++;stream.current?.getTracks().forEach(track=>track.stop());},[]);
  function close(){
   generation.current++;stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;
@@ -39,18 +38,16 @@ export function VisitorPhotoCapture({hindi,busy,onChange,onProcessing}:{hindi:bo
    if(attempt!==generation.current)return;
    if(!blob||blob.type!=='image/jpeg'||blob.size>2*1024*1024)throw new Error('Photo unavailable');
    const file=new File([blob],'visitor.jpg',{type:'image/jpeg'});
-   setPreview(URL.createObjectURL(file));onChange(file);close();
+   const image=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{if(typeof reader.result==='string')resolve(reader.result);else reject(new Error('Photo unavailable'));};reader.onerror=()=>reject(new Error('Photo unavailable'));reader.readAsDataURL(file);});
+   if(attempt!==generation.current)return;
+   setPreview(image);onChange(file);close();
   }catch{
    if(attempt!==generation.current)return;
    setSaving(false);setError(hindi?'फोटो नहीं ली जा सकी। फिर कोशिश करें।':'Could not capture the photo. Try again.');
   }
  }
  return <section className="gate-photo-field" aria-label={hindi?'आगंतुक की फोटो':'Visitor photo'}>
-  <div className="gate-photo-preview">{preview?<img src={preview} alt={hindi?'आगंतुक की फोटो का पूर्वावलोकन':'Visitor photo preview'}/>:<Camera size={30} aria-hidden="true"/>}</div>
-  <div><h3>{hindi?'आगंतुक की फोटो':'Visitor photo'}</h3><p>{hindi?'मिलने वाला व्यक्ति अनुमति देने से पहले यह फोटो देख सकेगा।':'The host can review this photo before approving.'}</p>
-   <div className="gate-photo-actions"><button type="button" disabled={busy||open} onClick={()=>{void start();}}><Camera size={16}/>{preview?(hindi?'फिर से फोटो लें':'Retake photo'):(hindi?'फोटो लें':'Take photo')}</button>{preview?<button type="button" disabled={busy||open} aria-label={hindi?'फोटो हटाएँ':'Remove photo'} onClick={()=>{setPreview('');onChange(null);}}><X size={16}/></button>:null}</div>
-   <small>{hindi?'वैकल्पिक · कैमरे से फोटो लें':'Optional · Capture with your camera'}</small>
-  </div>
+  {preview?<div className="gate-photo-thumbnail"><img src={preview} alt={hindi?'आगंतुक की फोटो का पूर्वावलोकन':'Visitor photo preview'}/><button className="gate-photo-remove" type="button" disabled={busy||open} aria-label={hindi?'फोटो हटाएँ':'Remove photo'} onClick={()=>{setPreview('');setError('');onChange(null);}}><X size={16}/></button></div>:!open?<button className="gate-photo-take" type="button" disabled={busy} onClick={()=>{void start();}}><Camera size={18}/>{hindi?'फोटो लें':'Take photo'}</button>:null}
   {open?<div className="gate-photo-camera" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
    <video ref={video} autoPlay playsInline muted aria-label={hindi?'कैमरे का दृश्य':'Visitor camera preview'} onCanPlay={()=>setReady(true)}/>
    {!ready?<p role="status">{hindi?'कैमरा खुल रहा है…':'Opening camera…'}</p>:null}

@@ -194,3 +194,14 @@ retake and remove. There is no upload/file-picker option. Inline muted playback 
 Apple camera use; canvas encodes captured pixels as JPEG regardless of the device's
 HEIF camera setting. This is camera capture support, not HEIC file import. Cancellation,
 unmount and completed capture stop camera tracks; late permission results are discarded.
+
+### Owner correction: compact visitor form — 17 October 2026
+
+Remove the decorative inactive QR panel and checkpoint introduction from home; retain
+the functional Scan QR action. Visitor entry follows the supplied form reference with
+compact category pills and a small camera action below the fields. After capture show
+only a small photo thumbnail with an overlaid remove button; remove the photo heading,
+helper copy, retake button and format text. Remove the no-host identity/entry explanatory
+note; retain the host waiting note. Host remains optional and domain checks are unchanged.
+Use a local JPEG data URL for the thumbnail because production Helmet's default img-src
+permits data images but not blob URLs; the uploaded file remains the captured JPEG.
