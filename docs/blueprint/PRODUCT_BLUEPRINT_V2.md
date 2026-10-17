@@ -72,6 +72,25 @@ Capabilities share a core identity, context and event model, but each domain own
 
 Manual, assisted, paper-backed and offline participation are valid paths. The platform supports real campus work; it does not require every learner or guardian to own a phone.
 
+### 2.9 Keep the living development campus until market release cleanup
+
+During product development, Cambridge International School (`cis`) is ThatCampus's
+wholly synthetic reference campus. Its broad campus replica and configured simulated
+human participants are retained in version control and may evolve as new capabilities
+need realistic people, spaces, schedules, resources, rules and coordination to act
+against. This reference campus is part of the development and sales-demonstration
+strategy; it is not temporary scratch data and must not be silently removed from a
+shared development branch.
+
+Synthetic provenance remains explicit. Simulated actors are restricted to Cambridge,
+use ordinary authenticated domain and Model Core paths, and cannot manufacture real
+evidence or contact external parties. Hosted enablement requires an environment-
+specific safety contract. When the owner explicitly requests **clean for real market
+release**, release artifacts may exclude the actor harness and synthetic fixture while
+the reusable Model Core, Campus View and isolated what-if runtime remain product
+capabilities. Until that decision, preserve the full implementation and record any
+runtime exclusion as an open deployment boundary rather than deleting its source.
+
 ## 3. Who the product serves
 
 ### Institution shapes

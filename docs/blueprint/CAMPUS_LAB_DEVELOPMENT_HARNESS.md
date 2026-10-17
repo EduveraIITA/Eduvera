@@ -1,8 +1,8 @@
 # Campus Lab development harness
 
-Status: accepted implementation contract; current-calendar and school-hours
-correction in progress, owner validation and remaining hardening gates open,
-16 October 2026
+Status: accepted implementation contract; retained throughout active development by
+owner decision, hosted showcase enablement and remaining hardening gates open,
+17 October 2026
 
 Normative parents:
 
@@ -20,8 +20,11 @@ the normal ThatCampus frontend. It may add an explicitly simulated overlay to th
 production Campus View, but it does not own that view, its navigation or its topology.
 
 Its purpose is rapid observation while building the Campus Model Core and connected
-domain workflows. It is not a production capability, a source of campus truth, a
-customer-configurable simulator or evidence that predictive simulation is complete.
+domain workflows, and a realistic synthetic campus for controlled product
+demonstrations. It is not a source of real-campus truth, a customer-configurable
+simulator or evidence that predictive simulation is complete. Its source and fixture
+remain committed throughout active development; that retention is distinct from
+whether a particular hosted runtime has completed its safety gates.
 
 The owner decision for this harness is deliberately simple:
 
@@ -44,7 +47,9 @@ The owner decision for this harness is deliberately simple:
 - it may show a clearly labelled development-only **Rehearsal now** indication beside
   the unchanged timetable on normal screens, but it never rewrites authoritative
   timetable data or injects rehearsal state into a domain query cache;
-- simulated actor runtime and controls are absent from production artifacts.
+- a real-market release may exclude simulated actor runtime and controls only after
+  the owner explicitly requests the market-cleanup pass; until then the complete
+  source and Cambridge fixture remain on the shared development branch.
 
 ## 2. What Campus Lab is not
 
@@ -59,7 +64,7 @@ the Model Core blueprint.
 | normal local domain APIs and local demo identities | scenario executors and sink-only dispatchers |
 | may intentionally update the disposable local fixture | must never mutate live domain truth |
 | no playback or time controls | deterministic scenario range, seed and baseline comparison |
-| excluded from production artifact | production code may expose an authorized isolated scenario service |
+| retained development source; current runner is local-only until a hosted showcase contract is accepted | production code may expose an authorized isolated scenario service |
 | helps humans observe integration behavior | supports rehearsal and what-if analysis under declared assumptions |
 
 Campus Lab must not create a second recipient-routing or institution-automation
@@ -376,10 +381,24 @@ revision contracts. That credential is never returned by the status endpoint or
 written to activity output. Logs redact cookies, CSRF tokens, credentials, message
 content where unnecessary and restricted domain payloads.
 
-## 8. Production exclusion
+## 8. Development retention and market-release boundary
 
-“Development only” is a build and release property, not merely a hidden navigation
-link. The following controls are required together:
+The owner has explicitly retained Campus Lab and the Cambridge dummy campus throughout
+active development. Every branch carrying related Model Core/domain work must push the
+complete runner, fixture, guarded seeds and development adapters. A generic statement
+that the harness is “not production” is not authority to delete it, leave it only in
+one checkout or strip it from the shared development history.
+
+The current actor runner remains local-only because its authentication, loopback proxy
+and connector shutdown contract has not been replaced by a reviewed hosted-showcase
+contract. The public Stage application therefore proves the broad digital-twin,
+Campus View and isolated what-if code is deployed, but does not yet prove the
+wall-clock actor runner is live. Hosted development enablement must add a dedicated
+Cambridge-only runtime identity, private status transport, connector denial, bounded
+resources and visible simulated provenance without weakening domain authority.
+
+Only after the owner explicitly asks to **clean for real market release** does the
+following artifact-exclusion checklist become the active release target:
 
 - runner source lives under a top-level development-tools directory outside backend
   and frontend production source roots;
@@ -395,9 +414,11 @@ link. The following controls are required together:
   development runner and its unique markers;
 - production startup neither imports nor attempts to start the runner.
 
-The repository retains development source so contributors can use it. The shipped
-application artifact, frontend bundle and production runtime contain Campus View but
-do not contain the simulated-agent runner or development overlay.
+The repository retains development source so contributors and product reviewers can
+use it even after such a release cleanup. The customer-facing artifact may then
+contain Campus View and the isolated scenario product while excluding the wall-clock
+simulated-agent runner and development overlay. This cleanup must never remove the
+Campus Model Core or confuse product what-if simulation with the Campus Lab harness.
 
 ## 9. Failure behavior
 
@@ -486,7 +507,7 @@ the following:
 - degraded/offline/after-hours startup remains understandable;
 - the owner validates the working mobile UI through the local preview/Cloudflare link.
 
-### 11.3 Production exclusion
+### 11.3 Market-release exclusion (deferred until explicit owner request)
 
 - production bundle inspection finds Campus View and no synthetic overlay, status
   client, runner label, normal-timetable rehearsal indication or runner code;
@@ -497,6 +518,7 @@ the following:
 - normal production builds, release checks and local preview readiness still pass.
 
 Until these gates have verified evidence, the implementation-plan status remains
-**in progress**. Passing Campus Lab tests does not satisfy the Model Core simulation
-acceptance gates or production-readiness gates for any domain.
+**in progress**. During active development this does not authorize removal of Campus
+Lab or the Cambridge fixture. Passing Campus Lab tests does not satisfy the Model Core
+simulation acceptance gates or production-readiness gates for any domain.
 

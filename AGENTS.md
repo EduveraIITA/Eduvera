@@ -96,3 +96,27 @@ a competing local agent policy or copy the blueprint into session-only instructi
   record material deviations and ask before resolving consequential ambiguity.
 - Do not represent a proposed target, untested behavior, or incomplete release gate
   as implemented, measured, or production-ready.
+
+## Active development-fixture decision
+
+- Until the owner explicitly asks to **clean for real market release**, retain and
+  push the complete Campus Model Core, Campus View, isolated scenario runtime,
+  Cambridge synthetic-campus fixture and simulated-human Campus Lab source with the
+  owning work. They are shared development and sales-demonstration capability, not
+  disposable local scratch code. Do not delete, revert, minimize or silently omit
+  them merely because they are synthetic or not suitable for a customer tenant.
+- Cambridge International School (`cis`) is a wholly dummy campus created for this
+  project. Continue expanding and correcting its people, agents, roles, spaces,
+  resources, timetable, operating rules and activity whenever that is useful for
+  exercising or demonstrating a real capability. Keep stable fixture identities,
+  synthetic provenance and repeat-safe seeds; never treat Cambridge fixture records
+  as real people, production evidence or defaults for another institution.
+- Synthetic actors must still use normal authenticated domain APIs and the reviewed
+  Model Core coordination path. Keep them visibly labelled and restricted to the
+  Cambridge fixture, with external side effects disabled. Do not weaken tenant,
+  authority, evidence or connector safety merely to make a demo act automatically.
+- The currently implemented Campus Lab actor runner is local-only; its source is
+  nevertheless required in Git. A hosted development/showcase runner needs its own
+  reviewed isolation and credentials before enablement. This is an open deployment
+  boundary, not permission to remove the simulator. Only the owner's explicit real-
+  market cleanup instruction can authorize a release-removal pass.

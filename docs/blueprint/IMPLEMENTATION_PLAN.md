@@ -17,6 +17,18 @@ decisions cannot be replaced by synthetic software tests.
 
 ## Accepted direction
 
+- Product decision, 17 October 2026: retain and push the complete digital-twin core,
+  broad Cambridge synthetic campus, simulated-human Campus Lab runner, guarded seeds
+  and development adapters throughout active development. Cambridge is wholly dummy
+  and may be expanded whenever realistic capability demonstration requires more
+  people, agents, roles, spaces, resources, schedules, rules or activity. Do not run a
+  production-cleanup pass until the owner explicitly asks to **clean for real market
+  release**. Synthetic provenance, Cambridge-only scope, ordinary authenticated domain
+  APIs, external-side-effect denial and Model Core/domain authority remain mandatory.
+  The current wall-clock actor runner is still local-only; hosted Stage actor execution
+  needs a separate reviewed isolation/credential contract and must not be claimed from
+  source retention alone.
+
 - Product decision, 16 October 2026: ThatCampus is a campus digital twin, not a
   conventional ERP. Institutions can start with one bounded capability and expand from
   zero to the full campus without duplicate people, classes, places or resources. The
@@ -8330,3 +8342,31 @@ integrate with current identity/coordination ports, canonical spaces, owned work
 existing schedule drafts, temporal publication and coverage reconciliation. This is
 an implementation direction, not a delivered teacher-preference feature. The early
 unconnected solver/schema scratch work has not been registered, migrated or shipped.
+
+## Development simulator retention and published DT inventory — 17 October 2026
+
+Owner clarification supersedes any interpretation that synthetic development code is
+disposable before launch cleanup. At integration commit `bc4ea2b`, Git contains the
+complete `devtools/campus-simulator` runner and Cambridge behaviour fixture, guarded
+Cambridge seed, development Campus Lab frontend adapters, permanent Campus View,
+Campus Model Core, coordination runtime and isolated scenario foundation. The tracked
+core/Campus View/scenario/Campus Lab inventory contains 84 files; the simulator source
+and broad digital-twin implementation are not confined to an unpushed checkout.
+
+[Stage run 39021823505](https://github.com/EduveraIITA/Eduvera/actions/runs/39021823505)
+passed the complete clean-checkout verification matrix, migrations, both release-image
+builds, photo-service verification, zero-traffic candidate verification, public
+promotion, branded app/staff smoke checks and website deployment for `bc4ea2b`.
+This establishes that the current broad digital-twin and scenario product code is
+published on Stage. It does **not** establish that the separate wall-clock Campus Lab
+actor process is running there: its reviewed implementation still requires loopback,
+private demo authentication and all external connectors disabled, and the Stage release
+contract currently excludes that local process. A dedicated Cambridge-only hosted
+development/showcase contract is an open deployment slice. Until then, contributors
+must preserve, test and push the full runner rather than deleting it or representing
+source retention as hosted execution.
+
+Real-market cleanup is deferred. It may begin only after an explicit owner instruction
+to clean for real market release, and must distinguish the removable development actor
+harness/fixture from permanent product capabilities such as Model Core coordination,
+Campus View and isolated what-if analysis.
