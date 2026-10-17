@@ -1,11 +1,11 @@
 import "./powered-by.css";
 
 export function PoweredBy({ className = "" }: { className?: string }) {
-  return <div className={`powered-by ${className}`.trim()}>
-    <div className="powered-by__ribbon">
+  // The app shell uses light surface tokens even when the device prefers dark.
+  return <div className={`powered-by ${className}`.trim()} data-appearance="light">
+    <div className="powered-by__inline">
       <span>Powered by</span>
-      <i aria-hidden="true" />
-      <img src="/assets/thatcampus-logo.png" alt="ThatCampus" width="56" height="32" />
+      <img src="/assets/thatcampus-logo.png" alt="ThatCampus" width="56" height="34" />
     </div>
   </div>;
 }

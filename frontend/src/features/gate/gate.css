@@ -149,3 +149,39 @@
 .gate-visitor-empty h3 { margin: 16px 0 6px; color: var(--edura-ink); font-size: 15px; }
 .gate-visitor-empty p { margin: 0; font-size: 12px; line-height: 1.6; }
 @media(max-width:580px) { .gate-visitor-fields { grid-template-columns: 1fr; gap: 16px; }.gate-student-row { flex-wrap: wrap; }.gate-student-open { flex-basis: 100%; }.gate-shell .gate-quick-entry { width: 100%; }.gate-visitor-card { padding: 16px; }.gate-visitor-identity { flex-wrap: wrap; }.gate-visitor-identity > div { flex: 1; min-width: 0; }.gate-visitor-status { margin-left: 54px; }.gate-visitor-card footer { flex-wrap: wrap; }.gate-visitor-card footer p { flex-basis: 100%; }.gate-visitor-card footer button { width: 100%; } }
+/* Gate reference flows use the existing ThatCampus tokens in both themes. */
+.gate-photo-field { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.gate-photo-thumbnail { position:relative; width:76px; height:88px; }
+.gate-photo-thumbnail img { display:block; width:100%; height:100%; object-fit:cover; border-radius:12px; border:1px solid var(--edura-border); }
+.gate-shell .gate-photo-remove { position:absolute; top:-8px; right:-8px; display:grid; place-items:center; width:32px; height:32px; min-height:32px; padding:0; border-radius:50%; color:var(--edura-ink); background:var(--edura-surface); border:1px solid var(--edura-border); box-shadow:var(--edura-shadow-card); }
+.gate-shell .gate-photo-take { display:grid; place-items:center; width:48px; height:48px; padding:0; color:var(--edura-brand); background:var(--edura-surface-soft); border-radius:12px; }
+.gate-photo-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.gate-photo-actions button { display:flex; align-items:center; gap:6px; font-size:12px; }
+.gate-form .gate-file-input { display:none; }
+.gate-category { margin:0; padding:0; border:0; display:flex; flex-wrap:wrap; gap:8px; }
+.gate-category legend { margin-bottom:10px; font-size:13px; font-weight:600; }
+.gate-category label { position:relative; flex:0 0 auto; min-width:0; }
+.gate-category input { position:absolute; opacity:0; width:1px; min-height:0; }
+.gate-category span { display:grid; place-items:center; min-height:36px; padding:7px 14px; border:1px solid transparent; border-radius:var(--edura-radius-pill); background:var(--edura-surface-soft); font-size:12px; }
+.gate-category input:checked + span { color:white; border-color:var(--edura-brand); background:var(--edura-brand); }
+.gate-category input:focus-visible + span { outline:3px solid var(--edura-brand-bright); outline-offset:3px; }
+.gate-form textarea { width:100%; min-width:0; resize:vertical; padding:12px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); color:var(--edura-ink); background:var(--edura-surface); font:inherit; }
+.gate-scan-panel { display:grid; gap:20px; }
+.gate-section-heading h2 { margin:0; }
+.gate-shell .gate-manual-search { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--edura-brand); font-size:13px; }
+.gate-viewfinder { position:relative; max-width:480px; margin:auto; }
+.gate-scan-frame { position:absolute; inset:16%; border:3px solid var(--edura-brand-bright); border-radius:24px; box-shadow:0 0 0 999px #0003; overflow:hidden; }
+.gate-viewfinder { overflow:hidden; border-radius:var(--edura-radius-control); }
+.gate-scan-frame span { position:absolute; left:8%; right:8%; top:10%; height:2px; background:var(--edura-brand-bright); box-shadow:0 0 12px var(--edura-brand-bright); animation:gate-scan-line 2.2s ease-in-out infinite alternate; }
+.gate-camera-state { color:var(--edura-positive); font-weight:700; }
+.gate-visitor-avatar img { width:100%; height:100%; object-fit:cover; border-radius:inherit; }
+@keyframes gate-scan-line { to { top:90%; } }
+@media(prefers-reduced-motion:reduce) { .gate-scan-frame span { animation:none; top:50%; } }
+.gate-result-state { display:block; margin-top:8px; font-size:11px; font-weight:500; color:var(--edura-ink-muted); }
+.gate-photo-camera { flex-basis:100%; min-width:0; }
+.gate-photo-camera video { display:block; width:100%; max-height:360px; border-radius:var(--edura-radius-control); background:#111; object-fit:contain; }
+.gate-camera-badge { position:absolute; z-index:2; top:14px; left:14px; padding:7px 12px; border-radius:24px; background:#0f172acc; color:#fff; font-size:11px; }
+.gate-workspace .gate-person { border-radius:24px; }
+.gate-workspace .gate-collector { border:1px solid var(--edura-border); border-radius:16px; background:var(--edura-surface-soft); }
+
+.gate-language-footer { display:flex; justify-content:flex-end; margin-top:20px; }

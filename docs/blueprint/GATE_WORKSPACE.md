@@ -7,6 +7,23 @@ replaced with shared brand tokens, school identity, clear action cards and conci
 Hindi/English copy. Scan QR remains the primary action. Find Student, Visitor
 Entry and pending visitor approvals remain directly visible.
 
+## Campus Model Core boundary
+
+Gate remains the authoritative owner of student movements, visitor approval and
+visitor lifecycle state. Each accepted physical visitor entry or exit is also
+retained atomically as a source-bearing `movement.gate_observed` Model Core
+observation. A host-free arrival therefore creates a provisional `visitor` entity
+in the Gate domain and an accepted entry observation; checkout creates the next
+revision-bound exit observation. The Core payload contains category, direction,
+gate, capture source and evidence references, but not the visitor's phone, photo or
+purpose. Those remain access-controlled Gate records.
+
+Approval, notification delivery and a recorded physical movement remain different
+facts. Creating or approving a visit does not assert presence, and a missing exit
+does not prove that the person is physically inside. Known students continue to use
+their stable People identity; visitors are not silently merged with a student or
+staff record by name or phone.
+
 Gate-only staff land at `/gate`; opening `/teacher` also redirects there.
 Staff with additional permissions keep their current home and receive an
 **In & Out** navigation item at `/teacher/gate` in the sidebar and mobile bottom
@@ -157,3 +174,58 @@ environment, readiness and both-app verification at 17:21:38 UTC. The website
 release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
 review preview returned HTTP 200. Owner device/live-account review remains open;
 local synthetic browser fixtures do not establish that acceptance.
+
+## Visitor photos and direct arrivals — 17 October 2026
+
+Owner supplied three Gate & Safety HTML references and requested the existing theme,
+direct student search without class selection, visitor photo capture/attachment,
+photo review in the host's approval popup, and direct entry when no host is selected.
+The reference's sample people, live-location claims, auto-SMS promise and decorative
+filters are not operational data. Search uses real institution-scoped students,
+name/admission substrings or exact roll number; class is displayed, never a prerequisite.
+The last gate movement is labelled as a gate record, not continuous campus location.
+Pickup QR, current readiness/authority and physical identity checks remain required.
+
+Visitor creation accepts one optional JPEG/PNG photo (2 MB maximum), visitor category
+and an optional host. A selected active host creates a pending request; no host records
+an explicit gate-operator arrival with a check-in timestamp and no fabricated host
+approval. A direct visit can be checked out through the existing authorized flow.
+Photos are stored under the private persistent upload directory and served only through
+a current school/host/admin/gate-authorized, no-store endpoint. Photos and storage keys
+are excluded from notification/event payloads. The photo hash is part of request retry
+comparison so an existing request cannot silently acquire a different photo. The native
+mobile capture control and file picker support preview, replacement and removal.
+
+This extends the existing gate domain state machine and transactional audit/outbox.
+It does not claim a new Model Core visitor-command adapter or automated decision policy.
+Real host/guard walkthrough and owner-device photo-capture review remain acceptance steps.
+
+### Owner follow-up: scanner home and camera-only visitor photo
+
+The In & Out home adopts the supplied scanner reference's dark viewfinder, checkpoint
+heading, rounded controls and real verification cards within the existing school shell.
+The camera starts on Scan QR; no fabricated active-camera, student/location or SMS
+claims are displayed. Existing identity checks and domain authority remain unchanged.
+Visitor photos now open a live rear-camera preview directly, with capture, cancel,
+retake and remove. There is no upload/file-picker option. Inline muted playback supports
+Apple camera use; canvas encodes captured pixels as JPEG regardless of the device's
+HEIF camera setting. This is camera capture support, not HEIC file import. Cancellation,
+unmount and completed capture stop camera tracks; late permission results are discarded.
+
+### Owner correction: compact visitor form — 17 October 2026
+
+Remove the decorative inactive QR panel and checkpoint introduction from home; retain
+the functional Scan QR action. Visitor entry follows the supplied form reference with
+compact category pills and a small camera action below the fields. After capture show
+only a small photo thumbnail with an overlaid remove button; remove the photo heading,
+helper copy, retake button and format text. Remove the no-host identity/entry explanatory
+note; retain the host waiting note. Host remains optional and domain checks are unchanged.
+Use a local JPEG data URL for the thumbnail because production Helmet's default img-src
+permits data images but not blob URLs; the uploaded file remains the captured JPEG.
+
+### Owner correction: remove repeated header and move camera — 17 October 2026
+
+Remove the repeated Manage In & Out / Gate & Safety heading and introduction under
+shared navigation. Keep the language switch as a small footer control. Place the
+camera-only icon immediately above visitor name, replacing the visible Take photo
+text with an accessible label. Keep the captured thumbnail and overlaid remove control.

@@ -76,6 +76,20 @@ slice deliberately does not perform an unsafe partial rollback.
 
 ## Accepted direction
 
+- Attribution contrast correction, 17 October 2026: the app shell currently uses
+  light surface tokens regardless of device dark preference. Its compact credit
+  therefore uses the original navy/blue logo and slate text, without screen blending.
+  Desktop retains its actual light/dark surface selection. A dark-device regression
+  test, production app build, and browser checks against both clients' real theme
+  styles pass locally. Hosted promotion remains a separate deployment gate.
+
+- Owner decision, 17 October 2026: use a compact inline “Powered by” credit beside
+  the original ThatCampus logo in both app and desktop, without ribbon, container,
+  divider, border, shadow or animation. Existing placement remains unchanged.
+  Both production builds and two focused component tests pass locally; isolated
+  browser checks cover 320, 768, 1024 and 1440px in light/dark appearance. Hosted
+  deployment and owner visual acceptance are separate gates.
+
 - Product decision, 17 October 2026: retain and push the complete digital-twin core,
   broad Cambridge synthetic campus, simulated-human Campus Lab runner, guarded seeds
   and development adapters throughout active development. Cambridge is wholly dummy
@@ -9094,3 +9108,79 @@ isolated-database guard. The seed does not itself emit historical timetable even
 fresh-seed endpoint correctly returned an empty modeled schedule; model backfill/convergence remains a
 separate open gate rather than being hidden by a legacy timetable fallback. Campus View still has its
 transitional allowlisted composition and must converge on this boundary/checkpoint before MC-3 is complete.
+## Gate references, direct search and visitor photos — 17 October 2026
+
+Implemented on an isolated feature branch from Stage following the owner's three HTML
+references and follow-up photo/no-host decision. Preserves shared theme and navigation,
+Hindi support, permission-scoped direct search, pickup safeguards and home-only host
+approval. Adds camera/file photo input, preview/removal, private authorized photo reads,
+host approval photo, category and no-host direct arrival. Migration 122 makes host optional
+with a database invariant for direct entry and stores only photo metadata in PostgreSQL.
+Search also accepts an exact roll number across classes; no class selector is required.
+
+During integration with the shared digital-twin branch, host-free visitor entry and
+all later visitor check-in/check-out actions were connected to the existing
+Observation Ingress port in the same Gate transaction. Gate remains authoritative;
+the Core retains only a provisional visitor identity and privacy-minimal accepted
+boundary evidence. Phone, photo and purpose do not enter the Core, approval never
+becomes presence, and request retries cannot duplicate observations. Focused
+isolated-database coverage asserts one ordered entry/exit pair and no phone leakage.
+
+Local backend/frontend typechecks, production frontend build, 34 focused UI tests and
+6 photo/gate unit tests passed. Focused lint passed after fixing photo URL cleanup.
+Added isolated-database tests for direct entry/retry/outbox, photo round-trip, current
+host/gate authority, school isolation and revocation; hosted CI must execute them.
+Local visual browser verification is blocked by unavailable Chromium and a corrupt
+browser-download response. No screenshot or device-validation success is claimed.
+A local Vite preview is running on port 5177; hosted deployment and owner-device review
+remain pending until separately verified.
+
+Follow-up before release: the portable Chromium runtime succeeded with synthetic API
+fixtures. Visitor form and direct search rendered at 320/768/1024/1440 px with no page
+errors; visitor form overflow checks passed at all four widths. Phone and tablet
+screenshots were visually inspected. This supersedes the initial browser-download
+block above. Native owner-device camera review remains open. Large JPEG/PNG camera
+captures are resized locally before upload; submission waits for photo preparation.
+
+## 17 October 2026 — scanner home and camera-only visitor follow-up
+
+Owner requested the new pickup scanner HTML reference for In & Out home and resumed
+the camera-only visitor change. Added themed viewfinder/checkpoint presentation and
+live scanner status; retained real student/guardian verification and direct search.
+Removed file picker; live camera captures JPEG on Apple and other devices, with preview,
+retake/removal, permission-error recovery, cancellation and late-stream cleanup.
+Local frontend typecheck, focused lint and 15 gate/form tests passed. Portable Chromium
+synthetic fixtures verified camera capture to preview, no page errors, and visitor/search
+layouts at 320/768/1024/1440 px. Real iPhone camera acceptance remains open. Deployment
+is tracked separately; these checks do not establish real-device or hosted acceptance.
+
+## 17 October 2026 — owner compact visitor form correction
+
+Removed the inactive decorative QR panel and its checkpoint introduction. Simplified
+visitor photo to a camera control and a small captured thumbnail with overlaid removal;
+removed helper text and the no-host entry note, retained optional host/direct entry,
+and styled categories as reference pills. JPEG data URL previews fix the production
+CSP incompatibility of blob image previews without weakening the security policy.
+Validation: frontend typecheck, 15 focused gate/form tests and focused ESLint passed.
+Portable Chromium verified capture and a decoded thumbnail (naturalWidth > 0), no page
+errors, responsive visitor/search layouts at 320/768/1024/1440px, and absence of the
+removed home QR panel. Compact captured-photo screenshot was visually reviewed.
+
+## 17 October 2026 — gate header and camera placement correction
+
+Owner marked the redundant gate heading/introduction for removal and requested an
+icon-only camera directly above visitor name. Removed that block, moved the language
+switch to the footer, and moved the accessible camera action above the visitor fields.
+Existing thumbnail removal and camera lifecycle remain unchanged.
+Frontend typecheck, focused lint and 15 gate/form tests passed. Portable Chromium
+verified capture/decoded preview without page errors and responsive layouts at
+320/768/1024/1440px; icon-only control and top thumbnail screenshots reviewed.
+
+## 18 October 2026 — deployment test date correction
+
+Gate header release ff0bf02 was blocked by seven existing agent attendance integration
+assertions after the school-local clock crossed into Sunday. The tests implicitly used
+today even when the fixture had no scheduled lessons. Select the latest actual scheduled
+date within the fixture term and use it explicitly in lookup and mocked attendance tools.
+Retain all attendance availability/authority checks and assertions; no production rule
+or test gate is disabled. Hosted integration rerun must verify this correction.

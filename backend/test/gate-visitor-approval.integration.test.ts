@@ -77,4 +77,46 @@ suite('visitor approval delivery and current host authority',()=>{
   expect((await query('SELECT revision FROM gate_visitors WHERE id=$1',[visitor.id])).revision).toBe(2);
   expect((await query("SELECT count(*)::int total FROM event_outbox WHERE aggregate_id=$1 AND event_type='gate.visitor.updated'",[visitor.id])).total).toBe(2);
  });
+ it('records host-free arrivals once without inventing a host approval',async()=>{
+  const body={...request(),host_user_id:'',category:'delivery'};
+  const visitor=await gate.visitor(guard,school,body);
+  expect(visitor).toMatchObject({state:'inside',host_user_id:null,category:'delivery',revision:1});
+  expect(visitor.checked_in_at).toBeTruthy();expect(visitor.decided_at).toBeNull();
+  expect((await gate.visitor(guard,school,body)).id).toBe(visitor.id);
+  expect((await gate.workspace(guard,school)).visitors.map(v=>v.id)).toContain(visitor.id);
+  expect((await gate.approvals(host)).map(v=>v.id)).not.toContain(visitor.id);
+  const event=await query("SELECT * FROM event_outbox WHERE aggregate_id=$1",[visitor.id]);
+  expect(event.notification_user_ids).toEqual([]);
+  await expect(gate.visitor(unrelated,school,body)).rejects.toThrow(/permission/);
+  await expect(gate.visitorAction(host,school,visitor.id,'approve',{expected_revision:1})).rejects.toThrow();
+  expect((await gate.visitorAction(guard,school,visitor.id,'out',{expected_revision:1})).visitor.state).toBe('out');
+  const observations=(await pool.query(`SELECT observation.payload,entity.kind,entity.domain,entity.domain_id,entity.metadata
+    FROM campus_model_observations observation
+    JOIN campus_model_entities entity ON entity.id=observation.subject_entity_id
+    WHERE observation.school_id=$1 AND observation.source_type='gate.visitor_movement'
+      AND entity.domain='gate' AND entity.domain_id=$2
+    ORDER BY observation.observed_at,observation.id`,[school,visitor.id])).rows;
+  expect(observations).toHaveLength(2);
+  expect(observations.map(row=>row.payload.direction)).toEqual(['in','out']);
+  expect(observations[0]).toMatchObject({kind:'visitor',domain:'gate',domain_id:visitor.id,metadata:{category:'delivery'}});
+  expect(JSON.stringify(observations)).not.toContain(body.phone);
+ });
+ it('keeps photos private to current host, administrator and gate operators',async()=>{
+  const data=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=','base64');
+  const upload={data,mimetype:'image/png'};const body=request();
+  const visitor=await gate.visitor(guard,school,body,upload);
+  expect(visitor.state).toBe('pending');expect(visitor.photo_url).toContain(`/visitors/${visitor.id}/photo/`);
+  expect((await gate.visitor(guard,school,body,upload)).id).toBe(visitor.id);
+  await expect(gate.visitor(guard,school,body)).rejects.toThrow(/reference already used/);
+  expect((await gate.approvals(host)).find(v=>v.id===visitor.id)?.photo_url).toBe(visitor.photo_url);
+  for(const actor of [host,admin,guard]){const photo=await gate.visitorPhoto(actor,school,visitor.id);expect(photo.type).toBe('image/png');const chunks:Buffer[]=[];for await(const chunk of photo.stream)chunks.push(Buffer.from(chunk));expect(Buffer.concat(chunks)).toEqual(data);}
+  await expect(gate.visitorPhoto(unrelated,school,visitor.id)).rejects.toThrow(/permission/);
+  await expect(gate.visitorPhoto(host,otherSchool,visitor.id)).rejects.toThrow(/not found/);
+  await expect(gate.visitorPhoto({...host,active_school_id:otherSchool},school,visitor.id)).rejects.toThrow(/access/);
+  await query('UPDATE school_memberships SET is_active=false WHERE user_id=$1 AND school_id=$2',[host.id,school]);
+  await expect(gate.visitorPhoto(host,school,visitor.id)).rejects.toThrow(/access/);
+  await query('UPDATE school_memberships SET is_active=true WHERE user_id=$1 AND school_id=$2',[host.id,school]);
+  await expect(gate.visitor(guard,school,request(),{data:Buffer.from('<svg/>'),mimetype:'image/png'})).rejects.toThrow(/JPEG or PNG/);
+ });
+
 });

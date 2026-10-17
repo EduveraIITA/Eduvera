@@ -37,6 +37,10 @@
   outline: none;
 }
 .parent-app .assistant-dock { --assistant-nav-height: 72px; }
+/* Programmatic panel focus must not inherit the later global :focus-visible ring.
+   Keep the individual control focus indicators above intact. */
+.assistant-dock:focus,
+.assistant-dock:focus-visible { outline: none; }
 .assistant-response {
   padding: 4px 16px 12px;
   background: var(--thatcampus-surface);
@@ -241,6 +245,8 @@
 .assistant-conversation li { display: grid; gap: 16px; }
 .assistant-question { justify-self: end; max-width: 88%; padding: 12px 16px; border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface-strong); color: var(--thatcampus-ink); font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-full-reply { padding: 0 4px; }
+.assistant-latest-reply { display: grid; gap: 12px; min-width: 0; }
+.assistant-latest-reply__mark { display: flex; align-items: center; min-height: 36px; padding-left: 16px; }
 .assistant-page__empty { margin: 24px 0; font-size: 16px; line-height: 1.7; color: var(--thatcampus-ink-secondary); }
 .assistant-page__composer { --assistant-nav-height: 0px; padding-top: 16px; background: linear-gradient(to bottom, color-mix(in srgb,var(--thatcampus-canvas) 0%, transparent), var(--thatcampus-canvas) 18px); border-radius: var(--thatcampus-radius-card); }
 .assistant-page__composer > p { margin: 0; padding: 0 8px; font-size: 11px; line-height: 1.5; color: var(--thatcampus-ink-muted); }
@@ -252,11 +258,38 @@
   .operations-app .assistant-page__composer { left: calc(50% + 120px); width: min(720px, calc(100% - 288px)); }
 }
 
-/* React Bits current stays close to the edge; decorative canvas never blocks input. */
-.assistant-electric-border { --assistant-electric-glow: #4f46e5; min-width: 0; box-shadow: 0 0 0 .35px color-mix(in srgb, var(--assistant-electric-glow) 30%, transparent), 0 0 12px color-mix(in srgb, var(--assistant-electric-glow) 16%, transparent); }
-.assistant-electric-border > .electric-border__canvas { opacity: 1; }
+/* Approved blue highlight: response only, no flashing or input decoration. */
+@property --assistant-flow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.assistant-electric-border {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  box-shadow: 0 0 16px rgba(0,119,252,.16);
+}
+.assistant-electric-border::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1.25px;
+  pointer-events: none;
+  background: conic-gradient(from var(--assistant-flow-angle), rgba(0,119,252,.22) 0deg, rgba(0,119,252,.22) 235deg, rgba(0,119,252,.5) 275deg, rgba(0,119,252,.95) 305deg, rgba(0,149,252,.9) 318deg, rgba(0,119,252,.22) 350deg);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: assistant-response-flow 7s linear infinite;
+}
+@keyframes assistant-response-flow {
+  to { --assistant-flow-angle: 360deg; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .assistant-electric-border > .electric-border__canvas { display: none; }
+  .assistant-electric-border::after { animation: none; }
 }
 
 .assistant-conversation .assistant-electric-border > .assistant-full-reply { padding: 12px 16px; border-radius: inherit; background: var(--edura-surface); }
