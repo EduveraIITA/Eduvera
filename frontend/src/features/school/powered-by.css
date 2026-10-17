@@ -2,8 +2,6 @@
 .powered-by__inline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; max-width: 100%; }
 .powered-by__inline > span { color: #536078; font-family: inherit; font-size: 11px; font-weight: 400; line-height: 1.5; white-space: nowrap; }
 .powered-by__inline > img { display: block; width: 56px; height: 34px; object-fit: contain; flex-shrink: 0; }
-.powered-by[data-appearance="dark"] .powered-by__inline > span { color: #a9b4cc; }
-.powered-by[data-appearance="dark"] .powered-by__inline > img { mix-blend-mode: screen; }
 .powered-by--home { margin-top: 16px; }
 .operations-sidebar > .powered-by { margin-top: auto; }
 @media (min-width: 1001px) { .operations-main > .powered-by--home { display: none; } }

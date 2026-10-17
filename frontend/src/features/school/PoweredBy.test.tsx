@@ -1,5 +1,5 @@
-import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import { PoweredBy } from "./PoweredBy";
 
 afterEach(() => {
@@ -16,11 +16,11 @@ it("renders the compact original logo credit without ribbon decoration", () => {
   expect(container.querySelector(".powered-by--home")).not.toBeNull();
 });
 
-it("updates the logo and appearance when the app theme changes", async () => {
-  const { container } = render(<PoweredBy />);
+it("keeps the full-color logo on the light app shell when the device prefers dark", () => {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  vi.spyOn(window, "matchMedia").mockReturnValue({ ...media, matches: true });
   document.documentElement.setAttribute("data-theme", "dark");
-  await waitFor(() => expect(screen.getByRole("img")).toHaveAttribute("src", "/assets/thatcampus-logo-dark.png"));
-  expect(container.firstChild).toHaveAttribute("data-appearance", "dark");
-  document.documentElement.setAttribute("data-theme", "light");
-  await waitFor(() => expect(screen.getByRole("img")).toHaveAttribute("src", "/assets/thatcampus-logo.png"));
+  const { container } = render(<PoweredBy />);
+  expect(screen.getByRole("img")).toHaveAttribute("src", "/assets/thatcampus-logo.png");
+  expect(container.firstChild).toHaveAttribute("data-appearance", "light");
 });

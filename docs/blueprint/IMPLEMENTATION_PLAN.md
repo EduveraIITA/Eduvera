@@ -17,6 +17,13 @@ decisions cannot be replaced by synthetic software tests.
 
 ## Accepted direction
 
+- Attribution contrast correction, 17 October 2026: the app shell currently uses
+  light surface tokens regardless of device dark preference. Its compact credit
+  therefore uses the original navy/blue logo and slate text, without screen blending.
+  Desktop retains its actual light/dark surface selection. A dark-device regression
+  test, production app build, and browser checks against both clients' real theme
+  styles pass locally. Hosted promotion remains a separate deployment gate.
+
 - Owner decision, 17 October 2026: use a compact inline “Powered by” credit beside
   the original ThatCampus logo in both app and desktop, without ribbon, container,
   divider, border, shadow or animation. Existing placement remains unchanged.
