@@ -4,11 +4,11 @@ import type { Workspace } from './api';
 import { VisitorPhotoCapture } from './VisitorPhotoCapture';
 
 export function GateVisitorForm({hosts,hindi,busy,onSubmit}:{hosts:Workspace['hosts'];hindi:boolean;busy:boolean;onSubmit:(form:FormData)=>void}) {
- const [host,setHost]=useState(''),[photo,setPhoto]=useState<File|null>(null);
+ const [host,setHost]=useState(''),[photo,setPhoto]=useState<File|null>(null),[processing,setProcessing]=useState(false);
  const categories=[['parent',hindi?'अभिभावक':'Parent'],['vendor',hindi?'विक्रेता':'Vendor'],['delivery',hindi?'डिलीवरी':'Delivery'],['guest',hindi?'अतिथि':'Guest']];
- return <form className="gate-form gate-visitor-form" onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);if(photo)form.set('photo',photo);onSubmit(form);}}>
+ return <form className="gate-form gate-visitor-form" onSubmit={event=>{event.preventDefault();if(processing)return;const form=new FormData(event.currentTarget);if(photo)form.set('photo',photo);onSubmit(form);}}>
   <header className="gate-section-heading"><span className="gate-section-icon"><UserRoundPlus size={23}/></span><div><h2>{hindi?'आगंतुक प्रवेश':'Visitor Entry'}</h2><p>{hindi?'आगमन दर्ज करें या मिलने वाले व्यक्ति से अनुमति माँगें।':'Record an arrival or request approval from a host.'}</p></div></header>
-  <VisitorPhotoCapture hindi={hindi} busy={busy} onChange={setPhoto}/>
+  <VisitorPhotoCapture hindi={hindi} busy={busy||processing} onChange={setPhoto} onProcessing={setProcessing}/>
   <div className="gate-visitor-fields">
    <label>{hindi?'आगंतुक का नाम':'Visitor name'}<input name="name" autoComplete="name" placeholder={hindi?'पूरा नाम':'Full name'} required minLength={2} maxLength={150} disabled={busy}/></label>
    <label>{hindi?'मोबाइल नंबर':'Mobile number'}<input name="phone" type="tel" autoComplete="tel" inputMode="tel" placeholder="98765 43210" required minLength={6} maxLength={32} disabled={busy}/></label>
@@ -17,6 +17,6 @@ export function GateVisitorForm({hosts,hindi,busy,onSubmit}:{hosts:Workspace['ho
    <label className="gate-field-wide">{hindi?'आने का कारण':'Purpose of visit'}<textarea name="purpose" placeholder={hindi?'जैसे: बैठक या दस्तावेज़ देना':'For example, a meeting or document delivery'} required minLength={3} maxLength={300} rows={3} disabled={busy}/></label>
   </div>
   <p className="gate-form-note">{host?<Clock3 size={17}/>:<LogIn size={17}/>}<span>{host?(hindi?'अनुमति मिलने तक आगंतुक को गेट पर रुकने के लिए कहें।':'Ask the visitor to wait at the gate until approved.'):(hindi?'पहचान जाँचें। यह बटन आगंतुक का प्रवेश अभी दर्ज करेगा।':'Check their identity. This action records the visitor’s entry now.')}</span></p>
-  <button className="gate-primary gate-send-request" disabled={busy}>{host?<Send size={17}/>:<LogIn size={17}/>} {busy?(hindi?'सहेज रहे हैं…':'Saving…'):host?(hindi?'अनुमति माँगें':'Request approval'):(hindi?'प्रवेश दर्ज करें':'Record visitor entry')}</button>
+  <button className="gate-primary gate-send-request" disabled={busy||processing}>{host?<Send size={17}/>:<LogIn size={17}/>} {processing?(hindi?'फोटो तैयार हो रही है…':'Preparing photo…'):busy?(hindi?'सहेज रहे हैं…':'Saving…'):host?(hindi?'अनुमति माँगें':'Request approval'):(hindi?'प्रवेश दर्ज करें':'Record visitor entry')}</button>
  </form>;
 }

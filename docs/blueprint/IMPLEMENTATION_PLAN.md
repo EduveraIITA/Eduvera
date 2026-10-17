@@ -8483,3 +8483,10 @@ Local visual browser verification is blocked by unavailable Chromium and a corru
 browser-download response. No screenshot or device-validation success is claimed.
 A local Vite preview is running on port 5177; hosted deployment and owner-device review
 remain pending until separately verified.
+
+Follow-up before release: the portable Chromium runtime succeeded with synthetic API
+fixtures. Visitor form and direct search rendered at 320/768/1024/1440 px with no page
+errors; visitor form overflow checks passed at all four widths. Phone and tablet
+screenshots were visually inspected. This supersedes the initial browser-download
+block above. Native owner-device camera review remains open. Large JPEG/PNG camera
+captures are resized locally before upload; submission waits for photo preparation.
