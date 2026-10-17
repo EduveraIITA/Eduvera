@@ -98,10 +98,10 @@ jobs:
           python3 scripts/generate_school_data.py
           node --import tsx src/database/seed.ts
           node --import tsx src/database/seed-operations.ts
-          node --import tsx src/database/seed-roles.ts
-          node --import tsx src/database/seed-departure.ts
-          node --import tsx src/database/seed-governance-authority.ts
-          node --import tsx src/database/seed-access-roles.ts
+          npm run db:seed:roles
+          npm run db:seed:departure
+          npm run db:seed:governance-authority
+          npm run db:seed:access-roles
       - name: Backend · integration tests
         working-directory: backend
         run: npm run test:ci

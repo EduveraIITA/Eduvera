@@ -8243,3 +8243,25 @@ production deployment is claimed.
 ## Loader visual update — 16 October 2026
 
 User-approved four-arm ThatCampus loader uses alternating logo blues, a fixed center gap, and a trailing arm that shrinks toward white. The final requested speed is a 2.667-second cycle. Shared route loading and inline loading indicators across authentication, activation, chat, notifications, onboarding, planner, attendance, leave and student submissions use this asset. Existing labels, control sizes, loading conditions and reduced-motion fallback remain. TypeScript and the shared loader test passed; production rollout is not yet verified.
+
+## Campus digital-twin Stage release reconciliation — 17 October 2026
+
+At the user's request, the previously verified Stage head `59879d7` fast-forwarded
+`main`. The digital-twin branch then committed its reviewed working tree while
+excluding the known untracked numbered duplicate artifacts, merged Stage's login,
+logo, loader and public-website changes, and fast-forwarded `Stage` to `f22ec2b`.
+No force push or live database edit was used.
+
+[Stage run 39018988945](https://github.com/EduveraIITA/Eduvera/actions/runs/39018988945)
+correctly stopped before deployment. It found a new historical fingerprint for the
+existing mocked Telegram credential fixture, a CI call that bypassed the guarded
+governance-seed wrapper, two stale Institute setup navigation assertions, one raw
+date input outside the shared bounded component and a realtime assertion that had
+not counted the three new Campus Model/Campus View dependent invalidations. The
+release corrections retain the exact-fingerprint secret-scan policy, switch CI to
+the approved npm seed wrappers, hide administrator-only access/rule/readiness links
+from delegated office staff, adopt `TemporalInput`, and assert all eight intended
+realtime invalidations. Focused evidence after repair: 19/19 frontend regressions,
+15/15 guarded-seed checks and 26/26 deployment-contract checks pass. A fresh Stage
+run must still pass the complete clean-checkout matrix, migration, candidate checks
+and public revision verification before this release is called deployed.

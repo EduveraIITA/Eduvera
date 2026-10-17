@@ -28,16 +28,16 @@ describe("Institute settings hierarchy", () => {
     expect(await screen.findByRole("link", { name: "Invitations" })).toHaveAttribute("href", "/principal/invitations?from=settings&school=school");
     expect(screen.queryByRole("form")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Go back" }));
-    expect(await screen.findByRole("link", { name: "Academic setup" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Academic structure" })).toBeVisible();
     expect(screen.queryByText("Get your institution ready")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Promote a class" })).not.toBeInTheDocument();
   });
   it("does not expose account access or activation to delegated school-office staff", async () => {
     session.admin = false;
     show("/teacher/administration?section=access");
-    expect(await screen.findByRole("link", { name: "Academic setup" })).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Academic structure" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Account access" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Setup status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Setup readiness" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "School members" })).not.toBeInTheDocument();
   });
   it("moves back one level at a time from an operating-rule editor", async () => {
