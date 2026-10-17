@@ -17,6 +17,13 @@ decisions cannot be replaced by synthetic software tests.
 
 ## Accepted direction
 
+- Owner decision, 17 October 2026: use a compact inline “Powered by” credit beside
+  the original ThatCampus logo in both app and desktop, without ribbon, container,
+  divider, border, shadow or animation. Existing placement remains unchanged.
+  Both production builds and two focused component tests pass locally; isolated
+  browser checks cover 320, 768, 1024 and 1440px in light/dark appearance. Hosted
+  deployment and owner visual acceptance are separate gates.
+
 - Product decision, 17 October 2026: retain and push the complete digital-twin core,
   broad Cambridge synthetic campus, simulated-human Campus Lab runner, guarded seeds
   and development adapters throughout active development. Cambridge is wholly dummy
