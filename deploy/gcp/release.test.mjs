@@ -175,5 +175,8 @@ test('smoke check accepts the actual responsive app shell and rejects a broken l
     return new Response('ok');
   };
   await verify('https://example.run.app', env.GITHUB_SHA, request('/'));
+  await verify('https://app.thatcampus.com', env.GITHUB_SHA, request('https://app.thatcampus.com/'));
+  await assert.rejects(verify('https://app.thatcampus.com', env.GITHUB_SHA, request('https://other.example/')), /Retired staff route/);
+  await assert.rejects(verify('https://app.thatcampus.com', env.GITHUB_SHA, request('https://app.thatcampus.com/?wrong=1')), /Retired staff route/);
   await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, request('/login')), /Retired staff route/);
 });
