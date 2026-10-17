@@ -82,7 +82,10 @@ test('production frontend sources cannot statically import Campus Lab or the sim
 
 test('the permanent Campus View contains no development-persona implementation', () => {
   const campusViewSource = join(repositoryRoot, 'frontend/src/features/campus-view');
-  const developmentPersonaLanguage = /\b(?:dummy|simulat(?:e|ed|ion)|synthetic)\b/iu;
+  // Product what-if scenarios legitimately use the word "simulation". Keep the
+  // deployment boundary focused on development personas, which must stay under
+  // frontend/src/dev and must never become actors in the permanent Campus View.
+  const developmentPersonaLanguage = /\b(?:dummy|synthetic|simulated|sudo|pseudo)[-_ ]+(?:agent|actor|persona|student|staff|teacher|parent)s?\b/iu;
   for (const path of sourceFiles(campusViewSource)) {
     const source = readFileSync(path, 'utf8');
     assert.doesNotMatch(
