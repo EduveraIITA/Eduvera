@@ -2,7 +2,7 @@
 """One-time Railway bootstrap for the stage environment.
 
 Creates the Railway project, one service that runs backend/Dockerfile (serving
-the mobile app, the desktop dashboard and the API from one origin), pins it to
+the responsive web app and the API from one origin), pins it to
 Singapore (Railway's config-as-code file is deprecated, so this script is the
 infrastructure definition), gives it a public domain and an uploads volume, sets its variables,
 and stores what GitHub Actions needs (Railway/migration secrets and exact target variables)
@@ -369,8 +369,7 @@ def main() -> None:
     store_in_github(token, migration_database_url, metrics_token, public_url, project_id)
     print()
     print(f"Done. Push to Stage (or run the workflow) and the site appears at {public_url}")
-    print(f"  mobile   {public_url}/")
-    print(f"  desktop  {public_url}/staff/")
+    print(f"  app      {public_url}/")
     print(f"  api      {public_url}/api/docs")
 
 

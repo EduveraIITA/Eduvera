@@ -9,15 +9,6 @@ ENV VITE_CAMPUS_LAB_ENABLED=$VITE_CAMPUS_LAB_ENABLED
 COPY frontend/ ./
 RUN npm run build
 
-FROM node:24-bookworm-slim AS desktop-dependencies
-WORKDIR /build/frontend-desktop
-COPY frontend-desktop/package.json frontend-desktop/package-lock.json ./
-RUN npm ci
-
-FROM desktop-dependencies AS desktop-build
-COPY frontend-desktop/ ./
-RUN npm run build
-
 FROM node:24-bookworm-slim AS backend-dependencies
 WORKDIR /build/backend
 COPY backend/package.json backend/package-lock.json ./
@@ -38,7 +29,6 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8000 \
     SPA_DIST_DIR=/app/frontend-dist \
-    STAFF_DIST_DIR=/app/staff-dist \
     UPLOAD_DIR=/app/storage/leave-documents
 WORKDIR /app
 RUN groupadd --system --gid 10001 omnischool \
@@ -49,7 +39,6 @@ COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=backend-build --chown=omnischool:omnischool /build/backend/dist ./dist
 COPY --from=frontend-build --chown=omnischool:omnischool /build/frontend/dist ./frontend-dist
-COPY --from=desktop-build --chown=omnischool:omnischool /build/frontend-desktop/dist ./staff-dist
 COPY --from=seed-build --chown=omnischool:omnischool /build/backend/generated ./seed-data
 COPY --chown=omnischool:omnischool backend/migrations ./migrations
 COPY --chown=omnischool:omnischool backend/assets ./assets

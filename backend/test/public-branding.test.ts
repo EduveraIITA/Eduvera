@@ -10,8 +10,6 @@ const publicSurfaceRoots = [
   "frontend/index.html",
   "frontend/public/manifest.webmanifest",
   "frontend/src",
-  "frontend-desktop/index.html",
-  "frontend-desktop/src",
   "backend/src",
   "services/photo-attendance/app",
 ];
@@ -61,12 +59,9 @@ describe("public ThatCampus branding", () => {
   it("uses the supplied ThatCampus mark on app and install surfaces", () => {
     const brand = readFileSync(resolve(repositoryRoot, "frontend/src/features/school/SchoolBrand.tsx"), "utf8");
     const mobileDocument = readFileSync(resolve(repositoryRoot, "frontend/index.html"), "utf8");
-    const desktopDocument = readFileSync(resolve(repositoryRoot, "frontend-desktop/index.html"), "utf8");
     const manifest = readFileSync(resolve(repositoryRoot, "frontend/public/manifest.webmanifest"), "utf8");
     expect(brand).toContain("/assets/thatcampus-logo-light.png");
     expect(mobileDocument).toContain("/favicon.png");
-    expect(desktopDocument).toContain("/staff/thatcampus-logo-light.png");
-    expect(desktopDocument).toContain("/staff/thatcampus-logo-dark.png");
     expect(manifest).toContain("/icon-192.png");
     expect(manifest).toContain("/icon-512.png");
     for (const path of [
@@ -78,8 +73,6 @@ describe("public ThatCampus branding", () => {
       "frontend/public/apple-touch-icon.png",
       "frontend/public/icon-192.png",
       "frontend/public/icon-512.png",
-      "frontend-desktop/public/thatcampus-logo-light.png",
-      "frontend-desktop/public/thatcampus-logo-dark.png",
       "backend/assets/receipt/thatcampus-logo.png",
     ]) expect(readFileSync(resolve(repositoryRoot, path)).byteLength).toBeGreaterThan(100);
   });

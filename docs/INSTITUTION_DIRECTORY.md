@@ -148,8 +148,6 @@ node --import tsx src/database/seed.ts
 npm run typecheck && npm run lint && npm test && npm run test:seed
 cd ../frontend
 npm run typecheck && npm run lint && npm test && npm run build
-cd ../frontend-desktop
-npm run typecheck && npm run build
 ```
 
 Manual UI review: check `/company` at mobile and desktop widths; search official

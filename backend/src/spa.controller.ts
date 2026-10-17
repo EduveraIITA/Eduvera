@@ -90,11 +90,12 @@ export class SpaController {
     return this.serve(reply, config().spaDistDir, "Build the React application before serving the SPA.");
   }
 
-  // Desktop staff console, built with base "/staff/". Same origin, same session.
+  // Preserve old bookmarks after retiring the separate desktop bundle. The main
+  // application is responsive and owns every current staff workflow.
   @Public()
   @Get(["staff", "staff/*"])
-  async staff(@Res() reply: FastifyReply) {
-    return this.serve(reply, config().staffDistDir, "Build the desktop dashboard before serving /staff.");
+  staff(@Res() reply: FastifyReply) {
+    return reply.redirect("/", 308);
   }
 
   private async serve(reply: FastifyReply, dir: string, detail: string) {

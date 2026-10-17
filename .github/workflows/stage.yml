@@ -113,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        directory: [frontend, frontend-desktop]
+        directory: [frontend]
     defaults:
       run:
         working-directory: ${{ matrix.directory }}
@@ -125,10 +125,9 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.directory }}/package-lock.json
       - run: npm ci --prefer-offline --no-audit --no-fund
-      - name: Lint mobile app
-        if: matrix.directory == 'frontend'
+      - name: Lint responsive app
         run: npm run lint
-      # Both build scripts include tsc -b: a separate typecheck repeats that work.
+      # The build script includes tsc -b, so a separate typecheck repeats that work.
       - run: npm run build
 
   mobile-tests:

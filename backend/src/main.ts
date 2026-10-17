@@ -58,17 +58,6 @@ async function bootstrap(): Promise<void> {
   } catch {
     // The API remains runnable before the separately-built React bundle exists.
   }
-  try {
-    await access(join(settings.staffDistDir, "index.html"));
-    await app.register(fastifyStatic, {
-      root: join(settings.staffDistDir, "assets"),
-      prefix: "/staff/assets/",
-      wildcard: true,
-      decorateReply: false,
-    });
-  } catch {
-    // The desktop staff console is optional; the API and mobile app run without it.
-  }
   app.enableCors({
     credentials: true,
     origin(origin, callback) {

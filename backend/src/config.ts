@@ -41,7 +41,6 @@ const schema = z.object({
   CAMPUS_SIMULATOR_SERVICE_TOKEN: z.string().min(32).max(256).optional(),
   CAMPUS_LAB_PROXY_KEY: z.string().min(24).max(256).optional(),
   SPA_DIST_DIR: z.string().default("../frontend/dist"),
-  STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),
   INVITATION_EMAIL_ENABLED: booleanString("false"),
   INVITATION_EMAIL_PROVIDER: z.enum(["smtp", "resend"]).default("smtp"),
@@ -209,7 +208,6 @@ export function loadConfig() {
     rateLimitStore,
     allowedOrigins,
     spaDistDir: resolve(process.cwd(), value.SPA_DIST_DIR),
-    staffDistDir: resolve(process.cwd(), value.STAFF_DIST_DIR),
     uploadDir: resolve(process.cwd(), value.UPLOAD_DIR),
     restrictedCaseEncryptionKey: value.RESTRICTED_CASE_ENCRYPTION_KEY ?? value.COOKIE_SECRET,
   };

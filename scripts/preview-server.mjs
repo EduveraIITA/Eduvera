@@ -174,7 +174,6 @@ const backendEnv = {
   CAMPUS_SIMULATION_DATABASE_URL: process.env.CAMPUS_SIMULATION_DATABASE_URL || simulationDatabase.toString(),
   CAMPUS_LAB_PROXY_KEY: campusLabProxyKey,
   SPA_DIST_DIR: resolve(root, "frontend/dist"),
-  STAFF_DIST_DIR: resolve(root, "frontend-desktop/dist"),
   ALLOWED_ORIGINS: [...origins].join(","),
   PHOTO_ATTENDANCE_ENABLED: photoAttendanceReady ? "true" : "false",
   PHOTO_ATTENDANCE_BASE_URL: "http://127.0.0.1:8100/api",

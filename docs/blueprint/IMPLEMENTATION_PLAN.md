@@ -9184,3 +9184,14 @@ today even when the fixture had no scheduled lessons. Select the latest actual s
 date within the fixture term and use it explicitly in lookup and mocked attendance tools.
 Retain all attendance availability/authority checks and assertions; no production rule
 or test gate is disabled. Hosted integration rerun must verify this correction.
+
+## 18 October 2026 — one responsive application
+
+The owner retired the separate `/staff` Vite application because its screens were a
+dummy parallel experience while the primary `frontend/` application already provides
+the responsive, authoritative workflows. Removed `frontend-desktop/` and its duplicate
+build, container, runtime configuration, branding checks and CI matrix entry. The
+NestJS application now redirects legacy `/staff` bookmarks to `/`; release verification
+checks that compatibility redirect and the responsive application shell. Historical
+desktop-build evidence above remains an accurate record of earlier checkpoints, not a
+current architecture claim.

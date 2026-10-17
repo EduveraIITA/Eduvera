@@ -18,9 +18,9 @@ Attendance, leave, timetable, and notification changes use a transactional
 outbox. The record change and its event commit in the same PostgreSQL
 transaction; a horizontally safe worker claims events with `SKIP LOCKED`,
 fans them out through PostgreSQL `LISTEN/NOTIFY`, and the open tabs for one
-signed-in session elect a single SSE leader across both the main and `/staff`
-React bundles. Validated events are relayed to the other tabs, and each bundle's
-React query cache refreshes only the affected views.
+signed-in session elect a single SSE leader across tabs of the responsive React
+application. Validated events are relayed to the other tabs, and each tab's React
+query cache refreshes only the affected views.
 Commit-ordered, versioned delivery cursors provide authorized replay after a
 disconnect, with a bounded full-sync fallback when the replay window is exceeded.
 

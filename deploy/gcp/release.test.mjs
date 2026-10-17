@@ -76,13 +76,13 @@ test('smoke check rejects a stale release and unexpected origins', async () => {
   await assert.rejects(verify('https://untrusted.example', env.GITHUB_SHA));
   await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, async () => new Response(JSON.stringify({ release_sha: 'wrong', environment: 'stage' }))));
 });
-test('smoke check accepts the current ThatCampus mobile and staff brands', async () => {
+test('smoke check accepts the responsive ThatCampus app and retired staff redirect', async () => {
   const request = async (url, options = {}) => {
     const path = new URL(url).pathname;
     if (path === '/releasez') return new Response(JSON.stringify({ release_sha: env.GITHUB_SHA, environment: 'stage' }));
     if (path === '/readyz') return new Response(JSON.stringify({ status: 'ready' }));
     if (path === '/') return new Response('<title>ThatCampus</title>');
-    if (path === '/staff/') return new Response('<title>ThatCampus · Staff</title>');
+    if (path === '/staff/') return new Response(null, { status: 308, headers: { location: '/' } });
     if (path === '/api/v1/auth/session/') return new Response(JSON.stringify({ demo_mode: false }));
     if (path === '/api/v1/auth/demo-session/' && options.method === 'POST') return new Response('', { status: 404 });
     if (path === '/metrics') return new Response('', { status: 401 });
@@ -160,21 +160,20 @@ test('missing images, denied registry access and malformed digests fail closed',
   }
 });
 
- test('smoke check accepts actual app shells and rejects a wrong staff shell', async () => {
+test('smoke check accepts the actual responsive app shell and rejects a broken legacy redirect', async () => {
   const { readFileSync } = await import('node:fs');
-  const mobile = readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
-  const staff = readFileSync(new URL('../../frontend-desktop/index.html', import.meta.url), 'utf8');
-  const request = (staffHtml) => async url => {
+  const app = readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+  const request = (redirectLocation) => async url => {
     const path = new URL(url).pathname;
     if (path === '/releasez') return Response.json({ release_sha: env.GITHUB_SHA, environment: 'stage' });
     if (path === '/readyz') return Response.json({ status: 'ready' });
-    if (path === '/') return new Response(mobile);
-    if (path === '/staff/') return new Response(staffHtml);
+    if (path === '/') return new Response(app);
+    if (path === '/staff/') return new Response(null, { status: 308, headers: { location: redirectLocation } });
     if (path === '/api/v1/auth/session/') return Response.json({ demo_mode: false });
     if (path === '/api/v1/auth/demo-session/') return new Response(null, { status: 404 });
     if (path === '/metrics') return new Response(null, { status: 401 });
     return new Response('ok');
   };
-  await verify('https://example.run.app', env.GITHUB_SHA, request(staff));
-  await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, request(mobile)), /Staff app failed/);
+  await verify('https://example.run.app', env.GITHUB_SHA, request('/'));
+  await assert.rejects(verify('https://example.run.app', env.GITHUB_SHA, request('/login')), /Retired staff route/);
 });
