@@ -252,11 +252,38 @@
   .operations-app .assistant-page__composer { left: calc(50% + 120px); width: min(720px, calc(100% - 288px)); }
 }
 
-/* React Bits current stays close to the edge; decorative canvas never blocks input. */
-.assistant-electric-border { --assistant-electric-glow: #4f46e5; min-width: 0; box-shadow: 0 0 0 .35px color-mix(in srgb, var(--assistant-electric-glow) 30%, transparent), 0 0 12px color-mix(in srgb, var(--assistant-electric-glow) 16%, transparent); }
-.assistant-electric-border > .electric-border__canvas { opacity: 1; }
+/* Approved blue highlight: response only, no flashing or input decoration. */
+@property --assistant-flow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.assistant-electric-border {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  box-shadow: 0 0 16px rgba(0,119,252,.16);
+}
+.assistant-electric-border::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1.25px;
+  pointer-events: none;
+  background: conic-gradient(from var(--assistant-flow-angle), rgba(0,119,252,.22) 0deg, rgba(0,119,252,.22) 235deg, rgba(0,119,252,.5) 275deg, rgba(0,119,252,.95) 305deg, rgba(0,149,252,.9) 318deg, rgba(0,119,252,.22) 350deg);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: assistant-response-flow 7s linear infinite;
+}
+@keyframes assistant-response-flow {
+  to { --assistant-flow-angle: 360deg; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .assistant-electric-border > .electric-border__canvas { display: none; }
+  .assistant-electric-border::after { animation: none; }
 }
 
 .assistant-conversation .assistant-electric-border > .assistant-full-reply { padding: 12px 16px; border-radius: inherit; background: var(--edura-surface); }
