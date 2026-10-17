@@ -8265,3 +8265,25 @@ realtime invalidations. Focused evidence after repair: 19/19 frontend regression
 15/15 guarded-seed checks and 26/26 deployment-contract checks pass. A fresh Stage
 run must still pass the complete clean-checkout matrix, migration, candidate checks
 and public revision verification before this release is called deployed.
+
+[Stage run 39019345150](https://github.com/EduveraIITA/Eduvera/actions/runs/39019345150)
+then cleared the frontend build, desktop build, secret scan, deployment contracts and
+all three client test shards, but again stopped before deployment when the complete
+backend suite exposed integration fixtures that predated current digital-twin
+invariants. The repair keeps the digital-twin implementation authoritative: inactive
+enrolments now carry their required lifecycle evidence; attendance fixtures grant a
+dated class responsibility instead of inferring authority from a timetable row; the
+report-card fixture no longer models a roomless physical exam; accepted legacy cover
+uses the reviewed schedule identity; and manual cover acceptance retains its exact
+manual-task authority receipt. The authoritative leave-review link remains the shared
+`/work/staff-leave` action surface. Remaining visible `Edura`/`Eduera` copy was replaced
+with ThatCampus, the approved light-background mark and install icons are used, and the
+approved tagline is present on login, install and invitation identity surfaces.
+
+Release-candidate evidence on 17 October 2026: backend typecheck and zero-warning lint
+pass; 17/17 focused temporal, attention and public-brand tests pass; 53/53 previously
+failing database assertions pass against an isolated PostgreSQL 17 database; and the
+complete backend suite passes **147 files / 1107 tests**. This is local candidate
+evidence only. A new Stage run must still pass the clean-checkout matrix and complete
+Google Cloud/public revision verification before the digital-twin release is called
+published.

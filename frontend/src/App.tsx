@@ -192,7 +192,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Edura OS UI failed to render", error, info.componentStack);
+    console.error("ThatCampus UI failed to render", error, info.componentStack);
   }
 
   render() {

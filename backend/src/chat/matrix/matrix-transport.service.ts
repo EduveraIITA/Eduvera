@@ -176,7 +176,7 @@ export class MatrixTransportService {
               msgtype: 'm.text', body: text,
               'io.eduvera.message_id': row.message_id,
               'io.eduvera.original_created_at': row.payload.created_at,
-              // Keep files behind Eduvera's conversation-scoped authorization, not public mxc URLs.
+              // Keep files behind ThatCampus conversation-scoped authorization, not public mxc URLs.
               ...(attachment ? { 'io.eduvera.attachment': { ...attachment,
                 url: `/api/v1/chat/conversations/${row.conversation_id}/messages/${row.message_id}/attachment/` } } : {}),
             };

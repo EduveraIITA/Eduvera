@@ -165,6 +165,6 @@ export class MatrixClient {
     return result.event_id;
   }
   async redact(roomId: string, eventId: string, transactionId: string): Promise<void> {
-    await this.request('PUT', `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/redact/${encodeURIComponent(eventId)}/${encodeURIComponent(transactionId)}`, { reason: 'Removed in Eduvera' });
+    await this.request('PUT', `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/redact/${encodeURIComponent(eventId)}/${encodeURIComponent(transactionId)}`, { reason: 'Removed in ThatCampus' });
   }
 }

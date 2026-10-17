@@ -134,7 +134,7 @@ describe("accepted timetable substitution temporal contract", () => {
       schedule: entity(
         "schedule",
         "timetable",
-        `legacy:${ids.period}:2026-10-16`,
+        `legacy:${ids.period}`,
         "Class 6A legacy timetable",
       ),
     };

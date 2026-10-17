@@ -1,6 +1,6 @@
 import "./school-brand.css";
 
-const appMark = "/assets/thatcampus-logo.png";
+const appMark = "/assets/thatcampus-logo-light.png";
 
 export function SchoolBrand({
   name,

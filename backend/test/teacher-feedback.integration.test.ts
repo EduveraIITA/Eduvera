@@ -50,9 +50,9 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
     await expect(eventAuthorized(students[0]!.id)).resolves.toBe(true);
     await expect(eventAuthorized(outsider.id)).resolves.toBe(false);
     await expect(eventAuthorized(parent.id)).resolves.toBe(false);
-    await pool.query('UPDATE enrollments SET is_active=false WHERE student_id=$1',[studentId]);
+    await pool.query("UPDATE enrollments SET is_active=false,inactive_from=current_date,exit_kind='withdrawn',exit_reason='Feedback eligibility boundary',ended_by=$2,ended_at=now() WHERE student_id=$1",[studentId,admin.id]);
     try { await expect(eventAuthorized(students[0]!.id)).resolves.toBe(false); }
-    finally { await pool.query('UPDATE enrollments SET is_active=true WHERE student_id=$1',[studentId]); }
+    finally { await pool.query('UPDATE enrollments SET is_active=true,inactive_from=NULL,exit_kind=NULL,exit_reason=NULL,ended_by=NULL,ended_at=NULL WHERE student_id=$1',[studentId]); }
   });
   it('restricts creation and results to active administrators in the selected institution',async()=>{
     await expect(service.create(teacher,school,input())).rejects.toThrow(/Principal/);

@@ -477,7 +477,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
       resulting_task_revision: coverAccepted.data.revision,
       substitution_id: coverAccepted.data.effective_substitution.id,
       authority_receipt: {
-        authority_kind: "exact_coverage_offer_recipient",
+        authority_kind: "exact_manual_coverage_task_recipient",
         recipient_user_id: coverAccepted.data.effective_substitution.replacement_teacher_user_id,
       },
       schedule_provenance: {

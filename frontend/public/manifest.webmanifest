@@ -1,7 +1,7 @@
 {
   "name": "ThatCampus",
   "short_name": "ThatCampus",
-  "description": "School attendance, timetable, leave, and diary workspace for students and families.",
+  "description": "Not just any campus. That campus. School attendance, timetable, leave, and diary workspace for students and families.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -11,11 +11,7 @@
   "background_color": "#f8f9ff",
   "theme_color": "#f8f9ff",
   "icons": [
-    {
-      "src": "/assets/thatcampus-logo.png",
-      "sizes": "768x512",
-      "type": "image/png",
-      "purpose": "any"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }

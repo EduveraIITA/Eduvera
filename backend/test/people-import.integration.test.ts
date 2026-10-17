@@ -32,6 +32,8 @@ beforeAll(async()=>{
   const classes=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','A'),($1,'2026-27','7','B') RETURNING id,section",[schoolId])).rows;
   sectionA=classes.find(c=>c.section==='A').id;
   await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$4,'admin'),($2,$4,'staff'),($3,$4,'guardian')",[admin.authUser.id,teacher.authUser.id,parent.authUser.id,schoolId]);
+  const teacherProfile=(await pool.query("INSERT INTO staff_profiles(school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by) VALUES($1,$2,$3,'Kavita','Teacher',$4,'teaching','Class teacher','full_time',$5,'active',$6,$6) RETURNING id",[schoolId,teacher.authUser.id,`IMPORT-${randomUUID().slice(0,8)}`,teacher.authUser.email,today,admin.authUser.id])).rows[0].id;
+  await pool.query("INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,class_section_id,starts_on,status,assigned_by) SELECT $1,id,$2,$3,($4::date-90),'active',$5 FROM staff_responsibility_types WHERE school_id=$1 AND code='class_teacher'",[schoolId,teacherProfile,sectionA,today,admin.authUser.id]);
   parentId=(await pool.query('SELECT id FROM parents WHERE user_id=$1',[parent.authUser.id])).rows[0].id;
   const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name,contact_phone) VALUES($1,'Pooja','Sharma','9000011111') RETURNING id",[schoolId])).rows[0].id;
   await pool.query('INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id) VALUES($1,$2,$3)',[schoolId,parentId,person]);
@@ -47,7 +49,10 @@ afterAll(async()=>{
     await pool.query('DELETE FROM students WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM guardian_school_profiles WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM parents WHERE id=ANY($1::uuid[])',[guardianIds]);
-    await pool.query('DELETE FROM attendance_registers WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM class_sections WHERE school_id=$1',[schoolId]);
+    await pool.query('DELETE FROM attendance_registers WHERE school_id=$1',[schoolId]);
+    await pool.query('DELETE FROM staff_responsibility_assignments WHERE school_id=$1',[schoolId]);
+    await pool.query('DELETE FROM staff_profiles WHERE school_id=$1',[schoolId]);
+    await pool.query('DELETE FROM class_sections WHERE school_id=$1',[schoolId]);
     await pool.query('DELETE FROM academic_terms WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM school_people WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM schools WHERE id=$1',[schoolId]);
   }
   await db?.destroy();await pool.end();

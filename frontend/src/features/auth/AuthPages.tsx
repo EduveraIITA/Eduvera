@@ -45,6 +45,7 @@ export function AuthLayout({ eyebrow, title, description, children, variant }: {
     <section className="auth-story" aria-label="ThatCampus introduction">
       <AuthBrand />
       <div className="auth-story__content">
+        <p className="auth-story__tagline">Not just any campus. That campus.</p>
         <h1>School records that stay current.</h1>
         <p>Attendance, timetables, leave and communication for every school role.</p>
         <div className="auth-story__proof">
@@ -241,7 +242,7 @@ export function SignupPage() {
   }
 
   return (
-    <AuthLayout eyebrow="Get started" title="Create your Edura account" description="Join an institution, apply to onboard one, or create a coaching workspace.">
+    <AuthLayout eyebrow="Get started" title="Create your ThatCampus account" description="Join an institution, apply to onboard one, or create a coaching workspace.">
       <form className="auth-form" onSubmit={submit}>
         {error ? <div className="auth-alert" role="alert"><ShieldCheck size={18} /><span>{error}</span></div> : null}
         <fieldset className="auth-role-picker">
@@ -306,7 +307,7 @@ export function PendingOnboardingPage() {
         <h1>Now connect with your school</h1>
         <p>Your secure account for <strong>{auth.user?.email}</strong> is ready. A school administrator needs to verify your membership before attendance or student records appear.</p>
         <ol className="onboarding-steps">
-          <li className="is-complete"><span><Check size={15} /></span><div><b>Edura account</b><small>Identity and password secured</small></div></li>
+          <li className="is-complete"><span><Check size={15} /></span><div><b>ThatCampus account</b><small>Identity and password secured</small></div></li>
           <li className="is-current"><span>2</span><div><b>School verification</b><small>Ask your school office to invite this email</small></div></li>
           <li><span>3</span><div><b>Portal access</b><small>Your role-safe workspace opens automatically</small></div></li>
         </ol>

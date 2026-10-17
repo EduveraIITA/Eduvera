@@ -135,7 +135,10 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     await sql`UPDATE enrollments SET enrolled_on=${f.today}::date+1 WHERE student_id=${f.pupilB}::uuid`.execute(tx);
     const future = await f.service.overview(f.admin,f.school,'principal',{});
     expect(future.institution).toMatchObject({ students: 1, populated_classes: 1, students_per_teacher: 0.5 });
-    await sql`UPDATE enrollments SET is_active=false WHERE student_id=${f.pupilA}::uuid`.execute(tx);
+    await sql`UPDATE enrollments SET
+      is_active=false,inactive_from=${f.today}::date,exit_kind='withdrawn',
+      exit_reason='Analytics lifecycle boundary',ended_by=${f.admin.id}::uuid,ended_at=now()
+      WHERE student_id=${f.pupilA}::uuid`.execute(tx);
     await sql`UPDATE staff_profiles SET status='inactive' WHERE school_id=${f.school}::uuid`.execute(tx);
     expect((await f.service.overview(f.admin,f.school,'principal',{})).institution).toMatchObject({ students: 0, populated_classes: 0, average_class_size: null, students_per_teacher: null });
   }));
