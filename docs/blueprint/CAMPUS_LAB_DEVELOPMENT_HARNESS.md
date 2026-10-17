@@ -28,8 +28,9 @@ whether a particular hosted runtime has completed its safety gates.
 
 The owner decision for this harness is deliberately simple:
 
-- it is available with the managed local development server and starts active unless
-  an administrator explicitly stops it in Experimental settings;
+- it is available with the managed local development server and isolated Stage test
+  deployment, and starts active unless an administrator explicitly stops it in
+  Experimental settings;
 - it uses wall-clock time only;
 - it has one explicit **Activate simulation / Stop simulation** control for the
   Cambridge actor process; it has no fast-forward, speed, scrub, replay or virtual-
@@ -61,10 +62,10 @@ the Model Core blueprint.
 
 | Campus Lab development harness | Model Core rehearsal/simulation |
 | --- | --- |
-| local development aid | future product/core capability |
+| development and isolated Stage testing aid | future product/core capability |
 | real wall clock | isolated virtual clock |
 | Cambridge synthetic fixture only | versioned synthetic or sanitized scenario snapshot |
-| normal local domain APIs and local demo identities | scenario executors and sink-only dispatchers |
+| normal domain APIs and exact synthetic fixture identities | scenario executors and sink-only dispatchers |
 | may intentionally update the disposable local fixture | must never mutate live domain truth |
 | no playback or time controls | deterministic scenario range, seed and baseline comparison |
 | retained development source; current runner is local-only until a hosted showcase contract is accepted | production code may expose an authorized isolated scenario service |
@@ -83,7 +84,8 @@ Core isolation, virtual-clock, deterministic-seed and side-effect gates independ
 
 ### 3.1 Cambridge is wholly synthetic
 
-The harness is restricted to the local Cambridge International School fixture. Its
+The harness is restricted to the Cambridge International School fixture in local
+development and isolated Stage. Its
 people, accounts, classes, rooms, timetable, attendance and conversations are test
 data. Every harness run records a synthetic provenance label and an explicit fixture
 version. Nothing from the runner may select an arbitrary institution merely because
@@ -121,11 +123,13 @@ inventing authorization from a title.
 Not every visible fixture person requires a login. A person without an acting demo
 account can participate in the development routine's **planned** view, but cannot sign
 an authoritative domain command. When a configured reaction is addressed to a seeded
-staff account, the harness authenticates that exact synthetic account through the
-normal login and CSRF contract using an environment-only fixture credential. Material
-writes use that concrete identity through the normal application API. The harness must
-not introduce a hidden impersonation endpoint or attribute a representative account's
-action to another person.
+staff account, the harness authenticates that exact synthetic account. Local execution
+uses normal login and CSRF with an environment-only fixture credential. Hosted Stage
+uses a rotated service credential accepted only for an active `@example.test` account
+with an active membership in the exact `cis` school. Material writes use that concrete
+identity through the normal application API and its authorization/audit path. The
+harness cannot select another school or customer identity, create a reusable browser
+session or attribute a representative account's action to another person.
 
 ### 3.2 Initial safe action catalogue
 
@@ -212,7 +216,7 @@ a newly published closure or cancellation fails closed immediately.
 ### 4.2 Continuous real time with one bounded administrator control
 
 The runner evaluates the real campus-local instant automatically while the managed
-local preview is alive and stops with that preview. There is no user control to start,
+local preview or hosted Stage test client is active. There is no user control to start,
 replay, skip or accelerate the school clock. An administrator may stop or activate the
 entire Cambridge actor process from Experimental settings. Stopped means zero
 synthetic actors and zero synthetic actions; activation resumes evaluation at the real
@@ -291,8 +295,10 @@ does not synthesize that dimension from motion, silence or a scheduled action.
 Campus View is a permanent administrator feature under **More -> School overview**.
 It renders configured topology and ordinary model-core read projections even when
 the development runner is absent. The development adapter may add planned Cambridge
-markers and runner activity to that production component only when `import.meta.env.DEV`
-is true. Every such marker says **Simulated** and remains expected, not observed.
+markers and runner activity to that production component only in local development or
+when the reviewed `VITE_CAMPUS_LAB_ENABLED` Stage build gate is active. Every such
+marker says **Simulated** and remains expected, not observed. The default customer
+build keeps that gate false.
 
 Experimental settings owns only the **Synthetic school day** description/status and
 may deep-link to Campus View. The permanent view, route, canvas renderer, accessible
@@ -309,7 +315,7 @@ current instructional date's effective Cambridge schedule
         + declarative safe actions + real wall clock
                     |
                     v
-local development runner + authenticated demo session
+local runner or isolated Stage runner + exact synthetic identity
                     |
                     v
 ordinary attendance / notices / chat / other domain API
@@ -324,8 +330,8 @@ transactional event/outbox -> existing live-event bridge
 normal query invalidation and domain screen update
 ```
 
-The development overlay adapter may poll a loopback-only runner status endpoint for
-ephemeral planned markers, the current real-time effective slot and runner health.
+The development overlay adapter may poll the loopback runner or authenticated hosted
+proxy for ephemeral planned markers, the current real-time effective slot and runner health.
 Domain pages continue to fetch their authoritative timetable and other domain data
 from their normal APIs and react to the existing event bridge.
 
@@ -353,9 +359,9 @@ The UI must be able to show both sides honestly: the fixture routine planned an 
 and the domain accepted, refused or has not yet processed it. A completed runner task
 is not itself a completed campus operation.
 
-## 7. Local-only safety contract
+## 7. Local and hosted Stage safety contract
 
-The runner fails closed unless every required condition is true:
+The local runner fails closed unless every required condition is true:
 
 1. an explicit Campus Lab enable flag is set;
 2. Node and deployment environment are both development;
@@ -387,6 +393,25 @@ revision contracts. That credential is never returned by the status endpoint or
 written to activity output. Logs redact cookies, CSRF tokens, credentials, message
 content where unnecessary and restricted domain payloads.
 
+Hosted Stage uses the separate `eduvera-stage-simulator` Cloud Run service with no
+database credential. It accepts no unkeyed status/control request and calls only the
+canonical `https://app.thatcampus.com` origin. A rotated service secret authenticates
+exact synthetic users; a separate rotated proxy key protects runner status/control.
+Both live only in Secret Manager and are available to the Stage runtime identity.
+The browser receives neither secret. The application proxy rechecks an active admin
+membership in school code `cis`; the public-demo write guard continues to reject
+control mutations.
+
+The hosted service uses zero minimum instances, at most one instance and request-time
+CPU. The durable enabled/stopped value lives in the application database. When stopped,
+the frontend stops polling and no scheduler or reserved simulator instance keeps it
+alive; Cloud Run can scale it to zero, so there is no continuing simulator compute
+charge after the platform's normal scale-down delay. When activated, authenticated
+admin polling supplies bounded request-time pulses that advance the wall-clock runner.
+This testing mode does not promise autonomous activity while nobody has the Stage app
+open; persistent unattended rehearsal would require a separately approved scheduler
+and cost contract.
+
 ## 8. Development retention and market-release boundary
 
 The owner has explicitly retained Campus Lab and the Cambridge dummy campus throughout
@@ -395,13 +420,8 @@ complete runner, fixture, guarded seeds and development adapters. A generic stat
 that the harness is “not production” is not authority to delete it, leave it only in
 one checkout or strip it from the shared development history.
 
-The current actor runner remains local-only because its authentication, loopback proxy
-and connector shutdown contract has not been replaced by a reviewed hosted-showcase
-contract. The public Stage application therefore proves the broad digital-twin,
-Campus View and isolated what-if code is deployed, but does not yet prove the
-wall-clock actor runner is live. Hosted development enablement must add a dedicated
-Cambridge-only runtime identity, private status transport, connector denial, bounded
-resources and visible simulated provenance without weakening domain authority.
+The actor runner is also enabled for isolated Stage testing under the bounded contract
+above. This does not authorize it for production or for any non-Cambridge institution.
 
 Only after the owner explicitly asks to **clean for real market release** does the
 following artifact-exclusion checklist become the active release target:
@@ -411,7 +431,7 @@ following artifact-exclusion checklist become the active release target:
 - the production Docker context ignores the runner directory;
 - the production Dockerfile never copies the runner directory or its dependencies;
 - the synthetic overlay adapter and status client are loaded only through a Vite
-  development-guarded dynamic import;
+  development or explicitly reviewed Stage-build guarded dynamic import;
 - a production frontend build contains the Campus View route and Canvas renderer but
   no synthetic-school-day adapter, runner label, timetable rehearsal indication,
   fixture or status-proxy chunk;

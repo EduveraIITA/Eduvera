@@ -43,6 +43,7 @@ import { AgentChannelModule } from "./agent/channels/channel.module.js";
 import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-integrations.module.js";
 import { CampusViewModule } from "./campus-view/campus-view.module.js";
 import { CampusScenarioModule } from "./campus-scenarios/campus-scenario.module.js";
+import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.module.js";
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { CampusScenarioModule } from "./campus-scenarios/campus-scenario.module.
     CalendarIntegrationsModule,
     CampusViewModule,
     CampusScenarioModule,
+    CampusLabHostedModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

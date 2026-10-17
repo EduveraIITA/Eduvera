@@ -5,9 +5,10 @@ import { migrationDiagnostics } from './migration-diagnostics.mjs';
 
 export function guard(env, now = Date.now()) {
   if (env.GITHUB_REPOSITORY !== 'EduveraIITA/Eduvera' || env.GITHUB_REF !== 'refs/heads/Stage') throw new Error('Only the trusted Stage branch can deploy');
-  if (env.GCP_PROJECT_ID !== 'eduera-511111' || env.GCP_REGION !== 'asia-south1' || env.GCP_SERVICE !== 'eduvera-stage' || env.GCP_PHOTO_SERVICE !== 'eduvera-stage-photo' || env.GCP_MIGRATION_JOB !== 'eduvera-stage-migrate') throw new Error('Unexpected deployment target');
+  if (env.GCP_PROJECT_ID !== 'eduera-511111' || env.GCP_REGION !== 'asia-south1' || env.GCP_SERVICE !== 'eduvera-stage' || env.GCP_PHOTO_SERVICE !== 'eduvera-stage-photo' || env.GCP_SIMULATOR_SERVICE !== 'eduvera-stage-simulator' || env.GCP_MIGRATION_JOB !== 'eduvera-stage-migrate') throw new Error('Unexpected deployment target');
   if (env.GCP_IMAGE !== 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web') throw new Error('Unexpected image repository');
   if (env.GCP_PHOTO_IMAGE !== 'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance') throw new Error('Unexpected photo image repository');
+  if (env.GCP_SIMULATOR_IMAGE !== 'asia-south1-docker.pkg.dev/eduera-511111/eduera/simulator') throw new Error('Unexpected simulator image repository');
   if (!/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? '')) throw new Error('A full release SHA is required');
   const expiry = Date.parse(env.GCP_TRIAL_DEPLOY_UNTIL ?? '');
   if (!Number.isFinite(expiry) || expiry <= now || expiry - now > 90 * 86400000) throw new Error('Trial deployment window is missing, expired or exceeds 90 days; review remaining credit before renewing');
@@ -26,10 +27,14 @@ export function assertRuntime(service, job, { allowPublicDemoBootstrap = false }
     if (!app.env?.find(item => item.name === name)?.valueFrom?.secretKeyRef) throw new Error(`${name} must use Secret Manager`);
   }
   const simulatorVariable = (app.env ?? []).find(item =>
-    item.name?.startsWith('CAMPUS_SIMULATOR_') || item.name === 'SYNTHETIC_ACTOR_ENABLED'
+    (item.name?.startsWith('CAMPUS_SIMULATOR_') && item.name !== 'CAMPUS_SIMULATOR_SERVICE_TOKEN') || item.name === 'SYNTHETIC_ACTOR_ENABLED'
   );
   if (simulatorVariable) throw new Error(`Development simulator variable is forbidden in Stage: ${simulatorVariable.name}`);
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
+  if (env.HOSTED_CAMPUS_SIMULATOR_ENABLED === 'true') {
+    if (!app.env?.find(item => item.name === 'CAMPUS_SIMULATOR_SERVICE_TOKEN')?.valueFrom?.secretKeyRef) throw new Error('Hosted simulator service authentication must use Secret Manager');
+    if (!app.env?.find(item => item.name === 'CAMPUS_LAB_PROXY_KEY')?.valueFrom?.secretKeyRef) throw new Error('Hosted simulator proxy authentication must use Secret Manager');
+  }
   if (env.DEMO_MODE !== 'false') throw new Error('Password-based development demo access must remain disabled');
   const publicDemoReady = env.PUBLIC_DEMO_ENABLED === 'true' && env.DEMO_PROFILE_SWITCHER_ENABLED === 'true';
   const publicDemoLegacyPrivate = env.PUBLIC_DEMO_ENABLED === undefined
@@ -96,6 +101,7 @@ export function resolveImageDigest(image, sha, execute = execFileSync) {
   if (![
     'asia-south1-docker.pkg.dev/eduera-511111/eduera/web',
     'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance',
+    'asia-south1-docker.pkg.dev/eduera-511111/eduera/simulator',
   ].includes(image)) throw new Error('Unexpected release image repository');
   if (!/^[a-f0-9]{40}$/.test(sha ?? '')) throw new Error('A full release SHA is required');
   // Builds and deployment run on separate runners. Resolve the pushed commit tag
@@ -122,6 +128,7 @@ async function deploy(env) {
   const publicUrl = service.spec.template.spec.containers[0].env.find(item => item.name === 'PUBLIC_URL').value;
   const image = resolveImageDigest(env.GCP_IMAGE, env.GITHUB_SHA);
   const photoImage = resolveImageDigest(env.GCP_PHOTO_IMAGE, env.GITHUB_SHA);
+  const simulatorImage = resolveImageDigest(env.GCP_SIMULATOR_IMAGE, env.GITHUB_SHA);
   gcloud(['run', 'jobs', 'update', env.GCP_MIGRATION_JOB, ...flags, `--image=${image}`]);
   try {
     gcloud(['run', 'jobs', 'execute', env.GCP_MIGRATION_JOB, ...flags, '--wait']);
@@ -150,10 +157,24 @@ async function deploy(env) {
   const photoUrl = photoService.status?.url;
   if (!photoUrl) throw new Error('Photo-service URL is missing');
   await verifyPhoto(photoUrl);
+  gcloud([
+    'run', 'deploy', env.GCP_SIMULATOR_SERVICE, ...flags,
+    `--image=${simulatorImage}`,
+    '--service-account=stage-runtime@eduera-511111.iam.gserviceaccount.com',
+    '--cpu=1', '--memory=256Mi', '--concurrency=10', '--timeout=30', '--min=0', '--max=1',
+    '--cpu-throttling', '--no-cpu-boost', '--ingress=all', '--allow-unauthenticated',
+    '--set-env-vars=NODE_ENV=production,DEPLOYMENT_ENVIRONMENT=stage,CAMPUS_SIMULATOR_HOSTED=true,CAMPUS_SIMULATOR_ENABLED=true,CAMPUS_SIMULATOR_API_ORIGIN=https://app.thatcampus.com',
+    '--set-secrets=CAMPUS_SIMULATOR_SERVICE_TOKEN=stage-campus-simulator-service-token:latest,CAMPUS_LAB_PROXY_KEY=stage-campus-lab-proxy-key:latest',
+  ]);
+  const simulatorService = describe('services', env.GCP_SIMULATOR_SERVICE);
+  const simulatorUrl = simulatorService.status?.url;
+  if (!simulatorUrl) throw new Error('Simulator service URL is missing');
+  const anonymousSimulator = await fetch(`${simulatorUrl}/status`, { signal: AbortSignal.timeout(20_000), redirect: 'error' });
+  if (anonymousSimulator.status !== 401) throw new Error('Simulator status must reject anonymous access');
   const tag = `check-${env.GITHUB_SHA.slice(0, 12)}`;
   let promoted = false;
   try {
-    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},GOOGLE_CLIENT_ID=367469594690-mp6vblj14p9b9c9fo5dgrfg9a6h06pat.apps.googleusercontent.com,DEMO_PROFILE_SWITCHER_ENABLED=true,PUBLIC_DEMO_ENABLED=true,PUBLIC_DEMO_SESSION_TTL_SECONDS=1800,PUBLIC_DEMO_MAX_STARTS_PER_HOUR=20,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest', '--no-traffic', `--tag=${tag}`]);
+    gcloud(['run', 'services', 'update', env.GCP_SERVICE, ...flags, `--image=${image}`, `--update-env-vars=RELEASE_SHA=${env.GITHUB_SHA},GOOGLE_CLIENT_ID=367469594690-mp6vblj14p9b9c9fo5dgrfg9a6h06pat.apps.googleusercontent.com,DEMO_PROFILE_SWITCHER_ENABLED=true,PUBLIC_DEMO_ENABLED=true,PUBLIC_DEMO_SESSION_TTL_SECONDS=1800,PUBLIC_DEMO_MAX_STARTS_PER_HOUR=20,PHOTO_ATTENDANCE_ENABLED=true,PHOTO_ATTENDANCE_BASE_URL=${photoUrl}/api,PHOTO_ATTENDANCE_TIMEOUT_MS=180000,HOSTED_CAMPUS_SIMULATOR_ENABLED=true,HOSTED_CAMPUS_SIMULATOR_URL=${simulatorUrl}`, '--update-secrets=PHOTO_ATTENDANCE_API_TOKEN=stage-photo-token:latest,CAMPUS_SIMULATOR_SERVICE_TOKEN=stage-campus-simulator-service-token:latest,CAMPUS_LAB_PROXY_KEY=stage-campus-lab-proxy-key:latest', '--no-traffic', `--tag=${tag}`]);
     const updated = describe('services', env.GCP_SERVICE);
     const candidate = updated.status?.traffic?.find(item => item.tag === tag);
     if (!candidate?.url || !candidate.revisionName) throw new Error('Candidate URL/revision is missing');

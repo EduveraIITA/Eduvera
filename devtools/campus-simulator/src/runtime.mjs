@@ -1,7 +1,7 @@
 import { ApiSession } from "./http-session.mjs";
 import { DevelopmentActionRunner } from "./actions.mjs";
 import { buildStatusSnapshot, createRoutineSchedule } from "./model.mjs";
-import { assertCambridgeFixture, verifyLocalApi } from "./safety.mjs";
+import { assertCambridgeFixture, verifyApplicationApi } from "./safety.mjs";
 
 function errorMessage(error) {
   return typeof error?.message === "string" ? error.message.slice(0, 400) : "Unknown Campus Lab runtime error.";
@@ -86,10 +86,12 @@ async function currentSchoolDay(session, schoolId, principalTimetable = null) {
 }
 
 export class CampusSimulatorRuntime {
-  constructor({ apiOrigin, behavior, demoPassword, startedAt = new Date(), fetchImpl = fetch }) {
+  constructor({ apiOrigin, behavior, demoPassword, hosted = false, serviceToken = "", startedAt = new Date(), fetchImpl = fetch }) {
     this.apiOrigin = apiOrigin;
     this.behavior = behavior;
     this.demoPassword = demoPassword;
+    this.hosted = hosted;
+    this.serviceToken = serviceToken;
     this.startedAt = new Date(startedAt);
     this.fetchImpl = fetchImpl;
     this.status = emptyStatus(this.startedAt);
@@ -142,20 +144,27 @@ export class CampusSimulatorRuntime {
   }
 
   createSessions() {
-    const options = { fetchImpl: this.fetchImpl };
+    const create = (persona) => new ApiSession(this.apiOrigin, {
+      fetchImpl: this.fetchImpl,
+      ...(this.hosted ? { serviceToken: this.serviceToken, serviceUsername: this.behavior.personas?.[persona] } : {}),
+    });
     return {
-      admin: new ApiSession(this.apiOrigin, options),
-      staff: new ApiSession(this.apiOrigin, options),
-      parent: new ApiSession(this.apiOrigin, options),
-      student: new ApiSession(this.apiOrigin, options),
+      admin: create("admin"),
+      staff: create("staff"),
+      parent: create("parent"),
+      student: create("student"),
     };
   }
 
   async fixtureActorSession({ username, userId, schoolId }) {
     const existing = this.actorSessions.get(userId);
     if (existing) return existing;
-    const session = new ApiSession(this.apiOrigin, { fetchImpl: this.fetchImpl });
-    await session.login(username, this.demoPassword);
+    const session = new ApiSession(this.apiOrigin, {
+      fetchImpl: this.fetchImpl,
+      ...(this.hosted ? { serviceToken: this.serviceToken, serviceUsername: username } : {}),
+    });
+    if (this.hosted) await session.connectServiceIdentity();
+    else await session.login(username, this.demoPassword);
     if (session.user?.id !== userId || session.user?.active_school_id !== schoolId) {
       throw new Error(`The fixture identity ${username} did not resolve to the offered Cambridge staff member.`);
     }
@@ -164,13 +173,12 @@ export class CampusSimulatorRuntime {
   }
 
   async connect() {
-    await verifyLocalApi(this.apiOrigin, { fetchImpl: this.fetchImpl });
+    await verifyApplicationApi(this.apiOrigin, { fetchImpl: this.fetchImpl, hosted: this.hosted });
     const sessions = this.createSessions();
-    await Promise.all([
-      sessions.admin.loginDemo("admin"),
-      sessions.staff.loginDemo("staff"),
-      sessions.parent.loginDemo("parent"),
-      sessions.student.loginDemo("student"),
+    if (this.hosted) await Promise.all(Object.values(sessions).map((session) => session.connectServiceIdentity()));
+    else await Promise.all([
+      sessions.admin.loginDemo("admin"), sessions.staff.loginDemo("staff"),
+      sessions.parent.loginDemo("parent"), sessions.student.loginDemo("student"),
     ]);
     const schoolId = sessions.admin.user?.active_school_id;
     if (!schoolId) throw new Error("The Cambridge administrator has no active dummy school.");
@@ -243,7 +251,11 @@ export class CampusSimulatorRuntime {
 
   async setEnabled(enabled) {
     const next = Boolean(enabled);
-    if (this.control.enabled === next) return this.snapshot();
+    if (this.control.enabled === next) {
+      if (next) await this.actionRunner?.tick(new Date());
+      this.render();
+      return this.snapshot();
+    }
     this.control = { enabled: next, changed_at: new Date().toISOString(), changed_by: "administrator" };
     if (!next) {
       this.stop();

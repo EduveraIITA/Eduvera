@@ -132,6 +132,30 @@ export class AuthService {
     };
   }
 
+  async hostedCampusSimulatorUser(username: string): Promise<AuthUser | null> {
+    if (!config().HOSTED_CAMPUS_SIMULATOR_ENABLED || config().DEPLOYMENT_ENVIRONMENT !== "stage") return null;
+    if (!/^[a-z0-9._-]{3,80}$/i.test(username)) return null;
+    const row = await this.db.selectFrom("users as u")
+      .innerJoin("school_memberships as m", "m.user_id", "u.id")
+      .innerJoin("schools as s", "s.id", "m.school_id")
+      .select([
+        "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.avatar_url", "u.role", "u.is_active", "u.email_verified_at",
+        "m.school_id",
+      ])
+      .where(sql<boolean>`lower(u.username) = ${username.toLowerCase()}`)
+      .where("u.is_active", "=", true)
+      .where("m.is_active", "=", true)
+      .where("s.code", "=", "cis")
+      .where(sql<boolean>`lower(u.email) like ${"%@example.test"}`)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      id: row.id, username: row.username, email: row.email, first_name: row.first_name, last_name: row.last_name,
+      avatar_url: row.avatar_url, role: row.role, is_active: row.is_active, email_verified_at: row.email_verified_at,
+      active_school_id: row.school_id,
+    };
+  }
+
   async createSession(user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number } = {}): Promise<{ rawToken: string; csrfToken: string }> {
     if (!user.active_school_id) {
       const memberships = await this.db.selectFrom('school_memberships').select('school_id')

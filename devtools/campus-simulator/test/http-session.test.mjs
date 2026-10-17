@@ -24,3 +24,16 @@ test("logs an exact fixture actor in through the ordinary CSRF-protected applica
   assert.equal(session.csrfToken,"csrf-two");
   assert.equal(session.user.id,"staff-1");
 });
+
+test("uses a service identity without creating a human password session", async () => {
+  const fetchImpl = async (_url, options) => {
+    assert.equal(options.headers.get("x-thatcampus-simulator-token"), "service-secret");
+    assert.equal(options.headers.get("x-thatcampus-simulator-user"), "kavita.staff");
+    return Response.json({ user: { id: "staff-1", username: "kavita.staff", active_school_id: "school-1" } });
+  };
+  const session = new ApiSession("https://app.thatcampus.com", {
+    fetchImpl, serviceToken: "service-secret", serviceUsername: "kavita.staff",
+  });
+  await session.connectServiceIdentity();
+  assert.equal(session.user.id, "staff-1");
+});

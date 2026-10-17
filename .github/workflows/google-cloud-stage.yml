@@ -34,6 +34,12 @@ jobs:
             context: .
             dockerfile: backend/Dockerfile
             cache: stage-web
+            build_args: VITE_CAMPUS_LAB_ENABLED=true
+          - image: simulator
+            context: devtools/campus-simulator
+            dockerfile: devtools/campus-simulator/Dockerfile
+            cache: stage-simulator
+            build_args: ''
           - image: photo-attendance
             context: services/photo-attendance
             dockerfile: services/photo-attendance/Dockerfile
@@ -47,8 +53,10 @@ jobs:
       GCP_REGION: asia-south1
       GCP_SERVICE: eduvera-stage
       GCP_PHOTO_SERVICE: eduvera-stage-photo
+      GCP_SIMULATOR_SERVICE: eduvera-stage-simulator
       GCP_MIGRATION_JOB: eduvera-stage-migrate
       GCP_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/web
+      GCP_SIMULATOR_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/simulator
       GCP_PHOTO_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance
       GCP_STAGE_DEPLOY_ENABLED: ${{ vars.GCP_STAGE_DEPLOY_ENABLED }}
       GCP_TRIAL_DEPLOY_UNTIL: ${{ vars.GCP_TRIAL_DEPLOY_UNTIL }}
@@ -71,6 +79,7 @@ jobs:
           tags: asia-south1-docker.pkg.dev/eduera-511111/eduera/${{ matrix.image }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.cache }}
           cache-to: type=gha,scope=${{ matrix.cache }},mode=max,ignore-error=true
+          build-args: ${{ matrix.build_args }}
       # Authenticate after the build so a long build cannot expire the OIDC token.
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         if: matrix.image != 'thatcampus' || vars.GCP_STAGE_DEPLOY_ENABLED == 'true'
@@ -101,8 +110,10 @@ jobs:
       GCP_SERVICE: eduvera-stage
       GCP_PHOTO_SERVICE: eduvera-stage-photo
       GCP_MIGRATION_JOB: eduvera-stage-migrate
+      GCP_SIMULATOR_SERVICE: eduvera-stage-simulator
       GCP_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/web
       GCP_PHOTO_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance
+      GCP_SIMULATOR_IMAGE: asia-south1-docker.pkg.dev/eduera-511111/eduera/simulator
       GCP_STAGE_DEPLOY_ENABLED: ${{ vars.GCP_STAGE_DEPLOY_ENABLED }}
       GCP_TRIAL_DEPLOY_UNTIL: ${{ vars.GCP_TRIAL_DEPLOY_UNTIL }}
     steps:

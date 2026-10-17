@@ -10,6 +10,8 @@ async function main() {
     apiOrigin: configuration.apiOrigin,
     behavior,
     demoPassword: configuration.demoPassword,
+    hosted: configuration.hosted,
+    serviceToken: configuration.serviceToken,
     startedAt: new Date(),
   });
   const server = await startStatusServer({
@@ -17,8 +19,9 @@ async function main() {
     proxyKey: configuration.proxyKey,
     getStatus: () => runtime.snapshot(),
     setEnabled: (enabled) => runtime.setEnabled(enabled),
+    host: configuration.host,
   });
-  console.log(`[campus-lab] read-only status listening on 127.0.0.1:${configuration.port}`);
+  console.log(`[campus-lab] status listening on ${configuration.host}:${configuration.port}`);
   void runtime.bootWithRetry();
 
   const shutdown = () => {

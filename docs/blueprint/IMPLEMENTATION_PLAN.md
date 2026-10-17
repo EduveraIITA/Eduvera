@@ -8379,3 +8379,32 @@ ephemeral proxy key is required. Stopping clears timers and projects zero simula
 actors/actions without changing timetable or domain data. Activation reconnects or
 refreshes Cambridge and resumes from the real current instant, still respecting the
 instructional calendar and school-hours gate and never replaying missed actions.
+
+## Hosted Cambridge Campus Lab for Stage testing — 17 October 2026
+
+The owner authorized simulated Cambridge users on the actual Stage platform during
+active feature development, with the additional requirement that stopping the harness
+must not reserve paid simulator compute. The implementation keeps the runner separate
+from the application as `eduvera-stage-simulator`, with no database access, zero
+minimum instances, one maximum instance and request-time CPU. Its durable start/stop
+state lives in a Stage-only application table. Once stopped, the admin client stops
+polling and Cloud Run can scale the simulator to zero; there is no simulator scheduler
+or always-on instance. Activated execution advances through bounded admin-client
+pulses, so it is intentionally a live testing aid rather than an unattended daemon
+when nobody is using Stage.
+
+The runner calls the canonical app through normal domain APIs. A rotated Secret
+Manager service credential maps each request only to an exact active
+`@example.test` user in synthetic school code `cis`; commands remain attributed,
+authorized and audited as that Cambridge person. A second rotated key protects runner
+status/control. The browser receives neither secret. The same-origin app proxy rechecks
+active Cambridge admin membership, while the existing public-demo mutation guard
+continues to block start/stop writes.
+
+Stage's web image includes only the build-gated Campus Lab adapter; the simulator is
+built as its own image and the default customer build keeps the adapter disabled.
+Local verification currently includes backend TypeScript build and focused lint,
+26/26 simulator tests, 19/19 release/deployment-boundary tests and focused frontend
+lint. The full local frontend build remains blocked only by pre-existing untracked
+numbered duplicate test artifacts, which were not modified. Clean-checkout Stage CI,
+deployment and authenticated mobile validation remain open evidence gates.

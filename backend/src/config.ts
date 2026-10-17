@@ -35,6 +35,10 @@ const schema = z.object({
   PUBLIC_DEMO_ENABLED: booleanString("false"),
   PUBLIC_DEMO_SESSION_TTL_SECONDS: z.coerce.number().int().min(300).max(3600).default(1800),
   PUBLIC_DEMO_MAX_STARTS_PER_HOUR: z.coerce.number().int().min(1).max(1000).default(20),
+  HOSTED_CAMPUS_SIMULATOR_ENABLED: booleanString("false"),
+  HOSTED_CAMPUS_SIMULATOR_URL: z.string().url().optional(),
+  CAMPUS_SIMULATOR_SERVICE_TOKEN: z.string().min(32).max(256).optional(),
+  CAMPUS_LAB_PROXY_KEY: z.string().min(24).max(256).optional(),
   SPA_DIST_DIR: z.string().default("../frontend/dist"),
   STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),
@@ -166,6 +170,16 @@ export function loadConfig() {
     }
     if (value.PUBLIC_DEMO_ENABLED && deploymentEnvironment !== "stage") {
       throw new Error("PUBLIC_DEMO_ENABLED is restricted to the isolated Stage environment");
+    }
+    if (value.HOSTED_CAMPUS_SIMULATOR_ENABLED) {
+      if (deploymentEnvironment !== "stage") throw new Error("The hosted Campus Lab is restricted to Stage");
+      if (!value.HOSTED_CAMPUS_SIMULATOR_URL || !value.CAMPUS_SIMULATOR_SERVICE_TOKEN || !value.CAMPUS_LAB_PROXY_KEY) {
+        throw new Error("The hosted Campus Lab requires its service URL and both rotated service secrets");
+      }
+      const simulatorUrl = new URL(value.HOSTED_CAMPUS_SIMULATOR_URL);
+      if (simulatorUrl.protocol !== "https:" || simulatorUrl.origin !== value.HOSTED_CAMPUS_SIMULATOR_URL || !simulatorUrl.hostname.endsWith(".run.app")) {
+        throw new Error("The hosted Campus Lab URL must be an exact Cloud Run HTTPS origin");
+      }
     }
   }
   if (value.PHOTO_ATTENDANCE_ENABLED && value.PHOTO_ATTENDANCE_API_TOKEN.length < 24) {

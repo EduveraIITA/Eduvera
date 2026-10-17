@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { guard, assertRuntime, verify, verifyPhoto, resolveImageDigest } from './release.mjs';
 
 const now = Date.parse('2026-10-09T00:00:00Z');
-const env = { GITHUB_REPOSITORY: 'EduveraIITA/Eduvera', GITHUB_REF: 'refs/heads/Stage', GITHUB_SHA: 'a'.repeat(40), GCP_PROJECT_ID: 'eduera-511111', GCP_REGION: 'asia-south1', GCP_SERVICE: 'eduvera-stage', GCP_PHOTO_SERVICE: 'eduvera-stage-photo', GCP_MIGRATION_JOB: 'eduvera-stage-migrate', GCP_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web', GCP_PHOTO_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance', GCP_TRIAL_DEPLOY_UNTIL: '2026-11-08T00:00:00Z' };
+const env = { GITHUB_REPOSITORY: 'EduveraIITA/Eduvera', GITHUB_REF: 'refs/heads/Stage', GITHUB_SHA: 'a'.repeat(40), GCP_PROJECT_ID: 'eduera-511111', GCP_REGION: 'asia-south1', GCP_SERVICE: 'eduvera-stage', GCP_PHOTO_SERVICE: 'eduvera-stage-photo', GCP_SIMULATOR_SERVICE: 'eduvera-stage-simulator', GCP_MIGRATION_JOB: 'eduvera-stage-migrate', GCP_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/web', GCP_PHOTO_IMAGE: 'asia-south1-docker.pkg.dev/eduvera-511111/eduera/photo-attendance', GCP_SIMULATOR_IMAGE: 'asia-south1-docker.pkg.dev/eduera-511111/eduera/simulator', GCP_TRIAL_DEPLOY_UNTIL: '2026-11-08T00:00:00Z' };
+env.GCP_PHOTO_IMAGE = 'asia-south1-docker.pkg.dev/eduera-511111/eduera/photo-attendance';
+env.GCP_SIMULATOR_IMAGE = 'asia-south1-docker.pkg.dev/eduera-511111/eduera/simulator';
 test('only the exact trusted Stage target is accepted', () => {
   guard(env, now);
-  for (const [key, value] of Object.entries({ GITHUB_REPOSITORY: 'attacker/Eduvera', GITHUB_REF: 'refs/pull/1/merge', GITHUB_SHA: 'latest', GCP_PROJECT_ID: 'other', GCP_REGION: 'us-central1', GCP_SERVICE: 'production', GCP_PHOTO_SERVICE: 'production-photo', GCP_MIGRATION_JOB: 'wrong', GCP_IMAGE: 'other/image', GCP_PHOTO_IMAGE: 'other/photo' })) assert.throws(() => guard({ ...env, [key]: value }, now));
+  for (const [key, value] of Object.entries({ GITHUB_REPOSITORY: 'attacker/Eduvera', GITHUB_REF: 'refs/pull/1/merge', GITHUB_SHA: 'latest', GCP_PROJECT_ID: 'other', GCP_REGION: 'us-central1', GCP_SERVICE: 'production', GCP_PHOTO_SERVICE: 'production-photo', GCP_SIMULATOR_SERVICE: 'production-simulator', GCP_MIGRATION_JOB: 'wrong', GCP_IMAGE: 'other/image', GCP_PHOTO_IMAGE: 'other/photo', GCP_SIMULATOR_IMAGE: 'other/simulator' })) assert.throws(() => guard({ ...env, [key]: value }, now));
 });
 test('unapproved, expired and unbounded deployment windows fail closed', () => {
   for (const value of ['', 'invalid', '2026-10-08', '2027-10-09']) assert.throws(() => guard({ ...env, GCP_TRIAL_DEPLOY_UNTIL: value }, now));
@@ -119,10 +121,10 @@ test('Telegram deployment requires Secret Manager bindings and verified webhook 
   assert.throws(()=>check({auto:'false'}));
 });
 
-test('a fresh deployment runner resolves both pushed commit tags through Artifact Registry', () => {
+test('a fresh deployment runner resolves all pushed commit tags through Artifact Registry', () => {
   const calls = [];
-  const images = [env.GCP_IMAGE, env.GCP_PHOTO_IMAGE];
-  const digests = ['sha256:' + '1'.repeat(64), 'sha256:' + '2'.repeat(64)];
+  const images = [env.GCP_IMAGE, env.GCP_PHOTO_IMAGE, env.GCP_SIMULATOR_IMAGE];
+  const digests = ['sha256:' + '1'.repeat(64), 'sha256:' + '2'.repeat(64), 'sha256:' + '3'.repeat(64)];
   const execute = (command, args, options) => {
     const index = calls.length;
     calls.push({ command, args, options });

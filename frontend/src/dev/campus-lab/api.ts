@@ -75,21 +75,24 @@ export interface CampusLabStatus {
   control?: { enabled: boolean; changed_at: string; changed_by: "startup" | "administrator" };
 }
 
+const campusLabBase = import.meta.env.DEV ? "/__campus-lab" : "/api/v1/development/campus-simulator";
+
 export async function getCampusLabStatus(signal?: AbortSignal): Promise<CampusLabStatus> {
-  const response = await fetch("/__campus-lab/status", {
+  const response = await fetch(`${campusLabBase}/status`, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
     signal,
   });
-  if (!response.ok) throw new Error(response.status === 503 ? "The local campus rehearsal is starting." : "The local campus rehearsal is unavailable.");
+  if (!response.ok) throw new Error(response.status === 503 ? "The campus rehearsal is starting." : "The campus rehearsal is unavailable.");
   return response.json() as Promise<CampusLabStatus>;
 }
 
 export async function setCampusLabEnabled(enabled: boolean): Promise<CampusLabStatus> {
-  const response = await fetch("/__campus-lab/control", {
+  const csrf = document.cookie.split("; ").find((item) => item.startsWith("csrftoken="))?.split("=").slice(1).join("=");
+  const response = await fetch(`${campusLabBase}/control`, {
     method: "POST",
     credentials: "same-origin",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...(csrf ? { "X-CSRFToken": decodeURIComponent(csrf) } : {}) },
     body: JSON.stringify({ enabled }),
   });
   if (!response.ok) throw new Error("The Cambridge simulation control is unavailable.");

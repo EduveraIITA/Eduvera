@@ -4,6 +4,8 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 FROM frontend-dependencies AS frontend-build
+ARG VITE_CAMPUS_LAB_ENABLED=false
+ENV VITE_CAMPUS_LAB_ENABLED=$VITE_CAMPUS_LAB_ENABLED
 COPY frontend/ ./
 RUN npm run build
 

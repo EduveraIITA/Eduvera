@@ -6,7 +6,8 @@ import { useOptionalAuth } from "../auth/AuthContext";
 import { setTimetableExperience, useTimetableExperience, type TimetableExperience } from "./timetableExperience";
 import "./experimental-settings.css";
 
-const CampusLabControl = import.meta.env.DEV ? lazy(() => import("../../dev/campus-lab/CampusLabControl")) : null;
+const campusLabEnabled = import.meta.env.DEV || import.meta.env.VITE_CAMPUS_LAB_ENABLED === "true";
+const CampusLabControl = campusLabEnabled ? lazy(() => import("../../dev/campus-lab/CampusLabControl")) : null;
 
 const options: Array<{ id: TimetableExperience; name: string; description: string; badge?: string }> = [
   { id: "current", name: "Current", description: "The proven timetable and calendar, kept as the default." },
@@ -32,14 +33,14 @@ export default function ExperimentalSettingsPage() {
         </div>
         <p className="experimental-settings__note">You can switch back at any time. Your timetable data is shared; only the interface changes.</p>
       </section>
-      {import.meta.env.DEV ? <section className="experimental-settings__lab" aria-labelledby="synthetic-school-day-title">
+      {campusLabEnabled ? <section className="experimental-settings__lab" aria-labelledby="synthetic-school-day-title">
         <header>
           <span aria-hidden="true"><Activity size={20} /></span>
-          <div><h2 id="synthetic-school-day-title">Synthetic school day</h2><p>Cambridge's dummy students, staff and families perform normal app work on this local server.</p></div>
+          <div><h2 id="synthetic-school-day-title">Synthetic school day</h2><p>Cambridge's dummy students, staff and families perform normal app work in this testing environment.</p></div>
         </header>
         {CampusLabControl ? <Suspense fallback={<p className="experimental-settings__control-loading">Checking simulation…</p>}><CampusLabControl /></Suspense> : null}
         <Link to="/principal/campus"><span><strong>See synthetic activity in Campus view</strong><small>The development actors appear as an explicitly simulated layer over the normal admin feature.</small></span><ChevronRight size={19} /></Link>
-        <p className="experimental-settings__note">Development only. Campus View itself is a permanent admin feature and does not depend on this simulation.</p>
+        <p className="experimental-settings__note">Testing only and isolated to Cambridge. Campus View itself is a permanent admin feature and does not depend on this simulation.</p>
       </section> : null}
     </div>
   </OperationsShell>;

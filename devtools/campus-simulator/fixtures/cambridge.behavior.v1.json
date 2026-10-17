@@ -4,6 +4,12 @@
   "school_code": "cis",
   "timezone": "Asia/Kolkata",
   "source_label": "Cambridge development fixture v5",
+  "personas": {
+    "admin": "meera.principal",
+    "staff": "kavita.staff",
+    "parent": "pooja.parent",
+    "student": "aarav.student"
+  },
   "refresh_interval_seconds": 15,
   "status_tick_seconds": 2,
   "action_poll_seconds": 2,

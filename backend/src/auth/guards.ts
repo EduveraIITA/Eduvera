@@ -1,4 +1,5 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { timingSafeEqual } from "node:crypto";
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
 import { config } from "../config.js";
@@ -21,6 +22,24 @@ export class SessionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [context.getHandler(), context.getClass()])) return true;
     const request = context.switchToHttp().getRequest<RequestWithContext>();
+    const simulatorToken = request.headers["x-thatcampus-simulator-token"];
+    const simulatorUsername = request.headers["x-thatcampus-simulator-user"];
+    if (typeof simulatorToken === "string" || typeof simulatorUsername === "string") {
+      const expected = config().CAMPUS_SIMULATOR_SERVICE_TOKEN ?? "";
+      const received = typeof simulatorToken === "string" ? simulatorToken : "";
+      const validSecret = expected.length >= 32
+        && received.length === expected.length
+        && timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+      if (!validSecret || typeof simulatorUsername !== "string") throw new UnauthorizedException("Hosted Campus Lab authentication failed.");
+      const user = await this.auth.hostedCampusSimulatorUser(simulatorUsername);
+      if (!user) throw new UnauthorizedException("Hosted Campus Lab identity is not an active Cambridge fixture user.");
+      request.authUser = user;
+      request.sessionHash = `campus-lab:${user.id}`;
+      request.csrfToken = "hosted-campus-lab";
+      request.internalAgentDelegation = true;
+      request.hostedCampusSimulator = true;
+      return true;
+    }
     const internalToken = request.headers["x-omnischool-agent-delegation"];
     if (typeof internalToken === "string") {
       const delegation = this.delegations.consume(internalToken);

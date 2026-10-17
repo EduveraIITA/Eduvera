@@ -40,13 +40,13 @@ test('the development simulator is outside the production Docker build context',
   );
 });
 
-test('production frontend sources cannot statically import Campus Lab or the simulator runtime', () => {
+test('application frontend may load only the thin Campus Lab client behind an explicit build gate', () => {
   const frontendSource = join(repositoryRoot, 'frontend/src');
   const devSource = join(frontendSource, 'dev');
   const forbiddenRuntimeReference = /(?:devtools\/campus-simulator|campus-simulator)/iu;
   const staticImport = /(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gu;
   const dynamicDevImport = /import\s*\(\s*(['"])([^'"]*(?:\/dev\/campus-lab|\.\/dev\/campus-lab)[^'"]*)\1\s*\)/gu;
-  const guardedDevImport = /import\.meta\.env\.DEV\s*\?\s*(?:lazy\s*\(\s*)?(?:\(\s*\)\s*=>\s*)?import\s*\(\s*(['"])([^'"]*(?:\/dev\/campus-lab|\.\/dev\/campus-lab)[^'"]*)\1\s*\)\s*\)?\s*:\s*(?:null|undefined)/gsu;
+  const guardedDevImport = /(?:import\.meta\.env\.DEV|campusLabEnabled)\s*\?\s*(?:lazy\s*\(\s*)?(?:\(\s*\)\s*=>\s*)?import\s*\(\s*(['"])([^'"]*(?:\/dev\/campus-lab|\.\/dev\/campus-lab)[^'"]*)\1\s*\)\s*\)?\s*:\s*(?:null|undefined)/gsu;
 
   for (const path of sourceFiles(frontendSource)) {
     if (path === devSource || path.startsWith(`${devSource}/`)) continue;
@@ -74,7 +74,7 @@ test('production frontend sources cannot statically import Campus Lab or the sim
     for (const match of source.matchAll(dynamicDevImport)) {
       assert.ok(
         allowedRanges.some(([start, end]) => match.index >= start && match.index < end),
-        `${displayPath} may load Campus Lab only through an import.meta.env.DEV guarded lazy import`,
+        `${displayPath} may load Campus Lab only through the reviewed build-gated lazy import`,
       );
     }
   }

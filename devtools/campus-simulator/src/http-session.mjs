@@ -14,13 +14,15 @@ function setCookieValues(headers) {
 }
 
 export class ApiSession {
-  constructor(origin, { fetchImpl = fetch, timeoutMs = 8_000 } = {}) {
+  constructor(origin, { fetchImpl = fetch, timeoutMs = 8_000, serviceToken = "", serviceUsername = "" } = {}) {
     this.origin = new URL(origin).origin;
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.cookies = new Map();
     this.csrfToken = "";
     this.user = null;
+    this.serviceToken = serviceToken;
+    this.serviceUsername = serviceUsername;
   }
 
   captureCookies(response) {
@@ -41,6 +43,10 @@ export class ApiSession {
     }
     const upperMethod = method.toUpperCase();
     const requestHeaders = new Headers({ accept: "application/json", ...headers });
+    if (this.serviceToken && this.serviceUsername) {
+      requestHeaders.set("x-thatcampus-simulator-token", this.serviceToken);
+      requestHeaders.set("x-thatcampus-simulator-user", this.serviceUsername);
+    }
     const cookie = this.cookieHeader();
     if (cookie) requestHeaders.set("cookie", cookie);
     if (!["GET", "HEAD", "OPTIONS"].includes(upperMethod) && this.csrfToken) {
@@ -100,6 +106,16 @@ export class ApiSession {
     if (!result?.user) throw new Error(`The fixture actor ${identifier} could not start an application session.`);
     const refreshedCsrf = this.cookies.get("csrftoken");
     this.csrfToken = refreshedCsrf ? decodeURIComponent(refreshedCsrf) : String(result.csrf_token ?? this.csrfToken);
+    this.user = result.user;
+    return result;
+  }
+
+  async connectServiceIdentity() {
+    if (!this.serviceToken || !this.serviceUsername) throw new Error("Hosted Campus Lab service identity is not configured.");
+    const result = await this.request("/api/v1/auth/me/");
+    if (!result?.user || result.user.username !== this.serviceUsername) {
+      throw new Error(`The hosted fixture identity ${this.serviceUsername} was not accepted.`);
+    }
     this.user = result.user;
     return result;
   }
