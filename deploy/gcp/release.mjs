@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { migrationDiagnostics } from './migration-diagnostics.mjs';
 
 export function guard(env, now = Date.now()) {
   if (env.GITHUB_REPOSITORY !== 'EduveraIITA/Eduvera' || env.GITHUB_REF !== 'refs/heads/Stage') throw new Error('Only the trusted Stage branch can deploy');
@@ -122,7 +123,19 @@ async function deploy(env) {
   const image = resolveImageDigest(env.GCP_IMAGE, env.GITHUB_SHA);
   const photoImage = resolveImageDigest(env.GCP_PHOTO_IMAGE, env.GITHUB_SHA);
   gcloud(['run', 'jobs', 'update', env.GCP_MIGRATION_JOB, ...flags, `--image=${image}`]);
-  gcloud(['run', 'jobs', 'execute', env.GCP_MIGRATION_JOB, ...flags, '--wait']);
+  try {
+    gcloud(['run', 'jobs', 'execute', env.GCP_MIGRATION_JOB, ...flags, '--wait']);
+  } catch (error) {
+    try {
+      const filter = `resource.type="cloud_run_job" AND resource.labels.job_name="${env.GCP_MIGRATION_JOB}"`;
+      const entries = JSON.parse(gcloud(['logging', 'read', filter, `--project=${env.GCP_PROJECT_ID}`, '--freshness=15m', '--limit=100', '--format=json']));
+      const summaries = migrationDiagnostics(entries);
+      console.error(summaries.length ? summaries.join('\n') : 'No allowlisted migration error detail found; inspect the Cloud Run execution logs.');
+    } catch {
+      console.error('Migration diagnostics unavailable; inspect the Cloud Run execution logs.');
+    }
+    throw error; // Never continue to promotion after failed migration.
+  }
   gcloud([
     'run', 'deploy', env.GCP_PHOTO_SERVICE, ...flags,
     `--image=${photoImage}`,
