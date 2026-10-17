@@ -205,3 +205,10 @@ helper copy, retake button and format text. Remove the no-host identity/entry ex
 note; retain the host waiting note. Host remains optional and domain checks are unchanged.
 Use a local JPEG data URL for the thumbnail because production Helmet's default img-src
 permits data images but not blob URLs; the uploaded file remains the captured JPEG.
+
+### Owner correction: remove repeated header and move camera — 17 October 2026
+
+Remove the repeated Manage In & Out / Gate & Safety heading and introduction under
+shared navigation. Keep the language switch as a small footer control. Place the
+camera-only icon immediately above visitor name, replacing the visible Take photo
+text with an accessible label. Keep the captured thumbnail and overlaid remove control.

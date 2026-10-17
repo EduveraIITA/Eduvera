@@ -8528,3 +8528,13 @@ Validation: frontend typecheck, 15 focused gate/form tests and focused ESLint pa
 Portable Chromium verified capture and a decoded thumbnail (naturalWidth > 0), no page
 errors, responsive visitor/search layouts at 320/768/1024/1440px, and absence of the
 removed home QR panel. Compact captured-photo screenshot was visually reviewed.
+
+## 17 October 2026 — gate header and camera placement correction
+
+Owner marked the redundant gate heading/introduction for removal and requested an
+icon-only camera directly above visitor name. Removed that block, moved the language
+switch to the footer, and moved the accessible camera action above the visitor fields.
+Existing thumbnail removal and camera lifecycle remain unchanged.
+Frontend typecheck, focused lint and 15 gate/form tests passed. Portable Chromium
+verified capture/decoded preview without page errors and responsive layouts at
+320/768/1024/1440px; icon-only control and top thumbnail screenshots reviewed.

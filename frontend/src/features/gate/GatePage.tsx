@@ -9,7 +9,6 @@ import { GateStudentSearch } from './GateStudentSearch';
 import { GateVisitorForm } from './GateVisitorForm';
 import { GateVisitors } from './GateVisitors';
 import { gateError } from './gateError';
-import { isGateOnlyMember } from '../auth/staffAccess';
 import QRScanner from './QRScanner';
 import './gate.css';
 type Mode='home'|'scan'|'search'|'visitor'|'pending';
@@ -38,9 +37,8 @@ export default function GatePage(){
  async function confirm(){if(!person||!verified)return;setBusy(true);setError('');try{await gateCommand(school,'movements',{student_id:person.id,direction,qr,identity_verified:true,command_id:commandId});reset();setSuccess(t.saved);void workspace.refetch();}catch{setError(t.expired);}finally{setBusy(false);}}
  async function visitor(form:FormData){form.set('request_id',visitorRequestId);setBusy(true);setError('');setSuccess('');try{const result=await createGateVisitor(school,form);reset();updateVisitor(result);setMode('pending');setSuccess(result.state==='inside'?(language==='hi'?'आगंतुक का प्रवेश दर्ज हुआ।':'Visitor entry recorded.'):(language==='hi'?'अनुमति का अनुरोध भेज दिया गया।':'Approval request sent to the host.'));}catch(error){setError(gateError(error,language==='hi',t.retry));}finally{setBusy(false);}}
  async function moveVisitor(visitor:Visitor,action:'in'|'out'){setBusy(true);setError('');setSuccess('');try{const result=await gateCommand<{saved:boolean;visitor:Visitor}>(school,`visitors/${visitor.id}/${action}`,{expected_revision:visitor.revision});reset();updateVisitor(result.visitor);setMode('pending');setSuccess(language==='hi'?(action==='in'?'आगंतुक का प्रवेश दर्ज हुआ।':'आगंतुक का निकास दर्ज हुआ।'):(action==='in'?'Visitor entry recorded.':'Visitor exit recorded.'));}catch(error){setError(gateError(error,language==='hi',t.retry));void workspace.refetch();}finally{setBusy(false);}}
- const Heading=isGateOnlyMember(member)?'h1':'h2';
- return <GateFrame member={member} hindi={language==='hi'}><section className="gate-shell gate-workspace" lang={language==='hi'?'hi':'en'}>
-  <header className="gate-header"><div><span className="gate-eyebrow"><ShieldCheck size={15} aria-hidden="true"/>{language==='hi'?'प्रवेश और निकास':'Manage In & Out'}</span><Heading>{t.title}</Heading><p>{language==='hi'?'छात्रों और आगंतुकों का सुरक्षित प्रवेश और निकास।':'Safe arrivals and departures, all in one place.'}</p></div><button className="gate-language" onClick={()=>{const next=language==='en'?'hi':'en';setLanguage(next);localStorage.setItem(key,next);setError('');setSuccess('');}} aria-label="Switch Hindi / English"><Languages size={17} aria-hidden="true"/>{language==='en'?'हिन्दी':'English'}</button></header>
+ return <GateFrame member={member} hindi={language==='hi'}><section className="gate-shell gate-workspace" aria-label={t.title} lang={language==='hi'?'hi':'en'}>
+
   {mode!=='home'||person?<button className="gate-back" disabled={busy} onClick={reset}><ArrowLeft size={20}/>{t.back}</button>:null}
   {success?<div className="gate-success" role="status"><Check/>{success}<button onClick={()=>setSuccess('')} aria-label={t.back}>×</button></div>:null}
   {error?<p className="gate-error" role="alert">{error}</p>:null}
@@ -60,5 +58,6 @@ export default function GatePage(){
    <p className="gate-safety-note"><ShieldCheck size={17} aria-hidden="true"/>{language==='hi'?'दर्ज करने से पहले छात्र और लेने आए व्यक्ति की पहचान जाँचें।':'Check the student and collecting person before confirming.'}</p>
    {member.role==='admin'?<Link className="gate-admin-link" to="/principal/gate">Manage gate access <ArrowRight size={16}/></Link>:null}
   </>:mode==='scan'?<section className="gate-scan-panel"><header className="gate-section-heading"><span className="gate-section-icon"><QrCode size={23}/></span><div><h2>{language==='hi'?'QR स्कैन और सत्यापन':'Scan QR & Verify'}</h2><p>{language==='hi'?'छात्र, पिकअप या आगंतुक पास स्कैन करें।':'Scan a student, pickup or visitor pass.'}</p></div></header><QRScanner hindi={language==='hi'} onScan={value=>void scan(value)}/><button className="gate-manual-search" onClick={()=>setMode('search')}><Search size={18}/>{language==='hi'?'नाम या प्रवेश संख्या से खोजें':'Search by name or admission number'}<ArrowRight size={18}/></button></section>:mode==='search'?<GateStudentSearch school={school} hindi={language==='hi'} busy={busy} onSelect={student=>void selectStudent(student.id)}/>:mode==='visitor'?<GateVisitorForm hosts={workspace.data?.hosts??[]} hindi={language==='hi'} busy={busy} onSubmit={form=>void visitor(form)}/>:<GateVisitors visitors={scannedVisitor?[scannedVisitor]:workspace.data?.visitors??[]} hindi={language==='hi'} busy={busy} onMove={(visitor,action)=>void moveVisitor(visitor,action)}/>}
+  <footer className="gate-language-footer"><button className="gate-language" onClick={()=>{const next=language==='en'?'hi':'en';setLanguage(next);localStorage.setItem(key,next);setError('');setSuccess('');}} aria-label="Switch Hindi / English"><Languages size={17} aria-hidden="true"/>{language==='en'?'हिन्दी':'English'}</button></footer>
  </section></GateFrame>;
 }

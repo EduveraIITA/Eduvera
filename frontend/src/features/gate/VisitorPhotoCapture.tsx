@@ -47,7 +47,7 @@ export function VisitorPhotoCapture({hindi,busy,onChange,onProcessing}:{hindi:bo
   }
  }
  return <section className="gate-photo-field" aria-label={hindi?'आगंतुक की फोटो':'Visitor photo'}>
-  {preview?<div className="gate-photo-thumbnail"><img src={preview} alt={hindi?'आगंतुक की फोटो का पूर्वावलोकन':'Visitor photo preview'}/><button className="gate-photo-remove" type="button" disabled={busy||open} aria-label={hindi?'फोटो हटाएँ':'Remove photo'} onClick={()=>{setPreview('');setError('');onChange(null);}}><X size={16}/></button></div>:!open?<button className="gate-photo-take" type="button" disabled={busy} onClick={()=>{void start();}}><Camera size={18}/>{hindi?'फोटो लें':'Take photo'}</button>:null}
+  {preview?<div className="gate-photo-thumbnail"><img src={preview} alt={hindi?'आगंतुक की फोटो का पूर्वावलोकन':'Visitor photo preview'}/><button className="gate-photo-remove" type="button" disabled={busy||open} aria-label={hindi?'फोटो हटाएँ':'Remove photo'} onClick={()=>{setPreview('');setError('');onChange(null);}}><X size={16}/></button></div>:!open?<button className="gate-photo-take" aria-label={hindi?'फोटो लें':'Take photo'} type="button" disabled={busy} onClick={()=>{void start();}}><Camera size={22} aria-hidden="true"/></button>:null}
   {open?<div className="gate-photo-camera" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
    <video ref={video} autoPlay playsInline muted aria-label={hindi?'कैमरे का दृश्य':'Visitor camera preview'} onCanPlay={()=>setReady(true)}/>
    {!ready?<p role="status">{hindi?'कैमरा खुल रहा है…':'Opening camera…'}</p>:null}
