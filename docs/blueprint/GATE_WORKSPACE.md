@@ -157,3 +157,28 @@ environment, readiness and both-app verification at 17:21:38 UTC. The website
 release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
 review preview returned HTTP 200. Owner device/live-account review remains open;
 local synthetic browser fixtures do not establish that acceptance.
+
+## Visitor photos and direct arrivals — 17 October 2026
+
+Owner supplied three Gate & Safety HTML references and requested the existing theme,
+direct student search without class selection, visitor photo capture/attachment,
+photo review in the host's approval popup, and direct entry when no host is selected.
+The reference's sample people, live-location claims, auto-SMS promise and decorative
+filters are not operational data. Search uses real institution-scoped students,
+name/admission substrings or exact roll number; class is displayed, never a prerequisite.
+The last gate movement is labelled as a gate record, not continuous campus location.
+Pickup QR, current readiness/authority and physical identity checks remain required.
+
+Visitor creation accepts one optional JPEG/PNG photo (2 MB maximum), visitor category
+and an optional host. A selected active host creates a pending request; no host records
+an explicit gate-operator arrival with a check-in timestamp and no fabricated host
+approval. A direct visit can be checked out through the existing authorized flow.
+Photos are stored under the private persistent upload directory and served only through
+a current school/host/admin/gate-authorized, no-store endpoint. Photos and storage keys
+are excluded from notification/event payloads. The photo hash is part of request retry
+comparison so an existing request cannot silently acquire a different photo. The native
+mobile capture control and file picker support preview, replacement and removal.
+
+This extends the existing gate domain state machine and transactional audit/outbox.
+It does not claim a new Model Core visitor-command adapter or automated decision policy.
+Real host/guard walkthrough and owner-device photo-capture review remain acceptance steps.

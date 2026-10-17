@@ -3,9 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GatePage from './GatePage';
-const state=vi.hoisted(()=>({auth:{status:'authenticated',user:{id:'guard'},memberships:[{school_id:'school',school_name:'Test school',role:'staff',permissions:['gate.manage']}],logout:vi.fn()},command:vi.fn(),workspace:vi.fn(),find:vi.fn(),student:vi.fn()}));
+const state=vi.hoisted(()=>({auth:{status:'authenticated',user:{id:'guard'},memberships:[{school_id:'school',school_name:'Test school',role:'staff',permissions:['gate.manage']}],logout:vi.fn()},command:vi.fn(),createVisitor:vi.fn(),workspace:vi.fn(),find:vi.fn(),student:vi.fn()}));
 vi.mock('../auth/AuthContext',()=>({useAuth:()=>state.auth,authDestination:()=>'/teacher'}));
-vi.mock('./api',()=>({gateCommand:state.command,getGateWorkspace:state.workspace,findGateStudents:state.find,getGateStudent:state.student}));
+vi.mock('./api',()=>({gateCommand:state.command,createGateVisitor:state.createVisitor,getGateWorkspace:state.workspace,findGateStudents:state.find,getGateStudent:state.student}));
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children}:{children:React.ReactNode})=><div data-testid="staff-shell">{children}</div>}));
 vi.mock('./QRScanner',()=>({default:({onScan}:{onScan:(s:string)=>void})=><button onClick={()=>onScan('qr')}>Scan test pass</button>}));
 function mount(){render(<MemoryRouter><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><GatePage/></QueryClientProvider></MemoryRouter>);}
