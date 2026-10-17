@@ -9214,3 +9214,9 @@ contract registry fixtures and test-double types with current interfaces, retain
 all assertions, and corrected two existing lint findings. The 30 focused auth, effect
 isolation and registry tests pass; production backend build passes. Hosted integration
 and deployment remain separate release gates.
+
+Release follow-up: Stage run 39064145346 passed every frontend check and 1,227 backend
+tests, but the isolated CI fixture omitted the existing human-agent identity seed.
+Added db:seed:human-agents after profile/governance seeds so current endpoint integrity
+and model-mediated attendance authorization run against complete fixture identities.
+No domain permission, identity assertion or deployment gate is relaxed.
