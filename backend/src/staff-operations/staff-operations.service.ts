@@ -10,6 +10,10 @@ import { accessRoleCatalogue, staffRoleAssignments } from "../roles/access-roles
 import { roleOptions } from "../roles/scoped-role-policy.js";
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
 import {
+  DOMAIN_COMMAND_GATEWAY_PORT,
+  type DomainCommandGatewayPort,
+} from "../campus-model-core/domain-command-gateway.port.js";
+import {
   STAFF_COVERAGE_RECONCILIATION_PORT,
   type CoverageReconciliationInput,
   type StaffCoverageReconciliationPort,
@@ -264,6 +268,7 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
     private readonly coverageOffers: StaffCoverageOfferBridgeService,
     @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
     @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal: TemporalContextPort,
+    @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commandGateway: DomainCommandGatewayPort,
   ) {}
 
   onModuleInit() {
@@ -1309,6 +1314,57 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           "The staff-leave decision owner changed after submission. Rerouting is not available yet; an administrator must restore or correct the route before this request can be decided.",
         );
       }
+      const preparedCommand = await this.commandGateway.prepareDomainCommand(db, {
+        school_id: schoolId,
+        actor_user_id: user.id,
+        command_type: "staff.leave.decide",
+        handler_key: "staff_operations.leave_decide",
+        handler_version: 1,
+        source_domain: "staff_operations",
+        target: {
+          kind: "staff_leave_request",
+          domain: "staff_operations",
+          domain_id: request.id,
+          label: "Staff leave request",
+          lifecycle_state: "active",
+          source_revision: request.revision,
+          metadata: {},
+        },
+        current_revision: request.revision,
+        expected_revision: data.expected_revision,
+        capability: "staff_leave:decide",
+        purpose: "decide_staff_leave",
+        requested_at: occurredAt.toISOString(),
+        correlation_id: submissionTrace.correlation_id,
+        causation_id: submissionTrace.causation_event_id,
+        idempotency_key: `staff-leave-decide:${commandId}`,
+        operating_rule_version_ref: `governance-decision:${decisionAuthority.rule.id}:${decisionAuthority.rule.revision}`,
+        configuration_refs: [
+          { kind: "governance_rule", ref: decisionAuthority.rule.id, version: String(decisionAuthority.rule.revision) },
+          { kind: "appointment", ref: decisionAuthority.appointment.id, version: String(decisionAuthority.appointment.revision) },
+        ],
+        authority_attestation: {
+          evaluator_domain: "governance",
+          decision: "allowed",
+          reason_codes: ["current_governance_officeholder"],
+          authority_source_refs: decisionAuthority.sources.map((source) => ({
+            source_id: source.id,
+            revision: source.revision,
+            verification_state: source.verification_state,
+          })),
+          operating_rule_refs: [{
+            rule_id: decisionAuthority.rule.id,
+            revision: decisionAuthority.rule.revision,
+            appointment_id: decisionAuthority.appointment.id,
+            appointment_revision: decisionAuthority.appointment.revision,
+          }],
+          valid_until: null,
+        },
+        safe_context: { decision: data.decision, request_id: request.id },
+      });
+      if (preparedCommand.status !== "ready") {
+        throw new ConflictException("This leave decision was already completed through the campus command gateway.");
+      }
       const profile = await db.selectFrom("staff_profiles").selectAll().where("id", "=", request.staff_profile_id).executeTakeFirstOrThrow();
       if (data.decision === "approved") {
         const policy = await db.selectFrom("staff_leave_policies").selectAll().where("id", "=", request.policy_id).executeTakeFirstOrThrow();
@@ -1363,6 +1419,22 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         occurred_at: occurredAt.toISOString(),
         decision_authority: decisionAuthority,
       });
+      const gatewayOutcome = await this.commandGateway.completeDomainCommand(db, {
+        school_id: schoolId,
+        command_id: preparedCommand.command_id,
+        terminal_state: "accepted",
+        code: `staff_leave_${data.decision}`,
+        explanation: data.decision === "approved"
+          ? "The Staff domain approved the current leave-request revision."
+          : "The Staff domain rejected the current leave-request revision.",
+        resulting_revision: updated.revision,
+        domain_event_id: outboxEventId,
+        metadata: {
+          affected_periods: coverageCount,
+          message_outcome_id: coordination.outcome_id,
+        },
+        completed_at: new Date().toISOString(),
+      });
       const result = { ...updated, affected_periods: coverageCount };
       await this.audit(db, user, schoolId, `staff.leave.${data.decision}`, request.id, {
         requested_days: request.requested_days,
@@ -1376,6 +1448,9 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         message_outcome_id: coordination.outcome_id,
         decision_rule_id: decisionAuthority.rule.id,
         decision_appointment_id: decisionAuthority.appointment.id,
+        model_command_id: preparedCommand.command_id,
+        model_command_outcome_id: gatewayOutcome.outcome_id,
+        authority_receipt_id: preparedCommand.authority_receipt_id,
       });
       await this.saveLeaveCommand(db, schoolId, user.id, commandId, "decide", request.id, requestHash, result, outboxEventId, {
         correlation_id: submissionTrace.correlation_id,

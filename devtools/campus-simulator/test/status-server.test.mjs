@@ -15,14 +15,14 @@ test("serves status and explicit control only to the local proxy key", async (co
     zones: [],
     activity: [],
   };
-  let enabled = true;
+  let controlState = { enabled: true, clock_mode: "60m", duration_seconds: 3_600 };
   const server = await startStatusServer({
     port: 0,
     proxyKey,
     getStatus: () => snapshot,
-    setEnabled: async (next) => {
-      enabled = next;
-      return { ...snapshot, control: { enabled: next } };
+    setControl: async (next) => {
+      controlState = { ...controlState, ...next };
+      return { ...snapshot, control: controlState };
     },
   });
   context.after(() => new Promise((resolve) => server.close(resolve)));
@@ -44,11 +44,11 @@ test("serves status and explicit control only to the local proxy key", async (co
   const control = await fetch(`${origin}/control`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Campus-Lab-Key": proxyKey },
-    body: JSON.stringify({ enabled: false }),
+    body: JSON.stringify({ enabled: false, clock_mode: "1m" }),
   });
   assert.equal(control.status, 200);
   assert.equal((await control.json()).control.enabled, false);
-  assert.equal(enabled, false);
+  assert.deepEqual(controlState, { enabled: false, clock_mode: "1m", duration_seconds: 3_600 });
 
   const invalid = await fetch(`${origin}/control`, {
     method: "POST",
@@ -56,4 +56,18 @@ test("serves status and explicit control only to the local proxy key", async (co
     body: JSON.stringify({ enabled: "yes" }),
   });
   assert.equal(invalid.status, 400);
+
+  const invalidDuration = await fetch(`${origin}/control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Campus-Lab-Key": proxyKey },
+    body: JSON.stringify({ enabled: true, duration_seconds: 120 }),
+  });
+  assert.equal(invalidDuration.status, 400);
+
+  const invalidMode = await fetch(`${origin}/control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Campus-Lab-Key": proxyKey },
+    body: JSON.stringify({ enabled: true, clock_mode: "fast" }),
+  });
+  assert.equal(invalidMode.status, 400);
 });

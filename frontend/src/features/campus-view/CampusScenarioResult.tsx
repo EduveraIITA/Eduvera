@@ -1,5 +1,7 @@
-import { ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowRight, LoaderCircle, ShieldCheck, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { CampusScenarioMetric, CampusScenarioRun } from "./scenarioApi";
+import { useOptionalApplicationExecutionEnvironment } from "../simulation/ApplicationExecutionEnvironment";
 
 function value(metric: CampusScenarioMetric, amount: number) {
   const rendered = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 }).format(amount);
@@ -35,8 +37,29 @@ export function CampusScenarioResult({ run, timezone, isDiscarding, onDiscard }:
   isDiscarding: boolean;
   onDiscard: () => void;
 }) {
+  const applicationEnvironment = useOptionalApplicationExecutionEnvironment();
+  const [runExpired, setRunExpired] = useState(false);
   const calibrated = run.uncertainty_status === "calibrated_ensemble";
+  const canEnterApplication = run.projection_capabilities.application_parity === true
+    && run.projection_capabilities.unsupported.length === 0
+    && !runExpired;
+  const entering = applicationEnvironment?.switchState === "switching";
   const dateTime = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: timezone });
+
+  useEffect(() => {
+    const remaining = new Date(run.expires_at).getTime() - Date.now();
+    if (remaining <= 0) {
+      const expiredTimer = window.setTimeout(() => setRunExpired(true), 0);
+      return () => window.clearTimeout(expiredTimer);
+    }
+    const resetTimer = window.setTimeout(() => setRunExpired(false), 0);
+    const timer = window.setTimeout(() => setRunExpired(true), Math.min(remaining + 50, 2_147_483_647));
+    return () => {
+      window.clearTimeout(resetTimer);
+      window.clearTimeout(timer);
+    };
+  }, [run.expires_at]);
+
   if (run.status === "queued" || run.status === "running") return <div className="campus-scenario-running" role="status" aria-live="polite">
     <span aria-hidden="true" /><strong>Running isolated scenario</strong><p>{Math.max(0, Math.min(100, Math.round(run.progress)))}% complete. Live campus operations remain untouched.</p>
   </div>;
@@ -48,6 +71,16 @@ export function CampusScenarioResult({ run, timezone, isDiscarding, onDiscard }:
       <h3 id="campus-scenario-result-title">{run.intervention.target_label} unavailable</h3>
       <p>{run.horizon_days}-day view from the campus snapshot captured {dateTime.format(new Date(run.snapshot_at))}. Estimates are planning guidance, not facts about the future.</p>
       <div className="campus-scenario-safety"><ShieldCheck size={17} aria-hidden="true" /><p><strong>No live changes or messages.</strong> This run used an isolated snapshot with production writes, connectors and messaging disabled.</p></div>
+      {canEnterApplication && applicationEnvironment ? <div className="campus-scenario-entry">
+        <div><strong>Explore this virtual campus</strong><p>The same ThatCampus screens will use this isolated run until you return to Live.</p></div>
+        <button type="button" disabled={entering} onClick={() => void applicationEnvironment.enterSimulation(run.id)}>
+          {entering ? <LoaderCircle className="campus-scenario-entry__spinner" size={17} aria-hidden="true" /> : <ArrowRight size={17} aria-hidden="true" />}
+          {entering ? "Entering…" : "Enter simulation"}
+        </button>
+      </div> : <div className="campus-scenario-results-only" role="note">
+        <strong>Comparison only</strong>
+        <p>This run does not contain every enabled app module, so it cannot replace your Live campus screens.</p>
+      </div>}
     </section>
 
     <section aria-labelledby="campus-scenario-comparison-title">

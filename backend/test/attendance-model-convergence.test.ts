@@ -137,6 +137,12 @@ describe("attendance Campus Model convergence", () => {
         domain_event_id: ids.domainEvent,
         subject: expect.objectContaining({ domain: "people", domain_id: ids.student, source_revision: 4 }),
         context: expect.objectContaining({ domain: "academic_structure", domain_id: ids.classSection, source_revision: 3 }),
+        contract_refs: {
+          subject_type: { namespace: "thatcampus.people", type_key: "student", version: 1 },
+          context_type: { namespace: "thatcampus.academic_structure", type_key: "class", version: 1 },
+          observation_schema: { namespace: "thatcampus.attendance", schema_key: "attendance.status_observed", version: 1 },
+          capability_manifest: { namespace: "thatcampus.attendance", capability_key: "attendance", version: 1 },
+        },
         payload: {
           attendance_status: "present",
           attendance_date: "2026-10-16",

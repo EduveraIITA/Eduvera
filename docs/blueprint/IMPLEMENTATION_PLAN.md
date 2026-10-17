@@ -8423,9 +8423,9 @@ and configured actor actions advance from the same accelerated status projection
 Action timing is configured as a bounded ratio within a named real timetable phase,
 so a timetable change cannot leave an accelerated run waiting for an obsolete fixed
 offset. Holidays, closures and days without an effective schedule still fail closed.
-One activation produces one bounded one-hour run and pauses at completion; the runner does not
-loop material writes. Stopping remains durable and lets the separate hosted service
-scale to zero. Focused simulator verification covers the exact one-hour bounds,
+This earlier single-run constraint has now been superseded by the four-mode rolling
+clock contract recorded below. Stopping remains durable and lets the separate hosted
+service scale to zero. Focused simulator verification covers the configured bounds,
 source schedule identity, accelerated campus time, phase advancement and bounded
 action due instants. Stage deployment and owner mobile acceptance remain open.
 
@@ -8464,3 +8464,513 @@ Local verification: Campus Lab model/action tests pass **20/20**, including sche
 daily-class and disabled-mode routing; backend TypeScript typecheck passes; and the
 focused attendance-model convergence suite passes **5/5**. Stage deployment and a
 fresh one-hour-run mobile validation remain open evidence gates.
+
+### Configurable rehearsal clock and projection postconditions — 17 October 2026 (local)
+
+Campus Lab now supports exactly four administrator-selected clock modes: **real
+time**, **60 seconds per school day** for engineering checks, **15 minutes per school
+day** for focused workflow review and **60 minutes per school day** for owner
+observation. Accelerated modes advance through the effective schedule one campus date
+at a time, skip dates with no effective instructional slots, cover a rolling 30-day
+calendar window and then rotate to its first date. Real-time mode follows the current
+school-local date and clock without this rotation. The selection is a stage-development
+harness setting, persisted separately from campus Operating rules. Changing it
+restarts only the transient synthetic run; it does not rewrite timetable slots, domain
+records or model configuration. The runtime, local proxy, hosted control API,
+protected control table and Experimental settings UI share the same closed clock-mode
+set. Non-admin Cambridge test-campus members may read the
+status projection for their header and rehearsal-aware views, but only an active
+Cambridge administrator can change the control.
+
+While the harness is enabled, the shared principal/teacher, parent and student headers
+show a compact, explicitly labelled **SIM** date/time derived from the projected
+school-local instant and timezone. It is hidden when the harness is disabled; real
+device time is never relabelled as simulated time.
+
+**Superseded product/UI interpretation:** the later owner decision in
+**authoritative Live/transient Simulation separation** removes this Campus Lab header
+projection from normal Live shells. Clock modes remain Campus Lab harness controls;
+the product shows virtual time only when the same application is bound to an actual
+isolated Simulation fork.
+
+Material synthetic actions now prove their user-facing postcondition before recording
+success: attendance re-reads the exact teacher/principal register, messages re-read the
+teacher conversation, notice publication/acknowledgement re-read principal notice
+detail, and invigilation re-reads the assessment assignment. A stale rejected exam
+offer is surfaced once and no longer prevents a later valid offer from reacting.
+Same-day family acknowledgement is repeat-safe.
+
+Local evidence: focused simulator model/runtime/action tests pass **30/30**, the
+localhost status/control test passes **1/1**, focused control/clock UI tests pass
+**5/5**, backend TypeScript build passes, and the production frontend bundle builds.
+A complete 60-second Saturday run used the real published timetable, recorded a
+teacher message and submitted Class 7A Hindi attendance through the assigned teacher.
+The normal principal attendance workspace independently returned that exact session as
+`locked`, **27/27 marked**, submitted by Neelam Mishra. Saturday has no configured
+Period-4 lunch break, so notice publish/acknowledgement actions correctly remained
+ineligible rather than being forced outside their configured phase. Stage migration,
+deployment and owner mobile acceptance remain open gates.
+
+The one-minute live rollover was subsequently observed crossing from Saturday
+17 October to Monday 19 October, skipping Sunday because it had no effective
+instructional schedule. The projected clock changed to Monday and the next teacher
+attendance action converged through the normal attendance domain before its recorded
+receipt appeared. A regression test now ensures that a requested simulated
+`school_date` takes precedence over the day-plan service's real wall-clock `today`;
+otherwise each completed day could incorrectly restart the activation date. A second
+guard fails visibly if an entire configured window contains no effective school day,
+instead of cycling indefinitely.
+
+## Authoritative Live state and transient Simulation fork — owner correction, 17 October 2026
+
+The owner clarified the permanent product architecture after the accelerated Campus
+Lab work above. This decision supersedes the earlier implication that a Campus Lab
+clock should become a normal application header/date or that changing a Live query
+date creates a simulation experience.
+
+ThatCampus has one authoritative Live campus environment. An authorized user can
+temporarily fork its digital-twin state into an isolated Simulation environment:
+
+1. **Live** is the authoritative environment used by onboarded institutions. It uses
+   real institution time, stable production agents, domain APIs, observations,
+   commands, channels and accepted evidence.
+2. **Simulation** is a transient product environment available to every institution. An
+   authorized administrator forks a privacy-minimized point-in-time Live digital-twin
+   snapshot into a run/namespace with a virtual clock, run-local counterparts for
+   eligible human/team/device/integration/software agents, copied effective
+   configuration and rules, deterministic scenario adapters and sink-only effects.
+
+Simulation requires no duplicate institution setup and is not a second permanent
+platform. Missing human-response behavior
+is explicit unknown/unsupported unless an approved versioned scenario policy models
+the relevant cohort; the behaviour-neutral core does not invent defaults. Scenario
+events, messages, evidence, KPIs, caches, credentials and connectors never enter
+Live. A future reviewed scenario result may prepare a new Live draft only after fresh
+authority, rule, revision and domain-invariant checks. A fork expires or is discarded;
+it is never merged back into Live.
+
+The environment binding is application-wide, but the product UI is unchanged. The
+administrator continues to use the same routes, navigation and domain modules; only a
+compact top **Live** or **Simulation** marker, with virtual time in Simulation,
+distinguishes the context. Today, timetable, attendance, Messages, Requests, Campus
+View, notifications, KPIs and every other enabled module must resolve through their
+normal domain contracts against the same server-authoritative run namespace and
+virtual clock. A date, URL or caller-controlled header cannot select the backing
+environment. Switching environment clears or partitions client caches and realtime
+subscriptions before the same screen renders.
+
+During development, a domain without a scenario adapter fails closed with **Not
+modelled in this run**. It may not query Live using a simulated date, blend Live
+attention with scenario rows or write into a Live browser cache. This is an open
+implementation gap, not the intended product experience: release acceptance requires
+snapshot/read/action/projection parity for every module enabled for that institution.
+Simulation actions must apply the same domain invariants to copy-on-write scenario
+state so a change is visible across the whole simulated app and nowhere in Live.
+
+Campus Lab remains committed and useful, but only as the Cambridge synthetic
+Live-environment conformance harness. Its clients may intentionally mutate the
+disposable Cambridge fixture through ordinary authenticated APIs to verify real
+domain/event/UI convergence. Its status and accelerated clock belong only in the
+explicit developer harness/control; normal Live routes and headers do not inherit
+them. The product Simulation runtime remains `campus-model-core/scenarios` plus
+registered tenant-generic domain adapters.
+
+Local remediation and delivery state:
+
+- Live Attendance/Home date substitution and global Live-shell `SIM` badges have
+  been removed locally; the simulator-exclusion guard passes **3/3**.
+- Campus Lab no longer wraps the root application or replaces normal timetable and
+  Campus View routes. Its provider/overlay is scoped to `/principal/campus-lab`, with
+  Experimental settings retaining scoped status/control access. Focused route tests
+  pass **62/62**.
+- The existing isolated engine already provides snapshot hashing, deterministic
+  virtual clock/randomness, run namespace, sink-only message/evidence and structural
+  production-side-effect denial.
+- Scenario identity materialization now accepts every Model Core agent kind
+  (`human`, `team`, `device`, `integration`, `software`), creates distinct run-local
+  counterparts and rejects malformed or duplicate mappings. The focused scenario and
+  runtime suite passes **20/20**.
+- A foundational discriminated execution-context seam now models Live as the sole
+  persistent `authoritative_real` environment and Simulation as a coverage-gated
+  `transient_virtual_fork`. It selects the same typed domain/projection contracts over
+  either an authoritative Live unit of work with production effects or an isolated
+  copy-on-write unit of work with sink-only effects. Runtime validation rejects mixed
+  fields, namespace/run mismatches, malformed clocks/expiry and production-capability
+  leakage; its focused suite passes **8/8** and the backend build passes. The
+  authenticated request/session resolver is now wired as described below; the
+  complete concrete domain-adapter registry is still not wired.
+- A provider-neutral external-effect boundary now declares reviewed categories for
+  operational-message delivery, notifications, connectors, files, external compute,
+  webhooks and realtime publication. Live selects separately registered production
+  ports; Simulation requires an immutable, complete sink-only set bound to the exact
+  scenario/run namespace and never falls through to Live. The current process-local
+  sink records deterministic, idempotent receipts and can be discarded with the run;
+  mismatched namespaces, changed-payload retries and incomplete sink coverage fail
+  closed. Focused execution-environment/effect/scenario tests pass **28/28** and the
+  backend build/scoped lint pass. Existing email, Telegram, Matrix, payment, upload,
+  AI and other provider call sites are not yet migrated to this router, so this is a
+  tested contract seam—not evidence that whole-application effects are isolated.
+- The isolated data-plane readiness gate now requires runtime
+  `ExecutionEffectCoverage` from the effect boundary in addition to the declarative
+  application coverage manifest. The receipt must be for the exact Simulation run
+  namespace, report every reviewed effect kind through a configured sink, contain no
+  missing kind, be `ready`, and prove production ports are unreachable. Missing,
+  blocked, cross-run or production-reachable effect coverage is rejected before the
+  isolated database driver is initialized; application-manifest claims alone cannot
+  activate a run. A complete router-produced sink set plus complete module coverage
+  is covered by the focused execution data-plane/effect suite (**23/23**), and the
+  backend build/scoped lint pass. This remains a process-local readiness seam: the
+  current aggregate KPI scenario has no complete application data plane and remains
+  non-enterable, while real provider call-site migration and shared ephemeral driver
+  provisioning remain open.
+- An injectable `EXECUTION_CLOCK_PORT` is now globally wired through the database
+  integration module and reads only the server-owned `ExecutionDataPlaneScope`.
+  Scoped Live requests use their real environment clock; scoped Simulation requests
+  use the selected run's read-only virtual clock; unscoped Live control-plane work
+  uses an injected system wall clock. Institution-local date/time conversion requires
+  the owning domain's authoritative institution ID and validated IANA timezone, and a
+  cross-institution read fails closed. No date, request header, URL or query value can
+  select an environment through this port. Focused clock, environment and data-plane
+  tests pass **21/21**; backend build and scoped lint pass.
+
+  This is a clock-adoption seam, not whole-application virtual-time parity. A broad
+  static inventory still finds **309** direct application wall-clock constructions
+  (`Date.now()` / zero-argument `new Date()`) across **55** backend source files and
+  **668** PostgreSQL clock expressions (`now()`, `clock_timestamp()` or
+  `CURRENT_TIMESTAMP`) across **83** backend source files. The inventory includes
+  infrastructure and development utilities, so each owning domain must classify its
+  call sites; nevertheless, any Simulation-sensitive decision/projection must replace
+  application reads with the injected clock and pass its instant explicitly into SQL.
+  PostgreSQL wall-clock functions are not made virtual merely by routing a query to an
+  isolated data plane. Until that adoption and domain tests are complete, ordinary
+  module dates, deadlines and temporal predicates cannot be claimed Simulation-safe.
+- The authorized school-event SSE boundary now binds every connection to the exact
+  execution environment already resolved from the authenticated server session. Live
+  broker events dispatch only to `live:<institution>` clients; Simulation publishing,
+  replay and authorization queries run only inside the matching
+  `ExecutionDataPlaneScope` and isolated outbox. Simulation cursor IDs include an
+  opaque run-namespace fingerprint, while a foreign, legacy or caller-supplied cursor
+  can only request a full refresh and cannot select an environment. Active session
+  bindings are rechecked before broadcast and on heartbeat so a switched, expired or
+  invalid session stream is closed rather than receiving the former environment.
+  Focused cursor, namespace, scope and broker lifecycle tests pass **8/8**; backend
+  build and scoped lint pass. The Simulation stream poll remains process-local, like
+  the current isolated driver registry; shared multi-instance run storage/broker
+  provisioning and complete module projection parity remain open release gates.
+- The frontend has one application-level environment context and compact marker on
+  authenticated operational routes. Its environment comes from the authenticated
+  server session; activation and Return to Live use that control plane, clear cached
+  server state after confirmation and retain the same route/module tree. It exposes
+  no client environment persistence or magic headers. No parallel Simulation route,
+  module tabs or workspace CTA remains. Complete environment-aware domain adapters
+  remain open.
+- The first tenant-generic campus adapter remains limited to future
+  teacher/space-unavailability planning and aggregate Campus View KPIs.
+- Complete enabled-module snapshots, shared multi-instance ephemeral storage,
+  scenario event/realtime projections and whole-application domain adapters
+  remain delivery work. No current evidence supports calling those capabilities
+  complete or production-ready.
+
+Next dependency order:
+
+1. keep normal Live routes independent of Campus Lab and retain release-boundary
+   tests;
+2. register concrete Live/copy-on-write domain-store, executor, clock and side-effect
+   adapters, with a coverage manifest that prevents activation until all modules
+   enabled for that institution are represented;
+3. provide encrypted shared TTL scenario storage and run-scoped event/projection
+   streams;
+4. connect one event-reactive end-to-end scenario (staff absence → Offers → responses
+   → timetable/Requests/Today effects); and
+5. add timetable, attendance, Messages, Requests, Campus View/KPI and every remaining
+   enabled-module adapter so the existing app reaches Simulation parity, with isolated
+   store/cache/realtime namespaces and explicit temporary unsupported states.
+
+### Unavailable Simulation session tombstone — 17 October 2026 (local)
+
+An authenticated session no longer falls silently back to Live when its selected
+Simulation expires, its authorized run disappears after a runtime restart, or its
+isolated application data plane is no longer registered. The persisted session
+binding is retained as an explicit unavailable-Simulation tombstone with its original
+institution/scenario/run/namespace identity and a bounded reason; it carries no
+executable environment and no fabricated virtual clock. Only an explicit **Return to
+Live** command (or the existing explicit institution/session transition) removes the
+binding.
+
+The first session guard returns HTTP 410 for ordinary APIs before permission or
+domain handlers can query data, while the auth control plane remains available for
+session inspection and Return to Live. The interceptor repeats the fail-closed check
+as a defense at the data-plane boundary. The React application understands the
+server-owned tombstone, mounts no campus children, creates no environment query key,
+and shows a full-height **Simulation unavailable** recovery screen on the same route.
+Live data is explicitly not rendered as fallback; Return to Live clears cached server
+state only after the server confirms the change.
+
+Focused evidence: backend unavailable/expired/restart/session-guard/interceptor tests
+pass **16/16**, backend TypeScript build and scoped lint pass; frontend execution-
+environment parser/context/boundary/API/marker tests pass **32/32**, and frontend
+TypeScript plus scoped lint pass. This fixes environment-loss handling only. It does
+not provide the still-missing shared isolated driver provisioner, complete snapshots,
+all-domain Simulation adapters or production-ready full-application parity.
+
+## Universal institution model v1.0 — 17 October 2026
+
+`UNIVERSAL_INSTITUTION_MODEL.md` now proposes the domain-neutral realm, semantic
+catalogue and adapter model required to span a one-room coaching centre through a
+multi-institution network without adding domain branches to the Model Core. It separates
+the universal kernel from versioned semantic profiles, domain adapters, realm
+capability configuration and domain-native projections. It also defines institution and
+cross-realm exchange boundaries, recursive organization/topology, people and agent identity,
+authority, universal time/planning primitives, evidence states, Live/Simulation isolation
+and conformance gates. Parallel architecture, institutional-scenario and implementation
+reviews then separated OperationalRealm from Institution/legal party/data responsibility;
+environment-qualified model identity; semantic, protocol, capability and terminology
+registries; independent claim/reconciliation/consistency axes; direct-command ingress;
+party/representation and cross-realm exchange; adapter/capability lifecycles; civil time;
+privacy/restructuring; and resilience/observability contracts.
+
+The architecture is now an accepted target contract. Acceptance does not claim complete
+implementation. The first implementation dependencies are
+reviewed semantic/protocol registries; OperationalRealm and environment-qualified identity;
+organization-group realm, organizational-unit, legal-party/data-responsibility and
+agreement-envelope/local-acceptance exchange contracts; capability manifests; generalized
+authority/policy receipts; and environment-aware adapter coverage. Existing `school_id`
+storage remains a compatibility boundary until a separately migrated and tested realm
+contract is delivered.
+
+### OperationalRealm and Attendance contract seam — 17 October 2026 (local)
+
+Migration `124_operational_realm_model_address.sql` adds the domain-neutral
+`operational_realms` compatibility mapping, server execution namespaces, separate semantic-
+type/protocol-schema/capability-manifest registries, and realm/environment-qualified model
+entity and observation identity. Existing `school_id` remains present while every current
+school is backfilled to one institution realm and one `live:<school_id>` namespace. The
+entity and observation uniqueness boundaries now include realm plus environment namespace,
+so an isolated Simulation copy can no longer alias a Live model address.
+
+The Core resolves the server-selected environment through the existing request-local data-
+plane scope, creates Simulation namespace metadata only inside that isolated data plane,
+and rejects an environment belonging to another institution compatibility key. Generic
+observation ingress can validate optional reviewed semantic, protocol and capability
+references without a domain-specific branch. The Attendance observation adapter is the first
+caller to provide those references (`student`, `class`, `attendance.status_observed`, and
+the Attendance capability manifest). Legacy adapters remain explicitly transitional rather
+than being falsely marked catalogue-certified.
+
+Local evidence: backend TypeScript build passes; focused Model Core contract, Attendance
+convergence and OperationalRealm/model-address suites pass **24/24**; `git diff --check`
+passes. The migration has not been applied to a database in this checkout because no
+`MIGRATION_DATABASE_URL` or `DATABASE_URL` is configured. Database migration execution,
+integration evidence, conversion of the remaining core records/adapters, registry
+activation administration and complete Simulation snapshot namespace rewriting remain open
+release gates.
+
+### Realm contract governance and exact evidence pinning — 17 October 2026 (local)
+
+Migration `125_model_contract_registry_governance.sql` makes the three reviewed model
+catalogues operational. Each OperationalRealm now has an effective-dated activation record
+for a particular semantic type, protocol schema or capability-manifest version. The initial
+backfill activates only the already-reviewed active definitions for existing setup/active
+realms. Reviewed definition content is immutable: lifecycle status may progress, but changing
+meaning, schema, compatibility or approval evidence requires publishing a new version.
+
+The reusable `ModelContractRegistryPort` resolves portable adapter references only when every
+requested definition is globally active and currently activated for the selected realm. It
+fails closed when one pin is missing or suspended. Certified observation ingress now stores
+the exact semantic definition on its subject/context entities and the exact protocol and
+capability identities and versions on the retained observation. A later catalogue release
+therefore cannot silently reinterpret historical evidence. Existing adapters without
+`contract_refs` remain visible as transitional uncertified producers; this is migration
+compatibility, not an implicit activation or hidden default.
+
+Local evidence: backend TypeScript build and scoped ESLint pass; focused Model Core,
+OperationalRealm, registry-governance and Attendance convergence tests pass **27/27**. The
+migration has not been applied because this checkout has no configured isolated database.
+Relationship-type pinning, realm activation administration/authorization, upcasters,
+remaining adapter certification, all-record namespace qualification and database-backed
+migration/replay evidence remain open core gates.
+
+### Environment-qualified relationship and command state — 17 October 2026 (local)
+
+Migration `126_model_relationship_command_address.sql` extends the ModelAddress boundary
+from entities/observations to relationship history and accepted command/outcome traces.
+Relationship source and target, command target and outcome result must now resolve inside the
+same OperationalRealm and execution namespace through composite foreign keys. Current
+relationship and command idempotency keys are unique per realm/environment, allowing a
+Simulation fork to apply the same logical operation without colliding with or mutating Live.
+The Core obtains this scope from the server request-local execution data plane; it is not
+accepted from a domain adapter or client payload. Registered device/integration scope traversal
+also follows relationships only inside that resolved environment.
+
+Existing records are backfilled into their entity's Live address (or the school's Live
+namespace for targetless commands). Local evidence: backend TypeScript build and scoped ESLint
+pass; focused address-isolation, registry, OperationalRealm, Core contract and Attendance tests
+pass **30/30**. Migration execution is still pending without an isolated database URL. Events,
+reactions/messages, temporal occurrences, agent/configuration environment semantics and full
+database-backed replay isolation remain subsequent core gates.
+
+### Environment-qualified execution and coordination chain — 17 October 2026 (local)
+
+Migration `127_execution_trace_model_address.sql` moves the complete mutable execution spine
+behind the ModelAddress boundary in one convergence slice: typed events, temporal schedule
+occurrence revisions, reactions, coordination exceptions, operational messages and message
+outcomes. Each child inherits its realm/environment from its addressed parent; database
+triggers reject a missing parent, a cross-environment reference or later address mutation.
+Composite constraints also keep event causation/supersession, temporal entity references and
+reaction/message lineage inside the same environment.
+
+Event, reaction and message-outcome idempotency is now realm/environment-local. Consequently a
+Simulation can replay the same configured workflow and logical keys without returning a Live
+event or suppressing simulated work. Existing records are deterministically backfilled through
+their entity/event/reaction/message parent into Live. Realm-shared people-agent identity and
+approved behaviour configuration deliberately remain shared definitions; their mutable
+execution records are isolated.
+
+The Core's current-activity, operational-signal and temporal-context projections now bind to
+the request-local execution namespace. Temporal entity/observation lookups, registered-source
+relationship traversal and replay queries no longer use an unqualified school-wide model row.
+Frontend/domain callers still use their existing domain ports; no Model Core storage concept was
+introduced into UI code.
+
+Local evidence: backend TypeScript build and scoped ESLint pass; **76/76** focused registry,
+address, Core, Attendance, coordination and temporal lineage/substitution tests pass. Migrations
+124–127 remain unapplied because this checkout has no isolated database URL. Database migration
+and rollback rehearsal, agent/configuration snapshot semantics, environment-qualified projection
+checkpoints, generic authority/policy receipts, registry administration/upcasters and remaining
+adapter certification are still open core gates.
+
+### Execution identity, sealed configuration and authority evidence — 17 October 2026 (local)
+
+Migration `128_execution_identity_authority_checkpoint.sql` implements the next shared-kernel
+boundary as one coordinated slice. A stable `campus_model_agents` identity still represents the
+real person, team, device or bounded software actor across the realm; an execution-local actor
+binding now states whether that identity is acting as the Live agent, a Simulation counterpart or
+an explicit delegate. Database guards prevent a Live agent binding inside Simulation, a simulated
+counterpart inside Live, or later rewriting of the captured actor identity/configuration.
+
+Execution configuration is sealed into an immutable snapshot plus exact version/hash items for
+Operating rules, behaviour, domain configuration, semantic/protocol contracts, capability
+manifests and terminology. The reusable `ExecutionSnapshotPort` computes a deterministic content
+hash and requires a Simulation fork to match the server-selected `source_snapshot_ref`; a caller
+cannot install a different state after entering the run. Simulation authority is copied as an
+immutable minimum grant set tied to that exact snapshot. Live authority remains current and
+effective-dated. It is not silently replaced by a snapshot.
+
+The reusable `AuthorityEvaluationPort` now emits immutable, idempotent receipts within one
+ModelAddress. In Live it evaluates current agent authority; in Simulation it requires the exact
+snapshot and actor binding, then evaluates only the frozen grant set. Accepted Model Core commands
+may reference an allowed receipt, and the Core rechecks same environment, actor, correlation and
+validity before retaining that reference. The field remains optional only for existing adapters
+during convergence; catalogue-certified adapters must be migrated to issue and retain it before
+the release gate can close.
+
+`ProjectionCheckpointPort` adds environment-local forward-only checkpoints keyed by realm,
+namespace and consumer. This prevents a Simulation replay cursor from advancing or suppressing a
+Live projection. It is the storage contract for subsequent leased replay/rebuild workers, not a
+claim that those workers are complete.
+
+Local evidence: backend TypeScript build and scoped ESLint pass; the focused migrations 124–128,
+registry, ModelAddress, Core, Attendance, coordination and temporal suites pass **109/109**
+(the narrow migration-124–128 address/registry set is **20/20**). Migration 128, like 124–127, is not applied in
+this checkout because no isolated database URL is configured. Database migration/rollback and
+concurrency rehearsal, an authorized snapshot provisioner that copies every enabled domain,
+projection leases/rebuild APIs, command-adapter adoption of authority receipts, general policy
+decision receipts, retention cleanup and all-domain Simulation parity remain open release gates.
+
+### Domain-neutral snapshot provisioning and projection recovery — 17 October 2026 (local)
+
+Migration `129_execution_provisioning_projection_recovery.sql` and the reusable
+`ExecutionProvisioningPort`, `ProjectionRecoveryPort` and `EnvironmentRetentionPort` implement the
+next Core reliability boundary. The kernel still does not know an Attendance, timetable, finance or
+people table. A reviewed, versioned snapshot adapter definition names the handler and capture/restore
+schema and is backed by a realm-activated capability manifest. Each realm explicitly activates the
+adapter for a module.
+
+An authorized Live capture request freezes the requested module list and exact adapter versions into
+an immutable expected-coverage manifest. Missing coverage blocks capture; overlapping required
+adapters fail as ambiguous. Each domain adapter contributes only a content-addressed artifact
+reference, record count, source watermark, privacy-transform reference, capture/restore schema pins
+and safe metadata. Replay keys carry request hashes, and a repeated adapter contribution must exactly
+match retained evidence. A provision becomes ready only when every frozen adapter contributes.
+
+Inside the server-selected Simulation data plane, restoration must match the provision's source
+snapshot and sealed execution snapshot. Every expected adapter reports an exact artifact hash,
+restore-schema version, restored row count and adapter-owned receipt. The Simulation restore cannot
+become ready until all captured adapters have reported. This establishes the domain-neutral
+orchestration contract; individual domain artifact serializers/restorers and the shared encrypted
+artifact store are deliberately adapter/infrastructure work, not hidden generic-table copying in the
+Core.
+
+Projection recovery is now an authorized, environment-local job with an immutable request hash,
+requested sequence boundary, configured retry-policy reference and exact retry delays. Workers claim
+jobs with bounded `SKIP LOCKED` leases, heartbeat ownership, cannot complete before the matching
+environment checkpoint reaches the requested boundary, and retain poison events in a separate
+quarantine with safe diagnostics. Retry timing is supplied by reviewed configuration rather than a
+hard-coded Core default.
+
+Transient Simulation retention likewise has an explicit policy reference, allowed authority receipt,
+artifact classes, bounded attempts and configured retry delays. A worker must report deletion counts
+for every declared artifact class before the namespace can be marked expired. The Core retains the
+cleanup ledger; a privileged storage executor performs physical deletion so ordinary application code
+does not acquire broad destructive access.
+
+Local evidence: backend TypeScript build and scoped ESLint pass; focused Model Core, Attendance,
+coordination, temporal, registry and migrations 124–129 suites pass **118/118** (the narrow
+provisioning/registry/ModelAddress set is **29/29**). Migration 129 has not been applied because this
+checkout has no isolated database URL. Database migration/rollback and multi-worker lease rehearsal,
+adapter-definition/activation administration, encrypted artifact transport, implementation of every
+enabled domain capture/restore adapter, a privileged retention executor, quarantine release workflow,
+and hosted all-module Simulation parity remain open release gates.
+
+### Core persistence boundary convergence — 17 October 2026 (local)
+
+Transport-duty coordination no longer reconstructs event/reaction/message traces by querying
+Model Core tables. `CoordinationRuntimePort.findExactTrace` now owns that exact, revision-bound
+lookup. The overdue-attendance coordinator likewise asks the Core whether an outbox event has
+already been accepted and claims open workflow messages through the operational-mailbox port;
+it reads only the authoritative attendance registers needed to decide whether its domain work is
+satisfied. The Core still owns message locking and work-state selection.
+
+A source-level architecture regression rejects direct Model Core SQL from ordinary business
+domains. The only explicit allowlist is the Campus View/KPI read projection and the scenario
+snapshot adapter. Those adapters still perform transitional cross-store composition and must move
+to independently checkpointed projection/snapshot contracts; the allowlist is not production
+acceptance of generic table access.
+
+Local evidence: backend TypeScript build passes. Focused coordination, staff-leave, transport and
+persistence-boundary tests pass **26/26**. Database-backed locking/concurrency evidence remains
+open because this checkout has no isolated database URL. Full backend lint remains blocked by the
+pre-existing hosted Campus Lab clock-mode stringification error; this slice does not claim a clean
+repository-wide lint gate.
+
+### Pre-domain command gateway — 17 October 2026 (local)
+
+Migration 130 and `DomainCommandGatewayPort` add the first shared execution boundary for material
+domain mutations. Before an adopted domain writes authoritative state, it now prepares an
+environment-qualified command envelope with an immutable canonical request hash, idempotency key,
+stable acting-human identity, target and expected revision, handler/version, exact configuration
+references and authority evidence. A replay with the same envelope returns the existing command or
+terminal outcome; reuse of the key with different intent fails closed. Terminal completion records the
+owning domain's result revision/event and supports an explicit `uncertain` state so an ambiguous effect
+cannot be presented as accepted.
+
+The gateway remains behaviour-neutral. In Live it retains a fresh authority attestation supplied by the
+owning domain after that domain re-evaluates its current relationships, appointments and rules. In
+Simulation it ignores Live attestations and evaluates only the frozen authority grants of the isolated
+environment. It does not move business validation into the Core or permit the Core to mutate domain
+records.
+
+Two end-to-end paths now prove the boundary:
+
+- staff-leave approve/reject prepares `staff.leave.decide` after current Governance authority and request
+  revision checks, then completes it with the Staff-owned revision and outbox event;
+- attendance record/submission prepares an attendance command after fresh membership, class assignment,
+  cover, roster, register revision and Operating-rule checks, then completes it with the authoritative
+  register revision and event.
+
+Source-level regression coverage verifies migration/schema invariants, realm/environment isolation,
+identity and authority retention, replay semantics and the ordering of both domain integrations. The
+remaining acceptance work is migration/concurrency evidence on an isolated PostgreSQL database,
+independently durable rejected/failed evidence when a domain transaction rolls back, recovery and expiry
+for abandoned `pending`/`uncertain` commands, administration of handler/configuration versions, and
+adoption by the other material domain mutations.

@@ -19,13 +19,20 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import { postgresClientConnectionConfig } from "../database/connection-policy.js";
 import type { Database } from "../database/types.js";
+import { ExecutionDataPlaneScope } from "../database/execution-data-plane.js";
 import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
 import { COORDINATION_RUNTIME_PORT, type CoordinationRuntimePort } from "../campus-model-core/coordination-runtime.port.js";
+import {
+  executionRealtimeBinding,
+  executionRealtimeCursor,
+  liveRealtimeNamespace,
+  parseExecutionRealtimeCursor,
+  type ExecutionRealtimeBinding,
+} from "./execution-realtime.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 
 const BROKER_CHANNEL = "omnischool_school_events_v1";
-const SSE_CURSOR_VERSION = "v2";
 const HEARTBEAT_MS = 20_000;
 const CLEANUP_MS = 60_000;
 const OVERDUE_REGISTER_CHECK_MS = 60_000;
@@ -74,6 +81,7 @@ interface StreamClient {
   id: string;
   userId: string;
   sessionHash: string;
+  binding: ExecutionRealtimeBinding;
   reply: FastifyReply;
   lastSequence: number | null;
   replaying: boolean;
@@ -155,6 +163,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   private brokerReady = false;
   private shuttingDown = false;
   private publishing = false;
+  private readonly simulationPublishing = new Set<string>();
   private lastPublishSucceededAt: Date | null = null;
   private lastPublishFailedAt: Date | null = null;
   private cachedOutboxMetrics: {
@@ -168,11 +177,15 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     private readonly db: DatabaseService,
     @Optional() @Inject(CAMPUS_MODEL_CORE_PORT) private readonly campusModelCore?: CampusModelCorePort,
     @Optional() @Inject(COORDINATION_RUNTIME_PORT) private readonly coordinationRuntime?: CoordinationRuntimePort,
+    @Optional() private readonly executionScope?: ExecutionDataPlaneScope,
   ) {}
 
   onApplicationBootstrap(): void {
     void this.connectBroker();
-    this.workerTimer = setInterval(() => { void this.publishPending(); }, config().EVENT_WORKER_INTERVAL_MS);
+    this.workerTimer = setInterval(() => {
+      void this.publishPending();
+      void this.publishSimulationNamespaces();
+    }, config().EVENT_WORKER_INTERVAL_MS);
     this.workerTimer.unref();
     this.heartbeatTimer = setInterval(() => { void this.heartbeatAndValidateSessions(); }, HEARTBEAT_MS);
     this.heartbeatTimer.unref();
@@ -201,6 +214,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     for (const client of this.clients.values()) this.closeClient(client);
     this.clients.clear();
+    this.simulationPublishing.clear();
     if (this.broker) {
       this.broker.removeAllListeners();
       await this.broker.end().catch(() => undefined);
@@ -725,7 +739,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     const coordinationRuntime = this.coordinationRuntime;
     if (!coordinationRuntime) return 0;
     return this.db.transaction().execute(async (db) => {
-      const work = await sql<{
+      const candidates = await sql<{
         outbox_id: string;
         school_id: string;
         event_type: "attendance.register.overdue" | "attendance.session.overdue";
@@ -751,12 +765,19 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           AND subject.school_id=outbox.school_id
         WHERE outbox.event_type IN ('attendance.register.overdue','attendance.session.overdue')
           AND cardinality(outbox.audience_user_ids)=1
-          AND NOT EXISTS(SELECT 1 FROM campus_model_events event
-            WHERE event.school_id=outbox.school_id AND event.source_outbox_event_id=outbox.id)
         ORDER BY outbox.created_at,outbox.id
-        LIMIT ${Math.max(1, Math.min(500, Math.trunc(batchSize)))}
+        LIMIT ${Math.max(1, Math.min(500, Math.trunc(batchSize) * 4))}
         FOR UPDATE OF outbox SKIP LOCKED`.execute(db);
-      for (const item of work.rows) {
+      const work: typeof candidates.rows = [];
+      for (const candidate of candidates.rows) {
+        const alreadyCoordinated = await coordinationRuntime.hasAcceptedSourceEvent(db, {
+          school_id: candidate.school_id,
+          source_outbox_event_id: candidate.outbox_id,
+        });
+        if (!alreadyCoordinated) work.push(candidate);
+        if (work.length >= batchSize) break;
+      }
+      for (const item of work) {
         const occurredAt = new Date(item.occurred_at).toISOString();
         const date = typeof item.payload.date === "string" ? item.payload.date : occurredAt.slice(0, 10);
         const sessionId = typeof item.payload.session_id === "string" ? item.payload.session_id : null;
@@ -816,36 +837,45 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           },
         });
       }
-      const satisfied = await sql<{
+      const messageWork = await coordinationRuntime.listOperationalMessageWork(db, {
+        workflow: "attendance_completion",
+        states: ["queued", "delivered", "acknowledged"],
+        limit: Math.max(1, Math.min(500, Math.trunc(batchSize))),
+        claim: true,
+      });
+      const satisfied: Array<{
         message_id: string;
         school_id: string;
         register_state: "submitted" | "locked";
-      }>`SELECT message.id AS message_id,message.school_id,
-          CASE
-            WHEN message.payload->>'session_id' IS NOT NULL THEN session_register.state
-            ELSE daily_register.state
-          END AS register_state
-        FROM campus_model_operational_messages message
-        LEFT JOIN attendance_session_registers session_register
-          ON session_register.school_id=message.school_id
-          AND session_register.id=(message.payload->>'session_id')::uuid
-        LEFT JOIN attendance_registers daily_register
-          ON daily_register.school_id=message.school_id
-          AND daily_register.class_section_id=(message.payload->>'class_section_id')::uuid
-          AND daily_register.date=(message.payload->>'date')::date
-        WHERE message.state IN ('queued','delivered','acknowledged')
-          AND message.payload->>'workflow'='attendance_completion'
-          AND (
-            (message.payload->>'session_id' IS NOT NULL
-              AND session_register.state IN ('submitted','locked'))
-            OR
-            (message.payload->>'session_id' IS NULL
-              AND daily_register.state IN ('submitted','locked'))
-          )
-        ORDER BY message.queued_at,message.id
-        FOR UPDATE OF message SKIP LOCKED`.execute(db);
+      }> = [];
+      for (const message of messageWork) {
+        const sessionId = typeof message.payload.session_id === "string" ? message.payload.session_id : null;
+        const classSectionId = typeof message.payload.class_section_id === "string"
+          ? message.payload.class_section_id
+          : null;
+        const date = typeof message.payload.date === "string" ? message.payload.date : null;
+        const register = sessionId
+          ? (await sql<{ state: "draft" | "submitted" | "locked" }>`SELECT state
+              FROM attendance_session_registers
+              WHERE school_id=${message.school_id}::uuid AND id=${sessionId}::uuid`
+            .execute(db)).rows[0]
+          : classSectionId && date
+            ? (await sql<{ state: "draft" | "submitted" | "locked" }>`SELECT state
+                FROM attendance_registers
+                WHERE school_id=${message.school_id}::uuid
+                  AND class_section_id=${classSectionId}::uuid AND date=${date}::date`
+              .execute(db)).rows[0]
+            : null;
+        if (register?.state === "submitted" || register?.state === "locked") {
+          satisfied.push({
+            message_id: message.message_id,
+            school_id: message.school_id,
+            register_state: register.state,
+          });
+        }
+      }
       const occurredAt = new Date().toISOString();
-      for (const item of satisfied.rows) {
+      for (const item of satisfied) {
         await coordinationRuntime.recordMessageOutcome(db, {
           school_id: item.school_id,
           message_id: item.message_id,
@@ -859,7 +889,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           idempotency_key: `attendance-completion-satisfied:${item.message_id}:${item.register_state}`,
         });
       }
-      return work.rows.length + satisfied.rows.length;
+      return work.length + satisfied.length;
     });
   }
 
@@ -1078,9 +1108,33 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   async openStream(user: AuthUser, reply: FastifyReply, request: AuthenticatedRequest): Promise<void> {
-    if (!this.brokerReady) throw new ServiceUnavailableException("Live updates are temporarily unavailable. Retry shortly.");
+    const environment = request.executionEnvironment;
+    if (!environment) {
+      throw new HttpException("Select an institution before opening live updates.", HttpStatus.CONFLICT);
+    }
+    const binding = executionRealtimeBinding(environment);
+    if (user.active_school_id !== binding.institution_id) {
+      throw new HttpException("The live-update context no longer matches the active institution.", HttpStatus.CONFLICT);
+    }
+    if (binding.kind === "live" && !this.brokerReady) {
+      throw new ServiceUnavailableException("Live updates are temporarily unavailable. Retry shortly.");
+    }
     if (this.clients.size >= config().SSE_MAX_CONNECTIONS) throw new ServiceUnavailableException("Live update capacity has been reached.");
-    const sessionCount = [...this.clients.values()].filter((client) => client.sessionHash === request.sessionHash && !client.closed).length;
+    // A session can select only one server-authoritative environment. Retire an
+    // older connection immediately when the same session reconnects after a
+    // switch; the cursor and stream URL cannot select the new environment.
+    for (const candidate of this.clients.values()) {
+      if (candidate.sessionHash !== request.sessionHash
+        || candidate.closed
+        || candidate.binding.namespace_id === binding.namespace_id) continue;
+      this.send(candidate, "environment.changed", { reason: "server_session_switched" });
+      this.closeClient(candidate);
+    }
+    const sessionCount = [...this.clients.values()].filter((client) => (
+      client.sessionHash === request.sessionHash
+      && client.binding.namespace_id === binding.namespace_id
+      && !client.closed
+    )).length;
     if (sessionCount >= config().SSE_MAX_CONNECTIONS_PER_SESSION) throw new HttpException("Too many live update connections are open for this session.", HttpStatus.TOO_MANY_REQUESTS);
 
     reply.hijack();
@@ -1095,13 +1149,12 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
 
     const header = request.headers["last-event-id"];
     const rawLastId = Array.isArray(header) ? header[0] : header;
-    // Cursor IDs are explicitly versioned. Numeric IDs came from the legacy
-    // insert-order cursor and cannot safely be interpreted as commit order.
-    const cursorMatch = rawLastId?.match(new RegExp(`^${SSE_CURSOR_VERSION}-(\\d+)$`));
-    const parsedLastId = cursorMatch?.[1] ? Number(cursorMatch[1]) : null;
-    const lastId = parsedLastId !== null && Number.isSafeInteger(parsedLastId) ? parsedLastId : null;
+    // Cursor IDs are positions only inside the server-selected namespace.
+    // Legacy/numeric/cross-run cursor values force a safe full refresh.
+    const lastId = parseExecutionRealtimeCursor(binding, rawLastId);
     const client: StreamClient = {
       id: randomUUID(), userId: user.id, sessionHash: request.sessionHash,
+      binding,
       reply, lastSequence: lastId, replaying: true, replayOverflow: false,
       pendingEvents: new Map(), closed: false,
     };
@@ -1116,7 +1169,14 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       } else {
         await this.replay(client, lastId);
       }
-      this.send(client, "stream.ready", { connected_at: new Date().toISOString() });
+      const connectedAt = environment.kind === "simulation"
+        ? environment.virtual_clock.nowIso()
+        : environment.clock.nowIso();
+      this.send(client, "stream.ready", {
+        connected_at: connectedAt,
+        environment: binding.kind,
+        namespace_id: binding.namespace_id,
+      });
     } catch (error) {
       this.logger.error("Unable to initialize SSE replay", error instanceof Error ? error.stack : String(error));
       try {
@@ -1130,6 +1190,10 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async replay(client: StreamClient, afterSequence: number): Promise<void> {
+    return this.runInClientEnvironment(client, () => this.replayInSelectedEnvironment(client, afterSequence));
+  }
+
+  private async replayInSelectedEnvironment(client: StreamClient, afterSequence: number): Promise<void> {
     if (client.closed) return;
     const limit = config().EVENT_REPLAY_LIMIT;
     // Bounds and rows must share one PostgreSQL statement snapshot. Otherwise
@@ -1242,7 +1306,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       // Establish the instance cursor while new streams are still rejected.
       // Existing clients replay from their own cursors below, so notifications
       // committed between LISTEN and this snapshot cannot create a gap.
-      this.brokerWatermark = await this.readCurrentWatermark();
+      this.brokerWatermark = await this.queryCurrentWatermark();
       if (this.shuttingDown) return;
       this.brokerReady = true;
       this.reconnectAttempt = 0;
@@ -1328,6 +1392,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async drainPublishedEvents(): Promise<void> {
+    await this.validateClientSessions(false, true);
     const limit = Math.max(1, config().EVENT_BATCH_SIZE);
     for (;;) {
       // NOTIFY is only a wake-up. Draining the committed cursor range in
@@ -1393,7 +1458,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
         if (!Number.isSafeInteger(sequence) || sequence <= this.brokerWatermark) {
           throw new Error("Invalid event delivery sequence");
         }
-        this.dispatch(event);
+        this.dispatch(event, liveRealtimeNamespace(event.school_id));
         this.brokerWatermark = sequence;
       }
       if (this.brokerWatermark >= publishedMax) return;
@@ -1404,28 +1469,93 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (this.publishing || !this.brokerReady) return;
     this.publishing = true;
     try {
-      const eventIds = await this.claimPendingEvents(config().EVENT_BATCH_SIZE);
-      if (!eventIds.length) return;
-      try {
-        const published = await this.publishClaimedEvents(eventIds);
-        if (published > 0) this.lastPublishSucceededAt = new Date();
-      } catch (batchError) {
-        this.lastPublishFailedAt = new Date();
-        this.logger.error("Event outbox batch publishing failed; isolating claimed rows", batchError instanceof Error ? batchError.stack : String(batchError));
-        for (const eventId of eventIds) {
-          try {
-            const published = await this.publishClaimedEvents([eventId]);
-            if (published > 0) this.lastPublishSucceededAt = new Date();
-          } catch (eventError) {
-            await this.recordPublishFailure(eventId, eventError);
-          }
-        }
-      }
+      await this.publishPendingInSelectedEnvironment(true);
     } catch (error) {
       this.lastPublishFailedAt = new Date();
       this.logger.error("Event outbox claim failed", error instanceof Error ? error.stack : String(error));
     } finally {
       this.publishing = false;
+    }
+  }
+
+  private async publishPendingInSelectedEnvironment(recordOperationalHealth: boolean): Promise<void> {
+    const eventIds = await this.claimPendingEvents(config().EVENT_BATCH_SIZE);
+    if (!eventIds.length) return;
+    try {
+      const published = await this.publishClaimedEvents(eventIds);
+      if (recordOperationalHealth && published > 0) this.lastPublishSucceededAt = new Date();
+    } catch (batchError) {
+      if (recordOperationalHealth) this.lastPublishFailedAt = new Date();
+      this.logger.error("Event outbox batch publishing failed; isolating claimed rows", batchError instanceof Error ? batchError.stack : String(batchError));
+      for (const eventId of eventIds) {
+        try {
+          const published = await this.publishClaimedEvents([eventId]);
+          if (recordOperationalHealth && published > 0) this.lastPublishSucceededAt = new Date();
+        } catch (eventError) {
+          await this.recordPublishFailure(eventId, eventError);
+        }
+      }
+    }
+  }
+
+  /**
+   * Simulation has no access to the Live LISTEN connection. Its pending outbox
+   * is published and replayed only while running inside the exact run-scoped data
+   * plane selected by the authenticated clients. This is intentionally polling:
+   * the data-plane registry is process-local today, so claiming a shared broker
+   * would be false multi-instance evidence.
+   */
+  private async publishSimulationNamespaces(): Promise<void> {
+    const simulationClients = [...this.clients.values()].filter((client) => (
+      !client.closed && client.binding.kind === "simulation"
+    ));
+    if (!simulationClients.length) return;
+    if (!this.executionScope) {
+      for (const client of simulationClients) {
+        this.send(client, "sync.required", { reason: "simulation_realtime_unavailable" });
+        this.closeClient(client);
+      }
+      return;
+    }
+    try {
+      await this.validateClientSessions(false, true);
+    } catch {
+      return;
+    }
+    const bindings = new Map<string, ExecutionRealtimeBinding>();
+    for (const client of simulationClients) {
+      if (!client.closed) bindings.set(client.binding.namespace_id, client.binding);
+    }
+    await Promise.all([...bindings.values()].map((binding) => this.publishSimulationNamespace(binding)));
+  }
+
+  private async publishSimulationNamespace(binding: ExecutionRealtimeBinding): Promise<void> {
+    if (binding.kind !== "simulation" || this.simulationPublishing.has(binding.namespace_id)) return;
+    this.simulationPublishing.add(binding.namespace_id);
+    try {
+      await this.executionScope!.run(binding.environment, async () => {
+        await this.publishPendingInSelectedEnvironment(false);
+        const clients = [...this.clients.values()].filter((client) => (
+          !client.closed && client.binding.namespace_id === binding.namespace_id
+        ));
+        await Promise.all(clients.map(async (client) => {
+          const sequence = client.lastSequence;
+          if (sequence === null) {
+            await this.requestFullSync(client, "simulation_cursor_unavailable");
+          } else {
+            await this.replay(client, sequence);
+          }
+        }));
+      });
+    } catch (error) {
+      this.logger.warn(`Simulation realtime publication failed for ${binding.namespace_id}: ${error instanceof Error ? error.message : String(error)}`);
+      for (const client of this.clients.values()) {
+        if (client.binding.namespace_id !== binding.namespace_id) continue;
+        this.send(client, "sync.required", { reason: "simulation_realtime_unavailable" });
+        this.closeClient(client);
+      }
+    } finally {
+      this.simulationPublishing.delete(binding.namespace_id);
     }
   }
 
@@ -1679,9 +1809,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     }
   }
 
-  private dispatch(event: EventEnvelope): void {
+  private dispatch(event: EventEnvelope, namespaceId: string): void {
     const audience = new Set(event.audience_user_ids);
     for (const client of this.clients.values()) {
+      if (client.binding.namespace_id !== namespaceId
+        || client.binding.institution_id !== event.school_id) continue;
       if (!audience.has(client.userId)) continue;
       if (client.replaying) {
         const sequence = Number(event.sequence);
@@ -1717,7 +1849,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (accepted) client.lastSequence = sequence;
   }
 
-  private async readCurrentWatermark(): Promise<number> {
+  private async readCurrentWatermark(client: StreamClient): Promise<number> {
+    return this.runInClientEnvironment(client, () => this.queryCurrentWatermark());
+  }
+
+  private async queryCurrentWatermark(): Promise<number> {
     const result = await sql<{ sequence: string | number | null }>`
       SELECT last_sequence AS sequence FROM event_delivery_cursor WHERE singleton
     `.execute(this.db);
@@ -1729,7 +1865,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async advanceToCurrentWatermark(client: StreamClient): Promise<number> {
-    const watermark = await this.readCurrentWatermark();
+    const watermark = await this.readCurrentWatermark(client);
     // A full cache read supersedes the old cursor. Under normal operation this
     // only advances; replacing a cursor from another/reset database prevents a
     // permanently future Last-Event-ID from forcing full sync on every retry.
@@ -1748,7 +1884,12 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async recoverConnectedClients(): Promise<void> {
-    const clients = [...this.clients.values()].filter((client) => !client.closed);
+    await this.validateClientSessions(false, true);
+    // The PostgreSQL LISTEN connection belongs only to the authoritative Live
+    // data plane. Simulation connections recover through their own scoped poll.
+    const clients = [...this.clients.values()].filter((client) => (
+      !client.closed && client.binding.kind === "live"
+    ));
     await Promise.all(clients.map(async (client) => {
       client.replaying = true;
       try {
@@ -1791,7 +1932,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       this.closeClient(client);
       return false;
     }
-    const frame = `${sequence === undefined ? "" : `id: ${SSE_CURSOR_VERSION}-${sequence}\n`}event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+    const frame = `${sequence === undefined ? "" : `id: ${executionRealtimeCursor(client.binding, sequence)}\n`}event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
     try {
       const accepted = client.reply.raw.write(frame);
       if (!accepted) {
@@ -1816,27 +1957,65 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (!client.reply.raw.writableEnded) client.reply.raw.end();
   }
 
+  private runInClientEnvironment<T>(client: StreamClient, work: () => T): T {
+    const selected = this.executionScope?.current();
+    if (selected && selected.namespace_id !== client.binding.namespace_id) {
+      throw new Error("Realtime work cannot cross the selected execution-environment namespace.");
+    }
+    if (selected) return work();
+    if (!this.executionScope) {
+      if (client.binding.kind === "simulation") {
+        throw new Error("Simulation realtime requires the server execution-environment scope.");
+      }
+      // Direct unit/integration construction predates the globally injected
+      // scope. It remains safe only for the authoritative Live data plane.
+      return work();
+    }
+    return this.executionScope.run(client.binding.environment, work);
+  }
+
   private async heartbeatAndValidateSessions(): Promise<void> {
-    const liveClients = [...this.clients.values()].filter((client) => !client.closed);
-    if (!liveClients.length) return;
-    const sessionHashes = [...new Set(liveClients.map((client) => client.sessionHash))];
+    await this.validateClientSessions(true, false);
+  }
+
+  private async validateClientSessions(sendHeartbeat: boolean, failClosed: boolean): Promise<void> {
+    const connectedClients = [...this.clients.values()].filter((client) => !client.closed);
+    if (!connectedClients.length) return;
+    const sessionHashes = [...new Set(connectedClients.map((client) => client.sessionHash))];
     try {
-      const active = await sql<{ token_hash: string }>`
-        SELECT s.token_hash FROM auth_sessions s
+      const active = await sql<{ token_hash: string; namespace_id: string | null }>`
+        SELECT s.token_hash,
+          CASE
+            WHEN environment.token_hash IS NOT NULL
+              AND environment.expires_at > now()
+              AND environment.school_id=s.active_school_id
+              THEN environment.namespace_id
+            WHEN s.active_school_id IS NOT NULL
+              THEN 'live:' || s.active_school_id::text
+            ELSE NULL
+          END AS namespace_id
+        FROM auth_sessions s
         JOIN users u ON u.id=s.user_id AND u.is_active
+        LEFT JOIN auth_session_execution_environments environment
+          ON environment.token_hash=s.token_hash
         WHERE s.token_hash = ANY(${sessionHashes}::text[]) AND s.expires_at > now()
       `.execute(this.db);
-      const valid = new Set(active.rows.map((row) => row.token_hash));
-      for (const client of liveClients) {
-        if (!valid.has(client.sessionHash)) {
+      const currentNamespace = new Map(active.rows.map((row) => [row.token_hash, row.namespace_id]));
+      for (const client of connectedClients) {
+        const selectedNamespace = currentNamespace.get(client.sessionHash);
+        if (!selectedNamespace) {
           this.send(client, "session.expired", { reason: "session_invalid" });
           this.closeClient(client);
-        } else {
+        } else if (selectedNamespace !== client.binding.namespace_id) {
+          this.send(client, "environment.changed", { reason: "server_session_switched" });
+          this.closeClient(client);
+        } else if (sendHeartbeat) {
           try { client.reply.raw.write(": heartbeat\n\n"); } catch { this.closeClient(client); }
         }
       }
     } catch (error) {
       this.logger.warn(`SSE session validation failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (failClosed) throw error;
     }
   }
 

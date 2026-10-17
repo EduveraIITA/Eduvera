@@ -3,6 +3,11 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth, authDestination } from "./AuthContext";
+import {
+  ApplicationExecutionEnvironmentProvider,
+  EXECUTION_ENVIRONMENT_SIGNAL_KEY,
+} from "../simulation/ApplicationExecutionEnvironment";
+import { useExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
 
@@ -29,6 +34,7 @@ function AuthProbe() {
       <span data-testid="status">{auth.status}</span>
       <span data-testid="demo-mode">{String(auth.demoMode)}</span>
       <span data-testid="user">{auth.user?.display_name ?? "none"}</span>
+      <span data-testid="environment">{auth.executionEnvironment.mode === "live" ? "live" : auth.executionEnvironment.runId}</span>
       <button type="button" onClick={() => void auth.login({ identifier: "meera.principal", password: "password" })}>Sign in</button>
       <button type="button" onClick={() => void auth.register({ email: "new@example.test", password: "secure-password", first_name: "New", last_name: "User", role: "student" })}>Sign up</button>
       <button type="button" onClick={() => void auth.enterDemo("admin")}>Principal demo</button>
@@ -46,6 +52,34 @@ function renderAuth() {
       <AuthProvider><AuthProbe /></AuthProvider>
     </QueryClientProvider>,
   );
+}
+
+function AuthEnvironmentProbe() {
+  const auth = useAuth();
+  const environment = useExecutionEnvironment();
+  return <div>
+    <output data-testid="application-auth-status">{auth.status}</output>
+    <output data-testid="application-environment">
+      {environment.mode === "live" ? "live" : environment.runId}
+    </output>
+  </div>;
+}
+
+function renderAuthEnvironment() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(["live-campus-data"], "live");
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <ApplicationExecutionEnvironmentProvider>
+          <AuthEnvironmentProbe />
+        </ApplicationExecutionEnvironmentProvider>
+      </AuthProvider>
+    </QueryClientProvider>,
+  );
+  return { ...view, queryClient };
 }
 
 describe("AuthProvider logout", () => {
@@ -89,6 +123,83 @@ describe("AuthProvider logout", () => {
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
     expect(screen.getByTestId("demo-mode")).toHaveTextContent("true");
     expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("reads the server-owned simulation descriptor from the authenticated profile", async () => {
+    const executionEnvironment = {
+      mode: "simulation" as const,
+      namespace_id: "scenario:run-1",
+      run_id: "run-1",
+      scenario_id: "scenario-1",
+      institution_id: "school-1",
+      virtual_clock: { now: "2026-10-19T09:15:00.000+05:30", time_zone: "Asia/Kolkata" },
+      source_snapshot_at: "2026-10-17T08:00:00.000Z",
+      expires_at: "2026-10-20T08:00:00.000Z",
+    };
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/v1/auth/session/") return Promise.resolve({ authenticated: true, user: adminUser, csrf_token: "csrf", demo_mode: true, execution_environment: executionEnvironment });
+      if (path === "/api/v1/auth/me/") return Promise.resolve({
+        user: adminUser,
+        students: [],
+        memberships: [{ id: "membership-1", school_id: "school-1", school_name: "CIS", role: "admin" }],
+        demo_mode: true,
+        execution_environment: executionEnvironment,
+      });
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+
+    renderAuth();
+
+    await waitFor(() => expect(screen.getByTestId("environment")).toHaveTextContent("run-1"));
+  });
+
+  it("revalidates a cross-tab switch through the real AuthContext refresh contract", async () => {
+    const simulationEnvironment = {
+      mode: "simulation" as const,
+      namespace_id: "scenario:run-2",
+      run_id: "run-2",
+      scenario_id: "scenario-2",
+      institution_id: "school-1",
+      virtual_clock: { now: "2026-10-20T10:15:00.000+05:30", time_zone: "Asia/Kolkata" },
+      source_snapshot_at: "2026-10-17T08:00:00.000Z",
+      expires_at: "2099-10-20T08:00:00.000Z",
+    };
+    const serverSession = { environment: undefined as typeof simulationEnvironment | undefined };
+    apiFetchMock.mockImplementation((path: string) => {
+      if (path === "/api/v1/auth/session/") return Promise.resolve({
+        authenticated: true,
+        user: adminUser,
+        csrf_token: "csrf",
+        demo_mode: true,
+        execution_environment: serverSession.environment,
+      });
+      if (path === "/api/v1/auth/me/") return Promise.resolve({
+        user: adminUser,
+        students: [],
+        memberships: [{ id: "membership-1", school_id: "school-1", school_name: "CIS", role: "admin" }],
+        demo_mode: true,
+        execution_environment: serverSession.environment,
+      });
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+
+    const { queryClient } = renderAuthEnvironment();
+    await waitFor(() => expect(screen.getByTestId("application-auth-status")).toHaveTextContent("authenticated"));
+    expect(screen.getByTestId("application-environment")).toHaveTextContent("live");
+
+    serverSession.environment = simulationEnvironment;
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: EXECUTION_ENVIRONMENT_SIGNAL_KEY,
+      newValue: JSON.stringify({
+        version: 1,
+        kind: "session-environment-changed",
+        senderId: "another-tab",
+        nonce: "refresh-session-on-server",
+      }),
+    }));
+
+    await waitFor(() => expect(screen.getByTestId("application-environment")).toHaveTextContent("run-2"));
+    expect(queryClient.getQueryData(["live-campus-data"])).toBeUndefined();
   });
 
   it("recovers a transient CSRF bootstrap and signs in after an explicit logout", async () => {

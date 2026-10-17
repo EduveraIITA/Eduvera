@@ -3,15 +3,17 @@ import { Reflector } from "@nestjs/core";
 import { sql } from "kysely";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
+import { ExecutionDataPlaneScope } from "../database/execution-data-plane.js";
 import { PERMISSION_METADATA } from "./permissions.js";
 import { RolesService } from "./roles.service.js";
 @Injectable()
 export class PermissionGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector,private readonly db: DatabaseService,private readonly roles: RolesService) {}
+  constructor(private readonly reflector: Reflector,private readonly db: DatabaseService,private readonly roles: RolesService,private readonly executionScope: ExecutionDataPlaneScope) {}
   async canActivate(context: ExecutionContext) {
     const permission=this.reflector.getAllAndOverride<string>(PERMISSION_METADATA,[context.getHandler(),context.getClass()]);
     if(!permission) return true;
     const req=context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const authorize = async () => {
     const params=req.params as Record<string,string>, query=req.query as Record<string,string>, body=(req.body ?? {}) as Record<string,unknown>;
     // Family requests retain relationship authority independently of staff role grants.
     if(context.getClass().name==='CoordinationController' && (query.context==='guardian' || body.context==='guardian')) return true;
@@ -45,5 +47,14 @@ export class PermissionGuard implements CanActivate {
     const effective=await this.roles.effective(req.authUser,school);
     if(effective.role==='staff' && !effective.permissions.includes(permission)) throw new ForbiddenException('Your school role does not allow this action ('+permission+').');
     return true;
+    };
+    // Session/run authorization is intentionally resolved on the Live control
+    // plane. Domain resource and role authority, however, must come from the
+    // selected environment. Guards execute before Nest interceptors, so bind
+    // their database work explicitly instead of leaking Live lookups into a
+    // Simulation request.
+    return req.executionEnvironment?.kind === "simulation"
+      ? this.executionScope.run(req.executionEnvironment, authorize)
+      : authorize();
   }
 }

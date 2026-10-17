@@ -8,6 +8,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { AuthUser } from "../common/request.js";
+import type {
+  TransientExecutionRunCatalog,
+  TransientExecutionRunReference,
+} from "../campus-model-core/transient-execution-run.contracts.js";
 import {
   InMemoryScenarioRunStore,
   IsolatedScenarioEngine,
@@ -99,6 +103,7 @@ const metricPresentation: Record<string, Pick<CampusScenarioMetricView,
 interface RunMetadata {
   school_id: string;
   created_at: string;
+  time_zone: string;
   horizon_days: number;
   intervention: CampusScenarioRunView["intervention"];
   counts: CampusScenarioRepositorySnapshot["counts"];
@@ -127,7 +132,7 @@ interface ResolvedBehaviourPolicy {
 }
 
 @Injectable()
-export class CampusScenarioService {
+export class CampusScenarioService implements TransientExecutionRunCatalog {
   private readonly engine = new IsolatedScenarioEngine();
   private readonly executor = new CampusOperationsScenarioExecutor();
   private readonly store = new InMemoryScenarioRunStore({
@@ -285,6 +290,29 @@ export class CampusScenarioService {
         metrics,
         progress: 100,
         failure_reason: null,
+        execution_environment: {
+          mode: "simulation",
+          namespace_id: result.namespace_id,
+          run_id: result.run_id,
+          virtual_clock: {
+            now: result.horizon.from,
+            time_zone: metadata.time_zone,
+          },
+          source_snapshot_at: result.snapshot_at,
+          expires_at: result.expires_at,
+        },
+        projection_capabilities: {
+          application_parity: false,
+          supported: ["campus_performance"],
+          unsupported: [
+            "today",
+            "timetable",
+            "attendance",
+            "requests",
+            "notifications",
+            "campus_view",
+          ],
+        },
         side_effect_policy: {
           mode: "sink_only",
           production_writes: false,
@@ -488,7 +516,7 @@ export class CampusScenarioService {
       result = await this.engine.run({
         mode: "simulation",
         scenario_id: scenarioId,
-        namespace_id: `scenario:${scenarioId}`,
+        namespace_id: `scenario:${scenarioId}:run:${runId}`,
         institution_id: schoolId,
         run_id: runId,
         requested_at: createdAt,
@@ -540,6 +568,7 @@ export class CampusScenarioService {
     const metadata: RunMetadata = {
       school_id: schoolId,
       created_at: createdAt,
+      time_zone: repositorySnapshot.snapshot.timezone,
       horizon_days: input.horizon_days,
       intervention: canonicalIntervention,
       counts: repositorySnapshot.counts,
@@ -560,6 +589,31 @@ export class CampusScenarioService {
       throw new NotFoundException("Scenario run not found or expired.");
     }
     return this.view(result, metadata);
+  }
+
+  async resolveAuthorizedRun(input: {
+    actor_id: string;
+    institution_id: string;
+    run_id: string;
+  }): Promise<TransientExecutionRunReference | null> {
+    if (!(await this.repository.hasActiveAdminMembership(input.actor_id, input.institution_id))) {
+      throw new ForbiddenException("An active institution administrator membership is required.");
+    }
+    this.sweepMetadata();
+    const result = this.store.get(input.institution_id, input.run_id);
+    const metadata = this.metadata.get(input.run_id);
+    if (!result || !metadata || metadata.school_id !== input.institution_id) return null;
+    return {
+      institution_id: input.institution_id,
+      scenario_id: result.scenario_id,
+      run_id: result.run_id,
+      namespace_id: result.namespace_id as `scenario:${string}:run:${string}`,
+      virtual_now: result.horizon.from,
+      time_zone: metadata.time_zone,
+      source_snapshot_at: result.snapshot_at,
+      source_snapshot_ref: `sha256:${result.snapshot_hash}`,
+      expires_at: result.expires_at,
+    };
   }
 
   async discard(user: AuthUser, schoolId: string, runId: string) {

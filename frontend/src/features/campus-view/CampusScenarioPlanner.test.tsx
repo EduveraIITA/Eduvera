@@ -5,16 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CampusScenarioPlanner } from "./CampusScenarioPlanner";
 import { createCampusScenario, discardCampusScenario, getCampusScenario, getCampusScenarioTargets } from "./scenarioApi";
 import type { CampusScenarioResponse } from "./scenarioApi";
+import { ApplicationExecutionEnvironmentProvider } from "../simulation/ApplicationExecutionEnvironment";
+import { selectExecutionEnvironment } from "../simulation/executionEnvironmentApi";
+import { createSimulationExecutionEnvironment } from "../simulation/executionEnvironment";
 
 vi.mock("./scenarioApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./scenarioApi")>();
   return { ...actual, createCampusScenario: vi.fn(), getCampusScenario: vi.fn(), getCampusScenarioTargets: vi.fn(), discardCampusScenario: vi.fn() };
 });
+vi.mock("../simulation/executionEnvironmentApi", () => ({ selectExecutionEnvironment: vi.fn() }));
 
 const createMock = vi.mocked(createCampusScenario);
 const getMock = vi.mocked(getCampusScenario);
 const targetsMock = vi.mocked(getCampusScenarioTargets);
 const discardMock = vi.mocked(discardCampusScenario);
+const selectEnvironmentMock = vi.mocked(selectExecutionEnvironment);
 
 const result: CampusScenarioResponse = {
   schema_version: 1,
@@ -42,6 +47,18 @@ const result: CampusScenarioResponse = {
     }],
     progress: 100,
     failure_reason: null,
+    execution_environment: {
+      mode: "simulation",
+      namespace_id: "scenario:scenario-1",
+      run_id: "scenario-1",
+      virtual_clock: { now: "2026-10-19T09:00:00.000+05:30", time_zone: "Asia/Kolkata" },
+      source_snapshot_at: "2026-10-17T08:00:00.000Z",
+      expires_at: "2026-10-18T08:00:00.000Z",
+    },
+    projection_capabilities: {
+      supported: ["campus_performance"],
+      unsupported: ["today", "timetable", "attendance", "requests", "notifications", "campus_view"],
+    },
     side_effect_policy: { mode: "sink_only", production_writes: false, production_messages: false, production_connectors: false },
     source_snapshot: {
       hash: "snapshot-hash",
@@ -60,13 +77,17 @@ const result: CampusScenarioResponse = {
 
 function renderPlanner(overrides?: { teachers?: Array<{ id: string; label: string }>; spaces?: Array<{ id: string; label: string }> }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><CampusScenarioPlanner
-    schoolId="school-1"
-    campusId="campus-1"
-    timezone="Asia/Kolkata"
-    teachers={overrides?.teachers ?? [{ id: "teacher-1", label: "Kavita Mehta" }]}
-    spaces={overrides?.spaces ?? [{ id: "room-201", label: "Classroom 201" }]}
-  /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}>
+    <ApplicationExecutionEnvironmentProvider confirmedEnvironment={{ mode: "live" }}>
+      <CampusScenarioPlanner
+        schoolId="school-1"
+        campusId="campus-1"
+        timezone="Asia/Kolkata"
+        teachers={overrides?.teachers ?? [{ id: "teacher-1", label: "Kavita Mehta" }]}
+        spaces={overrides?.spaces ?? [{ id: "room-201", label: "Classroom 201" }]}
+      />
+    </ApplicationExecutionEnvironmentProvider>
+  </QueryClientProvider>);
 }
 
 beforeEach(() => {
@@ -74,6 +95,7 @@ beforeEach(() => {
   getMock.mockReset();
   targetsMock.mockReset();
   discardMock.mockReset();
+  selectEnvironmentMock.mockReset();
   createMock.mockResolvedValue(result);
   getMock.mockResolvedValue(result);
   targetsMock.mockResolvedValue({
@@ -131,10 +153,48 @@ describe("CampusScenarioPlanner", () => {
     expect(screen.getByText(/Point estimate from this snapshot/i)).toBeInTheDocument();
     expect(screen.queryByText(/P10–P90/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Transport routing/i)).toBeInTheDocument();
+    expect(screen.getByText("Comparison only")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enter simulation" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Discard scenario" }));
     await waitFor(() => expect(discardMock).toHaveBeenCalledWith("school-1", "scenario-1"));
     expect(await screen.findByRole("button", { name: "Run isolated scenario" })).toBeInTheDocument();
+  });
+
+  it("allows same-app entry only when the server confirms complete projection parity", async () => {
+    const operable: CampusScenarioResponse = {
+      ...result,
+      run: {
+        ...result.run,
+        expires_at: "2099-10-20T08:00:00.000Z",
+        execution_environment: {
+          ...result.run.execution_environment,
+          expires_at: "2099-10-20T08:00:00.000Z",
+        },
+        projection_capabilities: {
+          application_parity: true,
+          supported: ["today", "timetable", "attendance", "requests", "notifications", "campus_view"],
+          unsupported: [],
+        },
+      },
+    };
+    createMock.mockResolvedValue(operable);
+    getMock.mockResolvedValue(operable);
+    selectEnvironmentMock.mockResolvedValue(createSimulationExecutionEnvironment({
+      namespaceId: "scenario:scenario-1",
+      runId: "scenario-1",
+      virtualClock: { now: "2026-10-19T09:00:00.000+05:30", timeZone: "Asia/Kolkata" },
+      expiresAt: "2099-10-20T08:00:00.000Z",
+    }));
+    const user = userEvent.setup();
+    renderPlanner();
+    await screen.findByText(/Eligible teachers and spaces come from scheduled sessions/i);
+    await user.click(screen.getByRole("button", { name: "Run isolated scenario" }));
+
+    const enter = await screen.findByRole("button", { name: "Enter simulation" });
+    expect(screen.queryByText("Comparison only")).not.toBeInTheDocument();
+    await user.click(enter);
+    await waitFor(() => expect(selectEnvironmentMock).toHaveBeenCalledWith({ mode: "simulation", run_id: "scenario-1" }));
   });
 
   it("does not expose free-form identifiers when the snapshot has no eligible teacher", async () => {

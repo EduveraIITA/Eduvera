@@ -1,19 +1,25 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import { z } from "zod";
 import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
+import { ExecutionDataPlaneScope } from "../database/execution-data-plane.js";
 import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort, CampusOperationalSignal } from "./campus-model-core.port.js";
 import type {
   CoordinationCandidateAuthorizationInput,
   CoordinationCandidateAuthorizationReceipt,
   CoordinationExceptionCode,
   CoordinationPublishReceipt,
+  CoordinationTraceQuery,
+  CoordinationTraceReceipt,
   CoordinationRouteResolution,
   CoordinationRouteResolutionInput,
   CoordinationRuntimePort,
+  OperationalMessageWorkItem,
+  OperationalMessageWorkQuery,
   OperationalMessageOutcomeReceipt,
+  SourceEventLookup,
 } from "./coordination-runtime.port.js";
 import type { ObservationIngressPort } from "./observation-ingress.port.js";
 import type { ObservationCapability, ObservationSource, ObservationSourceRegistryPort, RegisterObservationSource } from "./observation-source-registry.port.js";
@@ -77,11 +83,36 @@ import {
   type HumanAgentPersonResolution,
   type ImportedAcceptedScheduleSubstitutionProjection,
   type LegacyTimetableSlotChangeProjection,
+  type ModelObservationContractRefs,
   type PublishedDayPlanProjection,
   type PublishedScheduleProjection,
   type OperationalMessageOutcome,
   type RecipientOperationalMessageResponse,
 } from "./contracts.js";
+import type { OperationalRealmScope } from "./operational-realm.js";
+import { executionNamespaceForSchool, modelAddressSchema, resolveOperationalRealmScope } from "./operational-realm.js";
+import type { ModelAddress } from "./operational-realm.js";
+import type { OperationalRealmPort } from "./operational-realm.port.js";
+import type {
+  ModelContractRegistryPort,
+  ResolvedObservationContracts,
+  ResolvedSemanticTypeDefinition,
+} from "./model-contract-registry.port.js";
+import type { AuthorityEvaluationInput, AuthorityEvaluationPort, AuthorityEvaluationReceipt } from "./authority-evaluation.port.js";
+import type { EnvironmentProjectionCheckpoint, ProjectionCheckpointPort } from "./projection-checkpoint.port.js";
+import type {
+  ExecutionSnapshotPort,
+  ExecutionSnapshotReceipt,
+  SealExecutionSnapshotInput,
+} from "./execution-snapshot.port.js";
+import type {
+  CompleteDomainCommandInput,
+  CompleteDomainCommandReceipt,
+  DomainCommandGatewayPort,
+  DomainCommandTerminalState,
+  PrepareDomainCommandInput,
+  PrepareDomainCommandReceipt,
+} from "./domain-command-gateway.port.js";
 
 const uuid = z.string().uuid();
 const coordinationRouteResolutionInputSchema = z.object({
@@ -99,9 +130,166 @@ const coordinationCandidateAuthorizationInputSchema = z.object({
   recipients: z.array(coordinationRecipientAgentRefSchema).max(500),
   scope: campusModelEntitySchema.nullable(),
 }).strict();
+const coordinationTraceQuerySchema = z.object({
+  school_id: z.string().uuid(),
+  source_domain: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  source_record_id: z.string().trim().min(1).max(240),
+  event_type: z.string().trim().min(3).max(120),
+  source_revision: z.number().int().positive(),
+}).strict();
+const sourceEventLookupSchema = z.object({
+  school_id: z.string().uuid(),
+  source_outbox_event_id: z.string().uuid(),
+}).strict();
+const operationalMessageWorkQuerySchema = z.object({
+  workflow: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  states: z.array(z.enum(["queued", "delivered", "acknowledged"])).min(1).max(3),
+  limit: z.number().int().positive().max(500),
+  claim: z.boolean().optional(),
+}).strict();
+const prepareDomainCommandSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  command_type: z.string().trim().regex(/^[a-z][a-z0-9_.-]{2,119}$/),
+  handler_key: z.string().trim().regex(/^[a-z][a-z0-9_.-]{2,119}$/),
+  handler_version: z.number().int().positive(),
+  source_domain: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  target: campusModelEntitySchema,
+  current_revision: z.number().int().nonnegative(),
+  expected_revision: z.number().int().nonnegative(),
+  capability: z.string().trim().min(3).max(120),
+  purpose: z.string().trim().min(3).max(120),
+  requested_at: z.string().datetime({ offset: true }),
+  correlation_id: z.string().uuid(),
+  causation_id: z.string().uuid().nullable(),
+  idempotency_key: z.string().trim().min(8).max(240),
+  operating_rule_version_ref: z.string().trim().min(1).max(240).nullable(),
+  configuration_refs: z.array(z.object({
+    kind: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    ref: z.string().trim().min(1).max(240),
+    version: z.string().trim().min(1).max(120),
+  }).strict()).max(100),
+  authority_attestation: z.object({
+    evaluator_domain: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    decision: z.enum(["allowed", "denied"]),
+    reason_codes: z.array(z.string().trim().min(1).max(120)).max(50),
+    authority_source_refs: z.array(z.unknown()).max(100),
+    operating_rule_refs: z.array(z.unknown()).max(100),
+    valid_until: z.string().datetime({ offset: true }).nullable(),
+  }).strict().nullable(),
+  safe_context: z.record(z.string(), z.unknown()),
+}).strict();
+const domainCommandTerminalStateSchema = z.enum([
+  "accepted", "rejected", "conflicted", "review_required", "failed", "uncertain", "cancelled", "expired",
+]);
+const completeDomainCommandSchema = z.object({
+  school_id: z.string().uuid(),
+  command_id: z.string().uuid(),
+  terminal_state: domainCommandTerminalStateSchema,
+  code: z.string().trim().regex(/^[a-z][a-z0-9_]{1,79}$/),
+  explanation: z.string().trim().min(1).max(500),
+  resulting_revision: z.number().int().nonnegative().nullable(),
+  domain_event_id: z.string().uuid().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+  completed_at: z.string().datetime({ offset: true }),
+}).strict();
+const authorityEvaluationInputSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_agent_id: z.string().uuid(),
+  capability: z.string().trim().min(3).max(120),
+  purpose: z.string().trim().min(3).max(120),
+  scope_entity_id: z.string().uuid().nullable(),
+  evaluated_at: z.string().datetime({ offset: true }),
+  correlation_id: z.string().uuid(),
+  causation_id: z.string().uuid().nullable(),
+  idempotency_key: z.string().trim().min(8).max(240),
+}).strict();
+const checkpointConsumerSchema = z.string().trim().regex(/^[a-z][a-z0-9_.-]{2,99}$/);
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalJson(item)]));
+  }
+  return value;
+}
+const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+const executionSnapshotInputSchema = z.object({
+  school_id: z.string().uuid(),
+  snapshot_kind: z.enum(["live_activation", "simulation_fork", "rehearsal"]),
+  source_snapshot_ref: z.string().trim().min(3).max(240),
+  core_contract_version: z.string().trim().min(1).max(40),
+  source_recorded_at: z.string().datetime({ offset: true }),
+  sealed_at: z.string().datetime({ offset: true }),
+  sealed_by_authority: z.string().trim().min(3).max(160),
+  metadata: z.record(z.string(), z.unknown()),
+  items: z.array(z.object({
+    item_kind: z.enum(["operating_rule", "behaviour", "domain_configuration", "semantic_contract", "protocol_contract", "capability_manifest", "terminology"]),
+    item_key: z.string().trim().min(3).max(241),
+    version_ref: z.string().trim().min(1).max(200),
+    content_hash: sha256Schema,
+    effective_from: z.string().datetime({ offset: true }),
+    effective_until: z.string().datetime({ offset: true }).nullable(),
+    source_ref: z.string().trim().min(1).max(500),
+    metadata: z.record(z.string(), z.unknown()),
+  }).strict()).min(1).max(2_000),
+  actors: z.array(z.object({
+    source_agent_id: z.string().uuid(),
+    binding_key: z.string().trim().min(3).max(160),
+    actor_mode: z.enum(["live_agent", "simulation_counterpart", "delegate"]),
+    behaviour_policy_version_ref: z.string().trim().min(1).max(240).nullable(),
+    authority_snapshot_ref: z.string().trim().min(1).max(240).nullable(),
+    effective_from: z.string().datetime({ offset: true }),
+    effective_until: z.string().datetime({ offset: true }).nullable(),
+  }).strict()).min(1).max(10_000),
+  authority_grants: z.array(z.object({
+    source_authority_id: z.string().uuid(),
+    agent_id: z.string().uuid(),
+    capability: z.string().trim().min(3).max(120),
+    scope_entity_id: z.string().uuid().nullable(),
+    effective_from: z.string().datetime({ offset: true }),
+    effective_until: z.string().datetime({ offset: true }).nullable(),
+    operating_rule_version_ref: z.string().trim().min(1).max(240).nullable(),
+    constraints: z.record(z.string(), z.unknown()),
+    content_hash: sha256Schema,
+  }).strict()).max(50_000),
+}).strict().superRefine((value, context) => {
+  const itemKeys = value.items.map((item) => `${item.item_kind}:${item.item_key}`);
+  const bindingKeys = value.actors.map((actor) => actor.binding_key);
+  const grantKeys = value.authority_grants.map((grant) => grant.source_authority_id);
+  for (const [path, keys] of [["items", itemKeys], ["actors", bindingKeys], ["authority_grants", grantKeys]] as const) {
+    if (new Set(keys).size !== keys.length) context.addIssue({ code: "custom", path: [path], message: `${path} must use unique stable keys.` });
+  }
+  if (Date.parse(value.sealed_at) < Date.parse(value.source_recorded_at)) {
+    context.addIssue({ code: "custom", path: ["sealed_at"], message: "A snapshot cannot be sealed before its source was recorded." });
+  }
+});
 
 interface EntityRow { id: string; domain: string; domain_id: string }
+interface ObservationContractRegistryRow {
+  subject_definition_id: string | null;
+  context_definition_id: string | null;
+  protocol_definition_id: string | null;
+  capability_manifest_id: string | null;
+}
 interface AgentRow { id: string }
+interface AuthorityGrantRow {
+  source_authority_id: string;
+  operating_rule_version_ref: string | null;
+  effective_until: Date | string | null;
+}
+interface AuthorityReceiptRow {
+  id: string; request_hash: string; decision: "allowed" | "denied";
+  reason_codes: string[]; authority_source_refs: unknown[]; operating_rule_refs: unknown[];
+  evaluated_at: Date | string; valid_until: Date | string | null; execution_actor_id: string | null;
+}
+interface CommandAuthorityReceiptRow {
+  actor_agent_id: string;
+  decision: "allowed" | "denied";
+  correlation_id: string;
+  valid: boolean;
+}
 interface HumanAgentEndpointRow {
   agent_id: string;
   school_id: string;
@@ -160,7 +348,7 @@ interface ExplicitPersonCandidateRow {
   source_kinds: string[];
 }
 interface RelationshipRow { id: string; target_entity_id: string; effective_from: Date | string }
-interface CommandRow { id: string; command_type: string; target_entity_id: string | null; actor_agent_id: string }
+interface CommandRow { id: string; command_type: string; target_entity_id: string | null; actor_agent_id: string; request_hash: string }
 interface ObservationRow { id: string; request_hash: string }
 interface ResolvedObservationRow {
   assertion_id: string;
@@ -345,8 +533,11 @@ interface TemporalAssertionRow {
 }
 
 @Injectable()
-export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort, CoordinationRuntimePort, HumanAgentIdentityPort {
-  constructor(private readonly db: DatabaseService) {}
+export class CampusModelCoreService implements CampusModelCorePort, ObservationIngressPort, ObservationSourceRegistryPort, TemporalContextPort, CoordinationRuntimePort, HumanAgentIdentityPort, OperationalRealmPort, ModelContractRegistryPort, AuthorityEvaluationPort, ProjectionCheckpointPort, ExecutionSnapshotPort, DomainCommandGatewayPort {
+  constructor(
+    private readonly db: DatabaseService,
+    @Optional() private readonly executionScope?: ExecutionDataPlaneScope,
+  ) {}
 
   async resolveAccountEndpoint(
     transaction: Transaction<Database>,
@@ -723,11 +914,12 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     rawInput: AcceptedCampusModelChange,
   ): Promise<CampusModelChangeReceipt> {
     const input = acceptedCampusModelChangeSchema.parse(rawInput);
+    const modelScope = await this.resolveScope(transaction, input.school_id);
     const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
     const entities = new Map<string, string>();
 
     for (const snapshot of input.entities) {
-      const entity = await this.upsertEntity(transaction, input.school_id, snapshot);
+      const entity = await this.upsertEntity(transaction, input.school_id, snapshot, modelScope);
       entities.set(this.key(entity), entity.id);
     }
 
@@ -738,7 +930,9 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       const current = snapshot.replace_current
         ? (await sql<RelationshipRow>`SELECT id,target_entity_id,effective_from
             FROM campus_model_relationships
-            WHERE school_id=${input.school_id}::uuid AND relation_type=${snapshot.relation_type}
+            WHERE realm_id=${modelScope.realm_id}::uuid
+              AND environment_namespace_id=${modelScope.environment_namespace_id}
+              AND relation_type=${snapshot.relation_type}
               AND source_entity_id=${sourceId}::uuid AND effective_until IS NULL
             ORDER BY effective_from DESC FOR UPDATE`.execute(transaction)).rows[0]
         : undefined;
@@ -766,15 +960,17 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       if (!targetId) throw new ConflictException("The connected campus relationship target is missing.");
 
       const inserted = (await sql<{ id: string }>`INSERT INTO campus_model_relationships(
-          school_id,relation_type,source_entity_id,target_entity_id,effective_from,effective_until,
+          school_id,realm_id,environment_namespace_id,relation_type,
+          source_entity_id,target_entity_id,effective_from,effective_until,
           source_domain,source_record_id,source_revision,metadata
         ) VALUES (
-          ${input.school_id}::uuid,${snapshot.relation_type},${sourceId}::uuid,${targetId}::uuid,
+          ${input.school_id}::uuid,${modelScope.realm_id}::uuid,${modelScope.environment_namespace_id},
+          ${snapshot.relation_type},${sourceId}::uuid,${targetId}::uuid,
           ${snapshot.effective_from}::timestamptz,${snapshot.effective_until}::timestamptz,
           ${snapshot.source_domain},${snapshot.source_record_id},${snapshot.source_revision},
           ${JSON.stringify(snapshot.metadata)}::jsonb
         )
-        ON CONFLICT(school_id,relation_type,source_entity_id,target_entity_id,effective_from)
+        ON CONFLICT(realm_id,environment_namespace_id,relation_type,source_entity_id,target_entity_id,effective_from)
         DO UPDATE SET effective_until=EXCLUDED.effective_until,source_domain=EXCLUDED.source_domain,
           source_record_id=EXCLUDED.source_record_id,source_revision=EXCLUDED.source_revision,
           metadata=EXCLUDED.metadata,updated_at=now()
@@ -784,11 +980,13 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     }
 
     const targetEntityId = this.resolve(entities, input.target);
-    const command = await this.recordCommand(transaction, input, actor.id, targetEntityId);
+    const command = await this.recordCommand(transaction, input, actor.id, targetEntityId, modelScope);
     await sql`INSERT INTO campus_model_command_outcomes(
-        command_id,sequence,status,code,explanation,resulting_entity_id,resulting_revision,domain_event_id,metadata
+        command_id,realm_id,environment_namespace_id,sequence,status,code,explanation,
+        resulting_entity_id,resulting_revision,domain_event_id,metadata
       ) VALUES (
-        ${command.id}::uuid,1,'accepted',${input.outcome.code},${input.outcome.explanation},
+        ${command.id}::uuid,${modelScope.realm_id}::uuid,${modelScope.environment_namespace_id},
+        1,'accepted',${input.outcome.code},${input.outcome.explanation},
         ${targetEntityId}::uuid,${input.outcome.resulting_revision},${input.domain_event_id}::uuid,
         ${JSON.stringify(input.outcome.metadata)}::jsonb
       ) ON CONFLICT(command_id,sequence) DO NOTHING`.execute(transaction);
@@ -803,6 +1001,10 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const observations = rawObservations.map((item) => campusModelObservationSchema.parse(item));
     const ids: string[] = [];
     for (const observation of observations) {
+      const modelScope = await this.resolveScope(transaction, observation.school_id);
+      const contracts = observation.contract_refs
+        ? await this.resolveObservationContracts(transaction, modelScope, observation.contract_refs)
+        : null;
       if (observation.captured_by && observation.captured_by.kind !== "human" && observation.state === "accepted") {
         throw new ConflictException("Device and integration evidence must be reviewed by its owning workflow before acceptance.");
       }
@@ -811,30 +1013,49 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
           ? await this.ensureHumanAgent(transaction, observation.school_id, observation.captured_by.user_id)
           : await this.requireAuthorizedExternalAgent(transaction, observation.school_id, observation.captured_by, observation.source_type, observation.context)
         : await this.ensureHumanAgent(transaction, observation.school_id, observation.actor_user_id!);
-      const subject = await this.upsertEntity(transaction, observation.school_id, observation.subject);
+      const subject = await this.upsertEntity(
+        transaction,
+        observation.school_id,
+        observation.subject,
+        modelScope,
+        contracts?.subject_type,
+      );
       const context = observation.context
-        ? await this.upsertEntity(transaction, observation.school_id, observation.context)
+        ? await this.upsertEntity(
+          transaction,
+          observation.school_id,
+          observation.context,
+          modelScope,
+          contracts?.context_type ?? undefined,
+        )
         : null;
       const requestHash = createHash("sha256").update(JSON.stringify(observation)).digest("hex");
       const inserted = (await sql<ObservationRow>`INSERT INTO campus_model_observations(
-          school_id,kind,subject_entity_id,context_entity_id,captured_by_agent_id,source_type,
+          school_id,realm_id,environment_namespace_id,kind,subject_entity_id,context_entity_id,captured_by_agent_id,source_type,
           source_ref,source_record_id,observed_at,received_at,evidence_refs,payload,schema_version,
-          state,idempotency_key,request_hash,domain_event_id
+          state,idempotency_key,request_hash,domain_event_id,
+          protocol_schema_definition_id,protocol_schema_version,
+          capability_manifest_id,capability_manifest_version
         ) VALUES (
-          ${observation.school_id}::uuid,${observation.kind},${subject.id}::uuid,${context?.id ?? null}::uuid,
+          ${observation.school_id}::uuid,${modelScope.realm_id}::uuid,${modelScope.environment_namespace_id},
+          ${observation.kind},${subject.id}::uuid,${context?.id ?? null}::uuid,
           ${actor.id}::uuid,${observation.source_type},${observation.source_ref},${observation.source_record_id},
           ${observation.observed_at}::timestamptz,${observation.received_at}::timestamptz,
           ${observation.evidence_refs}::text[],${JSON.stringify(observation.payload)}::jsonb,
           ${observation.schema_version},${observation.state},${observation.idempotency_key},${requestHash},
-          ${observation.domain_event_id}::uuid
-        ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+          ${observation.domain_event_id}::uuid,
+          ${contracts?.observation_schema.id ?? null}::uuid,${contracts?.observation_schema.version ?? null},
+          ${contracts?.capability_manifest.id ?? null}::uuid,${contracts?.capability_manifest.version ?? null}
+        ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
         RETURNING id,request_hash`.execute(transaction)).rows[0];
       if (inserted) {
         ids.push(inserted.id);
         continue;
       }
       const existing = (await sql<ObservationRow>`SELECT id,request_hash FROM campus_model_observations
-        WHERE school_id=${observation.school_id}::uuid AND idempotency_key=${observation.idempotency_key}
+        WHERE realm_id=${modelScope.realm_id}::uuid
+          AND environment_namespace_id=${modelScope.environment_namespace_id}
+          AND idempotency_key=${observation.idempotency_key}
         FOR UPDATE`.execute(transaction)).rows[0];
       if (!existing || existing.request_hash !== requestHash) {
         throw new ConflictException("This observation key was already used for different evidence.");
@@ -914,6 +1135,58 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       .where("state", "!=", "superseded")
       .executeTakeFirst();
     return Number(result.numUpdatedRows ?? 0);
+  }
+
+  async findExactTrace(
+    transaction: Transaction<Database>,
+    rawInput: CoordinationTraceQuery,
+  ): Promise<CoordinationTraceReceipt | null> {
+    const input = coordinationTraceQuerySchema.parse(rawInput);
+    const rows = (await sql<CoordinationTraceReceipt>`SELECT event.id AS event_id,
+        event.correlation_id,message.id AS message_id
+      FROM campus_model_events event
+      JOIN campus_model_reactions reaction ON reaction.school_id=event.school_id
+        AND reaction.trigger_event_id=event.id
+      JOIN campus_model_operational_messages message ON message.school_id=reaction.school_id
+        AND message.reaction_id=reaction.id
+      WHERE event.school_id=${input.school_id}::uuid
+        AND event.source_domain=${input.source_domain}
+        AND event.source_record_id=${input.source_record_id}
+        AND event.event_type=${input.event_type}
+        AND event.source_revision=${input.source_revision}
+      ORDER BY event.created_at,event.id,message.id
+      FOR SHARE OF event,reaction,message`.execute(transaction)).rows;
+    return rows.length === 1 ? rows[0]! : null;
+  }
+
+  async hasAcceptedSourceEvent(
+    transaction: Transaction<Database>,
+    rawInput: SourceEventLookup,
+  ): Promise<boolean> {
+    const input = sourceEventLookupSchema.parse(rawInput);
+    const row = (await sql<{ present: boolean }>`SELECT EXISTS(
+        SELECT 1 FROM campus_model_events event
+        WHERE event.school_id=${input.school_id}::uuid
+          AND event.source_outbox_event_id=${input.source_outbox_event_id}::uuid
+      ) AS present`.execute(transaction)).rows[0];
+    return row?.present ?? false;
+  }
+
+  async listOperationalMessageWork(
+    transaction: Transaction<Database>,
+    rawInput: OperationalMessageWorkQuery,
+  ): Promise<OperationalMessageWorkItem[]> {
+    const input = operationalMessageWorkQuerySchema.parse(rawInput);
+    const states = sql.join(input.states.map((state) => sql`${state}`));
+    const lock = input.claim ? sql`FOR UPDATE OF message SKIP LOCKED` : sql``;
+    return (await sql<OperationalMessageWorkItem>`SELECT message.id AS message_id,
+        message.school_id,message.state,message.payload
+      FROM campus_model_operational_messages message
+      WHERE message.state IN (${states})
+        AND message.payload->>'workflow'=${input.workflow}
+      ORDER BY message.queued_at,message.id
+      LIMIT ${input.limit}
+      ${lock}`.execute(transaction)).rows;
   }
 
   async resolveEventRoute(
@@ -1103,10 +1376,11 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${JSON.stringify({ source: "event_outbox", source_outbox_event_id: input.source_outbox_event_id })}::jsonb,
         ${JSON.stringify(input.payload)}::jsonb,1,${input.idempotency_key},${requestHash},
         ${input.source_outbox_event_id}::uuid
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
       RETURNING id,request_hash`.execute(transaction)).rows[0];
     const event = insertedEvent ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${subject.id}::uuid
+        AND idempotency_key=${input.idempotency_key}
       FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This coordination event key was already used for different work.");
@@ -1366,11 +1640,12 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
           ${event.id}::uuid,0,${match.max_attempts},${queuedAt}::timestamptz,
           ${responseDueAt}::timestamptz,${expiresAt}::timestamptz,
           ${reactionIdempotencyKey},${reactionRequestHash}
-        ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+        ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
         RETURNING id,request_hash`.execute(transaction)).rows[0];
       const reaction = insertedReaction ?? (await sql<ReactionRow>`SELECT id,request_hash
         FROM campus_model_reactions
-        WHERE school_id=${input.school_id}::uuid AND idempotency_key=${reactionIdempotencyKey}
+        WHERE school_id=${input.school_id}::uuid AND trigger_event_id=${event.id}::uuid
+          AND idempotency_key=${reactionIdempotencyKey}
         FOR UPDATE`.execute(transaction)).rows[0];
       if (!reaction || reaction.request_hash !== reactionRequestHash) {
         throw new ConflictException("This reaction key was already used for different work.");
@@ -1591,7 +1866,8 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const existingOutcome = (await sql<OperationalMessageOutcomeRow>`SELECT id,message_id,state,request_hash
       FROM campus_model_operational_message_outcomes
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
+      WHERE school_id=${input.school_id}::uuid AND message_id=${input.message_id}::uuid
+        AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
     if (existingOutcome) {
       if (existingOutcome.message_id !== input.message_id || existingOutcome.state !== input.state || existingOutcome.request_hash !== requestHash) {
         throw new ConflictException("This message outcome key was already used for a different result.");
@@ -1619,7 +1895,8 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     if (!message) throw new ConflictException("The operational message was not found.");
     const concurrentOutcome = (await sql<OperationalMessageOutcomeRow>`SELECT id,message_id,state,request_hash
       FROM campus_model_operational_message_outcomes
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
+      WHERE school_id=${input.school_id}::uuid AND message_id=${input.message_id}::uuid
+        AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
     if (concurrentOutcome) {
       if (concurrentOutcome.message_id !== input.message_id || concurrentOutcome.state !== input.state || concurrentOutcome.request_hash !== requestHash) {
         throw new ConflictException("This message outcome key was already used for a different result.");
@@ -1701,6 +1978,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
 
   async recentActivity(schoolId: string, limit = 12): Promise<CampusModelActivity[]> {
     const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    const environmentNamespaceId = executionNamespaceForSchool(schoolId, this.executionScope?.current());
     return (await sql<CampusModelActivity>`
       SELECT * FROM (
         SELECT command.id::text AS id,'setup'::text AS kind,command.command_type AS action,
@@ -1709,7 +1987,9 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         FROM campus_model_commands command
         LEFT JOIN campus_model_entities target ON target.id=command.target_entity_id
         JOIN campus_model_agents actor ON actor.id=command.actor_agent_id
-        WHERE command.school_id=${schoolId}::uuid AND command.source_domain='campus_topology'
+        WHERE command.school_id=${schoolId}::uuid
+          AND command.environment_namespace_id=${environmentNamespaceId}
+          AND command.source_domain='campus_topology'
         UNION ALL
         SELECT observation.source_ref AS id,'attendance'::text AS kind,
           observation.source_type AS action,context.label AS subject_label,
@@ -1719,6 +1999,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         LEFT JOIN campus_model_entities context ON context.id=observation.context_entity_id
         JOIN campus_model_agents actor ON actor.id=observation.captured_by_agent_id
         WHERE observation.school_id=${schoolId}::uuid
+          AND observation.environment_namespace_id=${environmentNamespaceId}
           AND observation.source_type IN ('attendance.capture','attendance.daily','attendance.session','attendance.self_check_in')
           AND observation.state IN ('accepted','pending')
         GROUP BY observation.source_ref,observation.source_type,context.label,observation.state,actor.label
@@ -1729,7 +2010,9 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         FROM campus_model_commands command
         LEFT JOIN campus_model_entities target ON target.id=command.target_entity_id
         JOIN campus_model_agents actor ON actor.id=command.actor_agent_id
-        WHERE command.school_id=${schoolId}::uuid AND command.source_domain='assessments'
+        WHERE command.school_id=${schoolId}::uuid
+          AND command.environment_namespace_id=${environmentNamespaceId}
+          AND command.source_domain='assessments'
       ) connected_activity
       ORDER BY occurred_at DESC,id DESC
       LIMIT ${safeLimit}
@@ -1738,6 +2021,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
 
   async operationalSignals(schoolId: string, at = new Date().toISOString(), limit = 20): Promise<CampusOperationalSignal[]> {
     const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    const environmentNamespaceId = executionNamespaceForSchool(schoolId, this.executionScope?.current());
     const atInstant = new Date(at);
     if (Number.isNaN(atInstant.getTime())) throw new ConflictException("Use a valid instant for campus signals.");
     return (await sql<CampusOperationalSignal>`
@@ -1750,6 +2034,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
           COALESCE(NULLIF(observation.payload->>'gate',''),'Campus gate') AS gate_label
         FROM campus_model_observations observation CROSS JOIN school_clock
         WHERE observation.school_id=${schoolId}::uuid
+          AND observation.environment_namespace_id=${environmentNamespaceId}
           AND observation.kind='movement.gate_observed' AND observation.state='accepted'
           AND observation.observed_at<=${atInstant.toISOString()}::timestamptz
           AND observation.received_at<=${atInstant.toISOString()}::timestamptz
@@ -1771,12 +2056,15 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       JOIN enrollments enrollment ON enrollment.class_section_id=class_entity.domain_id::uuid AND enrollment.is_active
       JOIN students student ON student.id=enrollment.student_id AND student.school_id=occurrence.school_id
       JOIN campus_model_entities student_entity ON student_entity.school_id=student.school_id
+        AND student_entity.environment_namespace_id=occurrence.environment_namespace_id
         AND student_entity.domain='people' AND student_entity.domain_id=student.id::text
       JOIN latest_gate gate ON gate.subject_entity_id=student_entity.id AND gate.direction='out'
       LEFT JOIN LATERAL (
         SELECT observation.id AS observation_id,observation.payload->>'attendance_status' AS attendance_status
         FROM campus_model_observations observation
-        WHERE observation.school_id=occurrence.school_id AND observation.subject_entity_id=student_entity.id
+        WHERE observation.school_id=occurrence.school_id
+          AND observation.environment_namespace_id=occurrence.environment_namespace_id
+          AND observation.subject_entity_id=student_entity.id
           AND observation.context_entity_id=occurrence.class_entity_id
           AND observation.kind='attendance.status_observed' AND observation.state='accepted'
           AND observation.observed_at>=gate.observed_at
@@ -1786,7 +2074,9 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
           AND observation.payload->>'attendance_status' IN ('present','late')
         ORDER BY observation.observed_at DESC,observation.received_at DESC LIMIT 1
       ) attendance ON true
-      WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.state='expected'
+      WHERE occurrence.school_id=${schoolId}::uuid
+        AND occurrence.environment_namespace_id=${environmentNamespaceId}
+        AND occurrence.state='expected'
         AND occurrence.recorded_until IS NULL
         AND occurrence.starts_at<=${atInstant.toISOString()}::timestamptz
         AND occurrence.ends_at>${atInstant.toISOString()}::timestamptz
@@ -1827,11 +2117,12 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${JSON.stringify({ source: "schedule_versions", captured_by: "schedule-planning" })}::jsonb,
         ${JSON.stringify({ starts_on: input.starts_on, ends_on: input.ends_on, timezone: input.timezone, period_count: input.periods.length })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
       RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
 
     const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${schedule.id}::uuid
+        AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This timetable publication key was already used for different plan evidence.");
     }
@@ -2033,12 +2324,13 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
           slot: input.slot,
         })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
       RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
     const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT
         id,request_hash,recorded_at,journal_sequence
       FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey}
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${schedule.id}::uuid
+        AND idempotency_key=${idempotencyKey}
       FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException(
@@ -2228,10 +2520,11 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${input.correlation_id}::uuid,${JSON.stringify({ source: "school_calendar_days", captured_by: "school-calendar" })}::jsonb,
         ${JSON.stringify({ action: input.action, dates: input.dates, label: input.label, closure_kind: input.closure_kind })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
       RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
     const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${institution.id}::uuid
+        AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This calendar event key was already used for different plan evidence.");
     }
@@ -2361,10 +2654,11 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${input.correlation_id}::uuid,${JSON.stringify({ source: "day_plan_versions", captured_by: "day-plans" })}::jsonb,
         ${JSON.stringify({ date: input.date, version: input.plan_version, cancelled_period_ids: input.periods.filter((period) => period.cancelled).map((period) => period.period_id) })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
       RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
     const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${planEntity.id}::uuid
+        AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This daily-plan event key was already used for different plan evidence.");
     }
@@ -2960,11 +3254,12 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
               ${input.correlation_id}::uuid,
               ${JSON.stringify({ source: "effective_school_schedule_v3", captured_by: "staff-coverage", import_reason: "missing_temporal_occurrence" })}::jsonb,
               ${JSON.stringify(basisInput)}::jsonb,1,${basisIdempotencyKey},${basisRequestHash}
-            ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+            ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
             RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
           basis = insertedBasis ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence
             FROM campus_model_events
-            WHERE school_id=${input.school_id}::uuid AND idempotency_key=${basisIdempotencyKey}
+            WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${schedule.id}::uuid
+              AND idempotency_key=${basisIdempotencyKey}
             FOR UPDATE`.execute(transaction)).rows[0];
           if (!basis || basis.request_hash !== basisRequestHash) {
             throw new ConflictException("The source occurrence backfill key belongs to different schedule evidence.");
@@ -3017,7 +3312,8 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
     const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence
       FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey}
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${substitution.id}::uuid
+        AND idempotency_key=${idempotencyKey}
       FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This accepted-cover key was already used for different timetable evidence.");
@@ -3201,7 +3497,8 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT
         id,request_hash,recorded_at,journal_sequence
       FROM campus_model_events
-      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey}
+      WHERE school_id=${input.school_id}::uuid AND subject_entity_id=${accepted.subject_entity_id}::uuid
+        AND idempotency_key=${idempotencyKey}
       FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException(
@@ -3336,6 +3633,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
 
   async resolveAt(rawInput: CampusTemporalContextQuery): Promise<CampusTemporalAssertion[]> {
     const input = campusTemporalContextQuerySchema.parse(rawInput);
+    const environmentNamespaceId = executionNamespaceForSchool(input.school_id, this.executionScope?.current());
     const recordedAsOf = input.recorded_as_of ?? new Date().toISOString();
     const entityDomain = input.subject.type === "entity" ? input.subject.domain : null;
     const entityDomainId = input.subject.type === "entity" ? input.subject.domain_id : null;
@@ -3390,8 +3688,11 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       LEFT JOIN campus_model_agents agent ON agent.id=occurrence.responsible_agent_id
         AND agent.id=account_endpoint.agent_id
       LEFT JOIN campus_model_entities queried_entity ON queried_entity.school_id=occurrence.school_id
+        AND queried_entity.environment_namespace_id=occurrence.environment_namespace_id
         AND queried_entity.domain=${entityDomain} AND queried_entity.domain_id=${entityDomainId}
-      WHERE occurrence.school_id=${input.school_id}::uuid AND occurrence.state='expected'
+      WHERE occurrence.school_id=${input.school_id}::uuid
+        AND occurrence.environment_namespace_id=${environmentNamespaceId}
+        AND occurrence.state='expected'
         AND occurrence.starts_at<=${input.at}::timestamptz AND occurrence.ends_at>${input.at}::timestamptz
         AND occurrence.recorded_from<=${recordedAsOf}::timestamptz
         AND (occurrence.recorded_until IS NULL OR occurrence.recorded_until>${recordedAsOf}::timestamptz)
@@ -3475,7 +3776,10 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       JOIN campus_model_entities subject ON subject.id=observation.subject_entity_id
       LEFT JOIN campus_model_entities context ON context.id=observation.context_entity_id
       JOIN campus_model_agents agent ON agent.id=observation.captured_by_agent_id
-      WHERE queried.school_id=${input.school_id}::uuid AND queried.domain=${input.subject.domain}
+      WHERE queried.school_id=${input.school_id}::uuid
+        AND queried.environment_namespace_id=${environmentNamespaceId}
+        AND observation.environment_namespace_id=${environmentNamespaceId}
+        AND queried.domain=${input.subject.domain}
         AND queried.domain_id=${input.subject.domain_id}
         AND observation.observed_at<=${input.at}::timestamptz
         AND observation.received_at<=${recordedAsOf}::timestamptz
@@ -3569,24 +3873,34 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     transaction: Transaction<Database>,
     schoolId: string,
     snapshot: CampusModelEntitySnapshot,
+    providedScope?: OperationalRealmScope,
+    semanticType?: ResolvedSemanticTypeDefinition,
   ): Promise<EntityRow> {
+    const modelScope = providedScope ?? await this.resolveScope(transaction, schoolId);
     const result = await sql<EntityRow>`
       INSERT INTO campus_model_entities(
-        school_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
+        school_id,realm_id,environment_namespace_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata,
+        semantic_type_definition_id,semantic_type_version
       ) VALUES (
-        ${schoolId}::uuid,${snapshot.kind},${snapshot.domain},${snapshot.domain_id},
+        ${schoolId}::uuid,${modelScope.realm_id}::uuid,${modelScope.environment_namespace_id},
+        ${snapshot.kind},${snapshot.domain},${snapshot.domain_id},
         ${snapshot.label},${snapshot.lifecycle_state},${snapshot.source_revision},
-        ${JSON.stringify(snapshot.metadata)}::jsonb
+        ${JSON.stringify(snapshot.metadata)}::jsonb,
+        ${semanticType?.id ?? null}::uuid,${semanticType?.version ?? null}
       )
-      ON CONFLICT(school_id,domain,domain_id) DO UPDATE SET
+      ON CONFLICT(realm_id,environment_namespace_id,domain,domain_id) DO UPDATE SET
         kind=EXCLUDED.kind,label=EXCLUDED.label,lifecycle_state=EXCLUDED.lifecycle_state,
         source_revision=EXCLUDED.source_revision,metadata=EXCLUDED.metadata,
+        semantic_type_definition_id=COALESCE(EXCLUDED.semantic_type_definition_id,campus_model_entities.semantic_type_definition_id),
+        semantic_type_version=COALESCE(EXCLUDED.semantic_type_version,campus_model_entities.semantic_type_version),
         revision=CASE
           WHEN campus_model_entities.kind IS DISTINCT FROM EXCLUDED.kind
             OR campus_model_entities.label IS DISTINCT FROM EXCLUDED.label
             OR campus_model_entities.lifecycle_state IS DISTINCT FROM EXCLUDED.lifecycle_state
             OR campus_model_entities.source_revision IS DISTINCT FROM EXCLUDED.source_revision
             OR campus_model_entities.metadata IS DISTINCT FROM EXCLUDED.metadata
+            OR (EXCLUDED.semantic_type_definition_id IS NOT NULL AND campus_model_entities.semantic_type_definition_id IS DISTINCT FROM EXCLUDED.semantic_type_definition_id)
+            OR (EXCLUDED.semantic_type_version IS NOT NULL AND campus_model_entities.semantic_type_version IS DISTINCT FROM EXCLUDED.semantic_type_version)
           THEN campus_model_entities.revision+1 ELSE campus_model_entities.revision END,
         updated_at=CASE
           WHEN campus_model_entities.kind IS DISTINCT FROM EXCLUDED.kind
@@ -3594,11 +3908,385 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
             OR campus_model_entities.lifecycle_state IS DISTINCT FROM EXCLUDED.lifecycle_state
             OR campus_model_entities.source_revision IS DISTINCT FROM EXCLUDED.source_revision
             OR campus_model_entities.metadata IS DISTINCT FROM EXCLUDED.metadata
+            OR (EXCLUDED.semantic_type_definition_id IS NOT NULL AND campus_model_entities.semantic_type_definition_id IS DISTINCT FROM EXCLUDED.semantic_type_definition_id)
+            OR (EXCLUDED.semantic_type_version IS NOT NULL AND campus_model_entities.semantic_type_version IS DISTINCT FROM EXCLUDED.semantic_type_version)
           THEN now() ELSE campus_model_entities.updated_at END
       RETURNING id,domain,domain_id`.execute(transaction);
     const entity = result.rows[0];
     if (!entity) throw new ConflictException("The campus model could not register this domain record.");
     return entity;
+  }
+
+  async sealExecutionSnapshot(
+    transaction: Transaction<Database>,
+    rawInput: SealExecutionSnapshotInput,
+  ): Promise<ExecutionSnapshotReceipt> {
+    const input = executionSnapshotInputSchema.parse(rawInput);
+    const scope = await this.resolveScope(transaction, input.school_id);
+    const environment = this.executionScope?.current();
+    const isSimulation = environment?.kind === "simulation";
+
+    if (isSimulation) {
+      if (input.snapshot_kind !== "simulation_fork"
+        || input.source_snapshot_ref !== environment.source_snapshot_ref) {
+        throw new ConflictException("A Simulation run must seal its exact server-selected source snapshot.");
+      }
+      if (input.actors.some((actor) => actor.actor_mode === "live_agent")) {
+        throw new ConflictException("A Live human agent cannot be installed as the actor inside Simulation.");
+      }
+    } else {
+      if (input.snapshot_kind === "simulation_fork") {
+        throw new ConflictException("A Simulation fork can be sealed only inside its isolated execution environment.");
+      }
+      if (input.actors.some((actor) => actor.actor_mode !== "live_agent")) {
+        throw new ConflictException("Live execution may bind only the stable Live agent identity.");
+      }
+      if (input.authority_grants.length > 0) {
+        throw new ConflictException("Live authority stays effective-dated and cannot be replaced by a frozen Simulation grant set.");
+      }
+    }
+
+    const normalizedConfiguration = {
+      snapshot_kind: input.snapshot_kind,
+      source_snapshot_ref: input.source_snapshot_ref,
+      core_contract_version: input.core_contract_version,
+      source_recorded_at: input.source_recorded_at,
+      items: [...input.items].sort((left, right) => `${left.item_kind}:${left.item_key}`.localeCompare(`${right.item_kind}:${right.item_key}`)),
+      actors: [...input.actors].sort((left, right) => left.binding_key.localeCompare(right.binding_key)),
+      authority_grants: [...input.authority_grants].sort((left, right) => left.source_authority_id.localeCompare(right.source_authority_id)),
+    };
+    const configurationHash = createHash("sha256")
+      .update(JSON.stringify(canonicalJson(normalizedConfiguration)))
+      .digest("hex");
+    const existing = (await sql<{ id: string; configuration_hash: string }>`SELECT id,configuration_hash
+      FROM campus_model_execution_snapshots
+      WHERE realm_id=${scope.realm_id}::uuid AND environment_namespace_id=${scope.environment_namespace_id}
+        AND source_snapshot_ref=${input.source_snapshot_ref}
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (existing) {
+      if (existing.configuration_hash !== configurationHash) {
+        throw new ConflictException("This source snapshot reference was already sealed with different execution configuration.");
+      }
+      const counts = (await sql<{ item_count: number; actor_count: number; grant_count: number }>`SELECT
+          (SELECT count(*)::int FROM campus_model_execution_snapshot_items WHERE snapshot_id=${existing.id}::uuid) AS item_count,
+          (SELECT count(*)::int FROM campus_model_execution_actor_bindings WHERE snapshot_id=${existing.id}::uuid) AS actor_count,
+          (SELECT count(*)::int FROM campus_model_authority_snapshot_grants WHERE snapshot_id=${existing.id}::uuid) AS grant_count`
+        .execute(transaction)).rows[0];
+      return {
+        snapshot_id: existing.id,
+        realm_id: scope.realm_id,
+        environment_namespace_id: scope.environment_namespace_id,
+        configuration_hash: configurationHash,
+        item_count: counts?.item_count ?? 0,
+        actor_count: counts?.actor_count ?? 0,
+        authority_grant_count: counts?.grant_count ?? 0,
+        replayed: true,
+      };
+    }
+
+    const snapshot = (await sql<{ id: string }>`INSERT INTO campus_model_execution_snapshots(
+        school_id,realm_id,environment_namespace_id,snapshot_kind,source_snapshot_ref,
+        core_contract_version,configuration_hash,source_recorded_at,sealed_at,sealed_by_authority,metadata
+      ) VALUES (
+        ${input.school_id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},${input.snapshot_kind},
+        ${input.source_snapshot_ref},${input.core_contract_version},${configurationHash},
+        ${input.source_recorded_at}::timestamptz,${input.sealed_at}::timestamptz,
+        ${input.sealed_by_authority},${JSON.stringify(input.metadata)}::jsonb
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!snapshot) throw new ConflictException("The execution snapshot could not be sealed.");
+
+    for (const item of input.items) {
+      await sql`INSERT INTO campus_model_execution_snapshot_items(
+          snapshot_id,realm_id,environment_namespace_id,item_kind,item_key,version_ref,
+          content_hash,effective_from,effective_until,source_ref,metadata
+        ) VALUES (
+          ${snapshot.id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},
+          ${item.item_kind},${item.item_key},${item.version_ref},${item.content_hash},
+          ${item.effective_from}::timestamptz,${item.effective_until}::timestamptz,
+          ${item.source_ref},${JSON.stringify(item.metadata)}::jsonb
+        )`.execute(transaction);
+    }
+    for (const actor of input.actors) {
+      await sql`INSERT INTO campus_model_execution_actor_bindings(
+          school_id,realm_id,environment_namespace_id,source_agent_id,actor_mode,binding_key,
+          snapshot_id,behaviour_policy_version_ref,authority_snapshot_ref,status,effective_from,effective_until
+        ) VALUES (
+          ${input.school_id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},
+          ${actor.source_agent_id}::uuid,${actor.actor_mode},${actor.binding_key},
+          ${isSimulation ? snapshot.id : null}::uuid,${actor.behaviour_policy_version_ref},
+          ${actor.authority_snapshot_ref},'active',${actor.effective_from}::timestamptz,
+          ${actor.effective_until}::timestamptz
+        )`.execute(transaction);
+    }
+    for (const grant of input.authority_grants) {
+      await sql`INSERT INTO campus_model_authority_snapshot_grants(
+          snapshot_id,school_id,realm_id,environment_namespace_id,source_authority_id,agent_id,
+          capability,scope_entity_id,effective_from,effective_until,operating_rule_version_ref,
+          constraints,content_hash
+        ) VALUES (
+          ${snapshot.id}::uuid,${input.school_id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},
+          ${grant.source_authority_id}::uuid,${grant.agent_id}::uuid,${grant.capability},
+          ${grant.scope_entity_id}::uuid,${grant.effective_from}::timestamptz,
+          ${grant.effective_until}::timestamptz,${grant.operating_rule_version_ref},
+          ${JSON.stringify(grant.constraints)}::jsonb,${grant.content_hash}
+        )`.execute(transaction);
+    }
+    return {
+      snapshot_id: snapshot.id,
+      realm_id: scope.realm_id,
+      environment_namespace_id: scope.environment_namespace_id,
+      configuration_hash: configurationHash,
+      item_count: input.items.length,
+      actor_count: input.actors.length,
+      authority_grant_count: input.authority_grants.length,
+      replayed: false,
+    };
+  }
+
+  async evaluateAuthority(
+    transaction: Transaction<Database>,
+    rawInput: AuthorityEvaluationInput,
+  ): Promise<AuthorityEvaluationReceipt> {
+    const input = authorityEvaluationInputSchema.parse(rawInput);
+    const scope = await this.resolveScope(transaction, input.school_id);
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const existing = (await sql<AuthorityReceiptRow>`SELECT id,request_hash,decision,reason_codes,
+        authority_source_refs,operating_rule_refs,evaluated_at,valid_until,execution_actor_id
+      FROM campus_model_authority_receipts
+      WHERE realm_id=${scope.realm_id}::uuid
+        AND environment_namespace_id=${scope.environment_namespace_id}
+        AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
+    if (existing) {
+      if (existing.request_hash !== requestHash) {
+        throw new ConflictException("This authority evaluation key was already used for another decision.");
+      }
+      return {
+        receipt_id: existing.id, realm_id: scope.realm_id,
+        environment_namespace_id: scope.environment_namespace_id,
+        actor_agent_id: input.actor_agent_id, capability: input.capability, purpose: input.purpose,
+        scope_entity_id: input.scope_entity_id, decision: existing.decision,
+        reason_codes: existing.reason_codes, authority_source_refs: existing.authority_source_refs,
+        operating_rule_refs: existing.operating_rule_refs, evaluated_at: existing.evaluated_at,
+        valid_until: existing.valid_until, replayed: true,
+      };
+    }
+
+    const actor = (await sql<{ active: boolean }>`SELECT EXISTS(SELECT 1 FROM campus_model_agents
+      WHERE id=${input.actor_agent_id}::uuid AND school_id=${input.school_id}::uuid AND status='active') AS active`
+      .execute(transaction)).rows[0]?.active ?? false;
+    const selectedEnvironment = this.executionScope?.current();
+    let executionActorId: string | null = null;
+    let snapshotMissing = false;
+    let grants: AuthorityGrantRow[] = [];
+    if (selectedEnvironment?.kind === "simulation") {
+      const binding = (await sql<{ execution_actor_id: string; snapshot_id: string }>`SELECT
+          binding.execution_actor_id,binding.snapshot_id
+        FROM campus_model_execution_actor_bindings binding
+        JOIN campus_model_execution_snapshots snapshot
+          ON snapshot.id=binding.snapshot_id AND snapshot.realm_id=binding.realm_id
+          AND snapshot.environment_namespace_id=binding.environment_namespace_id
+        WHERE binding.realm_id=${scope.realm_id}::uuid
+          AND binding.environment_namespace_id=${scope.environment_namespace_id}
+          AND snapshot.source_snapshot_ref=${selectedEnvironment.source_snapshot_ref}
+          AND binding.source_agent_id=${input.actor_agent_id}::uuid AND binding.status='active'
+          AND effective_from<=${input.evaluated_at}::timestamptz
+          AND (effective_until IS NULL OR effective_until>${input.evaluated_at}::timestamptz)
+        ORDER BY actor_mode='simulation_counterpart' DESC,effective_from DESC LIMIT 1 FOR SHARE`
+        .execute(transaction)).rows[0];
+      executionActorId = binding?.execution_actor_id ?? null;
+      snapshotMissing = !binding;
+      if (binding) {
+        grants = (await sql<AuthorityGrantRow>`SELECT source_authority_id,operating_rule_version_ref,effective_until
+          FROM campus_model_authority_snapshot_grants
+          WHERE snapshot_id=${binding.snapshot_id}::uuid AND agent_id=${input.actor_agent_id}::uuid
+            AND capability=${input.capability}
+            AND effective_from<=${input.evaluated_at}::timestamptz
+            AND (effective_until IS NULL OR effective_until>${input.evaluated_at}::timestamptz)
+            AND (scope_entity_id IS NULL OR scope_entity_id=${input.scope_entity_id}::uuid)
+          ORDER BY scope_entity_id IS NOT NULL DESC,effective_until NULLS LAST,source_authority_id`
+          .execute(transaction)).rows;
+      }
+    } else {
+      grants = (await sql<AuthorityGrantRow>`SELECT authority.id AS source_authority_id,
+          authority.operating_rule_version_ref,authority.effective_until
+        FROM campus_model_agent_authorities authority
+        WHERE authority.school_id=${input.school_id}::uuid AND authority.agent_id=${input.actor_agent_id}::uuid
+          AND authority.capability=${input.capability} AND authority.revoked_at IS NULL
+          AND authority.effective_from<=${input.evaluated_at}::timestamptz
+          AND (authority.effective_until IS NULL OR authority.effective_until>${input.evaluated_at}::timestamptz)
+          AND (authority.scope_entity_id IS NULL OR authority.scope_entity_id=${input.scope_entity_id}::uuid)
+        ORDER BY authority.scope_entity_id IS NOT NULL DESC,authority.effective_until NULLS LAST,authority.id`
+        .execute(transaction)).rows;
+    }
+    const reasons = !actor ? ["actor_inactive"]
+      : snapshotMissing ? ["execution_snapshot_or_actor_binding_missing"]
+        : grants.length === 0 ? ["capability_not_granted"] : ["effective_grant_found"];
+    const decision = actor && !snapshotMissing && grants.length > 0 ? "allowed" as const : "denied" as const;
+    const authoritySources = grants.map((grant) => ({ source_authority_id: grant.source_authority_id }));
+    const operatingRules = grants.flatMap((grant) => grant.operating_rule_version_ref
+      ? [{ version_ref: grant.operating_rule_version_ref }] : []);
+    const expiryValues = grants.flatMap((grant) => grant.effective_until ? [new Date(grant.effective_until)] : []);
+    const validUntil = expiryValues.length > 0
+      ? new Date(Math.min(...expiryValues.map((value) => value.getTime()))).toISOString()
+      : null;
+    const inserted = (await sql<{ id: string }>`INSERT INTO campus_model_authority_receipts(
+        school_id,realm_id,environment_namespace_id,actor_agent_id,execution_actor_id,
+        capability,purpose,scope_entity_id,decision,reason_codes,authority_source_refs,
+        operating_rule_refs,evaluated_at,valid_until,correlation_id,causation_id,idempotency_key,request_hash
+      ) VALUES (
+        ${input.school_id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},
+        ${input.actor_agent_id}::uuid,${executionActorId}::uuid,${input.capability},${input.purpose},
+        ${input.scope_entity_id}::uuid,${decision},${reasons}::text[],${JSON.stringify(authoritySources)}::jsonb,
+        ${JSON.stringify(operatingRules)}::jsonb,${input.evaluated_at}::timestamptz,${validUntil}::timestamptz,
+        ${input.correlation_id}::uuid,${input.causation_id}::uuid,${input.idempotency_key},${requestHash}
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!inserted) throw new ConflictException("The authority evaluation could not be retained.");
+    return {
+      receipt_id: inserted.id, realm_id: scope.realm_id,
+      environment_namespace_id: scope.environment_namespace_id,
+      actor_agent_id: input.actor_agent_id, capability: input.capability, purpose: input.purpose,
+      scope_entity_id: input.scope_entity_id, decision, reason_codes: reasons,
+      authority_source_refs: authoritySources, operating_rule_refs: operatingRules,
+      evaluated_at: input.evaluated_at, valid_until: validUntil, replayed: false,
+    };
+  }
+
+  async readCheckpoint(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    consumer: string,
+  ): Promise<EnvironmentProjectionCheckpoint> {
+    const safeConsumer = checkpointConsumerSchema.parse(consumer);
+    const scope = await this.resolveScope(transaction, schoolId);
+    const row = (await sql<EnvironmentProjectionCheckpoint>`INSERT INTO campus_model_environment_projection_checkpoints(
+        realm_id,environment_namespace_id,consumer
+      ) VALUES(${scope.realm_id}::uuid,${scope.environment_namespace_id},${safeConsumer})
+      ON CONFLICT(realm_id,environment_namespace_id,consumer) DO UPDATE SET consumer=EXCLUDED.consumer
+      RETURNING realm_id,environment_namespace_id,consumer,last_delivery_sequence,last_event_id,state,updated_at`
+      .execute(transaction)).rows[0];
+    if (!row) throw new ConflictException("The projection checkpoint could not be resolved.");
+    return row;
+  }
+
+  async advanceCheckpoint(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    consumer: string,
+    deliverySequence: number,
+    eventId: string | null,
+  ): Promise<EnvironmentProjectionCheckpoint> {
+    if (!Number.isSafeInteger(deliverySequence) || deliverySequence < 0) {
+      throw new ConflictException("Projection sequence must be a non-negative safe integer.");
+    }
+    const current = await this.readCheckpoint(transaction, schoolId, consumer);
+    if (deliverySequence < current.last_delivery_sequence) {
+      throw new ConflictException("A projection checkpoint cannot move backwards.");
+    }
+    const row = (await sql<EnvironmentProjectionCheckpoint>`UPDATE campus_model_environment_projection_checkpoints SET
+        last_delivery_sequence=${deliverySequence},last_event_id=${eventId}::uuid,state='active',
+        last_error_code=NULL,updated_at=now()
+      WHERE realm_id=${current.realm_id}::uuid
+        AND environment_namespace_id=${current.environment_namespace_id}
+        AND consumer=${current.consumer}
+      RETURNING realm_id,environment_namespace_id,consumer,last_delivery_sequence,last_event_id,state,updated_at`
+      .execute(transaction)).rows[0];
+    if (!row) throw new ConflictException("The projection checkpoint could not be advanced.");
+    return row;
+  }
+
+  resolveScope(
+    transaction: Transaction<Database>,
+    schoolId: string,
+  ): Promise<OperationalRealmScope> {
+    return resolveOperationalRealmScope(transaction, schoolId, this.executionScope?.current());
+  }
+
+  async resolveEntityAddress(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    reference: { domain: string; domain_id: string },
+  ): Promise<ModelAddress | null> {
+    const scope = await this.resolveScope(transaction, schoolId);
+    const entity = (await sql<{ id: string }>`SELECT id FROM campus_model_entities
+      WHERE realm_id=${scope.realm_id}::uuid
+        AND environment_namespace_id=${scope.environment_namespace_id}
+        AND domain=${reference.domain} AND domain_id=${reference.domain_id}
+      FOR SHARE`.execute(transaction)).rows[0];
+    return entity ? modelAddressSchema.parse({
+      realm_id: scope.realm_id,
+      environment_namespace_id: scope.environment_namespace_id,
+      model_id: entity.id,
+    }) : null;
+  }
+
+  async resolveObservationContracts(
+    transaction: Transaction<Database>,
+    scope: OperationalRealmScope,
+    refs: ModelObservationContractRefs,
+  ): Promise<ResolvedObservationContracts> {
+    const result = (await sql<ObservationContractRegistryRow>`SELECT
+      (SELECT definition.id FROM model_semantic_type_definitions definition
+        JOIN realm_model_contract_activations activation
+          ON activation.realm_id=${scope.realm_id}::uuid
+          AND activation.contract_kind='semantic_type'
+          AND activation.contract_id=definition.id
+          AND activation.contract_version=definition.version
+          AND activation.status='active' AND activation.effective_from<=now()
+          AND (activation.effective_until IS NULL OR activation.effective_until>now())
+        WHERE definition.namespace=${refs.subject_type.namespace}
+          AND definition.type_key=${refs.subject_type.type_key}
+          AND definition.definition_kind='entity' AND definition.version=${refs.subject_type.version}
+          AND definition.status='active' LIMIT 1) AS subject_definition_id,
+      ${refs.context_type ? sql<string | null>`(SELECT definition.id FROM model_semantic_type_definitions definition
+        JOIN realm_model_contract_activations activation
+          ON activation.realm_id=${scope.realm_id}::uuid
+          AND activation.contract_kind='semantic_type'
+          AND activation.contract_id=definition.id
+          AND activation.contract_version=definition.version
+          AND activation.status='active' AND activation.effective_from<=now()
+          AND (activation.effective_until IS NULL OR activation.effective_until>now())
+        WHERE definition.namespace=${refs.context_type.namespace}
+          AND definition.type_key=${refs.context_type.type_key}
+          AND definition.definition_kind='entity' AND definition.version=${refs.context_type.version}
+          AND definition.status='active' LIMIT 1)` : sql<string | null>`NULL::uuid`} AS context_definition_id,
+      (SELECT definition.id FROM model_protocol_schema_definitions definition
+        JOIN realm_model_contract_activations activation
+          ON activation.realm_id=${scope.realm_id}::uuid
+          AND activation.contract_kind='protocol_schema'
+          AND activation.contract_id=definition.id
+          AND activation.contract_version=definition.version
+          AND activation.status='active' AND activation.effective_from<=now()
+          AND (activation.effective_until IS NULL OR activation.effective_until>now())
+        WHERE definition.namespace=${refs.observation_schema.namespace}
+          AND definition.schema_key=${refs.observation_schema.schema_key}
+          AND definition.protocol_kind='observation' AND definition.version=${refs.observation_schema.version}
+          AND definition.status='active' LIMIT 1) AS protocol_definition_id,
+      (SELECT manifest.id FROM model_capability_manifests manifest
+        JOIN realm_model_contract_activations activation
+          ON activation.realm_id=${scope.realm_id}::uuid
+          AND activation.contract_kind='capability_manifest'
+          AND activation.contract_id=manifest.id
+          AND activation.contract_version=manifest.version
+          AND activation.status='active' AND activation.effective_from<=now()
+          AND (activation.effective_until IS NULL OR activation.effective_until>now())
+        WHERE manifest.namespace=${refs.capability_manifest.namespace}
+          AND manifest.capability_key=${refs.capability_manifest.capability_key}
+          AND manifest.version=${refs.capability_manifest.version}
+          AND manifest.status='active' LIMIT 1) AS capability_manifest_id`.execute(transaction)).rows[0];
+    if (!result?.subject_definition_id
+      || (refs.context_type && !result.context_definition_id)
+      || !result?.protocol_definition_id
+      || !result?.capability_manifest_id) {
+      throw new ConflictException("The observation adapter contract is not activated for this operational realm.");
+    }
+    return {
+      subject_type: { id: result.subject_definition_id, ...refs.subject_type },
+      context_type: refs.context_type && result.context_definition_id
+        ? { id: result.context_definition_id, ...refs.context_type }
+        : null,
+      observation_schema: { id: result.protocol_definition_id, ...refs.observation_schema },
+      capability_manifest: { id: result.capability_manifest_id, ...refs.capability_manifest },
+    };
   }
 
   private key(reference: { domain: string; domain_id: string }): string {
@@ -3932,15 +4620,20 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     if (!(["attendance.capture", "gate.movement"] as string[]).includes(sourceType)) {
       throw new ConflictException("This observation type is not enabled for registered sources.");
     }
+    const modelScope = await this.resolveScope(transaction, schoolId);
     const contextEntity = context ? (await sql<{ id: string }>`SELECT id FROM campus_model_entities
-      WHERE school_id=${schoolId}::uuid AND domain=${context.domain} AND domain_id=${context.domain_id}`.execute(transaction)).rows[0] : null;
+      WHERE realm_id=${modelScope.realm_id}::uuid
+        AND environment_namespace_id=${modelScope.environment_namespace_id}
+        AND domain=${context.domain} AND domain_id=${context.domain_id}`.execute(transaction)).rows[0] : null;
     const capability = `observe:${sourceType}` as ObservationCapability;
     const agent = (await sql<AgentRow>`WITH RECURSIVE context_scope AS (
         SELECT ${contextEntity?.id ?? null}::uuid AS id
         UNION
         SELECT relationship.target_entity_id FROM campus_model_relationships relationship
         JOIN context_scope child ON child.id=relationship.source_entity_id
-        WHERE relationship.school_id=${schoolId}::uuid AND relationship.relation_type IN ('part_of','located_in','home_space')
+        WHERE relationship.realm_id=${modelScope.realm_id}::uuid
+          AND relationship.environment_namespace_id=${modelScope.environment_namespace_id}
+          AND relationship.relation_type IN ('part_of','located_in','home_space')
           AND relationship.effective_from<=now() AND relationship.effective_until IS NULL
       )
       SELECT agent.id FROM campus_model_agents agent
@@ -3954,29 +4647,290 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     return agent;
   }
 
+  async prepareDomainCommand(
+    transaction: Transaction<Database>,
+    rawInput: PrepareDomainCommandInput,
+  ): Promise<PrepareDomainCommandReceipt> {
+    const input = prepareDomainCommandSchema.parse(rawInput);
+    if (input.current_revision !== input.expected_revision) {
+      throw new ConflictException("The command target changed. Refresh before continuing.");
+    }
+    const scope = await this.resolveScope(transaction, input.school_id);
+    const requestHash = createHash("sha256")
+      .update(JSON.stringify(canonicalJson(input)))
+      .digest("hex");
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(
+      ${`domain-command:${scope.realm_id}:${scope.environment_namespace_id}:${input.idempotency_key}`},0
+    ))`.execute(transaction);
+
+    const existing = (await sql<{
+      id: string;
+      request_hash: string;
+      state: DomainCommandTerminalState | "pending";
+      target_entity_id: string;
+      actor_agent_id: string;
+      authority_receipt_id: string;
+      status: DomainCommandTerminalState | null;
+      code: string | null;
+      explanation: string | null;
+      resulting_revision: number | null;
+      domain_event_id: string | null;
+      metadata: Record<string, unknown> | null;
+    }>`SELECT command.id,command.request_hash,command.state,command.target_entity_id,
+        command.actor_agent_id,command.authority_receipt_id,outcome.status,outcome.code,
+        outcome.explanation,outcome.resulting_revision,outcome.domain_event_id,outcome.metadata
+      FROM campus_model_commands command
+      LEFT JOIN LATERAL (
+        SELECT retained.status,retained.code,retained.explanation,retained.resulting_revision,
+          retained.domain_event_id,retained.metadata
+        FROM campus_model_command_outcomes retained
+        WHERE retained.command_id=command.id ORDER BY retained.sequence DESC LIMIT 1
+      ) outcome ON true
+      WHERE command.realm_id=${scope.realm_id}::uuid
+        AND command.environment_namespace_id=${scope.environment_namespace_id}
+        AND command.idempotency_key=${input.idempotency_key}
+      FOR UPDATE OF command`.execute(transaction)).rows[0];
+    if (existing) {
+      if (existing.request_hash !== requestHash) {
+        throw new ConflictException("This command key was already used for different work.");
+      }
+      if (existing.state === "pending") {
+        return {
+          status: "ready", command_id: existing.id, realm_id: scope.realm_id,
+          environment_namespace_id: scope.environment_namespace_id,
+          target_entity_id: existing.target_entity_id, actor_agent_id: existing.actor_agent_id,
+          authority_receipt_id: existing.authority_receipt_id, request_hash: requestHash, replayed: true,
+        };
+      }
+      if (!existing.status || !existing.code || !existing.explanation) {
+        throw new ConflictException("The retained command is terminal but its outcome is unavailable.");
+      }
+      return {
+        status: "completed", command_id: existing.id, terminal_state: existing.status,
+        code: existing.code, explanation: existing.explanation,
+        resulting_revision: existing.resulting_revision, domain_event_id: existing.domain_event_id,
+        metadata: existing.metadata ?? {}, replayed: true,
+      };
+    }
+
+    const actor = await this.resolveAccountEndpointIn(
+      transaction,
+      input.school_id,
+      input.actor_user_id,
+      input.requested_at,
+    );
+    if (!actor.acting) {
+      throw new ForbiddenException(this.humanAgentResolutionMessage(actor.reason));
+    }
+    const target = await this.upsertEntity(transaction, input.school_id, input.target, scope);
+    const selectedEnvironment = this.executionScope?.current();
+    const authority = selectedEnvironment?.kind !== "simulation" && input.authority_attestation
+      ? await this.retainDomainAuthorityAttestation(transaction, {
+        school_id: input.school_id,
+        realm_id: scope.realm_id,
+        environment_namespace_id: scope.environment_namespace_id,
+        actor_agent_id: actor.agent_id,
+        scope_entity_id: target.id,
+        capability: input.capability,
+        purpose: input.purpose,
+        evaluated_at: input.requested_at,
+        correlation_id: input.correlation_id,
+        causation_id: input.causation_id,
+        idempotency_key: `${input.idempotency_key}:authority`,
+        attestation: input.authority_attestation,
+      })
+      : await this.evaluateAuthority(transaction, {
+        school_id: input.school_id,
+        actor_agent_id: actor.agent_id,
+        capability: input.capability,
+        purpose: input.purpose,
+        scope_entity_id: target.id,
+        evaluated_at: input.requested_at,
+        correlation_id: input.correlation_id,
+        causation_id: input.causation_id,
+        idempotency_key: `${input.idempotency_key}:authority`,
+      });
+    if (authority.decision !== "allowed") {
+      throw new ForbiddenException("The current campus authority does not allow this action.");
+    }
+    const inserted = (await sql<{ id: string }>`INSERT INTO campus_model_commands(
+        school_id,realm_id,environment_namespace_id,command_type,target_entity_id,actor_agent_id,
+        state,requested_at,effective_at,expected_revision,authority_evidence,authority_receipt_id,
+        operating_rule_version_ref,correlation_id,causation_id,idempotency_key,source_domain,
+        safe_context,request_hash,handler_key,handler_version,configuration_refs,execution_started_at
+      ) VALUES (
+        ${input.school_id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},
+        ${input.command_type},${target.id}::uuid,${actor.agent_id}::uuid,'pending',
+        ${input.requested_at}::timestamptz,${input.requested_at}::timestamptz,${input.expected_revision},
+        ${authority.authority_source_refs.map((ref) => JSON.stringify(ref))}::text[],
+        ${authority.receipt_id}::uuid,${input.operating_rule_version_ref},${input.correlation_id}::uuid,
+        ${input.causation_id}::uuid,${input.idempotency_key},${input.source_domain},
+        ${JSON.stringify(input.safe_context)}::jsonb,${requestHash},${input.handler_key},
+        ${input.handler_version},${JSON.stringify(input.configuration_refs)}::jsonb,
+        ${input.requested_at}::timestamptz
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!inserted) throw new ConflictException("The domain command could not be retained.");
+    return {
+      status: "ready", command_id: inserted.id, realm_id: scope.realm_id,
+      environment_namespace_id: scope.environment_namespace_id,
+      target_entity_id: target.id, actor_agent_id: actor.agent_id,
+      authority_receipt_id: authority.receipt_id, request_hash: requestHash, replayed: false,
+    };
+  }
+
+  async completeDomainCommand(
+    transaction: Transaction<Database>,
+    rawInput: CompleteDomainCommandInput,
+  ): Promise<CompleteDomainCommandReceipt> {
+    const input = completeDomainCommandSchema.parse(rawInput);
+    const scope = await this.resolveScope(transaction, input.school_id);
+    const command = (await sql<{ state: DomainCommandTerminalState | "pending"; target_entity_id: string | null }>`SELECT state,target_entity_id
+      FROM campus_model_commands WHERE id=${input.command_id}::uuid
+        AND school_id=${input.school_id}::uuid AND realm_id=${scope.realm_id}::uuid
+        AND environment_namespace_id=${scope.environment_namespace_id}
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!command) throw new ConflictException("The prepared domain command was not found in this execution environment.");
+    const prior = (await sql<{
+      id: number; status: DomainCommandTerminalState; code: string; explanation: string;
+      resulting_revision: number | null; domain_event_id: string | null; metadata: Record<string, unknown>;
+    }>`SELECT id,status,code,explanation,resulting_revision,domain_event_id,metadata
+      FROM campus_model_command_outcomes WHERE command_id=${input.command_id}::uuid
+      ORDER BY sequence DESC LIMIT 1`.execute(transaction)).rows[0];
+    if (command.state !== "pending") {
+      if (!prior || prior.status !== input.terminal_state || prior.code !== input.code
+        || prior.resulting_revision !== input.resulting_revision || prior.domain_event_id !== input.domain_event_id
+        || JSON.stringify(canonicalJson(prior.metadata)) !== JSON.stringify(canonicalJson(input.metadata))) {
+        throw new ConflictException("The command already has a different terminal outcome.");
+      }
+      return { ...input, outcome_id: prior.id, replayed: true };
+    }
+    await sql`UPDATE campus_model_commands SET state=${input.terminal_state},completed_at=${input.completed_at}::timestamptz,
+        updated_at=${input.completed_at}::timestamptz
+      WHERE id=${input.command_id}::uuid`.execute(transaction);
+    const outcome = (await sql<{ id: number }>`INSERT INTO campus_model_command_outcomes(
+        command_id,realm_id,environment_namespace_id,sequence,status,code,explanation,
+        resulting_entity_id,resulting_revision,domain_event_id,metadata,recorded_at
+      ) VALUES (
+        ${input.command_id}::uuid,${scope.realm_id}::uuid,${scope.environment_namespace_id},1,
+        ${input.terminal_state},${input.code},${input.explanation},${command.target_entity_id}::uuid,
+        ${input.resulting_revision},${input.domain_event_id}::uuid,${JSON.stringify(input.metadata)}::jsonb,
+        ${input.completed_at}::timestamptz
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!outcome) throw new ConflictException("The domain command outcome could not be retained.");
+    return { ...input, outcome_id: outcome.id, replayed: false };
+  }
+
+  private async retainDomainAuthorityAttestation(
+    transaction: Transaction<Database>,
+    input: {
+      school_id: string;
+      realm_id: string;
+      environment_namespace_id: string;
+      actor_agent_id: string;
+      scope_entity_id: string;
+      capability: string;
+      purpose: string;
+      evaluated_at: string;
+      correlation_id: string;
+      causation_id: string | null;
+      idempotency_key: string;
+      attestation: NonNullable<PrepareDomainCommandInput["authority_attestation"]>;
+    },
+  ): Promise<AuthorityEvaluationReceipt> {
+    const requestHash = createHash("sha256")
+      .update(JSON.stringify(canonicalJson(input)))
+      .digest("hex");
+    const existing = (await sql<AuthorityReceiptRow>`SELECT id,request_hash,decision,reason_codes,
+        authority_source_refs,operating_rule_refs,evaluated_at,valid_until,execution_actor_id
+      FROM campus_model_authority_receipts
+      WHERE realm_id=${input.realm_id}::uuid
+        AND environment_namespace_id=${input.environment_namespace_id}
+        AND idempotency_key=${input.idempotency_key}`.execute(transaction)).rows[0];
+    if (existing) {
+      if (existing.request_hash !== requestHash) {
+        throw new ConflictException("This authority-attestation key was already used for another decision.");
+      }
+      return {
+        receipt_id: existing.id, realm_id: input.realm_id,
+        environment_namespace_id: input.environment_namespace_id,
+        actor_agent_id: input.actor_agent_id, capability: input.capability, purpose: input.purpose,
+        scope_entity_id: input.scope_entity_id, decision: existing.decision,
+        reason_codes: existing.reason_codes, authority_source_refs: existing.authority_source_refs,
+        operating_rule_refs: existing.operating_rule_refs, evaluated_at: existing.evaluated_at,
+        valid_until: existing.valid_until, replayed: true,
+      };
+    }
+    const retained = (await sql<{ id: string }>`INSERT INTO campus_model_authority_receipts(
+        school_id,realm_id,environment_namespace_id,actor_agent_id,execution_actor_id,capability,
+        purpose,scope_entity_id,decision,reason_codes,authority_source_refs,operating_rule_refs,
+        evaluated_at,valid_until,correlation_id,causation_id,idempotency_key,request_hash
+      ) VALUES (
+        ${input.school_id}::uuid,${input.realm_id}::uuid,${input.environment_namespace_id},
+        ${input.actor_agent_id}::uuid,NULL,${input.capability},${input.purpose},${input.scope_entity_id}::uuid,
+        ${input.attestation.decision},${input.attestation.reason_codes}::text[],
+        ${JSON.stringify([{ evaluator_domain: input.attestation.evaluator_domain }, ...input.attestation.authority_source_refs])}::jsonb,
+        ${JSON.stringify(input.attestation.operating_rule_refs)}::jsonb,${input.evaluated_at}::timestamptz,
+        ${input.attestation.valid_until}::timestamptz,${input.correlation_id}::uuid,
+        ${input.causation_id}::uuid,${input.idempotency_key},${requestHash}
+      ) RETURNING id`.execute(transaction)).rows[0];
+    if (!retained) throw new ConflictException("The domain authority attestation could not be retained.");
+    return {
+      receipt_id: retained.id, realm_id: input.realm_id,
+      environment_namespace_id: input.environment_namespace_id,
+      actor_agent_id: input.actor_agent_id, capability: input.capability, purpose: input.purpose,
+      scope_entity_id: input.scope_entity_id, decision: input.attestation.decision,
+      reason_codes: input.attestation.reason_codes,
+      authority_source_refs: input.attestation.authority_source_refs,
+      operating_rule_refs: input.attestation.operating_rule_refs,
+      evaluated_at: input.evaluated_at, valid_until: input.attestation.valid_until, replayed: false,
+    };
+  }
+
   private async recordCommand(
     transaction: Transaction<Database>,
     input: AcceptedCampusModelChange,
     actorAgentId: string,
     targetEntityId: string,
+    modelScope: OperationalRealmScope,
   ): Promise<CommandRow> {
+    const requestHash = createHash("sha256")
+      .update(JSON.stringify(canonicalJson(input)))
+      .digest("hex");
+    if (input.authority_receipt_id) {
+      const receipt = (await sql<CommandAuthorityReceiptRow>`SELECT actor_agent_id,decision,correlation_id,
+          (valid_until IS NULL OR valid_until>CURRENT_TIMESTAMP) AS valid
+        FROM campus_model_authority_receipts
+        WHERE id=${input.authority_receipt_id}::uuid AND realm_id=${modelScope.realm_id}::uuid
+          AND environment_namespace_id=${modelScope.environment_namespace_id}
+        FOR SHARE`.execute(transaction)).rows[0];
+      if (!receipt || receipt.actor_agent_id !== actorAgentId || receipt.decision !== "allowed"
+        || receipt.correlation_id !== input.correlation_id || !receipt.valid) {
+        throw new ConflictException("The command authority receipt is missing, expired, denied, or belongs to another actor or trace.");
+      }
+    }
     const inserted = (await sql<CommandRow>`INSERT INTO campus_model_commands(
-        school_id,command_type,target_entity_id,actor_agent_id,state,effective_at,expected_revision,
-        authority_evidence,operating_rule_version_ref,correlation_id,causation_id,idempotency_key,
-        source_domain,safe_context
+        school_id,realm_id,environment_namespace_id,command_type,target_entity_id,actor_agent_id,state,effective_at,expected_revision,
+        authority_evidence,authority_receipt_id,operating_rule_version_ref,correlation_id,causation_id,idempotency_key,
+        source_domain,safe_context,request_hash,handler_key,handler_version,configuration_refs,
+        execution_started_at,completed_at
       ) VALUES (
-        ${input.school_id}::uuid,${input.command_type},${targetEntityId}::uuid,${actorAgentId}::uuid,'accepted',
-        now(),${input.expected_revision},${input.authority_evidence}::text[],${input.operating_rule_version_ref},
+        ${input.school_id}::uuid,${modelScope.realm_id}::uuid,${modelScope.environment_namespace_id},
+        ${input.command_type},${targetEntityId}::uuid,${actorAgentId}::uuid,'accepted',
+        now(),${input.expected_revision},${input.authority_evidence}::text[],${input.authority_receipt_id ?? null}::uuid,${input.operating_rule_version_ref},
         ${input.correlation_id}::uuid,${input.causation_id}::uuid,${input.idempotency_key},
-        ${input.source_domain},${JSON.stringify(input.safe_context)}::jsonb
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
-      RETURNING id,command_type,target_entity_id,actor_agent_id`.execute(transaction)).rows[0];
+        ${input.source_domain},${JSON.stringify(input.safe_context)}::jsonb,${requestHash},
+        ${`legacy.${input.source_domain}`},1,'[]'::jsonb,now(),now()
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
+      RETURNING id,command_type,target_entity_id,actor_agent_id,request_hash`.execute(transaction)).rows[0];
     if (inserted) return inserted;
 
-    const existing = (await sql<CommandRow>`SELECT id,command_type,target_entity_id,actor_agent_id
-      FROM campus_model_commands WHERE school_id=${input.school_id}::uuid AND idempotency_key=${input.idempotency_key}
+    const existing = (await sql<CommandRow>`SELECT id,command_type,target_entity_id,actor_agent_id,request_hash
+      FROM campus_model_commands WHERE realm_id=${modelScope.realm_id}::uuid
+        AND environment_namespace_id=${modelScope.environment_namespace_id}
+        AND idempotency_key=${input.idempotency_key}
       FOR UPDATE`.execute(transaction)).rows[0];
-    if (!existing || existing.command_type !== input.command_type || existing.target_entity_id !== targetEntityId || existing.actor_agent_id !== actorAgentId) {
+    if (!existing || existing.command_type !== input.command_type || existing.target_entity_id !== targetEntityId
+      || existing.actor_agent_id !== actorAgentId || existing.request_hash !== requestHash) {
       throw new ConflictException("This campus command key was already used for different work.");
     }
     return existing;

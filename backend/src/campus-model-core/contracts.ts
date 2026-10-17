@@ -1,6 +1,28 @@
 import { z } from "zod";
 
 const identifier = z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/);
+const catalogueNamespace = z.string().trim().regex(/^[a-z][a-z0-9_.-]{2,119}$/);
+const semanticTypeContractRefSchema = z.object({
+  namespace: catalogueNamespace,
+  type_key: identifier,
+  version: z.number().int().positive(),
+}).strict();
+const protocolContractRefSchema = z.object({
+  namespace: catalogueNamespace,
+  schema_key: z.string().trim().regex(/^[a-z][a-z0-9_.-]{2,119}$/),
+  version: z.number().int().positive(),
+}).strict();
+const capabilityContractRefSchema = z.object({
+  namespace: catalogueNamespace,
+  capability_key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,79}$/),
+  version: z.number().int().positive(),
+}).strict();
+export const modelObservationContractRefsSchema = z.object({
+  subject_type: semanticTypeContractRefSchema,
+  context_type: semanticTypeContractRefSchema.nullable().default(null),
+  observation_schema: protocolContractRefSchema,
+  capability_manifest: capabilityContractRefSchema,
+}).strict();
 const entityRefSchema = z.object({
   domain: identifier,
   domain_id: z.string().trim().min(1).max(160),
@@ -48,6 +70,7 @@ export const acceptedCampusModelChangeSchema = z.object({
   causation_id: z.string().uuid().nullable().default(null),
   expected_revision: z.number().int().nonnegative().nullable().default(null),
   authority_evidence: z.array(z.string().trim().min(1).max(180)).max(20).default([]),
+  authority_receipt_id: z.string().uuid().nullable().optional(),
   operating_rule_version_ref: z.string().trim().max(160).nullable().default(null),
   source_domain: identifier,
   safe_context: z.record(z.string(), z.unknown()).default({}),
@@ -111,12 +134,27 @@ export const campusModelObservationSchema = z.object({
   state: z.enum(["pending", "accepted", "rejected", "quarantined", "superseded"]),
   idempotency_key: z.string().trim().min(8).max(240),
   domain_event_id: z.string().uuid().nullable().default(null),
+  contract_refs: modelObservationContractRefsSchema.optional(),
 }).strict().superRefine((value, context) => {
   if (!value.actor_user_id && !value.captured_by) {
     context.addIssue({ code: "custom", path: ["captured_by"], message: "Identify the human, device or integration that captured this observation." });
   }
   if (value.actor_user_id && value.captured_by) {
     context.addIssue({ code: "custom", path: ["captured_by"], message: "Use either actor_user_id or captured_by, not both." });
+  }
+  if (value.contract_refs?.subject_type.type_key !== undefined
+    && value.contract_refs.subject_type.type_key !== value.subject.kind) {
+    context.addIssue({ code: "custom", path: ["contract_refs", "subject_type"], message: "The subject type contract must match the subject kind." });
+  }
+  if (value.contract_refs?.context_type && value.context
+    && value.contract_refs.context_type.type_key !== value.context.kind) {
+    context.addIssue({ code: "custom", path: ["contract_refs", "context_type"], message: "The context type contract must match the context kind." });
+  }
+  if (value.contract_refs?.context_type && !value.context) {
+    context.addIssue({ code: "custom", path: ["context"], message: "The declared context type requires a context entity." });
+  }
+  if (value.contract_refs && value.contract_refs.observation_schema.schema_key !== value.kind) {
+    context.addIssue({ code: "custom", path: ["contract_refs", "observation_schema"], message: "The protocol contract must match the observation kind." });
   }
 });
 
@@ -699,6 +737,7 @@ export type CampusModelEntitySnapshot = z.infer<typeof campusModelEntitySchema>;
 export type CampusModelRelationshipSnapshot = z.infer<typeof campusModelRelationshipSchema>;
 export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChangeSchema>;
 export type CampusModelObservation = z.infer<typeof campusModelObservationSchema>;
+export type ModelObservationContractRefs = z.infer<typeof modelObservationContractRefsSchema>;
 export type CampusModelObservationTransition = z.infer<typeof campusModelObservationTransitionSchema>;
 export type PublishedScheduleProjection = z.infer<typeof publishedScheduleProjectionSchema>;
 export type LegacyTimetableSlotChangeProjection = z.infer<typeof legacyTimetableSlotChangeProjectionSchema>;

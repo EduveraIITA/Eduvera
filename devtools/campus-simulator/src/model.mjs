@@ -17,11 +17,11 @@ export function validateBehaviorFixture(input) {
   }
   if (input.clock?.mode !== "compressed_school_day"
     || !Number.isInteger(input.clock?.duration_seconds)
-    || input.clock.duration_seconds < 120
+    || input.clock.duration_seconds < 60
     || input.clock.duration_seconds > 3_600
     || typeof input.clock?.label !== "string"
     || input.clock.label.trim().length < 3) {
-    throw new Error("The Cambridge fixture must configure a labelled 2-60 minute compressed school day.");
+    throw new Error("The Cambridge fixture must configure a labelled 1-60 minute compressed school day.");
   }
   const ratios = input.attendance_ratios ?? {};
   const ratioTotal = ["present", "late", "absent", "excused"].reduce((sum, key) => sum + Number(ratios[key] ?? 0), 0);
@@ -241,7 +241,10 @@ export function createRoutineSchedule({ startedAt: startedAtValue, now: nowValue
   const now = new Date(nowValue ?? startedAtValue ?? new Date());
   const context = timetable?.context ?? {};
   const timeZone = context.timezone || behavior.timezone;
-  const referenceDate = context.today || timetable?.school_date || dateInZone(now, timeZone);
+  // `context.today` is the service's real wall-clock date. Accelerated runs ask
+  // the same domain API for another effective date, which is retained as
+  // `school_date`; that requested date must drive the rehearsal projection.
+  const referenceDate = timetable?.school_date || context.today || dateInZone(now, timeZone);
   const referenceInstant = instantInZone(referenceDate, 12 * 3_600, timeZone);
   const referenceWeekday = dayNumber(referenceInstant, timeZone);
   const classes = new Map((timetable?.classes ?? []).map((item) => [String(item.id), item]));
@@ -670,6 +673,7 @@ export function buildStatusSnapshot({
     schedule: {
       reference_weekday: routine.reference_weekday,
       reference_date: routine.reference_date,
+      timezone: routine.timezone,
       simulated_at: simulatedAt(generatedAt, routine),
       source: routine.source,
       active_slot_ids: phase.active_slot_ids,

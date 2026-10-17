@@ -3,6 +3,15 @@ import { DevelopmentActionRunner } from "./actions.mjs";
 import { buildStatusSnapshot, createRoutineSchedule } from "./model.mjs";
 import { assertCambridgeFixture, verifyApplicationApi } from "./safety.mjs";
 
+const CLOCK_MODES = new Map([["1m", 60], ["15m", 900], ["60m", 3_600]]);
+
+function durationLabel(durationSeconds) {
+  if (durationSeconds === 60) return "One-minute Cambridge school day";
+  if (durationSeconds === 900) return "15-minute Cambridge school day";
+  if (durationSeconds === 3_600) return "One-hour Cambridge school day";
+  throw new Error("Campus Lab duration must be 1 minute, 15 minutes or 1 hour.");
+}
+
 function errorMessage(error) {
   return typeof error?.message === "string" ? error.message.slice(0, 400) : "Unknown Campus Lab runtime error.";
 }
@@ -29,7 +38,7 @@ function emptyStatus(startedAt, message = null) {
     zones: [],
     unplaced: [],
     activity: [],
-    control: { enabled: true, changed_at: new Date(startedAt).toISOString(), changed_by: "startup" },
+    control: { enabled: true, clock_mode: "60m", duration_seconds: 3_600, changed_at: new Date(startedAt).toISOString(), changed_by: "startup" },
     ...(message ? { errors: [message] } : {}),
   };
 }
@@ -94,6 +103,18 @@ async function currentSchoolDay(session, schoolId, { date, timezone }) {
   return { ...day, school_date: date };
 }
 
+async function schoolDayForDate(session, schoolId, date) {
+  const day = await session.request(`/api/v1/day-plans/options?${new URLSearchParams({ school_id: schoolId, date })}`);
+  if (!day?.context?.timezone) throw new Error("The effective school day did not provide a campus timezone.");
+  return { ...day, school_date: date };
+}
+
+function addCalendarDays(date, days) {
+  const [year, month, day] = String(date).split("-").map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + days));
+  return value.toISOString().slice(0, 10);
+}
+
 export class CampusSimulatorRuntime {
   constructor({ apiOrigin, behavior, demoPassword, hosted = false, serviceToken = "", startedAt = new Date(), fetchImpl = fetch }) {
     this.apiOrigin = apiOrigin;
@@ -113,9 +134,16 @@ export class CampusSimulatorRuntime {
     this.routine = null;
     this.intervals = [];
     this.refreshing = false;
+    this.advancing = false;
     this.bootPromise = null;
     this.actorSessions = new Map();
-    this.control = { enabled: true, changed_at: this.startedAt.toISOString(), changed_by: "startup" };
+    this.control = {
+      enabled: true,
+      clock_mode: "60m",
+      duration_seconds: Number(this.behavior.clock.duration_seconds),
+      changed_at: this.startedAt.toISOString(),
+      changed_by: "startup",
+    };
   }
 
   snapshot() {
@@ -140,7 +168,7 @@ export class CampusSimulatorRuntime {
     }
     this.status = buildStatusSnapshot({
       now: new Date(),
-      startedAt: this.startedAt,
+      startedAt: this.runStartedAt,
       behavior: this.behavior,
       setup: this.data.setup,
       timetable: this.data.timetable,
@@ -151,6 +179,13 @@ export class CampusSimulatorRuntime {
       status: "running",
       routine: this.routine,
     });
+    if (this.status.schedule && this.control.clock_mode !== "realtime") {
+      this.status.schedule.cycle = {
+        start_date: this.simulationStartDate,
+        end_date: this.simulationEndDate,
+        rotation: "repeat",
+      };
+    }
     this.status.control = this.control;
   }
 
@@ -209,31 +244,79 @@ export class CampusSimulatorRuntime {
     if (!(setup.spaces ?? []).some((space) => space.status === "active")) throw new Error("The Cambridge fixture has no active campus spaces.");
     this.sessions = sessions;
     this.data = { setup, timetable, students };
-    this.routine = createRoutineSchedule({ startedAt: this.runStartedAt, now: new Date(), behavior: this.behavior, timetable });
+    this.simulationStartDate = timetable.school_date;
+    this.simulationEndDate = addCalendarDays(this.simulationStartDate, 29);
     this.errors = [];
-    this.actionRunner = new DevelopmentActionRunner({
-      sessions,
-      setup,
+    this.resetRun(this.runStartedAt, false);
+    this.render();
+  }
+
+  resetRun(startedAt = new Date(), clearActivity = true) {
+    if (!this.data || !this.sessions) return;
+    this.runStartedAt = new Date(startedAt);
+    if (clearActivity) this.actionActivity = [];
+    this.routine = createRoutineSchedule({
+      startedAt: this.runStartedAt,
+      now: new Date(),
       behavior: this.behavior,
-      startedAt: this.startedAt,
+      timetable: this.data.timetable,
+    });
+    this.actionRunner = new DevelopmentActionRunner({
+      sessions: this.sessions,
+      setup: this.data.setup,
+      behavior: this.behavior,
+      startedAt: this.runStartedAt,
       routine: this.routine,
       actorSession: (identity) => this.fixtureActorSession(identity),
       onActivity: (item) => this.addActivity(item),
     });
-    this.render();
+  }
+
+  async advanceCalendar(now = new Date()) {
+    if (this.advancing || this.refreshing || !this.data || !this.sessions || !this.control.enabled) return;
+    if (this.routine?.clock?.mode !== "compressed_school_day") return;
+    if (new Date(now).getTime() < new Date(this.routine.clock.ends_at).getTime()) return;
+    this.advancing = true;
+    try {
+      let nextDate = addCalendarDays(this.data.timetable.school_date, 1);
+      if (nextDate > this.simulationEndDate) nextDate = this.simulationStartDate;
+      const schoolId = this.data.setup.school.id;
+      let timetable = await schoolDayForDate(this.sessions.admin, schoolId, nextDate);
+      const checkedDates = new Set([nextDate]);
+      while (!(timetable.schedule ?? []).length || timetable.context?.is_instructional === false) {
+        nextDate = addCalendarDays(nextDate, 1);
+        if (nextDate > this.simulationEndDate) nextDate = this.simulationStartDate;
+        if (checkedDates.has(nextDate)) {
+          throw new Error("The configured 30-day Campus Lab window has no effective school day to simulate.");
+        }
+        checkedDates.add(nextDate);
+        timetable = await schoolDayForDate(this.sessions.admin, schoolId, nextDate);
+      }
+      this.data = { ...this.data, timetable };
+      this.resetRun(new Date(), false);
+      this.errors = [];
+      this.render();
+    } catch (error) {
+      this.errors = [errorMessage(error)];
+      this.render();
+    } finally {
+      this.advancing = false;
+    }
   }
 
   async refresh() {
-    if (this.refreshing || !this.sessions || !this.data) return;
+    if (this.refreshing || this.advancing || !this.sessions || !this.data) return;
     this.refreshing = true;
     try {
       const schoolId = this.data.setup.school.id;
       const setup = await this.sessions.admin.request(`/api/v1/schools/${encodeURIComponent(schoolId)}/institution-setup/`);
       const timezone = setup.school?.timezone ?? this.behavior.timezone;
-      const timetable = await currentSchoolDay(this.sessions.admin, schoolId, {
-        date: dateInZone(new Date(), timezone),
-        timezone,
-      });
+      const activeDate = this.control.clock_mode === "realtime"
+        ? dateInZone(new Date(), timezone)
+        : this.data.timetable.school_date ?? dateInZone(new Date(), timezone);
+      const timetable = this.control.clock_mode === "realtime"
+        ? await currentSchoolDay(this.sessions.admin, schoolId, { date: activeDate, timezone })
+        : await schoolDayForDate(this.sessions.admin, schoolId, activeDate);
       assertCambridgeFixture(setup, this.behavior);
       this.data = { ...this.data, setup, timetable };
       this.routine = createRoutineSchedule({ startedAt: this.runStartedAt, now: new Date(), behavior: this.behavior, timetable });
@@ -252,7 +335,10 @@ export class CampusSimulatorRuntime {
     const renderTimer = setInterval(() => this.render(), Number(this.behavior.status_tick_seconds) * 1_000);
     const refreshTimer = setInterval(() => void this.refresh(), Number(this.behavior.refresh_interval_seconds) * 1_000);
     const actionTimer = setInterval(
-      () => void this.actionRunner?.tick(new Date()),
+      () => {
+        const now = new Date();
+        void this.advanceCalendar(now).then(() => this.actionRunner?.tick(now));
+      },
       Number(this.behavior.action_poll_seconds) * 1_000,
     );
     for (const timer of [renderTimer, refreshTimer, actionTimer]) timer.unref?.();
@@ -264,30 +350,59 @@ export class CampusSimulatorRuntime {
     this.intervals = [];
   }
 
-  async setEnabled(enabled) {
-    const next = Boolean(enabled);
-    if (this.control.enabled === next) {
-      if (next) await this.actionRunner?.tick(new Date());
+  async setControl({ enabled, clock_mode: requestedClockMode, duration_seconds: legacyDuration } = {}) {
+    const nextEnabled = Boolean(enabled);
+    const legacyMode = legacyDuration === undefined ? null
+      : [...CLOCK_MODES].find(([, duration]) => duration === Number(legacyDuration))?.[0];
+    const nextClockMode = requestedClockMode ?? legacyMode ?? this.control.clock_mode;
+    if (nextClockMode !== "realtime" && !CLOCK_MODES.has(nextClockMode)) {
+      throw new Error("Campus Lab clock mode must be realtime, 1m, 15m or 60m.");
+    }
+    const nextDuration = nextClockMode === "realtime" ? null : CLOCK_MODES.get(nextClockMode);
+    const enabledChanged = this.control.enabled !== nextEnabled;
+    const clockModeChanged = this.control.clock_mode !== nextClockMode;
+    if (!enabledChanged && !clockModeChanged) {
+      if (nextEnabled) await this.actionRunner?.tick(new Date());
       this.render();
       return this.snapshot();
     }
-    this.control = { enabled: next, changed_at: new Date().toISOString(), changed_by: "administrator" };
-    if (!next) {
+    this.behavior = { ...this.behavior, clock: nextClockMode === "realtime"
+      ? { mode: "wall_clock", label: "Real campus time" }
+      : { ...this.behavior.clock, mode: "compressed_school_day", duration_seconds: nextDuration, label: durationLabel(nextDuration) } };
+    this.control = {
+      enabled: nextEnabled,
+      clock_mode: nextClockMode,
+      duration_seconds: nextDuration,
+      changed_at: new Date().toISOString(),
+      changed_by: "administrator",
+    };
+    if (!nextEnabled) {
       this.stop();
       this.render();
       return this.snapshot();
     }
-    this.runStartedAt = new Date();
     if (!this.data) {
       this.errors = [];
       this.render();
       void this.bootWithRetry();
       return this.snapshot();
     }
+    if (enabledChanged || clockModeChanged) {
+      const timezone = this.data.setup.school?.timezone ?? this.behavior.timezone;
+      const startDate = dateInZone(new Date(), timezone);
+      this.data.timetable = await schoolDayForDate(this.sessions.admin, this.data.setup.school.id, startDate);
+      this.simulationStartDate = startDate;
+      this.simulationEndDate = addCalendarDays(startDate, 29);
+    }
+    this.resetRun(new Date(), true);
     void this.refresh().then(() => this.actionRunner?.tick(new Date()));
     this.startIntervals();
     this.render();
     return this.snapshot();
+  }
+
+  setEnabled(enabled) {
+    return this.setControl({ enabled, clock_mode: this.control.clock_mode });
   }
 
   bootWithRetry({ retryMs = 15_000 } = {}) {
@@ -318,4 +433,4 @@ export class CampusSimulatorRuntime {
   }
 }
 
-export const runtimeInternals = { allStudents, currentSchoolDay, dateInZone, emptyStatus, errorMessage };
+export const runtimeInternals = { addCalendarDays, allStudents, currentSchoolDay, schoolDayForDate, dateInZone, emptyStatus, errorMessage };

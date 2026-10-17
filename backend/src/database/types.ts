@@ -25,7 +25,7 @@ export interface UserTable {
 
 export interface SchoolTable { id: Generated<string>; name: string; code: string; timezone: Generated<string>; attendance_submission_cutoff: Generated<string>; institution_kind: Generated<"school" | "college" | "coaching" | "hybrid">; onboarding_model: Generated<"company_managed" | "company_verified" | "self_service_coaching">; verification_status: Generated<"not_required" | "pending" | "approved" | "rejected">; created_by_user_id: string | null; created_at: Timestamp }
 export interface MembershipTable { id: Generated<string>; user_id: string; school_id: string; role: "student" | "guardian" | "staff" | "admin"; is_active: Generated<boolean>; created_at: Timestamp }
-export interface HostedCampusLabControlTable { school_id: string; enabled: Generated<boolean>; changed_by: string | null; changed_at: Timestamp }
+export interface HostedCampusLabControlTable { school_id: string; enabled: Generated<boolean>; clock_mode: Generated<"realtime"|"1m"|"15m"|"60m">; changed_by: string | null; changed_at: Timestamp }
 export interface SchoolPersonTable { id: Generated<string>; school_id: string; first_name: string; last_name: Generated<string>; contact_phone: Generated<string>; contact_email: Generated<string>; avatar_url: Generated<string>; revision: Generated<number>; created_at: Timestamp }
 export interface GuardianSchoolProfileTable { school_id: string; guardian_id: string; person_id: string }
 export interface StudentTable { id: Generated<string>; person_id: Generated<string>; user_id: string | null; school_id: string; admission_number: string; date_of_birth: DateOnly | null; blood_group: string | null; emergency_contact: string | null; avatar_url: Generated<string>; created_at: Timestamp }
@@ -165,16 +165,58 @@ export interface InstitutionSetupAuditTable {
   id: Generated<string>; school_id: string; actor_id: string; action: string;
   target_type: string; target_id: string | null; metadata: Json; created_at: Timestamp;
 }
+export interface OperationalRealmTable {
+  id: Generated<string>; realm_kind: Generated<string>; legacy_school_id: string | null;
+  status: Generated<"setup" | "active" | "suspended" | "closed">;
+  created_at: Timestamp; updated_at: Timestamp;
+}
+export interface ExecutionEnvironmentNamespaceTable {
+  namespace_id: string; realm_id: string; environment_kind: "live" | "simulation";
+  source_namespace_id: string | null; status: Generated<"active" | "expired" | "closed">;
+  expires_at: NullableTimestamp; created_at: Timestamp;
+}
+export interface ModelSemanticTypeDefinitionTable {
+  id: Generated<string>; namespace: string; type_key: string; definition_kind: "entity" | "relationship";
+  version: number; owning_domain: string; status: "approved" | "active" | "deprecated" | "retired";
+  definition: Json; content_hash: string; approved_by_authority: string;
+  activated_at: NullableTimestamp; retired_at: NullableTimestamp; created_at: Timestamp;
+}
+export interface ModelProtocolSchemaDefinitionTable {
+  id: Generated<string>; namespace: string; schema_key: string;
+  protocol_kind: "event" | "observation" | "assertion" | "message" | "command" | "outcome";
+  version: number; owning_domain: string; status: "approved" | "active" | "deprecated" | "retired";
+  schema_document: Json; content_hash: string; approved_by_authority: string;
+  activated_at: NullableTimestamp; retired_at: NullableTimestamp; created_at: Timestamp;
+}
+export interface ModelCapabilityManifestTable {
+  id: Generated<string>; namespace: string; capability_key: string; version: number;
+  status: "approved" | "active" | "deprecated" | "retired"; adapter_key: string;
+  compatible_core_range: string; manifest: Json; content_hash: string;
+  approved_by_authority: string; activated_at: NullableTimestamp;
+  retired_at: NullableTimestamp; created_at: Timestamp;
+}
+export interface RealmModelContractActivationTable {
+  id: Generated<string>; realm_id: string;
+  contract_kind: "semantic_type" | "protocol_schema" | "capability_manifest";
+  contract_key: string; contract_id: string; contract_version: number;
+  status: "active" | "suspended" | "retired";
+  effective_from: Timestamp; effective_until: NullableTimestamp;
+  activated_by_authority: string; created_at: Timestamp;
+}
 export interface CampusModelEntityTable {
-  id: Generated<string>; school_id: string; kind: string; domain: string; domain_id: string;
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  kind: string; domain: string; domain_id: string;
   label: string; lifecycle_state: "planned" | "active" | "inactive" | "retired" | "archived";
   source_revision: Generated<number>; metadata: Json; revision: Generated<number>;
+  semantic_type_definition_id: Generated<string | null>; semantic_type_version: Generated<number | null>;
   created_at: Timestamp; updated_at: Timestamp;
 }
 export interface CampusModelRelationshipTable {
-  id: Generated<string>; school_id: string; relation_type: string; source_entity_id: string;
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  relation_type: string; source_entity_id: string;
   target_entity_id: string; effective_from: Timestamp; effective_until: NullableTimestamp;
   source_domain: string; source_record_id: string; source_revision: Generated<number>;
+  semantic_type_definition_id: Generated<string | null>; semantic_type_version: Generated<number | null>;
   metadata: Json; created_at: Timestamp; updated_at: Timestamp;
 }
 export interface CampusModelAgentTable {
@@ -229,7 +271,7 @@ export interface CampusModelEventSubscriptionTable {
   created_at: Timestamp;
 }
 export interface CampusModelReactionTable {
-  id: Generated<string>; school_id: string; trigger_event_id: string;
+  id: Generated<string>; school_id: string; realm_id: Generated<string>; environment_namespace_id: Generated<string>; trigger_event_id: string;
   source_outbox_event_id: string; behaviour_version_id: string; subscription_id: string;
   recipient_agent_id: string; reaction_kind: string;
   state: "queued" | "delivered" | "acknowledged" | "completed" | "expired" | "cancelled" | "dead_letter";
@@ -240,14 +282,14 @@ export interface CampusModelReactionTable {
   completed_at: NullableTimestamp;
 }
 export interface CampusModelCoordinationExceptionTable {
-  id: Generated<string>; school_id: string; trigger_event_id: string; source_outbox_event_id: string;
+  id: Generated<string>; school_id: string; realm_id: Generated<string>; environment_namespace_id: Generated<string>; trigger_event_id: string; source_outbox_event_id: string;
   exception_code: "configuration_missing" | "configuration_invalid" | "selector_invalid" | "recipient_unresolved" | "recipient_unauthorized";
   status: "open" | "resolved"; selector_key: string; explanation: string; details: Json;
   correlation_id: string; created_at: Timestamp; resolved_at: NullableTimestamp;
   resolved_by_agent_id: string | null;
 }
 export interface CampusModelOperationalMessageTable {
-  id: Generated<string>; school_id: string; reaction_id: string; sender_agent_id: string;
+  id: Generated<string>; school_id: string; realm_id: Generated<string>; environment_namespace_id: Generated<string>; reaction_id: string; sender_agent_id: string;
   recipient_agent_id: string; owner_agent_id: string;
   message_kind: "request" | "task" | "offer" | "update";
   state: "queued" | "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
@@ -259,33 +301,152 @@ export interface CampusModelOperationalMessageTable {
   dead_lettered_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp;
 }
 export interface CampusModelOperationalMessageOutcomeTable {
-  id: Generated<string>; school_id: string; message_id: string; sequence: number;
+  id: Generated<string>; school_id: string; realm_id: Generated<string>; environment_namespace_id: Generated<string>; message_id: string; sequence: number;
   state: "delivered" | "acknowledged" | "responded" | "expired" | "cancelled" | "dead_letter";
   actor_agent_id: string | null; source_outbox_event_id: string | null; code: string;
   explanation: string; response: Json | null; occurred_at: Timestamp;
   idempotency_key: string; request_hash: string; created_at: Timestamp;
 }
 export interface CampusModelObservationTable {
-  id: Generated<string>; school_id: string; kind: string; subject_entity_id: string;
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  kind: string; subject_entity_id: string;
   context_entity_id: string | null; captured_by_agent_id: string; source_type: string;
   source_ref: string | null; source_record_id: string; observed_at: Timestamp; received_at: Timestamp;
   evidence_refs: Generated<string[]>; payload: Json; schema_version: Generated<number>;
   state: Generated<"pending" | "accepted" | "rejected" | "quarantined" | "superseded">;
   idempotency_key: string; request_hash: string; domain_event_id: string | null; created_at: Timestamp;
+  protocol_schema_definition_id: Generated<string | null>; protocol_schema_version: Generated<number | null>;
+  capability_manifest_id: Generated<string | null>; capability_manifest_version: Generated<number | null>;
 }
 export interface CampusModelCommandTable {
-  id: Generated<string>; school_id: string; command_type: string; target_entity_id: string | null;
-  actor_agent_id: string; state: Generated<"pending" | "review_required" | "accepted" | "rejected" | "conflicted" | "expired" | "failed" | "cancelled">;
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  command_type: string; target_entity_id: string | null;
+  actor_agent_id: string; state: Generated<"pending" | "review_required" | "accepted" | "rejected" | "conflicted" | "expired" | "failed" | "uncertain" | "cancelled">;
   requested_at: Timestamp; effective_at: NullableTimestamp; expected_revision: number | null;
   authority_evidence: Generated<string[]>; operating_rule_version_ref: string | null;
+  authority_receipt_id: string | null;
   correlation_id: string; causation_id: string | null; idempotency_key: string;
-  source_domain: string; safe_context: Json; created_at: Timestamp; updated_at: Timestamp;
+  source_domain: string; safe_context: Json; request_hash: string; handler_key: string;
+  handler_version: number; configuration_refs: Json; execution_started_at: NullableTimestamp;
+  completed_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp;
 }
 export interface CampusModelCommandOutcomeTable {
-  id: Generated<number>; command_id: string; sequence: number;
-  status: "review_required" | "accepted" | "rejected" | "conflicted" | "expired" | "failed" | "cancelled";
+  id: Generated<number>; realm_id: string; environment_namespace_id: string;
+  command_id: string; sequence: number;
+  status: "review_required" | "accepted" | "rejected" | "conflicted" | "expired" | "failed" | "uncertain" | "cancelled";
   code: string; explanation: string; resulting_entity_id: string | null;
   resulting_revision: number | null; domain_event_id: string | null; metadata: Json; recorded_at: Timestamp;
+}
+export interface CampusModelExecutionSnapshotTable {
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  snapshot_kind: "live_activation" | "simulation_fork" | "rehearsal"; source_snapshot_ref: string;
+  core_contract_version: string; configuration_hash: string; source_recorded_at: Timestamp;
+  sealed_at: Timestamp; sealed_by_authority: string; metadata: Json; created_at: Timestamp;
+}
+export interface CampusModelExecutionSnapshotItemTable {
+  id: Generated<string>; snapshot_id: string; realm_id: string; environment_namespace_id: string;
+  item_kind: "operating_rule" | "behaviour" | "domain_configuration" | "semantic_contract" | "protocol_contract" | "capability_manifest" | "terminology";
+  item_key: string; version_ref: string; content_hash: string; effective_from: Timestamp;
+  effective_until: NullableTimestamp; source_ref: string; metadata: Json; created_at: Timestamp;
+}
+export interface CampusModelExecutionActorBindingTable {
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  source_agent_id: string; execution_actor_id: Generated<string>;
+  actor_mode: "live_agent" | "simulation_counterpart" | "delegate"; binding_key: string;
+  snapshot_id: string | null; behaviour_policy_version_ref: string | null;
+  authority_snapshot_ref: string | null; status: "active" | "suspended" | "revoked";
+  effective_from: Timestamp; effective_until: NullableTimestamp; created_at: Timestamp;
+}
+export interface CampusModelAuthoritySnapshotGrantTable {
+  id: Generated<string>; snapshot_id: string; school_id: string; realm_id: string;
+  environment_namespace_id: string; source_authority_id: string; agent_id: string;
+  capability: string; scope_entity_id: string | null; effective_from: Timestamp;
+  effective_until: NullableTimestamp; operating_rule_version_ref: string | null;
+  constraints: Json; content_hash: string; created_at: Timestamp;
+}
+export interface CampusModelAuthorityReceiptTable {
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  actor_agent_id: string; execution_actor_id: string | null; capability: string; purpose: string;
+  scope_entity_id: string | null; decision: "allowed" | "denied"; reason_codes: string[];
+  authority_source_refs: Json; operating_rule_refs: Json; evaluated_at: Timestamp;
+  valid_until: NullableTimestamp; correlation_id: string; causation_id: string | null;
+  idempotency_key: string; request_hash: string; created_at: Timestamp;
+}
+export interface CampusModelEnvironmentProjectionCheckpointTable {
+  realm_id: string; environment_namespace_id: string; consumer: string;
+  last_delivery_sequence: Generated<number>; last_event_id: string | null;
+  state: Generated<"active" | "rebuilding" | "failed" | "paused">;
+  lease_owner: string | null; lease_until: NullableTimestamp; last_error_code: string | null;
+  updated_at: Timestamp;
+}
+export interface ModelSnapshotAdapterDefinitionTable {
+  id: Generated<string>; namespace: string; adapter_key: string; version: number; module_id: string;
+  capability_manifest_id: string; handler_key: string; capture_schema_version: number;
+  restore_schema_version: number; content_hash: string;
+  status: "approved" | "active" | "deprecated" | "retired";
+  approved_by_authority: string; created_at: Timestamp;
+}
+export interface RealmSnapshotAdapterActivationTable {
+  id: Generated<string>; realm_id: string; adapter_definition_id: string; adapter_version: number;
+  module_id: string; required: Generated<boolean>; status: "active" | "suspended" | "retired";
+  effective_from: Timestamp; effective_until: NullableTimestamp; activated_by_authority: string; created_at: Timestamp;
+}
+export interface CampusModelSnapshotProvisionTable {
+  id: Generated<string>; school_id: string; realm_id: string; source_environment_namespace_id: string;
+  source_snapshot_ref: string; state: "collecting" | "blocked" | "ready" | "restoring" | "restored" | "expired" | "failed";
+  requested_modules: string[]; missing_modules: Generated<string[]>; expected_adapter_count: number;
+  coverage_hash: string; manifest_hash: string | null; source_recorded_at: Timestamp; expires_at: Timestamp;
+  requested_by_agent_id: string; authority_receipt_id: string; correlation_id: string;
+  idempotency_key: string; request_hash: string; failure_code: string | null; created_at: Timestamp; sealed_at: NullableTimestamp;
+}
+export interface CampusModelSnapshotExpectedAdapterTable {
+  provision_id: string; realm_id: string; source_environment_namespace_id: string;
+  adapter_definition_id: string; adapter_version: number; module_id: string;
+  capture_schema_version: number; restore_schema_version: number; content_hash: string;
+}
+export interface CampusModelSnapshotContributionTable {
+  id: Generated<string>; provision_id: string; realm_id: string; source_environment_namespace_id: string;
+  adapter_definition_id: string; adapter_version: number; module_id: string; artifact_ref: string;
+  artifact_hash: string; restore_schema_version: number; record_count: number; source_revision_watermark: string;
+  privacy_transform_ref: string; capture_schema_version: number; captured_at: Timestamp;
+  metadata: Json; created_at: Timestamp;
+}
+export interface CampusModelSnapshotRestoreTable {
+  id: Generated<string>; provision_id: string; execution_snapshot_id: string; realm_id: string;
+  target_environment_namespace_id: string; state: "restoring" | "ready" | "failed" | "expired";
+  expected_adapter_count: number; restored_adapter_count: Generated<number>; manifest_hash: string;
+  started_at: Timestamp; completed_at: NullableTimestamp; failure_code: string | null; created_at: Timestamp;
+}
+export interface CampusModelSnapshotRestoreContributionTable {
+  restore_id: string; realm_id: string; target_environment_namespace_id: string;
+  adapter_definition_id: string; adapter_version: number; artifact_hash: string; restore_schema_version: number;
+  restored_record_count: number; restored_at: Timestamp; receipt: Json;
+}
+export interface CampusModelProjectionRecoveryJobTable {
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  consumer: string; mode: "rebuild" | "replay" | "verify";
+  state: "scheduled" | "leased" | "running" | "retry_scheduled" | "completed" | "failed" | "cancelled" | "quarantined";
+  from_sequence: number; through_sequence: number | null; attempt_count: Generated<number>;
+  max_attempts: number; retry_policy_ref: string; retry_delays_seconds: number[];
+  available_at: Timestamp; lease_owner: string | null; lease_until: NullableTimestamp;
+  last_error_code: string | null; requested_by_agent_id: string; authority_receipt_id: string;
+  correlation_id: string; idempotency_key: string; request_hash: string; created_at: Timestamp; updated_at: Timestamp; completed_at: NullableTimestamp;
+}
+export interface CampusModelProjectionReplayQuarantineTable {
+  id: Generated<string>; job_id: string; realm_id: string; environment_namespace_id: string;
+  event_id: string; delivery_sequence: number; error_code: string; schema_ref: string | null;
+  safe_diagnostics: Json; status: "open" | "released" | "discarded";
+  quarantined_at: Timestamp; resolved_at: NullableTimestamp; resolved_by_agent_id: string | null;
+}
+export interface CampusModelEnvironmentRetentionJobTable {
+  id: Generated<string>; school_id: string; realm_id: string; environment_namespace_id: string;
+  state: "scheduled" | "leased" | "running" | "completed" | "failed" | "cancelled";
+  delete_after: Timestamp; available_at: Timestamp; artifact_classes: string[]; retention_policy_ref: string;
+  scheduled_by_agent_id: string; authority_receipt_id: string; correlation_id: string;
+  idempotency_key: string; request_hash: string;
+  lease_owner: string | null; lease_until: NullableTimestamp; attempt_count: Generated<number>;
+  max_attempts: number; retry_delays_seconds: number[]; deleted_counts: Json; last_error_code: string | null;
+  created_at: Timestamp; completed_at: NullableTimestamp;
 }
 export interface StaffLeaveCommandTable {
   id: Generated<string>; school_id: string; actor_id: string; command_id: string;
@@ -298,7 +459,7 @@ export interface CampusModelProjectionCheckpointTable {
   consumer: string; last_delivery_sequence: Generated<number>; last_event_id: string | null; updated_at: Timestamp;
 }
 export interface CampusModelEventTable {
-  id: Generated<string>; school_id: string; event_kind: "plan" | "observation" | "decision" | "command_outcome" | "domain_event";
+  id: Generated<string>; school_id: string; realm_id: Generated<string>; environment_namespace_id: Generated<string>; event_kind: "plan" | "observation" | "decision" | "command_outcome" | "domain_event";
   event_type: string; subject_entity_id: string; context_entity_id: string | null; actor_agent_id: string | null;
   source_domain: string; source_record_id: string; source_revision: number; event_at: Timestamp;
   effective_from: Timestamp; effective_until: NullableTimestamp; recorded_at: Timestamp;
@@ -308,7 +469,7 @@ export interface CampusModelEventTable {
   journal_sequence: Generated<string>;
 }
 export interface CampusModelScheduleOccurrenceTable {
-  id: Generated<string>; school_id: string; source_event_id: string; schedule_entity_id: string;
+  id: Generated<string>; school_id: string; realm_id: Generated<string>; environment_namespace_id: Generated<string>; source_event_id: string; schedule_entity_id: string;
   period_entity_id: string; class_entity_id: string; subject_entity_id: string | null;
   responsible_agent_id: string | null; space_entity_id: string | null; occurrence_date: DateOnly;
   starts_at: Timestamp; ends_at: Timestamp; title: string; slot_type: "class" | "break" | "activity";
@@ -595,6 +756,16 @@ export interface RestrictedCareAuditTable {
   action: string; metadata: Json; created_at: Timestamp;
 }
 export interface AuthSessionTable { token_hash: string; user_id: string; csrf_token: string; expires_at: Timestamp; created_at: Timestamp; last_seen_at: Timestamp; ip_hash: string | null; user_agent: Generated<string>; active_school_id: Generated<string | null>; is_public_demo: Generated<boolean> }
+export interface AuthSessionExecutionEnvironmentTable {
+  token_hash: string;
+  school_id: string;
+  scenario_id: string;
+  run_id: string;
+  namespace_id: string;
+  expires_at: Timestamp;
+  bound_by: string;
+  bound_at: Generated<Date>;
+}
 export interface AuditEventTable { id: Generated<string>; action: string; actor_id: string | null; school_id: string | null; target_type: Generated<string>; target_id: string | null; request_id: string; ip_hash: string | null; metadata: Json; created_at: Timestamp }
 export interface AiConversationTable { id: Generated<string>; owner_id: string; student_id: string; title: string; status: Generated<"active" | "archived">; created_at: Timestamp; updated_at: Timestamp }
 export interface AiMessageTable { id: Generated<string>; conversation_id: string; role: "user" | "assistant"; content: string; citations: Json; provider: string; model: string; status: Generated<"complete" | "error">; latency_ms: number | null; created_at: Timestamp }
@@ -854,6 +1025,12 @@ export interface Database {
   class_campus_placements: ClassCampusPlacementTable;
   staff_campus_assignments: StaffCampusAssignmentTable;
   institution_setup_audits: InstitutionSetupAuditTable;
+  operational_realms: OperationalRealmTable;
+  execution_environment_namespaces: ExecutionEnvironmentNamespaceTable;
+  model_semantic_type_definitions: ModelSemanticTypeDefinitionTable;
+  model_protocol_schema_definitions: ModelProtocolSchemaDefinitionTable;
+  model_capability_manifests: ModelCapabilityManifestTable;
+  realm_model_contract_activations: RealmModelContractActivationTable;
   campus_model_entities: CampusModelEntityTable;
   campus_model_relationships: CampusModelRelationshipTable;
   campus_model_agents: CampusModelAgentTable;
@@ -869,6 +1046,22 @@ export interface Database {
   campus_model_observations: CampusModelObservationTable;
   campus_model_commands: CampusModelCommandTable;
   campus_model_command_outcomes: CampusModelCommandOutcomeTable;
+  campus_model_execution_snapshots: CampusModelExecutionSnapshotTable;
+  campus_model_execution_snapshot_items: CampusModelExecutionSnapshotItemTable;
+  campus_model_execution_actor_bindings: CampusModelExecutionActorBindingTable;
+  campus_model_authority_snapshot_grants: CampusModelAuthoritySnapshotGrantTable;
+  campus_model_authority_receipts: CampusModelAuthorityReceiptTable;
+  campus_model_environment_projection_checkpoints: CampusModelEnvironmentProjectionCheckpointTable;
+  model_snapshot_adapter_definitions: ModelSnapshotAdapterDefinitionTable;
+  realm_snapshot_adapter_activations: RealmSnapshotAdapterActivationTable;
+  campus_model_snapshot_provisions: CampusModelSnapshotProvisionTable;
+  campus_model_snapshot_expected_adapters: CampusModelSnapshotExpectedAdapterTable;
+  campus_model_snapshot_contributions: CampusModelSnapshotContributionTable;
+  campus_model_snapshot_restores: CampusModelSnapshotRestoreTable;
+  campus_model_snapshot_restore_contributions: CampusModelSnapshotRestoreContributionTable;
+  campus_model_projection_recovery_jobs: CampusModelProjectionRecoveryJobTable;
+  campus_model_projection_replay_quarantine: CampusModelProjectionReplayQuarantineTable;
+  campus_model_environment_retention_jobs: CampusModelEnvironmentRetentionJobTable;
   campus_model_projection_checkpoints: CampusModelProjectionCheckpointTable;
   campus_model_events: CampusModelEventTable;
   campus_model_schedule_occurrences: CampusModelScheduleOccurrenceTable;
@@ -909,6 +1102,7 @@ export interface Database {
   restricted_care_external_reports: RestrictedCareExternalReportTable;
   restricted_care_audits: RestrictedCareAuditTable;
   auth_sessions: AuthSessionTable;
+  auth_session_execution_environments: AuthSessionExecutionEnvironmentTable;
   audit_events: AuditEventTable;
   ai_conversations: AiConversationTable;
   ai_messages: AiMessageTable;

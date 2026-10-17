@@ -41,6 +41,22 @@ export interface HumanAgentIdentity {
   person_id: string;
 }
 
+export type NonHumanAgentKind = "team" | "device" | "integration" | "software";
+export type ScenarioSourceAgentKind = "human" | NonHumanAgentKind;
+
+export interface NonHumanAgentIdentity {
+  kind: NonHumanAgentKind;
+  agent_id: string;
+  external_ref: string;
+}
+
+/**
+ * A stable identity copied from the live Model Core agent registry. It is a
+ * reference to the source actor only; it carries no live credential, endpoint or
+ * authority into the scenario namespace.
+ */
+export type ScenarioSourceAgentIdentity = HumanAgentIdentity | NonHumanAgentIdentity;
+
 export interface DelegateAgentIdentity {
   kind: "delegate";
   delegate_agent_id: string;
@@ -56,11 +72,38 @@ export interface ScenarioPersonaIdentity {
   behaviour_policy_version_id: string | null;
 }
 
-export interface ScenarioIdentityMapping {
+/**
+ * Run-local counterpart for any source agent. Counterparts are isolated actors,
+ * not aliases or impersonations of the live source agent.
+ */
+export interface ScenarioCounterpartIdentity {
+  kind: "scenario_counterpart";
+  scenario_counterpart_id: string;
+  scenario_id: string;
+  source_agent_id: string;
+  source_agent_kind: ScenarioSourceAgentKind;
+  behaviour_policy_version_id: string | null;
+}
+
+export interface ScenarioCounterpartIdentityMapping {
+  source: ScenarioSourceAgentIdentity;
+  delegates: readonly DelegateAgentIdentity[];
+  counterpart: ScenarioCounterpartIdentity;
+}
+
+/**
+ * Compatibility input for the first human-only scenario slice. New snapshots
+ * must emit ScenarioCounterpartIdentityMapping instead.
+ */
+export interface LegacyHumanScenarioIdentityMapping {
   human: HumanAgentIdentity;
   delegates: readonly DelegateAgentIdentity[];
   persona: ScenarioPersonaIdentity;
 }
+
+export type ScenarioIdentityMapping =
+  | ScenarioCounterpartIdentityMapping
+  | LegacyHumanScenarioIdentityMapping;
 
 export type ScenarioSideEffectKind =
   | "scenario_event"
@@ -100,17 +143,32 @@ export interface VirtualClock {
   advanceTo(instant: string): string;
 }
 
-export interface ScenarioMessage {
+interface ScenarioMessageBase {
   id: string;
   scenario_id: string;
   namespace_id: string;
   run_id: string;
-  sender_persona_id: string;
-  recipient_persona_id: string;
   protocol: string;
   payload: ScenarioValue;
   sent_at: string;
 }
+
+export interface ScenarioCounterpartMessage extends ScenarioMessageBase {
+  sender_counterpart_id: string;
+  recipient_counterpart_id: string;
+  sender_persona_id?: never;
+  recipient_persona_id?: never;
+}
+
+/** Compatibility envelope for human-only callers from the first scenario slice. */
+export interface LegacyScenarioPersonaMessage extends ScenarioMessageBase {
+  sender_persona_id: string;
+  recipient_persona_id: string;
+  sender_counterpart_id?: never;
+  recipient_counterpart_id?: never;
+}
+
+export type ScenarioMessage = ScenarioCounterpartMessage | LegacyScenarioPersonaMessage;
 
 export interface ScenarioArtifactInput {
   kind: string;
@@ -137,8 +195,14 @@ export interface ScenarioEvidenceStore {
 }
 
 export interface ScenarioIdentityResolver {
+  resolveCounterpart(scenarioCounterpartId: string): ScenarioCounterpartIdentity | null;
+  counterpartForSource(sourceAgentId: string): ScenarioCounterpartIdentity | null;
+  sourceForCounterpart(scenarioCounterpartId: string): ScenarioSourceAgentIdentity | null;
+  /** @deprecated Human-only compatibility adapter. */
   resolvePersona(scenarioPersonaId: string): ScenarioPersonaIdentity | null;
+  /** @deprecated Human-only compatibility adapter. */
   personaForHuman(humanAgentId: string): ScenarioPersonaIdentity | null;
+  /** @deprecated Human-only compatibility adapter. */
   humanForPersona(scenarioPersonaId: string): HumanAgentIdentity | null;
   delegate(delegateAgentId: string): DelegateAgentIdentity | null;
 }

@@ -59,18 +59,19 @@ function request(monteCarlo = false): ScenarioRunRequest {
       effective_until: null,
     }],
     identities: [{
-      human: { kind: "human", human_agent_id: "human-kavita", person_id: "person-kavita" },
+      source: { kind: "human", human_agent_id: "human-kavita", person_id: "person-kavita" },
       delegates: [{
         kind: "delegate",
         delegate_agent_id: "delegate-kavita",
         acts_for_human_agent_id: "human-kavita",
         authority_snapshot_ref: "authority:kavita:v2",
       }],
-      persona: {
-        kind: "scenario_persona",
-        scenario_persona_id: "persona-kavita",
+      counterpart: {
+        kind: "scenario_counterpart",
+        scenario_counterpart_id: "persona-kavita",
         scenario_id: "scenario-teacher-away",
-        source_human_agent_id: "human-kavita",
+        source_agent_id: "human-kavita",
+        source_agent_kind: "human",
         behaviour_policy_version_id: monteCarlo ? policy.version_id : null,
       },
     }],
@@ -111,8 +112,8 @@ const executor: PureScenarioExecutor = {
       scenario_id: input.context.scenario_id,
       namespace_id: input.context.namespace_id,
       run_id: input.context.run_id,
-      sender_persona_id: "persona-kavita",
-      recipient_persona_id: "persona-kavita",
+      sender_counterpart_id: "persona-kavita",
+      recipient_counterpart_id: "persona-kavita",
       protocol: "scenario.self_check",
       payload: { plan: input.plan.key },
       sent_at: input.context.clock.nowIso(),
@@ -203,7 +204,7 @@ describe("isolated campus scenario runtime", () => {
       .rejects.toThrow("versioned behaviour policy");
   });
 
-  it("separates human, delegate and scenario persona identities and denies live side effects", () => {
+  it("separates source agents, delegates and scenario counterparts and denies live side effects", () => {
     const fixture = request();
     const context = createScenarioExecutionContext({
       mode: fixture.mode,
@@ -219,6 +220,10 @@ describe("isolated campus scenario runtime", () => {
 
     expect(context.identity_resolver.humanForPersona("persona-kavita"))
       .toMatchObject({ kind: "human", human_agent_id: "human-kavita" });
+    expect(context.identity_resolver.counterpartForSource("human-kavita"))
+      .toMatchObject({ kind: "scenario_counterpart", source_agent_kind: "human" });
+    expect(context.identity_resolver.sourceForCounterpart("persona-kavita"))
+      .toMatchObject({ kind: "human", person_id: "person-kavita" });
     expect(context.identity_resolver.delegate("delegate-kavita"))
       .toMatchObject({ kind: "delegate", acts_for_human_agent_id: "human-kavita" });
     expect(context.identity_resolver.resolvePersona("delegate-kavita")).toBeNull();
@@ -232,6 +237,105 @@ describe("isolated campus scenario runtime", () => {
       target_namespace_id: fixture.namespace_id,
       target_ref: "teacher@example.test",
     })).toThrow(SideEffectDeniedError);
+  });
+
+  it("maps human, team, device, integration and software sources to isolated counterparts", () => {
+    const fixture = request();
+    const kinds = ["team", "device", "integration", "software"] as const;
+    const context = createScenarioExecutionContext({
+      mode: fixture.mode,
+      namespace_id: fixture.namespace_id,
+      institution_id: fixture.institution_id,
+      scenario_id: fixture.scenario_id,
+      run_id: fixture.run_id,
+      deterministic_seed: fixture.deterministic_seed,
+      horizon: fixture.horizon,
+      configuration_snapshot: fixture.configuration_snapshot,
+      identities: [
+        ...fixture.identities,
+        ...kinds.map((kind) => ({
+          source: { kind, agent_id: `${kind}-source`, external_ref: `${kind}:source` },
+          delegates: [],
+          counterpart: {
+            kind: "scenario_counterpart" as const,
+            scenario_counterpart_id: `${kind}-counterpart`,
+            scenario_id: fixture.scenario_id,
+            source_agent_id: `${kind}-source`,
+            source_agent_kind: kind,
+            behaviour_policy_version_id: null,
+          },
+        })),
+      ],
+    });
+
+    for (const kind of kinds) {
+      expect(context.identity_resolver.counterpartForSource(`${kind}-source`))
+        .toMatchObject({ source_agent_kind: kind, source_agent_id: `${kind}-source` });
+      expect(context.identity_resolver.sourceForCounterpart(`${kind}-counterpart`))
+        .toEqual({ kind, agent_id: `${kind}-source`, external_ref: `${kind}:source` });
+    }
+    context.message_dispatcher.dispatch({
+      id: "device-to-team",
+      scenario_id: fixture.scenario_id,
+      namespace_id: fixture.namespace_id,
+      run_id: fixture.run_id,
+      sender_counterpart_id: "device-counterpart",
+      recipient_counterpart_id: "team-counterpart",
+      protocol: "scenario.observation",
+      payload: { state: "reported" },
+      sent_at: fixture.horizon.from,
+    });
+    expect(context.message_dispatcher.messages()).toHaveLength(1);
+    expect(context.identity_resolver.resolvePersona("device-counterpart")).toBeNull();
+  });
+
+  it("keeps legacy human persona mappings readable without weakening counterpart checks", () => {
+    const fixture = request();
+    const context = createScenarioExecutionContext({
+      mode: fixture.mode,
+      namespace_id: fixture.namespace_id,
+      institution_id: fixture.institution_id,
+      scenario_id: fixture.scenario_id,
+      run_id: fixture.run_id,
+      deterministic_seed: fixture.deterministic_seed,
+      horizon: fixture.horizon,
+      configuration_snapshot: fixture.configuration_snapshot,
+      identities: [{
+        human: { kind: "human", human_agent_id: "legacy-human", person_id: "legacy-person" },
+        delegates: [],
+        persona: {
+          kind: "scenario_persona",
+          scenario_persona_id: "legacy-persona",
+          scenario_id: fixture.scenario_id,
+          source_human_agent_id: "legacy-human",
+          behaviour_policy_version_id: null,
+        },
+      }],
+    });
+
+    expect(context.identity_resolver.resolvePersona("legacy-persona"))
+      .toMatchObject({ source_human_agent_id: "legacy-human" });
+    expect(context.identity_resolver.resolveCounterpart("legacy-persona"))
+      .toMatchObject({ source_agent_id: "legacy-human", source_agent_kind: "human" });
+  });
+
+  it("fails closed when a counterpart does not match its source agent", () => {
+    const fixture = request();
+    const mismatched = structuredClone(fixture.identities);
+    const mapping = mismatched[0];
+    if (!mapping || !("counterpart" in mapping)) throw new Error("Generalized mapping expected.");
+    mapping.counterpart.source_agent_id = "another-agent";
+    expect(() => createScenarioExecutionContext({
+      mode: fixture.mode,
+      namespace_id: fixture.namespace_id,
+      institution_id: fixture.institution_id,
+      scenario_id: fixture.scenario_id,
+      run_id: fixture.run_id,
+      deterministic_seed: fixture.deterministic_seed,
+      horizon: fixture.horizon,
+      configuration_snapshot: fixture.configuration_snapshot,
+      identities: mismatched,
+    })).toThrow("source agent and kind");
   });
 
   it("uses deterministic random streams and a bounded forward-only virtual clock", () => {

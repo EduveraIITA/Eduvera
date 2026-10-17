@@ -20,6 +20,14 @@ not use their older stack, workflow or navigation proposals to override current
 contracts. Do not rewrite historical implementation evidence to pretend an older
 release followed a later decision.
 
+The current simulation invariant is intentionally simple: ThatCampus has one
+authoritative Live campus. An authorized user may temporarily fork its state into an
+isolated, expiring Simulation context, but continues to operate the same application,
+routes, modules and workflows. Only the compact top **Live**/**Simulation** marker and
+Simulation virtual time need differ. Every read, action, cache and realtime stream
+must resolve from the server-authoritative selected context; never build a separate
+simulation mini-app or fall back to Live beneath a Simulation marker.
+
 ## Normative reading map
 
 | Concern | Read |
@@ -27,14 +35,15 @@ release followed a later decision.
 | Product direction and capability-first setup | `PRODUCT_BLUEPRINT_V2.md` |
 | Domain/core separation, identity, events and authority | `CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md` |
 | Typed coordination, configuration, command/outcome and adapter contracts | `THATCAMPUS_MODEL_CORE_BLUEPRINT.md` |
+| Universal realms, environment-qualified identity, semantic catalogues and domain-extension contract | `UNIVERSAL_INSTITUTION_MODEL.md` |
 | Shared shell, domain workspaces, Today, Requests, Updates and interaction | `THATCAMPUS_OPERATING_EXPERIENCE.md` |
 | Current delivery evidence and limitations | `IMPLEMENTATION_PLAN.md` |
 | Campus spaces and dated placements | `INSTITUTION_CAMPUS_REPLICA.md` |
 | Roles, assignments and purpose-specific authority | `WORK_PROFILE_ACCESS_ARCHITECTURE.md`, `INSTITUTE_GOVERNANCE_AUTHORITY_ARCHITECTURE.md` |
 | Institution-owned automatic behaviour | `OPERATING_RULES.md`, plus the Model Core and operating-experience contracts |
 | Timetable and coverage | `ANNUAL_SCHEDULE_PLANNING.md`, `STAFF_RESPONSIBILITIES_AND_COVERAGE.md` |
-| Scenario isolation and forecasts | `CAMPUS_SCENARIO_SIMULATION.md` |
-| Development-only synthetic school activity | `CAMPUS_LAB_DEVELOPMENT_HARNESS.md` |
+| Authoritative Live state, transient Simulation forks, actor counterparts, projections and forecasts | `CAMPUS_SCENARIO_SIMULATION.md` |
+| Cambridge-only Live conformance actor harness | `CAMPUS_LAB_DEVELOPMENT_HARNESS.md` |
 | Read-only campus measurement | `CAMPUS_VIEW_OPERATIONAL_KPIS.md` |
 | Enrollment changes | `STUDENT_ENROLLMENT_LIFECYCLE.md` |
 

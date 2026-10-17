@@ -57,8 +57,11 @@ describe("school event cross-tab channel", () => {
   });
 
   it("isolates both the lock and channel by authenticated user", () => {
-    expect(schoolEventChannelName("user-1")).toBe("omnischool:school-events:user-1");
-    expect(schoolEventLockName("user-1")).toBe("omnischool:school-events:leader:user-1");
+    expect(schoolEventChannelName("user-1")).toBe("omnischool:school-events:live:user-1");
+    expect(schoolEventLockName("user-1")).toBe("omnischool:school-events:leader:live:user-1");
     expect(schoolEventChannelName("user-1")).not.toBe(schoolEventChannelName("user-2"));
+    expect(schoolEventChannelName("user-1", "simulation:run-1")).not.toBe(
+      schoolEventChannelName("user-1", "live:school-1"),
+    );
   });
 });

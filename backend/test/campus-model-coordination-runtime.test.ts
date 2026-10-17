@@ -245,7 +245,7 @@ describe("Campus Model Core coordination architecture", () => {
 
   it("retains idempotent source, reaction, dispatch and response evidence", () => {
     expect(service).toContain("source_outbox_event_id");
-    expect(service).toContain("ON CONFLICT(school_id,idempotency_key) DO NOTHING");
+    expect(service).toContain("ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING");
     expect(service).toContain("campus.coordination.message_queued");
     expect(service).toContain("audience_user_ids=${dispatchAudience}::uuid[]");
     expect(service).toContain("notification_payload IS NULL");

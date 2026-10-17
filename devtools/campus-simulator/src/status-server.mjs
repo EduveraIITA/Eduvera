@@ -30,13 +30,19 @@ async function readControlRequest(request) {
   } catch {
     throw new Error("Control request must be valid JSON.");
   }
-  if (typeof parsed.enabled !== "boolean" || Object.keys(parsed).some((key) => key !== "enabled")) {
-    throw new Error("Control request must contain only a boolean enabled value.");
+  if (typeof parsed.enabled !== "boolean" || Object.keys(parsed).some((key) => !["enabled", "clock_mode", "duration_seconds"].includes(key))) {
+    throw new Error("Control request must contain enabled and may contain a supported clock_mode.");
   }
-  return parsed.enabled;
+  if (parsed.clock_mode !== undefined && !["realtime", "1m", "15m", "60m"].includes(parsed.clock_mode)) {
+    throw new Error("clock_mode must be realtime, 1m, 15m or 60m.");
+  }
+  if (parsed.duration_seconds !== undefined && ![60, 900, 3_600].includes(parsed.duration_seconds)) {
+    throw new Error("duration_seconds must be 60, 900 or 3600.");
+  }
+  return parsed;
 }
 
-export async function startStatusServer({ port, proxyKey, getStatus, setEnabled, host = "127.0.0.1" }) {
+export async function startStatusServer({ port, proxyKey, getStatus, setControl, setEnabled, host = "127.0.0.1" }) {
   if (typeof getStatus !== "function") throw new Error("A status snapshot provider is required.");
   const server = createServer(async (request, response) => {
     if (!secureEqual(request.headers["x-campus-lab-key"], proxyKey)) {
@@ -50,13 +56,14 @@ export async function startStatusServer({ port, proxyKey, getStatus, setEnabled,
         send(response, 405, { error: "Campus Lab control requires POST." });
         return;
       }
-      if (typeof setEnabled !== "function") {
+      const updateControl = typeof setControl === "function" ? setControl : (typeof setEnabled === "function" ? ({ enabled }) => setEnabled(enabled) : null);
+      if (!updateControl) {
         send(response, 503, { error: "Campus Lab control is unavailable." });
         return;
       }
       try {
-        const enabled = await readControlRequest(request);
-        send(response, 200, await setEnabled(enabled));
+        const control = await readControlRequest(request);
+        send(response, 200, await updateControl(control));
       } catch (error) {
         send(response, 400, { error: error instanceof Error ? error.message : "Invalid control request." });
       }

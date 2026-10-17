@@ -5,8 +5,10 @@ import { GoogleAuthService } from "./google-auth.service.js";
 import { AuthService } from "./auth.service.js";
 import { CsrfGuard, SessionGuard } from "./guards.js";
 import { InternalAgentDelegationService } from "./internal-agent-delegation.js";
+import { CampusScenarioModule } from "../campus-scenarios/campus-scenario.module.js";
 
 @Module({
+  imports: [CampusScenarioModule],
   controllers: [AuthController],
   providers: [GoogleAuthService, AuthService, AuditService, SessionGuard, CsrfGuard, InternalAgentDelegationService],
   exports: [AuthService, AuditService, SessionGuard, CsrfGuard, InternalAgentDelegationService],

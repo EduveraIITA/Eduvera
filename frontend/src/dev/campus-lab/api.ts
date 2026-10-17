@@ -46,6 +46,7 @@ export interface CampusLabActivity {
 export interface CampusLabSchedule {
   reference_weekday: number | null;
   reference_date: string | null;
+  timezone?: string | null;
   simulated_at: string | null;
   source: "effective_school_schedule";
   active_slot_ids: string[];
@@ -57,6 +58,7 @@ export interface CampusLabSchedule {
     started_at?: string;
     ends_at?: string;
   };
+  cycle?: { start_date: string; end_date: string; rotation: "repeat" };
 }
 
 export interface CampusLabStatus {
@@ -80,7 +82,7 @@ export interface CampusLabStatus {
   zones: CampusLabZone[];
   activity: CampusLabActivity[];
   errors?: string[];
-  control?: { enabled: boolean; changed_at: string; changed_by: "startup" | "administrator" };
+  control?: { enabled: boolean; clock_mode: "realtime" | "1m" | "15m" | "60m"; duration_seconds: 60 | 900 | 3600 | null; changed_at: string; changed_by: "startup" | "administrator" };
 }
 
 const campusLabBase = import.meta.env.DEV ? "/__campus-lab" : "/api/v1/development/campus-simulator";
@@ -95,13 +97,13 @@ export async function getCampusLabStatus(signal?: AbortSignal): Promise<CampusLa
   return response.json() as Promise<CampusLabStatus>;
 }
 
-export async function setCampusLabEnabled(enabled: boolean): Promise<CampusLabStatus> {
+export async function setCampusLabEnabled(enabled: boolean, clockMode?: "realtime" | "1m" | "15m" | "60m"): Promise<CampusLabStatus> {
   const csrf = document.cookie.split("; ").find((item) => item.startsWith("csrftoken="))?.split("=").slice(1).join("=");
   const response = await fetch(`${campusLabBase}/control`, {
     method: "POST",
     credentials: "same-origin",
     headers: { Accept: "application/json", "Content-Type": "application/json", ...(csrf ? { "X-CSRFToken": decodeURIComponent(csrf) } : {}) },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ enabled, ...(clockMode ? { clock_mode: clockMode } : {}) }),
   });
   if (!response.ok) throw new Error("The Cambridge simulation control is unavailable.");
   return response.json() as Promise<CampusLabStatus>;

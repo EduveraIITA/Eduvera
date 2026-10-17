@@ -63,6 +63,7 @@ export class DevelopmentActionRunner {
     this.completed = new Set();
     this.reactionFirstSeen = new Map();
     this.reactionFailureReported = new Set();
+    this.reactionRejected = new Set();
     this.lastReactionPollAt = 0;
     this.inFlight = false;
     this.noticeId = null;
@@ -79,6 +80,7 @@ export class DevelopmentActionRunner {
       this.noticeId = null;
       this.reactionFirstSeen.clear();
       this.reactionFailureReported.clear();
+      this.reactionRejected.clear();
       this.lastReactionPollAt = 0;
     }
     this.date = nextDate;
@@ -176,6 +178,7 @@ export class DevelopmentActionRunner {
       for (const assignment of detail.exam_operation.invigilators ?? []) {
         if (assignment.status !== "offered") continue;
         const key = `${reaction.id}:${assignment.id}:${assignment.revision}`;
+        if (this.reactionRejected.has(key)) continue;
         const firstSeenAt = this.reactionFirstSeen.get(key) ?? new Date(now).getTime();
         this.reactionFirstSeen.set(key, firstSeenAt);
         if (new Date(now).getTime() - firstSeenAt < Number(reaction.delay_seconds) * 1_000) continue;
@@ -193,15 +196,40 @@ export class DevelopmentActionRunner {
         const actorDetail = await session.request(detailPath);
         const current = actorDetail?.exam_operation?.viewer_assignment;
         if (!current || current.id !== assignment.id || current.status !== "offered") continue;
-        await session.request(`${detailPath}sitting/invigilators/${encodeURIComponent(current.id)}/response/`, {
-          method: "POST",
-          body: {
-            command_id: deterministicUuid(`${schoolId}:${reaction.id}:${current.id}:${current.revision}:${reaction.decision}`),
-            expected_revision: current.revision,
-            decision: reaction.decision,
-            note: reaction.note,
-          },
-        });
+        try {
+          await session.request(`${detailPath}sitting/invigilators/${encodeURIComponent(current.id)}/response/`, {
+            method: "POST",
+            body: {
+              command_id: deterministicUuid(`${schoolId}:${reaction.id}:${current.id}:${current.revision}:${reaction.decision}`),
+              expected_revision: current.revision,
+              decision: reaction.decision,
+              note: reaction.note,
+            },
+          });
+        } catch (error) {
+          const status = Number(error?.status ?? 0);
+          if (status < 400 || status >= 500) throw error;
+          this.reactionRejected.add(key);
+          const failureKey = `${key}:${safeMessage(error)}`;
+          if (!this.reactionFailureReported.has(failureKey)) {
+            this.reactionFailureReported.add(failureKey);
+            this.onActivity(activity({
+              action: reaction,
+              kind: "issue",
+              title: `${assignment.name}'s invigilation offer needs reissue`,
+              detail: `${safeMessage(error)} The stale offer was left unchanged and does not block later valid offers.`,
+              state: "issue",
+              target_path: `/principal/assessments?assessment=${encodeURIComponent(assessment.id)}`,
+            }));
+          }
+          continue;
+        }
+        const reflectedDetail = await this.sessions.admin.request(detailPath);
+        const reflected = (reflectedDetail?.exam_operation?.invigilators ?? [])
+          .find((item) => item.id === current.id);
+        if (!reflected || reflected.status !== reaction.decision) {
+          throw new Error("The invigilation response did not converge in the administrator's assessment workspace.");
+        }
         return activity({
           action: reaction,
           kind: "assessment",
@@ -237,13 +265,19 @@ export class DevelopmentActionRunner {
         ...(recipient.student_id ? { student_id: recipient.student_id } : {}),
       },
     });
-    await this.sessions.staff.request(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages/`, {
+    const body = `Development rehearsal: today's Cambridge class update is ready for ${recipient.name}.`;
+    const sent = await this.sessions.staff.request(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages/`, {
       method: "POST",
       body: {
-        body: `Development rehearsal: today's Cambridge class update is ready for ${recipient.name}.`,
+        body,
         client_id: deterministicUuid(`${this.scope}:${actionDefinition.id}:message`),
       },
     });
+    const reflected = await this.sessions.staff.request(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages/`);
+    const reflectedMessage = (reflected?.results ?? []).find((item) => item.id === sent?.id);
+    if (!reflectedMessage || reflectedMessage.body !== body || reflectedMessage.is_mine !== true) {
+      throw new Error("The message command did not converge in the teacher's conversation timeline.");
+    }
     return activity({
       action: actionDefinition,
       kind: "message",
@@ -276,6 +310,13 @@ export class DevelopmentActionRunner {
         idempotency_key: deterministicUuid(`${this.scope}:${actionDefinition.id}:publish`),
       },
     });
+    const reflected = await this.sessions.admin.request(`/api/v1/notices/${encodeURIComponent(published.id)}?portal=principal`);
+    if (
+      reflected?.status !== "published"
+      || Number(reflected?.metrics?.recipients) !== Number(published.recipient_count)
+    ) {
+      throw new Error("The published notice did not converge in the principal's notice workspace.");
+    }
     this.noticeId = published.id;
     return activity({
       action: actionDefinition,
@@ -292,11 +333,26 @@ export class DevelopmentActionRunner {
     const notice = list?.results?.find((item) => item.id === this.noticeId)
       ?? list?.results?.find((item) => item.title === expectedTitle);
     if (!notice) throw new Error("The demo guardian has no matching acknowledgement notice.");
+    if (notice.responded_at) {
+      const reflected = await this.sessions.admin.request(`/api/v1/notices/${encodeURIComponent(notice.id)}?portal=principal`);
+      const recipient = (reflected?.recipients ?? []).find((item) => item.id === notice.recipient_id);
+      if (!recipient?.responded_at || Number(reflected?.metrics?.responded) < 1) {
+        throw new Error("The retained family response did not converge in the principal's notice workspace.");
+      }
+      return activity({
+        action: actionDefinition,
+        kind: "notice",
+        title: "Demo family acknowledgement already recorded",
+        detail: "The existing fixture response remains visible in the principal notice screen; no duplicate response was created.",
+        state: "expected",
+        target_path: `/principal/notices/${notice.id}`,
+      });
+    }
     const opened = await this.sessions.parent.request(`/api/v1/notices/${encodeURIComponent(notice.id)}/open`, {
       method: "POST",
       body: { ...(notice.student_id ? { student_id: notice.student_id } : {}) },
     });
-    await this.sessions.parent.request(`/api/v1/notices/${encodeURIComponent(notice.id)}/respond`, {
+    const response = await this.sessions.parent.request(`/api/v1/notices/${encodeURIComponent(notice.id)}/respond`, {
       method: "POST",
       body: {
         expected_revision: opened.revision,
@@ -305,6 +361,11 @@ export class DevelopmentActionRunner {
         ...(notice.student_id ? { student_id: notice.student_id } : {}),
       },
     });
+    const reflected = await this.sessions.admin.request(`/api/v1/notices/${encodeURIComponent(notice.id)}?portal=principal`);
+    const recipient = (reflected?.recipients ?? []).find((item) => item.id === response?.recipient_id);
+    if (!recipient?.responded_at || Number(reflected?.metrics?.responded) < 1) {
+      throw new Error("The family response did not converge in the principal's notice workspace.");
+    }
     return activity({
       action: actionDefinition,
       kind: "notice",
@@ -478,6 +539,13 @@ export class DevelopmentActionRunner {
         records,
       },
     });
+    const reflected = await this.sessions.staff.request(`/api/v1/screens/teacher/attendance/?class_section_id=${encodeURIComponent(screen.class.id)}&date=${encodeURIComponent(today)}`);
+    if (
+      !["submitted", "locked"].includes(reflected?.register?.state)
+      || (reflected?.roster ?? []).filter((student) => student.status).length !== records.length
+    ) {
+      throw new Error("The daily attendance command did not converge in the teacher's authoritative register screen.");
+    }
     return activity({
       action: actionDefinition,
       kind: "attendance",

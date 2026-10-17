@@ -1,5 +1,5 @@
 import { RolesService } from "../roles/roles.service.js";
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, GoneException, HttpException, Inject, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { sql } from "kysely";
@@ -8,7 +8,15 @@ import { config } from "../config.js";
 import { AuditService } from "../common/audit.service.js";
 import { deliverAccountAction } from "../common/account-email.js";
 import type { AuthUser } from "../common/request.js";
+import {
+  TRANSIENT_EXECUTION_RUN_CATALOG,
+  type TransientExecutionRunCatalog,
+} from "../campus-model-core/transient-execution-run.contracts.js";
 import { DatabaseService } from "../database/database.service.js";
+import {
+  ExecutionDataPlaneError,
+  ExecutionDataPlaneRegistry,
+} from "../database/execution-data-plane.js";
 import { hashPassword, isPublishedDemoPassword, validatePassword, verifyPassword } from "./password.js";
 import { proFeaturesEnabled } from "./pro-features.js";
 import {
@@ -26,6 +34,13 @@ import {
   matchingTotpStep,
   normalizeRecoveryCode,
 } from "./mfa.js";
+import {
+  liveSessionExecutionEnvironment,
+  simulationSessionExecutionEnvironment,
+  unavailableSimulationSessionExecutionEnvironment,
+  type ExecutionEnvironmentView,
+  type ResolvedSessionExecutionEnvironment,
+} from "./session-execution-environment.js";
 
 const loginSchema = z.object({ identifier: z.string().trim().min(1).max(254), password: z.string().min(1).max(128) });
 const registrationSchema = z.object({
@@ -40,6 +55,10 @@ const mfaCodeSchema = z.object({ code: z.string().trim().min(6).max(32) });
 const mfaLoginSchema = z.object({ challenge_token: z.string().trim().min(32).max(256), code: z.string().trim().min(6).max(32) });
 const resetRequestSchema = z.object({ email: z.string().trim().toLowerCase().email().max(254) });
 const resetConfirmSchema = tokenSchema.extend({ password: z.string().min(1).max(128) });
+const selectExecutionEnvironmentSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("live") }).strict(),
+  z.object({ mode: z.literal("simulation"), run_id: z.string().uuid() }).strict(),
+]);
 const demoUsernames = {
   student: "aarav.student",
   parent: "pooja.parent",
@@ -50,7 +69,22 @@ const demoUsernames = {
 } as const;
 const institutionDemoUsernames = new Set<string>(Object.values(demoUsernames).filter((username) => username !== demoUsernames.company));
 
-export interface SessionIdentity { user: AuthUser; tokenHash: string; csrfToken: string; publicDemo: boolean }
+export interface SessionIdentity {
+  user: AuthUser;
+  tokenHash: string;
+  csrfToken: string;
+  publicDemo: boolean;
+  executionEnvironment: ResolvedSessionExecutionEnvironment["environment"];
+  executionEnvironmentView: ExecutionEnvironmentView;
+}
+
+interface StoredExecutionEnvironmentBinding {
+  school_id: string;
+  scenario_id: string;
+  run_id: string;
+  namespace_id: string;
+  expires_at: Date | string;
+}
 
 function publicUser(user: AuthUser) {
   return {
@@ -69,7 +103,16 @@ function publicUser(user: AuthUser) {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly roles: RolesService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly audit: AuditService,
+    private readonly roles: RolesService,
+    @Optional()
+    @Inject(TRANSIENT_EXECUTION_RUN_CATALOG)
+    private readonly transientRuns?: TransientExecutionRunCatalog,
+    @Optional()
+    private readonly executionDataPlanes?: ExecutionDataPlaneRegistry,
+  ) {}
 
   static tokenHash(raw: string): string {
     return createHash("sha256").update(raw).digest("hex");
@@ -77,6 +120,59 @@ export class AuthService {
 
   private sweepTimer?: ReturnType<typeof setInterval>;
   private lastSweepAt = 0;
+
+  private async clearExecutionEnvironmentBinding(tokenHash: string): Promise<void> {
+    await this.db.deleteFrom("auth_session_execution_environments")
+      .where("token_hash", "=", tokenHash)
+      .execute();
+  }
+
+  private async resolveSelectedExecutionEnvironment(input: {
+    tokenHash: string;
+    user: AuthUser;
+    binding: StoredExecutionEnvironmentBinding | null;
+  }): Promise<ResolvedSessionExecutionEnvironment> {
+    const live = () => liveSessionExecutionEnvironment(input.user.active_school_id);
+    if (!input.binding) return live();
+    const unavailable = (
+      reason: Parameters<typeof unavailableSimulationSessionExecutionEnvironment>[1],
+    ) => unavailableSimulationSessionExecutionEnvironment(input.binding!, reason);
+    const bindingExpiry = new Date(input.binding.expires_at).getTime();
+    if (!Number.isFinite(bindingExpiry)
+      || !input.user.active_school_id
+      || input.binding.school_id !== input.user.active_school_id) return unavailable("binding_invalid");
+    if (bindingExpiry <= Date.now()) return unavailable("expired");
+    if (!this.transientRuns || !this.executionDataPlanes) return unavailable("runtime_unavailable");
+
+    try {
+      const run = await this.transientRuns.resolveAuthorizedRun({
+        actor_id: input.user.id,
+        institution_id: input.binding.school_id,
+        run_id: input.binding.run_id,
+      });
+      if (!run) return unavailable("run_unavailable");
+      if (run.scenario_id !== input.binding.scenario_id
+        || run.namespace_id !== input.binding.namespace_id) return unavailable("run_unavailable");
+      if (Date.parse(run.expires_at) <= Date.now()) return unavailable("expired");
+      const coverage = this.executionDataPlanes.assertReady({
+        institutionId: run.institution_id,
+        runId: run.run_id,
+        namespaceId: run.namespace_id,
+      });
+      if (coverage.scenario_id !== run.scenario_id || coverage.expires_at !== run.expires_at) {
+        return unavailable("data_plane_unavailable");
+      }
+      return simulationSessionExecutionEnvironment(run, {
+        manifest_ref: coverage.manifest_ref,
+        checked_at: coverage.checked_at,
+      });
+    } catch (error) {
+      if (error instanceof ExecutionDataPlaneError) return unavailable("data_plane_unavailable");
+      if (error instanceof ForbiddenException) return unavailable("authorization_lost");
+      if (error instanceof NotFoundException) return unavailable("run_unavailable");
+      throw error;
+    }
+  }
 
   // Expired sessions are already rejected on lookup below; the DELETE only reclaims rows,
   // so it runs on a timer instead of on every request.
@@ -97,9 +193,15 @@ export class AuthService {
     const tokenHash = AuthService.tokenHash(rawToken);
     const row = await this.db.selectFrom("auth_sessions as s")
       .innerJoin("users as u", "u.id", "s.user_id")
+      .leftJoin("auth_session_execution_environments as environment", "environment.token_hash", "s.token_hash")
       .select([
         "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at", "s.active_school_id", "s.is_public_demo",
         "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.avatar_url", "u.role", "u.is_active", "u.email_verified_at",
+        "environment.school_id as environment_school_id",
+        "environment.scenario_id as environment_scenario_id",
+        "environment.run_id as environment_run_id",
+        "environment.namespace_id as environment_namespace_id",
+        "environment.expires_at as environment_expires_at",
       ])
       .where("s.token_hash", "=", tokenHash).executeTakeFirst();
     if (!row) return null;
@@ -113,22 +215,36 @@ export class AuthService {
       await this.db.updateTable("auth_sessions").set({ last_seen_at: new Date() })
         .where("token_hash", "=", tokenHash).execute();
     }
+    const user: AuthUser = {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      avatar_url: row.avatar_url,
+      role: row.role,
+      is_active: row.is_active,
+      email_verified_at: row.email_verified_at,
+      active_school_id: row.active_school_id,
+    };
+    const selected = await this.resolveSelectedExecutionEnvironment({
+      tokenHash,
+      user,
+      binding: row.environment_run_id ? {
+        school_id: row.environment_school_id!,
+        scenario_id: row.environment_scenario_id!,
+        run_id: row.environment_run_id,
+        namespace_id: row.environment_namespace_id!,
+        expires_at: row.environment_expires_at!,
+      } : null,
+    });
     return {
       tokenHash,
       csrfToken: row.csrf_token,
       publicDemo: row.is_public_demo,
-      user: {
-        id: row.id,
-        username: row.username,
-        email: row.email,
-        first_name: row.first_name,
-        last_name: row.last_name,
-        avatar_url: row.avatar_url,
-        role: row.role,
-        is_active: row.is_active,
-        email_verified_at: row.email_verified_at,
-        active_school_id: row.active_school_id,
-      },
+      user,
+      executionEnvironment: selected.environment,
+      executionEnvironmentView: selected.view,
     };
   }
 
@@ -465,13 +581,194 @@ export class AuthService {
     await this.db.deleteFrom("auth_sessions").where("token_hash", "=", tokenHash).execute();
   }
 
+  async returnSessionToLive(tokenHash: string): Promise<void> {
+    await this.clearExecutionEnvironmentBinding(tokenHash);
+  }
+
   async selectSchool(user: AuthUser, sessionHash: string, body: unknown) {
     const { school_id } = z.object({ school_id: z.string().uuid() }).parse(body);
     const membership = await this.db.selectFrom("school_memberships").select("id").where("user_id", "=", user.id)
       .where("school_id", "=", school_id).where("is_active", "=", true).executeTakeFirst();
     if (!membership) throw new ForbiddenException("An active membership in the selected school is required.");
-    await this.db.updateTable("auth_sessions").set({ active_school_id: school_id }).where("token_hash", "=", sessionHash).where("user_id", "=", user.id).execute();
-    return { active_school_id: school_id };
+    await this.db.transaction().execute(async (transaction) => {
+      await transaction.deleteFrom("auth_session_execution_environments")
+        .where("token_hash", "=", sessionHash)
+        .execute();
+      await transaction.updateTable("auth_sessions").set({ active_school_id: school_id })
+        .where("token_hash", "=", sessionHash)
+        .where("user_id", "=", user.id)
+        .execute();
+    });
+    return {
+      active_school_id: school_id,
+      execution_environment: liveSessionExecutionEnvironment(school_id).view,
+    };
+  }
+
+  async currentExecutionEnvironment(user: AuthUser, sessionHash: string) {
+    const row = await this.db.selectFrom("auth_sessions as session")
+      .leftJoin("auth_session_execution_environments as environment", "environment.token_hash", "session.token_hash")
+      .select([
+        "session.active_school_id",
+        "environment.school_id as environment_school_id",
+        "environment.scenario_id as environment_scenario_id",
+        "environment.run_id as environment_run_id",
+        "environment.namespace_id as environment_namespace_id",
+        "environment.expires_at as environment_expires_at",
+      ])
+      .where("session.token_hash", "=", sessionHash)
+      .where("session.user_id", "=", user.id)
+      .where("session.expires_at", ">", new Date())
+      .executeTakeFirst();
+    if (!row) throw new UnauthorizedException("The active authenticated session is unavailable.");
+    const selected = await this.resolveSelectedExecutionEnvironment({
+      tokenHash: sessionHash,
+      user: { ...user, active_school_id: row.active_school_id },
+      binding: row.environment_run_id ? {
+        school_id: row.environment_school_id!,
+        scenario_id: row.environment_scenario_id!,
+        run_id: row.environment_run_id,
+        namespace_id: row.environment_namespace_id!,
+        expires_at: row.environment_expires_at!,
+      } : null,
+    });
+    return { execution_environment: selected.view };
+  }
+
+  async selectExecutionEnvironment(
+    user: AuthUser,
+    sessionHash: string,
+    rawInput: unknown,
+    request: FastifyRequest,
+  ) {
+    const input = selectExecutionEnvironmentSchema.parse(rawInput);
+    const session = await this.db.selectFrom("auth_sessions")
+      .select(["active_school_id", "is_public_demo", "expires_at"])
+      .where("token_hash", "=", sessionHash)
+      .where("user_id", "=", user.id)
+      .where("expires_at", ">", new Date())
+      .executeTakeFirst();
+    if (!session) throw new UnauthorizedException("The active authenticated session is unavailable.");
+    if (session.is_public_demo) {
+      throw new ForbiddenException("The public demo cannot activate a transient Simulation environment.");
+    }
+
+    if (input.mode === "live") {
+      const previous = await this.db.deleteFrom("auth_session_execution_environments")
+        .where("token_hash", "=", sessionHash)
+        .returning(["school_id", "run_id", "namespace_id"])
+        .executeTakeFirst();
+      await this.audit.record({
+        action: "auth.execution_environment.returned_live",
+        request,
+        actorId: user.id,
+        schoolId: session.active_school_id,
+        targetType: "simulation_run",
+        targetId: previous?.run_id ?? null,
+        metadata: previous ? { namespace_id: previous.namespace_id } : { already_live: true },
+      });
+      return { execution_environment: liveSessionExecutionEnvironment(session.active_school_id).view };
+    }
+
+    const schoolId = session.active_school_id;
+    if (!schoolId || user.active_school_id !== schoolId) {
+      throw new ConflictException("Select an institution before entering Simulation.");
+    }
+    const administrator = await this.db.selectFrom("school_memberships")
+      .select("id")
+      .where("school_id", "=", schoolId)
+      .where("user_id", "=", user.id)
+      .where("role", "=", "admin")
+      .where("is_active", "=", true)
+      .executeTakeFirst();
+    if (!administrator) {
+      throw new ForbiddenException("An active institution administrator membership is required.");
+    }
+    if (!this.transientRuns || !this.executionDataPlanes) {
+      throw new ConflictException("Simulation activation is unavailable until the isolated application data plane is ready.");
+    }
+    const run = await this.transientRuns.resolveAuthorizedRun({
+      actor_id: user.id,
+      institution_id: schoolId,
+      run_id: input.run_id,
+    });
+    if (!run || Date.parse(run.expires_at) <= Date.now()) {
+      throw new GoneException("Simulation run not found or expired.");
+    }
+
+    let selected: ResolvedSessionExecutionEnvironment;
+    try {
+      const coverage = this.executionDataPlanes.assertReady({
+        institutionId: schoolId,
+        runId: run.run_id,
+        namespaceId: run.namespace_id,
+      });
+      if (coverage.scenario_id !== run.scenario_id || coverage.expires_at !== run.expires_at) {
+        throw new ExecutionDataPlaneError(
+          "data_plane_identity_mismatch",
+          "The isolated data plane does not match the selected scenario run.",
+          coverage,
+        );
+      }
+      selected = simulationSessionExecutionEnvironment(run, {
+        manifest_ref: coverage.manifest_ref,
+        checked_at: coverage.checked_at,
+      });
+    } catch (error) {
+      if (error instanceof ExecutionDataPlaneError) {
+        throw new ConflictException({
+          message: "This Simulation run cannot be opened in the application until its isolated data plane has full module parity.",
+          code: error.code,
+          missing_modules: error.descriptor?.missing_modules ?? [],
+          incomplete_capabilities: error.descriptor?.incomplete_capabilities ?? [],
+          unsafe_effects: error.descriptor?.unsafe_effects ?? [],
+        });
+      }
+      throw error;
+    }
+
+    await this.db.transaction().execute(async (transaction) => {
+      const stillActive = await transaction.selectFrom("auth_sessions")
+        .select("token_hash")
+        .where("token_hash", "=", sessionHash)
+        .where("user_id", "=", user.id)
+        .where("active_school_id", "=", schoolId)
+        .where("expires_at", ">", new Date())
+        .executeTakeFirst();
+      if (!stillActive) throw new UnauthorizedException("The active authenticated session changed. Try again.");
+      await transaction.insertInto("auth_session_execution_environments").values({
+        token_hash: sessionHash,
+        school_id: schoolId,
+        scenario_id: run.scenario_id,
+        run_id: run.run_id,
+        namespace_id: run.namespace_id,
+        expires_at: new Date(run.expires_at),
+        bound_by: user.id,
+      }).onConflict((conflict) => conflict.column("token_hash").doUpdateSet({
+        school_id: schoolId,
+        scenario_id: run.scenario_id,
+        run_id: run.run_id,
+        namespace_id: run.namespace_id,
+        expires_at: new Date(run.expires_at),
+        bound_by: user.id,
+        bound_at: new Date(),
+      })).execute();
+    });
+    await this.audit.record({
+      action: "auth.execution_environment.entered_simulation",
+      request,
+      actorId: user.id,
+      schoolId,
+      targetType: "simulation_run",
+      targetId: run.run_id,
+      metadata: {
+        scenario_id: run.scenario_id,
+        namespace_id: run.namespace_id,
+        source_snapshot_ref: run.source_snapshot_ref,
+        expires_at: run.expires_at,
+      },
+    });
+    return { execution_environment: selected.view };
   }
 
   async sessions(user: AuthUser, current: string) {
@@ -547,12 +844,17 @@ export class AuthService {
     return { enabled, preview: true };
   }
 
-  response(user: AuthUser, csrfToken: string) {
+  response(
+    user: AuthUser,
+    csrfToken: string,
+    executionEnvironment: ExecutionEnvironmentView = liveSessionExecutionEnvironment(user.active_school_id).view,
+  ) {
     return {
       user: publicUser(user),
       csrf_token: csrfToken,
       demo_mode: config().DEMO_MODE,
       demo_profile_switcher: this.canUseDemoProfileSwitcher(user),
+      execution_environment: executionEnvironment,
     };
   }
 }

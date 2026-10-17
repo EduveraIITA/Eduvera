@@ -73,10 +73,10 @@ export function decodeSchoolEventChannelMessage(value: unknown): SchoolEventChan
   return null;
 }
 
-export function schoolEventChannelName(userId: string) {
-  return `${SCHOOL_EVENT_CHANNEL_PREFIX}:${userId}`;
+export function schoolEventChannelName(userId: string, environmentIdentity = "live") {
+  return `${SCHOOL_EVENT_CHANNEL_PREFIX}:${environmentIdentity}:${userId}`;
 }
 
-export function schoolEventLockName(userId: string) {
-  return `${SCHOOL_EVENT_LOCK_PREFIX}:${userId}`;
+export function schoolEventLockName(userId: string, environmentIdentity = "live") {
+  return `${SCHOOL_EVENT_LOCK_PREFIX}:${environmentIdentity}:${userId}`;
 }

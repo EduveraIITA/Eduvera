@@ -60,6 +60,39 @@ export interface OperationalMessageOutcomeReceipt {
   replayed: boolean;
 }
 
+export interface CoordinationTraceQuery {
+  school_id: string;
+  source_domain: string;
+  source_record_id: string;
+  event_type: string;
+  source_revision: number;
+}
+
+export interface CoordinationTraceReceipt {
+  event_id: string;
+  correlation_id: string;
+  message_id: string;
+}
+
+export interface SourceEventLookup {
+  school_id: string;
+  source_outbox_event_id: string;
+}
+
+export interface OperationalMessageWorkQuery {
+  workflow: string;
+  states: readonly ("queued" | "delivered" | "acknowledged")[];
+  limit: number;
+  claim?: boolean;
+}
+
+export interface OperationalMessageWorkItem {
+  message_id: string;
+  school_id: string;
+  state: "queued" | "delivered" | "acknowledged";
+  payload: Record<string, unknown>;
+}
+
 export interface CoordinationRouteResolutionInput {
   school_id: string;
   source_domain: string;
@@ -115,6 +148,18 @@ export interface CoordinationCandidateAuthorizationReceipt {
 }
 
 export interface CoordinationRuntimePort {
+  findExactTrace(
+    transaction: Transaction<Database>,
+    input: CoordinationTraceQuery,
+  ): Promise<CoordinationTraceReceipt | null>;
+  hasAcceptedSourceEvent(
+    transaction: Transaction<Database>,
+    input: SourceEventLookup,
+  ): Promise<boolean>;
+  listOperationalMessageWork(
+    transaction: Transaction<Database>,
+    input: OperationalMessageWorkQuery,
+  ): Promise<OperationalMessageWorkItem[]>;
   resolveEventRoute(
     transaction: Transaction<Database>,
     input: CoordinationRouteResolutionInput,

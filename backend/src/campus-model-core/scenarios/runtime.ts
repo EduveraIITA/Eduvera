@@ -2,6 +2,7 @@ import type {
   DelegateAgentIdentity,
   DeterministicRandom,
   HumanAgentIdentity,
+  ScenarioCounterpartIdentity,
   ScenarioConfigurationRef,
   ScenarioEvidenceStore,
   ScenarioExecutionContext,
@@ -13,6 +14,7 @@ import type {
   ScenarioPersonaIdentity,
   ScenarioSideEffectPolicy,
   ScenarioSideEffectRequest,
+  ScenarioSourceAgentIdentity,
   ScenarioValue,
   VirtualClock,
 } from "./contracts.js";
@@ -179,6 +181,9 @@ export class SinkOnlySideEffectPolicy implements ScenarioSideEffectPolicy {
 }
 
 class IsolatedScenarioIdentityResolver implements ScenarioIdentityResolver {
+  private readonly counterparts = new Map<string, ScenarioCounterpartIdentity>();
+  private readonly sources = new Map<string, ScenarioSourceAgentIdentity>();
+  private readonly counterpartBySource = new Map<string, ScenarioCounterpartIdentity>();
   private readonly personas = new Map<string, ScenarioPersonaIdentity>();
   private readonly humans = new Map<string, HumanAgentIdentity>();
   private readonly personaByHuman = new Map<string, ScenarioPersonaIdentity>();
@@ -187,40 +192,101 @@ class IsolatedScenarioIdentityResolver implements ScenarioIdentityResolver {
 
   constructor(scenarioId: string, mappings: readonly ScenarioIdentityMapping[]) {
     for (const mapping of mappings) {
-      if (mapping.persona.scenario_id !== scenarioId) {
-        throw new Error("Every scenario persona must belong to the active scenario.");
+      const source = "source" in mapping ? mapping.source : mapping.human;
+      const sourceAgentId = source.kind === "human" ? source.human_agent_id : source.agent_id;
+      const counterpart: ScenarioCounterpartIdentity = "counterpart" in mapping
+        ? mapping.counterpart
+        : {
+            kind: "scenario_counterpart",
+            scenario_counterpart_id: mapping.persona.scenario_persona_id,
+            scenario_id: mapping.persona.scenario_id,
+            source_agent_id: mapping.persona.source_human_agent_id,
+            source_agent_kind: "human",
+            behaviour_policy_version_id: mapping.persona.behaviour_policy_version_id,
+          };
+
+      assertNonEmpty(sourceAgentId, "Source agent ID");
+      if (source.kind === "human") {
+        assertNonEmpty(source.person_id, "Human source person ID");
+      } else {
+        assertNonEmpty(source.external_ref, `${source.kind} source external reference`);
       }
-      if (mapping.persona.source_human_agent_id !== mapping.human.human_agent_id) {
-        throw new Error("A scenario persona must explicitly reference its source human agent.");
+      assertNonEmpty(counterpart.scenario_counterpart_id, "Scenario counterpart ID");
+      if (counterpart.behaviour_policy_version_id !== null) {
+        assertNonEmpty(counterpart.behaviour_policy_version_id, "Scenario counterpart behaviour version");
       }
-      if (this.humans.has(mapping.human.human_agent_id)
-        || this.personas.has(mapping.persona.scenario_persona_id)) {
+      if (counterpart.scenario_id !== scenarioId) {
+        throw new Error("Every scenario counterpart must belong to the active scenario.");
+      }
+      if (counterpart.source_agent_id !== sourceAgentId
+        || counterpart.source_agent_kind !== source.kind) {
+        throw new Error("A scenario counterpart must explicitly reference its source agent and kind.");
+      }
+      if (this.sources.has(sourceAgentId)
+        || this.counterparts.has(counterpart.scenario_counterpart_id)) {
         throw new Error("Scenario identity mappings must be one-to-one.");
       }
-      if (this.actorIds.has(mapping.human.human_agent_id)
-        || this.actorIds.has(mapping.persona.scenario_persona_id)
-        || mapping.human.human_agent_id === mapping.persona.scenario_persona_id) {
-        throw new Error("Human, delegate and scenario-persona actor IDs must remain distinct.");
+      if (this.actorIds.has(sourceAgentId)
+        || this.actorIds.has(counterpart.scenario_counterpart_id)
+        || sourceAgentId === counterpart.scenario_counterpart_id) {
+        throw new Error("Source, delegate and scenario-counterpart actor IDs must remain distinct.");
       }
-      this.actorIds.add(mapping.human.human_agent_id);
-      this.actorIds.add(mapping.persona.scenario_persona_id);
-      this.humans.set(mapping.human.human_agent_id, structuredClone(mapping.human));
-      this.personas.set(mapping.persona.scenario_persona_id, structuredClone(mapping.persona));
-      this.personaByHuman.set(mapping.human.human_agent_id, structuredClone(mapping.persona));
+      this.actorIds.add(sourceAgentId);
+      this.actorIds.add(counterpart.scenario_counterpart_id);
+      this.sources.set(sourceAgentId, structuredClone(source));
+      this.counterparts.set(counterpart.scenario_counterpart_id, structuredClone(counterpart));
+      this.counterpartBySource.set(sourceAgentId, structuredClone(counterpart));
+
+      if (source.kind === "human") {
+        const persona: ScenarioPersonaIdentity = "persona" in mapping
+          ? mapping.persona
+          : {
+              kind: "scenario_persona",
+              scenario_persona_id: counterpart.scenario_counterpart_id,
+              scenario_id: counterpart.scenario_id,
+              source_human_agent_id: source.human_agent_id,
+              behaviour_policy_version_id: counterpart.behaviour_policy_version_id,
+            };
+        this.humans.set(source.human_agent_id, structuredClone(source));
+        this.personas.set(persona.scenario_persona_id, structuredClone(persona));
+        this.personaByHuman.set(source.human_agent_id, structuredClone(persona));
+      } else if (mapping.delegates.length > 0) {
+        throw new Error("Delegate identities may be attached only to a human source agent.");
+      }
+
       for (const delegate of mapping.delegates) {
-        if (delegate.acts_for_human_agent_id !== mapping.human.human_agent_id) {
+        if (source.kind !== "human" || delegate.acts_for_human_agent_id !== source.human_agent_id) {
           throw new Error("A delegate mapping must name the human agent it acts for.");
         }
+        assertNonEmpty(delegate.delegate_agent_id, "Delegate agent ID");
+        assertNonEmpty(delegate.authority_snapshot_ref, "Delegate authority snapshot reference");
         if (this.delegates.has(delegate.delegate_agent_id)) {
           throw new Error("A delegate agent may appear in only one scenario identity mapping.");
         }
         if (this.actorIds.has(delegate.delegate_agent_id)) {
-          throw new Error("Human, delegate and scenario-persona actor IDs must remain distinct.");
+          throw new Error("Source, delegate and scenario-counterpart actor IDs must remain distinct.");
         }
         this.actorIds.add(delegate.delegate_agent_id);
         this.delegates.set(delegate.delegate_agent_id, structuredClone(delegate));
       }
     }
+  }
+
+  resolveCounterpart(scenarioCounterpartId: string): ScenarioCounterpartIdentity | null {
+    const result = this.counterparts.get(scenarioCounterpartId);
+    return result ? structuredClone(result) : null;
+  }
+
+  counterpartForSource(sourceAgentId: string): ScenarioCounterpartIdentity | null {
+    const result = this.counterpartBySource.get(sourceAgentId);
+    return result ? structuredClone(result) : null;
+  }
+
+  sourceForCounterpart(scenarioCounterpartId: string): ScenarioSourceAgentIdentity | null {
+    const counterpart = this.counterparts.get(scenarioCounterpartId);
+    if (!counterpart) return null;
+    const source = this.sources.get(counterpart.source_agent_id);
+    return source ? structuredClone(source) : null;
   }
 
   resolvePersona(scenarioPersonaId: string): ScenarioPersonaIdentity | null {
@@ -234,10 +300,8 @@ class IsolatedScenarioIdentityResolver implements ScenarioIdentityResolver {
   }
 
   humanForPersona(scenarioPersonaId: string): HumanAgentIdentity | null {
-    const persona = this.personas.get(scenarioPersonaId);
-    if (!persona) return null;
-    const human = this.humans.get(persona.source_human_agent_id);
-    return human ? structuredClone(human) : null;
+    const source = this.sourceForCounterpart(scenarioPersonaId);
+    return source?.kind === "human" ? structuredClone(source) : null;
   }
 
   delegate(delegateAgentId: string): DelegateAgentIdentity | null {
@@ -258,7 +322,14 @@ class SinkScenarioMessageDispatcher implements ScenarioMessageDispatcher {
   ) {}
 
   dispatch(message: ScenarioMessage): void {
-    if (message.scenario_id !== this.identities.resolvePersona(message.sender_persona_id)?.scenario_id
+    const senderId = "sender_counterpart_id" in message
+      ? message.sender_counterpart_id
+      : message.sender_persona_id;
+    const recipientId = "recipient_counterpart_id" in message
+      ? message.recipient_counterpart_id
+      : message.recipient_persona_id;
+    const sender = this.identities.resolveCounterpart(senderId);
+    if (message.scenario_id !== sender?.scenario_id
       || message.namespace_id !== this.namespaceId
       || message.run_id !== this.runId) {
       throw new Error("Scenario messages must retain their scenario and namespace identity.");
@@ -266,11 +337,10 @@ class SinkScenarioMessageDispatcher implements ScenarioMessageDispatcher {
     this.policy.assertPermitted({
       kind: "scenario_message",
       target_namespace_id: this.namespaceId,
-      target_ref: message.recipient_persona_id,
+      target_ref: recipientId,
     });
-    if (!this.identities.resolvePersona(message.sender_persona_id)
-      || !this.identities.resolvePersona(message.recipient_persona_id)) {
-      throw new Error("Scenario messages may address only personas in this scenario namespace.");
+    if (!sender || !this.identities.resolveCounterpart(recipientId)) {
+      throw new Error("Scenario messages may address only counterparts in this scenario namespace.");
     }
     this.dispatched.push(structuredClone(message));
   }

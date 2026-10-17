@@ -9,7 +9,7 @@ import { SchedulePlanningModule } from "./schedule-planning/schedule-planning.mo
 import { RolesModule } from "./roles/roles.module.js";
 import { PermissionGuard } from "./roles/permission.guard.js";
 import { Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { AiModule } from "./ai/ai.module.js";
 import { AgentModule } from "./agent/agent.module.js";
 import { CoordinationModule } from "./coordination/coordination.module.js";
@@ -44,6 +44,7 @@ import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-int
 import { CampusViewModule } from "./campus-view/campus-view.module.js";
 import { CampusScenarioModule } from "./campus-scenarios/campus-scenario.module.js";
 import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.module.js";
+import { ExecutionEnvironmentInterceptor } from "./auth/execution-environment.interceptor.js";
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.mod
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PublicDemoGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_INTERCEPTOR, useClass: ExecutionEnvironmentInterceptor },
   ],
 })
 export class AppModule {}

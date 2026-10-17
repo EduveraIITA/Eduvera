@@ -102,8 +102,9 @@ completion or failure.
 
 ### 4.1 Working context
 
-The shell always knows the current institution, campus where relevant, operating role
-and person/child context where relevant.
+The shell always knows the current institution, campus where relevant, operating role,
+person/child context where relevant and execution context (authoritative `live` or one
+explicit transient simulation run).
 
 - Do not silently combine Administrator and Principal authority.
 - If a user has multiple roles or campuses, show a clear context switcher.
@@ -112,6 +113,21 @@ and person/child context where relevant.
   shell switches.
 - Context switching returns to the equivalent safe home, not a stale unauthorized
   screen.
+- Ordinary entry points open Live. Entering Simulation is an explicit authorized
+  action that changes the server-authoritative execution session, not the route map
+  or module hierarchy.
+- The same shell, navigation and screens remain in place. A compact persistent
+  **Live** or **Simulation** marker at the top is the only required visual difference;
+  Simulation may place its virtual date/time and a clear **Return to Live** action in
+  that compact control. Do not create a parallel simulation dashboard, mini-app or
+  second set of domain tabs.
+- Environment is inherited by every child route, data hook, action and realtime
+  subscription. An environment switch clears or partitions cached data before the
+  same screen renders from the selected state.
+- During development, a screen with no scenario-native adapter shows **Not modelled
+  in this run** and never fills from Live APIs. Release acceptance requires adapters
+  for every enabled module, so an administrator sees the complete app rather than a
+  mixture of operational and placeholder screens.
 
 ### 4.2 Stable role-specific navigation
 
@@ -656,6 +672,15 @@ accepted evidence.
 3. The UI shows which offers, escalations and conflicts would occur.
 4. No production message, command, authority or evidence is changed.
 5. Activation records the reviewed result, approver and effective date.
+6. When the administrator selects the run, the existing application changes its
+   compact top marker from **Live** to **Simulation**. The same Today, timetable,
+   attendance, Messages, Requests, Campus View, notification, KPI and domain screens
+   now follow that run and virtual clock.
+7. During development, unsupported screens disclose a missing adapter and fail
+   closed. No screen mixes a simulated date/header with Live domain rows, attention
+   counts or badges; all enabled modules must achieve parity before release.
+8. **Return to Live** restores the unchanged Live application and its separately
+   namespaced caches and subscriptions.
 
 ### 13.9 Notice requiring a guardian response
 
@@ -731,6 +756,23 @@ role. If model projection processing is delayed, the UI labels that context
 **Delayed** or **Unknown** with its `asOf` time; it does not hide, downgrade or replace
 the already accepted domain result. Rehearsal/simulation state remains isolated and
 labelled and cannot enter a normal query cache or claim accepted/live campus state.
+
+Live and Simulation use the same product routes, visual components and domain API
+contracts. A server-authoritative execution session selects the backing environment
+and cannot be overridden by a caller-controlled environment header. Underneath those
+shared contracts they use separate store namespaces, cache keys, realtime topics and
+revision sequences. A Simulation projection key includes institution, scenario, run,
+projection kind and projection revision. All summary and detail data on one rendered
+screen must come from the same environment and compatible revision. Expiry,
+unsupported capability during development or a missing scenario stream is an explicit
+state; none permits fallback to Live state.
+
+Shared data hooks and actions must always resolve through the current environment
+binding. In Simulation they emit only scenario events/messages/artifacts and execute
+the same domain invariants against copy-on-write scenario state. Simulation context
+cannot resolve a production recipient, credential or connector. Switching environment
+tears down the prior realtime subscriptions and clears or partitions query caches
+before any shared screen is allowed to render.
 
 ### 14.2 Conceptual projection contracts
 

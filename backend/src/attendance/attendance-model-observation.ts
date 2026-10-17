@@ -112,6 +112,20 @@ export async function recordAttendanceModelObservations(input: AttendanceModelOb
       state: input.state,
       idempotency_key: `attendance-model:${input.sourceType}:${record.sourceRecordId}`,
       domain_event_id: record.domainEventId,
+      contract_refs: {
+        subject_type: { namespace: "thatcampus.people", type_key: "student", version: 1 },
+        context_type: { namespace: "thatcampus.academic_structure", type_key: "class", version: 1 },
+        observation_schema: {
+          namespace: "thatcampus.attendance",
+          schema_key: "attendance.status_observed",
+          version: 1,
+        },
+        capability_manifest: {
+          namespace: "thatcampus.attendance",
+          capability_key: "attendance",
+          version: 1,
+        },
+      },
     };
   }));
 }

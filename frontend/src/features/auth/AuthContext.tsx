@@ -9,6 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, apiFetch, type DemoPersona, type Persona } from "../../lib/api";
+import {
+  LIVE_EXECUTION_ENVIRONMENT,
+  ExecutionEnvironmentInvariantError,
+  executionEnvironmentFromWire,
+  type ExecutionEnvironment,
+  type ExecutionEnvironmentWireDescriptor,
+} from "../simulation/executionEnvironment";
 
 export type AccountRole = Persona | "staff" | "admin";
 export type MembershipRole = "student" | "guardian" | "staff" | "admin";
@@ -44,6 +51,7 @@ interface SessionResponse {
   demo_mode: boolean;
   demo_profile_switcher?: boolean;
   public_demo?: boolean;
+  execution_environment?: ExecutionEnvironmentWireDescriptor;
 }
 
 interface MeResponse {
@@ -55,6 +63,7 @@ interface MeResponse {
   memberships: SchoolMembership[];
   demo_mode: boolean;
   public_demo?: boolean;
+  execution_environment?: ExecutionEnvironmentWireDescriptor;
 }
 
 interface AuthResponse {
@@ -63,6 +72,7 @@ interface AuthResponse {
   demo_mode: boolean;
   demo_profile_switcher?: boolean;
   public_demo?: boolean;
+  execution_environment?: ExecutionEnvironmentWireDescriptor;
   onboarding?: {
     status: "pending_school_membership";
     has_school_access: boolean;
@@ -98,6 +108,7 @@ interface AuthState {
   demoMode: boolean;
   publicDemo: boolean;
   serviceError: string | null;
+  executionEnvironment: ExecutionEnvironment;
 }
 
 export interface AuthContextValue extends AuthState {
@@ -110,7 +121,7 @@ export interface AuthContextValue extends AuthState {
   enterDemo: (persona: DemoPersona) => Promise<void>;
   enterPublicDemo: (persona: "student" | "parent" | "staff" | "admin") => Promise<void>;
   logout: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<ExecutionEnvironment | null>;
 }
 
 const initialState: AuthState = {
@@ -120,6 +131,7 @@ const initialState: AuthState = {
   demoMode: false,
   publicDemo: false,
   serviceError: null,
+  executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -167,6 +179,15 @@ async function authMutation<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
+function confirmedEnvironment(
+  descriptor?: ExecutionEnvironmentWireDescriptor,
+  fallback?: ExecutionEnvironmentWireDescriptor,
+) {
+  if (descriptor) return executionEnvironmentFromWire(descriptor);
+  if (fallback) return executionEnvironmentFromWire(fallback);
+  return LIVE_EXECUTION_ENVIRONMENT;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<AuthState>(initialState);
@@ -174,6 +195,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (fallback?: AuthResponse) => {
     try {
       const profile = await apiFetch<MeResponse>("/api/v1/auth/me/");
+      const executionEnvironment = confirmedEnvironment(
+        profile.execution_environment,
+        fallback?.execution_environment,
+      );
       setState({
         status: "authenticated",
         user: profile.user,
@@ -183,9 +208,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: profile.demo_mode,
         publicDemo: profile.public_demo ?? fallback?.public_demo ?? false,
         serviceError: null,
+        executionEnvironment,
       });
+      return executionEnvironment;
     } catch (error) {
+      if (error instanceof ExecutionEnvironmentInvariantError) throw error;
       if (!fallback) throw error;
+      const executionEnvironment = confirmedEnvironment(fallback.execution_environment);
       setState({
         status: "authenticated",
         user: fallback.user,
@@ -193,7 +222,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: fallback.demo_mode,
         publicDemo: fallback.public_demo ?? false,
         serviceError: null,
+        executionEnvironment,
       });
+      return executionEnvironment;
     }
   }, []);
 
@@ -209,8 +240,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: retainedDemoMode === null ? import.meta.env.DEV : retainedDemoMode === "1",
         publicDemo: false,
         serviceError: null,
+        executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
       });
-      return;
+      return LIVE_EXECUTION_ENVIRONMENT;
     }
     try {
       const session = await apiFetch<SessionResponse>("/api/v1/auth/session/");
@@ -222,14 +254,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           demoMode: session.demo_mode,
           publicDemo: false,
           serviceError: null,
+          executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
         });
-        return;
+        return LIVE_EXECUTION_ENVIRONMENT;
       }
-      await loadProfile({
+      return await loadProfile({
         user: session.user,
         csrf_token: session.csrf_token,
         demo_mode: session.demo_mode,
         public_demo: session.public_demo,
+        execution_environment: session.execution_environment,
       });
     } catch (error) {
       const isUnauthorized = error instanceof ApiError && error.status === 401;
@@ -242,7 +276,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         serviceError: isUnauthorized
           ? null
           : "We couldn't reach the school service. You can retry in a moment.",
+        executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
       });
+      return isUnauthorized ? LIVE_EXECUTION_ENVIRONMENT : null;
     }
   }, [loadProfile]);
 
@@ -263,6 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: current.demoMode,
         publicDemo: false,
         serviceError: null,
+        executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
       }));
     };
     window.addEventListener("omnischool:session-expired", handleSessionExpiry);
@@ -320,6 +357,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: response.demo_mode,
         publicDemo: response.public_demo ?? false,
         serviceError: null,
+        executionEnvironment: confirmedEnvironment(response.execution_environment),
       });
       if (response.verification?.development_token) {
         window.sessionStorage.setItem("omnischool:development-verification-token", response.verification.development_token);
@@ -362,6 +400,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       demoMode: current.demoMode,
       publicDemo: false,
       serviceError: null,
+      executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
     }));
     try {
       await apiFetch<void>("/api/v1/auth/logout/", { method: "POST" });

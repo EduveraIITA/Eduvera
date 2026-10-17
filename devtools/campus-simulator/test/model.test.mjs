@@ -403,3 +403,15 @@ test("runs a configured Saturday because school days come from the effective sch
   assert.equal(routine.is_operating_day, true);
   assert.equal(phaseAt(new Date("2026-10-17T03:30:00.000Z"), routine).mode, "lesson");
 });
+
+test("uses the requested simulated school date instead of the API wall-clock date", async () => {
+  const behavior = await loadBehaviorFixture();
+  const startedAt = new Date("2026-10-17T10:00:00.000Z");
+  const timetable = schoolDay({ date: "2026-10-19" });
+  timetable.context.today = "2026-10-17";
+
+  const routine = createRoutineSchedule({ startedAt, now: startedAt, behavior, timetable });
+
+  assert.equal(routine.reference_date, "2026-10-19");
+  assert.equal(simulatedAt(startedAt, routine), "2026-10-19T09:00:00+05:30");
+});

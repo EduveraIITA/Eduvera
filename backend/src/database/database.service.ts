@@ -1,15 +1,23 @@
-import { Injectable, OnApplicationShutdown } from "@nestjs/common";
-import { Kysely, PostgresDialect } from "kysely";
+import { Injectable, OnApplicationShutdown, Optional } from "@nestjs/common";
+import { Kysely } from "kysely";
 import { Pool, types as pgTypes } from "pg";
 import { config } from "../config.js";
 import { postgresClientConnectionConfig } from "./connection-policy.js";
+import {
+  ExecutionDataPlaneRegistry,
+  ExecutionDataPlaneScope,
+} from "./execution-data-plane.js";
+import { ExecutionRoutingPostgresDialect } from "./execution-routing-postgres.dialect.js";
 import type { Database } from "./types.js";
 
 @Injectable()
 export class DatabaseService extends Kysely<Database> implements OnApplicationShutdown {
   private readonly pool: Pool;
 
-  constructor() {
+  constructor(
+    @Optional() scope?: ExecutionDataPlaneScope,
+    @Optional() registry?: ExecutionDataPlaneRegistry,
+  ) {
     const settings = config();
     // PostgreSQL DATE is a calendar value, not an instant. Keep it as YYYY-MM-DD
     // so timezone conversion cannot move attendance and leave dates by one day.
@@ -26,7 +34,15 @@ export class DatabaseService extends Kysely<Database> implements OnApplicationSh
       connectionTimeoutMillis: 5_000,
       application_name: "omnischool_node_api",
     });
-    super({ dialect: new PostgresDialect({ pool }) });
+    const executionScope = scope ?? new ExecutionDataPlaneScope();
+    const dataPlaneRegistry = registry ?? new ExecutionDataPlaneRegistry();
+    super({
+      dialect: new ExecutionRoutingPostgresDialect(
+        { pool },
+        executionScope,
+        dataPlaneRegistry,
+      ),
+    });
     this.pool = pool;
   }
 

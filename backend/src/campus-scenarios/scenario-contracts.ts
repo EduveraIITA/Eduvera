@@ -151,6 +151,14 @@ export interface CampusScenarioRepositorySnapshot {
     sessions: number;
     spaces: number;
     teachers: number;
+    agents: number;
+    agent_kinds: {
+      human: number;
+      team: number;
+      device: number;
+      integration: number;
+      software: number;
+    };
     enrolments: number;
   };
 }
@@ -182,6 +190,19 @@ export interface CampusScenarioRunView {
   metrics: CampusScenarioMetricView[];
   progress: number;
   failure_reason: string | null;
+  execution_environment: {
+    mode: "simulation";
+    namespace_id: string;
+    run_id: string;
+    virtual_clock: { now: string; time_zone: string };
+    source_snapshot_at: string;
+    expires_at: string;
+  };
+  projection_capabilities: {
+    application_parity: false;
+    supported: Array<"campus_performance">;
+    unsupported: Array<"today" | "timetable" | "attendance" | "requests" | "notifications" | "campus_view">;
+  };
   side_effect_policy: {
     mode: "sink_only";
     production_writes: false;

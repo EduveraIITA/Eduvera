@@ -19,6 +19,45 @@ The architecture has two deliberately different faces:
 
 Users must never need to understand graph terminology, twin identities, command envelopes or agent runtimes to operate the product. The conceptual model is infrastructure. The product remains a set of clear, role-appropriate campus workflows.
 
+It has one authoritative Live environment and may create transient isolated
+Simulation forks over those same contracts:
+
+| Environment | Starting state | Actors and clock | Effects | User experience |
+| --- | --- | --- | --- | --- |
+| Live | current authoritative domains and connected twin | stable production agents; real institution time | authorized domain writes, observations and approved channels | the ordinary role/domain application with a compact **Live** marker |
+| Simulation | immutable privacy-minimized snapshot of that institution's Live state | run-local counterparts for included human, team, device, integration and software agents; virtual clock | copy-on-write scenario domain state plus scenario-only event/message/evidence/connectors | the same role/domain application with a compact **Simulation** marker |
+
+There is no mixed environment and Simulation is not a second permanent campus. An
+environment identity is part of execution context,
+projection identity, event/message identity, idempotency key and client cache key. A
+simulation request cannot address a Live credential, connector, state store or
+evidence store. A Live screen cannot substitute the scenario date while continuing
+to query Live records. The server-authoritative execution session selects Live or one
+Simulation namespace before the shared domain service/API path resolves its stores,
+clock, actor counterparts, connectors and side-effect policy. The client cannot make
+this choice with a magic header or date parameter.
+
+Live and a selected Simulation fork therefore share product routes, components, domain commands and
+domain invariants; they do not share mutable state or external-effect ports. During
+development, a missing scenario adapter fails closed and is recorded as an
+implementation gap. Release acceptance requires every enabled module to have complete
+Simulation snapshot/read/write/projection support rather than leaving holes in an
+otherwise real-looking application.
+
+An institution receives Simulation without duplicating setup: a run copies the
+eligible current campus state and effective configuration through registered snapshot
+adapters. Each included source agent receives a distinct run-local counterpart that
+retains only the references and configuration evidence necessary to explain the run.
+No credential, channel endpoint or production authority is copied. The fork expires
+or is discarded and cannot be merged into Live; only a separately authorized,
+reviewed Live draft may be prepared from a minimal result receipt. Approved scenario
+behaviour may model a cohort response; absent such configuration, uncertain human
+choices remain unknown rather than receiving hidden defaults.
+
+Synthetic fixtures remain valid for automated tests and the separate Cambridge
+development harness only. They do not replace the Live-derived starting state of an
+institution user's product Simulation.
+
 ### Actor parity and model-mediated operation
 
 Every real person who acts through ThatCampus or an approved channel has one stable

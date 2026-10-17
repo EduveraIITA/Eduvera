@@ -19,6 +19,10 @@ import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from "../campus-model-core/observation-ingress.port.js";
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
 import {
+  DOMAIN_COMMAND_GATEWAY_PORT,
+  type DomainCommandGatewayPort,
+} from "../campus-model-core/domain-command-gateway.port.js";
+import {
   STAFF_COVERAGE_RECONCILIATION_PORT,
   type StaffCoverageReconciliationPort,
 } from "../staff-operations/staff-coverage-reconciliation.service.js";
@@ -496,6 +500,7 @@ export class SchoolService {
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
     @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
+    @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commandGateway: DomainCommandGatewayPort,
     @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
     @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
   ) {}
@@ -2723,12 +2728,14 @@ export class SchoolService {
       `.execute(tx);
       const currentRole = currentMembership.rows[0]?.role;
       if (!currentRole) throw new ForbiddenException("An active school staff membership is required.");
+      let attendanceAuthorityReason = "active_admin_membership";
       if (currentRole !== "admin") {
         const currentSubstitute=(await sql`SELECT id FROM effective_school_schedule(${membership.school_id}::uuid,${data.date}::date) WHERE class_section_id=${data.class_section_id}::uuid AND term_id=${screen.class.term_id}::uuid AND teacher_user_id=${user.id}::uuid AND NOT cancelled AND coverage_status='accepted' LIMIT 1`.execute(tx)).rows[0];
         const scoped=(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${membership.school_id}::uuid,${user.id}::uuid,'attendance.record',${data.class_section_id}::uuid,${data.date}::date) AS allowed`.execute(tx)).rows[0]?.allowed;
         if (!currentSubstitute&&!scoped) {
           throw new ForbiddenException("This class is no longer assigned to the signed-in teacher.");
         }
+        attendanceAuthorityReason = currentSubstitute ? "accepted_schedule_coverage" : "current_scoped_class_permission";
       }
       const currentRoster = await sql<{ student_id: string }>`
         SELECT enrollment.student_id
@@ -2833,6 +2840,58 @@ export class SchoolService {
       const effectiveRevision = Math.max(1, nextRevision);
       const now = new Date();
       const finalizationRules = await operatingRules(tx, membership.school_id);
+      const preparedCommand = await this.commandGateway.prepareDomainCommand(tx, {
+        school_id: membership.school_id,
+        actor_user_id: user.id,
+        command_type: single ? "attendance.student.record" : "attendance.register.submit",
+        handler_key: single ? "attendance.student_record" : "attendance.register_submit",
+        handler_version: 1,
+        source_domain: "attendance",
+        target: {
+          kind: "attendance_register",
+          domain: "attendance",
+          domain_id: `${data.class_section_id}:${data.date}`,
+          label: single ? "Student attendance record" : "Class attendance register",
+          lifecycle_state: "active",
+          source_revision: Math.max(1, currentRevision),
+          metadata: {},
+        },
+        current_revision: currentRevision,
+        expected_revision: data.expected_revision,
+        capability: "attendance:record",
+        purpose: single ? "record_student_attendance" : "submit_class_attendance",
+        requested_at: now.toISOString(),
+        correlation_id: request.requestId,
+        causation_id: null,
+        idempotency_key: `attendance:${user.id}:${idempotencyKey}`,
+        operating_rule_version_ref: `attendance-operating-rules:${finalizationRules.revision}`,
+        configuration_refs: [{
+          kind: "operating_rule",
+          ref: "attendance_finalization",
+          version: String(finalizationRules.revision),
+        }],
+        authority_attestation: {
+          evaluator_domain: "attendance",
+          decision: "allowed",
+          reason_codes: [attendanceAuthorityReason],
+          authority_source_refs: [{
+            membership_role: currentRole,
+            class_section_id: data.class_section_id,
+            attendance_date: data.date,
+          }],
+          operating_rule_refs: [{ revision: finalizationRules.revision }],
+          valid_until: null,
+        },
+        safe_context: {
+          class_section_id: data.class_section_id,
+          date: data.date,
+          record_count: data.records.length,
+          correction: changed.some((record) => previousByStudent.has(record.student_id)),
+        },
+      });
+      if (preparedCommand.status !== "ready") {
+        throw new ConflictException("This attendance command was already completed.");
+      }
       const autoFinalizeAt = single
         ? currentRegister?.auto_finalize_at ?? null
         : finalizationRules.attendance_finalization_mode === "automatic"
@@ -3002,11 +3061,28 @@ export class SchoolService {
           }),
         });
       }
-      await this.events.enqueueRegisterEvent(tx, {
+      const registerEventId = await this.events.enqueueRegisterEvent(tx, {
         schoolId: membership.school_id, classSectionId: data.class_section_id,
         termId: screen.class.term_id,
         date: data.date, requestId: request.requestId, state: register.state,
         revision: effectiveRevision, actorId: user.id,
+      });
+      await this.commandGateway.completeDomainCommand(tx, {
+        school_id: membership.school_id,
+        command_id: preparedCommand.command_id,
+        terminal_state: "accepted",
+        code: single ? "student_attendance_recorded" : "attendance_register_submitted",
+        explanation: single
+          ? "The Attendance domain recorded the requested learner decision."
+          : "The Attendance domain submitted the complete class register.",
+        resulting_revision: effectiveRevision,
+        domain_event_id: registerEventId,
+        metadata: {
+          changed_count: changed.length,
+          register_state: register.state,
+          submission_id: submission.id,
+        },
+        completed_at: new Date().toISOString(),
       });
       return result;
     });

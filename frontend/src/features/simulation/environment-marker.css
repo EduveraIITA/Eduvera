@@ -1,0 +1,158 @@
+.environment-marker-stack {
+  position: fixed;
+  z-index: 180;
+  top: max(7px, env(safe-area-inset-top));
+  left: 50%;
+  display: grid;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 16px));
+  justify-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.environment-marker {
+  position: fixed;
+  z-index: 180;
+  top: max(7px, env(safe-area-inset-top));
+  left: 50%;
+  display: inline-flex;
+  min-height: 30px;
+  padding: 5px 9px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--thatcampus-positive) 24%, var(--thatcampus-border));
+  border-radius: var(--thatcampus-radius-pill);
+  color: var(--thatcampus-positive);
+  background: color-mix(in srgb, var(--thatcampus-positive-soft) 94%, transparent);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
+  backdrop-filter: blur(16px);
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.environment-marker-stack > .environment-marker {
+  position: static;
+  max-width: 100%;
+  transform: none;
+}
+
+.environment-marker.is-simulation {
+  border-color: color-mix(in srgb, var(--thatcampus-brand) 28%, var(--thatcampus-border));
+  color: var(--thatcampus-brand);
+  background: color-mix(in srgb, var(--thatcampus-brand-soft) 96%, transparent);
+  pointer-events: auto;
+}
+
+.environment-marker.is-expired {
+  border-color: color-mix(in srgb, var(--thatcampus-warning) 36%, var(--thatcampus-border));
+  color: var(--thatcampus-warning);
+  background: color-mix(in srgb, var(--thatcampus-warning-soft) 96%, transparent);
+}
+
+.environment-marker > span {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.environment-marker small {
+  overflow: hidden;
+  color: var(--thatcampus-ink-secondary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.environment-marker__return {
+  display: inline-flex;
+  min-height: 24px;
+  padding: 3px 7px;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: var(--thatcampus-radius-pill);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-surface);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--thatcampus-brand) 12%, transparent);
+}
+
+.environment-marker__return:focus-visible,
+.environment-marker-error button:focus-visible {
+  outline: 2px solid var(--thatcampus-brand);
+  outline-offset: 2px;
+}
+
+.environment-marker__return:disabled {
+  cursor: wait;
+  opacity: .68;
+}
+
+.environment-marker__spinner {
+  animation: environment-marker-spin .8s linear infinite;
+}
+
+.environment-marker-error {
+  display: grid;
+  width: min(400px, calc(100vw - 24px));
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--thatcampus-danger) 22%, var(--thatcampus-border));
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-ink);
+  background: color-mix(in srgb, var(--thatcampus-danger-soft) 96%, transparent);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .14);
+  backdrop-filter: blur(18px);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+.environment-marker-error button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  place-items: center;
+  color: var(--thatcampus-ink-secondary);
+  background: color-mix(in srgb, var(--thatcampus-surface) 82%, transparent);
+  cursor: pointer;
+}
+
+@keyframes environment-marker-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 420px) {
+  .environment-marker-stack {
+    right: 8px;
+    left: auto;
+    justify-items: end;
+    transform: none;
+  }
+  .environment-marker.is-simulation > svg:first-child { display: none; }
+  .environment-marker__return > span { display: none; }
+  .environment-marker__return { width: 26px; padding: 0; justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .environment-marker__spinner { animation: none; }
+}

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { sql,type Transaction } from "kysely";
+import { type Transaction } from "kysely";
 import {
   COORDINATION_RUNTIME_PORT,
   type CoordinationRuntimePort,
@@ -102,19 +102,15 @@ export class TransportDutyModelBridgeService {
     eventType:"transport.duty_change.requested"|"transport.duty_change.accepted",
     sourceRevision:number,
   ) {
-    const rows=(await sql<{event_id:string;correlation_id:string;message_id:string}>`SELECT
-        event.id AS event_id,event.correlation_id,message.id AS message_id
-      FROM campus_model_events event
-      JOIN campus_model_reactions reaction ON reaction.school_id=event.school_id
-        AND reaction.trigger_event_id=event.id
-      JOIN campus_model_operational_messages message ON message.school_id=reaction.school_id
-        AND message.reaction_id=reaction.id
-      WHERE event.school_id=${schoolId}::uuid AND event.source_domain='departure_transport'
-        AND event.source_record_id=${changeId} AND event.event_type=${eventType}
-        AND event.source_revision=${sourceRevision}
-      ORDER BY event.created_at,event.id,message.id FOR SHARE OF event,reaction,message`.execute(transaction)).rows;
-    if(rows.length!==1)throw new ConflictException("The exact transport duty coordination request is unavailable or ambiguous.");
-    return rows[0]!;
+    const trace = await this.coordination.findExactTrace(transaction, {
+      school_id: schoolId,
+      source_domain: "departure_transport",
+      source_record_id: changeId,
+      event_type: eventType,
+      source_revision: sourceRevision,
+    });
+    if (!trace) throw new ConflictException("The exact transport duty coordination request is unavailable or ambiguous.");
+    return trace;
   }
 
   async publishRequested(

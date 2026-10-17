@@ -1,4 +1,6 @@
 import type { FastifyRequest } from "fastify";
+import type { ExecutionEnvironment } from "../campus-model-core/execution-environment.contracts.js";
+import type { ExecutionEnvironmentView } from "../auth/session-execution-environment.js";
 
 export type UserRole = "student" | "parent" | "staff" | "admin";
 
@@ -23,6 +25,8 @@ export type AuthenticatedRequest = FastifyRequest & {
   internalAgentDelegation?: true;
   hostedCampusSimulator?: true;
   publicDemo?: boolean;
+  executionEnvironment: ExecutionEnvironment | null;
+  executionEnvironmentView: ExecutionEnvironmentView;
 };
 
 export type RequestWithContext = FastifyRequest & {
@@ -33,4 +37,6 @@ export type RequestWithContext = FastifyRequest & {
   internalAgentDelegation?: true;
   hostedCampusSimulator?: true;
   publicDemo?: boolean;
+  executionEnvironment?: ExecutionEnvironment | null;
+  executionEnvironmentView?: ExecutionEnvironmentView;
 };

@@ -7,7 +7,7 @@ import { DatabaseService } from "../database/database.service.js";
 export class CampusLabHostedService {
   constructor(private readonly db: DatabaseService) {}
 
-  private async assertCambridgeAdmin(request: AuthenticatedRequest): Promise<string> {
+  private async assertCambridgeMember(request: AuthenticatedRequest, requireAdmin = false): Promise<string> {
     const settings = config();
     if (!settings.HOSTED_CAMPUS_SIMULATOR_ENABLED || settings.DEPLOYMENT_ENVIRONMENT !== "stage") throw new NotFoundException();
     const schoolId = request.authUser.active_school_id;
@@ -17,16 +17,22 @@ export class CampusLabHostedService {
       .select("m.id")
       .where("m.user_id", "=", request.authUser.id)
       .where("m.school_id", "=", schoolId)
-      .where("m.role", "=", "admin")
       .where("m.is_active", "=", true)
       .where("s.code", "=", "cis")
+      .$if(requireAdmin, (query) => query.where("m.role", "=", "admin"))
       .executeTakeFirst();
-    if (!membership) throw new ForbiddenException("Campus Lab is available only to Cambridge test-campus administrators.");
+    if (!membership) throw new ForbiddenException(requireAdmin
+      ? "Campus Lab controls are available only to Cambridge test-campus administrators."
+      : "Campus Lab is available only to Cambridge test-campus members.");
     return schoolId;
   }
 
-  private async enabled(schoolId: string): Promise<boolean> {
-    return (await this.db.selectFrom("hosted_campus_lab_controls").select("enabled").where("school_id", "=", schoolId).executeTakeFirst())?.enabled ?? true;
+  private async controlState(schoolId: string): Promise<{ enabled: boolean; clock_mode: "realtime" | "1m" | "15m" | "60m" }> {
+    const record = await this.db.selectFrom("hosted_campus_lab_controls")
+      .select(["enabled", "clock_mode"])
+      .where("school_id", "=", schoolId)
+      .executeTakeFirst();
+    return { enabled: record?.enabled ?? true, clock_mode: record?.clock_mode ?? "60m" };
   }
 
   private async forward(path: "status" | "control", init: RequestInit = {}): Promise<unknown> {
@@ -48,29 +54,34 @@ export class CampusLabHostedService {
   }
 
   async status(request: AuthenticatedRequest): Promise<unknown> {
-    const schoolId = await this.assertCambridgeAdmin(request);
+    const schoolId = await this.assertCambridgeMember(request);
     return this.forward("control", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: await this.enabled(schoolId) }),
+      body: JSON.stringify(await this.controlState(schoolId)),
     });
   }
 
   async control(request: AuthenticatedRequest): Promise<unknown> {
-    const schoolId = await this.assertCambridgeAdmin(request);
-    const body = request.body as { enabled?: unknown } | undefined;
-    if (typeof body?.enabled !== "boolean" || Object.keys(body).some((key) => key !== "enabled")) {
-      throw new ForbiddenException("Campus Lab control requires a boolean enabled value.");
+    const schoolId = await this.assertCambridgeMember(request, true);
+    const body = request.body as { enabled?: unknown; clock_mode?: unknown } | undefined;
+    if (typeof body?.enabled !== "boolean" || Object.keys(body).some((key) => !["enabled", "clock_mode"].includes(key))) {
+      throw new ForbiddenException("Campus Lab control requires enabled and may include clock_mode.");
     }
     const enabled = body.enabled;
+    const current = await this.controlState(schoolId);
+    const clockMode = body.clock_mode === undefined ? current.clock_mode : body.clock_mode;
+    if (!["realtime", "1m", "15m", "60m"].includes(String(clockMode))) {
+      throw new ForbiddenException("Campus Lab clock mode must be realtime, 1m, 15m or 60m.");
+    }
     await this.db.insertInto("hosted_campus_lab_controls").values({
-      school_id: schoolId, enabled, changed_by: request.authUser.id, changed_at: new Date(),
+      school_id: schoolId, enabled, clock_mode: clockMode as "realtime" | "1m" | "15m" | "60m", changed_by: request.authUser.id, changed_at: new Date(),
     }).onConflict((conflict) => conflict.column("school_id").doUpdateSet({
-      enabled, changed_by: request.authUser.id, changed_at: new Date(),
+      enabled, clock_mode: clockMode as "realtime" | "1m" | "15m" | "60m", changed_by: request.authUser.id, changed_at: new Date(),
     })).execute();
     return this.forward("control", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ enabled, clock_mode: clockMode }),
     });
   }
 }

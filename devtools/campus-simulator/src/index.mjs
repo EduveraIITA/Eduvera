@@ -18,7 +18,7 @@ async function main() {
     port: configuration.port,
     proxyKey: configuration.proxyKey,
     getStatus: () => runtime.snapshot(),
-    setEnabled: (enabled) => runtime.setEnabled(enabled),
+    setControl: (control) => runtime.setControl(control),
     host: configuration.host,
   });
   console.log(`[campus-lab] status listening on ${configuration.host}:${configuration.port}`);

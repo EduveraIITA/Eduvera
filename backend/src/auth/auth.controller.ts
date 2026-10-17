@@ -42,11 +42,12 @@ export class AuthController {
     reply.setCookie("csrftoken", csrfToken, this.cookieOptions(false));
     return {
       authenticated: Boolean(identity),
-      user: identity ? this.auth.response(identity.user, csrfToken).user : null,
+      user: identity ? this.auth.response(identity.user, csrfToken, identity.executionEnvironmentView).user : null,
       csrf_token: csrfToken,
       demo_mode: config().DEMO_MODE,
       demo_profile_switcher: identity ? this.auth.canUseDemoProfileSwitcher(identity.user) : false,
       public_demo: identity?.publicDemo ?? false,
+      execution_environment: identity?.executionEnvironmentView ?? { mode: "live", institution_id: null, namespace_id: null },
     };
   }
 
@@ -205,6 +206,7 @@ export class AuthController {
     if (!role || !demoSwitchRoles.includes(role as DemoSwitchRole)) throw new BadRequestException("Choose one of the available demo profiles.");
     const target = await this.auth.demoProfile(role as DemoSwitchRole);
     if (target.username === request.authUser.username) {
+      await this.auth.returnSessionToLive(request.sessionHash);
       return { ...this.auth.response(target, request.csrfToken), redirect_to: this.demoHome(role as DemoSwitchRole) };
     }
     const session = await this.auth.createSession(target, request, request.publicDemo ? { publicDemo: true, ttlSeconds: config().PUBLIC_DEMO_SESSION_TTL_SECONDS } : {});
@@ -249,6 +251,24 @@ export class AuthController {
   @HttpCode(200)
   selectSchool(@Req() request: AuthenticatedRequest) { return this.auth.selectSchool(request.authUser, request.sessionHash, request.body); }
 
+  @ApiCookieAuth()
+  @Get("execution-environment/")
+  executionEnvironment(@Req() request: AuthenticatedRequest) {
+    return this.auth.currentExecutionEnvironment(request.authUser, request.sessionHash);
+  }
+
+  @ApiCookieAuth()
+  @Post("execution-environment/")
+  @HttpCode(200)
+  selectExecutionEnvironment(@Req() request: AuthenticatedRequest) {
+    return this.auth.selectExecutionEnvironment(
+      request.authUser,
+      request.sessionHash,
+      request.body,
+      request,
+    );
+  }
+
   @Get("sessions/")
   sessions(@Req() request: AuthenticatedRequest) { return this.auth.sessions(request.authUser, request.sessionHash); }
 
@@ -259,7 +279,11 @@ export class AuthController {
   @ApiCookieAuth()
   @Get("me/")
   me(@Req() request: AuthenticatedRequest) {
-    return this.auth.me(request.authUser).then(result => ({ ...result, public_demo: request.publicDemo === true }));
+    return this.auth.me(request.authUser).then(result => ({
+      ...result,
+      public_demo: request.publicDemo === true,
+      execution_environment: request.executionEnvironmentView,
+    }));
   }
 
   @ApiCookieAuth()

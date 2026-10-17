@@ -15,6 +15,7 @@ import {
 } from "./test-database.js";
 import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
 import type { CampusModelCorePort } from "../src/campus-model-core/campus-model-core.port.js";
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 
 const port = 8022;
 const base = requireManagedTestApiBaseUrl(process.env.API_BASE_URL, `http://127.0.0.1:${port}`);
@@ -262,6 +263,7 @@ describe("ThatCampus API", () => {
     const client = {
       id: "full-sync-client",
       userId: "full-sync-user",
+      binding: { kind: "live", institution_id: "school", namespace_id: "live:school" },
       lastSequence: null,
       replaying: true,
       replayOverflow: false,
@@ -288,7 +290,7 @@ describe("ThatCampus API", () => {
           audience_user_ids: [client.userId],
           payload: { refresh: ["student.attendance"] },
           created_at: new Date(),
-        });
+        }, "live:school");
       }
       return true;
     };
@@ -314,6 +316,7 @@ describe("ThatCampus API", () => {
     let content = "";
     const client = {
       id: "zero-watermark-client",
+      binding: { kind: "live", institution_id: "school", namespace_id: "live:school" },
       lastSequence: null,
       closed: false,
       reply: {
@@ -1623,6 +1626,7 @@ describe("ThatCampus API", () => {
       database,
       events,
       createStaffCoverageReconciliationTestDouble(),
+      new CampusModelCoreService(database),
     );
     const user = (await pool.query<{
       id: string; username: string; email: string; first_name: string;
@@ -2238,6 +2242,7 @@ describe("ThatCampus API", () => {
       database,
       events,
       createStaffCoverageReconciliationTestDouble(),
+      new CampusModelCoreService(database),
     );
     try {
       await pool.query(`

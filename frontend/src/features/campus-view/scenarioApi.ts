@@ -68,6 +68,19 @@ export interface CampusScenarioRun {
   metrics: CampusScenarioMetric[];
   progress: number;
   failure_reason: string | null;
+  execution_environment: {
+    mode: "simulation";
+    namespace_id: string;
+    run_id: string;
+    virtual_clock: { now: string; time_zone: string };
+    source_snapshot_at: string;
+    expires_at: string;
+  };
+  projection_capabilities: {
+    application_parity?: boolean;
+    supported: string[];
+    unsupported: string[];
+  };
   side_effect_policy: {
     mode: "sink_only";
     production_writes: false;

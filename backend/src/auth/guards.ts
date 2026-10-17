@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, GoneException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { timingSafeEqual } from "node:crypto";
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
@@ -7,6 +7,7 @@ import { PUBLIC_ROUTE, SKIP_CSRF } from "../common/decorators.js";
 import type { RequestWithContext } from "../common/request.js";
 import { AuthService } from "./auth.service.js";
 import { InternalAgentDelegationService } from "./internal-agent-delegation.js";
+import { liveSessionExecutionEnvironment } from "./session-execution-environment.js";
 
 export function signedCookie(request: FastifyRequest, name: string): string | undefined {
   const encoded = request.cookies[name];
@@ -38,6 +39,9 @@ export class SessionGuard implements CanActivate {
       request.csrfToken = "hosted-campus-lab";
       request.internalAgentDelegation = true;
       request.hostedCampusSimulator = true;
+      const environment = liveSessionExecutionEnvironment(user.active_school_id);
+      request.executionEnvironment = environment.environment;
+      request.executionEnvironmentView = environment.view;
       return true;
     }
     const internalToken = request.headers["x-omnischool-agent-delegation"];
@@ -48,6 +52,9 @@ export class SessionGuard implements CanActivate {
       request.sessionHash = `agent:${delegation.requestId}`;
       request.csrfToken = "internal-agent-delegation";
       request.internalAgentDelegation = true;
+      const environment = liveSessionExecutionEnvironment(delegation.user.active_school_id);
+      request.executionEnvironment = environment.environment;
+      request.executionEnvironmentView = environment.view;
       return true;
     }
     const identity = await this.auth.resolveSession(signedCookie(request, config().SESSION_COOKIE_NAME));
@@ -56,6 +63,19 @@ export class SessionGuard implements CanActivate {
     request.sessionHash = identity.tokenHash;
     request.csrfToken = identity.csrfToken;
     request.publicDemo = identity.publicDemo;
+    request.executionEnvironment = identity.executionEnvironment;
+    request.executionEnvironmentView = identity.executionEnvironmentView;
+    const requestPath = request.url?.split("?", 1)[0] ?? "";
+    if (identity.executionEnvironmentView.mode === "simulation"
+      && identity.executionEnvironmentView.unavailable === true
+      && !requestPath.startsWith("/api/v1/auth/")) {
+      throw new GoneException({
+        message: "This Simulation is unavailable. Return to Live to continue.",
+        code: "simulation_environment_unavailable",
+        reason: identity.executionEnvironmentView.unavailable_reason,
+        run_id: identity.executionEnvironmentView.run_id,
+      });
+    }
     return true;
   }
 }

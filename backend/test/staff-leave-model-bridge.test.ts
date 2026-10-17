@@ -132,6 +132,9 @@ function setup(receipt: ReturnType<typeof matchedReceipt> | {
     replayed: false,
   });
   const coordination: CoordinationRuntimePort = {
+    findExactTrace: vi.fn(),
+    hasAcceptedSourceEvent: vi.fn(),
+    listOperationalMessageWork: vi.fn(),
     resolveEventRoute: vi.fn(),
     authorizeCandidateRecipients: vi.fn(),
     publishAcceptedEvent,
@@ -333,6 +336,7 @@ describe("staff leave model bridge", () => {
       {} as never,
       createStaffCoverageReconciliationTestDouble(),
       {} as TemporalContextPort,
+      {} as never,
     );
     await expect((staff as unknown as {
       canReviewStaffLeave: (

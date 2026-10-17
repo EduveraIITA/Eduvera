@@ -379,6 +379,18 @@
 .campus-scenario-result > section + section { padding-top: 18px; border-top: 1px solid var(--thatcampus-border); }
 .campus-scenario-result__summary { display: grid; gap: 2px; }
 .campus-scenario-result__summary .campus-scenario-safety { margin-top: 10px; }
+.campus-scenario-entry,
+.campus-scenario-results-only { display: grid; gap: 8px; margin-top: 10px; padding: 11px; border-radius: var(--thatcampus-radius-control); }
+.campus-scenario-entry { grid-template-columns: minmax(0, 1fr) auto; align-items: center; border: 1px solid color-mix(in srgb, var(--thatcampus-brand) 18%, var(--thatcampus-border)); background: var(--thatcampus-brand-soft); }
+.campus-scenario-entry strong,
+.campus-scenario-results-only strong { font-size: 11px; }
+.campus-scenario-entry p,
+.campus-scenario-results-only p { margin: 2px 0 0; color: var(--thatcampus-ink-secondary); font-size: 10px; line-height: 1.45; }
+.campus-scenario-entry button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: var(--thatcampus-radius-control); color: #fff; background: var(--thatcampus-brand); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.campus-scenario-entry button:disabled { cursor: wait; opacity: .68; }
+.campus-scenario-entry button:focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 2px; }
+.campus-scenario-entry__spinner { animation: campus-scenario-spin .8s linear infinite; }
+.campus-scenario-results-only { border: 1px solid var(--thatcampus-border); background: var(--thatcampus-surface-soft); }
 .campus-scenario-metrics { display: grid; gap: 1px; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--thatcampus-border); border-radius: 14px; background: var(--thatcampus-border); list-style: none; }
 .campus-scenario-metric { padding: 13px; background: var(--thatcampus-surface); }
 .campus-scenario-metric header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -418,6 +430,8 @@
   .campus-kpi-series-intro p { max-width: none; text-align: left; }
   .campus-kpi-metric > header { display: grid; }
   .campus-kpi-metric__value { min-width: 0; justify-items: start; text-align: left; }
+  .campus-scenario-entry { grid-template-columns: 1fr; }
+  .campus-scenario-entry button { width: 100%; }
 }
 
 @media (max-width: 680px) {
@@ -440,5 +454,6 @@
   .campus-kpi-loading span { animation: none; }
   .campus-kpi-donut__slice { transition: none; }
   .campus-scenario-running > span,
-  .campus-scenario-catalogue-state__spinner { animation: none; }
+  .campus-scenario-catalogue-state__spinner,
+  .campus-scenario-entry__spinner { animation: none; }
 }

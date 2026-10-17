@@ -2,6 +2,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ApiError, apiFetch } from "../../lib/api";
 import { useOptionalAuth } from "../auth/AuthContext";
+import { useOptionalApplicationExecutionEnvironment } from "../simulation/ApplicationExecutionEnvironment";
+import { LIVE_EXECUTION_ENVIRONMENT, executionEnvironmentIdentity } from "../simulation/executionEnvironment";
 import {
   decodeSchoolEventChannelMessage,
   SCHOOL_EVENT_CHANNEL_VERSION,
@@ -49,6 +51,12 @@ function encodeEnvelope(envelope: SchoolEventEnvelope) {
 export function SchoolEventBridge() {
   const auth = useOptionalAuth();
   const queryClient = useQueryClient();
+  const applicationEnvironment = useOptionalApplicationExecutionEnvironment();
+  const environmentId = executionEnvironmentIdentity(
+    applicationEnvironment?.environment
+      ?? auth?.executionEnvironment
+      ?? LIVE_EXECUTION_ENVIRONMENT,
+  );
   const userId = auth?.user?.id;
   const authenticated = auth?.status === "authenticated";
   const [streamStatus, setStreamStatus] = useState<StreamStatus>(initialStreamStatus);
@@ -244,7 +252,7 @@ export function SchoolEventBridge() {
       startSource(false);
     } else {
       try {
-        channel = new BroadcastChannel(schoolEventChannelName(userId));
+        channel = new BroadcastChannel(schoolEventChannelName(userId, environmentId));
         const handleChannelMessage = (event: MessageEvent<unknown>) => {
           const message = decodeSchoolEventChannelMessage(event.data);
           if (!message || message.userId !== userId || message.senderTabId === tabId) return;
@@ -269,7 +277,7 @@ export function SchoolEventBridge() {
         post({ kind: "hello" });
 
         const lockRequest = lockManager.request(
-          schoolEventLockName(userId),
+          schoolEventLockName(userId, environmentId),
           { mode: "exclusive", signal: lockAbort.signal },
           async (lock) => {
             if (!lock || cleaned) return;
@@ -311,7 +319,7 @@ export function SchoolEventBridge() {
       channel?.close();
       batcher.cancel();
     };
-  }, [authenticated, queryClient, userId]);
+  }, [authenticated, environmentId, queryClient, userId]);
 
   if (!authenticated) return null;
   return (

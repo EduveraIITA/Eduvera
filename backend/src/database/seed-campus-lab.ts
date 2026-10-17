@@ -170,11 +170,15 @@ async function seedOperationalStaff(client:PoolClient,scope:SeedScope,spaces:Map
 
 async function reconcileModelProjection(client:PoolClient,scope:SeedScope){
   const fixtureMetadata=JSON.stringify({synthetic:true,fixture_source:CAMBRIDGE_CAMPUS_FIXTURE_VERSION});
-  await client.query(`INSERT INTO campus_model_entities(school_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata)
-    SELECT space.school_id,'space','campus_topology',space.id::text,space.name,
+  await client.query(`INSERT INTO campus_model_entities(
+      school_id,realm_id,environment_namespace_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
+    )
+    SELECT space.school_id,realm.id,'live:'||space.school_id::text,'space','campus_topology',space.id::text,space.name,
       CASE space.status WHEN 'inactive' THEN 'inactive' ELSE 'active' END,space.revision,$2::jsonb
-    FROM campus_spaces space WHERE space.school_id=$1 AND space.attributes->>'fixture_source'=$3
-    ON CONFLICT(school_id,domain,domain_id) DO UPDATE SET
+    FROM campus_spaces space
+    JOIN operational_realms realm ON realm.legacy_school_id=space.school_id
+    WHERE space.school_id=$1 AND space.attributes->>'fixture_source'=$3
+    ON CONFLICT(realm_id,environment_namespace_id,domain,domain_id) DO UPDATE SET
       label=EXCLUDED.label,lifecycle_state=EXCLUDED.lifecycle_state,source_revision=EXCLUDED.source_revision,
       metadata=campus_model_entities.metadata||EXCLUDED.metadata,updated_at=now()
     WHERE campus_model_entities.label IS DISTINCT FROM EXCLUDED.label
@@ -183,11 +187,16 @@ async function reconcileModelProjection(client:PoolClient,scope:SeedScope){
       OR NOT (campus_model_entities.metadata @> EXCLUDED.metadata)`,[
     scope.schoolId,fixtureMetadata,CAMBRIDGE_CAMPUS_FIXTURE_VERSION,
   ]);
-  await client.query(`INSERT INTO campus_model_entities(school_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata)
-    SELECT profile.school_id,'staff','people',profile.id::text,trim(concat_ws(' ',profile.first_name,profile.last_name)),
+  await client.query(`INSERT INTO campus_model_entities(
+      school_id,realm_id,environment_namespace_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
+    )
+    SELECT profile.school_id,realm.id,'live:'||profile.school_id::text,'staff','people',profile.id::text,
+      trim(concat_ws(' ',profile.first_name,profile.last_name)),
       CASE profile.status WHEN 'inactive' THEN 'inactive' ELSE 'active' END,profile.revision,$2::jsonb
-    FROM staff_profiles profile WHERE profile.school_id=$1 AND profile.staff_code=ANY($3::text[])
-    ON CONFLICT(school_id,domain,domain_id) DO UPDATE SET
+    FROM staff_profiles profile
+    JOIN operational_realms realm ON realm.legacy_school_id=profile.school_id
+    WHERE profile.school_id=$1 AND profile.staff_code=ANY($3::text[])
+    ON CONFLICT(realm_id,environment_namespace_id,domain,domain_id) DO UPDATE SET
       label=EXCLUDED.label,lifecycle_state=EXCLUDED.lifecycle_state,source_revision=EXCLUDED.source_revision,
       metadata=campus_model_entities.metadata||EXCLUDED.metadata,updated_at=now()
     WHERE campus_model_entities.label IS DISTINCT FROM EXCLUDED.label

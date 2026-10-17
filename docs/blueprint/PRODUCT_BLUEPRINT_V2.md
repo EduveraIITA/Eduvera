@@ -91,6 +91,58 @@ the reusable Model Core, Campus View and isolated what-if runtime remain product
 capabilities. Until that decision, preserve the full implementation and record any
 runtime exclusion as an open deployment boundary rather than deleting its source.
 
+### 2.10 One authoritative campus, transient Simulation forks
+
+ThatCampus has one authoritative Live campus environment. An authorized user may
+temporarily fork its digital-twin state into an isolated, expiring Simulation
+environment:
+
+- **Live** uses the real clock, real actor endpoints and authoritative domain APIs.
+  Its events, observations, commands and outcomes can change campus operation.
+- **Simulation** is a transient fork of a privacy-minimized point-in-time snapshot
+  into a run-scoped
+  namespace with a virtual clock, run-local actor counterparts, snapshot/fake domain
+  executors and sink-only effects. It can never write, message or authenticate into
+  Live.
+
+Simulation is a product capability for every institution, not a second permanent
+platform, onboarding mode or Cambridge-only feature. An administrator starts from the institution's
+current digital-twin state; ThatCampus automatically copies the eligible topology,
+actors, plans, effective rules and configuration required by registered scenario
+adapters. The institution does not recreate its people or timetable. Missing modelled
+behaviour remains visibly unsupported or unknown unless an approved, versioned
+scenario policy supplies it; the core never invents a person's intent.
+
+The selected execution context is application-wide. An authorized user operates the same
+ThatCampus application, routes, navigation, modules and domain language in Live and
+Simulation. A compact, persistent **Live** or **Simulation** marker at the top is the
+only required visual distinction; Simulation also exposes its virtual date/time and a
+clear switch back to Live without turning the product into a separate mini-app.
+
+Today, timetable, attendance, Messages, Requests, Campus View, KPIs and every other
+enabled module resolve through the same domain contracts against the environment held
+by the server-authoritative user session. They must all read and write one selected
+Live or run-scoped Simulation state and clock. The browser cannot select an
+environment by supplying a date, route parameter or caller-controlled header. An
+environment switch clears or partitions caches and realtime subscriptions before the
+same screen is rendered from the new environment.
+
+The fork expires or is explicitly discarded; neither its data nor its actions become
+Live campus truth. A scenario result may later be used to prepare a reviewed Live
+draft, but that is a new authorized Live command with fresh rule, authority, revision
+and invariant checks—not a merge of environments.
+
+During incremental development a domain with no scenario adapter fails closed and is
+reported as an implementation gap; it must never fall back to Live data. That state is
+not acceptable release parity. Production acceptance requires a snapshot, read,
+command and projection adapter for every module enabled for that institution so the
+whole familiar application remains operable in Simulation.
+
+The Cambridge Campus Lab remains a separate development conformance harness. It may
+exercise the disposable Cambridge Live fixture through ordinary APIs, but its clock
+and actor receipts must not be presented as the product simulation environment or
+injected into customer Live screens.
+
 ## 3. Who the product serves
 
 ### Institution shapes
@@ -196,7 +248,9 @@ back to the owning domain action.
 The detailed implementation contract is [ThatCampus Model Core
 blueprint](THATCAMPUS_MODEL_CORE_BLUEPRINT.md). It defines the core capabilities,
 primitives, domain-adapter boundary, configured reaction runtime, simulation contract,
-failure semantics and acceptance gates.
+failure semantics and acceptance gates. Its domain-neutral realm, environment-qualified
+identity, semantic-catalogue and extension rules are defined by the accepted [universal
+institution model](UNIVERSAL_INSTITUTION_MODEL.md).
 
 The bounded operational specialization for transient baseline-versus-alternative
 planning and future KPI ranges is [Campus scenario simulation](CAMPUS_SCENARIO_SIMULATION.md).
