@@ -8490,3 +8490,15 @@ errors; visitor form overflow checks passed at all four widths. Phone and tablet
 screenshots were visually inspected. This supersedes the initial browser-download
 block above. Native owner-device camera review remains open. Large JPEG/PNG camera
 captures are resized locally before upload; submission waits for photo preparation.
+
+## 17 October 2026 — scanner home and camera-only visitor follow-up
+
+Owner requested the new pickup scanner HTML reference for In & Out home and resumed
+the camera-only visitor change. Added themed viewfinder/checkpoint presentation and
+live scanner status; retained real student/guardian verification and direct search.
+Removed file picker; live camera captures JPEG on Apple and other devices, with preview,
+retake/removal, permission-error recovery, cancellation and late-stream cleanup.
+Local frontend typecheck, focused lint and 15 gate/form tests passed. Portable Chromium
+synthetic fixtures verified camera capture to preview, no page errors, and visitor/search
+layouts at 320/768/1024/1440 px. Real iPhone camera acceptance remains open. Deployment
+is tracked separately; these checks do not establish real-device or hosted acceptance.

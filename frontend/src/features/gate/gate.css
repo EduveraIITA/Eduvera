@@ -179,3 +179,18 @@
 @keyframes gate-scan-line { to { top:90%; } }
 @media(prefers-reduced-motion:reduce) { .gate-scan-frame span { animation:none; top:50%; } }
 .gate-result-state { display:block; margin-top:8px; font-size:11px; font-weight:500; color:var(--edura-ink-muted); }
+.gate-photo-camera { flex-basis:100%; min-width:0; }
+.gate-photo-camera video { display:block; width:100%; max-height:360px; border-radius:var(--edura-radius-control); background:#111; object-fit:contain; }
+/* Scanner-first home follows the owner-provided pickup verification reference. */
+.gate-checkpoint-heading { margin:8px 0 18px; }
+.gate-checkpoint-heading > span { display:flex; align-items:center; gap:6px; color:var(--edura-brand); font-size:12px; font-weight:700; }
+.gate-checkpoint-heading h2 { margin:10px 0 6px; font-size:clamp(21px,3vw,28px); letter-spacing:-.035em; }
+.gate-checkpoint-heading p { margin:0; color:var(--edura-ink-muted); font-size:13px; line-height:1.6; }
+.gate-home-viewfinder { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:20px; min-height:270px; padding:18px; border-radius:24px; color:#e2e8f0; background:radial-gradient(#334155 1px,transparent 1px) 0 0/18px 18px,#0f172a; overflow:hidden; }
+.gate-home-camera-label { align-self:flex-start; display:flex; align-items:center; gap:7px; padding:7px 10px; background:#ffffff12; border:1px solid #ffffff20; border-radius:24px; font-size:11px; }
+.gate-home-target { position:relative; display:grid; place-items:center; width:160px; height:140px; border:3px solid var(--edura-brand-bright); border-radius:18px; color:#94a3b8; }
+.gate-home-viewfinder > p { margin:0; padding:7px 12px; border-radius:24px; background:#0004; font-size:11px; text-align:center; }
+.gate-home-viewfinder + .gate-actions { margin-top:16px; }
+.gate-camera-badge { position:absolute; z-index:2; top:14px; left:14px; padding:7px 12px; border-radius:24px; background:#0f172acc; color:#fff; font-size:11px; }
+.gate-workspace .gate-person { border-radius:24px; }
+.gate-workspace .gate-collector { border:1px solid var(--edura-border); border-radius:16px; background:var(--edura-surface-soft); }

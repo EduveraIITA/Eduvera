@@ -182,3 +182,15 @@ mobile capture control and file picker support preview, replacement and removal.
 This extends the existing gate domain state machine and transactional audit/outbox.
 It does not claim a new Model Core visitor-command adapter or automated decision policy.
 Real host/guard walkthrough and owner-device photo-capture review remain acceptance steps.
+
+### Owner follow-up: scanner home and camera-only visitor photo
+
+The In & Out home adopts the supplied scanner reference's dark viewfinder, checkpoint
+heading, rounded controls and real verification cards within the existing school shell.
+The camera starts on Scan QR; no fabricated active-camera, student/location or SMS
+claims are displayed. Existing identity checks and domain authority remain unchanged.
+Visitor photos now open a live rear-camera preview directly, with capture, cancel,
+retake and remove. There is no upload/file-picker option. Inline muted playback supports
+Apple camera use; canvas encodes captured pixels as JPEG regardless of the device's
+HEIF camera setting. This is camera capture support, not HEIC file import. Cancellation,
+unmount and completed capture stop camera tracks; late permission results are discarded.

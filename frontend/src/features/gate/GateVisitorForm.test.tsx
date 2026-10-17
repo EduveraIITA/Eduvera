@@ -3,29 +3,55 @@ import { afterEach,beforeEach,expect,it,vi } from 'vitest';
 import { GateVisitorForm } from './GateVisitorForm';
 import { VisitorApprovalPrompt } from './VisitorApprovalPrompt';
 const submit=vi.fn();
+const stop=vi.fn(),play=vi.fn().mockResolvedValue(undefined),getUserMedia=vi.fn();
+beforeEach(()=>{
+ stop.mockClear();play.mockClear();getUserMedia.mockReset();
+ getUserMedia.mockResolvedValue({getTracks:()=>[{stop}]});
+ Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia}});
+ vi.spyOn(HTMLMediaElement.prototype,'play').mockImplementation(play);
+ Object.defineProperty(HTMLVideoElement.prototype,'videoWidth',{configurable:true,value:1920});
+ Object.defineProperty(HTMLVideoElement.prototype,'videoHeight',{configurable:true,value:1080});
+ vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue({drawImage:vi.fn()} as unknown as CanvasRenderingContext2D);
+ vi.spyOn(HTMLCanvasElement.prototype,'toBlob').mockImplementation(callback=>callback(new Blob(['photo'],{type:'image/jpeg'})));
+});
 beforeEach(()=>{submit.mockReset();URL.createObjectURL=vi.fn(()=> 'blob:visitor-preview');URL.revokeObjectURL=vi.fn();});
-afterEach(cleanup);
+afterEach(()=>{cleanup();vi.restoreAllMocks();});
 it('submits direct entry without a host and approval with a host and photo',async()=>{
- const {container}=render(<GateVisitorForm hosts={[{id:'host',name:'Meera'}]} hindi={false} busy={false} onSubmit={submit}/>);
+ render(<GateVisitorForm hosts={[{id:'host',name:'Meera'}]} hindi={false} busy={false} onSubmit={submit}/>);
  fireEvent.change(screen.getByLabelText('Visitor name'),{target:{value:'Visitor Test'}});
  fireEvent.change(screen.getByLabelText('Mobile number'),{target:{value:'9876543210'}});
  fireEvent.change(screen.getByLabelText('Purpose of visit'),{target:{value:'Document delivery'}});
  fireEvent.click(screen.getByRole('button',{name:'Record visitor entry'}));
  expect((submit.mock.calls[0][0] as FormData).get('host_user_id')).toBe('');
  fireEvent.change(screen.getByRole('combobox'),{target:{value:'host'}});
- const photo=new File(['photo'],'visitor.jpg',{type:'image/jpeg'});
- fireEvent.change(container.querySelector('input[type=file]')!,{target:{files:[photo]}});
+ fireEvent.click(screen.getByRole('button',{name:'Take photo'}));
+ await waitFor(()=>expect(play).toHaveBeenCalled());
+ fireEvent.canPlay(screen.getByLabelText('Visitor camera preview'));
+ fireEvent.click(screen.getByRole('button',{name:'Capture photo'}));
  expect(await screen.findByAltText('Visitor photo preview')).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Request approval'}));
- const form=submit.mock.calls[1][0] as FormData;expect(form.get('host_user_id')).toBe('host');expect(form.get('photo')).toBe(photo);
+ const form=submit.mock.calls[1][0] as FormData;expect(form.get('host_user_id')).toBe('host');expect((form.get('photo') as File).type).toBe('image/jpeg');
  fireEvent.click(screen.getByRole('button',{name:'Remove photo'}));
  await waitFor(()=>expect(screen.queryByAltText('Visitor photo preview')).not.toBeInTheDocument());
 });
-it('rejects unsupported photos and allows entry when no hosts exist',()=>{
+it('has no upload picker and recovers when camera permission is denied',async()=>{
  const {container}=render(<GateVisitorForm hosts={[]} hindi={false} busy={false} onSubmit={submit}/>);
- fireEvent.change(container.querySelector('input[type=file]')!,{target:{files:[new File(['<svg/>'],'visitor.svg',{type:'image/svg+xml'})]}});
- expect(screen.getByRole('alert')).toHaveTextContent('JPEG or PNG');
+ expect(container.querySelector('input[type=file]')).toBeNull();
+ expect(screen.queryByRole('button',{name:'Attach photo'})).not.toBeInTheDocument();
+ getUserMedia.mockRejectedValueOnce(new Error('NotAllowedError'));
+ fireEvent.click(screen.getByRole('button',{name:'Take photo'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Allow camera access');
  expect(screen.getByRole('button',{name:'Record visitor entry'})).toBeEnabled();
+});
+it('stops a camera that opens after cancellation',async()=>{
+ let resolve!: (value: MediaStream) => void;
+ getUserMedia.mockReturnValueOnce(new Promise<MediaStream>(done=>{resolve=done;}));
+ render(<GateVisitorForm hosts={[]} hindi={false} busy={false} onSubmit={submit}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Take photo'}));
+ fireEvent.click(screen.getByRole('button',{name:'Cancel camera'}));
+ resolve({getTracks:()=>[{stop}]} as unknown as MediaStream);
+ await waitFor(()=>expect(stop).toHaveBeenCalled());
+ expect(screen.queryByLabelText('Visitor camera preview')).not.toBeInTheDocument();
 });
 it('shows the visitor photo before the host decides',()=>{
  render(<VisitorApprovalPrompt visitor={{id:'visitor',school_id:'school',name:'Visitor Test',purpose:'Meeting',revision:1,state:'pending',photo_url:'/api/v1/gate/schools/school/visitors/visitor/photo/'}} hindi={false} busy={false} error="" outcome={null} onComplete={vi.fn()} onLater={vi.fn()} onDecide={vi.fn()} onRetry={vi.fn()}/>);
