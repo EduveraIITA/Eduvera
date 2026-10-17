@@ -16,7 +16,7 @@ import type { AssistantContext, AssistantPortal } from './context';
 import { browserHistoryIndex, previousPortalLocation } from '../navigation/portalHistory';
 import { samePortalHref } from '../navigation/portalReturnState';
 import { ThatCampusLoader } from '../../components/ThatCampusLoader';
-import { AssistantElectricBorder } from './AssistantElectricBorder';
+import { AssistantLatestReply } from './AssistantLatestReply';
 import { AssistantIcon } from './AssistantIcon';
 import './assistant.css';
 
@@ -90,7 +90,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
         </div>;
         return <li key={run.id} data-agent-run={run.id}>
           <div className="assistant-question"><span className="sr-only">You: </span>{run.question}</div>
-          {run.id===latest?.id?<AssistantElectricBorder>{reply}</AssistantElectricBorder>:reply}
+          {run.id===latest?.id?<AssistantLatestReply>{reply}</AssistantLatestReply>:reply}
         </li>;
       })}
     </ol>:<div className="assistant-page__empty"><AssistantIcon size={48}/><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
