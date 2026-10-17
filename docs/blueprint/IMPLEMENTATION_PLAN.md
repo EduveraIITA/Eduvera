@@ -8538,3 +8538,12 @@ Existing thumbnail removal and camera lifecycle remain unchanged.
 Frontend typecheck, focused lint and 15 gate/form tests passed. Portable Chromium
 verified capture/decoded preview without page errors and responsive layouts at
 320/768/1024/1440px; icon-only control and top thumbnail screenshots reviewed.
+
+## 18 October 2026 — deployment test date correction
+
+Gate header release ff0bf02 was blocked by seven existing agent attendance integration
+assertions after the school-local clock crossed into Sunday. The tests implicitly used
+today even when the fixture had no scheduled lessons. Select the latest actual scheduled
+date within the fixture term and use it explicitly in lookup and mocked attendance tools.
+Retain all attendance availability/authority checks and assertions; no production rule
+or test gate is disabled. Hosted integration rerun must verify this correction.
