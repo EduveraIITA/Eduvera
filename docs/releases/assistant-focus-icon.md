@@ -12,3 +12,6 @@ Assistant mark immediately above the highlighted latest full-screen reply.
 
 Validation: nine focused component tests pass. Hosted deployment and owner visual
 acceptance remain separate gates; the generated placement image is a mockup only.
+
+Owner spacing refinement: reduce the icon-to-latest-response grid gap from 12px to
+6px. Preserve icon size, floating motion, response border and all other spacing.
