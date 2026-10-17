@@ -8446,7 +8446,19 @@ submits `/attendance-model/sessions/:sessionId/submit`. For `daily_class`, it re
 the daily register flow; for `none`, it records a visible no-action receipt. The
 existing owning-domain transaction retains roster validation, revision/idempotency,
 authorization, immutable evidence, Model Core command/outcome and outbox invalidation.
-No cache copying or compensating synchronization was added.
+Before emitting a successful Campus Lab receipt, the runner re-reads the principal's
+authoritative workspace and requires the identical session to be submitted/final with
+marked and roster counts equal to the submitted payload. A mismatch becomes a visible
+issue receipt. No cache copying or compensating synchronization was added.
+
+A Stage rehearsal also exposed a startup retry storm: the simulator fetched the full
+principal timetable projection merely to discover the school-local date, hit its
+bounded HTTP timeout while the server continued the expensive work, and retried every
+five seconds. Startup and refresh now obtain the current date from the configured
+institution timezone and read the narrower effective day-plan contract directly.
+Booting is single-flight with a bounded retry interval, and activation returns a
+connecting snapshot immediately instead of holding the operator request open. This
+keeps simulator control responsive and prevents overlapping abandoned timetable reads.
 
 Local verification: Campus Lab model/action tests pass **20/20**, including scheduled,
 daily-class and disabled-mode routing; backend TypeScript typecheck passes; and the

@@ -72,10 +72,19 @@ async function allStudents(session, schoolId) {
   return results;
 }
 
-async function currentSchoolDay(session, schoolId, principalTimetable = null) {
-  const principal = principalTimetable ?? await session.request("/api/v1/screens/principal/timetable/");
-  let date = principal.school_date;
-  if (!date) throw new Error("The principal timetable did not provide the current school-local date.");
+function dateInZone(now, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+async function currentSchoolDay(session, schoolId, { date, timezone }) {
+  if (!date || !timezone) throw new Error("The effective school day requires a school-local date and timezone.");
   let day = await session.request(`/api/v1/day-plans/options?${new URLSearchParams({ school_id: schoolId, date })}`);
   if (day?.context?.today && day.context.today !== date) {
     date = day.context.today;
@@ -104,6 +113,7 @@ export class CampusSimulatorRuntime {
     this.routine = null;
     this.intervals = [];
     this.refreshing = false;
+    this.bootPromise = null;
     this.actorSessions = new Map();
     this.control = { enabled: true, changed_at: this.startedAt.toISOString(), changed_by: "startup" };
   }
@@ -186,12 +196,15 @@ export class CampusSimulatorRuntime {
     const identities = Object.entries(sessions);
     const wrongSchool = identities.find(([, session]) => session.user?.active_school_id !== schoolId);
     if (wrongSchool) throw new Error(`The ${wrongSchool[0]} demo identity is not connected to the Cambridge dummy school.`);
-    const [setup, principalTimetable, students] = await Promise.all([
+    const [setup, students] = await Promise.all([
       sessions.admin.request(`/api/v1/schools/${encodeURIComponent(schoolId)}/institution-setup/`),
-      sessions.admin.request("/api/v1/screens/principal/timetable/"),
       allStudents(sessions.admin, schoolId),
     ]);
-    const timetable = await currentSchoolDay(sessions.admin, schoolId, principalTimetable);
+    const timezone = setup.school?.timezone ?? this.behavior.timezone;
+    const timetable = await currentSchoolDay(sessions.admin, schoolId, {
+      date: dateInZone(new Date(), timezone),
+      timezone,
+    });
     assertCambridgeFixture(setup, this.behavior);
     if (!(setup.spaces ?? []).some((space) => space.status === "active")) throw new Error("The Cambridge fixture has no active campus spaces.");
     this.sessions = sessions;
@@ -215,11 +228,12 @@ export class CampusSimulatorRuntime {
     this.refreshing = true;
     try {
       const schoolId = this.data.setup.school.id;
-      const [setup, principalTimetable] = await Promise.all([
-        this.sessions.admin.request(`/api/v1/schools/${encodeURIComponent(schoolId)}/institution-setup/`),
-        this.sessions.admin.request("/api/v1/screens/principal/timetable/"),
-      ]);
-      const timetable = await currentSchoolDay(this.sessions.admin, schoolId, principalTimetable);
+      const setup = await this.sessions.admin.request(`/api/v1/schools/${encodeURIComponent(schoolId)}/institution-setup/`);
+      const timezone = setup.school?.timezone ?? this.behavior.timezone;
+      const timetable = await currentSchoolDay(this.sessions.admin, schoolId, {
+        date: dateInZone(new Date(), timezone),
+        timezone,
+      });
       assertCambridgeFixture(setup, this.behavior);
       this.data = { ...this.data, setup, timetable };
       this.routine = createRoutineSchedule({ startedAt: this.runStartedAt, now: new Date(), behavior: this.behavior, timetable });
@@ -264,34 +278,44 @@ export class CampusSimulatorRuntime {
       return this.snapshot();
     }
     this.runStartedAt = new Date();
-    if (!this.data) await this.connect();
-    else await this.refresh();
+    if (!this.data) {
+      this.errors = [];
+      this.render();
+      void this.bootWithRetry();
+      return this.snapshot();
+    }
+    void this.refresh().then(() => this.actionRunner?.tick(new Date()));
     this.startIntervals();
     this.render();
-    await this.actionRunner?.tick(new Date());
     return this.snapshot();
   }
 
-  async bootWithRetry({ retryMs = 5_000 } = {}) {
-    while (!this.data && this.control.enabled) {
-      try {
-        await this.connect();
-      } catch (error) {
-        this.errors = [errorMessage(error)];
-        this.render();
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, retryMs);
-          timer.unref?.();
-        });
+  bootWithRetry({ retryMs = 15_000 } = {}) {
+    if (this.bootPromise) return this.bootPromise;
+    this.bootPromise = (async () => {
+      while (!this.data && this.control.enabled) {
+        try {
+          await this.connect();
+        } catch (error) {
+          this.errors = [errorMessage(error)];
+          this.render();
+          await new Promise((resolve) => {
+            const timer = setTimeout(resolve, retryMs);
+            timer.unref?.();
+          });
+        }
       }
-    }
-    if (!this.control.enabled) {
-      this.render();
-      return;
-    }
-    this.startIntervals();
-    await this.actionRunner?.tick(new Date());
+      if (!this.control.enabled) {
+        this.render();
+        return;
+      }
+      this.startIntervals();
+      await this.actionRunner?.tick(new Date());
+    })().finally(() => {
+      this.bootPromise = null;
+    });
+    return this.bootPromise;
   }
 }
 
-export const runtimeInternals = { allStudents, currentSchoolDay, emptyStatus, errorMessage };
+export const runtimeInternals = { allStudents, currentSchoolDay, dateInZone, emptyStatus, errorMessage };

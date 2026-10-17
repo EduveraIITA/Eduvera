@@ -19,7 +19,7 @@ test("resolves the effective schedule for the current school-local date", async 
       };
     },
   };
-  const result = await runtimeInternals.currentSchoolDay(session, "school-1", { school_date: "2026-10-16" });
+  const result = await runtimeInternals.currentSchoolDay(session, "school-1", { date: "2026-10-16", timezone: "Asia/Kolkata" });
   assert.equal(result.school_date, "2026-10-16");
   assert.deepEqual(result.schedule, [{ id: "period-1" }]);
   assert.equal(calls.length, 1);
@@ -43,9 +43,16 @@ test("re-resolves after a midnight race instead of running yesterday's schedule"
       };
     },
   };
-  const result = await runtimeInternals.currentSchoolDay(session, "school-1", { school_date: "2026-10-16" });
+  const result = await runtimeInternals.currentSchoolDay(session, "school-1", { date: "2026-10-16", timezone: "Asia/Kolkata" });
   assert.equal(result.school_date, "2026-10-17");
   assert.deepEqual(result.schedule, [{ id: "current-period" }]);
   assert.equal(calls.length, 2);
   assert.match(calls[1], /date=2026-10-17/);
+});
+
+test("formats the boot date in the institution timezone", () => {
+  assert.equal(
+    runtimeInternals.dateInZone(new Date("2026-10-16T19:15:00.000Z"), "Asia/Kolkata"),
+    "2026-10-17",
+  );
 });

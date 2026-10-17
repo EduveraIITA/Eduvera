@@ -404,6 +404,16 @@ export class DevelopmentActionRunner {
         records,
       },
     });
+    const reflectedWorkspace = await this.sessions.admin.request(`/api/v1/attendance-model/workspace?date=${encodeURIComponent(today)}`);
+    const reflected = (reflectedWorkspace?.registers ?? []).find((item) => item.session_id === selected.session_id);
+    if (
+      !reflected
+      || !["submitted", "locked"].includes(reflected.submission_status)
+      || Number(reflected.marked_count) !== records.length
+      || Number(reflected.student_count) !== records.length
+    ) {
+      throw new Error("The scheduled attendance command did not converge in the operator's authoritative register workspace.");
+    }
     return activity({
       action: actionDefinition,
       kind: "attendance",

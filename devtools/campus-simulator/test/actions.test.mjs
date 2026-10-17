@@ -131,6 +131,15 @@ test("the assigned teacher submits the same scheduled subject register shown to 
   const admin = {
     async request(path) {
       adminCalls.push(path);
+      if (adminCalls.length > 1) return {
+        mode: "scheduled_session",
+        registers: [{
+          session_id: "22222222-2222-4222-8222-222222222222",
+          submission_status: "submitted",
+          marked_count: 1,
+          student_count: 1,
+        }],
+      };
       return {
         mode: "scheduled_session",
         registers: [{
@@ -175,7 +184,10 @@ test("the assigned teacher submits the same scheduled subject register shown to 
 
   const result = await runner.execute(action);
 
-  assert.deepEqual(adminCalls, ["/api/v1/attendance-model/workspace?date=2026-10-16"]);
+  assert.deepEqual(adminCalls, [
+    "/api/v1/attendance-model/workspace?date=2026-10-16",
+    "/api/v1/attendance-model/workspace?date=2026-10-16",
+  ]);
   assert.deepEqual(actorCalls, [{ username: "priya.iyer", userId: "33333333-3333-4333-8333-333333333333", schoolId: "school-1" }]);
   assert.deepEqual(actorRequestCalls.at(-1), {
     path: "/api/v1/attendance-model/sessions/22222222-2222-4222-8222-222222222222/submit",
