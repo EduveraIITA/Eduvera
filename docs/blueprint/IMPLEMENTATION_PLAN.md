@@ -9220,3 +9220,9 @@ tests, but the isolated CI fixture omitted the existing human-agent identity see
 Added db:seed:human-agents after profile/governance seeds so current endpoint integrity
 and model-mediated attendance authorization run against complete fixture identities.
 No domain permission, identity assertion or deployment gate is relaxed.
+
+Release follow-up: b913e63 passed all CI and candidate smoke checks. Public verification
+rolled back because the existing Cloudflare proxy rewrites Location: / to the equivalent
+absolute branded root URL. Compare the resolved same-origin root URL in the smoke check;
+retain 308, reject other origins/paths/query strings, and cover both origin and edge forms
+in deployment contract tests. No application routing or authority change is needed.
