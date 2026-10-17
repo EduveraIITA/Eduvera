@@ -8974,3 +8974,30 @@ remaining acceptance work is migration/concurrency evidence on an isolated Postg
 independently durable rejected/failed evidence when a domain transaction rolls back, recovery and expiry
 for abandoned `pending`/`uncertain` commands, administration of handler/configuration versions, and
 adoption by the other material domain mutations.
+
+### Fresh-database Core correctness audit — 17 October 2026 (local)
+
+The migration, seed and implemented Core boundary have now been exercised from zero on a disposable
+PostgreSQL 17.11 database rather than only through source-level contracts. Migrations 131–133 close
+three discovered provisioning gaps: every newly inserted institution atomically receives one
+OperationalRealm and Live namespace; empty institution rollback follows the school → realm →
+namespace ownership chain while populated model history stays restrictive; and each realm receives
+the currently reviewed structural contract pins plus its institution identity. This provisions
+schemas and identity only—it does not activate an Operating rule, subscription, reaction, recipient
+or automation.
+
+The Cambridge post-migration seed now reconciles all explicit person/account identities into stable
+human agents and current endpoints, Campus Lab relationship writes use the complete ModelAddress,
+and the private gatekeeper provisioner creates its Staff agent/endpoint in the same transaction.
+Test fixtures that previously chose an arbitrary first administrator now bind explicitly to the
+Cambridge school, removing suite-order ambiguity without weakening tenant isolation.
+
+Verified evidence: fresh migration and full seed succeeded; **418** active Cambridge human agents
+and **418** current account endpoints were retained; production TypeScript build and scoped ESLint
+passed; Python seed tests passed **12/12**; and the fully enabled backend suite passed
+**1,220/1,220** tests across **167/167** files with destructive integration suites enabled. The new
+whole-model integrity suite checks realm/address cardinality, active contract coverage, human-agent
+endpoint completeness, cross-address consistency and evidence-certification atomicity. Full method,
+defect evidence and the still-open blueprint gates are recorded in
+`CORE_VERIFICATION_AUDIT_2026-10-17.md`. This is evidence for the implemented boundary, not a claim
+that the target Core or production release gates are complete.

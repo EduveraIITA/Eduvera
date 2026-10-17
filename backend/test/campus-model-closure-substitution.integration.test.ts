@@ -24,6 +24,8 @@ class RollbackFixture extends Error {}
 
 interface FixtureIdentity {
   school_id: string;
+  realm_id: string;
+  environment_namespace_id: string;
   timezone: string;
   actor_user_id: string;
   actor_agent_id: string;
@@ -37,6 +39,7 @@ interface FixtureIdentity {
 
 async function fixtureIdentity(tx: Transaction<Database>): Promise<FixtureIdentity> {
   const row = (await sql<FixtureIdentity>`SELECT school.id AS school_id,school.timezone,
+      institution.realm_id,institution.environment_namespace_id,
       administrator.user_id AS actor_user_id,administrator.agent_id AS actor_agent_id,
       original.id AS original_agent_id,replacement.id AS replacement_agent_id,
       institution.id AS institution_id,institution.label AS institution_label,
@@ -72,7 +75,8 @@ async function fixtureIdentity(tx: Transaction<Database>): Promise<FixtureIdenti
         AND agent.id<>original.id
       ORDER BY agent.id LIMIT 1
     ) replacement ON true
-    ORDER BY school.id LIMIT 1`.execute(tx)).rows[0];
+    WHERE school.code='cis'
+    LIMIT 1`.execute(tx)).rows[0];
   if (!row) throw new Error("The isolated test seed needs an admin and two retained human agents.");
   return row;
 }
@@ -84,9 +88,10 @@ async function entity(
   suffix: string,
 ) {
   return (await sql<{ id: string }>`INSERT INTO campus_model_entities(
-      school_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
+      school_id,realm_id,environment_namespace_id,kind,domain,domain_id,label,lifecycle_state,source_revision,metadata
     ) VALUES(
-      ${identity.school_id}::uuid,${kind},'temporal_test',${suffix},${suffix},'active',1,'{}'::jsonb
+      ${identity.school_id}::uuid,${identity.realm_id}::uuid,${identity.environment_namespace_id},
+      ${kind},'temporal_test',${suffix},${suffix},'active',1,'{}'::jsonb
     ) RETURNING id`.execute(tx)).rows[0]!.id;
 }
 

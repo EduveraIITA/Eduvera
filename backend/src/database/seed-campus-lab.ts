@@ -219,22 +219,29 @@ async function reconcileModelProjection(client:PoolClient,scope:SeedScope){
     scope.schoolId,CAMBRIDGE_CAMPUS_FIXTURE_VERSION,
   ]);
   await client.query(`INSERT INTO campus_model_relationships(
-      school_id,relation_type,source_entity_id,target_entity_id,effective_from,source_domain,source_record_id,source_revision,metadata
-    ) SELECT space.school_id,'part_of',source.id,target.id,now(),'campus_topology',space.id::text,space.revision,$3::jsonb
+      school_id,realm_id,environment_namespace_id,relation_type,source_entity_id,target_entity_id,
+      effective_from,source_domain,source_record_id,source_revision,metadata
+    ) SELECT space.school_id,source.realm_id,source.environment_namespace_id,'part_of',source.id,target.id,
+      now(),'campus_topology',space.id::text,space.revision,$3::jsonb
     FROM campus_spaces space
     JOIN campus_model_entities source ON source.school_id=space.school_id AND source.domain='campus_topology' AND source.domain_id=space.id::text
     JOIN campus_model_entities target ON target.school_id=space.school_id AND target.domain='campus_topology'
       AND target.domain_id=COALESCE(space.parent_space_id,space.campus_id)::text
+      AND target.realm_id=source.realm_id
+      AND target.environment_namespace_id=source.environment_namespace_id
     WHERE space.school_id=$1 AND space.attributes->>'fixture_source'=$2
       AND NOT EXISTS(SELECT 1 FROM campus_model_relationships current
-        WHERE current.school_id=space.school_id AND current.relation_type='part_of'
+        WHERE current.realm_id=source.realm_id
+          AND current.environment_namespace_id=source.environment_namespace_id
+          AND current.relation_type='part_of'
           AND current.source_entity_id=source.id AND current.target_entity_id=target.id AND current.effective_until IS NULL)`,[
     scope.schoolId,CAMBRIDGE_CAMPUS_FIXTURE_VERSION,fixtureMetadata,
   ]);
   await client.query(`INSERT INTO campus_model_relationships(
-      school_id,relation_type,source_entity_id,target_entity_id,effective_from,effective_until,
+      school_id,realm_id,environment_namespace_id,relation_type,source_entity_id,target_entity_id,effective_from,effective_until,
       source_domain,source_record_id,source_revision,metadata
-    ) SELECT assignment.school_id,'assigned_to',staff_entity.id,campus_entity.id,
+    ) SELECT assignment.school_id,staff_entity.realm_id,staff_entity.environment_namespace_id,
+      'assigned_to',staff_entity.id,campus_entity.id,
       assignment.effective_from::timestamp AT TIME ZONE campus.timezone,
       CASE WHEN assignment.effective_until IS NULL THEN NULL ELSE (assignment.effective_until+1)::timestamp AT TIME ZONE campus.timezone END,
       'campus_topology',assignment.id::text,assignment.revision,$2::jsonb
@@ -243,6 +250,8 @@ async function reconcileModelProjection(client:PoolClient,scope:SeedScope){
     JOIN institution_campuses campus ON campus.id=assignment.campus_id
     JOIN campus_model_entities staff_entity ON staff_entity.school_id=assignment.school_id AND staff_entity.domain='people' AND staff_entity.domain_id=profile.id::text
     JOIN campus_model_entities campus_entity ON campus_entity.school_id=assignment.school_id AND campus_entity.domain='campus_topology' AND campus_entity.domain_id=campus.id::text
+      AND campus_entity.realm_id=staff_entity.realm_id
+      AND campus_entity.environment_namespace_id=staff_entity.environment_namespace_id
     WHERE assignment.school_id=$1 AND profile.staff_code=ANY($3::text[])
     ON CONFLICT DO NOTHING`,[
     scope.schoolId,fixtureMetadata,CAMBRIDGE_OPERATIONAL_STAFF.map((person)=>person.code),
@@ -260,18 +269,25 @@ export async function seedCampusLab(pool:Pool,options:CampusLabSeedOptions) {
   const client=await pool.connect();
   try {
     await client.query("BEGIN");
-    const scope=(await client.query(`SELECT school.id,school.timezone,membership.user_id AS admin_id,campus.id AS campus_id
+    const schoolScope=(await client.query(`SELECT school.id,school.timezone,membership.user_id AS admin_id
       FROM schools school
       JOIN school_memberships membership ON membership.school_id=school.id
         AND membership.role='admin' AND membership.is_active
       JOIN users principal ON principal.id=membership.user_id
         AND principal.username='meera.principal' AND principal.email='meera.kapoor@example.test'
         AND principal.is_active
-      JOIN institution_campuses campus ON campus.school_id=school.id AND campus.is_primary AND campus.status='active'
       WHERE school.code='cis'`)).rows;
-    if(scope.length!==1)throw new Error("The Cambridge Campus Lab school is missing or ambiguous.");
+    if(schoolScope.length!==1)throw new Error("The Cambridge Campus Lab school is missing or ambiguous.");
+    const primaryCampus=(await client.query(`INSERT INTO institution_campuses(
+        school_id,name,code,campus_type,is_primary,timezone,address_line,city,state,postal_code,
+        status,created_by,updated_by
+      ) VALUES($1,'Main campus','MAIN','main',true,$2,'42 Learning Avenue','Bengaluru','Karnataka','560001',
+        'active',$3,$3)
+      ON CONFLICT(school_id,code) DO UPDATE SET
+        is_primary=true,status='active',updated_by=EXCLUDED.updated_by,updated_at=now()
+      RETURNING id`,[schoolScope[0].id,schoolScope[0].timezone,schoolScope[0].admin_id])).rows[0];
     const seedScope:SeedScope={
-      schoolId:String(scope[0].id),campusId:String(scope[0].campus_id),adminId:String(scope[0].admin_id),timezone:String(scope[0].timezone),
+      schoolId:String(schoolScope[0].id),campusId:String(primaryCampus.id),adminId:String(schoolScope[0].admin_id),timezone:String(schoolScope[0].timezone),
     };
     const schoolId=seedScope.schoolId;
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`campus-lab:space-capacity:${schoolId}`]);

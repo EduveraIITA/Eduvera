@@ -13,14 +13,15 @@ import { requireIsolatedTestDatabaseUrl } from './test-database.js';
 import { createStaffCoverageReconciliationTestDouble, type StaffCoverageReconciliationTestDouble } from './staff-coverage-reconciliation.test-support.js';
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL)});
 let db:DatabaseService,service:SchedulePlanningService,coverage:StaffCoverageReconciliationTestDouble,req:AuthenticatedRequest,school:string,term:string,classId:string,otherClass:string,from:string,to:string,today:string;
+const temporaryTeacherIds:string[]=[];
 const cmd=()=>({school_id:school,idempotency_key:randomUUID()});
 const add=(d:string,n:number)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 const rows=(title='Changed'):Period[]=>[{id:randomUUID(),weekday:1,period_number:1,starts_at:'18:00',ends_at:'18:30',subject_id:null,teacher_user_id:null,title,slot_type:'activity',room:''}];
 const begin=()=>service.start(req,{...cmd(),term_id:term,class_section_id:classId,starts_on:from,ends_on:to});
 beforeAll(async()=>{
   db=new DatabaseService();const events=new SchoolEventService(db);coverage=createStaffCoverageReconciliationTestDouble();const schoolService=new SchoolService(db,events,coverage);service=new SchedulePlanningService(db,events,schoolService,coverage);
-  const user=(await pool.query<AuthUser>("SELECT u.* FROM users u JOIN school_memberships m ON m.user_id=u.id WHERE m.role='admin' AND m.is_active LIMIT 1")).rows[0]!;
-  school=(await pool.query("SELECT school_id FROM school_memberships WHERE user_id=$1 AND role='admin' AND is_active LIMIT 1",[user.id])).rows[0].school_id;
+  const user=(await pool.query<AuthUser>("SELECT u.* FROM users u JOIN school_memberships m ON m.user_id=u.id JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1")).rows[0]!;
+  school=(await pool.query("SELECT m.school_id FROM school_memberships m JOIN schools s ON s.id=m.school_id WHERE m.user_id=$1 AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1",[user.id])).rows[0].school_id;
   req={authUser:{...user,active_school_id:school},requestId:randomUUID(),ip:'127.0.0.1'} as AuthenticatedRequest;
   today=(await pool.query("SELECT (now() AT TIME ZONE timezone)::date::text AS d FROM schools WHERE id=$1",[school])).rows[0].d;
   const d=new Date(today+'T12:00:00Z');from=add(today,((8-d.getUTCDay())%7||7)+7);to=add(from,6);
@@ -29,7 +30,10 @@ beforeAll(async()=>{
   for(const section of ['A','B']) {const id=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,$2,'SP',$3) RETURNING id",[school,academic,section])).rows[0].id;if(section==='A')classId=id;else otherClass=id;}
   await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,weekday,period_number,starts_at,ends_at,slot_type,title) VALUES($1,$2,1,1,'18:00','18:30','activity','Original')",[classId,term]);
 });
-afterAll(async()=>{await db?.destroy();await pool.end();});
+afterAll(async()=>{
+  if(temporaryTeacherIds.length)await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=ANY($2::uuid[])",[school,temporaryTeacherIds]);
+  await db?.destroy();await pool.end();
+});
 describe('annual scheduling',()=>{
   it('keeps drafts invisible, rejects stale edits, and retries idempotently',async()=>{
     const input={...cmd(),term_id:term,class_section_id:classId,starts_on:from,ends_on:to};
@@ -85,6 +89,7 @@ describe('annual scheduling',()=>{
   it('ties teaching access to validity dates and protects published data',async()=>{
     const username=`schedule-${randomUUID()}`;
     const teacher=(await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Schedule','Teacher','staff') RETURNING id",[username,`${username}@example.test`])).rows[0].id;
+    temporaryTeacherIds.push(teacher);
     await pool.query("INSERT INTO school_memberships(school_id,user_id,role,is_active) VALUES($1,$2,'staff',true)",[school,teacher]);
     const date=add(from,28);
     const v=await service.start(req,{...cmd(),term_id:term,class_section_id:classId,starts_on:date,ends_on:add(date,6)});

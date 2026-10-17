@@ -31,7 +31,7 @@ async function registerFixture(state:"submitted"|"draft"){
 beforeAll(async()=>{
   db=new DatabaseService();events=new SchoolEventService(db);people=new PeopleService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
   authority=new GuardianAuthorityService(db,events);
-  const row=(await pool.query("SELECT u.username,m.school_id FROM users u JOIN school_memberships m ON m.user_id=u.id WHERE m.role='admin' AND m.is_active ORDER BY u.created_at LIMIT 1")).rows[0];
+  const row=(await pool.query("SELECT u.username,m.school_id FROM users u JOIN school_memberships m ON m.user_id=u.id JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1")).rows[0];
   admin=await account(row.username);schoolId=row.school_id;teacher=await account("kavita.staff");parent=await account("pooja.parent");
   const target=(await pool.query("SELECT e.class_section_id,e.term_id,(now() AT TIME ZONE sc.timezone)::date::text AS today FROM students s JOIN enrollments e ON e.student_id=s.id JOIN users u ON u.id=s.user_id JOIN schools sc ON sc.id=s.school_id WHERE u.username='aarav.student' AND e.is_active LIMIT 1")).rows[0];
   section=target.class_section_id;term=target.term_id;today=target.today;

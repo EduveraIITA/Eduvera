@@ -22,6 +22,11 @@ suite('bounded new gate demo database operation',()=>{
   expect(await verifyPassword(password,account.password_hash)).toBe(true);
   expect(account).toMatchObject({role:'staff',is_active:true});expect(account.email_verified_at).toBeTruthy();
   expect((await pool.query('SELECT staff_kind,status FROM staff_profiles WHERE user_id=$1',[account.id])).rows).toEqual([{staff_kind:'non_teaching',status:'active'}]);
+  expect((await pool.query(`SELECT agent.agent_kind,endpoint.provider,endpoint.status
+    FROM campus_model_agents agent JOIN campus_model_agent_endpoints endpoint
+      ON endpoint.agent_id=agent.id AND endpoint.school_id=agent.school_id
+    WHERE agent.school_id=$1 AND endpoint.user_id=$2 AND endpoint.effective_until IS NULL`,
+    [result.school_id,account.id])).rows).toEqual([{agent_kind:'human',provider:'thatcampus',status:'active'}]);
   expect((await pool.query('SELECT permissions FROM staff_role_bindings WHERE user_id=$1',[account.id])).rows).toEqual([{permissions:['gate.manage']}]);
   await expect(createInsideContainer(credentialHash('Another!SyntheticPassword123'),'d5c9b749-157b-4257-9e45-4031a4cbb862',pool)).rejects.toThrow(/already exists/);
   expect((await pool.query('SELECT password_hash FROM users WHERE id=$1',[account.id])).rows[0].password_hash).toBe(hash);

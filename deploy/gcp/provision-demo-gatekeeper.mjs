@@ -43,6 +43,19 @@ export async function createInsideContainer(passwordHash, operationId, providedP
     await client.query("INSERT INTO school_memberships(user_id,school_id,role,is_active) VALUES($1,$2,'staff',true)", [userId, school]);
     const profile = (await client.query(`INSERT INTO staff_profiles(school_id,user_id,staff_code,first_name,last_name,email,phone,staff_kind,designation,department,employment_type,joined_on,status,created_by,updated_by)
       VALUES($1,$2,$3,'Gatekeeper','Demo',$4,'','non_teaching','Gatekeeper','Security','full_time',current_date,'active',$5,$5) RETURNING id`, [school, userId, `GATE-${userId.slice(0,8)}`, email, actor])).rows[0];
+    const agent = (await client.query(`INSERT INTO campus_model_agents(
+        school_id,agent_kind,person_id,label,status,metadata
+      ) SELECT $1,'human',person_id,'Gatekeeper Demo','active',$3::jsonb
+        FROM staff_profiles WHERE id=$2
+      ON CONFLICT(school_id,person_id) WHERE agent_kind='human'
+      DO UPDATE SET label=EXCLUDED.label,status='active',metadata=EXCLUDED.metadata,updated_at=now()
+      RETURNING id`, [school, profile.id, JSON.stringify({ source: 'user_authorized_new_gate_demo', operation_id: operationId })])).rows[0];
+    if (!agent?.id) throw new Error('Gatekeeper person agent could not be retained');
+    await client.query(`INSERT INTO campus_model_agent_endpoints(
+        school_id,agent_id,endpoint_kind,provider,user_id,status,effective_from,
+        source_domain,source_record_id,source_revision,linked_by_user_id,metadata
+      ) VALUES($1::uuid,$2::uuid,'account','thatcampus',$3::uuid,'active',now(),'auth',$3::uuid::text,1,$4::uuid,$5::jsonb)`,
+      [school, agent.id, userId, actor, JSON.stringify({ source: 'user_authorized_new_gate_demo', operation_id: operationId })]);
     const assignment = (await client.query(`INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,scope_label,starts_on,status,assigned_by,responded_at)
       VALUES($1,$2,$3,'School gate',current_date,'active',$4,now()) RETURNING id,revision`, [school, role.id, profile.id, actor])).rows[0];
     await client.query("INSERT INTO staff_responsibility_audits(school_id,assignment_id,actor_id,action,from_status,to_status) VALUES($1,$2,$3,'activated',NULL,'active')", [school, assignment.id, actor]);
@@ -54,7 +67,7 @@ export async function createInsideContainer(passwordHash, operationId, providedP
     const access = (await client.query("SELECT staff_has_resource_permission($1,$2,'gate.manage','institution',$1) allowed,staff_has_resource_permission($1,$2,'departure.manage','institution',$1) departure", [school, userId])).rows[0];
     if (bindings.length !== 1 || bindings[0].context_kind !== 'institution' || bindings[0].scope_id !== school || bindings[0].status !== 'active' || JSON.stringify(bindings[0].permissions) !== '["gate.manage"]' || !access.allowed || access.departure) throw new Error('Gate scope verification failed');
     await client.query('COMMIT');
-    return { username: 'gate.demo', role: 'Gatekeeper', permissions: ['gate.manage'], school_id: school, operation_id: operationId };
+    return { username: 'gate.demo', role: 'Gatekeeper', permissions: ['gate.manage'], school_id: school, operation_id: operationId, agent_id: agent.id };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

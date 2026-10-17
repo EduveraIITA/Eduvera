@@ -24,7 +24,7 @@ async function commit(id:string){const current=await detail(id);return imports.c
 async function count(){return (await pool.query('SELECT count(*)::int AS n FROM students WHERE school_id=$1',[schoolId])).rows[0].n as number;}
 beforeAll(async()=>{
   db=new DatabaseService();const events=new SchoolEventService(db);imports=new PeopleImportService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
-  const users=(await pool.query<AuthUser>("SELECT * FROM users WHERE username IN ('kavita.staff','pooja.parent') OR id=(SELECT user_id FROM school_memberships WHERE role='admin' AND is_active ORDER BY created_at LIMIT 1)")).rows;
+  const users=(await pool.query<AuthUser>("SELECT * FROM users WHERE username IN ('kavita.staff','pooja.parent','meera.principal')")).rows;
   admin=req(users.find(u=>u.role==='admin')!);teacher=req(users.find(u=>u.username==='kavita.staff')!);parent=req(users.find(u=>u.username==='pooja.parent')!);
   schoolId=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Isolated import test school',$1,'Asia/Kolkata') RETURNING id",[`import-${randomUUID().slice(0,10)}`])).rows[0].id;
   today=(await pool.query("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS today")).rows[0].today;

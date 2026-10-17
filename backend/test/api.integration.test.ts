@@ -179,7 +179,7 @@ afterAll(async () => {
 describe("ThatCampus API", () => {
   it("serves reviewed import APIs with session, role, CSRF and private download enforcement",async()=>{
     const principal=new BrowserSession();expect((await principal.login("meera.principal")).status).toBe(200);
-    const scope=(await pool.query("SELECT t.school_id,t.id FROM academic_terms t JOIN school_memberships m ON m.school_id=t.school_id JOIN users u ON u.id=m.user_id WHERE u.username='meera.principal' AND m.role='admin' AND t.is_active LIMIT 1")).rows[0];
+    const scope=(await pool.query("SELECT t.school_id,t.id FROM academic_terms t JOIN school_memberships m ON m.school_id=t.school_id JOIN users u ON u.id=m.user_id JOIN schools s ON s.id=t.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND t.is_active LIMIT 1")).rows[0];
     const endpoint='/api/v1/people/imports';const template=await principal.request(`${endpoint}/template?school_id=${scope.school_id}`);
     expect(template.status).toBe(200);expect(template.headers.get('content-type')).toContain('text/csv');expect(template.headers.get('cache-control')).toContain('no-store');const header=(await template.text()).trim();
     const body={school_id:scope.school_id,term_id:scope.id,filename:'api-contract.csv',csv:`${header}\nAPI-IMPORT-TEST,Test,Student,2014-04-12,7A,2000,2026-09-15,API-FAMILY,Test,Guardian,9000099999,,guardian`,idempotency_key:randomUUID()};

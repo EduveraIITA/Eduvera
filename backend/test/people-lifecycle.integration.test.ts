@@ -14,7 +14,7 @@ suite("connected student enrollment lifecycle",()=>{
   const request=(user:AuthUser)=>({authUser:user,requestId:randomUUID(),protocol:"http",headers:{host:"localhost"},ip:"127.0.0.1"}) as AuthenticatedRequest;
   beforeAll(async()=>{
     database=new DatabaseService();people=new PeopleService(database,new SchoolEventService(database));
-    const user=(await pool.query<AuthUser>("SELECT users.* FROM users JOIN school_memberships membership ON membership.user_id=users.id WHERE membership.role='admin' AND membership.is_active LIMIT 1")).rows[0]!;
+    const user=(await pool.query<AuthUser>("SELECT users.* FROM users JOIN school_memberships membership ON membership.user_id=users.id JOIN schools school ON school.id=membership.school_id WHERE users.username='meera.principal' AND school.code='cis' AND membership.role='admin' AND membership.is_active LIMIT 1")).rows[0]!;
     admin=request(user);
     schoolId=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Connected student test',$1,'Asia/Kolkata') RETURNING id",[`connected-${randomUUID().slice(0,8)}`])).rows[0].id;
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$2,'admin')",[user.id,schoolId]);
