@@ -1,5 +1,25 @@
 # Development reference
 
+## Repository-wide authority and session entry
+
+These instructions apply to every directory in this repository unless a more
+specific tracked `AGENTS.md` adds compatible domain instructions. Do not maintain
+a competing local agent policy or copy the blueprint into session-only instructions.
+
+- Fetch and inspect the active shared branch before substantial work. `Stage` is
+  the current integration branch; `main` may lag accepted product/code changes.
+  Compare both heads and their documentation. Do not automatically merge, reset or
+  overwrite a working tree to synchronize them.
+- Read `docs/blueprint/README.md` for the authority order and current contract map.
+  Blueprint v2 and its normative companions take precedence over historical root
+  proposals and the v1 PDF. An implementation checkpoint is evidence, not authority
+  to reverse a newer accepted decision.
+- Inspect the owning code, migrations, ports and tests before extending a workflow.
+  Distinguish target architecture from implemented contracts; do not copy a known
+  transitional gap as the pattern for a new feature.
+
+## Development rules
+
 - Use `docs/blueprint/PRODUCT_BLUEPRINT_V2.md` as the primary product and
   engineering blueprint. Read its linked domain/architecture contracts before
   planning or implementing a domain; do not rely only on conversation memory.

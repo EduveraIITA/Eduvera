@@ -294,7 +294,9 @@ application service.
 ## Product and architecture blueprints
 
 The primary development baseline is
-[`School_Operations_Blueprint.pdf`](School_Operations_Blueprint.pdf) (v1.0, 15 September 2026).
+[ThatCampus product blueprint v2](docs/blueprint/PRODUCT_BLUEPRINT_V2.md).
+Start with the [current contract map](docs/blueprint/README.md) and root
+[`AGENTS.md`](AGENTS.md). The v1 PDF is historical provenance, not current authority.
 Use the [implementation record](docs/blueprint/IMPLEMENTATION_PLAN.md) for current
 delivery evidence, accepted decisions, dependency order, and remaining gaps.
 
