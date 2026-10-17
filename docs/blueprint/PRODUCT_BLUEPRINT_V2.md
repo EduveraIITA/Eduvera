@@ -138,10 +138,14 @@ not acceptable release parity. Production acceptance requires a snapshot, read,
 command and projection adapter for every module enabled for that institution so the
 whole familiar application remains operable in Simulation.
 
-The Cambridge Campus Lab remains a separate development conformance harness. It may
-exercise the disposable Cambridge Live fixture through ordinary APIs, but its clock
-and actor receipts must not be presented as the product simulation environment or
-injected into customer Live screens.
+The Cambridge Campus Lab is the development actor harness attached to a real
+transient Simulation fork. Activating it snapshots Cambridge Live into an isolated
+run, binds the reviewing administrator and every synthetic actor counterpart to that
+same server-authoritative namespace, and lets them exercise ordinary domain APIs
+there. Stopping it halts the actors, returns the reviewing session to Live and
+discards the fork. It never writes the Cambridge Live fixture. The actor harness is
+development/demo configuration; the underlying two-world execution model remains a
+product capability for every institution.
 
 ## 3. Who the product serves
 

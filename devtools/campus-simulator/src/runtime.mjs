@@ -38,7 +38,7 @@ function emptyStatus(startedAt, message = null) {
     zones: [],
     unplaced: [],
     activity: [],
-    control: { enabled: true, clock_mode: "60m", duration_seconds: 3_600, changed_at: new Date(startedAt).toISOString(), changed_by: "startup" },
+    control: { enabled: false, clock_mode: "60m", duration_seconds: 3_600, changed_at: new Date(startedAt).toISOString(), changed_by: "startup" },
     ...(message ? { errors: [message] } : {}),
   };
 }
@@ -137,8 +137,9 @@ export class CampusSimulatorRuntime {
     this.advancing = false;
     this.bootPromise = null;
     this.actorSessions = new Map();
+    this.runId = null;
     this.control = {
-      enabled: true,
+      enabled: false,
       clock_mode: "60m",
       duration_seconds: Number(this.behavior.clock.duration_seconds),
       changed_at: this.startedAt.toISOString(),
@@ -189,6 +190,12 @@ export class CampusSimulatorRuntime {
     this.status.control = this.control;
   }
 
+  async syncSimulationClock() {
+    const virtualNow = this.status?.schedule?.simulated_at;
+    if (!virtualNow || !this.sessions?.admin) return;
+    await this.sessions.admin.enterCampusLabSimulation(virtualNow);
+  }
+
   createSessions() {
     const create = (persona) => new ApiSession(this.apiOrigin, {
       fetchImpl: this.fetchImpl,
@@ -211,6 +218,7 @@ export class CampusSimulatorRuntime {
     });
     if (this.hosted) await session.connectServiceIdentity();
     else await session.login(username, this.demoPassword);
+    await session.enterCampusLabSimulation();
     if (session.user?.id !== userId || session.user?.active_school_id !== schoolId) {
       throw new Error(`The fixture identity ${username} did not resolve to the offered Cambridge staff member.`);
     }
@@ -226,6 +234,7 @@ export class CampusSimulatorRuntime {
       sessions.admin.loginDemo("admin"), sessions.staff.loginDemo("staff"),
       sessions.parent.loginDemo("parent"), sessions.student.loginDemo("student"),
     ]);
+    await Promise.all(Object.values(sessions).map((session) => session.enterCampusLabSimulation()));
     const schoolId = sessions.admin.user?.active_school_id;
     if (!schoolId) throw new Error("The Cambridge administrator has no active dummy school.");
     const identities = Object.entries(sessions);
@@ -249,6 +258,7 @@ export class CampusSimulatorRuntime {
     this.errors = [];
     this.resetRun(this.runStartedAt, false);
     this.render();
+    await this.syncSimulationClock();
   }
 
   resetRun(startedAt = new Date(), clearActivity = true) {
@@ -269,6 +279,7 @@ export class CampusSimulatorRuntime {
       routine: this.routine,
       actorSession: (identity) => this.fixtureActorSession(identity),
       onActivity: (item) => this.addActivity(item),
+      runId: this.runId,
     });
   }
 
@@ -296,6 +307,7 @@ export class CampusSimulatorRuntime {
       this.resetRun(new Date(), false);
       this.errors = [];
       this.render();
+      await this.syncSimulationClock?.();
     } catch (error) {
       this.errors = [errorMessage(error)];
       this.render();
@@ -327,6 +339,10 @@ export class CampusSimulatorRuntime {
     } finally {
       this.refreshing = false;
       this.render();
+      await this.syncSimulationClock().catch((error) => {
+        this.errors = [errorMessage(error)];
+        this.render();
+      });
     }
   }
 
@@ -337,7 +353,9 @@ export class CampusSimulatorRuntime {
     const actionTimer = setInterval(
       () => {
         const now = new Date();
-        void this.advanceCalendar(now).then(() => this.actionRunner?.tick(now));
+        void this.advanceCalendar(now)
+          .then(() => this.syncSimulationClock())
+          .then(() => this.actionRunner?.tick(now));
       },
       Number(this.behavior.action_poll_seconds) * 1_000,
     );
@@ -350,8 +368,12 @@ export class CampusSimulatorRuntime {
     this.intervals = [];
   }
 
-  async setControl({ enabled, clock_mode: requestedClockMode, duration_seconds: legacyDuration } = {}) {
+  async setControl({ enabled, clock_mode: requestedClockMode, duration_seconds: legacyDuration, run_id: runId } = {}) {
     const nextEnabled = Boolean(enabled);
+    if (nextEnabled && !runId && !this.runId) {
+      throw new Error("Campus Lab can start only after the application creates an isolated Simulation run.");
+    }
+    if (runId) this.runId = runId;
     const legacyMode = legacyDuration === undefined ? null
       : [...CLOCK_MODES].find(([, duration]) => duration === Number(legacyDuration))?.[0];
     const nextClockMode = requestedClockMode ?? legacyMode ?? this.control.clock_mode;
@@ -378,6 +400,11 @@ export class CampusSimulatorRuntime {
     };
     if (!nextEnabled) {
       this.stop();
+      this.sessions = null;
+      this.data = null;
+      this.actionRunner = null;
+      this.actorSessions.clear();
+      this.runId = null;
       this.render();
       return this.snapshot();
     }

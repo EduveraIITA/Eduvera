@@ -37,6 +37,8 @@ const database = new URL(process.env.DATABASE_URL);
 if (!["127.0.0.1", "localhost", "[::1]"].includes(database.hostname)) {
   throw new Error("Local preview requires a loopback PostgreSQL database.");
 }
+const simulationDatabase = new URL(database.toString());
+simulationDatabase.pathname = `${database.pathname.replace(/\/$/u, "")}_simulation`;
 
 const apiOrigin = "http://127.0.0.1:8001";
 const appOrigin = "http://127.0.0.1:8000";
@@ -169,6 +171,8 @@ const backendEnv = {
   COOKIE_SECURE: "false",
   RATE_LIMIT_STORE: "memory",
   EVENT_DATABASE_URL: process.env.EVENT_DATABASE_URL || process.env.DATABASE_URL,
+  CAMPUS_SIMULATION_DATABASE_URL: process.env.CAMPUS_SIMULATION_DATABASE_URL || simulationDatabase.toString(),
+  CAMPUS_LAB_PROXY_KEY: campusLabProxyKey,
   SPA_DIST_DIR: resolve(root, "frontend/dist"),
   STAFF_DIST_DIR: resolve(root, "frontend-desktop/dist"),
   ALLOWED_ORIGINS: [...origins].join(","),

@@ -13,6 +13,7 @@ const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8000),
   HOST: z.string().default("127.0.0.1"),
   DATABASE_URL: z.string().min(1),
+  CAMPUS_SIMULATION_DATABASE_URL: z.string().min(1).optional(),
   EVENT_DATABASE_URL: z.string().min(1).optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
   EVENT_BROKER_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
@@ -115,6 +116,16 @@ export function loadConfig() {
     purpose: "application",
     requireRemoteTls: managedDeployment,
   });
+  if (value.CAMPUS_SIMULATION_DATABASE_URL) {
+    assertPostgreSqlConnectionPolicy(value.CAMPUS_SIMULATION_DATABASE_URL, {
+      name: "CAMPUS_SIMULATION_DATABASE_URL",
+      purpose: "application",
+      requireRemoteTls: managedDeployment,
+    });
+    if (value.CAMPUS_SIMULATION_DATABASE_URL === value.DATABASE_URL) {
+      throw new Error("CAMPUS_SIMULATION_DATABASE_URL must not reuse the Live database.");
+    }
+  }
 
   if (managedDeployment) {
     if (!value.EVENT_DATABASE_URL) throw new Error("EVENT_DATABASE_URL is required for stage and production deployments");

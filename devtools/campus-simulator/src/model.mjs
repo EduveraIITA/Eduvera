@@ -39,8 +39,12 @@ export function validateBehaviorFixture(input) {
     if (!["lesson", "break", "activity"].includes(action.phase_mode)) {
       throw new Error(`Unsupported action phase mode for ${action.id}.`);
     }
-    if (!Number.isInteger(action.period_number) || action.period_number < 1) {
-      throw new Error(`${action.id} must select a positive published period number.`);
+    const selectsEachLesson = action.period_selector === "each_lesson";
+    if (selectsEachLesson && (action.type !== "teacher_submit_attendance" || action.phase_mode !== "lesson")) {
+      throw new Error(`${action.id} may use each_lesson only for lesson attendance.`);
+    }
+    if (!selectsEachLesson && (!Number.isInteger(action.period_number) || action.period_number < 1)) {
+      throw new Error(`${action.id} must select a positive published period number or each_lesson.`);
     }
   }
   if (!Array.isArray(input.reactions)) throw new Error("Behavior reactions must be an array.");

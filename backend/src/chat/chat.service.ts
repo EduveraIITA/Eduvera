@@ -19,6 +19,7 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import { safeguardingReportAttentionHref } from "./chat-links.js";
+import { ChatModelBridgeService } from "./chat-model-bridge.service.js";
 
 export interface ChatUpload {
   filename: string;
@@ -90,6 +91,10 @@ function portalForRole(role: AuthUser["role"]): string {
 
 function displayName(user: Pick<AuthUser, "first_name" | "last_name">): string {
   return `${user.first_name} ${user.last_name}`.trim();
+}
+
+function correlationId(value?: string): string {
+  return value && uuid.safeParse(value).success ? value : randomUUID();
 }
 
 function conversationLink(role: AuthUser["role"], conversationId: string, studentId?: string | null): string {
@@ -211,7 +216,11 @@ export function chatConversationProjectionQuery(
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly events: SchoolEventService,
+    private readonly model: ChatModelBridgeService,
+  ) {}
 
   private async conversationForUser(user: AuthUser, conversationId: string, action = "messages.view") {
     if (!uuid.safeParse(conversationId).success) throw new NotFoundException("Conversation not found.");
@@ -532,6 +541,25 @@ export class ChatService {
         ip_hash: null,
         metadata: { recipient_id: recipient.id, context_student_id: data.student_id ?? null },
       }).execute();
+      const occurredAt = new Date().toISOString();
+      await this.model.record(tx, {
+        school_id: data.school_id,
+        actor_user_id: user.id,
+        audience_user_ids: [recipient.id],
+        event_type: "communication.conversation.created",
+        source_record_id: created.id,
+        conversation_id: created.id,
+        occurred_at: occurredAt,
+        correlation_id: correlationId(request.requestId),
+        idempotency_key: `communication-conversation-created:${created.id}`,
+        subject_kind: "conversation",
+        subject_label: data.title || "Direct school conversation",
+        payload: {
+          conversation_kind: "direct",
+          has_student_context: Boolean(data.student_id),
+          participant_count: 2,
+        },
+      });
       return created;
     });
     return { id: conversation.id, created: true };
@@ -732,6 +760,26 @@ export class ChatService {
           ip_hash: null,
           metadata: { conversation_id: conversationId, has_attachment: Boolean(upload) },
         }).execute();
+        await this.model.record(tx, {
+          school_id: conversation.school_id,
+          actor_user_id: user.id,
+          audience_user_ids: targets.map((target) => target.id),
+          event_type: "communication.message.sent",
+          source_record_id: message.id,
+          conversation_id: conversationId,
+          occurred_at: message.created_at.toISOString(),
+          correlation_id: correlationId(request.requestId),
+          idempotency_key: `communication-message-sent:${message.id}`,
+          subject_kind: "communication_message",
+          subject_label: "School message",
+          payload: {
+            conversation_kind: conversation.kind,
+            has_student_context: Boolean(conversation.context_student_id),
+            has_attachment: Boolean(upload),
+            is_reply: Boolean(data.reply_to_id),
+            recipient_count: targets.length,
+          },
+        });
         return message;
       });
       return { id: created.id, created_at: created.created_at, duplicate: false };
@@ -766,6 +814,20 @@ export class ChatService {
           refresh: ["messages", "notifications", "attention"],
         },
         idempotencyKey: `chat:read:${request?.requestId ?? randomUUID()}:${conversationId}:${user.id}`,
+      });
+      await this.model.record(tx, {
+        school_id: conversation.school_id,
+        actor_user_id: user.id,
+        audience_user_ids: [],
+        event_type: "communication.conversation.read",
+        source_record_id: conversationId,
+        conversation_id: conversationId,
+        occurred_at: readAt.toISOString(),
+        correlation_id: correlationId(request?.requestId),
+        idempotency_key: `communication-conversation-read:${conversationId}:${user.id}:${request?.requestId ?? readAt.toISOString()}`,
+        subject_kind: "conversation",
+        subject_label: "School conversation",
+        payload: { read_through: readAt.toISOString() },
       });
     });
     return { conversation_id: conversationId, read_at: readAt };
@@ -834,6 +896,20 @@ export class ChatService {
         ip_hash: null,
         metadata: { conversation_id: conversationId },
       }).execute();
+      await this.model.record(tx, {
+        school_id: conversation.school_id,
+        actor_user_id: user.id,
+        audience_user_ids: audience.map((participant) => participant.user_id).filter((id) => id !== user.id),
+        event_type: "communication.message.edited",
+        source_record_id: messageId,
+        conversation_id: conversationId,
+        occurred_at: edited.updated_at.toISOString(),
+        correlation_id: correlationId(request?.requestId),
+        idempotency_key: `communication-message-edited:${messageId}:${edited.updated_at.toISOString()}`,
+        subject_kind: "communication_message",
+        subject_label: "School message",
+        payload: { conversation_kind: conversation.kind },
+      });
       return { id: edited.id, edited: true, updated_at: edited.updated_at };
     });
   }

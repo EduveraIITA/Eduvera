@@ -46,6 +46,7 @@ import {
   acceptedScheduleSubstitutionProjectionSchema,
   acceptedCampusModelChangeSchema,
   acceptedCoordinationEventSchema,
+  acceptedDomainEventSchema,
   campusModelEntitySchema,
   campusModelObservationSchema,
   campusModelObservationTransitionSchema,
@@ -91,6 +92,8 @@ import {
   type OperationalMessageOutcome,
   type RecipientOperationalMessageResponse,
 } from "./contracts.js";
+import type { AcceptedDomainEvent } from "./contracts.js";
+import type { DomainEventJournalReceipt } from "./domain-event-journal.port.js";
 import type { OperationalRealmScope } from "./operational-realm.js";
 import { executionNamespaceForSchool, modelAddressSchema, resolveOperationalRealmScope } from "./operational-realm.js";
 import type { ModelAddress } from "./operational-realm.js";
@@ -1724,6 +1727,71 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         expires_at: expiresAt,
       },
       replayed: false,
+    };
+  }
+
+  async recordAcceptedEvent(
+    transaction: Transaction<Database>,
+    rawInput: AcceptedDomainEvent,
+  ): Promise<DomainEventJournalReceipt> {
+    const input = acceptedDomainEventSchema.parse(rawInput);
+    const sourceOutbox = (await sql<OutboxEventRow>`SELECT id,event_type,aggregate_id::text AS aggregate_id
+      FROM event_outbox
+      WHERE id=${input.source_outbox_event_id}::uuid AND school_id=${input.school_id}::uuid
+      FOR KEY SHARE`.execute(transaction)).rows[0];
+    if (!sourceOutbox || sourceOutbox.event_type !== input.event_type || sourceOutbox.aggregate_id !== input.source_record_id) {
+      throw new ConflictException("The accepted domain event does not match its source outbox record.");
+    }
+
+    const modelScope = await this.resolveScope(transaction, input.school_id);
+    const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
+    const subject = await this.upsertEntity(transaction, input.school_id, input.subject, modelScope);
+    const context = input.context
+      ? await this.upsertEntity(transaction, input.school_id, input.context, modelScope)
+      : null;
+    const audience = [];
+    for (const userId of input.audience_user_ids) {
+      audience.push(await this.ensureHumanAgent(transaction, input.school_id, userId));
+    }
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const inserted = (await sql<EventRow>`INSERT INTO campus_model_events(
+        school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
+        source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
+        correlation_id,causation_event_id,provenance,payload,schema_version,idempotency_key,
+        request_hash,source_outbox_event_id
+      ) VALUES (
+        ${input.school_id}::uuid,'domain_event',${input.event_type},${subject.id}::uuid,
+        ${context?.id ?? null}::uuid,${actor.id}::uuid,${input.source_domain},${input.source_record_id},
+        ${input.source_revision},${input.occurred_at}::timestamptz,${input.effective_from}::timestamptz,
+        ${input.effective_until}::timestamptz,${input.correlation_id}::uuid,${input.causation_event_id}::uuid,
+        ${JSON.stringify({ source: "event_outbox", source_outbox_event_id: input.source_outbox_event_id })}::jsonb,
+        ${JSON.stringify(input.payload)}::jsonb,1,${input.idempotency_key},${requestHash},
+        ${input.source_outbox_event_id}::uuid
+      ) ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING
+      RETURNING id,request_hash`.execute(transaction)).rows[0];
+    const event = inserted ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
+      WHERE realm_id=${modelScope.realm_id}::uuid
+        AND environment_namespace_id=${modelScope.environment_namespace_id}
+        AND idempotency_key=${input.idempotency_key}
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!event || event.request_hash !== requestHash) {
+      throw new ConflictException("This domain event key was already used for different work.");
+    }
+
+    for (const recipient of audience) {
+      await sql`INSERT INTO campus_model_event_agent_participants(
+          school_id,realm_id,environment_namespace_id,event_id,agent_id,participation_kind
+        ) VALUES (
+          ${input.school_id}::uuid,${modelScope.realm_id}::uuid,${modelScope.environment_namespace_id},
+          ${event.id}::uuid,${recipient.id}::uuid,'audience'
+        ) ON CONFLICT(realm_id,environment_namespace_id,event_id,agent_id,participation_kind) DO NOTHING`
+        .execute(transaction);
+    }
+    return {
+      event_id: event.id,
+      actor_agent_id: actor.id,
+      audience_agent_ids: audience.map((item) => item.id),
+      replayed: !inserted,
     };
   }
 

@@ -30,7 +30,9 @@ export class ExecutionEnvironmentInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     const environment = request.executionEnvironment;
-    if (request.url.split("?", 1)[0]!.startsWith("/api/v1/auth/")) {
+    const requestPath = request.url.split("?", 1)[0]!;
+    if (requestPath.startsWith("/api/v1/auth/")
+      || requestPath.startsWith("/api/v1/development/campus-simulator/")) {
       return next.handle();
     }
     if (request.executionEnvironmentView?.mode === "simulation"

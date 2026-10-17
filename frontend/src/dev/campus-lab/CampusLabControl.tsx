@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { setCampusLabEnabled } from "./api";
 import { useOptionalCampusLabProjection } from "./CampusLabProjectionContext";
+import { useOptionalAuth } from "../../features/auth/AuthContext";
 
 const durationOptions = [
   { mode: "realtime" as const, label: "Real time", detail: "Live clock" },
@@ -12,6 +13,7 @@ const durationOptions = [
 
 export default function CampusLabControl() {
   const projection = useOptionalCampusLabProjection();
+  const auth = useOptionalAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const enabled = projection?.status?.control?.enabled ?? false;
@@ -23,6 +25,7 @@ export default function CampusLabControl() {
     setError(null);
     try {
       await setCampusLabEnabled(next, nextClockMode);
+      await auth?.refresh();
       await projection?.refetch();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The Cambridge simulation could not be updated.");

@@ -30,8 +30,11 @@ async function readControlRequest(request) {
   } catch {
     throw new Error("Control request must be valid JSON.");
   }
-  if (typeof parsed.enabled !== "boolean" || Object.keys(parsed).some((key) => !["enabled", "clock_mode", "duration_seconds"].includes(key))) {
+  if (typeof parsed.enabled !== "boolean" || Object.keys(parsed).some((key) => !["enabled", "clock_mode", "duration_seconds", "run_id"].includes(key))) {
     throw new Error("Control request must contain enabled and may contain a supported clock_mode.");
+  }
+  if (parsed.run_id !== undefined && !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(parsed.run_id)) {
+    throw new Error("run_id must identify the server-created isolated Simulation run.");
   }
   if (parsed.clock_mode !== undefined && !["realtime", "1m", "15m", "60m"].includes(parsed.clock_mode)) {
     throw new Error("clock_mode must be realtime, 1m, 15m or 60m.");

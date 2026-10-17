@@ -85,7 +85,7 @@ export interface CampusLabStatus {
   control?: { enabled: boolean; clock_mode: "realtime" | "1m" | "15m" | "60m"; duration_seconds: 60 | 900 | 3600 | null; changed_at: string; changed_by: "startup" | "administrator" };
 }
 
-const campusLabBase = import.meta.env.DEV ? "/__campus-lab" : "/api/v1/development/campus-simulator";
+const campusLabBase = "/api/v1/development/campus-simulator";
 
 export async function getCampusLabStatus(signal?: AbortSignal): Promise<CampusLabStatus> {
   const response = await fetch(`${campusLabBase}/status`, {

@@ -5,11 +5,13 @@ import { ChatService } from "./chat.service.js";
 import { MatrixChatService } from "./matrix/matrix-chat.service.js";
 import { MatrixController } from "./matrix/matrix.controller.js";
 import { MatrixTransportService } from "./matrix/matrix-transport.service.js";
+import { CampusModelCoreModule } from "../campus-model-core/campus-model-core.module.js";
+import { ChatModelBridgeService } from "./chat-model-bridge.service.js";
 
 @Module({
-  imports: [SchoolModule],
+  imports: [SchoolModule, CampusModelCoreModule],
   controllers: [ChatController, MatrixController],
-  providers: [MatrixTransportService, { provide: ChatService, useClass: MatrixChatService }],
+  providers: [ChatModelBridgeService, MatrixTransportService, { provide: ChatService, useClass: MatrixChatService }],
   exports: [ChatService],
 })
 export class ChatModule {}

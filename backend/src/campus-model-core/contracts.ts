@@ -681,6 +681,39 @@ export const acceptedCoordinationEventSchema = z.object({
   }
 });
 
+/**
+ * An accepted domain fact that belongs in the immutable campus event journal but
+ * does not, by itself, create operational work. In particular, an ordinary chat
+ * message is evidence that two campus agents communicated; it is not a Task,
+ * Request, command or observation of physical truth.
+ */
+export const acceptedDomainEventSchema = z.object({
+  school_id: z.string().uuid(),
+  source_outbox_event_id: z.string().uuid(),
+  event_type: z.string().trim().min(3).max(120),
+  subject: campusModelEntitySchema,
+  context: campusModelEntitySchema.nullable().default(null),
+  actor_user_id: z.string().uuid(),
+  audience_user_ids: z.array(z.string().uuid()).max(500).default([]),
+  occurred_at: z.string().datetime({ offset: true }),
+  effective_from: z.string().datetime({ offset: true }),
+  effective_until: z.string().datetime({ offset: true }).nullable().default(null),
+  source_domain: identifier,
+  source_record_id: z.string().trim().min(1).max(160),
+  source_revision: z.number().int().positive(),
+  correlation_id: z.string().uuid(),
+  causation_event_id: z.string().uuid().nullable().default(null),
+  idempotency_key: z.string().trim().min(8).max(240),
+  payload: z.record(z.string(), z.unknown()).default({}),
+}).strict().superRefine((value, context) => {
+  if (value.effective_until && Date.parse(value.effective_until) <= Date.parse(value.effective_from)) {
+    context.addIssue({ code: "custom", path: ["effective_until"], message: "Event end must be after its start." });
+  }
+  if (new Set(value.audience_user_ids).size !== value.audience_user_ids.length) {
+    context.addIssue({ code: "custom", path: ["audience_user_ids"], message: "Event audience members must be unique." });
+  }
+});
+
 export const operationalMessageStateSchema = z.enum([
   "queued",
   "delivered",
@@ -736,6 +769,7 @@ export const recipientOperationalMessageResponseSchema = z.object({
 export type CampusModelEntitySnapshot = z.infer<typeof campusModelEntitySchema>;
 export type CampusModelRelationshipSnapshot = z.infer<typeof campusModelRelationshipSchema>;
 export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChangeSchema>;
+export type AcceptedDomainEvent = z.infer<typeof acceptedDomainEventSchema>;
 export type CampusModelObservation = z.infer<typeof campusModelObservationSchema>;
 export type ModelObservationContractRefs = z.infer<typeof modelObservationContractRefsSchema>;
 export type CampusModelObservationTransition = z.infer<typeof campusModelObservationTransitionSchema>;

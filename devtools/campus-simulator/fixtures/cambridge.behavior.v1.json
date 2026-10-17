@@ -105,12 +105,12 @@
   ],
   "actions": [
     {
-      "id": "teacher-attendance",
+      "id": "teacher-attendance-each-lesson",
       "type": "teacher_submit_attendance",
       "phase_mode": "lesson",
-      "period_number": 1,
+      "period_selector": "each_lesson",
       "offset_ratio": 0.22,
-      "goal": "Exercise the attendance workflow selected by the institution's effective Operating rule during the first published teaching period."
+      "goal": "Each synthetic teacher reacts to every assigned published lesson and submits that lesson's configured attendance register."
     },
     {
       "id": "staff-guardian-message",

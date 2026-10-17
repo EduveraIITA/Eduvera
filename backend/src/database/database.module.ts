@@ -10,6 +10,7 @@ import {
   SYSTEM_WALL_CLOCK,
   SystemWallClock,
 } from "./execution-clock.runtime.js";
+import { CampusLabSimulationEnvironmentService } from "./campus-lab-simulation-environment.service.js";
 
 @Global()
 @Module({
@@ -19,6 +20,7 @@ import {
     DatabaseService,
     SystemWallClock,
     ScopedExecutionClock,
+    CampusLabSimulationEnvironmentService,
     { provide: SYSTEM_WALL_CLOCK, useExisting: SystemWallClock },
     { provide: EXECUTION_CLOCK_PORT, useExisting: ScopedExecutionClock },
   ],
@@ -27,6 +29,7 @@ import {
     ExecutionDataPlaneScope,
     ExecutionDataPlaneRegistry,
     EXECUTION_CLOCK_PORT,
+    CampusLabSimulationEnvironmentService,
   ],
 })
 export class DatabaseModule {}

@@ -53,7 +53,7 @@ function attendanceStatus(studentId, ratios) {
 }
 
 export class DevelopmentActionRunner {
-  constructor({ sessions, setup, behavior, startedAt, routine, actorSession, onActivity }) {
+  constructor({ sessions, setup, behavior, startedAt, routine, actorSession, onActivity, runId = "development" }) {
     this.sessions = sessions;
     this.setup = setup;
     this.behavior = behavior;
@@ -67,6 +67,7 @@ export class DevelopmentActionRunner {
     this.lastReactionPollAt = 0;
     this.inFlight = false;
     this.noticeId = null;
+    this.runId = runId;
     this.date = null;
     this.scope = null;
     this.updateRoutine(routine, this.startedAt);
@@ -84,9 +85,20 @@ export class DevelopmentActionRunner {
       this.lastReactionPollAt = 0;
     }
     this.date = nextDate;
-    this.scope = `${this.behavior.version}:${this.setup.school.id}:${this.date}`;
+    this.scope = `${this.behavior.version}:${this.setup.school.id}:${this.runId}:${this.date}`;
     this.routine = routine;
-    this.scheduledActions = this.behavior.actions.map((action) => ({
+    const expandedActions = this.behavior.actions.flatMap((action) => {
+      if (action.period_selector !== "each_lesson") return [action];
+      const periods = [...new Set(routine.phases
+        .filter((phase) => phase.mode === "lesson" && Number.isInteger(phase.period_number))
+        .map((phase) => phase.period_number))];
+      return periods.map((periodNumber) => ({
+        ...action,
+        id: `${action.id}:period-${periodNumber}`,
+        period_number: periodNumber,
+      }));
+    });
+    this.scheduledActions = expandedActions.map((action) => ({
       action,
       due_at: actionDueAt(action, routine),
     }));
@@ -417,31 +429,45 @@ export class DevelopmentActionRunner {
         target_path: `/principal/attendance?date=${today}`,
       });
     }
-    let screen = null;
-    let actor = null;
-    let selected = null;
+    const submitted = [];
+    const failures = [];
     for (const candidate of candidates) {
-      const currentActor = await this.actorSession({
-        username: candidate.scheduled_teacher_username,
-        userId: candidate.scheduled_teacher_id,
-        schoolId: this.setup.school.id,
-      });
-      const current = await currentActor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}`);
-      const untouched = (current?.roster ?? []).every((student) => !student.status);
-      if (
-        current?.availability?.can_mark === true
-        && current?.register?.state === "draft"
-        && current?.register?.finalization_source !== "manual"
-        && untouched
-        && current.roster.length
-      ) {
-        screen = current;
-        actor = currentActor;
-        selected = candidate;
-        break;
+      try {
+        const actor = await this.actorSession({
+          username: candidate.scheduled_teacher_username,
+          userId: candidate.scheduled_teacher_id,
+          schoolId: this.setup.school.id,
+        });
+        const screen = await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}`);
+        const untouched = (screen?.roster ?? []).every((student) => !student.status);
+        if (
+          screen?.availability?.can_mark !== true
+          || screen?.register?.state !== "draft"
+          || screen?.register?.finalization_source === "manual"
+          || !untouched
+          || !screen.roster.length
+        ) continue;
+        const records = screen.roster.map((student) => ({
+          student_id: student.id,
+          status: attendanceStatus(student.id, this.behavior.attendance_ratios),
+          remarks: "",
+        }));
+        await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}/submit`, {
+          method: "POST",
+          headers: { "idempotency-key": `campus-lab-session-${today}-${candidate.session_id}` },
+          body: {
+            expected_revision: Number(screen.register.revision ?? 0),
+            reason: "Development-only Cambridge fixture rehearsal.",
+            records,
+          },
+        });
+        submitted.push({ candidate, screen, records });
+      } catch (error) {
+        failures.push(`${candidate.assigned_teachers?.[0] ?? "Assigned teacher"}: ${safeMessage(error)}`);
       }
     }
-    if (!screen || !actor || !selected) {
+    if (!submitted.length && failures.length) throw new Error(failures.join("; "));
+    if (!submitted.length) {
       return activity({
         action: actionDefinition,
         kind: "attendance",
@@ -451,36 +477,32 @@ export class DevelopmentActionRunner {
         target_path: `/principal/attendance?date=${today}`,
       });
     }
-    const records = screen.roster.map((student) => ({
-      student_id: student.id,
-      status: attendanceStatus(student.id, this.behavior.attendance_ratios),
-      remarks: "",
-    }));
-    await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(selected.session_id)}/submit`, {
-      method: "POST",
-      headers: { "idempotency-key": `campus-lab-session-${today}-${selected.session_id}` },
-      body: {
-        expected_revision: Number(screen.register.revision ?? 0),
-        reason: "Development-only Cambridge fixture rehearsal.",
-        records,
-      },
-    });
     const reflectedWorkspace = await this.sessions.admin.request(`/api/v1/attendance-model/workspace?date=${encodeURIComponent(today)}`);
-    const reflected = (reflectedWorkspace?.registers ?? []).find((item) => item.session_id === selected.session_id);
-    if (
-      !reflected
-      || !["submitted", "locked"].includes(reflected.submission_status)
-      || Number(reflected.marked_count) !== records.length
-      || Number(reflected.student_count) !== records.length
-    ) {
-      throw new Error("The scheduled attendance command did not converge in the operator's authoritative register workspace.");
+    for (const result of submitted) {
+      const reflected = (reflectedWorkspace?.registers ?? []).find((item) => item.session_id === result.candidate.session_id);
+      if (
+        !reflected
+        || !["submitted", "locked"].includes(reflected.submission_status)
+        || Number(reflected.marked_count) !== result.records.length
+        || Number(reflected.student_count) !== result.records.length
+      ) {
+        throw new Error("A scheduled attendance command did not converge in the operator's authoritative register workspace.");
+      }
     }
+    const first = submitted[0];
+    const totalRecords = submitted.reduce((sum, result) => sum + result.records.length, 0);
+    const partial = failures.length > 0;
     return activity({
       action: actionDefinition,
       kind: "attendance",
-      title: `${selected.assigned_teachers?.[0] ?? "Assigned teacher"} submitted ${screen.class.name} · ${screen.session.subject_name} attendance`,
-      detail: `${records.length} dummy student decisions were recorded in the same scheduled subject register shown to campus operators.`,
-      target_path: `/principal/attendance?session_id=${selected.session_id}&date=${today}`,
+      title: submitted.length === 1
+        ? `${first.candidate.assigned_teachers?.[0] ?? "Assigned teacher"} submitted ${first.screen.class.name} · ${first.screen.session.subject_name} attendance`
+        : `${submitted.length} assigned teachers submitted Period ${actionDefinition.period_number} attendance`,
+      detail: `${totalRecords} dummy student decisions were recorded across ${submitted.length} scheduled subject register${submitted.length === 1 ? "" : "s"}.${partial ? ` ${failures.length} register${failures.length === 1 ? "" : "s"} still need review.` : ""}`,
+      state: partial ? "issue" : "recorded",
+      target_path: submitted.length === 1
+        ? `/principal/attendance?session_id=${first.candidate.session_id}&date=${today}`
+        : `/principal/attendance?date=${today}`,
     });
   }
 

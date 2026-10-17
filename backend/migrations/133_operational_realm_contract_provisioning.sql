@@ -26,7 +26,10 @@ BEGIN
   )
   SELECT provisioned_realm_id,'semantic_type',definition.namespace||'/'||definition.type_key,
     definition.id,definition.version,'active','platform-provisioning'
-  FROM model_semantic_type_definitions definition WHERE definition.status='active'
+  FROM (
+    SELECT DISTINCT ON (namespace,type_key) * FROM model_semantic_type_definitions
+    WHERE status='active' ORDER BY namespace,type_key,version DESC
+  ) definition
   ON CONFLICT DO NOTHING;
 
   INSERT INTO realm_model_contract_activations(
@@ -35,7 +38,10 @@ BEGIN
   )
   SELECT provisioned_realm_id,'protocol_schema',definition.namespace||'/'||definition.schema_key,
     definition.id,definition.version,'active','platform-provisioning'
-  FROM model_protocol_schema_definitions definition WHERE definition.status='active'
+  FROM (
+    SELECT DISTINCT ON (namespace,schema_key) * FROM model_protocol_schema_definitions
+    WHERE status='active' ORDER BY namespace,schema_key,version DESC
+  ) definition
   ON CONFLICT DO NOTHING;
 
   INSERT INTO realm_model_contract_activations(
@@ -44,7 +50,10 @@ BEGIN
   )
   SELECT provisioned_realm_id,'capability_manifest',manifest.namespace||'/'||manifest.capability_key,
     manifest.id,manifest.version,'active','platform-provisioning'
-  FROM model_capability_manifests manifest WHERE manifest.status='active'
+  FROM (
+    SELECT DISTINCT ON (namespace,capability_key) * FROM model_capability_manifests
+    WHERE status='active' ORDER BY namespace,capability_key,version DESC
+  ) manifest
   ON CONFLICT DO NOTHING;
 
   INSERT INTO campus_model_entities(
@@ -66,8 +75,14 @@ INSERT INTO realm_model_contract_activations(
 )
 SELECT realm.id,'semantic_type',definition.namespace||'/'||definition.type_key,
   definition.id,definition.version,'active','platform-provisioning-backfill'
-FROM operational_realms realm CROSS JOIN model_semantic_type_definitions definition
-WHERE realm.status IN ('setup','active') AND definition.status='active'
+FROM operational_realms realm CROSS JOIN (
+  SELECT DISTINCT ON (namespace,type_key) * FROM model_semantic_type_definitions
+  WHERE status='active' ORDER BY namespace,type_key,version DESC
+) definition
+WHERE realm.status IN ('setup','active')
+  AND NOT EXISTS(SELECT 1 FROM realm_model_contract_activations existing
+    WHERE existing.realm_id=realm.id AND existing.contract_kind='semantic_type'
+      AND existing.contract_key=definition.namespace||'/'||definition.type_key AND existing.status='active')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO realm_model_contract_activations(
@@ -76,8 +91,14 @@ INSERT INTO realm_model_contract_activations(
 )
 SELECT realm.id,'protocol_schema',definition.namespace||'/'||definition.schema_key,
   definition.id,definition.version,'active','platform-provisioning-backfill'
-FROM operational_realms realm CROSS JOIN model_protocol_schema_definitions definition
-WHERE realm.status IN ('setup','active') AND definition.status='active'
+FROM operational_realms realm CROSS JOIN (
+  SELECT DISTINCT ON (namespace,schema_key) * FROM model_protocol_schema_definitions
+  WHERE status='active' ORDER BY namespace,schema_key,version DESC
+) definition
+WHERE realm.status IN ('setup','active')
+  AND NOT EXISTS(SELECT 1 FROM realm_model_contract_activations existing
+    WHERE existing.realm_id=realm.id AND existing.contract_kind='protocol_schema'
+      AND existing.contract_key=definition.namespace||'/'||definition.schema_key AND existing.status='active')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO realm_model_contract_activations(
@@ -86,8 +107,14 @@ INSERT INTO realm_model_contract_activations(
 )
 SELECT realm.id,'capability_manifest',manifest.namespace||'/'||manifest.capability_key,
   manifest.id,manifest.version,'active','platform-provisioning-backfill'
-FROM operational_realms realm CROSS JOIN model_capability_manifests manifest
-WHERE realm.status IN ('setup','active') AND manifest.status='active'
+FROM operational_realms realm CROSS JOIN (
+  SELECT DISTINCT ON (namespace,capability_key) * FROM model_capability_manifests
+  WHERE status='active' ORDER BY namespace,capability_key,version DESC
+) manifest
+WHERE realm.status IN ('setup','active')
+  AND NOT EXISTS(SELECT 1 FROM realm_model_contract_activations existing
+    WHERE existing.realm_id=realm.id AND existing.contract_kind='capability_manifest'
+      AND existing.contract_key=manifest.namespace||'/'||manifest.capability_key AND existing.status='active')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO campus_model_entities(

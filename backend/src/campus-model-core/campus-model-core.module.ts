@@ -16,6 +16,7 @@ import { EXECUTION_PROVISIONING_PORT } from "./execution-provisioning.port.js";
 import { PROJECTION_RECOVERY_PORT } from "./projection-recovery.port.js";
 import { ENVIRONMENT_RETENTION_PORT } from "./environment-retention.port.js";
 import { DOMAIN_COMMAND_GATEWAY_PORT } from "./domain-command-gateway.port.js";
+import { DOMAIN_EVENT_JOURNAL_PORT } from "./domain-event-journal.port.js";
 
 @Module({
   providers: [
@@ -36,6 +37,7 @@ import { DOMAIN_COMMAND_GATEWAY_PORT } from "./domain-command-gateway.port.js";
     { provide: PROJECTION_RECOVERY_PORT, useExisting: ExecutionProvisioningService },
     { provide: ENVIRONMENT_RETENTION_PORT, useExisting: ExecutionProvisioningService },
     { provide: DOMAIN_COMMAND_GATEWAY_PORT, useExisting: CampusModelCoreService },
+    { provide: DOMAIN_EVENT_JOURNAL_PORT, useExisting: CampusModelCoreService },
   ],
   exports: [
     CAMPUS_MODEL_CORE_PORT,
@@ -53,6 +55,7 @@ import { DOMAIN_COMMAND_GATEWAY_PORT } from "./domain-command-gateway.port.js";
     PROJECTION_RECOVERY_PORT,
     ENVIRONMENT_RETENTION_PORT,
     DOMAIN_COMMAND_GATEWAY_PORT,
+    DOMAIN_EVENT_JOURNAL_PORT,
   ],
 })
 export class CampusModelCoreModule {}

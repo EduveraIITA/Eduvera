@@ -22,7 +22,8 @@ async function main() {
     host: configuration.host,
   });
   console.log(`[campus-lab] status listening on ${configuration.host}:${configuration.port}`);
-  void runtime.bootWithRetry();
+  // The application first provisions an isolated Simulation fork, then sends
+  // the explicit activation control containing its server-created run ID.
 
   const shutdown = () => {
     runtime.stop();

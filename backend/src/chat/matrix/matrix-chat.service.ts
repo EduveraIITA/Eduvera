@@ -4,6 +4,7 @@ import { DatabaseService } from '../../database/database.service.js';
 import { SchoolEventService } from '../../school/school-event.service.js';
 import { ChatService, type ChatUpload } from '../chat.service.js';
 import { MatrixTransportService } from './matrix-transport.service.js';
+import { ChatModelBridgeService } from '../chat-model-bridge.service.js';
 
 /**
  * Keep the established authorization, audit, notification, edit and report contracts.
@@ -12,8 +13,8 @@ import { MatrixTransportService } from './matrix-transport.service.js';
  */
 @Injectable()
 export class MatrixChatService extends ChatService {
-  constructor(db: DatabaseService, events: SchoolEventService, private readonly matrix: MatrixTransportService) {
-    super(db, events);
+  constructor(db: DatabaseService, events: SchoolEventService, model: ChatModelBridgeService, private readonly matrix: MatrixTransportService) {
+    super(db, events, model);
   }
   override async send(user: AuthUser, conversationId: string, input: unknown, upload: ChatUpload | undefined, request: AuthenticatedRequest) {
     const result = await super.send(user,conversationId,input,upload,request);

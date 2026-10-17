@@ -269,6 +269,13 @@ export class AuthController {
     );
   }
 
+  @ApiCookieAuth()
+  @Post("campus-lab-simulation/")
+  @HttpCode(200)
+  bindCampusLabSimulation(@Req() request: AuthenticatedRequest) {
+    return this.auth.bindCampusLabSimulation(request.authUser, request.sessionHash, request.body);
+  }
+
   @Get("sessions/")
   sessions(@Req() request: AuthenticatedRequest) { return this.auth.sessions(request.authUser, request.sessionHash); }
 

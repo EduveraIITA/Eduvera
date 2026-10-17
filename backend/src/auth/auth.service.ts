@@ -13,6 +13,7 @@ import {
   type TransientExecutionRunCatalog,
 } from "../campus-model-core/transient-execution-run.contracts.js";
 import { DatabaseService } from "../database/database.service.js";
+import { CampusLabSimulationEnvironmentService } from "../database/campus-lab-simulation-environment.service.js";
 import {
   ExecutionDataPlaneError,
   ExecutionDataPlaneRegistry,
@@ -112,7 +113,19 @@ export class AuthService {
     private readonly transientRuns?: TransientExecutionRunCatalog,
     @Optional()
     private readonly executionDataPlanes?: ExecutionDataPlaneRegistry,
+    @Optional()
+    private readonly campusLabSimulation?: CampusLabSimulationEnvironmentService,
   ) {}
+
+  private async resolveRun(actorId: string, institutionId: string, runId: string) {
+    const lab = this.campusLabSimulation?.resolve(institutionId, runId);
+    if (lab) return lab;
+    return this.transientRuns?.resolveAuthorizedRun({
+      actor_id: actorId,
+      institution_id: institutionId,
+      run_id: runId,
+    }) ?? null;
+  }
 
   static tokenHash(raw: string): string {
     return createHash("sha256").update(raw).digest("hex");
@@ -142,14 +155,10 @@ export class AuthService {
       || !input.user.active_school_id
       || input.binding.school_id !== input.user.active_school_id) return unavailable("binding_invalid");
     if (bindingExpiry <= Date.now()) return unavailable("expired");
-    if (!this.transientRuns || !this.executionDataPlanes) return unavailable("runtime_unavailable");
+    if ((!this.transientRuns && !this.campusLabSimulation) || !this.executionDataPlanes) return unavailable("runtime_unavailable");
 
     try {
-      const run = await this.transientRuns.resolveAuthorizedRun({
-        actor_id: input.user.id,
-        institution_id: input.binding.school_id,
-        run_id: input.binding.run_id,
-      });
+      const run = await this.resolveRun(input.user.id, input.binding.school_id, input.binding.run_id);
       if (!run) return unavailable("run_unavailable");
       if (run.scenario_id !== input.binding.scenario_id
         || run.namespace_id !== input.binding.namespace_id) return unavailable("run_unavailable");
@@ -684,14 +693,10 @@ export class AuthService {
     if (!administrator) {
       throw new ForbiddenException("An active institution administrator membership is required.");
     }
-    if (!this.transientRuns || !this.executionDataPlanes) {
+    if ((!this.transientRuns && !this.campusLabSimulation) || !this.executionDataPlanes) {
       throw new ConflictException("Simulation activation is unavailable until the isolated application data plane is ready.");
     }
-    const run = await this.transientRuns.resolveAuthorizedRun({
-      actor_id: user.id,
-      institution_id: schoolId,
-      run_id: input.run_id,
-    });
+    const run = await this.resolveRun(user.id, schoolId, input.run_id);
     if (!run || Date.parse(run.expires_at) <= Date.now()) {
       throw new GoneException("Simulation run not found or expired.");
     }
@@ -769,6 +774,54 @@ export class AuthService {
       },
     });
     return { execution_environment: selected.view };
+  }
+
+  async bindCampusLabSimulation(user: AuthUser, sessionHash: string, rawInput?: unknown) {
+    const schoolId = user.active_school_id;
+    const requestedClock = z.object({ virtual_now: z.string().datetime({ offset: true }).optional() }).strict().parse(rawInput ?? {});
+    let run = schoolId ? this.campusLabSimulation?.current() : null;
+    if (!schoolId || !run || run.institution_id !== schoolId) {
+      throw new ConflictException("The isolated Cambridge Simulation environment is not active.");
+    }
+    const membership = await this.db.selectFrom("school_memberships")
+      .select("id")
+      .where("school_id", "=", schoolId)
+      .where("user_id", "=", user.id)
+      .where("is_active", "=", true)
+      .executeTakeFirst();
+    if (!membership) throw new ForbiddenException("An active Cambridge membership is required.");
+    if (requestedClock.virtual_now) {
+      run = this.campusLabSimulation!.advance(schoolId, requestedClock.virtual_now);
+    }
+    const coverage = this.executionDataPlanes?.assertReady({
+      institutionId: schoolId,
+      runId: run.run_id,
+      namespaceId: run.namespace_id,
+    });
+    if (!coverage) throw new ConflictException("The isolated Simulation data plane is not ready.");
+    await this.db.insertInto("auth_session_execution_environments").values({
+      token_hash: sessionHash,
+      school_id: schoolId,
+      scenario_id: run.scenario_id,
+      run_id: run.run_id,
+      namespace_id: run.namespace_id,
+      expires_at: new Date(run.expires_at),
+      bound_by: user.id,
+    }).onConflict((conflict) => conflict.column("token_hash").doUpdateSet({
+      school_id: schoolId,
+      scenario_id: run.scenario_id,
+      run_id: run.run_id,
+      namespace_id: run.namespace_id,
+      expires_at: new Date(run.expires_at),
+      bound_by: user.id,
+      bound_at: new Date(),
+    })).execute();
+    return {
+      execution_environment: simulationSessionExecutionEnvironment(run, {
+        manifest_ref: coverage.manifest_ref,
+        checked_at: coverage.checked_at,
+      }).view,
+    };
   }
 
   async sessions(user: AuthUser, current: string) {

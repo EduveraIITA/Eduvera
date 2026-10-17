@@ -4,7 +4,7 @@ import { DevelopmentActionRunner, deterministicUuid } from "../src/actions.mjs";
 import { createRoutineSchedule, loadBehaviorFixture } from "../src/model.mjs";
 
 const legacyOffsets = new Map([
-  ["teacher-attendance", 600],
+  ["teacher-attendance-each-lesson", 600],
   ["staff-guardian-message", 1200],
   ["publish-acknowledgement", 300],
   ["guardian-acknowledgement", 900],
@@ -52,6 +52,26 @@ function runnerFor(behavior, routine, startedAt = new Date("2026-10-16T00:00:00.
   });
   return { runner, activity };
 }
+
+test("derives each teacher-attendance obligation from the published lesson periods", async () => {
+  const behavior = await wallClockBehavior();
+  const schedule = [
+    { id: "p1", class_section_id: "class-1", period_number: 1, starts_at: "09:00", ends_at: "09:45", slot_type: "class", title: "Maths", cancelled: false },
+    { id: "p2", class_section_id: "class-1", period_number: 2, starts_at: "09:50", ends_at: "10:35", slot_type: "class", title: "Science", cancelled: false },
+    { id: "p3", class_section_id: "class-1", period_number: 3, starts_at: "10:40", ends_at: "11:25", slot_type: "class", title: "English", cancelled: false },
+  ];
+  const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16", schedule) });
+  const { runner } = runnerFor(behavior, routine);
+
+  assert.deepEqual(
+    runner.scheduledActions.map(({ action }) => [action.id, action.period_number]),
+    [
+      ["teacher-attendance-each-lesson:period-1", 1],
+      ["teacher-attendance-each-lesson:period-2", 2],
+      ["teacher-attendance-each-lesson:period-3", 3],
+    ],
+  );
+});
 
 test("never catches up a missed action after its live school phase", async () => {
   const behavior = await wallClockBehavior();
@@ -123,7 +143,7 @@ test("performs no action on a non-instructional day", async () => {
 test("the assigned teacher submits the same scheduled subject register shown to operators", async () => {
   const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
-  const action = behavior.actions.find((item) => item.id === "teacher-attendance");
+  const action = { ...behavior.actions.find((item) => item.id === "teacher-attendance-each-lesson"), period_number: 1 };
   const adminCalls = [];
   const actorCalls = [];
   const actorRequestCalls = [];
@@ -205,10 +225,56 @@ test("the assigned teacher submits the same scheduled subject register shown to 
   assert.equal(result.target_path, "/principal/attendance?session_id=22222222-2222-4222-8222-222222222222&date=2026-10-16");
 });
 
+test("all assigned teachers submit their registers in the configured period", async () => {
+  const behavior = await wallClockBehavior();
+  const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
+  const action = { ...behavior.actions.find((item) => item.id === "teacher-attendance-each-lesson"), period_number: 1 };
+  const registers = ["session-a", "session-b"].map((sessionId, index) => ({
+    attendance_scope: "scheduled_session",
+    session_id: sessionId,
+    schedule_slot_id: "period-2026-10-16",
+    scheduled_teacher_id: `teacher-${index}`,
+    scheduled_teacher_username: `teacher.${index}`,
+    assigned_teachers: [`Teacher ${index}`],
+    period_number: 1,
+    submission_status: "not_started",
+    can_mark: true,
+  }));
+  let workspaceReads = 0;
+  const submissions = [];
+  const runner = new DevelopmentActionRunner({
+    sessions: { admin: { request: async () => {
+      workspaceReads += 1;
+      return workspaceReads === 1
+        ? { mode: "scheduled_session", registers }
+        : { mode: "scheduled_session", registers: registers.map((item) => ({ ...item, submission_status: "submitted", marked_count: 1, student_count: 1 })) };
+    } } },
+    setup: { school: { id: "school-1" } }, behavior,
+    startedAt: new Date("2026-10-16T00:00:00.000Z"), routine,
+    actorSession: async ({ userId }) => ({ request: async (path, options) => {
+      if (!options) return {
+        availability: { can_mark: true }, class: { name: userId }, session: { subject_name: "Subject" },
+        register: { state: "draft", revision: 0, finalization_source: null },
+        roster: [{ id: `${userId}-student`, status: null }],
+      };
+      submissions.push(path);
+      return { register: { state: "submitted" } };
+    } }),
+    onActivity: () => undefined,
+  });
+
+  const result = await runner.execute(action);
+
+  assert.equal(submissions.length, 2);
+  assert.equal(result.title, "2 assigned teachers submitted Period 1 attendance");
+  assert.match(result.detail, /2 scheduled subject registers/);
+  assert.equal(result.target_path, "/principal/attendance?date=2026-10-16");
+});
+
 test("attendance rehearsal follows daily-class and disabled operating-rule modes", async () => {
   const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
-  const action = behavior.actions.find((item) => item.id === "teacher-attendance");
+  const action = { ...behavior.actions.find((item) => item.id === "teacher-attendance-each-lesson"), period_number: 1 };
   const dailyCalls = [];
   let dailySubmitted = false;
   const dailyRunner = new DevelopmentActionRunner({

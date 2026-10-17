@@ -449,6 +449,27 @@ It retains protocol/version, participants, subject/context, current owner, sourc
 record/revision and terminal outcome. Per-recipient delivery, acknowledgement,
 claim, response and terminal resolution are independent states.
 
+#### Ordinary person-to-person Messages
+
+The user-facing Messaging domain remains separate from this operational mailbox. It
+owns conversation membership, prose, attachments, moderation, transport, delivery
+projection, read state and retention. After accepting a conversation action, it MUST
+write a typed outbox fact and journal it through the Model Core in the same database
+transaction. The core resolves the sender and current recipients to stable human
+agents and retains their event participation, correlation and privacy-safe metadata.
+
+The journal MUST NOT copy message bodies, attachments or inferred intent. The
+standard event vocabulary is `communication.conversation.created`,
+`communication.message.sent`, `communication.message.edited` and
+`communication.conversation.read`. A read-through event is evidence that one agent
+opened the domain conversation; it is not acceptance of an operational request.
+
+Prose becomes operational work only through a separate, explicit and authorized
+domain command or configured reaction. For example, “I am absent tomorrow” remains a
+chat message until the teacher confirms a Leave-domain command; the accepted Leave
+record then enters its own configured coordination trace. This boundary applies
+equally in Live and an isolated Simulation environment.
+
 ### 5.12 Command
 
 A command asks one owning domain to attempt a typed state transition. It includes

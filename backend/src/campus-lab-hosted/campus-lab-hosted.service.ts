@@ -2,14 +2,22 @@ import { ForbiddenException, Injectable, NotFoundException, ServiceUnavailableEx
 import type { AuthenticatedRequest } from "../common/request.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
+import { CampusLabSimulationEnvironmentService } from "../database/campus-lab-simulation-environment.service.js";
+import { AuthService } from "../auth/auth.service.js";
 
 @Injectable()
 export class CampusLabHostedService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly environments: CampusLabSimulationEnvironmentService,
+    private readonly auth: AuthService,
+  ) {}
 
   private async assertCambridgeMember(request: AuthenticatedRequest, requireAdmin = false): Promise<string> {
     const settings = config();
-    if (!settings.HOSTED_CAMPUS_SIMULATOR_ENABLED || settings.DEPLOYMENT_ENVIRONMENT !== "stage") throw new NotFoundException();
+    const available = settings.DEPLOYMENT_ENVIRONMENT === "development"
+      || (settings.HOSTED_CAMPUS_SIMULATOR_ENABLED && settings.DEPLOYMENT_ENVIRONMENT === "stage");
+    if (!available) throw new NotFoundException();
     const schoolId = request.authUser.active_school_id;
     if (!schoolId) throw new ForbiddenException("Select the Cambridge testing campus first.");
     const membership = await this.db.selectFrom("school_memberships as m")
@@ -32,12 +40,23 @@ export class CampusLabHostedService {
       .select(["enabled", "clock_mode"])
       .where("school_id", "=", schoolId)
       .executeTakeFirst();
-    return { enabled: record?.enabled ?? true, clock_mode: record?.clock_mode ?? "60m" };
+    return { enabled: record?.enabled ?? false, clock_mode: record?.clock_mode ?? "60m" };
+  }
+
+  private async saveControl(schoolId: string, enabled: boolean, clockMode: "realtime" | "1m" | "15m" | "60m", changedBy: string) {
+    await this.db.insertInto("hosted_campus_lab_controls").values({
+      school_id: schoolId, enabled, clock_mode: clockMode, changed_by: changedBy, changed_at: new Date(),
+    }).onConflict((conflict) => conflict.column("school_id").doUpdateSet({
+      enabled, clock_mode: clockMode, changed_by: changedBy, changed_at: new Date(),
+    })).execute();
   }
 
   private async forward(path: "status" | "control", init: RequestInit = {}): Promise<unknown> {
     const settings = config();
-    const response = await fetch(`${settings.HOSTED_CAMPUS_SIMULATOR_URL}/${path}`, {
+    const simulatorOrigin = settings.DEPLOYMENT_ENVIRONMENT === "development"
+      ? "http://127.0.0.1:8002"
+      : settings.HOSTED_CAMPUS_SIMULATOR_URL!;
+    const response = await fetch(`${simulatorOrigin}/${path}`, {
       ...init,
       headers: {
         accept: "application/json",
@@ -54,11 +73,13 @@ export class CampusLabHostedService {
   }
 
   async status(request: AuthenticatedRequest): Promise<unknown> {
-    const schoolId = await this.assertCambridgeMember(request);
-    return this.forward("control", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(await this.controlState(schoolId)),
-    });
+    await this.assertCambridgeMember(request);
+    // Status polling is observational. Replaying the persisted control record here
+    // turned every UI refresh into an activation command; an enabled environment
+    // then failed because only the original activation owns the isolated run_id.
+    // Process recovery must use an explicit, run-aware reconciliation path rather
+    // than making a read endpoint mutate the Simulation environment.
+    return this.forward("status");
   }
 
   async control(request: AuthenticatedRequest): Promise<unknown> {
@@ -73,15 +94,37 @@ export class CampusLabHostedService {
     if (!["realtime", "1m", "15m", "60m"].includes(String(clockMode))) {
       throw new ForbiddenException("Campus Lab clock mode must be realtime, 1m, 15m or 60m.");
     }
-    await this.db.insertInto("hosted_campus_lab_controls").values({
-      school_id: schoolId, enabled, clock_mode: clockMode as "realtime" | "1m" | "15m" | "60m", changed_by: request.authUser.id, changed_at: new Date(),
-    }).onConflict((conflict) => conflict.column("school_id").doUpdateSet({
-      enabled, clock_mode: clockMode as "realtime" | "1m" | "15m" | "60m", changed_by: request.authUser.id, changed_at: new Date(),
-    })).execute();
-    return this.forward("control", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled, clock_mode: clockMode }),
-    });
+    let runId: string | null = null;
+    if (enabled) {
+      const school = await this.db.selectFrom("schools").select("timezone").where("id", "=", schoolId).executeTakeFirst();
+      const run = await this.environments.prepare(schoolId, school?.timezone ?? "Asia/Kolkata");
+      runId = run.run_id;
+      await this.auth.bindCampusLabSimulation(request.authUser, request.sessionHash);
+    } else {
+      await this.auth.returnSessionToLive(request.sessionHash);
+    }
+    const selectedClock = clockMode as "realtime" | "1m" | "15m" | "60m";
+    await this.saveControl(schoolId, enabled, selectedClock, request.authUser.id);
+    try {
+      const result = await this.forward("control", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled, clock_mode: selectedClock, ...(runId ? { run_id: runId } : {}) }),
+      });
+      if (!enabled) await this.environments.discard();
+      return result;
+    } catch (error) {
+      if (enabled) {
+        await this.auth.returnSessionToLive(request.sessionHash);
+        await this.environments.discard();
+        await this.saveControl(schoolId, false, selectedClock, request.authUser.id);
+        throw error;
+      }
+      // A stopped actor process cannot be allowed to strand the product in its
+      // fork. Return to Live and discard remain successful even if its status
+      // service is already unavailable.
+      await this.environments.discard();
+      return { status: "paused", control: { enabled: false, clock_mode: selectedClock } };
+    }
   }
 }

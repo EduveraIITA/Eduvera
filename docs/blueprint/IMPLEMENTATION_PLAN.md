@@ -15,6 +15,65 @@ acceptance scenarios that were not attached. IDs below are local traceability ID
 reconstructed companion artifacts. Field discovery, institution sign-off and operational/legal
 decisions cannot be replaced by synthetic software tests.
 
+## Messaging-to-core human-agent convergence — 17 October 2026 (local complete)
+
+The existing Messaging domain now records accepted person-to-person communication
+through a narrow Model Core event-journal port without turning ordinary chat into the
+operational mailbox:
+
+- conversation creation, message send/edit and conversation read-through emit typed,
+  transactional outbox facts and immutable Model Core events;
+- sender and current recipient account endpoints resolve to stable institution human
+  agents, with recipient participation retained in an environment-qualified event link;
+- bodies, attachments and inferred intent remain exclusively in the governed Messaging
+  domain. Core payloads contain only safe structural metadata such as conversation kind,
+  attachment/reply flags and recipient count;
+- the bridge uses the scoped execution database, so the same implementation journals to
+  Live or to the selected isolated Simulation fork and cannot leak a simulated message
+  into Live;
+- ordinary message events do not create Request/Task/Offer records. Any operational
+  effect still requires an explicit domain command or an activated, versioned behaviour.
+
+Implementation evidence: migration `134_communication_agent_event_journal.sql`, the
+generic `DomainEventJournalPort`, `ChatModelBridgeService`, backend TypeScript build,
+the communication contract tests and realtime-isolation tests. The local migration
+also exposed and corrected unapplied migration 133 so new realms select one latest
+active version per contract key instead of attempting overlapping activations. Full
+isolated-database chat acceptance remains gated by `TEST_DATABASE_ISOLATED=true`.
+
+## Two-world Campus Lab convergence — 17 October 2026 (local complete; managed provider open)
+
+The owner superseded the earlier Cambridge Live-fixture mutation contract. Campus
+Lab now uses the same two-world execution model required for customer what-if work:
+
+- activation takes a full point-in-time PostgreSQL snapshot into a separately
+  addressed local database, registers a coverage-gated Simulation data plane and
+  binds the administrator's server session to its run namespace;
+- the four representative sessions and every lazily opened synthetic staff session
+  explicitly bind to that same run before reading or acting, so timetable,
+  attendance, messages, requests, Campus View and the rest of the normal application
+  route through one fork rather than through screen-specific simulation adapters;
+- the runner advances the shared virtual clock through the authenticated control
+  plane; the normal top marker is the existing **Simulation** marker and Live never
+  inherits the rehearsal clock;
+- stop returns the operator session to Live, halts and releases actor sessions, then
+  destroys the registered driver and physical fork. If the actor status service is
+  already unavailable, return-to-Live and discard still win. A failed activation
+  compensates back to Live and removes its partial fork;
+- the local adapter is development-only and checks both database addresses are
+  distinct loopback PostgreSQL databases. Stage/production fail closed until a
+  managed, tenant/privacy-reviewed snapshot provider is configured; shell database
+  lifecycle is not represented as a production implementation.
+
+Verified local evidence: backend build passes; focused auth/data-plane tests pass
+28/28; focused frontend environment/control tests pass 21/21; production frontend
+build passes; a real one-minute run returned a server-confirmed Simulation namespace,
+advanced across effective Cambridge dates and recorded a teacher message through the
+normal chat domain. Stop returned the same browser session to `live:<school-id>` and
+the transient PostgreSQL database no longer existed. The existing Cambridge Live
+fixture still contains historical records written by the superseded harness; this
+slice deliberately does not perform an unsafe partial rollback.
+
 ## Accepted direction
 
 - Product decision, 17 October 2026: retain and push the complete digital-twin core,
@@ -8567,13 +8626,20 @@ snapshot/read/action/projection parity for every module enabled for that institu
 Simulation actions must apply the same domain invariants to copy-on-write scenario
 state so a change is visible across the whole simulated app and nowhere in Live.
 
-Campus Lab remains committed and useful, but only as the Cambridge synthetic
-Live-environment conformance harness. Its clients may intentionally mutate the
-disposable Cambridge fixture through ordinary authenticated APIs to verify real
-domain/event/UI convergence. Its status and accelerated clock belong only in the
-explicit developer harness/control; normal Live routes and headers do not inherit
-them. The product Simulation runtime remains `campus-model-core/scenarios` plus
-registered tenant-generic domain adapters.
+**Superseded Campus Lab interpretation:** Campus Lab no longer mutates Cambridge Live
+or overlays a Live header. The owner selected the two-world method above. Its actors
+now operate as run-local counterparts in a server-confirmed isolated Simulation fork;
+the whole familiar application shows that fork through the standard **Simulation**
+marker, and stopping discards it before the session resumes Live.
+
+Cambridge attendance behavior is configured as an `each_lesson` teacher reaction
+rather than a central list of hard-coded periods. The effective timetable and
+attendance Operating rule create each obligation; at the configured point in every
+published lesson, every eligible assigned synthetic teacher uses their own fixture
+identity to submit their own open subject register through the normal attendance
+command. The runner then verifies all submitted registers in the principal workspace
+and reports partial failures instead of treating one representative register as
+completion of an entire period.
 
 Local remediation and delivery state:
 
