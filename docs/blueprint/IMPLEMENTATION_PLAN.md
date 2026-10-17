@@ -8464,3 +8464,29 @@ Local verification: Campus Lab model/action tests pass **20/20**, including sche
 daily-class and disabled-mode routing; backend TypeScript typecheck passes; and the
 focused attendance-model convergence suite passes **5/5**. Stage deployment and a
 fresh one-hour-run mobile validation remain open evidence gates.
+
+## Gate references, direct search and visitor photos — 17 October 2026
+
+Implemented on an isolated feature branch from Stage following the owner's three HTML
+references and follow-up photo/no-host decision. Preserves shared theme and navigation,
+Hindi support, permission-scoped direct search, pickup safeguards and home-only host
+approval. Adds camera/file photo input, preview/removal, private authorized photo reads,
+host approval photo, category and no-host direct arrival. Migration 122 makes host optional
+with a database invariant for direct entry and stores only photo metadata in PostgreSQL.
+Search also accepts an exact roll number across classes; no class selector is required.
+
+Local backend/frontend typechecks, production frontend build, 34 focused UI tests and
+6 photo/gate unit tests passed. Focused lint passed after fixing photo URL cleanup.
+Added isolated-database tests for direct entry/retry/outbox, photo round-trip, current
+host/gate authority, school isolation and revocation; hosted CI must execute them.
+Local visual browser verification is blocked by unavailable Chromium and a corrupt
+browser-download response. No screenshot or device-validation success is claimed.
+A local Vite preview is running on port 5177; hosted deployment and owner-device review
+remain pending until separately verified.
+
+Follow-up before release: the portable Chromium runtime succeeded with synthetic API
+fixtures. Visitor form and direct search rendered at 320/768/1024/1440 px with no page
+errors; visitor form overflow checks passed at all four widths. Phone and tablet
+screenshots were visually inspected. This supersedes the initial browser-download
+block above. Native owner-device camera review remains open. Large JPEG/PNG camera
+captures are resized locally before upload; submission waits for photo preparation.
