@@ -8408,3 +8408,23 @@ Local verification currently includes backend TypeScript build and focused lint,
 lint. The full local frontend build remains blocked only by pre-existing untracked
 numbered duplicate test artifacts, which were not modified. Clean-checkout Stage CI,
 deployment and authenticated mobile validation remain open evidence gates.
+
+### One-hour Cambridge timetable replay — 17 October 2026
+
+The owner superseded the earlier real-duration development clock so frontend behavior
+can be observed economically during active development. Campus Lab now reads the
+current instructional date's actual `effective_school_schedule`, retains every real
+slot ID and school-local start/end value, and maps the complete first-to-last-slot
+window proportionally onto one fixture-configured 3,600-second run. The timetable is not
+rewritten in PostgreSQL: normal timetable panels keep the authoritative Cambridge
+version while their shared rehearsal marker, active periods, Campus View expectations
+and configured actor actions advance from the same accelerated status projection.
+
+Action timing is configured as a bounded ratio within a named real timetable phase,
+so a timetable change cannot leave an accelerated run waiting for an obsolete fixed
+offset. Holidays, closures and days without an effective schedule still fail closed.
+One activation produces one bounded one-hour run and pauses at completion; the runner does not
+loop material writes. Stopping remains durable and lets the separate hosted service
+scale to zero. Focused simulator verification covers the exact one-hour bounds,
+source schedule identity, accelerated campus time, phase advancement and bounded
+action due instants. Stage deployment and owner mobile acceptance remain open.

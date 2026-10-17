@@ -11,6 +11,25 @@ import {
 
 const processStartedAt = new Date("2026-10-16T00:00:00.000Z");
 
+const legacyOffsets = new Map([
+  ["teacher-daily-attendance", 600],
+  ["staff-guardian-message", 1200],
+  ["publish-acknowledgement", 300],
+  ["guardian-acknowledgement", 900],
+]);
+
+async function wallClockBehavior() {
+  const behavior = await loadBehaviorFixture();
+  return {
+    ...behavior,
+    clock: { mode: "wall_clock" },
+    actions: behavior.actions.map(({ offset_ratio: _offsetRatio, ...action }) => ({
+      ...action,
+      offset_seconds: legacyOffsets.get(action.id) ?? 0,
+    })),
+  };
+}
+
 function slot(id, classId, period, startsAt, endsAt, type = "class", extra = {}) {
   return {
     id,
@@ -65,8 +84,29 @@ function schoolDay({ date = "2026-10-16", isInstructional = null, label = null, 
   };
 }
 
-test("uses the real school-local window and never translates it to process start", async () => {
+test("replays the real published Cambridge day through one configured one-hour clock", async () => {
   const behavior = await loadBehaviorFixture();
+  const startedAt = new Date("2026-10-16T10:00:00.000Z");
+  const routine = createRoutineSchedule({ startedAt, now: startedAt, behavior, timetable: schoolDay() });
+
+  assert.equal(routine.source, "effective_school_schedule");
+  assert.equal(routine.clock.mode, "compressed_school_day");
+  assert.equal(routine.clock.duration_seconds, 3600);
+  assert.equal(routine.clock.started_at, "2026-10-16T10:00:00.000Z");
+  assert.equal(routine.clock.ends_at, "2026-10-16T11:00:00.000Z");
+  assert.equal(phaseAt(startedAt, routine).period_number, 1);
+  assert.equal(simulatedAt(new Date("2026-10-16T10:06:00.000Z"), routine), "2026-10-16T09:29:00+05:30");
+  assert.equal(phaseAt(new Date("2026-10-16T10:12:00.000Z"), routine).period_number, 2);
+  assert.equal(phaseAt(new Date("2026-10-16T11:00:00.000Z"), routine).id, "after-school-hours");
+
+  const attendance = behavior.actions.find((action) => action.id === "teacher-daily-attendance");
+  const dueAt = new Date(actionDueAt(attendance, routine)).getTime();
+  assert.ok(dueAt > startedAt.getTime());
+  assert.ok(dueAt < new Date(routine.phases[0].wall_ends_at).getTime());
+});
+
+test("uses the real school-local window and never translates it to process start", async () => {
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: processStartedAt, behavior, timetable: schoolDay() });
 
   assert.equal(routine.reference_weekday, 5);
@@ -104,7 +144,7 @@ test("uses the real school-local window and never translates it to process start
 });
 
 test("reports actual campus-local time and phase-relative action windows", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: processStartedAt, behavior, timetable: schoolDay() });
 
   assert.equal(simulatedAt(new Date("2026-10-16T03:30:00.000Z"), routine), "2026-10-16T09:00:00+05:30");
@@ -122,7 +162,7 @@ test("reports actual campus-local time and phase-relative action windows", async
 });
 
 test("projects scheduled people only while the effective school day is open", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const timetable = schoolDay();
   const routine = createRoutineSchedule({ now: processStartedAt, behavior, timetable });
   const setup = {
@@ -198,7 +238,7 @@ test("projects scheduled people only while the effective school day is open", as
 });
 
 test("places configured non-teaching staff only as expected simulation state", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const timetable = schoolDay();
   const routine = createRoutineSchedule({ now: processStartedAt, behavior, timetable });
   const setup = {
@@ -244,7 +284,7 @@ test("places configured non-teaching staff only as expected simulation state", a
 });
 
 test("does not guess a duty location from a staff home space when fixture configuration is missing", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const configured = structuredClone(behavior);
   configured.staff_expectations.find((item) => item.designation === "Security Supervisor").space_code = "MISSING-GATE";
   const timetable = schoolDay();
@@ -281,7 +321,7 @@ test("does not guess a duty location from a staff home space when fixture config
 });
 
 test("keeps the demo administrator unplaced when its configured duty space is missing", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const timetable = schoolDay();
   const routine = createRoutineSchedule({ now: processStartedAt, behavior, timetable });
   const setup = {
@@ -310,7 +350,7 @@ test("keeps the demo administrator unplaced when its configured duty space is mi
 });
 
 test("calendar closures override any supplied slots", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({
     now: new Date("2026-10-02T04:00:00.000Z"),
     behavior,
@@ -324,7 +364,7 @@ test("calendar closures override any supplied slots", async () => {
 });
 
 test("does not open the simulator when every effective slot is cancelled", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const cancelled = effectiveSlots().map((item) => ({ ...item, cancelled: true }));
   const routine = createRoutineSchedule({
     now: new Date("2026-10-16T04:00:00.000Z"),
@@ -337,7 +377,7 @@ test("does not open the simulator when every effective slot is cancelled", async
 });
 
 test("does not borrow a future weekday when today has no effective schedule", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({
     now: new Date("2026-10-18T04:00:00.000Z"),
     behavior,
@@ -353,7 +393,7 @@ test("does not borrow a future weekday when today has no effective schedule", as
 });
 
 test("runs a configured Saturday because school days come from the effective schedule", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({
     now: new Date("2026-10-17T03:30:00.000Z"),
     behavior,

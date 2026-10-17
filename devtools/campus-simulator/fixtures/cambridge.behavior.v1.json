@@ -4,6 +4,11 @@
   "school_code": "cis",
   "timezone": "Asia/Kolkata",
   "source_label": "Cambridge development fixture v5",
+  "clock": {
+    "mode": "compressed_school_day",
+    "duration_seconds": 3600,
+    "label": "One-hour Cambridge school day"
+  },
   "personas": {
     "admin": "meera.principal",
     "staff": "kavita.staff",
@@ -104,7 +109,7 @@
       "type": "teacher_submit_daily_attendance",
       "phase_mode": "lesson",
       "period_number": 1,
-      "offset_seconds": 600,
+      "offset_ratio": 0.22,
       "goal": "Exercise the current-day register during the first published teaching period."
     },
     {
@@ -112,7 +117,7 @@
       "type": "staff_guardian_message",
       "phase_mode": "lesson",
       "period_number": 3,
-      "offset_seconds": 1200,
+      "offset_ratio": 0.44,
       "goal": "Exercise a real staff-to-family conversation during a normal teaching morning."
     },
     {
@@ -120,7 +125,7 @@
       "type": "admin_publish_notice",
       "phase_mode": "break",
       "period_number": 4,
-      "offset_seconds": 300,
+      "offset_ratio": 0.25,
       "goal": "Exercise the notice workflow during the published lunch break."
     },
     {
@@ -128,7 +133,7 @@
       "type": "parent_acknowledge_notice",
       "phase_mode": "break",
       "period_number": 4,
-      "offset_seconds": 900,
+      "offset_ratio": 0.7,
       "goal": "Exercise a family response after the notice has been available during lunch."
     }
   ],

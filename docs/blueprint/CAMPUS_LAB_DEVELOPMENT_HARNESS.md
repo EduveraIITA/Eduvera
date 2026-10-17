@@ -31,21 +31,23 @@ The owner decision for this harness is deliberately simple:
 - it is available with the managed local development server and isolated Stage test
   deployment, and starts active unless an administrator explicitly stops it in
   Experimental settings;
-- it uses wall-clock time only;
+- it uses a fixture-configured accelerated clock: the current instructional day's
+  actual effective Cambridge timetable is replayed proportionally in sixty wall-clock
+  minutes, while displayed campus times remain the real timetable times;
 - it has one explicit **Activate simulation / Stop simulation** control for the
-  Cambridge actor process; it has no fast-forward, speed, scrub, replay or virtual-
-  date controls;
+  Cambridge actor process; the one-hour duration is versioned fixture configuration,
+  not an operator speed/scrub control;
 - it resolves the current date in Cambridge's configured timezone and uses only that
   date's effective instructional schedule, including dated overrides, cancellations,
   holidays and closures;
-- it never translates a timetable to the runner start, borrows another weekday or
-  moves the institution clock so that a synthetic day is easier to observe;
-- synthetic presence and domain actions exist only inside the configured school
-  operating window on an instructional date; weekends, holidays, closures, empty
-  effective schedules and before/after-school time remain paused with zero synthetic
-  actors and zero synthetic actions;
-- the process may remain alive between school windows, but it follows the campus-local
-  calendar as real time changes instead of looping or replaying a school day;
+- it never changes, republishes or replaces authoritative timetable records, borrows
+  another weekday or bypasses the school calendar; the accelerated wall intervals are
+  a development projection of the selected real timetable version;
+- synthetic presence and domain actions exist only inside the accelerated replay of
+  an instructional date with an effective schedule; holidays, closures and empty
+  schedules remain paused with zero synthetic actors and actions;
+- one activation produces one bounded one-hour run and then pauses; stopping and
+  activating starts a new run from the first real timetable phase;
 - it calls ordinary authenticated domain APIs so the normal event and frontend paths
   are exercised;
 - it may show a clearly labelled development-only **Rehearsal now** indication beside
@@ -63,7 +65,7 @@ the Model Core blueprint.
 | Campus Lab development harness | Model Core rehearsal/simulation |
 | --- | --- |
 | development and isolated Stage testing aid | future product/core capability |
-| real wall clock | isolated virtual clock |
+| configured one-hour projection of the current real timetable | isolated virtual clock |
 | Cambridge synthetic fixture only | versioned synthetic or sanitized scenario snapshot |
 | normal domain APIs and exact synthetic fixture identities | scenario executors and sink-only dispatchers |
 | may intentionally update the disposable local fixture | must never mutate live domain truth |
@@ -167,11 +169,13 @@ not widen the external-side-effect surface.
 
 ## 4. Real-time routine
 
-### 4.1 Wall clock, current calendar date and school operating window
+### 4.1 Accelerated wall clock, current calendar date and school operating window
 
-The runner receives an injectable clock for tests, but local execution uses the host's
-real wall clock. It does not reinterpret a minute as an hour, change the institution
-date, override `Date.now`, patch PostgreSQL time or expose a speed multiplier.
+The runner receives an injectable clock for tests. Local and hosted execution use the
+host's real wall clock to advance a fixture-configured projection: the full duration
+from the first to last effective Cambridge timetable slot is mapped proportionally to
+3,600 real seconds. It does not change the institution date, override `Date.now`, patch
+PostgreSQL time, or expose a user-adjustable speed multiplier.
 
 For each schedule refresh, the runner records:
 
@@ -181,7 +185,8 @@ For each schedule refresh, the runner records:
   label and revision where available;
 - the exact effective daily schedule source and revision used for the routine;
 - the selected declarative Cambridge development routine;
-- calculated real due instants for each lesson, break, transition and action;
+- calculated compressed wall due instants plus the original school-local bounds for
+  each lesson, break, transition and action;
 - an action receipt/idempotency ledger.
 
 The routine is built only from the current institution-local date's effective daily
@@ -199,33 +204,28 @@ institution-level operating-hours model is introduced, this contract can consume
 versioned effective bounds after a separate review.
 
 Every effective teaching slot and explicit break retains its actual campus-local start
-and end instant on that date. Uncovered gaps become transitions or unassigned time
-rather than being silently collapsed. A forty-five-minute source lesson remains the
-real 9:00-9:45 AM interval in the institution timezone; it is never shifted to the
-process start. The runner must not use arbitrary 90-second lessons, modulo-select a
-period by ordinal position or synthesize a second clock.
+and end values on that date. Uncovered gaps become proportionally scaled transitions
+rather than being silently collapsed. A 9:00-9:45 AM lesson is still presented and
+identified as 9:00-9:45 AM, but its wall interval is its proportional share of the
+configured one-hour run. The active marker and all simulator projections use the
+same mapping; no screen invents its own clock.
 
-Before the operating window, after it closes, and for every non-instructional date,
-the status is explicitly paused and contains no synthetic presence markers, current
-phase activity or due domain actions. Starting or restarting the preview during an
-active school window may join the real current phase, but actions whose due instant is
-already in the past are not replayed as catch-up work. A periodic refresh and every
-institution-local date rollover re-resolve the calendar and effective daily schedule;
-a newly published closure or cancellation fails closed immediately.
+Before activation, after the one-hour run completes, and for every non-instructional
+date, status is explicitly paused and contains no synthetic presence markers, current
+phase activity or due actions. Activation begins at the first effective phase. A
+periodic refresh re-resolves the current date and effective schedule; a newly published
+closure or cancellation fails closed immediately. Actions are placed by configured
+phase-relative ratios so they remain observable when source-period durations change.
 
-### 4.2 Continuous real time with one bounded administrator control
+### 4.2 One bounded administrator control
 
-The runner evaluates the real campus-local instant automatically while the managed
-local preview or hosted Stage test client is active. There is no user control to start,
-replay, skip or accelerate the school clock. An administrator may stop or activate the
-entire Cambridge actor process from Experimental settings. Stopped means zero
-synthetic actors and zero synthetic actions; activation resumes evaluation at the real
-current instant and never catches up missed actions. Its process may stay healthy while
-the routine is paused, but paused means zero synthetic actors and zero domain actions. It
-becomes active only when real time enters an instructional date's operating window and
-returns to paused when that window ends. Institution-local midnight triggers a new
-calendar resolution; it does not wrap the prior day's end into a manufactured next
-school day.
+An administrator may stop or activate the entire Cambridge actor process from
+Experimental settings. Stopped means zero synthetic actors and zero synthetic actions;
+activation anchors a fresh one-hour run at the current wall instant. There is no
+separate speed, scrub, skip or virtual-date control. Completion pauses rather than
+looping, preventing unattended repeated mutations. Institution-local midnight triggers
+a new calendar resolution; it does not wrap the prior day's end into a manufactured
+next school day.
 
 Routine definition belongs in a declarative fixture file, not hard-coded Model Core
 agent behavior. It defines participant selectors, action templates and safe fallback

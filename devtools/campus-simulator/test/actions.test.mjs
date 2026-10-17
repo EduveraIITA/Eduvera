@@ -3,6 +3,25 @@ import test from "node:test";
 import { DevelopmentActionRunner, deterministicUuid } from "../src/actions.mjs";
 import { createRoutineSchedule, loadBehaviorFixture } from "../src/model.mjs";
 
+const legacyOffsets = new Map([
+  ["teacher-daily-attendance", 600],
+  ["staff-guardian-message", 1200],
+  ["publish-acknowledgement", 300],
+  ["guardian-acknowledgement", 900],
+]);
+
+async function wallClockBehavior() {
+  const behavior = await loadBehaviorFixture();
+  return {
+    ...behavior,
+    clock: { mode: "wall_clock" },
+    actions: behavior.actions.map(({ offset_ratio: _offsetRatio, ...action }) => ({
+      ...action,
+      offset_seconds: legacyOffsets.get(action.id) ?? 0,
+    })),
+  };
+}
+
 function timetable(date, schedule = [{
   id: `period-${date}`,
   class_section_id: "class-1",
@@ -35,7 +54,7 @@ function runnerFor(behavior, routine, startedAt = new Date("2026-10-16T00:00:00.
 }
 
 test("never catches up a missed action after its live school phase", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
   const { runner } = runnerFor(behavior, routine);
   let executions = 0;
@@ -47,7 +66,7 @@ test("never catches up a missed action after its live school phase", async () =>
 });
 
 test("executes a configured action only inside its current live phase", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
   const { runner } = runnerFor(behavior, routine);
   let executions = 0;
@@ -61,7 +80,7 @@ test("executes a configured action only inside its current live phase", async ()
 });
 
 test("does not replay an action whose due instant passed before a midday restart", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T03:50:00.000Z"), behavior, timetable: timetable("2026-10-16") });
   const { runner } = runnerFor(behavior, routine, new Date("2026-10-16T03:50:00.000Z"));
   let executions = 0;
@@ -72,7 +91,7 @@ test("does not replay an action whose due instant passed before a midday restart
 });
 
 test("resets the action scope when the authoritative school date changes", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const firstRoutine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
   const { runner } = runnerFor(behavior, firstRoutine);
   let executions = 0;
@@ -88,7 +107,7 @@ test("resets the action scope when the authoritative school date changes", async
 });
 
 test("performs no action on a non-instructional day", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const closed = timetable("2026-10-16");
   closed.context.is_instructional = false;
   closed.context.label = "School holiday";
@@ -102,7 +121,7 @@ test("performs no action on a non-instructional day", async () => {
 });
 
 test("an offered synthetic invigilator accepts through the real response command during school hours", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: timetable("2026-10-16") });
   const assignment = { id: "assignment-1", user_id: "staff-1", username: "manish.tiwari", name: "Manish Tiwari", status: "offered", revision: 3 };
   const actorCalls = [];
@@ -161,7 +180,7 @@ test("an offered synthetic invigilator accepts through the real response command
 });
 
 test("does not inspect or answer exam offers outside the effective school day", async () => {
-  const behavior = await loadBehaviorFixture();
+  const behavior = await wallClockBehavior();
   const closed = timetable("2026-10-16");
   closed.context.is_instructional = false;
   const routine = createRoutineSchedule({ now: new Date("2026-10-16T00:00:00.000Z"), behavior, timetable: closed });

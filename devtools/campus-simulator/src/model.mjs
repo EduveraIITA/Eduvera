@@ -15,14 +15,25 @@ export function validateBehaviorFixture(input) {
   if (input.school_code !== "cis" || input.timezone !== "Asia/Kolkata") {
     throw new Error("The behavior fixture must target the Cambridge 'cis' school in Asia/Kolkata.");
   }
+  if (input.clock?.mode !== "compressed_school_day"
+    || !Number.isInteger(input.clock?.duration_seconds)
+    || input.clock.duration_seconds < 120
+    || input.clock.duration_seconds > 3_600
+    || typeof input.clock?.label !== "string"
+    || input.clock.label.trim().length < 3) {
+    throw new Error("The Cambridge fixture must configure a labelled 2-60 minute compressed school day.");
+  }
   const ratios = input.attendance_ratios ?? {};
   const ratioTotal = ["present", "late", "absent", "excused"].reduce((sum, key) => sum + Number(ratios[key] ?? 0), 0);
   if (Math.abs(ratioTotal - 1) > 0.00001) throw new Error("Attendance ratios must total exactly 1.");
   if (!Array.isArray(input.actions)) throw new Error("Behavior actions must be an array.");
   const actionIds = new Set();
   for (const action of input.actions) {
-    if (!action?.id || actionIds.has(action.id) || !action?.type || Number(action.offset_seconds) < 0) {
-      throw new Error("Every behavior action needs a unique id, type and non-negative phase offset.");
+    if (!action?.id || actionIds.has(action.id) || !action?.type
+      || !Number.isFinite(Number(action.offset_ratio))
+      || Number(action.offset_ratio) < 0
+      || Number(action.offset_ratio) >= 1) {
+      throw new Error("Every behavior action needs a unique id, type and a phase offset ratio from 0 up to 1.");
     }
     actionIds.add(action.id);
     if (!["lesson", "break", "activity"].includes(action.phase_mode)) {
@@ -284,6 +295,13 @@ export function createRoutineSchedule({ startedAt: startedAtValue, now: nowValue
 
   const firstStart = Math.min(...slots.map((slot) => slot.start_seconds));
   const lastEnd = Math.max(...slots.map((slot) => slot.end_seconds));
+  const compressed = behavior.clock?.mode === "compressed_school_day";
+  const cycleStartedAt = new Date(startedAtValue ?? now);
+  const cycleDurationMs = Number(behavior.clock?.duration_seconds ?? 0) * 1_000;
+  const sourceDuration = lastEnd - firstStart;
+  const wallInstant = (schoolSeconds) => compressed
+    ? new Date(cycleStartedAt.getTime() + ((schoolSeconds - firstStart) / sourceDuration) * cycleDurationMs).toISOString()
+    : instantInZone(referenceDate, schoolSeconds, timeZone).toISOString();
   const boundaries = [...new Set(slots.flatMap((slot) => [slot.start_seconds, slot.end_seconds]))].sort((a, b) => a - b);
   const planned = [];
   for (let index = 0; index < boundaries.length - 1; index += 1) {
@@ -314,22 +332,22 @@ export function createRoutineSchedule({ startedAt: startedAtValue, now: nowValue
     ...phase,
     school_starts_at: formatTime(phase.school_start_seconds),
     school_ends_at: formatTime(phase.school_end_seconds),
-    wall_starts_at: instantInZone(referenceDate, phase.school_start_seconds, timeZone).toISOString(),
-    wall_ends_at: instantInZone(referenceDate, phase.school_end_seconds, timeZone).toISOString(),
+    wall_starts_at: wallInstant(phase.school_start_seconds),
+    wall_ends_at: wallInstant(phase.school_end_seconds),
   }));
   const beforePhase = closedPhase({
     id: "before-school-hours",
     label: "School day has not started",
     description: "The simulator is paused until the first effective timetable period begins.",
-    startedAt: instantInZone(referenceDate, 0, timeZone).toISOString(),
-    nextChangeAt: instantInZone(referenceDate, firstStart, timeZone).toISOString(),
+    startedAt: compressed ? cycleStartedAt.toISOString() : instantInZone(referenceDate, 0, timeZone).toISOString(),
+    nextChangeAt: wallInstant(firstStart),
     schoolEndsAt: formatTime(firstStart),
   });
   const afterPhase = closedPhase({
     id: "after-school-hours",
     label: "School day complete",
     description: "The simulator is paused because the final effective timetable period has ended.",
-    startedAt: instantInZone(referenceDate, lastEnd, timeZone).toISOString(),
+    startedAt: wallInstant(lastEnd),
     schoolStartsAt: formatTime(lastEnd),
   });
   return {
@@ -337,6 +355,14 @@ export function createRoutineSchedule({ startedAt: startedAtValue, now: nowValue
     reference_date: referenceDate,
     timezone: timeZone,
     source: "effective_school_schedule",
+    clock: compressed ? {
+      mode: "compressed_school_day",
+      label: behavior.clock.label,
+      duration_seconds: behavior.clock.duration_seconds,
+      scale: sourceDuration / Number(behavior.clock.duration_seconds),
+      started_at: cycleStartedAt.toISOString(),
+      ends_at: new Date(cycleStartedAt.getTime() + cycleDurationMs).toISOString(),
+    } : { mode: "wall_clock" },
     is_operating_day: true,
     calendar_label: context.label ?? null,
     day_start_seconds: firstStart,
@@ -364,13 +390,27 @@ export function phaseAt(nowValue, routine) {
 }
 
 export function simulatedAt(nowValue, routine) {
+  if (routine.clock?.mode === "compressed_school_day") {
+    const startedAt = new Date(routine.clock.started_at).getTime();
+    const elapsed = Math.min(
+      Math.max(new Date(nowValue).getTime() - startedAt, 0),
+      Number(routine.clock.duration_seconds) * 1_000,
+    );
+    const schoolSeconds = routine.day_start_seconds
+      + (elapsed / (Number(routine.clock.duration_seconds) * 1_000)) * (routine.day_end_seconds - routine.day_start_seconds);
+    return zonedIso(instantInZone(routine.reference_date, schoolSeconds, routine.timezone), routine.timezone);
+  }
   return zonedIso(nowValue, routine.timezone);
 }
 
 export function actionDueAt(action, routine) {
   const phase = routine.phases.find((candidate) => candidate.mode === action.phase_mode && candidate.period_number === action.period_number);
   if (!phase || phase.wall_ends_at === null) return null;
-  const due = new Date(phase.wall_starts_at).getTime() + Number(action.offset_seconds) * 1_000;
+  const duration = new Date(phase.wall_ends_at).getTime() - new Date(phase.wall_starts_at).getTime();
+  const due = new Date(phase.wall_starts_at).getTime()
+    + (Number.isFinite(Number(action.offset_ratio))
+      ? duration * Number(action.offset_ratio)
+      : Number(action.offset_seconds) * 1_000);
   return due < new Date(phase.wall_ends_at).getTime() ? new Date(due).toISOString() : null;
 }
 
@@ -633,6 +673,7 @@ export function buildStatusSnapshot({
       simulated_at: simulatedAt(generatedAt, routine),
       source: routine.source,
       active_slot_ids: phase.active_slot_ids,
+      clock: routine.clock,
     },
     summary: {
       actors,

@@ -11,7 +11,7 @@ export function campusLabTimetableIndicator(status: CampusLabStatus | null | und
     || !status.schedule.simulated_at
   ) return null;
   return {
-    label: "Simulated school day",
+    label: status.schedule.clock?.label || "Simulated school day",
     status: status.status,
     referenceDate: status.schedule.reference_date,
     simulatedAt: status.schedule.simulated_at,

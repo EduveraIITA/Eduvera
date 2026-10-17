@@ -93,6 +93,7 @@ export class CampusSimulatorRuntime {
     this.hosted = hosted;
     this.serviceToken = serviceToken;
     this.startedAt = new Date(startedAt);
+    this.runStartedAt = new Date(startedAt);
     this.fetchImpl = fetchImpl;
     this.status = emptyStatus(this.startedAt);
     this.actionActivity = [];
@@ -195,7 +196,7 @@ export class CampusSimulatorRuntime {
     if (!(setup.spaces ?? []).some((space) => space.status === "active")) throw new Error("The Cambridge fixture has no active campus spaces.");
     this.sessions = sessions;
     this.data = { setup, timetable, students };
-    this.routine = createRoutineSchedule({ now: new Date(), behavior: this.behavior, timetable });
+    this.routine = createRoutineSchedule({ startedAt: this.runStartedAt, now: new Date(), behavior: this.behavior, timetable });
     this.errors = [];
     this.actionRunner = new DevelopmentActionRunner({
       sessions,
@@ -221,7 +222,7 @@ export class CampusSimulatorRuntime {
       const timetable = await currentSchoolDay(this.sessions.admin, schoolId, principalTimetable);
       assertCambridgeFixture(setup, this.behavior);
       this.data = { ...this.data, setup, timetable };
-      this.routine = createRoutineSchedule({ now: new Date(), behavior: this.behavior, timetable });
+      this.routine = createRoutineSchedule({ startedAt: this.runStartedAt, now: new Date(), behavior: this.behavior, timetable });
       this.actionRunner?.updateRoutine(this.routine);
       this.errors = [];
     } catch (error) {
@@ -262,6 +263,7 @@ export class CampusSimulatorRuntime {
       this.render();
       return this.snapshot();
     }
+    this.runStartedAt = new Date();
     if (!this.data) await this.connect();
     else await this.refresh();
     this.startIntervals();

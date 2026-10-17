@@ -13,8 +13,8 @@ function status(schedule: CampusLabStatus["schedule"]): CampusLabStatus {
 
 describe("Campus Lab timetable projection", () => {
   it("maps the shared development snapshot into a neutral timetable indicator", () => {
-    const indicator = campusLabTimetableIndicator(status({ reference_weekday: 3, reference_date: "2026-10-14", simulated_at: "2026-10-14T09:10:00+05:30", source: "effective_school_schedule", active_slot_ids: ["slot-1"] }));
-    expect(indicator).toMatchObject({ referenceDate: "2026-10-14", simulatedAt: "2026-10-14T09:10:00+05:30", phaseMode: "lesson", activeSlotIds: ["slot-1"] });
+    const indicator = campusLabTimetableIndicator(status({ reference_weekday: 3, reference_date: "2026-10-14", simulated_at: "2026-10-14T09:10:00+05:30", source: "effective_school_schedule", active_slot_ids: ["slot-1"], clock: { mode: "compressed_school_day", label: "One-hour Cambridge school day", duration_seconds: 3600 } }));
+    expect(indicator).toMatchObject({ label: "One-hour Cambridge school day", referenceDate: "2026-10-14", simulatedAt: "2026-10-14T09:10:00+05:30", phaseMode: "lesson", activeSlotIds: ["slot-1"] });
   });
 
   it("does not expose a partial boot snapshot to timetable date logic", () => {

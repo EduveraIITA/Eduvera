@@ -49,6 +49,14 @@ export interface CampusLabSchedule {
   simulated_at: string | null;
   source: "effective_school_schedule";
   active_slot_ids: string[];
+  clock?: {
+    mode: "compressed_school_day" | "wall_clock";
+    label?: string;
+    duration_seconds?: number;
+    scale?: number;
+    started_at?: string;
+    ends_at?: string;
+  };
 }
 
 export interface CampusLabStatus {
