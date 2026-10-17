@@ -1,5 +1,11 @@
 # THATCAMPUS — Technical Architecture
 
+> Authority: [Product blueprint v2](docs/blueprint/PRODUCT_BLUEPRINT_V2.md) and its
+> [current normative contracts](docs/blueprint/README.md) take precedence. This
+> broader proposal contains historical and future design choices; it is not a
+> statement that every described stack, screen or workflow is implemented. Read
+> the current owning code and implementation evidence before extending it.
+
 **Document:** 02_TECHNICAL_ARCHITECTURE.md  
 **Target:** Production Web + Android + iOS  
 **Architecture style:** TypeScript monorepo + modular monolith + background workers + realtime gateway  

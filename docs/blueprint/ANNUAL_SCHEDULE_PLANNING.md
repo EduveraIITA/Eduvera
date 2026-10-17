@@ -52,8 +52,9 @@ must be reconciled before normal deployment; do not rewrite checksums silently.
 
 ## Delivered scope and deliberate limits
 
-- Standalone Schedule settings replaces the routed live weekly editor. Prepare
-  next year, closures, teaching-time targets and class timetables share one entry.
+- The earlier standalone class editor was superseded on 14 October. Recurring
+  timetable viewing/editing and draft review now share the canonical calendar
+  workspace. Academic settings retains year preparation, closures and targets.
 - An empty pattern can generate school-day timings and a break. Periods use the
   existing subject/teacher editor; a day can be copied to selected weekdays,
   including Sunday. Teaching allocation remains reviewable before publication.
