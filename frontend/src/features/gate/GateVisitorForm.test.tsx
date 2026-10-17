@@ -28,7 +28,9 @@ it('submits direct entry without a host and approval with a host and photo',asyn
  await waitFor(()=>expect(play).toHaveBeenCalled());
  fireEvent.canPlay(screen.getByLabelText('Visitor camera preview'));
  fireEvent.click(screen.getByRole('button',{name:'Capture photo'}));
- expect(await screen.findByAltText('Visitor photo preview')).toBeInTheDocument();
+ expect(await screen.findByAltText('Visitor photo preview')).toHaveAttribute('src',expect.stringMatching(/^data:image\/jpeg;base64,/));
+ expect(screen.queryByText('The host can review this photo before approving.')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Retake photo'})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Request approval'}));
  const form=submit.mock.calls[1][0] as FormData;expect(form.get('host_user_id')).toBe('host');expect((form.get('photo') as File).type).toBe('image/jpeg');
  fireEvent.click(screen.getByRole('button',{name:'Remove photo'}));
@@ -37,6 +39,7 @@ it('submits direct entry without a host and approval with a host and photo',asyn
 it('has no upload picker and recovers when camera permission is denied',async()=>{
  const {container}=render(<GateVisitorForm hosts={[]} hindi={false} busy={false} onSubmit={submit}/>);
  expect(container.querySelector('input[type=file]')).toBeNull();
+ expect(screen.queryByText('Check their identity. This action records the visitor’s entry now.')).not.toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Attach photo'})).not.toBeInTheDocument();
  getUserMedia.mockRejectedValueOnce(new Error('NotAllowedError'));
  fireEvent.click(screen.getByRole('button',{name:'Take photo'}));

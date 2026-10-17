@@ -8509,3 +8509,15 @@ Local frontend typecheck, focused lint and 15 gate/form tests passed. Portable C
 synthetic fixtures verified camera capture to preview, no page errors, and visitor/search
 layouts at 320/768/1024/1440 px. Real iPhone camera acceptance remains open. Deployment
 is tracked separately; these checks do not establish real-device or hosted acceptance.
+
+## 17 October 2026 — owner compact visitor form correction
+
+Removed the inactive decorative QR panel and its checkpoint introduction. Simplified
+visitor photo to a camera control and a small captured thumbnail with overlaid removal;
+removed helper text and the no-host entry note, retained optional host/direct entry,
+and styled categories as reference pills. JPEG data URL previews fix the production
+CSP incompatibility of blob image previews without weakening the security policy.
+Validation: frontend typecheck, 15 focused gate/form tests and focused ESLint passed.
+Portable Chromium verified capture and a decoded thumbnail (naturalWidth > 0), no page
+errors, responsive visitor/search layouts at 320/768/1024/1440px, and absence of the
+removed home QR panel. Compact captured-photo screenshot was visually reviewed.
