@@ -1,6 +1,6 @@
 import { invitationCodeHash, issueInvitationCode } from '../common/invitation-code.js';
 import { enqueueInvitation } from "../common/invitation-queue.js";
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
@@ -9,6 +9,11 @@ import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { schoolPermissionForUser } from "../roles/authorization.js";
+import {
+  STAFF_COVERAGE_RECONCILIATION_PORT,
+  type CoverageReconciliationInput,
+  type StaffCoverageReconciliationPort,
+} from "../staff-operations/staff-coverage-reconciliation.service.js";
 import { catalogMutationSchema, classSchema, enrollmentSchema, guardianSchema, invoiceSchema, parseStudentCsv, paymentSchema, personSchema, rolloverSchema, studentSchema, studentUpdateSchema, subjectSchema, termSchema, uuid } from "./schemas.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -18,7 +23,10 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 
 @Injectable()
 export class OperationsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
+  ) {}
 
   createSchool() {
     throw new ForbiddenException("Company operators provision institutions through the company console.");
@@ -38,6 +46,95 @@ export class OperationsService {
   private async audit(db: Db, user: AuthUser, schoolId: string, action: string, targetId?: string, metadata: Record<string, unknown> = {}) {
     await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
       VALUES (${schoolId}::uuid,${user.id}::uuid,${action},${targetId ?? null}::uuid,${JSON.stringify(metadata)}::jsonb)`.execute(db);
+  }
+
+  private async enqueuePanelUpdate(
+    db: Transaction<Database>,
+    input: {
+      schoolId: string;
+      eventType: "fees.updated" | "administration.updated" | "people.updated";
+      aggregateType: string;
+      aggregateId: string;
+      payload: Record<string, unknown>;
+      idempotencyKey: string;
+    },
+  ) {
+    const audience = await sql<{ user_id: string }>`SELECT DISTINCT membership.user_id
+      FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${input.schoolId}::uuid AND membership.is_active
+        AND event_user_is_authorized(
+          ${input.schoolId}::uuid,
+          ${input.eventType},
+          ${JSON.stringify(input.payload)}::jsonb,
+          membership.user_id
+        )`.execute(db);
+    await db.insertInto("event_outbox").values({
+      school_id: input.schoolId,
+      event_type: input.eventType,
+      aggregate_type: input.aggregateType,
+      aggregate_id: input.aggregateId,
+      audience_user_ids: audience.rows.map((row) => row.user_id),
+      payload: input.payload,
+      idempotency_key: input.idempotencyKey,
+      notification_user_ids: [],
+      notification_payload: null,
+    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
+  }
+
+  private async enqueueAccessUpdate(
+    db: Transaction<Database>,
+    input: { schoolId: string; membershipId: string; affectedUserId: string; action: "membership_activated" | "membership_deactivated"; mutationId: string },
+  ) {
+    const admins = await sql<{ user_id: string }>`SELECT DISTINCT membership.user_id
+      FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${input.schoolId}::uuid AND membership.role='admin' AND membership.is_active`.execute(db);
+    await db.insertInto("event_outbox").values({
+      school_id: input.schoolId,
+      event_type: "staff.access.updated",
+      aggregate_type: "school_membership",
+      aggregate_id: input.membershipId,
+      audience_user_ids: [...new Set([input.affectedUserId, ...admins.rows.map((row) => row.user_id)])],
+      payload: {
+        school_id: input.schoolId,
+        action: input.action,
+        affected_user_id: input.affectedUserId,
+        refresh: ["staff.access"],
+      },
+      idempotency_key: `membership-access:${input.membershipId}:${input.mutationId}`,
+      notification_user_ids: [],
+      notification_payload: null,
+    }).execute();
+  }
+
+  private async enqueuePeopleUpdate(
+    db: Transaction<Database>,
+    input: {
+      schoolId: string;
+      aggregateType: string;
+      aggregateId: string;
+      action: string;
+      idempotencyKey: string;
+      studentId?: string;
+      classSectionId?: string;
+      extra?: Record<string, unknown>;
+    },
+  ) {
+    await this.enqueuePanelUpdate(db, {
+      schoolId: input.schoolId,
+      eventType: "people.updated",
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId,
+      payload: {
+        action: input.action,
+        ...(input.studentId ? { student_id: input.studentId } : {}),
+        ...(input.classSectionId ? { class_section_id: input.classSectionId } : {}),
+        ...input.extra,
+        refresh: ["people", "principal.administration", "principal.home", "teacher.home", "parent.home"],
+      },
+      idempotencyKey: input.idempotencyKey,
+    });
   }
 
   private async mutate<T>(
@@ -277,11 +374,25 @@ export class OperationsService {
 
   async student(user: AuthUser, schoolId: string, body: unknown, id?: string) {
     return this.mutate(user, schoolId, "sis.manage", `student.${id ? "updated" : "created"}`, async (db) => {
-      if (!id) return this.createStudent(db, schoolId, studentSchema.parse(body));
+      if (!id) {
+        const data = studentSchema.parse(body);
+        const created = await this.createStudent(db, schoolId, data);
+        await this.enqueuePeopleUpdate(db, {
+          schoolId, aggregateType: "student", aggregateId: created.id, action: "student_created",
+          studentId: created.id, classSectionId: data.class_section_id,
+          extra: { term_id: data.term_id }, idempotencyKey: `student:${created.id}:created`,
+        });
+        return created;
+      }
       const student = await this.schoolStudent(db, schoolId, id);
       const data = studentUpdateSchema.parse(body);
       await db.updateTable("users").set({ first_name: data.first_name, last_name: data.last_name }).where("id", "=", student.user_id).execute();
-      return db.updateTable("students").set({ admission_number: data.admission_number, date_of_birth: data.date_of_birth }).where("id", "=", student.id).returningAll().executeTakeFirstOrThrow();
+      const updated = await db.updateTable("students").set({ admission_number: data.admission_number, date_of_birth: data.date_of_birth }).where("id", "=", student.id).returningAll().executeTakeFirstOrThrow();
+      await this.enqueuePeopleUpdate(db, {
+        schoolId, aggregateType: "student", aggregateId: updated.id, action: "student_updated",
+        studentId: updated.id, idempotencyKey: `student:${updated.id}:updated:${randomUUID()}`,
+      });
+      return updated;
     });
   }
 
@@ -308,7 +419,15 @@ export class OperationsService {
           UNION ALL SELECT 1 FROM enrollments WHERE class_section_id=${row.class_section_id}::uuid AND term_id=${row.term_id}::uuid AND roll_number=${row.roll_number}`.execute(db);
         if (conflict.rows.length) throw new ConflictException(`Existing email, admission or roll number for ${row.admission_number}. No students imported.`);
       }
-      if (confirm) for (const row of rows) await this.createStudent(db, schoolId, row);
+      if (confirm) {
+        const created: string[] = [];
+        for (const row of rows) created.push((await this.createStudent(db, schoolId, row)).id);
+        const importId = randomUUID();
+        await this.enqueuePeopleUpdate(db, {
+          schoolId, aggregateType: "people_import", aggregateId: importId, action: "students_imported",
+          extra: { count: created.length }, idempotencyKey: `students-imported:${schoolId}:${importId}`,
+        });
+      }
       return { confirmed: confirm, count: rows.length, students: rows.map(({ first_name, last_name, admission_number }) => ({ first_name, last_name, admission_number })) };
     });
   }
@@ -331,8 +450,14 @@ export class OperationsService {
         ?? await db.selectFrom("parents").select("id").where("user_id", "=", account.id).executeTakeFirstOrThrow();
       await db.insertInto("school_memberships").values({ user_id: account.id, school_id: schoolId, role: "guardian" }).onConflict((oc) => oc.columns(["user_id", "school_id", "role"]).doNothing()).execute();
       if (data.is_primary) await db.updateTable("guardian_relationships").set({ is_primary: false }).where("student_id", "=", data.student_id).execute();
-      return db.insertInto("guardian_relationships").values({ guardian_id: parent.id, student_id: data.student_id, relationship: data.relationship, is_primary: data.is_primary, can_authorize_leave: data.can_authorize_leave })
-        .onConflict((oc) => oc.columns(["guardian_id", "student_id"]).doUpdateSet({ relationship: data.relationship, is_primary: data.is_primary, can_authorize_leave: data.can_authorize_leave })).returningAll().executeTakeFirstOrThrow();
+      const relationship = await db.insertInto("guardian_relationships").values({ guardian_id: parent.id, student_id: data.student_id, relationship: data.relationship, is_primary: data.is_primary, can_authorize_leave: data.can_authorize_leave })
+        .onConflict((oc) => oc.columns(["guardian_id", "student_id"]).doUpdateSet({ relationship: data.relationship, is_primary: data.is_primary, can_authorize_leave: data.can_authorize_leave, authority_revision: sql`guardian_relationships.authority_revision + 1` })).returningAll().executeTakeFirstOrThrow();
+      await this.enqueuePeopleUpdate(db, {
+        schoolId, aggregateType: "guardian_relationship", aggregateId: relationship.id, action: "guardian_linked",
+        studentId: data.student_id, extra: { guardian_id: parent.id, authority_revision: relationship.authority_revision },
+        idempotencyKey: `guardian-relationship:${relationship.id}:${relationship.authority_revision}`,
+      });
+      return relationship;
     });
   }
 
@@ -341,7 +466,14 @@ export class OperationsService {
     return this.mutate(user, schoolId, "sis.manage", "student.enrolled", async (db) => {
       await this.schoolStudent(db, schoolId, data.student_id);
       await this.checkEnrollment(db, schoolId, data.class_section_id, data.term_id);
-      return db.insertInto("enrollments").values(data).returningAll().executeTakeFirstOrThrow();
+      const enrollment = await db.insertInto("enrollments").values(data).returningAll().executeTakeFirstOrThrow();
+      await this.enqueuePeopleUpdate(db, {
+        schoolId, aggregateType: "enrollment", aggregateId: enrollment.id, action: "student_enrolled",
+        studentId: data.student_id, classSectionId: data.class_section_id,
+        extra: { term_id: data.term_id, enrollment_revision: enrollment.revision },
+        idempotencyKey: `enrollment:${enrollment.id}:${enrollment.revision}:created`,
+      });
+      return enrollment;
     });
   }
 
@@ -368,7 +500,14 @@ export class OperationsService {
           .where((eb) => eb.or([eb("student_id", "=", row.student_id), eb.and([eb("class_section_id", "=", row.class_section_id), eb("roll_number", "=", row.roll_number)])])).executeTakeFirst();
         if (conflict) throw new ConflictException("Target enrollments already exist. No changes were made.");
       }
-      if (data.confirm && preview.length) await db.insertInto("enrollments").values(preview).execute();
+      if (data.confirm && preview.length) {
+        await db.insertInto("enrollments").values(preview).execute();
+        await this.enqueuePeopleUpdate(db, {
+          schoolId, aggregateType: "academic_term", aggregateId: target.id, action: "term_rollover_completed",
+          extra: { source_term_id: source.id, target_term_id: target.id, enrollment_count: preview.length },
+          idempotencyKey: `term-rollover:${source.id}:${target.id}:${randomUUID()}`,
+        });
+      }
       // Historical enrollments remain intact; date-aware readers select the term.
       return { confirmed: data.confirm, count: preview.length, enrollments: preview };
     });
@@ -409,7 +548,16 @@ export class OperationsService {
       await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid AND email=${data.email} AND accepted_at IS NULL AND revoked_at IS NULL AND (${authority.role}='admin' OR role<>'admin')`.execute(db);
       const result=await sql<{id:string;expires_at:Date}>`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,expires_at,student_id,guardian_id)
         VALUES(${schoolId}::uuid,${data.email},${data.role},${tokenHash},${user.id}::uuid,now()+interval '30 minutes',${studentId??null}::uuid,${data.guardian_id??null}::uuid) RETURNING id,expires_at`.execute(db);
-      return enqueueInvitation(db, {...result.rows[0]!,email:data.email,token});
+      const ready = await enqueueInvitation(db, {...result.rows[0]!,email:data.email,token});
+      await this.enqueuePanelUpdate(db, {
+        schoolId,
+        eventType: "administration.updated",
+        aggregateType: "school_invitation",
+        aggregateId: result.rows[0]!.id,
+        payload: { action: "invitation_created", refresh: ["principal.administration"] },
+        idempotencyKey: `invitation:${result.rows[0]!.id}:created`,
+      });
+      return ready;
     });
     return invitation;
   }
@@ -433,7 +581,16 @@ export class OperationsService {
       const row = (await sql<{id:string;expires_at:Date}>`UPDATE school_invitations
         SET token_hash=${tokenHash},expires_at=now()+interval '30 minutes',created_at=now()
         WHERE id=${id}::uuid AND school_id=${schoolId}::uuid RETURNING id,expires_at`.execute(db)).rows[0]!;
-      return enqueueInvitation(db, {...row,email:found.email,token});
+      const ready = await enqueueInvitation(db, {...row,email:found.email,token});
+      await this.enqueuePanelUpdate(db, {
+        schoolId,
+        eventType: "administration.updated",
+        aggregateType: "school_invitation",
+        aggregateId: row.id,
+        payload: { action: "invitation_resent", refresh: ["principal.administration"] },
+        idempotencyKey: `invitation:${row.id}:resent:${tokenHash}`,
+      });
+      return ready;
     });
     return invitation;
   }
@@ -520,11 +677,19 @@ export class OperationsService {
       await sql`UPDATE school_invitations SET accepted_at=now() WHERE id=${invite.id}::uuid`.execute(db);
       await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id) VALUES (${invite.school_id}::uuid,${accountId}::uuid,'invitation.accepted',${invite.id}::uuid)`.execute(db);
       if(invite.source==='company') await sql`INSERT INTO company_audit(actor_id,school_id,action,metadata) VALUES(${accountId}::uuid,${invite.school_id}::uuid,'company.admin_joined',${JSON.stringify({invitation_id:invite.id})}::jsonb)`.execute(db);
+      await this.enqueuePanelUpdate(db, {
+        schoolId: invite.school_id,
+        eventType: "administration.updated",
+        aggregateType: "school_invitation",
+        aggregateId: invite.id,
+        payload: { action: "invitation_accepted", refresh: ["principal.administration", "people", "principal.home"] },
+        idempotencyKey: `invitation:${invite.id}:accepted`,
+      });
       return { accepted: true, school_id:invite.school_id, role:invite.role, message: "School access is ready. Sign in with your email and password." };
     });
   }
 
-  async member(user: AuthUser, schoolId: string, id: string, body: unknown) {
+  async member(user: AuthUser, schoolId: string, id: string, body: unknown, correlationId: string) {
     uuid.parse(id);
     const data = z.object({ is_active: z.boolean() }).strict().parse(body);
     return this.mutate(user, schoolId, "sis.manage", "membership.updated", async (db) => {
@@ -535,13 +700,71 @@ export class OperationsService {
         const remaining = await db.selectFrom("school_memberships").select("id").where("school_id", "=", schoolId).where("role", "=", "admin").where("is_active", "=", true).where("id", "!=", id).execute();
         if (!remaining.length) throw new ConflictException("The school must retain an active administrator.");
       }
+      let coverageReconciliationInput: CoverageReconciliationInput | null = null;
+      let coveragePreparation: { model_event_ids: string[] } | null = null;
+      if (!data.is_active && member.role === "staff") {
+        const range = (await sql<{ today: string; last_date: string }>`SELECT
+            (now() AT TIME ZONE school.timezone)::date::text AS today,
+            GREATEST(
+              (now() AT TIME ZONE school.timezone)::date,
+              COALESCE((SELECT max(substitution.duty_date)
+                FROM staff_timetable_substitutions substitution
+                WHERE substitution.school_id=school.id AND substitution.state='effective'),
+                (now() AT TIME ZONE school.timezone)::date)
+            )::text AS last_date
+          FROM schools school WHERE school.id=${schoolId}::uuid`.execute(db)).rows[0]!;
+        coverageReconciliationInput = {
+          school_id: schoolId,
+          from: range.today,
+          to: range.last_date,
+          actor_user_id: user.id,
+          correlation_id: correlationId,
+          cause: {
+            kind: "staff_membership_deactivated",
+            source_domain: "administration",
+            source_record_id: member.id,
+            source_revision: 1,
+          },
+        };
+        // Retained accepted cover must be projected while the membership is
+        // still eligible; the authoritative mutation follows under the same
+        // schedule-locked transaction.
+        coveragePreparation = await this.coverage.prepareEffectiveCoverageProjection(db, coverageReconciliationInput);
+      }
       await db.updateTable("school_memberships").set({ is_active: data.is_active }).where("id", "=", id).execute();
       if (!data.is_active) await sql`UPDATE school_invitations SET revoked_at=now() WHERE school_id=${schoolId}::uuid
         AND email=(SELECT lower(email) FROM users WHERE id=${member.user_id}::uuid) AND accepted_at IS NULL AND revoked_at IS NULL`.execute(db);
       if (!data.is_active) await sql`UPDATE school_access_exceptions SET status='revoked',revoked_by=${user.id}::uuid,revoked_at=now(),
         revocation_reason='Institution membership deactivated',revision=revision+1,updated_at=now()
         WHERE school_id=${schoolId}::uuid AND user_id=${member.user_id}::uuid AND status='active'`.execute(db);
-      return { id: member.id, updated: true };
+      const coverageReceipt = coverageReconciliationInput
+        ? await this.coverage.reconcileEffectiveCoverage(db, coverageReconciliationInput)
+        : null;
+      const mutationId = randomUUID();
+      await this.enqueuePanelUpdate(db, {
+        schoolId,
+        eventType: "administration.updated",
+        aggregateType: "school_membership",
+        aggregateId: member.id,
+        payload: {
+          action: data.is_active ? "membership_activated" : "membership_deactivated",
+          refresh: ["principal.administration", "people", "principal.home", "teacher.home"],
+        },
+        idempotencyKey: `membership:${member.id}:${data.is_active ? "active" : "inactive"}:${mutationId}`,
+      });
+      await this.enqueueAccessUpdate(db, {
+        schoolId,
+        membershipId: member.id,
+        affectedUserId: member.user_id,
+        action: data.is_active ? "membership_activated" : "membership_deactivated",
+        mutationId,
+      });
+      return {
+        id: member.id,
+        updated: true,
+        coverage_preparation: coveragePreparation,
+        coverage_reconciliation: coverageReceipt,
+      };
     });
   }
 
@@ -551,7 +774,16 @@ export class OperationsService {
       const authority=await this.authorize(user,schoolId,'members.invite',db);
       const result=await sql`UPDATE school_invitations SET revoked_at=now() WHERE id=${id}::uuid AND school_id=${schoolId}::uuid AND accepted_at IS NULL
         AND (${authority.role}='admin' OR (role<>'admin' AND source='school')) RETURNING id`.execute(db);
-      if(!result.rows.length)throw new NotFoundException('Invitation not found or cannot be managed by this role.');return {revoked:true};
+      if(!result.rows.length)throw new NotFoundException('Invitation not found or cannot be managed by this role.');
+      await this.enqueuePanelUpdate(db, {
+        schoolId,
+        eventType: "administration.updated",
+        aggregateType: "school_invitation",
+        aggregateId: id,
+        payload: { action: "invitation_revoked", refresh: ["principal.administration"] },
+        idempotencyKey: `invitation:${id}:revoked`,
+      });
+      return {revoked:true};
     });
   }
 
@@ -620,6 +852,20 @@ export class OperationsService {
       await this.schoolStudent(db, schoolId, data.student_id);
       const result = await sql`INSERT INTO fee_invoices(school_id,student_id,reference,description,amount_paise,due_on,created_by)
         VALUES (${schoolId}::uuid,${data.student_id}::uuid,${data.reference},${data.description},${data.amount_paise},${data.due_on}::date,${user.id}::uuid) RETURNING *`.execute(db);
+      const invoice = result.rows[0] as { id: string; student_id: string };
+      await this.enqueuePanelUpdate(db, {
+        schoolId,
+        eventType: "fees.updated",
+        aggregateType: "fee_invoice",
+        aggregateId: invoice.id,
+        payload: {
+          student_id: invoice.student_id,
+          invoice_id: invoice.id,
+          action: "invoice_posted",
+          refresh: ["fees", "parent.home", "principal.home"],
+        },
+        idempotencyKey: `fee-invoice:${invoice.id}:posted`,
+      });
       return result.rows[0];
     });
   }
@@ -634,11 +880,12 @@ export class OperationsService {
         return row;
       }
       const invoice = await sql<{
+        student_id: string;
         amount_paise: number;
         paid_paise: number;
         credited_paise: number;
         refunded_paise: number;
-      }>`SELECT invoice.amount_paise,
+      }>`SELECT invoice.student_id,invoice.amount_paise,
           COALESCE((SELECT sum(payment.amount_paise) FROM fee_payments payment
             WHERE payment.school_id=invoice.school_id AND payment.invoice_id=invoice.id),0)::int AS paid_paise,
           COALESCE((SELECT sum(credit.amount_paise) FROM fee_invoice_credits credit
@@ -660,6 +907,21 @@ export class OperationsService {
       if (data.amount_paise > collectible) throw new BadRequestException("Payment exceeds the outstanding invoice balance.");
       const result = await sql`INSERT INTO fee_payments(school_id,invoice_id,amount_paise,method,reference,idempotency_key,recorded_by)
         VALUES (${schoolId}::uuid,${invoiceId}::uuid,${data.amount_paise},${data.method},${data.reference},${data.idempotency_key}::uuid,${user.id}::uuid) RETURNING *`.execute(db);
+      const payment = result.rows[0] as { id: string };
+      await this.enqueuePanelUpdate(db, {
+        schoolId,
+        eventType: "fees.updated",
+        aggregateType: "fee_payment",
+        aggregateId: payment.id,
+        payload: {
+          student_id: ledger.student_id,
+          invoice_id: invoiceId,
+          payment_id: payment.id,
+          action: "payment_recorded",
+          refresh: ["fees", "parent.home", "principal.home"],
+        },
+        idempotencyKey: `fee-payment:${payment.id}:recorded`,
+      });
       return result.rows[0];
     });
   }

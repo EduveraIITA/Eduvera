@@ -20,6 +20,8 @@ type Rules = {
   attendance_session_close_after_minutes: number;
   attendance_finalization_mode: "automatic" | "principal_review";
   attendance_auto_finalize_minutes: number;
+  attendance_overdue_reminder_minutes: number;
+  attendance_overdue_escalation_minutes: number;
   event_entry_hours_before: number;
   event_staff_hours_after: number;
   journey_lead_minutes: number;
@@ -128,6 +130,21 @@ function AttendanceFinalizationFields({ rules }: { rules: Rules }) {
     </label> : <input type="hidden" name="attendance_auto_finalize_minutes" value={rules.attendance_auto_finalize_minutes}/>}
   </>;
 }
+
+function AttendanceCompletionFields({ rules }: { rules: Rules }) {
+  return <fieldset className="attendance-rule-group">
+    <legend>Incomplete registers</legend>
+    <p>Remind the responsible teacher first. Show the work to school administrators only if it remains incomplete after the escalation delay.</p>
+    <div className="office-form-grid">
+      <label className="office-field">First reminder after deadline (minutes)
+        <input name="attendance_overdue_reminder_minutes" type="number" required min="0" max="1440" step="1" defaultValue={rules.attendance_overdue_reminder_minutes}/>
+      </label>
+      <label className="office-field">Escalate after deadline (minutes)
+        <input name="attendance_overdue_escalation_minutes" type="number" required min="1" max="2880" step="1" defaultValue={rules.attendance_overdue_escalation_minutes}/>
+      </label>
+    </div>
+  </fieldset>;
+}
 export function WorkflowRules({ schoolId, category, onDirtyChange = () => undefined }: { schoolId: string; category: keyof typeof fields; onDirtyChange?: (dirty: boolean) => void }) {
   const client = useQueryClient();
   const url = `/api/v1/operating-rules/${schoolId}`;
@@ -152,6 +169,8 @@ export function WorkflowRules({ schoolId, category, onDirtyChange = () => undefi
         updates.attendance_session_close_after_minutes = Number(form.get("attendance_session_close_after_minutes"));
         updates.attendance_finalization_mode = form.get("attendance_finalization_mode");
         updates.attendance_auto_finalize_minutes = Number(form.get("attendance_auto_finalize_minutes"));
+        updates.attendance_overdue_reminder_minutes = Number(form.get("attendance_overdue_reminder_minutes"));
+        updates.attendance_overdue_escalation_minutes = Number(form.get("attendance_overdue_escalation_minutes"));
       }
       setBusy(true); setMessage("");
       try {
@@ -161,6 +180,7 @@ export function WorkflowRules({ schoolId, category, onDirtyChange = () => undefi
       finally { setBusy(false); }
     }}>
       {category === "attendance" ? <AttendanceModelFields rules={query.data}/> : null}
+      {category === "attendance" ? <AttendanceCompletionFields rules={query.data}/> : null}
       <div className="office-form-grid">{fields[category].map(([key,label,type,min,max]) => <label className="office-field" key={key}>{label}{type === "time" ? <TemporalInput name={key} type="time" required defaultValue={query.data[key]}/> : <input name={key} type="number" required step={1} min={min} max={max} defaultValue={query.data[key]}/>}</label>)}{category === "attendance" ? <AttendanceFinalizationFields rules={query.data}/> : null}</div>
       <p className="office-hint">New submissions snapshot these rules. Existing and historical registers keep the rule they already received.</p>
       <button className="office-primary" disabled={busy}>{busy ? "Saving…" : "Save rules"}</button>

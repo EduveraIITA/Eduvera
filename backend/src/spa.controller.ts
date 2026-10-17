@@ -16,6 +16,12 @@ export class SpaController {
   }
 
   @Public()
+  @Get('email-assets/thatcampus-logo.png')
+  async thatCampusEmailLogo(@Res() reply: FastifyReply) {
+    return this.serveAsset(reply, 'assets/thatcampus-logo-light.png', 'image/png');
+  }
+
+  @Public()
   @Get("manifest.webmanifest")
   async manifest(@Res() reply: FastifyReply) {
     try {
@@ -74,7 +80,7 @@ export class SpaController {
 
   @Public()
   @Get("apple-touch-icon-edura.png")
-  async appleTouchIconEdura(@Res() reply: FastifyReply) {
+  async legacyAppleTouchIcon(@Res() reply: FastifyReply) {
     return this.serveAsset(reply, "apple-touch-icon-edura.png", "image/png");
   }
 

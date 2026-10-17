@@ -30,7 +30,7 @@ function fold(line:string){
 }
 export function serializeCalendar(input:{name:string;timezone:string;events:ICalendarEvent[];generatedAt?:Date}){
   const stamp=utc(input.generatedAt??new Date());
-  const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Edura//School Calendar//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+  const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ThatCampus//School Calendar//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeText(input.name)}`,`X-WR-TIMEZONE:${escapeText(input.timezone)}`,'REFRESH-INTERVAL;VALUE=DURATION:PT15M','X-PUBLISHED-TTL:PT15M'];
   for(const event of [...input.events].sort((a,b)=>String(a.start).localeCompare(String(b.start))||a.uid.localeCompare(b.uid))){
     lines.push('BEGIN:VEVENT',`UID:${escapeText(event.uid)}`,`DTSTAMP:${stamp}`,`SEQUENCE:${event.sequence??0}`,

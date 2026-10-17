@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Module, Param, Post, Query, Req } from "@nestjs/common";
+import { CampusModelCoreModule } from "../campus-model-core/campus-model-core.module.js";
 import type { AuthenticatedRequest } from "../common/request.js";
+import { SchoolModule } from "../school/school.module.js";
 import { AttendanceModelService } from "./attendance-model.service.js";
 
 @Controller("api/v1/attendance-model")
@@ -44,6 +46,16 @@ class AttendanceModelController {
     return this.attendance.issueQr(request.authUser, sessionId);
   }
 
+  @Post("sessions/:sessionId/evidence/:evidenceId/decision")
+  @HttpCode(200)
+  decideEvidence(
+    @Req() request: AuthenticatedRequest,
+    @Param("sessionId") sessionId: string,
+    @Param("evidenceId") evidenceId: string,
+  ) {
+    return this.attendance.decideEvidence(request.authUser, sessionId, evidenceId, request.body, request);
+  }
+
   @Post("self-check-in")
   @HttpCode(200)
   selfCheckIn(@Req() request: AuthenticatedRequest, @Body("token") token: unknown) {
@@ -51,5 +63,5 @@ class AttendanceModelController {
   }
 }
 
-@Module({ controllers: [AttendanceModelController], providers: [AttendanceModelService], exports: [AttendanceModelService] })
+@Module({ imports: [SchoolModule, CampusModelCoreModule], controllers: [AttendanceModelController], providers: [AttendanceModelService], exports: [AttendanceModelService] })
 export class AttendanceModelModule {}

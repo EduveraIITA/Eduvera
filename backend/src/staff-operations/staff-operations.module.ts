@@ -5,9 +5,10 @@ import { StaffOperationsController } from "./staff-operations.controller.js";
 import { StaffLeaveModelBridgeService } from "./staff-leave-model-bridge.service.js";
 import { StaffOperationsService } from "./staff-operations.service.js";
 import { AccessRolesService } from "../roles/access-roles.service.js";
+import { StaffCoverageReconciliationModule } from "./staff-coverage-reconciliation.module.js";
 
 @Module({
-  imports: [CampusModelCoreModule, GovernanceModule],
+  imports: [CampusModelCoreModule, GovernanceModule, StaffCoverageReconciliationModule],
   controllers: [StaffOperationsController],
   providers: [StaffOperationsService, StaffLeaveModelBridgeService, AccessRolesService],
 })

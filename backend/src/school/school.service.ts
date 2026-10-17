@@ -18,6 +18,10 @@ import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from "../campus-model-core/observation-ingress.port.js";
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
+import {
+  STAFF_COVERAGE_RECONCILIATION_PORT,
+  type StaffCoverageReconciliationPort,
+} from "../staff-operations/staff-coverage-reconciliation.service.js";
 import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
@@ -25,6 +29,7 @@ import { SchoolEventService } from "./school-event.service.js";
 import { classUpdates } from "./class-updates.js";
 import {lockSchedule,protectPublishedPlans} from '../day-plans/schedule.js';
 import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendance-workspace.js';
+import { recordAttendanceModelObservations } from '../attendance/attendance-model-observation.js';
 import { findAttendanceStudents, studentAttendanceInput, studentAttendanceSearch } from '../attendance/student-attendance.js';
 import { operatingRules } from '../operating-rules/rules.js';
 
@@ -43,6 +48,23 @@ interface EnrollmentContext {
   grade: string; section: string; board: string; room_number: string;
   school_id: string; school_timezone: string; school_date: string;
   academic_year: string; term_name: string; starts_on: string; ends_on: string; attendance_threshold: string;
+}
+
+interface LegacyTimetableSlotProjectionRow {
+  id: string;
+  class_section_id: string;
+  term_id: string;
+  subject_id: string | null;
+  weekday: number;
+  period_number: number;
+  starts_at: string;
+  ends_at: string;
+  slot_type: "class" | "break" | "activity";
+  title: string;
+  room: string;
+  space_id: string | null;
+  teacher_user_id: string | null;
+  revision: number;
 }
 
 /**
@@ -87,6 +109,50 @@ export function notificationAttentionDestinationMatches(
   }
 }
 
+/**
+ * Resolve notification provenance from an authoritative school-owned source.
+ * The query intentionally has no active-school or arbitrary metadata fallback:
+ * a source-free account notification cannot safely be assigned to one school.
+ */
+export function notificationSchoolContextQuery(notificationId: string) {
+  return sql<{ school_id: string | null }>`
+    SELECT CASE
+      WHEN notification.attention_school_id IS NOT NULL
+        THEN notification.attention_school_id
+      WHEN notification.dedupe_key ~* '^event:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT event.school_id FROM event_outbox event
+          WHERE event.id::text=substring(notification.dedupe_key FROM 7))
+      WHEN notification.metadata->>'notice_recipient_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT recipient.school_id FROM school_notice_recipients recipient
+          WHERE recipient.id=(notification.metadata->>'notice_recipient_id')::uuid)
+      WHEN notification.metadata->>'report_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT conversation.school_id FROM chat_message_reports report
+          JOIN chat_messages message ON message.id=report.message_id
+          JOIN chat_conversations conversation ON conversation.id=message.conversation_id
+          WHERE report.id=(notification.metadata->>'report_id')::uuid)
+      WHEN notification.metadata->>'conversation_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT conversation.school_id FROM chat_conversations conversation
+          WHERE conversation.id=(notification.metadata->>'conversation_id')::uuid)
+      WHEN notification.metadata->>'publication_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT publication.school_id FROM assessment_publications publication
+          WHERE publication.id=(notification.metadata->>'publication_id')::uuid)
+      WHEN notification.metadata->>'report_batch_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT batch.school_id FROM grading_report_batches batch
+          WHERE batch.id=(notification.metadata->>'report_batch_id')::uuid)
+      WHEN notification.metadata->>'leave_request_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT student.school_id FROM leave_requests request
+          JOIN students student ON student.id=request.student_id
+          WHERE request.id=(notification.metadata->>'leave_request_id')::uuid)
+      WHEN notification.metadata->>'student_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (SELECT student.school_id FROM students student
+          WHERE student.id=(notification.metadata->>'student_id')::uuid)
+      ELSE NULL
+    END AS school_id
+    FROM notifications notification
+    WHERE notification.id=${notificationId}::uuid
+  `;
+}
+
 export type HomeActionPriority = "urgent" | "high" | "normal" | "info";
 export type HomeActionKind =
   | "event_rsvp"
@@ -112,6 +178,80 @@ export interface HomeAction {
   source_id: string;
   occurs_at: string | null;
   due_at: string | null;
+}
+
+export type ParentFeeStatusState = "not_configured" | "clear" | "outstanding" | "overdue" | "refund_due" | "mixed";
+
+export interface ParentFeeStatus {
+  state: ParentFeeStatusState;
+  source: "fee_ledger";
+  scope: "current_term_and_carried_balance";
+  as_of: string;
+  term_id: string;
+  invoice_count: number;
+  currency: "INR";
+  outstanding_paise: number | null;
+  overdue_paise: number | null;
+  refund_due_paise: number | null;
+  next_due_on: string | null;
+}
+
+interface ParentFeeLedgerAggregate {
+  invoice_count: number;
+  outstanding_paise: string | number;
+  overdue_paise: string | number;
+  refund_due_paise: string | number;
+  next_due_on: string | null;
+}
+
+function ledgerPaise(value: string | number): number {
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Fee ledger returned an invalid aggregate amount.");
+  return amount;
+}
+
+export function parentFeeStatusFromLedger(
+  aggregate: ParentFeeLedgerAggregate,
+  context: { asOf: string; termId: string },
+): ParentFeeStatus {
+  const invoiceCount = Number(aggregate.invoice_count);
+  if (!Number.isSafeInteger(invoiceCount) || invoiceCount < 0) throw new Error("Fee ledger returned an invalid invoice count.");
+  if (invoiceCount === 0) {
+    return {
+      state: "not_configured",
+      source: "fee_ledger",
+      scope: "current_term_and_carried_balance",
+      as_of: context.asOf,
+      term_id: context.termId,
+      invoice_count: 0,
+      currency: "INR",
+      outstanding_paise: null,
+      overdue_paise: null,
+      refund_due_paise: null,
+      next_due_on: null,
+    };
+  }
+
+  const outstandingPaise = ledgerPaise(aggregate.outstanding_paise);
+  const overduePaise = ledgerPaise(aggregate.overdue_paise);
+  const refundDuePaise = ledgerPaise(aggregate.refund_due_paise);
+  const state: ParentFeeStatusState = outstandingPaise > 0 && refundDuePaise > 0 ? "mixed"
+    : overduePaise > 0 ? "overdue"
+      : outstandingPaise > 0 ? "outstanding"
+        : refundDuePaise > 0 ? "refund_due" : "clear";
+  return {
+    state,
+    source: "fee_ledger",
+    scope: "current_term_and_carried_balance",
+    as_of: context.asOf,
+    term_id: context.termId,
+    invoice_count: invoiceCount,
+    currency: "INR",
+    outstanding_paise: outstandingPaise,
+    overdue_paise: overduePaise,
+    refund_due_paise: refundDuePaise,
+    next_due_on: aggregate.next_due_on,
+  };
 }
 
 interface FamilyEventActionRow {
@@ -355,9 +495,50 @@ export class SchoolService {
   constructor(
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
+    @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
     @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
     @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
   ) {}
+
+  private async parentFeeLedgerStatus(studentId: string, enrollment: EnrollmentContext): Promise<ParentFeeStatus> {
+    const aggregate = (await sql<ParentFeeLedgerAggregate>`
+      WITH invoice_ledger AS (
+        SELECT invoice.id,invoice.due_on,
+          GREATEST(invoice.amount_paise-
+            COALESCE((SELECT sum(credit.amount_paise) FROM fee_invoice_credits credit
+              WHERE credit.school_id=invoice.school_id AND credit.invoice_id=invoice.id),0),0)::bigint AS adjusted_paise,
+          GREATEST(
+            COALESCE((SELECT sum(payment.amount_paise) FROM fee_payments payment
+              WHERE payment.school_id=invoice.school_id AND payment.invoice_id=invoice.id),0)-
+            COALESCE((SELECT sum(refund.amount_paise) FROM fee_refunds refund
+              WHERE refund.school_id=invoice.school_id AND refund.invoice_id=invoice.id),0),0)::bigint AS net_paid_paise
+        FROM fee_invoices invoice
+        WHERE invoice.school_id=${enrollment.school_id}::uuid AND invoice.student_id=${studentId}::uuid
+      ), invoice_balances AS (
+        SELECT id,due_on,
+          GREATEST(adjusted_paise-net_paid_paise,0)::bigint AS balance_paise,
+          GREATEST(net_paid_paise-adjusted_paise,0)::bigint AS refund_due_paise
+        FROM invoice_ledger
+      ), applicable_invoices AS (
+        SELECT * FROM invoice_balances
+        WHERE due_on BETWEEN ${enrollment.starts_on}::date AND ${enrollment.ends_on}::date
+          OR ((balance_paise>0 OR refund_due_paise>0) AND due_on<=${enrollment.ends_on}::date)
+      )
+      SELECT count(*)::int AS invoice_count,
+        COALESCE(sum(balance_paise),0)::text AS outstanding_paise,
+        COALESCE(sum(balance_paise) FILTER (WHERE due_on<${enrollment.school_date}::date),0)::text AS overdue_paise,
+        COALESCE(sum(refund_due_paise),0)::text AS refund_due_paise,
+        min(due_on) FILTER (WHERE balance_paise>0 AND due_on>=${enrollment.school_date}::date)::text AS next_due_on
+      FROM applicable_invoices
+    `.execute(this.db)).rows[0] ?? {
+      invoice_count: 0,
+      outstanding_paise: "0",
+      overdue_paise: "0",
+      refund_due_paise: "0",
+      next_due_on: null,
+    };
+    return parentFeeStatusFromLedger(aggregate, { asOf: enrollment.school_date, termId: enrollment.term_id });
+  }
 
   private async familyHomeActions(
     user: AuthUser,
@@ -1586,6 +1767,27 @@ export class SchoolService {
     });
   }
 
+  private async diaryEventAudience(db: Db, student: StudentContext): Promise<string[]> {
+    const audience = await sql<{ user_id: string }>`
+      SELECT DISTINCT scoped.user_id FROM (
+        SELECT learner.user_id
+        FROM students learner
+        WHERE learner.id=${student.id}::uuid AND learner.school_id=${student.school_id}::uuid
+        UNION
+        SELECT guardian.user_id
+        FROM guardian_relationships relationship
+        JOIN parents guardian ON guardian.id=relationship.guardian_id
+        WHERE relationship.student_id=${student.id}::uuid
+          AND relationship.school_id=${student.school_id}::uuid
+      ) scoped
+      JOIN users account ON account.id=scoped.user_id AND account.is_active
+      JOIN school_memberships membership ON membership.user_id=scoped.user_id
+        AND membership.school_id=${student.school_id}::uuid AND membership.is_active
+      WHERE scoped.user_id IS NOT NULL
+    `.execute(db);
+    return audience.rows.map((row) => row.user_id);
+  }
+
   async setHomeworkCompleted(user: AuthUser, itemId: string, studentId: string | undefined, completed: boolean) {
     const student = await this.studentForUser(user, studentId);
     const self = student.user_id === user.id;
@@ -1596,13 +1798,37 @@ export class SchoolService {
       .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id)
       .where("item_type", "=", "homework").where("published_at", "<=", new Date()).executeTakeFirst();
     if (!item) throw new NotFoundException("Homework not found.");
-    if (completed) {
-      await this.db.insertInto("homework_completions").values({ item_id: itemId, student_id: student.id, completed_by: user.id })
-        .onConflict((conflict) => conflict.columns(["item_id", "student_id"]).doNothing()).execute();
-    } else {
-      await this.db.deleteFrom("homework_completions").where("item_id", "=", itemId).where("student_id", "=", student.id).execute();
-    }
-    return { item_id: itemId, student_id: student.id, completed };
+    return this.db.transaction().execute(async (tx) => {
+      const changed = completed
+        ? await tx.insertInto("homework_completions")
+          .values({ item_id: itemId, student_id: student.id, completed_by: user.id })
+          .onConflict((conflict) => conflict.columns(["item_id", "student_id"]).doNothing())
+          .returning("completed_at")
+          .executeTakeFirst()
+        : await tx.deleteFrom("homework_completions")
+          .where("item_id", "=", itemId)
+          .where("student_id", "=", student.id)
+          .returning("completed_at")
+          .executeTakeFirst();
+      if (changed) {
+        const changedAt = new Date(changed.completed_at).toISOString();
+        await this.events.enqueueUserEvent(tx, {
+          schoolId: student.school_id,
+          eventType: "diary.updated",
+          aggregateType: "homework_completion",
+          aggregateId: itemId,
+          audienceUserIds: await this.diaryEventAudience(tx, student),
+          payload: {
+            diary_item_id: itemId,
+            student_id: student.id,
+            action: completed ? "completed" : "reopened",
+            refresh: ["student.home", "student.diary", "parent.home", "parent.diary"],
+          },
+          idempotencyKey: `homework-completion:${itemId}:${student.id}:${completed}:${changedAt}`,
+        });
+      }
+      return { item_id: itemId, student_id: student.id, completed };
+    });
   }
 
   async addDiaryNote(user: AuthUser, itemId: string, studentId: string | undefined, bodyValue: unknown) {
@@ -1615,8 +1841,24 @@ export class SchoolService {
     const item = await this.db.selectFrom("diary_items").select("id").where("id", "=", itemId)
       .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id).executeTakeFirst();
     if (!item) throw new NotFoundException("Diary item not found.");
-    const note = await this.db.insertInto("diary_notes").values({ item_id: itemId, student_id: student.id, author_id: user.id, body }).returningAll().executeTakeFirstOrThrow();
-    return { id: note.id, author_name: `${user.first_name} ${user.last_name}`.trim(), body: note.body, created_at: note.created_at };
+    return this.db.transaction().execute(async (tx) => {
+      const note = await tx.insertInto("diary_notes").values({ item_id: itemId, student_id: student.id, author_id: user.id, body }).returningAll().executeTakeFirstOrThrow();
+      await this.events.enqueueUserEvent(tx, {
+        schoolId: student.school_id,
+        eventType: "diary.updated",
+        aggregateType: "diary_note",
+        aggregateId: note.id,
+        audienceUserIds: await this.diaryEventAudience(tx, student),
+        payload: {
+          diary_item_id: itemId,
+          student_id: student.id,
+          action: "note_added",
+          refresh: ["student.home", "student.diary", "parent.home", "parent.diary"],
+        },
+        idempotencyKey: `diary-note:${note.id}`,
+      });
+      return { id: note.id, author_name: `${user.first_name} ${user.last_name}`.trim(), body: note.body, created_at: note.created_at };
+    });
   }
 
   async notifications(user: AuthUser, rawPage: { limit?: string | undefined; cursor?: string | undefined } = {}) {
@@ -1649,6 +1891,18 @@ export class SchoolService {
         ? encodeNotificationCursor(results[results.length - 1]!)
         : null,
     };
+  }
+
+  /**
+   * Resolve only school context that is anchored to the same authoritative
+   * source used by notification_is_currently_visible. Legacy source-free
+   * account alerts deliberately return null: selecting one of a user's school
+   * memberships would invent provenance and could route a cross-device event
+   * into the wrong institution.
+   */
+  private async notificationSchoolId(db: Db, notificationId: string): Promise<string | null> {
+    const result = await notificationSchoolContextQuery(notificationId).execute(db);
+    return result.rows[0]?.school_id ?? null;
   }
 
   async markNotificationRead(user: AuthUser, id: string, openedTargetValue?: unknown) {
@@ -1690,9 +1944,10 @@ export class SchoolService {
         .where("id", "=", target.id)
         .returning(["id", "read_at"])
         .executeTakeFirstOrThrow();
-      if (target.attention_eligible && target.attention_school_id) {
+      const schoolId = await this.notificationSchoolId(tx, target.id);
+      if (schoolId) {
         await this.events.enqueueUserEvent(tx, {
-          schoolId: target.attention_school_id,
+          schoolId,
           eventType: "notification.created",
           aggregateType: "notification_read",
           aggregateId: row.id,
@@ -1713,7 +1968,7 @@ export class SchoolService {
     const student = await this.studentForUser(user, studentId);
     const [, enrollment] = await Promise.all([this.requireRole(user, student, "guardian"), this.enrollment(student.id)]);
     const schoolDate = enrollment.school_date;
-    const [summary, campus, schedule, diary, contacts, siblings, unread, pending, homework, recentAttendance, ranking, homeworkItems, eventActions, followupActions] = await Promise.all([
+    const [summary, campus, schedule, diary, contacts, siblings, unread, pending, homework, recentAttendance, ranking, homeworkItems, eventActions, followupActions, feeStatus] = await Promise.all([
       this.attendanceSummary(student.id, enrollment),
       this.latestGate(student.id, schoolDate),
       this.timetable(enrollment, isoWeekday(schoolDate),schoolDate),
@@ -1745,6 +2000,7 @@ export class SchoolService {
         .orderBy("item.published_at", "desc").execute(),
       this.familyHomeActions(user, student, "guardian"),
       this.followupHomeActions(user, "guardian", student.id),
+      this.parentFeeLedgerStatus(student.id, enrollment),
     ]);
     const sampleSize = Math.min(10, Math.floor(recentAttendance.length / 2));
     const attendanceScore = (statuses: typeof recentAttendance) => statuses.reduce((score, item) =>
@@ -1805,8 +2061,7 @@ export class SchoolService {
         homework_total: homeworkItems.length,
         homework_recent: recentHomework,
         homework_previous: previousHomework,
-        dues_status: "All Cleared",
-        dues_status_scope: "display_only_demo",
+        fee_status: feeStatus,
       },
       contacts,
     };
@@ -2642,6 +2897,7 @@ export class SchoolService {
       }
 
       let persisted = new Map<string, any>();
+      let recordRevisions = new Map<string, { id: number; student_id: string }>();
       if (changed.length) {
         const saved = await tx.insertInto("attendance_records").values(changed.map((record) => ({
           student_id: record.student_id, class_section_id: data.class_section_id, date: data.date,
@@ -2652,7 +2908,7 @@ export class SchoolService {
           revision: effectiveRevision, source_request_id: request.requestId, updated_at: now,
         })).returningAll().execute();
         persisted = new Map(saved.map((row) => [row.student_id, row]));
-        await tx.insertInto("attendance_record_revisions").values(changed.map((record) => {
+        const savedRevisions = await tx.insertInto("attendance_record_revisions").values(changed.map((record) => {
           const previous = previousByStudent.get(record.student_id);
           const savedRecord = persisted.get(record.student_id)!;
           return {
@@ -2670,7 +2926,8 @@ export class SchoolService {
             reason: previous ? data.reason! : single ? "Initial student attendance record" : "Initial register submission", changed_by: user.id,
             request_id: request.requestId, register_revision: effectiveRevision,
           };
-        })).execute();
+        })).returning(["id", "student_id"]).execute();
+        recordRevisions = new Map(savedRevisions.map((revision) => [revision.student_id, revision]));
       }
 
       const submittedByStudent = new Map(records.map((record) => [record.student_id, record]));
@@ -2701,7 +2958,7 @@ export class SchoolService {
       }).execute();
       if (changed.length) {
         await this.refreshSubjectAttendance(tx, changed.map((record) => record.student_id));
-        await this.events.enqueueAttendanceUpdates(tx, {
+        const attendanceEvents = await this.events.enqueueAttendanceUpdates(tx, {
           schoolId: membership.school_id, classSectionId: data.class_section_id,
           termId: screen.class.term_id,
           date: data.date, requestId: request.requestId,
@@ -2711,6 +2968,38 @@ export class SchoolService {
             previous_status: previousByStudent.get(record.student_id)?.status ?? null,
             revision: effectiveRevision,
           })),
+        });
+        await recordAttendanceModelObservations({
+          ingress: this.observationIngress,
+          transaction: tx,
+          schoolId: membership.school_id,
+          classSectionId: data.class_section_id,
+          date: data.date,
+          actorUserId: user.id,
+          sourceType: "attendance.daily",
+          sourceRef: submission.id,
+          state: "accepted",
+          receivedAt: now,
+          participationScope: "daily_class",
+          records: changed.map((record) => {
+            const revision = recordRevisions.get(record.student_id);
+            const domainEventId = attendanceEvents.studentEventIds.get(record.student_id);
+            if (!revision || !domainEventId) throw new ConflictException("The attendance evidence chain could not be retained.");
+            return {
+              studentId: record.student_id,
+              sourceRecordId: String(revision.id),
+              status: record.status,
+              observedAt: now,
+              captureSource: sourcePhotoSession ? "camera_assisted" : single ? "staff_student_record" : "staff_roll_call",
+              evidenceRefs: [
+                `attendance_record_revision:${revision.id}`,
+                `attendance_submission:${submission.id}`,
+                ...(sourcePhotoSession ? [`photo_attendance_session:${sourcePhotoSession.id}`] : []),
+              ],
+              domainEventId,
+              decisionProvenance: sourcePhotoSession ? "human_accepted_camera_assisted_register" : "human_attendance_decision",
+            };
+          }),
         });
       }
       await this.events.enqueueRegisterEvent(tx, {
@@ -3676,11 +3965,33 @@ export class SchoolService {
       if (attendanceConflict.rows[0]) {
         throw new ConflictException(`Attendance has already been recorded for ${attendanceConflict.rows[0].date}. Resolve the register before closing this date.`);
       }
-      const rows = await tx.insertInto("school_calendar_days").values(dates.map((date) => ({
-        school_id: membership.school_id, date, is_instructional: false,
+      const pendingRows = dates.map((date) => ({
+        id: randomUUID(), school_id: membership.school_id, date, is_instructional: false,
         label: data.label, kind: data.kind, reason: data.reason,
         created_by: user.id, updated_by: user.id,
-      }))).returning(["id", "date", "is_instructional", "label", "kind", "reason", "revision"]).execute();
+      }));
+      const coverageReconciliationInput = {
+        school_id: membership.school_id,
+        from: data.starts_on,
+        to: data.ends_on,
+        actor_user_id: user.id,
+        correlation_id: request.requestId,
+        cause: {
+          kind: "calendar_closure_created",
+          source_domain: "calendar",
+          source_record_id: pendingRows[0]!.id,
+          source_revision: 1,
+        },
+      };
+      // A closure hides the planned occurrence. Import retained accepted cover
+      // before the calendar write so its exact source remains resolvable.
+      const coveragePreparation =
+        await this.coverage.prepareEffectiveCoverageProjection(
+          tx,
+          coverageReconciliationInput,
+        );
+      const rows = await tx.insertInto("school_calendar_days").values(pendingRows)
+        .returning(["id", "date", "is_instructional", "label", "kind", "reason", "revision"]).execute();
       const school = await tx.selectFrom("schools").select(["name", "timezone"]).where("id", "=", membership.school_id).executeTakeFirstOrThrow();
       await this.temporal?.recordCalendarClosure(tx, {
         school_id: membership.school_id,
@@ -3699,11 +4010,15 @@ export class SchoolService {
         occurred_at: new Date().toISOString(),
         correlation_id: request.requestId,
       });
+      const coverageReceipt = await this.coverage.reconcileEffectiveCoverage(
+        tx,
+        coverageReconciliationInput,
+      );
       await tx.insertInto("audit_events").values({
         action: "school_calendar.closure.created", actor_id: user.id, school_id: membership.school_id,
         target_type: "school_calendar_range", target_id: rows[0]!.id,
         request_id: request.requestId, ip_hash: null,
-        metadata: { term_id: data.term_id, starts_on: data.starts_on, ends_on: data.ends_on, kind: data.kind, label: data.label, reason: data.reason },
+        metadata: { term_id: data.term_id, starts_on: data.starts_on, ends_on: data.ends_on, kind: data.kind, label: data.label, reason: data.reason, coverage_projection_preparation: coveragePreparation, coverage_reconciliation: coverageReceipt },
       }).execute();
       const audience = (await sql<{ user_id: string }>`
         SELECT DISTINCT membership.user_id
@@ -3782,6 +4097,24 @@ export class SchoolService {
         ) AS found
       `.execute(tx);
       if (attendanceConflict.rows[0]?.found) throw new ConflictException("Attendance exists for this date, so the closure cannot be removed here.");
+      const coverageReconciliationInput = {
+        school_id: membership.school_id,
+        from: date,
+        to: date,
+        actor_user_id: user.id,
+        correlation_id: request.requestId,
+        cause: {
+          kind: "calendar_closure_removed",
+          source_domain: "calendar",
+          source_record_id: current.id,
+          source_revision: current.revision,
+        },
+      };
+      const coveragePreparation =
+        await this.coverage.prepareEffectiveCoverageProjection(
+          tx,
+          coverageReconciliationInput,
+        );
       await tx.deleteFrom("school_calendar_days").where("id", "=", current.id).execute();
       const school = await tx.selectFrom("schools").select(["name", "timezone"]).where("id", "=", membership.school_id).executeTakeFirstOrThrow();
       await this.temporal?.recordCalendarClosure(tx, {
@@ -3801,11 +4134,15 @@ export class SchoolService {
         occurred_at: new Date().toISOString(),
         correlation_id: request.requestId,
       });
+      const coverageReceipt = await this.coverage.reconcileEffectiveCoverage(
+        tx,
+        coverageReconciliationInput,
+      );
       await tx.insertInto("audit_events").values({
         action: "school_calendar.closure.removed", actor_id: user.id, school_id: membership.school_id,
         target_type: "school_calendar_day", target_id: current.id,
         request_id: request.requestId, ip_hash: null,
-        metadata: { date, label: current.label, kind: current.kind, reason: data.reason },
+        metadata: { date, label: current.label, kind: current.kind, reason: data.reason, coverage_projection_preparation: coveragePreparation, coverage_reconciliation: coverageReceipt },
       }).execute();
       const audience = (await sql<{ user_id: string }>`
         SELECT DISTINCT membership.user_id
@@ -3860,6 +4197,176 @@ export class SchoolService {
     });
   }
 
+  private async reconcileLegacyTimetableSubstitutions(
+    tx: Transaction<Database>,
+    schoolId: string,
+    termId: string,
+    classSectionIds: string[],
+    actorUserId: string,
+    correlationId: string,
+    cause: { kind: string; sourceRecordId: string; sourceRevision: number },
+  ) {
+    const term = await tx.selectFrom("academic_terms").select(["starts_on", "ends_on"])
+      .where("id", "=", termId).where("school_id", "=", schoolId).executeTakeFirstOrThrow();
+    const receipt = {
+      superseded_substitution_ids: [] as string[],
+      cancelled_task_ids: [] as string[],
+      reopened_task_ids: [] as string[],
+      model_event_ids: [] as string[],
+    };
+    for (const classSectionId of [...new Set(classSectionIds)]) {
+      const reconciled = await this.coverage.reconcileEffectiveCoverage(tx, {
+        school_id: schoolId,
+        from: String(term.starts_on),
+        to: String(term.ends_on),
+        class_section_id: classSectionId,
+        actor_user_id: actorUserId,
+        correlation_id: correlationId,
+        cause: {
+          kind: cause.kind,
+          source_domain: "timetable",
+          source_record_id: cause.sourceRecordId,
+          source_revision: cause.sourceRevision,
+        },
+      });
+      receipt.superseded_substitution_ids.push(...reconciled.superseded_substitution_ids);
+      receipt.cancelled_task_ids.push(...reconciled.cancelled_task_ids);
+      receipt.reopened_task_ids.push(...reconciled.reopened_task_ids);
+      receipt.model_event_ids.push(...reconciled.model_event_ids);
+    }
+    return receipt;
+  }
+
+  private async prepareLegacyTimetableSubstitutions(
+    tx: Transaction<Database>,
+    schoolId: string,
+    termId: string,
+    classSectionIds: string[],
+    actorUserId: string,
+    correlationId: string,
+    cause: { kind: string; sourceRecordId: string; sourceRevision: number },
+  ) {
+    const term = await tx.selectFrom("academic_terms").select(["starts_on", "ends_on"])
+      .where("id", "=", termId).where("school_id", "=", schoolId).executeTakeFirstOrThrow();
+    const receipt = { model_event_ids: [] as string[] };
+    for (const classSectionId of [...new Set(classSectionIds)]) {
+      const prepared = await this.coverage.prepareEffectiveCoverageProjection(tx, {
+        school_id: schoolId,
+        from: String(term.starts_on),
+        to: String(term.ends_on),
+        class_section_id: classSectionId,
+        actor_user_id: actorUserId,
+        correlation_id: correlationId,
+        cause: {
+          kind: cause.kind,
+          source_domain: "timetable",
+          source_record_id: cause.sourceRecordId,
+          source_revision: cause.sourceRevision,
+        },
+      });
+      receipt.model_event_ids.push(...prepared.model_event_ids);
+    }
+    return receipt;
+  }
+
+  private async projectLegacyTimetableSlotChange(
+    tx: Transaction<Database>,
+    schoolId: string,
+    actorUserId: string,
+    correlationId: string,
+    action: "created" | "updated" | "deleted",
+    slot: LegacyTimetableSlotProjectionRow,
+    sourceRevision = slot.revision,
+  ) {
+    if (!this.temporal) {
+      throw new ConflictException("Timetable temporal coordination is unavailable.");
+    }
+    const context = (await sql<{
+      timezone: string;
+      starts_on: string;
+      ends_on: string;
+      class_label: string;
+      class_revision: number;
+      subject_name: string | null;
+      subject_code: string | null;
+      subject_revision: number | null;
+      space_name: string | null;
+      space_revision: number | null;
+      space_status: "active" | "inactive" | null;
+    }>`SELECT school.timezone,term.starts_on::text,term.ends_on::text,
+        concat('Class ',section.grade,section.section) AS class_label,
+        section.revision AS class_revision,
+        subject.name AS subject_name,subject.code AS subject_code,
+        subject.revision AS subject_revision,
+        space.name AS space_name,space.revision AS space_revision,space.status AS space_status
+      FROM class_sections section
+      JOIN schools school ON school.id=section.school_id
+      JOIN academic_terms term ON term.id=${slot.term_id}::uuid
+        AND term.school_id=section.school_id
+        AND term.academic_year=section.academic_year
+      LEFT JOIN subjects subject ON subject.id=${slot.subject_id}::uuid
+        AND subject.school_id=section.school_id
+      LEFT JOIN campus_spaces space ON space.id=${slot.space_id}::uuid
+        AND space.school_id=section.school_id
+      WHERE section.id=${slot.class_section_id}::uuid
+        AND section.school_id=${schoolId}::uuid`.execute(tx)).rows[0];
+    if (!context) {
+      throw new ConflictException("The legacy timetable source context no longer exists.");
+    }
+    const title = context.subject_name || slot.title.trim() || "Period";
+    return this.temporal.recordLegacyTimetableSlotChange(tx, {
+      school_id: schoolId,
+      actor_user_id: actorUserId,
+      action,
+      source_record_id: slot.id,
+      source_revision: sourceRevision,
+      previous_source_revision: action === "created" ? null : sourceRevision - 1,
+      term_id: slot.term_id,
+      starts_on: context.starts_on,
+      ends_on: context.ends_on,
+      timezone: context.timezone,
+      occurred_at: new Date().toISOString(),
+      class_section: {
+        kind: "class",
+        domain: "academic_structure",
+        domain_id: slot.class_section_id,
+        label: context.class_label,
+        lifecycle_state: "active",
+        source_revision: context.class_revision,
+        metadata: {},
+      },
+      slot: {
+        weekday: slot.weekday,
+        period_number: slot.period_number,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+        title,
+        slot_type: slot.slot_type,
+        teacher_user_id: slot.teacher_user_id,
+        subject: slot.subject_id ? {
+          kind: "subject",
+          domain: "academic_structure",
+          domain_id: slot.subject_id,
+          label: context.subject_name || context.subject_code || title,
+          lifecycle_state: "active",
+          source_revision: context.subject_revision ?? 1,
+          metadata: { code: context.subject_code },
+        } : null,
+        space: slot.space_id ? {
+          kind: "space",
+          domain: "campus_topology",
+          domain_id: slot.space_id,
+          label: context.space_name || slot.room || "Timetable space",
+          lifecycle_state: context.space_status === "inactive" ? "inactive" : "active",
+          source_revision: context.space_revision ?? 1,
+          metadata: {},
+        } : null,
+        room_snapshot: slot.room,
+      },
+      correlation_id: correlationId,
+    });
+  }
+
   async createTimetableSlot(user: AuthUser, body: unknown, request: AuthenticatedRequest) {
     const data = timetableSlotSchema.parse(body);
     if (data.ends_at <= data.starts_at) throw new BadRequestException("End time must be after start time.");
@@ -3871,6 +4378,12 @@ export class SchoolService {
       .$if(!data.term_id, (query) => query.where("academic_year", "=", section.academic_year).where("is_active", "=", true))
       .executeTakeFirst();
     if (!term || term.academic_year !== section.academic_year) throw new NotFoundException("The selected term is not available for this class.");
+    if (data.subject_id) {
+      const subject = await this.db.selectFrom("subjects").select("id")
+        .where("id", "=", data.subject_id).where("school_id", "=", membership.school_id)
+        .executeTakeFirst();
+      if (!subject) throw new BadRequestException("Selected subject does not belong to this school.");
+    }
     if (data.teacher_user_id) {
       const teacher = await this.db.selectFrom("school_memberships").select("id").where("school_id", "=", membership.school_id).where("user_id", "=", data.teacher_user_id).where("role", "=", "staff").where("is_active", "=", true).executeTakeFirst();
       if (!teacher) throw new BadRequestException("Selected teacher is not active in this school.");
@@ -3885,14 +4398,27 @@ export class SchoolService {
           ...(data.room ? [eb("room", "=", data.room)] : []),
         ])).executeTakeFirst() : undefined;
       if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
+      const slotId = randomUUID();
+      const preparedCoverage = await this.prepareLegacyTimetableSubstitutions(
+        tx,membership.school_id,term.id,[data.class_section_id],user.id,request.requestId,
+        { kind: "legacy_timetable_slot_create_prepared", sourceRecordId: slotId, sourceRevision: 1 },
+      );
       const slot = await tx.insertInto("timetable_slots").values({
+        id: slotId,
         class_section_id: data.class_section_id, term_id: term.id, subject_id: data.subject_id ?? null,
         weekday: data.weekday, period_number: data.period_number, starts_at: data.starts_at, ends_at: data.ends_at,
         slot_type: data.slot_type, title: data.title, room: data.room, teacher_user_id: data.teacher_user_id ?? null,
-        teacher_designation: data.teacher_designation,
+        teacher_designation: data.teacher_designation, updated_by: user.id,
       }).returningAll().executeTakeFirstOrThrow();
       await protectPublishedPlans(tx,membership.school_id);
-      await tx.insertInto("audit_events").values({ action: "timetable.slot.created", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slot.id, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: data.class_section_id } }).execute();
+      const temporalReceipt = await this.projectLegacyTimetableSlotChange(
+        tx,membership.school_id,user.id,request.requestId,"created",slot,
+      );
+      const coverageReceipt = await this.reconcileLegacyTimetableSubstitutions(
+        tx,membership.school_id,term.id,[data.class_section_id],user.id,request.requestId,
+        { kind: "legacy_timetable_slot_created", sourceRecordId: slot.id, sourceRevision: slot.revision },
+      );
+      await tx.insertInto("audit_events").values({ action: "timetable.slot.created", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slot.id, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: data.class_section_id, source_revision: slot.revision, coverage_projection_preparation: preparedCoverage, temporal_projection: temporalReceipt, coverage_reconciliation: coverageReceipt } }).execute();
       await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: data.class_section_id, slotId: slot.id, requestId: request.requestId, action: "created" });
       return slot;
     });
@@ -3901,42 +4427,87 @@ export class SchoolService {
   async updateTimetableSlot(user: AuthUser, slotId: string, body: unknown, request: AuthenticatedRequest) {
     const data = timetableSlotSchema.parse(body);
     if (data.ends_at <= data.starts_at) throw new BadRequestException("End time must be after start time.");
-    const current = await this.db.selectFrom("timetable_slots as ts").innerJoin("class_sections as cs", "cs.id", "ts.class_section_id").select(["ts.id", "ts.term_id", "ts.class_section_id", "cs.school_id"]).where("ts.id", "=", slotId).executeTakeFirst();
+    const current = await this.db.selectFrom("timetable_slots as ts").innerJoin("class_sections as cs", "cs.id", "ts.class_section_id").selectAll("ts").select("cs.school_id").where("ts.id", "=", slotId).executeTakeFirst();
     if (!current) throw new NotFoundException("Timetable slot not found.");
     const membership = await this.requireSchoolRole(user, ["admin"], current.school_id);
     if (data.term_id && data.term_id !== current.term_id) throw new BadRequestException("Move periods between terms by copying the timetable into the selected term.");
     const section = await this.db.selectFrom("class_sections").select("id").where("id", "=", data.class_section_id).where("school_id", "=", membership.school_id).executeTakeFirst();
     if (!section) throw new BadRequestException("Selected class does not belong to this school.");
+    if (data.subject_id) {
+      const subject = await this.db.selectFrom("subjects").select("id")
+        .where("id", "=", data.subject_id).where("school_id", "=", membership.school_id)
+        .executeTakeFirst();
+      if (!subject) throw new BadRequestException("Selected subject does not belong to this school.");
+    }
     if (data.teacher_user_id) {
       const teacher = await this.db.selectFrom("school_memberships").select("id").where("school_id", "=", membership.school_id).where("user_id", "=", data.teacher_user_id).where("role", "=", "staff").where("is_active", "=", true).executeTakeFirst();
       if (!teacher) throw new BadRequestException("Selected teacher is not active in this school.");
     }
     return this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
-      await requireLegacyTimetable(tx,current.class_section_id,current.term_id);
-      await requireLegacyTimetable(tx,data.class_section_id,current.term_id);
-      const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", current.term_id).where("id", "!=", slotId).where("weekday", "=", data.weekday).where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at).where((eb) => eb.or([...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []), ...(data.room ? [eb("room", "=", data.room)] : [])])).executeTakeFirst() : undefined;
+      const lockedCurrent = await tx.selectFrom("timetable_slots as ts")
+        .innerJoin("class_sections as cs", "cs.id", "ts.class_section_id")
+        .selectAll("ts").select("cs.school_id").where("ts.id", "=", slotId)
+        .forUpdate().executeTakeFirst();
+      if (!lockedCurrent || lockedCurrent.school_id !== membership.school_id
+        || lockedCurrent.revision !== current.revision) {
+        throw new ConflictException("The timetable slot changed. Review it before saving again.");
+      }
+      await requireLegacyTimetable(tx,lockedCurrent.class_section_id,lockedCurrent.term_id);
+      await requireLegacyTimetable(tx,data.class_section_id,lockedCurrent.term_id);
+      const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", lockedCurrent.term_id).where("id", "!=", slotId).where("weekday", "=", data.weekday).where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at).where((eb) => eb.or([...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []), ...(data.room ? [eb("room", "=", data.room)] : [])])).executeTakeFirst() : undefined;
       if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
-      const slot = await tx.updateTable("timetable_slots").set({ class_section_id: data.class_section_id, subject_id: data.subject_id ?? null, teacher_user_id: data.teacher_user_id ?? null, weekday: data.weekday, period_number: data.period_number, starts_at: data.starts_at, ends_at: data.ends_at, slot_type: data.slot_type, title: data.title, room: data.room, teacher_designation: data.teacher_designation }).where("id", "=", slotId).returningAll().executeTakeFirstOrThrow();
+      const preparedCoverage = await this.prepareLegacyTimetableSubstitutions(
+        tx,membership.school_id,lockedCurrent.term_id,[lockedCurrent.class_section_id,data.class_section_id],user.id,request.requestId,
+        { kind: "legacy_timetable_slot_update_prepared", sourceRecordId: slotId, sourceRevision: lockedCurrent.revision + 1 },
+      );
+      const slot = await tx.updateTable("timetable_slots").set({ class_section_id: data.class_section_id, subject_id: data.subject_id ?? null, teacher_user_id: data.teacher_user_id ?? null, weekday: data.weekday, period_number: data.period_number, starts_at: data.starts_at, ends_at: data.ends_at, slot_type: data.slot_type, title: data.title, room: data.room, teacher_designation: data.teacher_designation, updated_by: user.id }).where("id", "=", slotId).returningAll().executeTakeFirstOrThrow();
       await protectPublishedPlans(tx,membership.school_id);
-      await tx.insertInto("audit_events").values({ action: "timetable.slot.updated", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slot.id, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: data.class_section_id } }).execute();
+      const temporalReceipt = await this.projectLegacyTimetableSlotChange(
+        tx,membership.school_id,user.id,request.requestId,"updated",slot,
+      );
+      const coverageReceipt = await this.reconcileLegacyTimetableSubstitutions(
+        tx,membership.school_id,lockedCurrent.term_id,[lockedCurrent.class_section_id,data.class_section_id],user.id,request.requestId,
+        { kind: "legacy_timetable_slot_updated", sourceRecordId: slot.id, sourceRevision: slot.revision },
+      );
+      await tx.insertInto("audit_events").values({ action: "timetable.slot.updated", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slot.id, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: data.class_section_id, source_revision: slot.revision, coverage_projection_preparation: preparedCoverage, temporal_projection: temporalReceipt, coverage_reconciliation: coverageReceipt } }).execute();
       await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: data.class_section_id, slotId: slot.id, requestId: request.requestId, action: "updated" });
-      if (current.class_section_id !== data.class_section_id) await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: current.class_section_id, slotId: slot.id, requestId: request.requestId, action: "updated" });
+      if (lockedCurrent.class_section_id !== data.class_section_id) await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: lockedCurrent.class_section_id, slotId: slot.id, requestId: request.requestId, action: "updated" });
       return slot;
     });
   }
 
   async deleteTimetableSlot(user: AuthUser, slotId: string, request: AuthenticatedRequest) {
-    const current = await this.db.selectFrom("timetable_slots as ts").innerJoin("class_sections as cs", "cs.id", "ts.class_section_id").select(["ts.id", "ts.class_section_id", "cs.school_id"]).where("ts.id", "=", slotId).executeTakeFirst();
+    const current = await this.db.selectFrom("timetable_slots as ts").innerJoin("class_sections as cs", "cs.id", "ts.class_section_id").selectAll("ts").select("cs.school_id").where("ts.id", "=", slotId).executeTakeFirst();
     if (!current) throw new NotFoundException("Timetable slot not found.");
     const membership = await this.requireSchoolRole(user, ["admin"], current.school_id);
     await this.db.transaction().execute(async (tx) => {
       await lockSchedule(tx,membership.school_id);
-      await requireLegacyTimetable(tx,current.class_section_id);
+      const lockedCurrent = await tx.selectFrom("timetable_slots as ts")
+        .innerJoin("class_sections as cs", "cs.id", "ts.class_section_id")
+        .selectAll("ts").select("cs.school_id").where("ts.id", "=", slotId)
+        .forUpdate().executeTakeFirst();
+      if (!lockedCurrent || lockedCurrent.school_id !== membership.school_id
+        || lockedCurrent.revision !== current.revision) {
+        throw new ConflictException("The timetable slot changed. Review it before deleting.");
+      }
+      await requireLegacyTimetable(tx,lockedCurrent.class_section_id);
+      const deletionRevision = lockedCurrent.revision + 1;
+      const preparedCoverage = await this.prepareLegacyTimetableSubstitutions(
+        tx,membership.school_id,lockedCurrent.term_id,[lockedCurrent.class_section_id],user.id,request.requestId,
+        { kind: "legacy_timetable_slot_delete_prepared", sourceRecordId: slotId, sourceRevision: deletionRevision },
+      );
       await tx.deleteFrom("timetable_slots").where("id", "=", slotId).execute();
       await protectPublishedPlans(tx,membership.school_id);
-      await tx.insertInto("audit_events").values({ action: "timetable.slot.deleted", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slotId, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: current.class_section_id } }).execute();
-      await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: current.class_section_id, slotId, requestId: request.requestId, action: "deleted" });
+      const temporalReceipt = await this.projectLegacyTimetableSlotChange(
+        tx,membership.school_id,user.id,request.requestId,"deleted",lockedCurrent,deletionRevision,
+      );
+      const coverageReceipt = await this.reconcileLegacyTimetableSubstitutions(
+        tx,membership.school_id,lockedCurrent.term_id,[lockedCurrent.class_section_id],user.id,request.requestId,
+        { kind: "legacy_timetable_slot_deleted", sourceRecordId: slotId, sourceRevision: deletionRevision },
+      );
+      await tx.insertInto("audit_events").values({ action: "timetable.slot.deleted", actor_id: user.id, school_id: membership.school_id, target_type: "timetable_slot", target_id: slotId, request_id: request.requestId, ip_hash: null, metadata: { class_section_id: lockedCurrent.class_section_id, source_revision: deletionRevision, coverage_projection_preparation: preparedCoverage, temporal_projection: temporalReceipt, coverage_reconciliation: coverageReceipt } }).execute();
+      await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: lockedCurrent.class_section_id, slotId, requestId: request.requestId, action: "deleted" });
     });
     return { deleted: true, id: slotId };
   }
@@ -3956,23 +4527,37 @@ export class SchoolService {
         .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "=", data.source_weekday)
         .orderBy("period_number").execute();
       if (!source.length) throw new BadRequestException("The source day has no periods to copy.");
-      const existingTargets = await tx.selectFrom("timetable_slots").select(["id", "weekday"])
+      const existingTargets = await tx.selectFrom("timetable_slots").selectAll()
         .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "in", data.target_weekdays).execute();
       if (existingTargets.length && !data.replace) throw new BadRequestException("One or more target days already contain periods. Choose Replace existing days to continue.");
       const otherSlots = await tx.selectFrom("timetable_slots").select(["id", "class_section_id", "teacher_user_id", "weekday", "starts_at", "ends_at", "room"])
         .where("term_id", "=", term.id).where("weekday", "in", data.target_weekdays)
         .$if(data.replace, (query) => query.where("class_section_id", "!=", section.id))
         .execute();
-      const planned = data.target_weekdays.flatMap((weekday) => source.map((slot) => ({ ...slot, weekday })));
+      const planned = data.target_weekdays.flatMap((weekday) => source.map((slot) => ({
+        ...slot,
+        id: randomUUID(),
+        weekday,
+      })));
       const conflict = planned.find((candidate) => otherSlots.some((other) =>
         other.weekday === candidate.weekday && other.starts_at < candidate.ends_at && other.ends_at > candidate.starts_at
         && ((candidate.teacher_user_id && candidate.teacher_user_id === other.teacher_user_id) || (candidate.room && candidate.room === other.room)),
       ));
       if (conflict) throw new BadRequestException(`The copied ${weekdayLabels[conflict.weekday]} schedule conflicts with another teacher or room allocation.`);
+      const firstMutation = existingTargets[0] ?? planned[0]!;
+      const preparedCoverage = await this.prepareLegacyTimetableSubstitutions(
+        tx,membership.school_id,term.id,[section.id],user.id,request.requestId,
+        {
+          kind: "legacy_timetable_day_copy_prepared",
+          sourceRecordId: firstMutation.id,
+          sourceRevision: existingTargets[0] ? existingTargets[0].revision + 1 : 1,
+        },
+      );
       if (data.replace) {
         await tx.deleteFrom("timetable_slots").where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "in", data.target_weekdays).execute();
       }
       const inserted = await tx.insertInto("timetable_slots").values(planned.map((slot) => ({
+        id: slot.id,
         class_section_id: slot.class_section_id,
         term_id: slot.term_id,
         subject_id: slot.subject_id,
@@ -3985,13 +4570,30 @@ export class SchoolService {
         room: slot.room,
         teacher_user_id: slot.teacher_user_id,
         teacher_designation: slot.teacher_designation,
-      }))).returning(["id", "weekday"]).execute();
+        updated_by: user.id,
+      }))).returningAll().execute();
       await protectPublishedPlans(tx, membership.school_id);
+      const removedTemporalReceipts = [];
+      for (const removed of data.replace ? existingTargets : []) {
+        removedTemporalReceipts.push(await this.projectLegacyTimetableSlotChange(
+          tx,membership.school_id,user.id,request.requestId,"deleted",removed,removed.revision + 1,
+        ));
+      }
+      const createdTemporalReceipts = [];
+      for (const created of inserted) {
+        createdTemporalReceipts.push(await this.projectLegacyTimetableSlotChange(
+          tx,membership.school_id,user.id,request.requestId,"created",created,
+        ));
+      }
       const first = inserted[0]!;
+      const coverageReceipt = await this.reconcileLegacyTimetableSubstitutions(
+        tx,membership.school_id,term.id,[section.id],user.id,request.requestId,
+        { kind: "legacy_timetable_day_copied", sourceRecordId: first.id, sourceRevision: first.revision },
+      );
       await tx.insertInto("audit_events").values({
         action: "timetable.day.copied", actor_id: user.id, school_id: membership.school_id,
         target_type: "timetable_slot", target_id: first.id, request_id: request.requestId, ip_hash: null,
-        metadata: { class_section_id: section.id, term_id: term.id, source_weekday: data.source_weekday, target_weekdays: data.target_weekdays, replace: data.replace, reason: data.reason, periods_created: inserted.length },
+        metadata: { class_section_id: section.id, term_id: term.id, source_weekday: data.source_weekday, target_weekdays: data.target_weekdays, replace: data.replace, reason: data.reason, periods_created: inserted.length, coverage_projection_preparation: preparedCoverage, temporal_projection: { removed: removedTemporalReceipts, created: createdTemporalReceipts }, coverage_reconciliation: coverageReceipt },
       }).execute();
       await this.events.enqueueTimetableUpdate(tx, { schoolId: membership.school_id, classSectionId: section.id, slotId: first.id, requestId: request.requestId, action: "updated" });
       return { copied: true as const, periods_created: inserted.length, target_weekdays: data.target_weekdays };

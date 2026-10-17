@@ -771,19 +771,71 @@ export class ChatService {
     return { conversation_id: conversationId, read_at: readAt };
   }
 
-  async editMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown) {
+  async editMessage(
+    user: AuthUser,
+    conversationId: string,
+    messageId: string,
+    body: unknown,
+    request?: AuthenticatedRequest,
+  ) {
     const conversation = await this.conversationForUser(user, conversationId,"messages.send");
     const rules = await operatingRules(this.db, conversation.school_id);
     if (!uuid.safeParse(messageId).success) throw new NotFoundException("Message not found.");
     const data = editMessageSchema.parse(body);
-    const message = await this.db.selectFrom("chat_messages").selectAll().where("id", "=", messageId).where("conversation_id", "=", conversationId).executeTakeFirst();
-    if (!message) throw new NotFoundException("Message not found.");
-    if (message.sender_id !== user.id) throw new ForbiddenException("You can only edit messages you sent.");
-    if (message.message_type === "system" || rules.message_edit_minutes === 0 || Date.now() - new Date(message.created_at).getTime() >= rules.message_edit_minutes * 60_000) {
-      throw new BadRequestException(`Messages can only be edited for ${rules.message_edit_minutes} minutes after sending.`);
-    }
-    await this.db.updateTable("chat_messages").set({ body: data.body, updated_at: new Date() }).where("id", "=", messageId).execute();
-    return { id: messageId, edited: true };
+    return this.db.transaction().execute(async (tx) => {
+      const message = await tx.selectFrom("chat_messages").selectAll()
+        .where("id", "=", messageId)
+        .where("conversation_id", "=", conversationId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!message) throw new NotFoundException("Message not found.");
+      if (message.sender_id !== user.id) throw new ForbiddenException("You can only edit messages you sent.");
+      if (message.message_type === "system" || rules.message_edit_minutes === 0 || Date.now() - new Date(message.created_at).getTime() >= rules.message_edit_minutes * 60_000) {
+        throw new BadRequestException(`Messages can only be edited for ${rules.message_edit_minutes} minutes after sending.`);
+      }
+
+      const edited = await tx.updateTable("chat_messages")
+        .set({ body: data.body, updated_at: new Date() })
+        .where("id", "=", messageId)
+        .where("conversation_id", "=", conversationId)
+        .returning(["id", "updated_at"])
+        .executeTakeFirstOrThrow();
+      const audience = await tx.selectFrom("chat_participants as participant")
+        .innerJoin("users as account", "account.id", "participant.user_id")
+        .select("participant.user_id")
+        .where("participant.conversation_id", "=", conversationId)
+        .where("participant.is_active", "=", true)
+        .where("account.is_active", "=", true)
+        .where(sql<boolean>`chat_actor_is_current_participant(
+          ${conversation.school_id}::uuid,participant.user_id,'messages.view',${conversationId}::uuid
+        )`)
+        .execute();
+      await this.events.enqueueUserEvent(tx, {
+        schoolId: conversation.school_id,
+        eventType: "chat.updated",
+        aggregateType: "chat_conversation",
+        aggregateId: conversationId,
+        audienceUserIds: audience.map((participant) => participant.user_id),
+        payload: {
+          conversation_id: conversationId,
+          message_id: messageId,
+          change_kind: "message_edited",
+          refresh: ["messages", "notifications", "attention"],
+        },
+        idempotencyKey: `chat:message-edit:${messageId}:${edited.updated_at.toISOString()}`,
+      });
+      await tx.insertInto("audit_events").values({
+        action: "chat.message.edited",
+        actor_id: user.id,
+        school_id: conversation.school_id,
+        target_type: "chat_message",
+        target_id: messageId,
+        request_id: request?.requestId ?? randomUUID(),
+        ip_hash: null,
+        metadata: { conversation_id: conversationId },
+      }).execute();
+      return { id: edited.id, edited: true, updated_at: edited.updated_at };
+    });
   }
 
   async reportMessage(user: AuthUser, conversationId: string, messageId: string, body: unknown, request: AuthenticatedRequest) {

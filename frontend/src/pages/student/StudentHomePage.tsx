@@ -76,41 +76,11 @@ function greeting() {
   return "Good evening";
 }
 
-function compactSubject(subject: string) {
-  return subject
-    .replace(/\s*\([^)]*\)/g, "")
-    .replace(/\b(General|Theory|Literature|Practicum|Science)\b/gi, "")
-    .trim() || subject;
-}
-
-function kitForPeriod(period: StudentHomePeriod): string | null {
-  const subject = period.subject.toLowerCase();
-  if (/lunch|recess|break|free|dismissal/.test(subject)) return null;
-  if (/assembly|yoga/.test(subject)) return "House uniform";
-  if (/lab|physics|chemistry|biology|computer/.test(subject)) return "Lab manual";
-  if (/club/.test(subject)) return "Club kit";
-  if (/games|physical|pe|sport|house/.test(subject)) return "Sports kit";
-  if (/social|history|geography|civics|polity/.test(subject)) return "SST notebook";
-  if (/art|craft/.test(subject)) return "Art kit";
-  if (/music|choir/.test(subject)) return "Music folder";
-  if (/quiz/.test(subject)) return "Quiz prep";
-  if (/math/.test(subject)) return "Math notebook";
-  if (/english|debate|library/.test(subject)) return "Reader";
-  if (/hindi|sanskrit|french|language/.test(subject)) return "Language notebook";
-  return `${compactSubject(period.subject)} notebook`;
-}
-
 function todaysKit(schedule: StudentHomePeriod[]): StudentHomeKitItem[] {
   const seen = new Map<string, StudentHomeKitItem>();
   for (const period of schedule) {
-    const labels=period.materials??[kitForPeriod(period)];
+    const labels = period.materials ?? [];
     for(const label of labels){if(!label||seen.has(label))continue;seen.set(label,{id:`material-${label.toLowerCase()}`,label,detail:`For ${period.subject}`});}
-  }
-  if (!seen.has("School ID")) {
-    seen.set("School ID", { id: "school-id", label: "School ID", detail: "Keep it ready for entry" });
-  }
-  if (!seen.has("Water bottle")) {
-    seen.set("Water bottle", { id: "water-bottle", label: "Water bottle", detail: "Refill before first period" });
   }
   return Array.from(seen.values()).slice(0, 6);
 }
@@ -125,7 +95,7 @@ function readKitState(storageKey: string): Record<string, boolean> {
   }
 }
 
-export function StudentHomePage({ data, proFeaturesEnabled = false }: { data: StudentHomeData; proFeaturesEnabled?: boolean }) {
+export function StudentHomePage({ data, schoolName, proFeaturesEnabled = false }: { data: StudentHomeData; schoolName?: string; proFeaturesEnabled?: boolean }) {
   const navigate = useNavigate();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [kitOpen, setKitOpen] = useState(false);
@@ -181,10 +151,10 @@ export function StudentHomePage({ data, proFeaturesEnabled = false }: { data: St
   }, [kitOpen, scheduleOpen]);
 
   return (
-    <StudentShell activeNav="home" section="Home" className={data.className} notificationCount={data.unreadNotifications}>
+    <StudentShell activeNav="home" section="Home" className={data.className} schoolName={schoolName} notificationCount={data.unreadNotifications}>
       <div className="student-page-stack student-home-page family-home">
         <div className="student-home-anchor">
-          <StudentIdentityCard identity={data} eyebrow={greeting()} primaryHeading={false} />
+          <StudentIdentityCard identity={data} schoolName={schoolName} eyebrow={greeting()} primaryHeading={false} />
           {primaryAction ? <HomeActionSpotlight action={primaryAction} /> : null}
         </div>
         <FeedbackNudge portal="student"/>
@@ -217,9 +187,9 @@ export function StudentHomePage({ data, proFeaturesEnabled = false }: { data: St
             <button type="button" onClick={() => navigate("/student/leave")}>
               <span className="tone-teal"><CalendarCheck2 size={19} /></span><small>Active leave</small><strong>{data.activeLeaveCount}</strong><em>{data.activeLeaveCount ? "Track approval" : "No requests"}</em>
             </button>
-            <button type="button" onClick={() => setKitOpen(true)}>
+            {kitItems.length ? <button type="button" onClick={() => setKitOpen(true)}>
               <span className="tone-amber"><Sparkles size={19} /></span><small>Today checklist</small><strong>{packedCount}/{kitItems.length}</strong><em>{packedCount === kitItems.length ? "Ready for school" : "Tap to pack"}</em>
-            </button>
+            </button> : null}
           </div>
         </section>
 
@@ -282,7 +252,7 @@ export function StudentHomePage({ data, proFeaturesEnabled = false }: { data: St
             </section>
           </div>
         ) : null}
-        {kitOpen ? (
+        {kitOpen && kitItems.length ? (
           <div className="student-sheet-backdrop" onClick={() => setKitOpen(false)}>
             <section
               className="student-sheet student-home-checklist-sheet"

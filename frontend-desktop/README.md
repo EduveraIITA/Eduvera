@@ -1,4 +1,4 @@
-# OmniSchool desktop dashboard
+# ThatCampus desktop dashboard
 
 The staff console: principal and teacher screens on a desktop layout. It is a separate
 Vite app from `frontend/` (the mobile parent/student app) and shares the same API.
@@ -27,7 +27,7 @@ Demo accounts (password `OmniDemo@2026`): `meera.principal`, `kavita.staff`, `po
 
 ## Design
 
-Implements the Edura OS desktop design (`src/theme.css`): a Material-3 tonal palette
+Implements the ThatCampus desktop design (`src/theme.css`): a Material-3 tonal palette
 (surface tiers, primary `#0037b0`, primary-container `#1d4ed8`, tertiary for "good",
 error for "critical"), Plus Jakarta Sans on a fixed type scale (display / headline /
 label / body utility classes `t-*`), borderless cards lifted by a 1px shadow, tiles in

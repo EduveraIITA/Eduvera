@@ -11,11 +11,11 @@ import {
   ClipboardList,
   Phone,
   PieChart,
+  ReceiptIndianRupee,
   TrendingDown,
   TrendingUp,
   Minus,
 } from "lucide-react";
-import { fallbackHomeData } from "./parentDemoData";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
 import { getAccessibleStudents } from "../../features/school/api";
 import { StudentIdentityCard } from "../student/StudentIdentityCard";
@@ -31,7 +31,7 @@ import "./parent-pages.css";
 import "../../features/family-home/family-home.css";
 
 export interface ParentHomePageProps {
-  data?: ParentHomeData;
+  data: ParentHomeData;
   onSelectChild?: (childId: string) => ParentPageAction;
   onPrepareChild?: (childId: string) => Promise<ParentHomeData>;
   onContactTeacher?: () => ParentPageAction;
@@ -83,7 +83,7 @@ function MetricTrend({ value, label, higherIsBetter = true, suffix = "%", compac
 }
 
 export function ParentHomePage({
-  data = fallbackHomeData,
+  data,
   onSelectChild,
   onPrepareChild,
   onContactTeacher,
@@ -106,7 +106,8 @@ export function ParentHomePage({
     };
   }, []);
   const activeTransition = transition?.phase === "completed" && transition.targetId === data.child.id ? null : transition;
-  const schoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name ?? "Cambridge International School";
+  const guardianSchoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name?.trim();
+  const schoolName = guardianSchoolName || (!auth ? "School" : auth.status === "loading" ? "Loading school" : "School information unavailable");
   const childrenQuery = useQuery({ queryKey: ["school", "accessible-students"], queryFn: getAccessibleStudents, staleTime: 60_000 });
   const children = childrenQuery.data?.results.map((student) => ({ id: student.id, name: student.user.display_name, grade: `Grade ${student.current_enrollment.grade}`, section: student.current_enrollment.section, avatarUrl: student.avatar_url })) ?? [];
   const visibleChildId = activeTransition?.phase === "completed" ? activeTransition.targetId : data.child.id;
@@ -244,8 +245,8 @@ export function ParentHomePage({
             </>}>
               <span>{data.metrics.homeworkTasks} pending</span>
             </MetricCard>
-            <MetricCard label="Dues Status" icon={<CheckCircle2 size={19} />} value={data.metrics.duesStatus} tone="positive">
-              <span>{data.metrics.duesDetail}</span>
+            <MetricCard label="Fees" icon={<ReceiptIndianRupee size={19} />} value={data.metrics.feeStatus} tone={data.metrics.feeState === "clear" ? "positive" : undefined}>
+              <span>{data.metrics.feeDetail}</span>
             </MetricCard>
           </div>
           {rankingOpen && <AttendanceRankingDialog ranking={data.ranking} className={data.idCard.className} currentLabel="Your child" onClose={() => setRankingOpen(false)} />}

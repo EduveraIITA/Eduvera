@@ -5,7 +5,7 @@ the product decision and implemented contract; it is not Stage deployment eviden
 
 ## Product decision
 
-Eduvera supports two explicit creation models. They are not different labels for the same
+ThatCampus supports two explicit creation models. They are not different labels for the same
 workflow and the UI must not imply that an unreviewed coaching workspace is a verified school.
 
 ### Model A — Onboard your institution
@@ -51,7 +51,7 @@ workarounds around this guard.
 ## Shared rules
 
 - Account authentication is required before either path. "No verification" for coaching means
-  no Eduvera organisation verification; it does not disable account/session protections.
+  no ThatCampus organisation verification; it does not disable account/session protections.
 - Tenant codes remain globally unique and lowercase; collisions are rejected at PostgreSQL.
 - PostgreSQL also serializes the one-coaching-workspace-per-creator boundary with a partial
   unique index, so concurrent requests cannot bypass the service pre-check.

@@ -12,6 +12,10 @@ import {
 } from "../src/day-plans/schedule.js";
 import type { AuthUser, AuthenticatedRequest } from "../src/common/request.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import {
+  createStaffCoverageReconciliationTestDouble,
+  type StaffCoverageReconciliationTestDouble,
+} from "./staff-coverage-reconciliation.test-support.js";
 const pool = new Pool({
   connectionString: requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),
   max: 3,
@@ -19,6 +23,7 @@ const pool = new Pool({
 let db: DatabaseService,
   service: DayPlanService,
   school: SchoolService,
+  coverage: StaffCoverageReconciliationTestDouble,
   schoolId: string,
   termId: string,
   classA: string,
@@ -85,8 +90,9 @@ async function publish(id: string) {
 beforeAll(async () => {
   db = new DatabaseService();
   const events = new SchoolEventService(db);
-  school = new SchoolService(db, events);
-  service = new DayPlanService(db, events, school);
+  coverage = createStaffCoverageReconciliationTestDouble();
+  school = new SchoolService(db, events, coverage);
+  service = new DayPlanService(db, events, school, coverage);
   const users = (
     await pool.query<AuthUser>(
       "SELECT * FROM users WHERE username IN ('kavita.staff','pooja.parent','suresh.staff') OR role='admin' ORDER BY created_at",
@@ -97,7 +103,7 @@ beforeAll(async () => {
   parent = request(users.find((u) => u.username === "pooja.parent")!);
   const second = (
     await pool.query<AuthUser>(
-      "SELECT * FROM users WHERE role='staff' AND id<>$1 LIMIT 1",
+      "SELECT * FROM users WHERE role='staff' AND is_active AND id<>$1 ORDER BY created_at LIMIT 1",
       [teacher.authUser.id],
     )
   ).rows[0]!;
@@ -255,6 +261,36 @@ describe("Daily school plans", () => {
       materials: ["Graph notebook", "Ruler"],
     });
     await publish(p.id);
+    expect(coverage.preparationInputs).toContainEqual(
+      expect.objectContaining({
+        school_id: schoolId,
+        from: p.date,
+        to: p.date,
+        class_section_id: classA,
+        actor_user_id: admin.authUser.id,
+        correlation_id: admin.requestId,
+        cause: expect.objectContaining({
+          kind: "day_plan_published",
+          source_domain: "day_plan",
+          source_record_id: p.id,
+        }),
+      }),
+    );
+    expect(coverage.reconciliationInputs).toContainEqual(
+      expect.objectContaining({
+        school_id: schoolId,
+        from: p.date,
+        to: p.date,
+        class_section_id: classA,
+        actor_user_id: admin.authUser.id,
+        correlation_id: admin.requestId,
+        cause: expect.objectContaining({
+          kind: "day_plan_published",
+          source_domain: "day_plan",
+          source_record_id: p.id,
+        }),
+      }),
+    );
     const studentView = await school.timetableScreen(
       student.authUser,
       "week",

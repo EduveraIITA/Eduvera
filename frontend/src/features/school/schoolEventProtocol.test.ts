@@ -65,7 +65,22 @@ describe("school event protocol", () => {
   it("refreshes enrollment and family lists on a people event", () => {
     const result=resolveSchoolEvent(eventData("people.updated",{student_id:"new-student",class_section_id:"class-7a"}),"people.updated","admin-1");
     expect(result.usedFallback).toBe(false);
-    expect(result.invalidations).toEqual(expect.arrayContaining([{queryKey:["school","people"]},{queryKey:["school","parent"]},{queryKey:["teacher-attendance","class-7a"]},{queryKey:["attention"]}]));
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      {queryKey:["school","people"]},
+      {queryKey:["school","parent"]},
+      {queryKey:["school","accessible-students"]},
+      {queryKey:["school","student","timetable"]},
+      {queryKey:["gate-students"]},
+      {queryKey:["office","fee-students"]},
+      {queryKey:["campus-event-consent-authorities"]},
+      {queryKey:["invitations"]},
+      {queryKey:["notice-references"]},
+      {queryKey:["calendar"]},
+      {queryKey:["institution-activation"]},
+      {queryKey:["teacher-attendance"]},
+      {queryKey:["campus-view"]},
+      {queryKey:["attention"]},
+    ]));
   });
   it("maps allowlisted refresh hints to the affected student, parent, operations, and notification caches", () => {
     const result = resolveSchoolEvent(
@@ -96,9 +111,12 @@ describe("school event protocol", () => {
       { queryKey: ["school", "student", "attendance"] },
       { queryKey: ["school", "parent", "attendance", "student-1"] },
       { queryKey: ["school", "parent", "attendance", "default"] },
-      { queryKey: ["teacher-attendance", "class-7a", "2026-09-12"] },
-      { queryKey: ["principal-register", "class-7a", "2026-09-12"] },
-      { queryKey: ["principal-register-history", "class-7a", "2026-09-12"] },
+      { queryKey: ["teacher-attendance"] },
+      { queryKey: ["principal-register"] },
+      { queryKey: ["principal-register-history"] },
+      { queryKey: ["attendance-model"] },
+      { queryKey: ["attendance-continuity"] },
+      { queryKey: ["campus-view"] },
       { queryKey: ["notifications", "user-1"] },
     ]));
   });
@@ -107,6 +125,7 @@ describe("school event protocol", () => {
     const result = resolveSchoolEvent(
       eventData("attendance.register.submitted", {
         class_section_id: "class-7a",
+        session_id: "session-physics-7a",
         date: "2026-09-12",
         refresh: [
           "teacher.attendance",
@@ -122,11 +141,14 @@ describe("school event protocol", () => {
 
     expect(result.usedFallback).toBe(false);
     expect(result.invalidations).toEqual(expect.arrayContaining([
-      { queryKey: ["teacher-attendance", "class-7a", "2026-09-12"] },
+      { queryKey: ["teacher-attendance"] },
       { queryKey: ["teacher-home", "2026-09-12"] },
       { queryKey: ["principal-home", "2026-09-12"] },
-      { queryKey: ["principal-register", "class-7a", "2026-09-12"] },
-      { queryKey: ["principal-register-history", "class-7a", "2026-09-12"] },
+      { queryKey: ["principal-register"] },
+      { queryKey: ["principal-register-history"] },
+      { queryKey: ["attendance-model"] },
+      { queryKey: ["attendance-continuity"] },
+      { queryKey: ["campus-view"] },
     ]));
   });
 
@@ -144,9 +166,12 @@ describe("school event protocol", () => {
     expect(result.usedFallback).toBe(false);
     expect(result.invalidations).toEqual(expect.arrayContaining([
       { queryKey: ["teacher-home", "2026-09-12"] },
-      { queryKey: ["teacher-attendance", "class-7a", "2026-09-12"] },
+      { queryKey: ["teacher-attendance"] },
       { queryKey: ["principal-home", "2026-09-12"] },
-      { queryKey: ["principal-register", "class-7a", "2026-09-12"] },
+      { queryKey: ["principal-register"] },
+      { queryKey: ["attendance-model"] },
+      { queryKey: ["attendance-continuity"] },
+      { queryKey: ["campus-view"] },
       { queryKey: ["notifications", "teacher-1"] },
     ]));
   });
@@ -159,7 +184,10 @@ describe("school event protocol", () => {
     expect(leave.usedFallback).toBe(false);
     expect(leave.invalidations).toEqual(expect.arrayContaining([
       { queryKey: ["school", "student", "leave"] },
-      { queryKey: ["school", "parent", "leave", "student-1"] },
+      { queryKey: ["school", "student", "leave-status"] },
+      { queryKey: ["school", "parent", "leave"] },
+      { queryKey: ["school", "principal", "student-leave"] },
+      { queryKey: ["analytics"] },
       { queryKey: ["notifications", "guardian-1"] },
     ]));
   });
@@ -216,6 +244,27 @@ describe("school event protocol", () => {
     ]);
   });
 
+  it("refreshes the selected family Home fee projection after every ledger change", () => {
+    const result = resolveSchoolEvent(
+      eventData("fees.updated", {
+        student_id: "student-1",
+        refresh: ["fees"],
+      }),
+      "fees.updated",
+      "guardian-1",
+    );
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["office", "fees"] },
+      { queryKey: ["office", "fee-gateway-review"] },
+      { queryKey: ["school", "parent", "home", "student-1"] },
+      { queryKey: ["school", "parent", "home", "default"] },
+      { queryKey: ["principal-home"] },
+      { queryKey: ["principal-insights"] },
+    ]));
+  });
+
   it("refreshes the administration catalog and dependent timetable after a catalog edit", () => {
     const result = resolveSchoolEvent(
       eventData("administration.updated", { refresh: ["principal.administration", "principal.timetable"] }),
@@ -223,13 +272,91 @@ describe("school event protocol", () => {
       "principal-1",
     );
     expect(result.usedFallback).toBe(false);
-    expect(result.invalidations).toEqual([
+    expect(result.invalidations).toEqual(expect.arrayContaining([
       { queryKey: ["office", "administration"] },
+      { queryKey: ["institution-setup"] },
+      { queryKey: ["invitations"] },
+      { queryKey: ["operating-rules"] },
+      { queryKey: ["workflow-rules"] },
+      { queryKey: ["chat", "policy"] },
       { queryKey: ["principal-timetable"] },
+      { queryKey: ["calendar"] },
+      { queryKey: ["institution-activation"] },
+      { queryKey: ["campus-view"] },
       { queryKey: ["analytics"] },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },
-    ]);
+    ]));
+  });
+
+  it("refreshes live campus setup without falling back on its named outbox event", () => {
+    const result = resolveSchoolEvent(
+      eventData("institution.setup.updated", {
+        refresh: ["principal.administration"],
+      }),
+      "institution.setup.updated",
+      "admin-1",
+    );
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["office", "administration"] },
+      { queryKey: ["institution-setup"] },
+      { queryKey: ["operating-rules"] },
+      { queryKey: ["campus-view"] },
+      { queryKey: ["requests"] },
+      { queryKey: ["attention"] },
+    ]));
+  });
+
+  it("refreshes role timetable summaries together with their detailed timetable", () => {
+    const result = resolveSchoolEvent(
+      eventData("timetable.updated", { student_id: "student-1" }),
+      "timetable.updated",
+      "guardian-1",
+    );
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["school", "student", "timetable"] },
+      { queryKey: ["school", "student", "timetable-summary"] },
+      { queryKey: ["school", "parent", "timetable", "student-1"] },
+      { queryKey: ["school", "parent", "timetable-summary", "student-1"] },
+      { queryKey: ["school", "parent", "timetable-summary", "default"] },
+      { queryKey: ["calendar"] },
+      { queryKey: ["institution-activation"] },
+      { queryKey: ["campus-view"] },
+    ]));
+  });
+
+  it("keeps date-scoped teacher Home refreshes while also refreshing its timetable projection", () => {
+    const result = resolveSchoolEvent(
+      eventData("timetable.updated", { date: "2026-09-12", refresh: ["teacher.home"] }),
+      "timetable.updated",
+      "teacher-1",
+    );
+
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["teacher-home", "2026-09-12"] },
+      { queryKey: ["teacher-home", "timetable"] },
+      { queryKey: ["calendar"] },
+    ]));
+  });
+
+  it("refreshes schedule and class-update projections after a day-plan change", () => {
+    const result = resolveSchoolEvent(
+      eventData("day_plan.updated", { date: "2026-09-12", refresh: ["day-plans", "teacher.home"] }),
+      "day_plan.updated",
+      "teacher-1",
+    );
+
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["school", "day-plans"] },
+      { queryKey: ["teacher-class-updates"] },
+      { queryKey: ["teacher-home", "timetable"] },
+      { queryKey: ["calendar"] },
+      { queryKey: ["analytics"] },
+    ]));
   });
 
   it.each([
@@ -242,10 +369,17 @@ describe("school event protocol", () => {
     expect(result.invalidations).toEqual(FULL_SYNC_INVALIDATIONS);
     expect(result.invalidations).toEqual(expect.arrayContaining([
       { queryKey: ["principal-register-history"] },
+      { queryKey: ["attendance-model"] },
+      { queryKey: ["attendance-continuity"] },
+      { queryKey: ["campus-view"] },
       { queryKey: ["campus-events"] },
       { queryKey: ["campus-event"] },
       { queryKey: ["campus-event-register"] },
       { queryKey: ["campus-event-finance"] },
+      { queryKey: ["campus-event-consent-authorities"] },
+      { queryKey: ["institution-setup"] },
+      { queryKey: ["operating-rules"] },
+      { queryKey: ["teacher-class-updates"] },
     ]));
   });
 
@@ -286,11 +420,12 @@ describe("school event protocol", () => {
     );
 
     expect(result.usedFallback).toBe(false);
-    expect(result.invalidations).toEqual([
+    expect(result.invalidations).toEqual(expect.arrayContaining([
       { queryKey: ["campus-events"] },
       { queryKey: ["campus-event"] },
       { queryKey: ["campus-event-register"] },
       { queryKey: ["campus-event-finance"] },
+      { queryKey: ["campus-event-consent-authorities"] },
       { queryKey: ["school", "student", "home"] },
       { queryKey: ["school", "parent", "home", "student-1"] },
       { queryKey: ["school", "parent", "home", "default"] },
@@ -298,9 +433,11 @@ describe("school event protocol", () => {
       { queryKey: ["principal-home"] },
       { queryKey: ["principal-insights"] },
       { queryKey: ["notifications", "guardian-1"] },
+      { queryKey: ["calendar"] },
+      { queryKey: ["campus-view"] },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },
-    ]);
+    ]));
   });
 
   it("refreshes the exact notice, Requests, bell and shared attention projection", () => {

@@ -9,6 +9,9 @@ export class PeopleController {
   @Get("guardian-relationships/:id/leave-authority") authorityDetail(@Req() req:AuthenticatedRequest,@Param("id") id:string,@Query("school_id") schoolId:string){return this.authority.detail(req.authUser,id,schoolId);}
   @Post("guardian-relationships/:id/leave-authority") @HttpCode(200) authorityChange(@Req() req:AuthenticatedRequest,@Param("id") id:string){return this.authority.change(req,id,req.body);}
   @Get("students") list(@Req() req:AuthenticatedRequest,@Query() query:Record<string,string>){return this.people.list(req.authUser,query);}
+  @Get("students/:id/enrollment-lifecycle") lifecycle(@Req() req:AuthenticatedRequest,@Param("id") id:string,@Query("school_id") schoolId:string){return this.people.lifecycle(req.authUser,id,schoolId);}
+  @Post("students/:id/enrollment-change-reviews") @HttpCode(200) previewLifecycle(@Req() req:AuthenticatedRequest,@Param("id") id:string){return this.people.previewLifecycle(req,id,req.body);}
+  @Post("enrollment-change-reviews/:id/commit") @HttpCode(200) commitLifecycle(@Req() req:AuthenticatedRequest,@Param("id") id:string){return this.people.commitLifecycle(req,id);}
   @Get("guardians") guardians(@Req() req:AuthenticatedRequest,@Query() query:Record<string,string>){return this.people.guardians(req.authUser,query);}
   @Get("enrollment-options") options(@Req() req:AuthenticatedRequest,@Query("school_id") schoolId:string){return this.people.options(req.authUser,schoolId);}
   @Post("enrollment-reviews") @HttpCode(200) preview(@Req() req:AuthenticatedRequest){return this.people.preview(req,req.body);}

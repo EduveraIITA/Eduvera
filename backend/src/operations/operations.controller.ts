@@ -85,7 +85,7 @@ export class OperationsController {
   revoke(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.revokeInvitation(req.authUser, school, id); }
 
   @Patch("schools/:schoolId/members/:id/")
-  member(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.member(req.authUser, school, id, req.body); }
+  member(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.member(req.authUser, school, id, req.body, req.requestId); }
 
   @Get("schools/:schoolId/fees/")
   @RequirePermission("fees.manage")

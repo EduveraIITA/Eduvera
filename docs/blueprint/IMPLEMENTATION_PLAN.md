@@ -198,6 +198,420 @@ This section records direction and incomplete local work. It does not claim a
 complete digital twin, autonomous campus operation, multi-campus release or deployed
 behavior.
 
+### Attendance observation convergence — local backend slice (16 October 2026)
+
+The ordinary daily-register save path and the scheduled-session submit path now retain
+their authoritative attendance record, immutable revision, domain audit, durable
+audience-scoped outbox event and accepted human-agent Campus Model observation in the
+same database transaction. Each accepted observation points to its immutable attendance
+revision and the per-student outbox event through `domain_event_id`; its payload carries
+the class, attendance date and, for scheduled attendance, the exact session ID. The
+observation describes attendance participation only and does not infer room presence or
+continuous location. The existing continuity-capture workflow remains a distinct
+pending/reviewed evidence path.
+
+Scheduled register submission, manual lock/reopen and leased automatic finalization now
+emit the same typed attendance/register event family with session-aware payloads and
+attendance-model, continuity and Campus View cache targets. Record changes also emit
+per-student `attendance.updated` events for learner/family projection refresh; session
+events suppress the pre-existing daily-record notification link because that link cannot
+identify a scheduled entry. Lock transitions refresh projections but deliberately do not
+manufacture per-student observations.
+
+Learner QR check-in now serializes against the session register and rejects a locked
+register. Automatic acceptance retains an immutable session-entry revision, accepted
+human-origin observation and linked outbox event atomically. Staff-review mode retains a
+pending human-origin observation instead; replay does not downgrade already accepted QR
+evidence or create another accepted observation. Neither path treats the QR assertion as
+a device identity or spatial observation.
+
+The Campus Model recent-activity projection now includes accepted or pending
+`attendance.capture`, `attendance.daily`, `attendance.session` and
+`attendance.self_check_in` evidence with the source type and human-agent provenance.
+Focused backend convergence, core-contract, Campus View and event-service tests pass
+**32/32**; backend typecheck and build pass. This is local source evidence, not deployment
+or all-panel acceptance. Database-backed API integration was not rerun in this checkout
+because no isolated `DATABASE_URL` was provided.
+
+This slice converges accepted attendance facts, evidence and browser invalidation; it
+does **not** yet add the full typed model command/outcome and next-agent hand-off chain.
+An explicit staff decision endpoint for pending QR evidence, broader scheduled-session
+integration/concurrency coverage, operating-rule version snapshots for automatic QR,
+and historical daily/session observation backfill remain open.
+
+### User-facing projection convergence — local horizontal slice (16 October 2026)
+
+The accepted read boundary is now explicit: every user-facing panel reads an
+authorized, role- and domain-specific projection of the owning domain's current
+records. The Campus Model Core connects those records with typed provenance,
+correlation and expected/observed/accepted context; it is not a generic UI state
+table, and frontend code must not query model-core persistence or reinterpret one
+observation as another domain's fact. Domain mutation, audit and the audience-scoped
+outbox event commit atomically; authorized clients then invalidate the affected
+domain projections and refetch them. Realtime delivery is a convergence signal, not
+the state store.
+
+The shared frontend event protocol now covers the dependent role projections for
+attendance, timetable, leave, people, fees, diary/day plans, campus events,
+assessments, institution setup, Operating rules and activation readiness, with a
+broader fail-safe full-sync set. Backend producers now retain atomic durable refresh
+events for fee invoice/payment and Razorpay settlement, fee instructions,
+homework completion/reopen, diary notes, all Operating-rule saves, invitation
+create/resend/revoke/acceptance and membership activation/deactivation. The same
+contract now covers staff profile/onboarding, leave-policy/balance and coverage-rule
+changes; Activation quick-start catalogue/timetable writes; legacy student, guardian,
+enrolment, import and rollover commands; chat message edits; and source-backed
+notification-read acknowledgements. Membership revocation emits a narrowly authorized
+self-scoped access signal so an already-open client immediately refreshes its authority.
+Refresh audiences include the affected learner/family and staff/principal views rather
+than requiring a page reload or relying on an unrelated notification count.
+
+Semantic leaks found during this audit were removed. Gate/RFID evidence remains gate
+evidence and no longer becomes academic `Present` or `verified`; attendance panels
+retain the unrecorded state until attendance evidence exists. Parent Home fee state
+is derived from the selected learner's authoritative posted ledger as
+not-configured, clear, outstanding, overdue, refund-due or mixed, and no longer uses
+a fixture "all clear" label. Authenticated learner/family routes no longer invent a
+school identifier, materials, stock profile image or fixture learner when the API
+does not provide one; recorded avatar URLs are used and initials are the neutral
+fallback.
+
+Verified local evidence for this slice: the combined focused frontend convergence set
+passes 47/47; the combined backend projection/event set passes 60/60; the Campus Lab
+schedule/safety set passes 8/8; and the production-exclusion set passes 3/3. Backend
+build and full backend ESLint pass, the frontend production bundle succeeds, and
+targeted frontend ESLint plus repository diff checks pass. The repository-wide frontend
+TypeScript command remains blocked by
+pre-existing untracked duplicate `* 2.tsx`/`* 3.tsx` files in the shared checkout;
+those files were not changed or removed by this slice.
+
+This is not yet evidence that every workflow is fully Model-Core-mediated. Source-free
+personal account notifications deliberately remain local because assigning one of the
+user's campuses would fabricate provenance; all notification reads with an authoritative
+school source now converge across devices. Fees, diary, rules, invitations, activation,
+staff administration and legacy enrolment writes still need typed Model Core
+command/outcome adapters before those workflows can be called end-to-end
+digital-twin-driven. Database integration suites compiled but were skipped without an
+isolated test database, and deployment plus owner-device all-panel acceptance remain
+open. Migration 110 was applied to the current development database with its recorded
+checksum; the normal migration runner still stops at a pre-existing checksum mismatch
+for applied migration 047. That historical checksum must be reconciled against the
+shared deployment baseline before any managed release rather than bypassed in production.
+
+### Campus View separated from the synthetic school day — implementation and owner validation in progress (16 October 2026)
+
+The owner clarified that campus observability is a permanent administrator feature,
+not an experimental simulator page. **Campus view** now belongs directly under
+Principal/Admin **More -> School overview**, while only Cambridge's pseudo students,
+staff and families performing normal app work remain a development experiment named
+**Synthetic school day**. This decision supersedes the earlier dev-only ownership of
+the mobile view recorded below.
+
+The production backend now exposes
+`GET /api/v1/schools/:schoolId/campus-view/?campus_id=&at=` through a dedicated
+Campus View module. It requires an active administrator membership, constrains
+topology to institution/campus, reads temporal/model projections through their ports,
+and returns a deterministic versioned schematic keyed to real space IDs. Expected,
+observed, accepted and unknown assertions remain separate and carry source,
+freshness and spatial-claim qualifiers. A timetable remains expected context; gate
+and attendance evidence does not become an inferred room position.
+
+The permanent frontend route `/principal/campus` uses React Konva/Konva to render an
+immersive top-down Canvas scene. The owner explicitly corrected this route on 16
+October: Campus View is a map workspace, so the normal app header, desktop sidebar and
+mobile navigation must not reserve top or bottom strips. It now uses a dedicated
+edge-to-edge canvas shell with only a floating deterministic **Back to More** control,
+the selected campus's short configured code and compact map controls. Other Operations
+routes retain the established shell and navigation. The campus world is deliberately
+finite: a fixed `760 x 920` schematic coordinate space
+is fitted responsively and pan is clamped to recoverable bounds rather than exposing
+an infinitely draggable canvas. When the complete site is smaller than the viewport it
+stays centred and cannot drift across empty space; panning activates only on axes where
+the zoomed site is larger. Wheel, button and two-finger pinch zoom share the same
+fit-relative limits, and **Fit campus** returns the whole site to view. Explicit floor
+or honestly labelled room-series selection, selectable rooms, clustered counts and
+truth-state styling remain within that bounded site.
+
+The view states when geometry is schematic and not to scale. Native-dialog Spaces
+and Activity overlays provide a keyboard/screen-reader-accessible map directory and
+recent evidence trail; the opaque room sheet retains provenance, spatial qualifiers
+and authoritative domain links. The page is read-only; campus edits remain in
+Institute setup. The frontend API preserves the backend `spatial_claim` qualifier so
+expected context, a point observation and bounded-space presence do not collapse into
+one location claim. The development-only adapter may add labelled Cambridge rehearsal
+context through a generic view-extension contract, but it does not replace real
+assertions or upgrade them to another truth dimension. Personas, development labels
+and the runner client remain under `frontend/src/dev`, are loaded only behind the Vite
+development constant and remain excluded from production builds.
+
+Point observations without an institution-configured validity window remain
+historical evidence: they may be inspected in the room sheet but no longer paint a
+room as currently observed or accepted. The sheet labels expected, observed and
+accepted evidence separately. Multi-campus selection now selects one real campus
+rather than offering a false aggregate, school time uses the configured campus/school
+timezone, and the activity trail identifies its current institution-wide scope.
+
+Configured room capacity is now visible directly inside each mapped room as a compact,
+anonymous capacity pattern. A source-qualified scheduled or development-overlay count
+fills representative places as **planned**; the remainder stays **unconfirmed**. The
+view deliberately does not call these places occupied, empty or available because the
+current timetable, attendance and gate contracts do not prove chair-level presence.
+Capacity-only rooms say that current use is unknown, dense rooms use a proportional
+maximum of 60 representative marks, and a plan above capacity is called out without
+fabricating extra seat identities. True chair-level occupancy remains gated on a
+versioned seat layout plus bounded, source-bearing room-presence evidence.
+
+The current-day operational projection now adds effective timetable occurrences,
+responsible-teacher expectation, accepted gate point totals, active visitor records
+and a bounded day-activity trail to the same read-only Campus View contract. A
+teacher shown against a room is **expected** from the effective schedule, never
+presented as physically present. Gate movements remain accepted boundary point
+events and never become a room-location claim. Institution-wide gate totals disclose
+that scope when a selected-campus attribution cannot be proven. The map summary uses
+only the effective schedule for its current-class count; development overlay zones
+for reception, health, transport or other operational staff cannot inflate that
+number. Pending attendance evidence remains observed, while pending/review/failed
+commands remain unknown rather than being promoted to accepted campus truth.
+
+Verified local evidence at this checkpoint:
+
+- backend Campus View tests pass 9/9; the combined Campus View/core temporal suite
+  passes 27/27; backend build and targeted lint pass;
+- Campus View geometry, finite viewport, full-canvas shell and More navigation tests
+  pass together with the focused More suite, 41/41; the viewport suite verifies fit,
+  centring whenever the whole site fits on an axis, pointer-centred
+  zoom, pinch zoom, scale limits, resize preservation and clamped recoverable bounds;
+  targeted frontend lint passes;
+- Vite production bundling succeeds with the permanent `CampusViewPage` chunk;
+- the focused room-capacity, accessible directory, map geometry and viewport suites
+  pass 19/19; scoped lint passes. The capacity suite covers planned versus
+  unconfirmed places, explicit zero versus unknown use, overflow, dense proportional
+  rendering and the prohibition on presenting planned headcount as physical occupancy;
+- the reconciled current-day operations, activity-truth, capacity, accessible
+  directory, geometry and viewport suites pass 23/23; the two Campus Lab view/timetable
+  suites bring the focused frontend integration run to 27/27. Backend Campus View and
+  Cambridge-fixture contracts pass 17/17, backend full typecheck and scoped lint pass,
+  frontend scoped lint passes, and the Vite production bundle completes. The full
+  frontend typecheck remains blocked only by the already-recorded duplicate test
+  artifacts, not by this slice;
+- simulator source/exclusion tests pass 3/3, retain the development-only import
+  boundary and reject development-persona language from permanent Campus View source;
+- the latest production Campus View chunk contains no simulator route/client or
+  synthetic/dummy/simulation language;
+- the repository-wide frontend TypeScript command remains blocked only by pre-existing
+  untracked duplicate `* 2.tsx`/`* 3.tsx` test files in the shared dirty checkout;
+  those files were not changed or deleted by this slice.
+
+The local preview database has migrations 106-109 and the Matrix transport migration
+applied, and the managed preview is healthy. The permanent Canvas view, bounded
+pan/zoom controls, accessible Spaces and Activity overlays and opaque details sheet
+were inspected at a narrow `320 x 780` mobile viewport with no document overflow or
+reserved application-chrome strip; the development overlay remains clearly labelled.
+It remains a source-backed current snapshot, not a continuous
+live-location claim. Owner mobile/Cloudflare visual acceptance, mapped surveyed
+geometry, event-driven refresh coverage and deployment remain open; this section does
+not claim those gates, production readiness or a live-location capability.
+
+The normal local migrator is still blocked by a pre-existing checksum mismatch for
+applied migration `047_work_profile_domain_alignment.sql`; the missing post-105
+migrations were therefore applied transactionally and recorded for this disposable
+preview database. That checksum drift remains a release-engineering debt and is not
+claimed as repaired by Campus View.
+
+### Cambridge Campus Lab development harness — real school-day/window correction implemented locally, owner validation open (16 October 2026)
+
+The owner requested a development-only way to watch the fully synthetic Cambridge
+school continue to act as real wall-clock time advances. The accepted contract is
+[Campus Lab development harness](CAMPUS_LAB_DEVELOPMENT_HARNESS.md). Campus Lab starts
+with the managed local preview and has no play, pause, replay, scrub, speed or
+fast-forward controls. The owner rejected the earlier rapidly cycling sequence. The
+latest owner decision also rejects translating or borrowing a school day for convenient
+after-hours review. The runner must resolve the current date in Cambridge's configured
+timezone, use only that date's calendar-approved effective schedule, and map each phase
+to its actual campus-local instant. It may remain online while paused, but weekends,
+holidays, closures, empty effective schedules and time before the first or after the last effective slot
+must expose zero synthetic actors and execute zero synthetic actions. Restarting during
+the day must not catch up an already-expired action, and institution-local date rollover
+must resolve the new calendar day rather than wrap or replay the prior one.
+
+The runner uses existing authenticated demo identities and ordinary domain
+APIs. Accepted/refused outcomes therefore pass through current authorization,
+invariants, idempotency, audit/outbox and live-update paths instead of a direct
+database or frontend-fixture shortcut. All Cambridge fixture people may appear in the
+read-only development routine, but a planned marker remains **expected**; it is never
+presented as an observed physical location without source-bearing domain evidence.
+People without an acting demo account do not sign material commands through hidden
+impersonation.
+
+This harness is not the Model Core what-if/scenario runtime. It may mutate only the
+disposable local Cambridge fixture through normal APIs, uses the real wall clock and
+is excluded from production artifacts. At this checkpoint the scenario runtime remained
+separately
+gated by an isolated namespace, virtual clock, deterministic seed, snapshot/fake
+domain executors, sink-only delivery and zero production mutation/contact. The Model
+Core `ExecutionContext` simulation/rehearsal/replay seam therefore remains
+unimplemented at this checkpoint. That historical gap is superseded by the transient
+scenario slice recorded below and in `CAMPUS_SCENARIO_SIMULATION.md`; Campus Lab and
+scenario execution remain separate facilities.
+
+The first local runner slice is implemented. `devtools/campus-simulator/` contains the
+standalone wall-clock runner and versioned Cambridge behaviour fixture;
+`frontend/src/dev/campus-lab/` contains only the development-only status/overlay
+adapter; and the managed preview starts the runner on loopback and exposes its status
+only through an ephemeral-key same-origin development proxy. Campus View itself has
+moved to permanent production feature code as recorded above. The synthetic adapter
+is reachable only in a Vite development build and exposes no time or playback controls.
+
+The earlier runner replaced the rejected fixed short cycle with a
+timetable-derived 1:1 routine, but it selected another published weekday when needed
+and anchored that day's first instant to process start. That behavior is now explicitly
+retired. The corrected runner now obtains the current
+institution-local date, instructional/closure context and effective daily schedule
+from the ordinary calendar/day-plan domain API; retains actual lesson, break and
+uncovered-gap instants; and fails closed outside the first/last effective-slot school
+window. A development-only
+**Rehearsal now** indication may appear beside the matching row in the normal
+timetable only while the live current date and exact effective slot identity also
+match Campus View. Timetable/calendar source-revision parity remains a hardening gate
+until the source API supplies and the status contract exposes those revisions
+explicitly.
+This is an additive presentation overlay only: normal pages still fetch the
+authoritative timetable API, published times and row state stay unchanged, and runner
+status is not written to domain records or injected into the domain query cache. The
+indication and its status client must remain absent from production artifacts.
+
+The development-only timetable indication now reaches the normal principal, teacher,
+learner and guardian timetable routes through one shared Campus Lab projection. An
+explicit URL date always wins. During an active school window, the current
+institution-local date may supply the labelled simulated-current instant; while the
+runner is paused it must not navigate any role to another weekday/date or highlight a
+synthetic current period. Teacher rows use the exact active effective-slot identifier,
+while learner and family bell/current/next calculations use that same real
+campus-local instant. Every strip is explicitly **Read-only**. Authoritative timetable queries, published times, API
+`context.today`, coverage eligibility and attendance mutations remain unchanged; the
+rehearsal projection is not written into a domain cache or record. Production routes
+retain their full components and load these wrappers only through `import.meta.env.DEV`
+guards.
+
+Verified locally for this cross-role display slice: 19 focused timetable/rehearsal
+tests passed across projection-date precedence, principal mapping, teacher active-row
+state, learner/family bell state and shared presentation; the three production
+simulator-exclusion tests passed; focused lint passed; and the production Vite bundle
+completed without Campus Lab route chunks. The full TypeScript command remains blocked
+only by the unrelated duplicate test artifacts recorded below.
+
+Verified locally for the real school-day/window correction: the runner suite passes
+18/18 across the current institution date, exact effective-slot instants, explicit
+calendar closure, all-slots-cancelled closure, no-schedule Sunday, configured Saturday,
+before/after-hours zero-presence state, action-phase bounds, midday restart suppression
+and institution-date rollover. The focused development-presentation suite passes 8/8:
+a paused or closed runner cannot drive normal principal, teacher, learner or family
+timetable dates, clocks, bells or active-row state, and Campus View retains its
+source-backed map while showing a neutral paused badge with no simulated people. The
+three production-exclusion checks pass. At 20:30 IST the managed local and Cloudflare
+status endpoints both reported `paused`, `after-school-hours`, current date
+`2026-10-16`, source `effective_school_schedule`, zero actors and zero synthetic phase
+activity; both readiness endpoints were healthy. This is local/preview evidence, not a
+managed deployment or owner-device acceptance claim.
+
+Retained local evidence predating the latest school-day/window correction:
+
+- runner tests pass 8/8 across published-slot timing, retained gaps/breaks, one-shot
+  completion, safety gates and the protected status surface; these tests did not prove
+  current-date selection or off-hours/closure suppression and are superseded by the
+  corrected 18/18 runner evidence above;
+- focused frontend tests pass across projection-date precedence, exact principal and
+  teacher slot matching, learner/family bell state, normal current-timetable parity,
+  shared presentation and event-driven role-projection invalidation;
+- the production simulator-exclusion checks and production Vite bundle pass without
+  Campus Lab route chunks; and
+- the managed local and Cloudflare readiness endpoints returned successfully, but the
+  observed 221-person after-hours routine exposed the contract gap corrected above;
+  it is not acceptance evidence for the new timing rule.
+
+Earlier evidence remains useful only for the retained safety,
+ordinary-domain-action and production-exclusion boundaries:
+
+- focused runner tests pass 6/6 for wall-clock phase progression, all-person expected
+  projection, safe development gates, production/managed-host/connector refusal,
+  private Cambridge API verification and protected read-only status;
+- the earlier card-grid scene and its test were retired when the permanent Canvas
+  Campus View replaced that development UI; current evidence is recorded above;
+- the live routine recorded a teacher-to-family chat, principal acknowledgement
+  notice, family acknowledgement and 25-student Class 6A attendance through the
+  ordinary application APIs; the feed links each accepted result back to its normal
+  domain screen. This proves the retained API path only, not that those actions were
+  scheduled within a valid school window;
+- the local and Cloudflare readiness and Campus Lab status endpoints return
+  successfully;
+- focused release/exclusion tests pass 13/13; the permanent Campus View is expected in
+  production while the synthetic adapter/status client and simulator markers remain
+  excluded. The production Docker context ignores `devtools/`, and the release
+  contract rejects simulator environment variables.
+
+The full frontend TypeScript command remains blocked by unrelated duplicate
+`* 2.tsx`/`* 3.tsx` files already present in the shared dirty checkout. Those files
+were not changed or removed by this slice. The focused TypeScript check and production
+bundle complete successfully.
+
+Remaining acceptance before the harness itself is marked complete:
+
+- expose and verify the published source revision in the source API/status contract,
+  then prove Campus View and every development timetable indication resolve the same
+  calendar/effective-schedule revision, current date and slot identity;
+- retain regression coverage proving that cross-role rehearsal indication cannot
+  mutate timetable/domain caches, records or API-controlled action eligibility;
+- add durable action receipts and restart/idempotency coverage rather than relying on
+  one-process action memory;
+- add explicit refused/conflicted/unavailable domain-outcome tests and connector
+  spies, while retaining the already verified fail-closed connector gate;
+- complete automated 320/390px overflow, sheet focus-return and reduced-motion checks;
+- verify production-mode route/proxy absence and final container image contents in
+  addition to the completed source-context, release-contract and frontend-bundle
+  checks;
+- owner review through the managed local/Cloudflare preview.
+
+External Telegram/email/SMS/payment/model providers, physical observations and
+non-Cambridge institutions remain out of scope for Campus Lab. This historical
+checkpoint does not claim scenario-runtime evidence; the later isolated scenario
+slice below records its own implementation and acceptance limits.
+
+The Campus Lab activity projection now uses the versioned Cambridge v5 behaviour
+fixture. During an open school window it reconstructs a bounded expected-only receipt
+for each already-started effective timetable phase, so joining the local preview at
+mid-day shows the school-day sequence without replaying any missed material command.
+Current class entries name the class, subject and expected teacher, remain explicitly
+simulated, and carry `planned_rehearsal_only` / `spatial_evidence=false`. Accepted
+ordinary-domain rehearsal actions carry `domain_record_only` /
+`spatial_evidence=false`; neither category increments a physical room-evidence count.
+The same fixture now maps exact non-teaching designations and the representative demo
+administrator to stable configured space codes for expected duty positions; missing
+codes remain unplaced rather than falling back to a staff home space or the first
+available office. Expected actor and zone markers expose their development source
+label/version and current phase validity bounds; these remain planning provenance,
+not physical evidence.
+
+The Cambridge source fixture has also been upgraded in place to
+`cambridge-campus-replica.v1`. Its guarded, explicit-opt-in seed now provides 36
+connected spaces across academic, administration/student-services, community,
+arrival and outdoor zones; eight class home rooms; specialist learning, wellbeing,
+staff, dining, gate, transport and sports locations; four bounded resource holdings;
+and 11 wholly synthetic non-teaching operational staff profiles with current campus
+assignments and existing-contract duties. It does not create acting accounts for
+those people or turn their planned home space into presence evidence. Stable fixture
+IDs and conflict guards allow the existing local database to upgrade without a full
+medium-school reset; two consecutive verification runs produced zero new spaces,
+resources, staff, assignments, duties or orphan people on the second run. The
+authenticated institution-setup projection returned 36 active spaces, 28 staff, all
+28 staff campus-assigned, all eight classes with home rooms, and the four seeded
+resource holdings. Focused fixture tests pass 5/5; backend lint and typecheck pass.
+This is local synthetic-fixture evidence, not production seed behaviour or owner UI
+acceptance.
+Focused Campus Lab verification passes 24/24 tests, including open/closed windows,
+phase receipts, configuration-only staff and administrator placement, missing-space
+fail-closed behavior, no catch-up, synthetic staff reactions, evidence scope and the
+protected loopback status server.
+
 ### Model-mediated workflow gap - 16 October 2026
 
 The current core foundation registers identities, authority, temporal plans,
@@ -254,18 +668,38 @@ text only to the requester or exact current decision owner; technical administra
 do not inherit review access merely from the admin role. The original requester can
 cancel the exact durable Request after the decision route changes or disappears.
 
-This remains a bounded first segment, not a complete leave-and-cover workflow.
-Approve/reject deliberately fails closed if the governance officeholder changes after
+Staff leave and coverage are now partially model-mediated, but this remains a bounded
+segment rather than the complete configured workflow. Submission and decision retain
+the exact configured decision-owner Request trace. For a schedule-backed coverage
+task, the offered staff member's replay-safe acceptance records the authoritative
+Staff substitution and outbox evidence and invokes the Model Core temporal port in
+the same transaction. The effective schedule keeps planned teaching separate from
+operational staffing: while approved leave is effective it exposes either the exact
+valid accepted replacement or an explicit unassigned occurrence, never the absent
+planned teacher. This is plan and responsibility truth, not evidence that the lesson
+was physically delivered.
+
+Approve/reject still fails closed if the governance officeholder changes after
 submission; configured rerouting and transfer evidence are not yet implemented.
-Coverage offer/acceptance, effective timetable substitution and physical delivery
-evidence are not yet model-mediated. A role-neutral `/work/staff-leave` action surface
-is implemented locally and reuses the domain review card for either a staff or admin
-officeholder; it fails closed unless the workspace confirms current decision
-authority. Owner-device acceptance remains open. The runtime also has no
-administration API, filter language, durable lease/retry worker,
-mailbox query or channel-delivery adapter. Existing domain outbox events, notification
-delivery, Requests and AI/channel transcript remain adapters, not substitutes for the
-spine. Leave, staffing and timetable records stay authoritative throughout.
+Coverage-task creation and manual assignment remain domain-owned. Migration 116 and
+`StaffCoverageOfferBridgeService` now provide the first bounded automatic route: an
+exact approved `staff.coverage.opened` subscription configures candidate strategy,
+capability/scope and response timing; Staff Operations deterministically filters real
+active staff against effective schedules and approved leave; and one exact typed
+Offer, route snapshot and task revision are committed atomically. Missing, ambiguous
+or invalid automation configuration is retained as a visible domain exception while
+the existing explicit administrator assignment path remains available. A configured
+recipient response is bound to the exact current Offer, teacher, task revision and
+deadline before delegating to the existing authoritative accept/decline path. Later
+rounds, expiry workers, escalation/fallback execution and administration UI remain
+open. A role-neutral `/work/staff-leave`
+action surface reuses the domain review card for either a staff or admin officeholder
+and fails closed unless the workspace confirms current decision authority.
+Owner-device acceptance remains open. The runtime also has no administration API,
+filter language, durable lease/retry worker, mailbox query or channel-delivery
+adapter. Existing domain outbox events, notifications, Requests and AI/channel
+transcripts remain adapters, not substitutes for the spine. Leave, staffing and
+timetable records stay authoritative throughout.
 
 The second bounded coordination segment now connects existing transport-duty cover
 and exchange operations through migration 109 and
@@ -440,6 +874,74 @@ the no-automatic-conclusion copy. The focused frontend test is green; the full
 frontend TypeScript build remains blocked by unrelated duplicate untracked test files
 with names ending in ` 2.tsx` / ` 3.tsx`, which are outside this slice and were not
 modified or deleted.
+
+### Effective schedule lineage and staff-cover convergence — 16 October 2026 (local)
+
+Migrations `111_campus_model_temporal_schedule_lineage.sql` through
+`114_campus_model_substitution_cancellation_lineage.sql` extend the temporal runtime
+without replacing the timetable, daily-plan, calendar or Staff domains. A logical
+dated occurrence now has append-only recorded-time revisions and a stable journal
+cursor. Its plan basis, later change and applicable condition remain separate, and
+`resolveAt(at, recordedAsOf)` returns both logical-occurrence and revision identities
+with basis/change/condition provenance. No schedule assertion is physical-presence
+evidence.
+
+The shared schedule resolver now separates the original planned occurrence from its
+effective staffing. Exact accepted cover retains the source kind, source record and
+revision, occurrence key, original teacher, replacement, task revision, accepting
+actor and authoritative outbox event. Every role-facing timetable consumer continues
+to read the shared effective schedule: approved leave with no valid accepted
+replacement is shown as unassigned, while a valid accepted replacement is the
+effective teacher with an explanation reference. A later account or membership
+change does not rewrite elapsed accepted cover.
+
+Acceptance rechecks the offered recipient, approved-leave source, exact current
+schedule occurrence and overlapping work under the shared schedule lock. The Staff
+task, audit, substitution, command receipt and domain event are committed with the
+Model Core `timetable.substitution_effective` decision or all roll back. Schedule or
+daily-plan publication, calendar-closure changes, legacy timetable mutations and
+staff-membership deactivation call a narrow Staff-owned reconciliation port in their
+own transaction. Reconciliation retains the old substitution as history, closes the
+invalid task decision, creates a new linked obligation when approved leave still
+requires cover, emits exact non-duplicated domain evidence and records a causally
+linked Model Core cancellation. Replacement loss leaves the occurrence explicitly
+unassigned; removal of the leave obligation restores the original teacher; a newer
+schedule source remains untouched.
+
+The retained accepted-cover bootstrap is also a separate typed Staff-domain
+preparation port, so schedule owners can establish missing model lineage before they
+change authoritative source truth. A non-instructional calendar closure is a
+temporary condition: it hides the occurrence for that day but does not supersede an
+accepted substitution, which can become effective again after the closure is
+removed. Prospective reconciliation considers only tasks still in `accepted` state;
+`completed` cover is elapsed evidence and is never rewritten by this reconciler.
+Moving a replacement profile from `active` back to onboarding now prepares and
+reconciles its future effective substitutions under the school schedule lock, and
+retains the shared correlation plus preparation/reconciliation receipts in the Staff
+audit.
+
+Verified locally at this checkpoint: the backend build, full backend typecheck and
+focused lint pass; 47 focused lineage/provenance/substitution/bootstrap/Campus View
+contract tests pass; and migrations `111`–`114` apply on a fresh disposable
+PostgreSQL clone. The Staff Operations PostgreSQL suite passes 15/15, including exact
+acceptance replay, wrong-actor rejection, linked-task uniqueness after cancellation,
+future substitute deactivation through onboarding, temporary-closure retention,
+completed-cover immutability, and preservation of past accepted cover. Day Plans
+passes 19/19 and Schedule Planning passes 10/10 on the disposable clone. The dated
+assignment authorization regression proves that a pending coverage recipient cannot
+inherit attendance, photo, messaging or follow-up class authority before acceptance,
+and that declining later revokes the accepted date-scoped access.
+
+Retained accepted substitutions without a live command receipt now enter through a
+narrow recovery bridge before reconciliation. The bridge resolves exact planned or
+retained source evidence, emits one deterministic empty-audience/non-notifying import
+event, requires an active importing operator, resolves the historical accepter and
+teachers only from retained People/endpoint identity, and invokes the typed temporal
+port. It never manufactures a teacher command, authority grant or notification, and
+fails closed on identity, source or idempotency mismatch. Five focused bridge tests
+and the disposable database suites above verify this path. Configured
+cover-recipient selection, Offer routing, expiry, escalation and fallback remain open
+MC-2 work. No hosted deployment or owner-device acceptance is claimed.
 
 ## Active delivery: connected student lifecycle — 16 October 2026 (local)
 
@@ -7368,3 +7870,372 @@ missing images or denied registry reads fail before migration. All 13 release
 contract tests and syntax checks pass locally, including three new regressions.
 Fresh hosted checks and deployment timing are pending; old runs do not validate
 this reconciled head. No security/runtime guards or provisioning paths were removed.
+
+## Parent Home fee and identity truth correction — 16 October 2026
+
+Parent Home no longer returns or renders the static `All Cleared` demo assertion.
+Its fee summary is now a read-only projection over the selected student's posted
+invoices, accepted payments, event credits and recorded refunds. Applicable records
+are invoices due within the active enrollment term plus unresolved carried balances
+up to that term's end. The response identifies the fee ledger as its source, carries
+the school-local `as_of` date and keeps no applicable invoice data as **Not
+configured**, distinct from **No balance due** on one or more posted invoices.
+Outstanding, overdue, refund-due and mixed balances remain distinct integer-paise
+states. Pending family payment claims remain in Fees & receipts and do not reduce the
+Home balance before school verification.
+
+The authenticated parent shell no longer imports a fixture learner or fabricates the
+Cambridge school name while linked-student or membership context is absent. It uses a
+route-provided or authorized accessible student, otherwise shows a neutral
+loading/unavailable context and does not form a fixture student scope for attention or
+the assistant. Static parent demo data remains explicitly labelled as demo data and is
+not a live-route default.
+
+Local focused evidence: 3 backend fee-state tests, 15 frontend adapter/shell tests and
+the parent Home fee-card route regression passed. Backend source typecheck and focused
+lint passed; a frontend source typecheck excluding the already-recorded duplicate
+`* 2.tsx`/`* 3.tsx` test artifacts and focused lint passed. A read-only isolated API
+integration assertion now compares Home aggregates with the family fee endpoint, but
+that PostgreSQL integration case was not run locally. Hosted CI, deployment and owner
+device review are not claimed.
+
+Remaining finance modelling gap: existing fee invoices do not carry an explicit term
+or normalized obligation/line-item identity, so the Home projection must use the
+documented due-date and carried-balance rule. Adding explicit obligation-to-term
+ownership should replace that compatibility rule in the authoritative finance-domain
+contract; no inference from invoice description/reference was introduced here.
+
+## Attendance command and evidence convergence — 16 October 2026 (local branch)
+
+Scheduled-session attendance now retains its accepted domain decision and its Campus
+Model command outcome in the same transaction. A complete staff submission records a
+typed `attendance.register.submit` command against the attendance-register entity,
+including the source and resulting register revisions, the exact register event,
+safe session context and the effective institution Operating-rule revision. Automatic
+student QR acceptance does the same through
+`attendance.self_check_in.accept_automatically`; the QR evidence and audit record also
+snapshot the configured self-check mode and time-window values that authorized the
+decision. This does not make QR evidence a room-presence assertion.
+
+Staff-review QR mode now has an explicit evidence decision instead of leaving pending
+observations without an operator path. Pending evidence is returned inside the same
+subject register. An authorized recorder must provide a verification note and an
+expected register revision, then accept or reject it through an idempotent endpoint.
+Acceptance writes the current register row, immutable attendance revision, student and
+register events, accepted observation and typed model command atomically. Rejection
+preserves the evidence and transitions its model observation without changing the
+register. The evidence metadata retains the decision idempotency binding and applicable
+Operating-rule revisions. The register UI prevents evidence decisions while local
+attendance edits are unsaved, avoiding an invisible overwrite or parallel workflow.
+
+Local evidence: backend source typecheck passed; the focused attendance-model suite
+passed **5/5**; the focused register/query frontend suites passed **18/18** and the
+register suite with the new QR-review interaction passed **17/17**; the Vite production
+bundle and a source typecheck limited to the changed frontend dependency graph passed.
+The repository-wide frontend TypeScript command remains blocked by pre-existing,
+untracked duplicate `* 2.tsx`/`* 3.tsx` test artifacts with missing DOM matcher types;
+those shared artifacts were not deleted or changed. No push, deployment, live database
+walkthrough or device acceptance is claimed.
+
+Remaining attendance coordination gates: overdue and exception events still use the
+legacy broad outbox audience rather than a configured next-agent selector; automatic
+finalization still needs a typed model outcome; older attendance facts need an explicit
+historical backfill policy. These stay separate from the now-complete staff/QR evidence
+decision path and must not be presented as delivered.
+
+## Examination-day operations and model convergence — 16 October 2026 (local branch)
+
+The offline assessment domain now covers the operational period between planning a
+physical exam and opening its result register. Exams, practicals and vivas require a
+canonical campus space and offered invigilator at creation. An institution-level,
+revisioned Operating rule controls readiness and attendance windows, required accepted
+invigilators, attendance completeness at completion, and manual versus automatic entry
+to marking. Invigilator response, room capacity, frozen roster, start, factual candidate
+attendance, incident handling, completion and cancellation are tenant-scoped,
+revision-guarded, audited and emitted through the existing event boundary.
+
+Migration `117_examination_day_operations.sql` owns the new policy and operational
+records. Composite unique keys and foreign keys keep the assessment/sitting/candidate/
+learner chain internally consistent. Physical assessments cannot schedule without a
+sitting or open marking before completion. Both manual and automatic marking derive
+their result rows from the same frozen roster. Invigilator fallback access requires an
+active institution membership and active account; operational viewers do not receive
+result or publication data.
+
+Material examination operations are connected through the appropriate Core contract:
+sitting state and evidence changes use accepted-change commands, while invigilation
+assignment and response use typed coordination messages. Draft/readiness state remains
+authoritative in Assessments. The model records the scheduled-in relationship to the
+canonical space, lifecycle actions, attendance completeness and incident state while
+keeping planned expectation, factual evidence and academic outcome distinct. Campus
+View consumes current, revision-matched examination expectations; the standard calendar
+and assessment workspace remain the operator interfaces. The frontend reuses the class
+attendance row interaction for candidate attendance and adds a focused exam-day panel,
+invigilation response, incident log and a dedicated Examination day Operating-rules
+screen without introducing a separate navigation system.
+
+Verified local evidence: backend typecheck and scoped lint pass; a fresh isolated
+PostgreSQL schema passes the assessment/examination suites 11/11, including six asserted
+model commands and a cross-sitting integrity rejection; focused model bridge, Campus
+View and realtime/event suites pass 20 tests outside the isolated database runner. Six
+focused frontend suites pass 24/24 with scoped lint and diff whitespace checks. This
+record does not claim deployment or owner-device acceptance.
+
+### Examination effective-timetable readiness — 17 October 2026 (local branch)
+
+The next assessment slice closes the canonical timetable/resource acceptance gate.
+Migration `118_effective_schedule_canonical_spaces.sql` adds
+`effective_school_schedule_v4`, an additive wrapper over the established v3 effective
+schedule. It resolves the already-selected source occurrence to its canonical
+`campus_spaces` identity without changing published-timetable, dated-plan, closure or
+staff-substitution precedence.
+
+`ExamOperationsService` now produces one domain-native readiness projection covering
+cycle/future time, effective enrolment, room availability/capacity, accepted invigilator
+minimums, other exam reservations, effective class periods, canonical room occupancy
+and accepted invigilators' teaching commitments. Assessment detail and the dedicated
+readiness route expose the same explanation to authorized administrators and assigned
+invigilators. The existing Exam day panel lists concrete blockers and disables the
+Schedule action; the schedule command re-evaluates the projection under the existing
+institution-scoped advisory lock before freezing candidates. Accepted schedule audit
+evidence retains the readiness time and timetable-contract version. The same workspace
+also provides the correction path: before scheduling, administrators can revise the
+time, duration, canonical room and invigilators with optimistic concurrency and domain
+audit evidence. A changed time or room resets selected invigilator confirmations and
+requires acceptance of the revised duty rather than reusing stale consent.
+
+Verified local evidence: backend source typecheck and focused lint pass; a fresh
+disposable PostgreSQL schema applied migrations through 118 and the focused
+examination, Model Bridge and Campus View suites pass 15/15. The integration case
+asserts simultaneous class, room and invigilator timetable blockers, server-side
+schedule rejection, an administrator correction, reset/re-acceptance of the material
+duty change and a clear re-evaluation. Focused assessment frontend suites pass 16/16
+with source typecheck and lint. Migration
+118 is applied to the local development database. No push, deployment or owner-device
+acceptance is claimed.
+
+### Examination invigilation coordination — 17 October 2026 (local branch)
+
+Migration `119_assessment_invigilation_model_coordination.sql` and
+`AssessmentInvigilationOfferBridgeService` connect each offered assignment revision to
+one typed `assessment.invigilation.offered` outbox event, the exact approved behaviour
+and subscription, the accepted Model event/reaction, and one durable operational Offer
+addressed to the explicitly selected human agent. Assessments remains authoritative
+for assignment and response state; the bridge uses only the Coordination Runtime port
+and does not write Model Core tables directly.
+
+The normal invigilator response command now requires an actor-generated command ID,
+rechecks membership, assignment revision, exact message recipient, capability,
+deadline and expiry, and records the Assessment mutation, response outbox event,
+correlated Core outcome, immutable binding closure and actor-scoped replay receipt in
+one transaction. An identical retry returns its retained result; changed work under
+the same command ID conflicts. Material changes to time, room or selected staff cancel
+an open Offer before resetting responsibility and publish the replacement only after
+the new arrangements are authoritative. Requests remains a domain projection of the
+same assignment status, not a second acceptance workflow.
+
+There is no runtime fallback recipient or automatic acceptance. A guarded Cambridge
+seed provides an explicit route and response capability only for development, local
+and test environments. The development runner may answer only an Offer addressed to
+its authenticated account through the normal staff endpoint; it cannot impersonate
+another fixture staff member. Past physical-examination times are rejected before
+room or invigilator coordination, and the sitting projection exposes the exact offered
+username needed by that development boundary.
+
+Verified local evidence for this bridge is kept separate from the earlier readiness
+counts: backend source typecheck passes; 95 focused bridge, configuration, attention
+and fixture-seed checks pass; five database-backed assessment integration tests pass
+against the isolated `omnischool_test_exam_readiness_20261017` database after applying
+migration 119; 21 focused Assessment and Requests frontend checks pass; and 20 Campus
+Lab action, session, model, runtime and safety checks pass. Migration 119, the guarded
+Cambridge coordination seed and the explicit 40-seat classroom fixture are applied to
+the local development database. The local preview and existing Cloudflare quick tunnel
+both return HTTP 200; Campus Lab reports `paused` before the effective 09:00 school
+start, so no off-hours acceptance is claimed. The repository-wide migration runner is
+still blocked by pre-existing checksum drift in applied migration 047; migration 119
+was applied locally as one transaction and recorded with its verified checksum without
+rewriting that historical record. No push, deployment or owner-device acceptance is
+claimed.
+
+Remaining acceptance gates: add configured reminder rounds, expiry processing and
+escalation/fallback workers on top of the retained first Offer; define a multi-room/split-
+cohort model; and complete representative administrator/invigilator mobile validation.
+These are not implemented behavior in this slice.
+
+## Attendance completion and exception coordination — 17 October 2026 (local branch)
+
+Attendance completion now follows the configured academic model instead of producing
+one broad, hard-coded alert. Migration
+`120_attendance_completion_coordination.sql` adds institution-owned first-reminder and
+administrator-escalation delays. Administrators edit both values alongside the existing
+attendance deadline, session window and finalization policy in **Operating rules →
+Attendance**. Validation requires escalation to occur after the first reminder. The
+scheduled-session deadline is the effective period end plus the configured close window;
+the daily-class deadline remains the institution's daily submission cutoff.
+
+The leased attendance scan materializes effective subject registers and emits one typed
+overdue event only after the configured reminder delay. A scheduled-session reminder is
+addressed only to its effective scheduled teacher. A daily-class reminder first uses an
+explicit current `attendance.record` class owner; only when none exists may one unique
+effective teacher be used. An ambiguous or missing owner fails closed instead of notifying
+every teacher or administrator. Principals do not receive the teacher reminder. Their
+Requests projection adds the unresolved register only after the configured escalation
+delay. Daily-class and scheduled-session Requests are mutually exclusive, and every
+materialized subject item deep-links through the canonical `session_id` attendance path.
+
+For institutions with an approved behaviour, each overdue domain event passes through
+the Coordination Runtime as an `attendance_completion` Task addressed to the selected
+human agent. The runtime retains the source outbox event, Operating-rule revision,
+correlation, recipient capability and exact action path. A later authoritative
+`submitted` or `locked` register state cancels the still-open Task as satisfied; Requests
+disappears from the same domain state rather than running a second workflow. Missing,
+overlapping or unauthorized behaviour remains a visible fail-closed coordination
+exception. The guarded Cambridge development seed installs the explicit behaviour, two
+event subscriptions and `attendance_completion:complete` capabilities for linked active
+staff agents only in development/local/test with both demo opt-ins.
+
+Automatic finalization now records a typed accepted Model Core command/outcome for daily
+and subject registers, retaining the exact register revision, snapshotted finalization
+rule and emitted locked event. The submitting human remains the accepted-change actor
+while `attendance_register_auto_finalize` is retained as executor metadata; a first-class
+software-agent executor identity is still an open core-contract refinement and is not
+claimed here.
+
+Verified local evidence: the refreshed shared branch matched local `HEAD` before this
+work; backend typecheck, scoped lint and production build pass; 49 focused backend
+Operating-rules, Requests, event, convergence and guarded-seed checks pass; 22 focused
+attendance/Operating-rules frontend checks, scoped lint and the production Vite build
+pass. Migration 120 was applied transactionally and checksum-recorded in the local
+database without changing the known historical migration-047 checksum drift. The
+explicit Cambridge seed resolved 17 linked staff agents, one approved behaviour and two
+subscriptions. The live principal Requests API projected eight currently escalated
+subject registers with exact session links while the current demo teacher correctly had
+no assigned overdue register. The local `/readyz` reports database/events ready and the
+existing Cloudflare preview returns HTTP 200.
+
+Remaining gates: the principal escalation is currently an authorized administrator
+Requests queue, not a single dated officeholder/team-agent assignment; team membership
+and claim semantics remain intentionally outside the public coordination contract.
+Historical pre-Core attendance events still need an explicit backfill policy. Physical
+owner-device validation of the new rule fields, teacher reminder and principal escalation
+remains open. No push or production deployment is claimed.
+
+## Campus View operational KPI cockpit — 17 October 2026 (local branch)
+
+Campus View now has a read-only operational KPI contract and panel without turning the
+Model Core into an analytics store. `CAMPUS_VIEW_OPERATIONAL_KPIS.md` defines the first
+versioned catalogue of 30 measures across teaching and attendance, movement and people,
+spaces, coordination and data health. Each measure declares its source, grain, scope,
+unit, numerator/denominator where applicable, evidence class and safe interpretation.
+Expected, recorded, accepted and unknown states remain distinct; unavailable evidence is
+returned as unavailable or partial rather than as zero, simulated rehearsal activity is
+excluded, and the overview has no opaque campus-health score or staff ranking.
+
+The authorized Campus View query endpoint serves six pages (`overview`, `teaching`,
+`movement`, `spaces`, `coordination`, `data_health`) and five windows (`today`, `7d`,
+`30d`, `90d`, `1y`). Today uses 15-minute buckets, seven- and 30-day views use hourly
+buckets, and 90-day and one-year views use daily buckets. Ratio rollups retain numerator
+and denominator instead of averaging percentages. Due attendance uses effective schedule
+requirements, the configured close-after deadline and explicit missing-register unknowns;
+unsupported attendance modes fail closed. Teacher assignment accepts only active human
+agents. Planned space use unions each canonical bookable leaf's scheduled intervals over
+the effective daily instructional envelope so double bookings and nights do not distort
+the rate. The overview combines four headline values, an evidence-safe attendance
+composition, recorded gate-flow bars and an objective bottleneck table with links back to
+the owning domain workspace. The mobile Campus View exposes the dashboard as a fourth
+bottom action and an independent sheet, so a slow KPI request cannot block or blank the
+live map. All charts have textual summaries and semantic data tables.
+
+Verified local evidence: backend typecheck and scoped lint pass; 22 focused backend KPI
+and Campus View checks pass; 36 focused frontend Campus View checks pass with scoped KPI
+lint. Authenticated end-to-end calls against the Cambridge development school returned
+the complete 30-definition catalogue, six pages, seven overview measures, four current
+headline projections, completed/outstanding/unknown due-register composition, explicit
+`available`/`partial` evidence states and one current bottleneck. The 30-day Teaching
+request returned hourly series in 404 ms, and the one-year Spaces request returned six
+measures and 2,190 daily series points in 1.14 seconds. The Overview completed in 48 ms.
+The local preview `/readyz` and the existing Cloudflare Campus View URL both return HTTP
+200.
+
+Remaining gates: complete owner-device review of the KPI sheet, page navigation, chart
+legibility and bottleneck deep links; measure query latency again as the retained history
+grows before adding cache tables or indexes; and add only those later metrics whose
+domain evidence and interpretation contracts are approved. The repository-wide frontend
+typecheck remains blocked by unrelated pre-existing duplicate `*test 2.tsx` and
+`*test 3.tsx` files, so it is not claimed here. No push or production deployment is
+claimed.
+
+## Isolated Campus View scenarios — 17 October 2026 (local branch)
+
+The first Model Core what-if foundation is implemented under
+`backend/src/campus-model-core/scenarios/`. It provides the shared immutable execution
+contracts, distinct real-human/delegate/scenario-persona identities, virtual clock,
+seeded deterministic randomness, sink-only message/evidence facilities, production
+side-effect denial, baseline/alternative comparison, optional policy-backed Monte
+Carlo ranges and a bounded transient run store. The campus-specific repository,
+executor and HTTP surface remain in `campus-scenarios`; future domains must register
+against the shared foundation rather than fork its semantics.
+
+An active institution administrator can discover future scheduled teacher and active
+bookable-space targets, then model one unavailable target over its real per-date
+scheduled span for a 7, 14 or 30 day horizon. The snapshot is captured in one read-only
+repeatable-read transaction from the effective schedule, canonical spaces and
+capacities, active enrolments, human-agent identity mappings, configuration hashes and
+privacy-minimized aggregate coverage evidence. The same transaction resolves any
+requested institution-owned behaviour version. The client can select only its ID;
+unreviewed probabilities, hashes, calibration claims, sample counts and random seeds
+are not accepted.
+
+The deterministic run reports schedule, uncovered/unplaced sessions, teacher/space
+conflicts, capacity and disrupted learner places. Missing agent mappings and missing
+room capacity remain explicit unknown/partial evidence. A reviewed historical cohort
+policy may add P10/P50/P90 response ranges, but a modelled positive response never
+invents a substitute or alternative room and never closes the operational disruption.
+Attendance outcomes, physical movement, transport, finance, assessments and eligible
+candidate allocation are returned as unsupported.
+
+Runs are copy-on-write, process-local, institution-scoped and expire after 30 minutes;
+they never write operational/Core tables, send production messages or call connectors.
+Session/execution/result-size limits, one active run per institution, a global runner
+cap, oldest-result eviction, authorization-first target caching/in-flight deduplication
+and route-specific rate limits bound resource use. The API supports target discovery,
+create, retrieve and explicit discard. Campus View exposes it separately from Live
+performance as **Plan & what-if**, uses only verified effective session windows, labels
+deterministic results as point estimates and reserves P50/P10–P90 language for
+calibrated ensembles.
+
+Verified local evidence: backend source typecheck and focused lint pass; **15/15**
+focused scenario-runtime, campus-adapter and route-limit tests pass; the read-only
+repeatable-read snapshot query was probed against local PostgreSQL; and **42/42**
+focused Campus View frontend tests plus scoped lint pass. The repository-wide frontend
+typecheck remains blocked only by the pre-existing duplicate `* 2.tsx` test files, with
+no Campus View errors. The restarted local `/readyz` and existing Cloudflare Campus
+View URL both return HTTP 200; owner-device workflow acceptance is still open at this
+checkpoint. No push or production deployment is claimed.
+
+Remaining gates: replace process-local storage with a shared encrypted ephemeral store
+before multi-instance production use; add the general authority resolver/domain
+executor registry; provide reviewed Operating-rule administration and backtesting for
+forecast policies; connect eligible substitute/space allocation; add further
+evidence-backed interventions; and implement a separately authorized
+scenario-to-domain-draft hand-off. Direct apply-to-live remains prohibited.
+
+### Scenario catalogue and mobile workspace repair — 17 October 2026 (local branch)
+
+Owner-device review exposed a real integration gap: Cambridge had a valid future
+effective timetable, but the scenario catalogue returned no selectable targets. The
+repository was still joining the identity column retired by the person-stable human
+agent migration, while legacy timetable periods had no explicit canonical space even
+though every class had a dated home-space placement. Target discovery and run-time
+target resolution now use active, effective `thatcampus` account endpoints linked to
+person-stable human agents. Explicit scheduled spaces win; the dated class home space
+is the fallback. No label, email or phone matching was introduced.
+
+The Cambridge development dataset now resolves **16 teacher targets and 8 bookable
+space targets**, each with verified future session windows. The Campus performance
+dialog is full device height on phones with safe-area handling and independent content
+scrolling. Planning options now have distinct loading, retryable error and empty-plan
+states instead of presenting an unexplained disabled form. Focused verification passes:
+backend typecheck/scoped lint and **16/16** scenario tests; frontend scoped lint and
+**14/14** planner/KPI-panel tests. Mobile owner validation remains open; no push or
+production deployment is claimed.

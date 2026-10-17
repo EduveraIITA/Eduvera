@@ -44,7 +44,7 @@ export function CreateInstitution({ onCreated, onCancel }: { onCreated?: (result
   }
 
   return <>
-    <p className="institution-step">Search → Confirm details → Create in Eduera → Invite Institution Admin</p>
+    <p className="institution-step">Search → Confirm details → Create in ThatCampus → Invite Institution Admin</p>
     {!selected && !manual && <InstitutionSearch onSelect={(item) => {
       if (item.is_onboarded) void navigate(`/company/institutions/${item.eduera_institution_id}`);
       else { setSelected(item); setCode(normalizeInstitutionCode(item.name)); setCodeEdited(false); }

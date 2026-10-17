@@ -57,7 +57,7 @@ def create_app(settings: Settings | None = None, backend=None, llm_client=None) 
             await task
 
     app = FastAPI(
-        title="Edura photo attendance inference",
+        title="ThatCampus photo attendance inference",
         version="0.1.0",
         lifespan=lifespan,
         docs_url=None,

@@ -29,6 +29,7 @@ import type {
   ApiAttendanceRanking,
   ApiDiaryItem,
   ApiLeaveRequest,
+  ApiParentFeeStatus,
   ApiStudent,
   ApiTimetableSlot,
   ParentAttendanceResponse,
@@ -52,6 +53,83 @@ const shortDateFormatter = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
   month: "short",
 });
+const feeAmountFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 2,
+});
+
+export function adaptParentFeeStatus(status?: ApiParentFeeStatus): {
+  feeStatus: string;
+  feeDetail: string;
+  feeState: ParentHomeData["metrics"]["feeState"];
+} {
+  const unavailable = (detail: string) => ({
+    feeStatus: "Unavailable",
+    feeDetail: detail,
+    feeState: "unavailable" as const,
+  });
+  if (!status || status.source !== "fee_ledger" || status.scope !== "current_term_and_carried_balance" || status.currency !== "INR") {
+    return unavailable("Fee ledger status could not be confirmed");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(status.as_of)
+    || (status.next_due_on !== null && !/^\d{4}-\d{2}-\d{2}$/.test(status.next_due_on))) {
+    return unavailable("Fee ledger date could not be confirmed");
+  }
+  if (status.invoice_count === 0) return {
+    feeStatus: "Not configured",
+    feeDetail: "No applicable invoices are posted in the fee ledger",
+    feeState: "not_configured",
+  };
+  if (status.state === "not_configured" || !Number.isSafeInteger(status.invoice_count) || status.invoice_count < 0) {
+    return unavailable("Fee ledger status could not be confirmed");
+  }
+  const amounts = [status.outstanding_paise, status.overdue_paise, status.refund_due_paise];
+  if (amounts.some((amount) => amount == null || !Number.isSafeInteger(amount) || amount < 0)) {
+    return unavailable("Fee ledger totals could not be confirmed");
+  }
+  const outstandingPaise = status.outstanding_paise as number;
+  const overduePaise = status.overdue_paise as number;
+  const refundDuePaise = status.refund_due_paise as number;
+  const derivedState = outstandingPaise > 0 && refundDuePaise > 0 ? "mixed"
+    : overduePaise > 0 ? "overdue"
+      : outstandingPaise > 0 ? "outstanding"
+        : refundDuePaise > 0 ? "refund_due" : "clear";
+  if (status.state !== derivedState || overduePaise > outstandingPaise) {
+    return unavailable("Fee ledger totals could not be confirmed");
+  }
+  const money = (paise: number | null) => feeAmountFormatter.format((paise as number) / 100);
+  const asOf = `Fee ledger as of ${formatShortDate(status.as_of)}`;
+  if (status.state === "clear") return {
+    feeStatus: "No balance due",
+    feeDetail: `${status.invoice_count} posted ${status.invoice_count === 1 ? "invoice" : "invoices"} · ${asOf}`,
+    feeState: status.state,
+  };
+  if (status.state === "refund_due") return {
+    feeStatus: `${money(status.refund_due_paise)} refund due`,
+    feeDetail: asOf,
+    feeState: status.state,
+  };
+  const outstanding = `${money(status.outstanding_paise)} due`;
+  if (status.state === "mixed") {
+    const overdue = status.overdue_paise ? `${money(status.overdue_paise)} overdue · ` : "";
+    return {
+      feeStatus: outstanding,
+      feeDetail: `${overdue}${money(status.refund_due_paise)} refund due · ${asOf}`,
+      feeState: status.state,
+    };
+  }
+  if (status.state === "overdue") return {
+    feeStatus: outstanding,
+    feeDetail: `${money(status.overdue_paise)} overdue · ${asOf}`,
+    feeState: status.state,
+  };
+  return {
+    feeStatus: outstanding,
+    feeDetail: status.next_due_on ? `Next due ${formatShortDate(status.next_due_on)} · ${asOf}` : asOf,
+    feeState: status.state,
+  };
+}
 
 function adaptRanking(ranking?: ApiAttendanceRanking): AttendanceRankingData | undefined {
   if (!ranking?.published) return undefined;
@@ -233,6 +311,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
   const attendance = Number(response.attendance.percentage);
   const hasAttendance = response.attendance.total > response.attendance.excused;
   const primaryContact = response.contacts.find((contact) => isHomeroomContact(contact.label));
+  const feeStatus = adaptParentFeeStatus(response.semester_metrics.fee_status);
   return {
     child,
     homeActions: response.home_actions ?? [],
@@ -330,8 +409,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
       homeworkRecent: response.semester_metrics.homework_recent,
       homeworkPrevious: response.semester_metrics.homework_previous,
       homeworkDetail: response.semester_metrics.homework_due ? "Due items in the class diary" : "Nothing currently due",
-      duesStatus: response.semester_metrics.dues_status,
-      duesDetail: response.semester_metrics.dues_status_scope === "display_only_demo" ? "Demo school account" : "School account status",
+      ...feeStatus,
       termLabel: `${response.student.current_enrollment.term.name} (${response.student.current_enrollment.term.academic_year})`,
     },
     homeroomTeacher: primaryContact
@@ -681,6 +759,16 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
   });
   const presence = response.campus_presence;
   const attendance = response.today_attendance;
+  const attendanceLabels: Record<NonNullable<StudentHomeResponse["today_attendance"]>["status"], string> = {
+    present: "Present",
+    absent: "Absent",
+    late: "Late",
+    excused: "Excused absence",
+    half_day: "Half day",
+  };
+  const campusObservation = presence
+    ? `${presence.gate} ${presence.direction === "in" ? "entry" : "exit"} recorded at ${formatTime(presence.occurred_at)}`
+    : null;
   const dateLabel = new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
     weekday: "long",
@@ -697,15 +785,19 @@ export function adaptStudentHome(response: StudentHomeResponse): StudentHomeData
     studentId: response.student.admission_number,
     termLabel: `${response.term.name} - ${response.term.academic_year}`,
     dateLabel,
-    presence: attendance || presence
+    presence: attendance
       ? {
-          label: attendance?.status === "absent" ? "Absent" : attendance?.status === "excused" ? "Excused absence" : presence?.direction === "out" ? "Checked out" : "Present",
-          detail: presence
-            ? `${presence.gate} ${presence.direction === "in" ? "entry" : "exit"} at ${formatTime(presence.occurred_at)}`
-            : attendance?.check_in_at ? `Attendance marked at ${formatTime(attendance.check_in_at)}` : "Marked in the school attendance register",
-          verified: Boolean(attendance || presence),
+          label: attendanceLabels[attendance.status],
+          detail: `${attendance.check_in_at ? `Attendance marked at ${formatTime(attendance.check_in_at)}` : "Marked in the school attendance register"}${campusObservation ? ` · ${campusObservation}` : ""}`,
+          verified: true,
         }
-      : { label: "Not recorded yet", detail: "Waiting for today's school attendance", verified: false },
+      : {
+          label: "Not recorded yet",
+          detail: campusObservation
+            ? `Attendance has not been marked · ${campusObservation}`
+            : "Waiting for today's school attendance",
+          verified: false,
+        },
     attendancePercent: Number(response.attendance.percentage),
     attendanceThreshold: Number(response.term.threshold),
     periodsToday: schedule.length,

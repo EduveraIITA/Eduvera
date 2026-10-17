@@ -1,5 +1,5 @@
 {
-  "name": "omnischool-web",
+  "name": "thatcampus-web",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -19,11 +19,13 @@
     "@fullcalendar/react": "^7.1.2",
     "@tanstack/react-query": "^5.102.8",
     "jsqr": "^1.4.0",
+    "konva": "^10.9.0",
     "leaflet": "1.9.4",
     "lucide-react": "^0.544.0",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-konva": "^19.3.2",
     "react-markdown": "10.1.0",
     "react-router-dom": "^7.18.3"
   },

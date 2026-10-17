@@ -103,3 +103,6 @@
   .planner-sheet__grid { grid-template-columns:1fr; }.planner-draft-action { gap:3px; }.planner-draft-action > span { display:none; }
 }
 @media (prefers-reduced-motion:reduce) { .spin { animation:none; } }
+
+.school-calendar-block--rehearsal-now { outline:2px solid var(--thatcampus-brand); outline-offset:-2px; box-shadow:0 0 0 3px color-mix(in srgb,var(--thatcampus-brand) 14%,transparent); }
+.school-calendar-block--rehearsal-now::after { position:absolute; top:5px; right:5px; width:7px; height:7px; border:2px solid #fff; border-radius:50%; background:var(--thatcampus-brand); content:""; }

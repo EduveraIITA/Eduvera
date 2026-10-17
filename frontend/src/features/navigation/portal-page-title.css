@@ -14,13 +14,13 @@
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: var(--edura-radius-control, 12px);
-  color: var(--edura-brand, #0037b0);
+  border-radius: var(--thatcampus-radius-control, 12px);
+  color: var(--thatcampus-brand, #0037b0);
   background: transparent;
   cursor: pointer;
 }
 
-.portal-page-title__back:hover { background: var(--edura-surface-strong, #e5ecff); }
+.portal-page-title__back:hover { background: var(--thatcampus-surface-strong, #e5ecff); }
 .portal-page-title__back:active { transform: scale(.96); }
 .portal-page-title__back:focus-visible { outline: 3px solid rgba(29, 78, 216, .24); outline-offset: 2px; }
 
@@ -28,7 +28,7 @@
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: var(--edura-ink, #0b1c30);
+  color: var(--thatcampus-ink, #0b1c30);
   font-size: 18px;
   font-weight: 750;
   line-height: 1.25;

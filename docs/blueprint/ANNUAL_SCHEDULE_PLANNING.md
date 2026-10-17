@@ -27,11 +27,13 @@ This extends blueprint sections 3, 6–8; it does not replace the shared navigat
 
 ## Experience
 
-Schedule settings: academic year, school dates, class timetable. A class timetable
-shows published arrangements and a single draft. Choose “From a date onward” or
-“Date range”; one-date changes retain the existing Daily Plan workflow. Reuse
-existing period sheets, theme, header and contextual Back navigation. Parents and
-teachers retain the compact Day/Month/Year reader.
+Updated by user decision, 14 October: the principal's calendar is the canonical
+recurring timetable workspace. Select a lesson to inspect/edit it in a sheet;
+select free time to plan; review a class draft and its effective dates from the
+same calendar. Academic settings keeps academic-year preparation, school dates
+and coverage targets, without a second class-editor list. Old class-pattern
+links redirect with their context. One-date changes retain the existing Daily
+Plan workflow. Parents and teachers retain their existing compact readers.
 
 ## Evidence sources
 

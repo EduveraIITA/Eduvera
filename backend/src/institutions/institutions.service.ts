@@ -68,7 +68,7 @@ export class InstitutionsService {
         WHERE id=${input.directory_id}::uuid FOR UPDATE`.execute(executor)).rows[0];
       if (!directory) throw new NotFoundException("Directory institution not found.");
       const existing = (await sql<{ school_id: string }>`SELECT school_id FROM institution_onboarding WHERE directory_id=${directory.id}::uuid`.execute(executor)).rows[0];
-      if (existing) throw new ConflictException({ code: "institution_already_onboarded", message: "This institution already has an Eduera account.", fields: { existing: await this.get(existing.school_id, executor) } });
+      if (existing) throw new ConflictException({ code: "institution_already_onboarded", message: "This institution already has a ThatCampus account.", fields: { existing: await this.get(existing.school_id, executor) } });
       return { directory_id: directory.id, name: directory.name, institution_kind: ['college','university','standalone'].includes(directory.institution_type) ? 'college' as const : 'school' as const };
     }
     const manual = input.manual ?? { name: input.name, institution_type: input.institution_kind === 'college' ? 'college' as const : 'school' as const, state: '', district: '', city: '', address: '' };

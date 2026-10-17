@@ -19,7 +19,7 @@ export interface StudentIdentity {
 
 export function StudentIdentityCard({
   identity,
-  schoolName = "Cambridge International School",
+  schoolName = "School",
   switchChild,
   showSwitchButton = true,
   eyebrow = "Student identity",

@@ -29,8 +29,10 @@ import { CoverageResponse } from "./CoverageResponse";
 import { ScheduleActions } from "./ScheduleActions";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { useUnsavedChangesGuard } from "../navigation/useUnsavedChangesGuard";
+import { TimetableRehearsalStrip } from "../planner/TimetableRehearsalStrip";
+import { resolveTimetableDisplayDate, type TimetableRehearsalIndicator } from "../planner/rehearsal";
 import "./day-plans.css";
-export default function PrincipalDayPlanPage() {
+export default function PrincipalDayPlanPage({ rehearsal }: { rehearsal?: TimetableRehearsalIndicator | null } = {}) {
   const auth = useAuth(),
     [params, setParams] = useSearchParams();
   const [dirty, setDirty] = useState(false);
@@ -46,7 +48,7 @@ export default function PrincipalDayPlanPage() {
     ?? schools[0];
   const schoolId = school?.school_id ?? "";
   const inaccessibleSchoolTarget = Boolean(requestedSchoolId && !requestedSchool);
-  const date = params.get("date") || schoolDateToday();
+  const date = resolveTimetableDisplayDate(params.get("date"), rehearsal, schoolDateToday());
   const view = readTimetableView(params.get("view"));
   const requestedClassId = params.get("class");
   const requestedPlanId = params.get("plan");
@@ -129,6 +131,7 @@ export default function PrincipalDayPlanPage() {
       contentHasHeading
     >
       <div className="day-workspace">
+        {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} showCampusLink /> : null}
         {attentionTargetLoaded ? <AttentionOpenAcknowledgement /> : null}
         {inaccessibleSchoolTarget ? (
           <DayPlanTargetUnavailable message="This day-plan link belongs to a school you cannot currently access." />

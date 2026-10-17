@@ -9,7 +9,7 @@
 .school-brand__marks {
   position: relative;
   display: flex;
-  width: 67px;
+  width: 92px;
   height: 42px;
   flex: 0 0 auto;
   align-items: center;
@@ -23,15 +23,15 @@
   place-items: center;
   border-radius: 11px;
   color: #ffffff;
-  background: var(--edura-brand, #0037b0);
+  background: var(--thatcampus-brand, #0037b0);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 5px 14px rgba(0, 55, 176, 0.13);
   font-size: 11px;
   font-weight: 800;
 }
 
-.school-brand__eduvera {
+.school-brand__platform {
   display: grid;
-  width: 35px;
+  width: 51px;
   height: 35px;
   flex: 0 0 auto;
   overflow: hidden;
@@ -42,10 +42,13 @@
   box-shadow: none;
 }
 
-.school-brand__eduvera img {
+.school-brand__platform img {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.school-brand__platform img {
   object-fit: contain;
 }
 
@@ -56,7 +59,7 @@
   top: 2px;
 }
 
-.school-brand__marks--overlap .school-brand__eduvera {
+.school-brand__marks--overlap .school-brand__platform {
   position: absolute;
   z-index: 1;
   right: 0;
@@ -72,7 +75,7 @@
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: var(--edura-ink, #0b1c30);
+  color: var(--thatcampus-ink, #0b1c30);
   font-size: 16px;
   line-height: 1.1;
   font-weight: 700;
@@ -82,9 +85,9 @@
 
 @media (max-width: 390px) {
   .school-brand { gap: 6px; }
-  .school-brand__marks { width: 57px; height: 36px; }
+  .school-brand__marks { width: 80px; height: 36px; }
   .school-brand__crest { width: 32px; height: 32px; }
-  .school-brand__eduvera { width: 30px; height: 30px; border-radius: 9px; }
+  .school-brand__platform { width: 44px; height: 30px; border-radius: 9px; }
   .school-brand__marks--side-by-side { width: auto; gap: 7px; }
   .school-brand__name { font-size: 13px; }
 }

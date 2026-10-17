@@ -139,7 +139,7 @@ export class ChatController {
   @HttpCode(200)
   @RequirePermission("messages.send")
   edit(@Req() request: AuthenticatedRequest, @Param("conversationId") conversationId: string, @Param("messageId") messageId: string) {
-    return this.chat.editMessage(request.authUser, conversationId, messageId, request.body);
+    return this.chat.editMessage(request.authUser, conversationId, messageId, request.body, request);
   }
 
   @Post("conversations/:conversationId/messages/:messageId/report/")

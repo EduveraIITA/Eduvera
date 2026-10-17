@@ -341,7 +341,7 @@ export class AuthService {
       VALUES(${user.id}::uuid,${encrypted.encrypted},${encrypted.iv},${encrypted.tag},'pending',NULL,now())
       ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=excluded.encrypted_secret,secret_iv=excluded.secret_iv,
         secret_tag=excluded.secret_tag,status='pending',confirmed_at=NULL,last_used_step=NULL,updated_at=now()`.execute(this.db);
-    const issuer = "Eduvera";
+    const issuer = "ThatCampus";
     const label = `${issuer}:${user.email}`;
     const uri = `otpauth://totp/${encodeURIComponent(label)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
     await this.audit.record({ action: "auth.mfa.enrollment_started", request, actorId: user.id, targetType: "user", targetId: user.id });

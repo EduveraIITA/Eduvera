@@ -14,7 +14,7 @@
   height: 9px;
   color: #fff;
   background: #0b57c9;
-  box-shadow: 0 0 0 3px var(--edura-surface);
+  box-shadow: 0 0 0 3px var(--thatcampus-surface);
 }
 
 .attention-indicator--module.attention-indicator--counted {
@@ -46,7 +46,7 @@
   align-items: flex-start;
   gap: 9px;
   border: 1px solid color-mix(in srgb, #a45b00 28%, transparent);
-  border-radius: var(--edura-radius-control, 14px);
+  border-radius: var(--thatcampus-radius-control, 14px);
   color: #6f4200;
   background: color-mix(in srgb, #fff2cc 62%, white);
   font-size: .86rem;

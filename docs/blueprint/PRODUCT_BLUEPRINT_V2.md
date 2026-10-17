@@ -150,15 +150,27 @@ location, or collect/retain data merely because a digital twin can represent it.
 
 The normative technical contract is [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md).
 
-### 4.6 Future spatial visualization
+### 4.6 Campus View and later spatial visualization
 
-The same model may later drive an optional 2D floor-plan or 3D live-campus view.
-That view is a projection over stable campuses, spaces, schedules, resources,
-observations and responsible agents; it is not a second source of truth. Spatial
-geometry, floor plans, coordinates, sensor placement and rendering metadata belong
-in a separate versioned visualization projection keyed to model identities. They
-are added only for a validated operational use case and must never imply continuous
-knowledge of a person's location from sparse observations.
+Campus View is a first-class, read-only administrator capability. Its mobile 2D
+scene projects stable campuses and spaces together with explicitly separated
+scheduled context, source-bearing observations, accepted records, unknown state and
+contradictions. It is available directly from administrator navigation and remains
+useful without any development simulator.
+
+The initial scene may use a deterministic schematic generated from configured spaces
+and must say that it is schematic and not to scale. Surveyed geometry, floor plans,
+coordinates, sensor placement and rendering metadata belong in a separate versioned
+visualization projection keyed to model identities. A future richer 2D/3D interface
+uses the same contract; neither the current nor future view is a second source of
+truth or may imply continuous knowledge of a person's location from schedules or
+sparse observations.
+
+The read-only operational measurement contract for this surface is [Campus View
+operational KPIs](CAMPUS_VIEW_OPERATIONAL_KPIS.md). It keeps expected, observed,
+accepted and unknown evidence separate; forbids inferred occupancy and opaque
+health scores; and defines bounded live and one-year historical views that link
+back to the owning domain action.
 
 ## 5. Model-core separation
 
@@ -166,6 +178,9 @@ The detailed implementation contract is [ThatCampus Model Core
 blueprint](THATCAMPUS_MODEL_CORE_BLUEPRINT.md). It defines the core capabilities,
 primitives, domain-adapter boundary, configured reaction runtime, simulation contract,
 failure semantics and acceptance gates.
+
+The bounded operational specialization for transient baseline-versus-alternative
+planning and future KPI ranges is [Campus scenario simulation](CAMPUS_SCENARIO_SIMULATION.md).
 
 The Campus Model Core is a separate backend module with versioned ports, APIs and events. It owns cross-domain identity, temporal relationships, normalized observation/command envelopes, agent authority evidence, coordination hand-offs and projections. It mediates the operational thread between agents and domains; it is not an after-the-fact analytics mirror.
 

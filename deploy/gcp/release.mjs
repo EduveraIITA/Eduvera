@@ -24,6 +24,10 @@ export function assertRuntime(service, job, { allowPublicDemoBootstrap = false }
   for (const name of ['DATABASE_URL', 'EVENT_DATABASE_URL', 'COOKIE_SECRET', 'METRICS_TOKEN', 'RESTRICTED_CASE_ENCRYPTION_KEY']) {
     if (!app.env?.find(item => item.name === name)?.valueFrom?.secretKeyRef) throw new Error(`${name} must use Secret Manager`);
   }
+  const simulatorVariable = (app.env ?? []).find(item =>
+    item.name?.startsWith('CAMPUS_SIMULATOR_') || item.name === 'SYNTHETIC_ACTOR_ENABLED'
+  );
+  if (simulatorVariable) throw new Error(`Development simulator variable is forbidden in Stage: ${simulatorVariable.name}`);
   const env = Object.fromEntries((app.env ?? []).map(item => [item.name, item.value]));
   if (env.DEMO_MODE !== 'false') throw new Error('Password-based development demo access must remain disabled');
   const publicDemoReady = env.PUBLIC_DEMO_ENABLED === 'true' && env.DEMO_PROFILE_SWITCHER_ENABLED === 'true';

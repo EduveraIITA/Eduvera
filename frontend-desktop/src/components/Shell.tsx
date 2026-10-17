@@ -158,8 +158,8 @@ export function Shell() {
     <div className="app">
       <aside className="side">
         <div className="side-brand">
-          <span className="tile"><GraduationCap size={20} strokeWidth={2} /></span>
-          <div className="txt"><span className="name" title={school?.school_name}>{school?.school_name ?? "Eduera"}</span><span className="sub">{AREA_LABEL[p]} portal</span></div>
+          <span className="tile"><img className="thatcampus-logo" src="/thatcampus-logo-light.png" alt="" /></span>
+          <div className="txt"><span className="name" title={school?.school_name}>{school?.school_name ?? "ThatCampus"}</span><span className="sub">{AREA_LABEL[p]} portal</span></div>
         </div>
 
         {schools.length > 1 ? (

@@ -11,6 +11,7 @@ import { RazorpayService } from "../src/operations/razorpay.service.js";
 import { PaymentEmailService } from '../src/operations/payment-email.service.js';
 import * as transport from '../src/common/email-transport.js';
 import * as configuration from '../src/config.js';
+import { createStaffCoverageReconciliationTestDouble } from './staff-coverage-reconciliation.test-support.js';
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const url = isolated ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : "postgresql://invalid.invalid/unused";
 describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
@@ -35,7 +36,7 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
   const claim = (reference: string = randomUUID()) => ({ kind: "payment", amount_paise: 4000, method: "bank_transfer", reference, note: "Transferred today", idempotency_key: randomUUID() });
 
   beforeAll(async () => {
-    db = new DatabaseService(); operations = new OperationsService(db); service = new FeeReviewService(db, operations);
+    db = new DatabaseService(); operations = new OperationsService(db, createStaffCoverageReconciliationTestDouble()); service = new FeeReviewService(db, operations);
     payments = new RazorpayService(db, gateway);
     vi.spyOn(gateway, "enabled").mockReturnValue(true);
     vi.spyOn(gateway, "keyId").mockReturnValue("rzp_test_fixture");
@@ -82,6 +83,7 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
     const event = (await pool.query("SELECT audience_user_ids,payload FROM event_outbox WHERE aggregate_id=$1", [order.id])).rows[0];
     expect(event.audience_user_ids).toContain(parent.id); expect(event.audience_user_ids).not.toContain(outsider.id);
     expect(event.payload).not.toHaveProperty("provider_payment_id");
+    expect(event.payload.refresh).toEqual(["fees", "parent.home", "principal.home"]);
   });
   it("preserves captured funds for review when another payment changes the balance", async () => {
     vi.spyOn(gateway, "request").mockImplementation((_path, body) => Promise.resolve(Object.assign({}, body, { id: `order_${randomUUID().replaceAll("-", "")}` })));
@@ -117,7 +119,7 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
       await pool.query('UPDATE users SET email_verified_at=now() WHERE id=$1',[parent.id]);
       const order=await paid();await worker.deliverPending();await worker.deliverPending();
       expect(sender).toHaveBeenCalledTimes(1);
-      expect(sender.mock.calls[0]![0]).toMatchObject({to:parent.email,senderName:'Eduera · Pathyakram',attachments:[{contentType:'application/pdf'}]});
+      expect(sender.mock.calls[0]![0]).toMatchObject({to:parent.email,senderName:'ThatCampus · Pathyakram',attachments:[{contentType:'application/pdf'}]});
       expect(Buffer.from(sender.mock.calls[0]![0].attachments![0]!.content,'base64').subarray(0,5).toString()).toBe('%PDF-');
       expect((await pool.query('SELECT delivery_state FROM fee_payment_emails WHERE order_id=$1',[order.id])).rows[0].delivery_state).toBe('accepted');
       sender.mockRejectedValue(new Error('timeout after possible acceptance'));

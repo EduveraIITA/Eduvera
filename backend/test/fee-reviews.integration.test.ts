@@ -6,6 +6,7 @@ import { OperationsService } from "../src/operations/operations.service.js";
 import { FeeReviewService } from "../src/operations/fee-review.service.js";
 import type { AuthUser } from "../src/common/request.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const url = isolated ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : "postgresql://invalid.invalid/unused";
 describe.skipIf(!isolated)("fee payment claims and review", () => {
@@ -23,7 +24,7 @@ describe.skipIf(!isolated)("fee payment claims and review", () => {
   const claim = (reference: string = randomUUID()) => ({ kind: "payment", amount_paise: 4000, method: "bank_transfer", reference, note: "Transferred today", idempotency_key: randomUUID() });
   const approve = { outcome: "verified", response: "Matched against the school bank statement.", verified_funds: true };
   beforeAll(async () => {
-    db = new DatabaseService(); operations = new OperationsService(db); service = new FeeReviewService(db, operations);
+    db = new DatabaseService(); operations = new OperationsService(db, createStaffCoverageReconciliationTestDouble()); service = new FeeReviewService(db, operations);
     admin = await user("admin"); parent = await user("parent"); outsider = await user("parent"); learner = await user("student");
     school = (await pool.query("INSERT INTO schools(name,code) VALUES('Review Test School',$1) RETURNING id", [randomUUID().slice(0, 25)])).rows[0].id;
     for (const [actor, role] of [[admin, "admin"], [parent, "guardian"], [outsider, "guardian"], [learner, "student"]] as const) await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,$3)", [school, actor.id, role]);
@@ -121,6 +122,12 @@ describe.skipIf(!isolated)("fee payment claims and review", () => {
     await service.settings(admin, school, settings);
     await expect(service.settings(admin, school, settings)).rejects.toThrow(/changed/);
     expect((await service.workspace(parent, school, student)).payment_settings).toMatchObject({ upi_id: "school@bank", revision: 1 });
+    const event = await pool.query("SELECT event_type,aggregate_type,payload FROM event_outbox WHERE school_id=$1 AND idempotency_key=$2", [school, `fee-settings:${school}:1`]);
+    expect(event.rows[0]).toMatchObject({
+      event_type: "administration.updated",
+      aggregate_type: "fee_payment_settings",
+      payload: { action: "fee_instructions_updated", revision: 1, refresh: ["fees", "parent.home", "principal.home"] },
+    });
   });
   it("loads an exact open gateway review beyond the 100-row workspace cap with current school access", async () => {
     const invoiceId = await invoice();

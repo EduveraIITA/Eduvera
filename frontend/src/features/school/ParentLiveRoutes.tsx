@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { timetableSummaryRange, readTimetableView } from "../timetable/TimetableNavigator";
+import { resolveTimetableDisplayDate, type TimetableRehearsalIndicator } from "../planner/rehearsal";
 import { ParentAttendancePage } from "../../pages/parent/ParentAttendancePage";
 import { ParentDiaryPage } from "../../pages/parent/ParentDiaryPage";
 import { ParentHomePage } from "../../pages/parent/ParentHomePage";
@@ -277,11 +278,11 @@ export function ParentDiaryRoute() {
   );
 }
 
-export function ParentTimetableRoute() {
+export function ParentTimetableRoute({ rehearsal }: { rehearsal?: TimetableRehearsalIndicator | null } = {}) {
   const [params,setParams]=useSearchParams();
-  const date=params.get('date')||undefined;
+  const date=resolveTimetableDisplayDate(params.get('date'),rehearsal,schoolDateToday());
   const view = readTimetableView(params.get("view"));
-  const anchor=date??schoolDateToday();
+  const anchor=date;
   const range=timetableSummaryRange(anchor,view);
   const { studentId, selectStudent } = useSelectedStudent();
   const query = useQuery({
@@ -304,6 +305,7 @@ export function ParentTimetableRoute() {
     {attentionResolution === "exact" ? <AttentionOpenAcknowledgement /> : null}
     <StudentTimetablePage
       audience="parent"
+      rehearsal={rehearsal}
       focusPublishedSource={attentionResolution === "exact"}
       attentionStatus={attentionResolution === "stale" ? <AttentionTargetUnavailable message="This timetable update no longer matches the published source, revision, child and date. It was not marked as opened." /> : undefined}
       dayPlan={query.data.day_plan} selectedDate={anchor} scheduleLoading={query.isPlaceholderData} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next,{replace:true});}}

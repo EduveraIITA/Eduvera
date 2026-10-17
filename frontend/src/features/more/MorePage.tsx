@@ -90,7 +90,10 @@ export function MoreContent({ portal }: { portal: Portal }) {
     && (students.isError || students.isSuccess);
   const member = currentStaffMembership(auth?.memberships ?? []);
   const proFeatures = useProFeatures();
+  const adminSchool = auth?.memberships.find(item => item.role === "admin" && item.school_id === auth.user?.active_school_id)
+    ?? auth?.memberships.find(item => item.role === "admin");
   const tools = toolsFor(portal).filter((tool) => (portal !== "teacher" || teacherToolIsVisible(member, tool.id))
+    && (tool.id !== "campus" || Boolean(adminSchool))
     && (tool.id !== "copilot" || proFeatures.enabled));
   if (portal === "teacher" && member?.permissions?.includes("fees.manage")) tools.push({ id: "delegated-fees", name: "Fees & receipts", description: "Delegated fee and receipt access", icon: LockKeyhole, tone: "amber", path: "/teacher/fees" });
   if (portal === "teacher" && member?.permissions?.includes("sis.manage")) tools.push(
@@ -130,8 +133,6 @@ export function MoreContent({ portal }: { portal: Portal }) {
     const invitationTool=toolsFor("teacher").find(tool=>tool.id==="transport");
     if(invitationTool)tools.push(invitationTool);
   }
-  const adminSchool = auth?.memberships.find(item => item.role === "admin" && item.school_id === auth.user?.active_school_id)
-    ?? auth?.memberships.find(item => item.role === "admin");
   const activation = useQuery({ queryKey: ["institution-activation", adminSchool?.school_id],
     queryFn: () => getActivation(adminSchool!.school_id), enabled: portal === "principal" && Boolean(adminSchool), staleTime: 60_000, retry: false });
   const chooseLayout = (next: MoreLayout) => {

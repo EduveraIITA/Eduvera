@@ -18,7 +18,7 @@
 
 .results-library > header span,
 .family-assessment-heading span {
-  color: var(--edura-brand-bright);
+  color: var(--thatcampus-brand-bright);
   font-size: 10px;
   font-weight: 850;
   letter-spacing: .08em;
@@ -38,8 +38,8 @@
   height: 28px;
   place-items: center;
   border-radius: 9px;
-  background: var(--edura-brand-soft);
-  color: var(--edura-brand);
+  background: var(--thatcampus-brand-soft);
+  color: var(--thatcampus-brand);
   font-size: 12px;
 }
 
@@ -63,8 +63,8 @@
 
 .results-library__search:focus-within,
 .results-library__year select:focus-visible {
-  border-color: var(--edura-brand-bright);
-  outline: 3px solid color-mix(in srgb, var(--edura-brand-bright) 14%, transparent);
+  border-color: var(--thatcampus-brand-bright);
+  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand-bright) 14%, transparent);
 }
 
 .results-library__search input,
@@ -93,7 +93,7 @@
   grid-template-columns: repeat(3, 1fr);
   padding: 4px;
   border-radius: 12px;
-  background: var(--edura-brand-soft);
+  background: var(--thatcampus-brand-soft);
 }
 
 .results-library__tabs button {
@@ -110,7 +110,7 @@
 }
 
 .results-library__tabs button.is-active {
-  color: var(--edura-brand);
+  color: var(--thatcampus-brand);
   background: #fff;
   box-shadow: 0 2px 8px rgba(23, 66, 145, .08);
 }
@@ -163,12 +163,12 @@
 
 .result-gallery__navigator button.is-active::after {
   width: 18px;
-  background: var(--edura-brand-bright);
+  background: var(--thatcampus-brand-bright);
 }
 
 .result-gallery__navigator button:focus-visible {
   border-radius: 999px;
-  outline: 3px solid color-mix(in srgb, var(--edura-brand-bright) 20%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand-bright) 20%, transparent);
 }
 
 .result-gallery__track {
@@ -195,9 +195,9 @@
 
 .result-gallery__slide.attention-focus > .marksheet,
 .result-gallery__slide.attention-focus > .assessment-marksheet {
-  border-color: color-mix(in srgb, var(--edura-brand) 48%, #d6e0ee);
+  border-color: color-mix(in srgb, var(--thatcampus-brand) 48%, #d6e0ee);
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--edura-brand) 10%, transparent), 0 10px 28px rgba(27, 59, 117, .07);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--thatcampus-brand) 10%, transparent), 0 10px 28px rgba(27, 59, 117, .07);
 }
 
 .result-gallery__slide:only-child {
@@ -212,15 +212,15 @@
 .assessment-marksheet {
   overflow: hidden;
   border: 1px solid #d6e0ee;
-  border-top: 5px solid var(--edura-brand-bright);
+  border-top: 5px solid var(--thatcampus-brand-bright);
   border-radius: 20px;
   background: #fff;
   box-shadow: 0 10px 28px rgba(27, 59, 117, .07);
 }
 
 .term-marksheet {
-  --term-document-accent: color-mix(in srgb, var(--edura-brand-bright) 64%, #078b75);
-  --term-document-soft: color-mix(in srgb, var(--edura-brand-soft) 78%, #dcf7f0);
+  --term-document-accent: color-mix(in srgb, var(--thatcampus-brand-bright) 64%, #078b75);
+  --term-document-soft: color-mix(in srgb, var(--thatcampus-brand-soft) 78%, #dcf7f0);
   border-top-color: var(--term-document-accent);
 }
 
@@ -269,7 +269,7 @@
   height: 33px;
 }
 
-.assessment-marksheet__institution .school-brand__eduvera {
+.assessment-marksheet__institution .school-brand__platform {
   width: 31px;
   height: 31px;
 }
@@ -294,7 +294,7 @@
 }
 
 .assessment-marksheet__title > span {
-  color: var(--edura-brand-bright);
+  color: var(--thatcampus-brand-bright);
   font-size: 10px;
   font-weight: 850;
   letter-spacing: .07em;
@@ -325,8 +325,8 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: var(--edura-brand);
-  background: var(--edura-brand-soft);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
   font-size: 13px;
 }
 
@@ -358,8 +358,8 @@
   grid-template-columns: 1fr 1fr;
   margin: 0 18px;
   border-radius: 14px;
-  color: var(--edura-brand);
-  background: var(--edura-brand-soft);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
 }
 
 .assessment-marksheet__score > span {
@@ -448,7 +448,7 @@
 
 .assessment-marksheet__table > div:last-child {
   border: 0;
-  color: var(--edura-brand);
+  color: var(--thatcampus-brand);
   background: #f2f6fc;
 }
 
@@ -473,11 +473,11 @@
 .assessment-marksheet__remarks {
   margin: 15px 18px 0;
   padding: 2px 0 2px 12px;
-  border-left: 3px solid var(--edura-brand-bright);
+  border-left: 3px solid var(--thatcampus-brand-bright);
 }
 
 .assessment-marksheet__remarks span {
-  color: var(--edura-brand-bright);
+  color: var(--thatcampus-brand-bright);
   font-size: 9px;
   font-weight: 850;
   letter-spacing: .06em;
@@ -526,7 +526,7 @@
   margin-top: 16px;
   padding: 12px 18px;
   border-top: 1px solid #e3e9f1;
-  color: var(--edura-brand-bright);
+  color: var(--thatcampus-brand-bright);
   background: #f8faff;
 }
 
@@ -563,10 +563,10 @@
   justify-content: center;
   gap: 7px;
   margin: 14px 18px 0;
-  border: 1px solid var(--edura-brand-bright);
+  border: 1px solid var(--thatcampus-brand-bright);
   border-radius: 12px;
   color: #fff;
-  background: var(--edura-brand-bright);
+  background: var(--thatcampus-brand-bright);
   font: inherit;
   font-size: 12px;
   font-weight: 800;
@@ -574,7 +574,7 @@
 }
 
 .assessment-marksheet__details {
-  color: var(--edura-brand);
+  color: var(--thatcampus-brand);
   font-size: 11px;
 }
 
@@ -672,7 +672,7 @@
   .assessment-marksheet__table > div:last-child { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 
-.parent-app .marksheet__summary { background: var(--edura-feature-gradient); }
+.parent-app .marksheet__summary { background: var(--thatcampus-feature-gradient); }
 .parent-app .marksheet__title span,
 .parent-app .marksheet__subject-row > strong,
 .parent-app .marksheet__verification,

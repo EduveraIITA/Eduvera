@@ -6,8 +6,12 @@ import type { Database } from "../database/types.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { CampusModelActivity, CampusModelChangeReceipt, CampusModelCorePort, CampusOperationalSignal } from "./campus-model-core.port.js";
 import type {
+  CoordinationCandidateAuthorizationInput,
+  CoordinationCandidateAuthorizationReceipt,
   CoordinationExceptionCode,
   CoordinationPublishReceipt,
+  CoordinationRouteResolution,
+  CoordinationRouteResolutionInput,
   CoordinationRuntimePort,
   OperationalMessageOutcomeReceipt,
 } from "./coordination-runtime.port.js";
@@ -25,15 +29,23 @@ import type {
   CampusTemporalAssertion,
   PlanReconciliationReceipt,
   ScheduleProjectionReceipt,
+  SubstitutionInvalidationReceipt,
+  SubstitutionProjectionReceipt,
   TemporalContextPort,
 } from "./temporal-context.port.js";
 import {
+  acceptedScheduleSubstitutionOutboxEvidence,
+  acceptedScheduleSubstitutionProjectionSchema,
   acceptedCampusModelChangeSchema,
   acceptedCoordinationEventSchema,
+  campusModelEntitySchema,
   campusModelObservationSchema,
   campusModelObservationTransitionSchema,
   campusTemporalContextQuerySchema,
   calendarClosureProjectionSchema,
+  cancelledScheduleSubstitutionOutboxEvidence,
+  cancelledScheduleSubstitutionProjectionSchema,
+  cancelledScheduleSubstitutionSuccessorAssignment,
   publishedDayPlanProjectionSchema,
   publishedScheduleProjectionSchema,
   coordinationRecipientAgentRefSchema,
@@ -43,21 +55,28 @@ import {
   humanAgentAccountEndpointReplaceSchema,
   humanAgentAccountResolutionSchema,
   humanAgentPersonResolutionSchema,
+  importedAcceptedScheduleSubstitutionOutboxEvidence,
+  importedAcceptedScheduleSubstitutionProjectionSchema,
+  legacyTimetableSlotChangeProjectionSchema,
   operationalMessageOutcomeSchema,
   recipientOperationalMessageResponseSchema,
   type AcceptedCoordinationEvent,
+  type AcceptedScheduleSubstitutionProjection,
   type AcceptedCampusModelChange,
   type CampusModelEntitySnapshot,
   type CampusModelObservation,
   type CampusModelObservationTransition,
   type CampusTemporalContextQuery,
   type CalendarClosureProjection,
+  type CancelledScheduleSubstitutionProjection,
   type CoordinationRecipientAgentRef,
   type HumanAgentAccountEndpointLink,
   type HumanAgentAccountEndpointClose,
   type HumanAgentAccountEndpointReplace,
   type HumanAgentAccountResolution,
   type HumanAgentPersonResolution,
+  type ImportedAcceptedScheduleSubstitutionProjection,
+  type LegacyTimetableSlotChangeProjection,
   type PublishedDayPlanProjection,
   type PublishedScheduleProjection,
   type OperationalMessageOutcome,
@@ -65,6 +84,21 @@ import {
 } from "./contracts.js";
 
 const uuid = z.string().uuid();
+const coordinationRouteResolutionInputSchema = z.object({
+  school_id: z.string().uuid(),
+  source_domain: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  event_type: z.string().trim().min(3).max(120),
+  selector_key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  occurred_at: z.string().datetime({ offset: true }),
+}).strict();
+const coordinationCandidateAuthorizationInputSchema = z.object({
+  school_id: z.string().uuid(),
+  behaviour_version_id: z.string().uuid(),
+  subscription_id: z.string().uuid(),
+  occurred_at: z.string().datetime({ offset: true }),
+  recipients: z.array(coordinationRecipientAgentRefSchema).max(500),
+  scope: campusModelEntitySchema.nullable(),
+}).strict();
 
 interface EntityRow { id: string; domain: string; domain_id: string }
 interface AgentRow { id: string }
@@ -149,6 +183,56 @@ interface ResolvedObservationRow {
   context_kind: string | null;
 }
 interface EventRow { id: string; request_hash: string }
+interface TemporalPlanEventRow extends EventRow {
+  recorded_at: Date | string;
+  journal_sequence: string;
+}
+interface TemporalSubstitutionOccurrenceRow {
+  id: string;
+  source_event_id: string;
+  schedule_entity_id: string;
+  period_entity_id: string;
+  class_entity_id: string;
+  subject_entity_id: string | null;
+  responsible_agent_id: string | null;
+  space_entity_id: string | null;
+  occurrence_date: Date | string;
+  starts_at: Date | string;
+  ends_at: Date | string;
+  title: string;
+  slot_type: "class" | "break" | "activity";
+  room_snapshot: string;
+  state: "expected" | "cancelled" | "superseded";
+  source_revision: number;
+  logical_occurrence_key: string;
+  period_number: number;
+  basis_event_id: string;
+  change_event_id: string;
+  condition_event_id: string | null;
+  recorded_from: Date | string;
+  basis_source_domain: string;
+  basis_source_record_id: string;
+  basis_source_revision: number;
+}
+interface TemporalSubstitutionDecisionRow extends TemporalPlanEventRow {
+  subject_entity_id: string;
+  context_entity_id: string;
+  effective_from: Date | string;
+  effective_until: Date | string;
+  source_revision: number;
+  original_teacher_agent_id: string;
+  replacement_teacher_agent_id: string;
+}
+interface ExistingSubstitutionDecisionReplayRow {
+  id: string;
+  decision_matches: boolean;
+  replacement_count: number;
+  replacement_matches: boolean;
+  source_history: boolean;
+  current_exists: boolean;
+  current_source_matches: boolean;
+  current_source_closed: boolean;
+}
 interface OutboxEventRow {
   id: string;
   event_type: string;
@@ -205,7 +289,9 @@ interface CoordinationExceptionRow {
 interface TemporalAssertionRow {
   assertion_id: string;
   occurrence_id: string;
+  occurrence_revision_id: string;
   schedule_version_id: string;
+  period_number: number;
   class_entity_id: string;
   class_label: string;
   subject_entity_id: string | null;
@@ -218,10 +304,41 @@ interface TemporalAssertionRow {
   ends_at: Date | string;
   recorded_at: Date | string;
   event_id: string;
+  journal_sequence: string;
   source_record_id: string;
   source_revision: number;
-  event_type: "timetable.schedule_published" | "timetable.day_plan_published";
+  event_type:
+    | "timetable.schedule_published"
+    | "timetable.day_plan_published"
+    | "timetable.schedule_projection_backfilled"
+    | "timetable.legacy_slot_imported"
+    | "timetable.legacy_slot_created"
+    | "timetable.legacy_slot_updated"
+    | "timetable.legacy_slot_deleted";
   source_domain: "timetable" | "day_plan";
+  change_event_id: string;
+  change_event_type: string;
+  change_source_domain: string;
+  change_source_record_id: string;
+  change_source_revision: number;
+  change_journal_sequence: string;
+  change_kind:
+    | "published"
+    | "overridden"
+    | "closure_cancelled"
+    | "closure_restored"
+    | "day_plan_cancelled"
+    | "substituted"
+    | "substitution_cancelled"
+    | "source_changed"
+    | "source_removed"
+    | "projection_backfill";
+  condition_event_id: string | null;
+  condition_event_type: string | null;
+  condition_source_domain: string | null;
+  condition_source_record_id: string | null;
+  condition_source_revision: number | null;
+  condition_journal_sequence: string | null;
   queried_subject_id: string;
   queried_subject_label: string;
   current: boolean;
@@ -318,7 +435,19 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       ) SELECT
         COALESCE(NULLIF(trim(concat_ws(' ',person.first_name,person.last_name)),''),'Campus person') AS label,
         account.is_active
-        AND EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id=person.id)
+        AND (
+          EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id=person.id)
+          OR (
+            ${input.source_domain}='institution_onboarding'
+            AND ${input.source_record_id}=${input.school_id}
+            AND ${input.actor_user_id}::uuid=${input.user_id}::uuid
+            AND EXISTS(
+              SELECT 1 FROM schools institution
+              WHERE institution.id=person.school_id
+                AND institution.created_by_user_id=account.id
+            )
+          )
+        )
         AND NOT EXISTS(SELECT 1 FROM explicit_person explicit WHERE explicit.person_id<>person.id)
         AND EXISTS(
           SELECT 1 FROM school_memberships membership
@@ -787,6 +916,162 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     return Number(result.numUpdatedRows ?? 0);
   }
 
+  async resolveEventRoute(
+    transaction: Transaction<Database>,
+    rawInput: CoordinationRouteResolutionInput,
+  ): Promise<CoordinationRouteResolution> {
+    const input = coordinationRouteResolutionInputSchema.parse(rawInput);
+    const matches = (await sql<CoordinationSubscriptionRow>`SELECT
+        behaviour.id AS behaviour_version_id,behaviour.behaviour_key,
+        behaviour.version AS behaviour_version,behaviour.configuration AS behaviour_configuration,
+        behaviour.configuration_schema_version,subscription.id AS subscription_id,
+        subscription.subscription_key,subscription.reaction_kind,subscription.message_kind,
+        subscription.message_schema_version,subscription.recipient_selector,
+        subscription.response_due_after_seconds,subscription.expires_after_seconds,
+        subscription.max_attempts,subscription.retry_after_seconds,subscription.priority
+      FROM campus_model_behaviour_versions behaviour
+      JOIN campus_model_event_subscriptions subscription
+        ON subscription.behaviour_version_id=behaviour.id AND subscription.school_id=behaviour.school_id
+      WHERE behaviour.school_id=${input.school_id}::uuid AND behaviour.status='approved'
+        AND behaviour.effective_from<=${input.occurred_at}::timestamptz
+        AND (behaviour.effective_until IS NULL OR behaviour.effective_until>${input.occurred_at}::timestamptz)
+        AND subscription.source_domain=${input.source_domain}
+        AND subscription.event_type=${input.event_type}
+        AND subscription.recipient_selector->>'selector_key'=${input.selector_key}
+      FOR SHARE OF behaviour,subscription`.execute(transaction)).rows;
+    if (matches.length === 0) {
+      return {
+        status: "unmatched",
+        exception_code: "configuration_missing",
+        explanation: "No approved Operating-rule behaviour is active for this campus event.",
+        matching_behaviour_version_ids: [],
+      };
+    }
+    if (matches.length !== 1) {
+      return {
+        status: "unmatched",
+        exception_code: "configuration_invalid",
+        explanation: "More than one approved Operating-rule behaviour matches this campus event.",
+        matching_behaviour_version_ids: matches.map((item) => item.behaviour_version_id),
+      };
+    }
+    const match = matches[0]!;
+    const parsedSelector = coordinationRecipientSelectorConfigSchema.safeParse(match.recipient_selector);
+    if (!parsedSelector.success || parsedSelector.data.selector_key !== input.selector_key) {
+      return {
+        status: "unmatched",
+        exception_code: "configuration_invalid",
+        explanation: "The approved behaviour has an invalid recipient selector.",
+        matching_behaviour_version_ids: [match.behaviour_version_id],
+      };
+    }
+    if (match.response_due_after_seconds !== null && match.expires_after_seconds !== null
+      && match.response_due_after_seconds > match.expires_after_seconds) {
+      return {
+        status: "unmatched",
+        exception_code: "configuration_invalid",
+        explanation: "The approved behaviour has a response deadline after its expiry.",
+        matching_behaviour_version_ids: [match.behaviour_version_id],
+      };
+    }
+    return {
+      status: "matched",
+      behaviour_version_id: match.behaviour_version_id,
+      behaviour_key: match.behaviour_key,
+      behaviour_version: match.behaviour_version,
+      behaviour_configuration: match.behaviour_configuration,
+      configuration_schema_version: match.configuration_schema_version,
+      subscription_id: match.subscription_id,
+      subscription_key: match.subscription_key,
+      reaction_kind: match.reaction_kind,
+      message_kind: match.message_kind,
+      message_schema_version: match.message_schema_version,
+      selector: parsedSelector.data,
+      response_due_after_seconds: match.response_due_after_seconds,
+      expires_after_seconds: match.expires_after_seconds,
+      max_attempts: match.max_attempts,
+      retry_after_seconds: match.retry_after_seconds,
+      priority: match.priority,
+    };
+  }
+
+  async authorizeCandidateRecipients(
+    transaction: Transaction<Database>,
+    rawInput: CoordinationCandidateAuthorizationInput,
+  ): Promise<CoordinationCandidateAuthorizationReceipt> {
+    const input = coordinationCandidateAuthorizationInputSchema.parse(rawInput);
+    const recipientKeys = input.recipients.map((recipient) => recipient.agent_kind === "human"
+      ? `human:${recipient.user_id}`
+      : `${recipient.agent_kind}:${recipient.external_ref}`);
+    if (new Set(recipientKeys).size !== recipientKeys.length) {
+      throw new ConflictException("Candidate recipient references must be unique.");
+    }
+    const match = (await sql<CoordinationSubscriptionRow>`SELECT
+        behaviour.id AS behaviour_version_id,behaviour.behaviour_key,
+        behaviour.version AS behaviour_version,behaviour.configuration AS behaviour_configuration,
+        behaviour.configuration_schema_version,subscription.id AS subscription_id,
+        subscription.subscription_key,subscription.reaction_kind,subscription.message_kind,
+        subscription.message_schema_version,subscription.recipient_selector,
+        subscription.response_due_after_seconds,subscription.expires_after_seconds,
+        subscription.max_attempts,subscription.retry_after_seconds,subscription.priority
+      FROM campus_model_behaviour_versions behaviour
+      JOIN campus_model_event_subscriptions subscription
+        ON subscription.behaviour_version_id=behaviour.id AND subscription.school_id=behaviour.school_id
+      WHERE behaviour.school_id=${input.school_id}::uuid
+        AND behaviour.id=${input.behaviour_version_id}::uuid
+        AND subscription.id=${input.subscription_id}::uuid
+        AND behaviour.status='approved'
+        AND behaviour.effective_from<=${input.occurred_at}::timestamptz
+        AND (behaviour.effective_until IS NULL OR behaviour.effective_until>${input.occurred_at}::timestamptz)
+      FOR SHARE OF behaviour,subscription`.execute(transaction)).rows[0];
+    if (!match) {
+      throw new ConflictException("The selected coordination route is no longer active.");
+    }
+    const parsedSelector = coordinationRecipientSelectorConfigSchema.safeParse(match.recipient_selector);
+    if (!parsedSelector.success) {
+      throw new ConflictException("The selected coordination route has an invalid recipient selector.");
+    }
+    const selector = parsedSelector.data;
+    if (selector.scope_mode === "event_scope" && !input.scope) {
+      throw new ConflictException("This coordination route requires an explicit campus scope.");
+    }
+    if (selector.scope_mode === "institution" && input.scope) {
+      throw new ConflictException("This coordination route is institution-scoped.");
+    }
+    const scope = input.scope
+      ? await this.upsertEntity(transaction, input.school_id, input.scope)
+      : null;
+    const authorised: CoordinationRecipientAgentRef[] = [];
+    const unresolved: CoordinationRecipientAgentRef[] = [];
+    const unauthorized: CoordinationRecipientAgentRef[] = [];
+    for (const recipientRef of input.recipients) {
+      const recipient = await this.resolveAgentReference(transaction, input.school_id, recipientRef);
+      if (!recipient) {
+        unresolved.push(recipientRef);
+        continue;
+      }
+      const grant = (await sql<{ id: string }>`SELECT authority.id
+        FROM campus_model_agent_authorities authority
+        WHERE authority.school_id=${input.school_id}::uuid
+          AND authority.agent_id=${recipient.id}::uuid
+          AND authority.capability=${selector.required_capability}
+          AND authority.revoked_at IS NULL
+          AND authority.effective_from<=CURRENT_TIMESTAMP
+          AND (authority.effective_until IS NULL OR authority.effective_until>CURRENT_TIMESTAMP)
+          AND (
+            (${selector.scope_mode}='institution' AND authority.scope_entity_id IS NULL)
+            OR (${selector.scope_mode}='event_scope' AND (
+              authority.scope_entity_id IS NULL OR authority.scope_entity_id=${scope?.id ?? null}::uuid
+            ))
+          )
+        LIMIT 1
+        FOR SHARE OF authority`.execute(transaction)).rows[0];
+      if (grant) authorised.push(recipientRef);
+      else unauthorized.push(recipientRef);
+    }
+    return { authorised, unresolved, unauthorized };
+  }
+
   async publishAcceptedEvent(
     transaction: Transaction<Database>,
     rawInput: AcceptedCoordinationEvent,
@@ -835,9 +1120,15 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         subscription_id: string;
         recipient_agent_id: string;
         selector_snapshot: unknown;
+        message_kind: "request" | "task" | "offer" | "update";
+        message_schema_version: number;
+        response_due_at: Date | string | null;
+        expires_at: Date | string | null;
       }>`SELECT reaction.id AS reaction_id,message.id AS message_id,
           reaction.behaviour_version_id,reaction.subscription_id,
-          reaction.recipient_agent_id,reaction.selector_snapshot
+          reaction.recipient_agent_id,reaction.selector_snapshot,
+          message.message_kind,message.schema_version AS message_schema_version,
+          message.response_due_at,message.expires_at
         FROM campus_model_reactions reaction
         JOIN campus_model_operational_messages message ON message.reaction_id=reaction.id
         WHERE reaction.school_id=${input.school_id}::uuid AND reaction.trigger_event_id=${event.id}::uuid
@@ -866,6 +1157,16 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
             const recipient = coordinationRecipientAgentRefSchema.parse(originalRecipients[recipientIndex]);
             return { reaction_id: item.reaction_id, message_id: item.message_id, recipient };
           }),
+          route_snapshot: {
+            message_kind: existing[0]!.message_kind,
+            message_schema_version: existing[0]!.message_schema_version,
+            response_due_at: existing[0]!.response_due_at
+              ? new Date(existing[0]!.response_due_at).toISOString()
+              : null,
+            expires_at: existing[0]!.expires_at
+              ? new Date(existing[0]!.expires_at).toISOString()
+              : null,
+          },
           replayed: true,
         };
       }
@@ -914,6 +1215,19 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         { matching_behaviour_version_ids: matches.map((item) => item.behaviour_version_id) });
     }
     const match = matches[0]!;
+    if (input.expected_route && (
+      input.expected_route.behaviour_version_id !== match.behaviour_version_id
+      || input.expected_route.subscription_id !== match.subscription_id
+    )) {
+      return this.recordCoordinationException(transaction, input, event.id, "configuration_invalid",
+        "The approved coordination route changed after the domain selected its recipient.",
+        {
+          expected_behaviour_version_id: input.expected_route.behaviour_version_id,
+          expected_subscription_id: input.expected_route.subscription_id,
+          actual_behaviour_version_id: match.behaviour_version_id,
+          actual_subscription_id: match.subscription_id,
+        });
+    }
     const parsedSelector = coordinationRecipientSelectorConfigSchema.safeParse(match.recipient_selector);
     if (!parsedSelector.success) {
       return this.recordCoordinationException(transaction, input, event.id, "configuration_invalid",
@@ -1126,6 +1440,12 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       reaction_ids: reactionIds,
       message_ids: messageIds,
       deliveries,
+      route_snapshot: {
+        message_kind: match.message_kind,
+        message_schema_version: match.message_schema_version,
+        response_due_at: responseDueAt,
+        expires_at: expiresAt,
+      },
       replayed: false,
     };
   }
@@ -1174,9 +1494,13 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       source_record_id: string;
       source_revision: number;
       selector_snapshot: unknown;
+      before_response_due: boolean;
+      before_expiry: boolean;
     }>`SELECT
         message.id AS message_id,message.state,event.source_record_id,event.source_revision,
-        reaction.selector_snapshot
+        reaction.selector_snapshot,
+        message.response_due_at IS NULL OR CURRENT_TIMESTAMP<=message.response_due_at AS before_response_due,
+        message.expires_at IS NULL OR CURRENT_TIMESTAMP<message.expires_at AS before_expiry
       FROM campus_model_operational_messages message
       JOIN campus_model_reactions reaction ON reaction.id=message.reaction_id AND reaction.school_id=message.school_id
       JOIN campus_model_events event ON event.id=reaction.trigger_event_id AND event.school_id=reaction.school_id
@@ -1191,6 +1515,12 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     }
     if (message.source_revision !== input.expected_source_revision) {
       throw new ConflictException("The source record changed. Refresh before responding to this request.");
+    }
+    if (!message.before_response_due) {
+      throw new ConflictException("The response deadline for this operational request has passed.");
+    }
+    if (!message.before_expiry) {
+      throw new ConflictException("This operational request has expired.");
     }
     const selectorSnapshot = message.selector_snapshot as {
       config?: unknown;
@@ -1382,15 +1712,24 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         WHERE command.school_id=${schoolId}::uuid AND command.source_domain='campus_topology'
         UNION ALL
         SELECT observation.source_ref AS id,'attendance'::text AS kind,
-          'attendance.capture'::text AS action,context.label AS subject_label,
+          observation.source_type AS action,context.label AS subject_label,
           count(*)::int AS item_count,observation.state,max(observation.received_at) AS occurred_at,
           actor.label AS actor_label
         FROM campus_model_observations observation
         LEFT JOIN campus_model_entities context ON context.id=observation.context_entity_id
         JOIN campus_model_agents actor ON actor.id=observation.captured_by_agent_id
         WHERE observation.school_id=${schoolId}::uuid
-          AND observation.source_type='attendance.capture'
-        GROUP BY observation.source_ref,context.label,observation.state,actor.label
+          AND observation.source_type IN ('attendance.capture','attendance.daily','attendance.session','attendance.self_check_in')
+          AND observation.state IN ('accepted','pending')
+        GROUP BY observation.source_ref,observation.source_type,context.label,observation.state,actor.label
+        UNION ALL
+        SELECT command.id::text AS id,'examination'::text AS kind,command.command_type AS action,
+          target.label AS subject_label,1::int AS item_count,command.state,
+          command.requested_at AS occurred_at,actor.label AS actor_label
+        FROM campus_model_commands command
+        LEFT JOIN campus_model_entities target ON target.id=command.target_entity_id
+        JOIN campus_model_agents actor ON actor.id=command.actor_agent_id
+        WHERE command.school_id=${schoolId}::uuid AND command.source_domain='assessments'
       ) connected_activity
       ORDER BY occurred_at DESC,id DESC
       LIMIT ${safeLimit}
@@ -1448,6 +1787,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ORDER BY observation.observed_at DESC,observation.received_at DESC LIMIT 1
       ) attendance ON true
       WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.state='expected'
+        AND occurrence.recorded_until IS NULL
         AND occurrence.starts_at<=${atInstant.toISOString()}::timestamptz
         AND occurrence.ends_at>${atInstant.toISOString()}::timestamptz
       ORDER BY CASE WHEN attendance.observation_id IS NOT NULL THEN 0 ELSE 1 END,
@@ -1474,7 +1814,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const classEntity = await this.upsertEntity(transaction, input.school_id, input.class_section);
     const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const idempotencyKey = `timetable.schedule-published:${input.schedule_version_id}:${input.schedule_revision}`;
-    const inserted = (await sql<EventRow>`INSERT INTO campus_model_events(
+    const inserted = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
         school_id,event_kind,event_type,subject_entity_id,actor_agent_id,source_domain,
         source_record_id,source_revision,event_at,effective_from,effective_until,
         correlation_id,causation_event_id,provenance,payload,schema_version,idempotency_key,request_hash
@@ -1487,9 +1827,10 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${JSON.stringify({ source: "schedule_versions", captured_by: "schedule-planning" })}::jsonb,
         ${JSON.stringify({ starts_on: input.starts_on, ends_on: input.ends_on, timezone: input.timezone, period_count: input.periods.length })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING RETURNING id,request_hash`.execute(transaction)).rows[0];
+      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
 
-    const event = inserted ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
+    const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence FROM campus_model_events
       WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This timetable publication key was already used for different plan evidence.");
@@ -1497,7 +1838,8 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     if (!inserted) {
       const existing = (await sql<{ count: number }>`SELECT count(*)::int AS count
         FROM campus_model_schedule_occurrences WHERE school_id=${input.school_id}::uuid
-          AND source_event_id=${event.id}::uuid AND state='expected'`.execute(transaction)).rows[0]?.count ?? 0;
+          AND basis_event_id=${event.id}::uuid
+          AND change_event_id=${event.id}::uuid`.execute(transaction)).rows[0]?.count ?? 0;
       return { event_id: event.id, schedule_entity_id: schedule.id, occurrence_count: existing, replayed: true };
     }
 
@@ -1521,34 +1863,345 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       const responsibleAgent = period.teacher_user_id
         ? await this.ensureHumanAgent(transaction, input.school_id, period.teacher_user_id)
         : null;
-      const result = await sql<{ id: string }>`INSERT INTO campus_model_schedule_occurrences(
+      const result = await sql<{ id: string }>`WITH candidates AS MATERIALIZED (
+          SELECT day::date AS occurrence_date,
+            encode(digest(concat_ws(':',${input.school_id}::text,${input.class_section.domain_id},
+              day::date::text,${period.period_number}::text),'sha256'),'hex') AS occurrence_key,
+            EXISTS(SELECT 1 FROM school_calendar_days closure
+              WHERE closure.school_id=${input.school_id}::uuid AND closure.date=day::date
+                AND NOT closure.is_instructional) AS closed,
+            (SELECT closure_event.id
+              FROM campus_model_events closure_event
+              WHERE closure_event.school_id=${input.school_id}::uuid
+                AND closure_event.event_type='calendar.closure_created'
+                AND closure_event.payload->'dates' ? day::date::text
+              ORDER BY closure_event.recorded_at DESC,closure_event.journal_sequence DESC
+              LIMIT 1) AS closure_event_id
+          FROM generate_series(${input.starts_on}::date,${input.ends_on}::date,'1 day') day
+          WHERE extract(isodow FROM day)=${period.weekday}
+            AND NOT EXISTS(
+              SELECT 1 FROM day_plans plan
+              WHERE plan.school_id=${input.school_id}::uuid
+                AND plan.class_section_id=${input.class_section.domain_id}::uuid
+                AND plan.date=day::date AND plan.published_version IS NOT NULL
+            )
+        ), closed AS (
+          UPDATE campus_model_schedule_occurrences occurrence SET
+            recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+              occurrence.recorded_from+interval '1 microsecond'),
+            projected_at=GREATEST(${event.recorded_at}::timestamptz,
+              occurrence.recorded_from+interval '1 microsecond')
+          FROM candidates
+          WHERE occurrence.school_id=${input.school_id}::uuid
+            AND occurrence.logical_occurrence_key=candidates.occurrence_key
+            AND occurrence.recorded_until IS NULL
+          RETURNING occurrence.id,occurrence.logical_occurrence_key,
+            occurrence.recorded_until AS transition_at
+        )
+        INSERT INTO campus_model_schedule_occurrences(
           school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
           subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
-          title,slot_type,room_snapshot,state,source_revision
+          title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+          basis_event_id,change_event_id,condition_event_id,recorded_from,
+          supersedes_occurrence_id,change_kind
         )
         SELECT ${input.school_id}::uuid,${event.id}::uuid,${schedule.id}::uuid,${periodEntity.id}::uuid,
           ${classEntity.id}::uuid,${subjectEntity?.id ?? null}::uuid,${responsibleAgent?.id ?? null}::uuid,
-          ${spaceEntity?.id ?? null}::uuid,day::date,
-          ((day::date+${period.starts_at}::time) AT TIME ZONE ${input.timezone}),
-          ((day::date+${period.ends_at}::time) AT TIME ZONE ${input.timezone}),
-          ${period.title},${period.slot_type},${period.room_snapshot},'expected',${input.schedule_revision}
-        FROM generate_series(${input.starts_on}::date,${input.ends_on}::date,'1 day') day
-        WHERE extract(isodow FROM day)=${period.weekday}
-          AND NOT EXISTS(
-            SELECT 1 FROM school_calendar_days closure
-            WHERE closure.school_id=${input.school_id}::uuid AND closure.date=day::date AND NOT closure.is_instructional
-          )
-          AND NOT EXISTS(
-            SELECT 1 FROM day_plans plan
-            WHERE plan.school_id=${input.school_id}::uuid AND plan.class_section_id=${input.class_section.domain_id}::uuid
-              AND plan.date=day::date AND plan.published_version IS NOT NULL
-          )
-        ON CONFLICT(school_id,period_entity_id,occurrence_date,source_revision) DO NOTHING
+          ${spaceEntity?.id ?? null}::uuid,candidates.occurrence_date,
+          ((candidates.occurrence_date+${period.starts_at}::time) AT TIME ZONE ${input.timezone}),
+          ((candidates.occurrence_date+${period.ends_at}::time) AT TIME ZONE ${input.timezone}),
+          ${period.title},${period.slot_type},${period.room_snapshot},
+          CASE WHEN candidates.closed THEN 'cancelled' ELSE 'expected' END,
+          ${input.schedule_revision},candidates.occurrence_key,${period.period_number},
+          ${event.id}::uuid,${event.id}::uuid,
+          CASE WHEN candidates.closed THEN candidates.closure_event_id ELSE NULL::uuid END,
+          COALESCE(closed.transition_at,${event.recorded_at}::timestamptz),closed.id,
+          CASE WHEN candidates.closed THEN 'closure_cancelled' ELSE 'published' END
+        FROM candidates
+        LEFT JOIN closed ON closed.logical_occurrence_key=candidates.occurrence_key
+        ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING
         RETURNING id`.execute(transaction);
       occurrenceCount += result.rows.length;
     }
 
     return { event_id: event.id, schedule_entity_id: schedule.id, occurrence_count: occurrenceCount, replayed: false };
+  }
+
+  async recordLegacyTimetableSlotChange(
+    transaction: Transaction<Database>,
+    rawInput: LegacyTimetableSlotChangeProjection,
+  ): Promise<PlanReconciliationReceipt> {
+    const input = legacyTimetableSlotChangeProjectionSchema.parse(rawInput);
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(
+      'campus-schedule-occurrence:'||${input.school_id}::text,0
+    ))`.execute(transaction);
+
+    const retainedSlot = (await sql<{ exact: boolean }>`SELECT EXISTS(
+        SELECT 1
+        FROM timetable_slots slot
+        JOIN class_sections section ON section.id=slot.class_section_id
+        JOIN academic_terms term ON term.id=slot.term_id
+        LEFT JOIN subjects subject
+          ON subject.id=slot.subject_id AND subject.school_id=section.school_id
+        WHERE slot.id=${input.source_record_id}::uuid
+          AND section.school_id=${input.school_id}::uuid
+          AND term.school_id=${input.school_id}::uuid
+          AND slot.revision=${input.source_revision}
+          AND slot.term_id=${input.term_id}::uuid
+          AND slot.class_section_id=${input.class_section.domain_id}::uuid
+          AND slot.weekday=${input.slot.weekday}
+          AND slot.period_number=${input.slot.period_number}
+          AND slot.starts_at=${input.slot.starts_at}::time
+          AND slot.ends_at=${input.slot.ends_at}::time
+          AND slot.slot_type=${input.slot.slot_type}
+          AND COALESCE(subject.name,NULLIF(trim(slot.title),''),'Period')=${input.slot.title}
+          AND slot.room=${input.slot.room_snapshot}
+          AND slot.teacher_user_id IS NOT DISTINCT FROM ${input.slot.teacher_user_id}::uuid
+          AND slot.subject_id IS NOT DISTINCT FROM ${input.slot.subject?.domain_id ?? null}::uuid
+          AND slot.space_id IS NOT DISTINCT FROM ${input.slot.space?.domain_id ?? null}::uuid
+          AND term.starts_on=${input.starts_on}::date
+          AND term.ends_on=${input.ends_on}::date
+      ) AS exact`.execute(transaction)).rows[0]?.exact ?? false;
+    if (input.action === "deleted" ? retainedSlot : !retainedSlot) {
+      throw new ConflictException(
+        input.action === "deleted"
+          ? "The deleted legacy timetable source still exists."
+          : "The legacy timetable projection does not match its authoritative source revision.",
+      );
+    }
+
+    const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
+    const schedule = await this.upsertEntity(transaction, input.school_id, {
+      kind: "schedule",
+      domain: "timetable",
+      domain_id: `legacy:${input.source_record_id}`,
+      label: `${input.class_section.label} recurring ${input.slot.title}`,
+      lifecycle_state: input.action === "deleted" ? "retired" : "active",
+      source_revision: input.source_revision,
+      metadata: {
+        term_id: input.term_id,
+        starts_on: input.starts_on,
+        ends_on: input.ends_on,
+        timezone: input.timezone,
+        source_kind: "legacy_timetable",
+      },
+    });
+    const classEntity = await this.upsertEntity(transaction, input.school_id, input.class_section);
+    const period = await this.upsertEntity(transaction, input.school_id, {
+      kind: "schedule_period",
+      domain: "timetable",
+      domain_id: input.source_record_id,
+      label: input.slot.title,
+      lifecycle_state: input.action === "deleted" ? "retired" : "active",
+      source_revision: input.source_revision,
+      metadata: {
+        weekday: input.slot.weekday,
+        period_number: input.slot.period_number,
+        slot_type: input.slot.slot_type,
+        source_kind: "legacy_timetable",
+      },
+    });
+    const subject = input.slot.subject
+      ? await this.upsertEntity(transaction, input.school_id, input.slot.subject)
+      : null;
+    const space = input.slot.space
+      ? await this.upsertEntity(transaction, input.school_id, input.slot.space)
+      : null;
+    const teacher = input.action !== "deleted" && input.slot.teacher_user_id
+      ? await this.ensureHumanAgent(transaction, input.school_id, input.slot.teacher_user_id)
+      : null;
+    const eventType = `timetable.legacy_slot_${input.action}`;
+    const idempotencyKey = `${eventType}:${input.source_record_id}:${input.source_revision}`;
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const inserted = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
+        school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
+        source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
+        correlation_id,provenance,payload,schema_version,idempotency_key,request_hash
+      ) VALUES(
+        ${input.school_id}::uuid,'plan',${eventType},${schedule.id}::uuid,${classEntity.id}::uuid,
+        ${actor.id}::uuid,'timetable',${input.source_record_id},${input.source_revision},
+        ${input.occurred_at}::timestamptz,
+        (${input.starts_on}::date::timestamp AT TIME ZONE ${input.timezone}),
+        ((${input.ends_on}::date+1)::timestamp AT TIME ZONE ${input.timezone}),
+        ${input.correlation_id}::uuid,
+        ${JSON.stringify({ source: "timetable_slots", captured_by: "school-timetable" })}::jsonb,
+        ${JSON.stringify({
+          action: input.action,
+          term_id: input.term_id,
+          class_section_id: input.class_section.domain_id,
+          previous_source_revision: input.previous_source_revision,
+          slot: input.slot,
+        })}::jsonb,
+        1,${idempotencyKey},${requestHash}
+      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
+    const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT
+        id,request_hash,recorded_at,journal_sequence
+      FROM campus_model_events
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey}
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!event || event.request_hash !== requestHash) {
+      throw new ConflictException(
+        "This legacy timetable source revision was already projected with different evidence.",
+      );
+    }
+    if (!inserted) {
+      const existing = (await sql<{ count: number }>`SELECT count(*)::int AS count
+        FROM campus_model_schedule_occurrences
+        WHERE school_id=${input.school_id}::uuid AND change_event_id=${event.id}::uuid`
+        .execute(transaction)).rows[0]?.count ?? 0;
+      return {
+        event_id: event.id,
+        affected_occurrence_count: existing,
+        replacement_occurrence_count: existing,
+        replayed: true,
+      };
+    }
+
+    const retired = await sql<{ id: string }>`WITH candidates AS MATERIALIZED (
+        SELECT day::date AS occurrence_date,
+          encode(digest(concat_ws(':',${input.school_id}::text,
+            ${input.class_section.domain_id}::text,day::date::text,
+            ${input.slot.period_number}::int::text),'sha256'),'hex') AS occurrence_key
+        FROM generate_series(${input.starts_on}::date,${input.ends_on}::date,'1 day') day
+        WHERE ${input.action}::text<>'deleted'
+          AND extract(isodow FROM day)=${input.slot.weekday}::int
+          AND NOT EXISTS(
+            SELECT 1 FROM day_plans plan
+            WHERE plan.school_id=${input.school_id}::uuid
+              AND plan.class_section_id=${input.class_section.domain_id}::uuid
+              AND plan.date=day::date AND plan.published_version IS NOT NULL
+          )
+          AND NOT EXISTS(
+            SELECT 1 FROM schedule_versions version
+            WHERE version.school_id=${input.school_id}::uuid
+              AND version.class_section_id=${input.class_section.domain_id}::uuid
+              AND version.term_id=${input.term_id}::uuid
+              AND version.state='published'
+              AND day::date BETWEEN version.starts_on AND version.ends_on
+          )
+      ), closed AS (
+        UPDATE campus_model_schedule_occurrences occurrence SET
+          recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond'),
+          projected_at=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond')
+        FROM campus_model_events basis
+        WHERE occurrence.school_id=${input.school_id}::uuid
+          AND occurrence.recorded_until IS NULL
+          AND basis.id=occurrence.basis_event_id
+          AND basis.school_id=occurrence.school_id
+          AND basis.source_domain='timetable'
+          AND basis.source_record_id=${input.source_record_id}
+          AND NOT EXISTS(
+            SELECT 1 FROM candidates
+            WHERE candidates.occurrence_key=occurrence.logical_occurrence_key
+          )
+        RETURNING occurrence.*
+      )
+      INSERT INTO campus_model_schedule_occurrences(
+        school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+        subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+        title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+        basis_event_id,change_event_id,condition_event_id,recorded_from,
+        supersedes_occurrence_id,change_kind
+      ) SELECT
+        closed.school_id,closed.source_event_id,closed.schedule_entity_id,closed.period_entity_id,
+        closed.class_entity_id,closed.subject_entity_id,closed.responsible_agent_id,
+        closed.space_entity_id,closed.occurrence_date,closed.starts_at,closed.ends_at,
+        closed.title,closed.slot_type,closed.room_snapshot,'cancelled',closed.source_revision,
+        closed.logical_occurrence_key,closed.period_number,closed.basis_event_id,${event.id}::uuid,
+        closed.condition_event_id,closed.recorded_until,closed.id,
+        CASE WHEN ${input.action}::text='deleted' THEN 'source_removed' ELSE 'source_changed' END
+      FROM closed
+      ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING
+      RETURNING id`.execute(transaction);
+
+    let projectedCount = 0;
+    if (input.action !== "deleted") {
+      const projected = await sql<{ id: string }>`WITH candidates AS MATERIALIZED (
+          SELECT day::date AS occurrence_date,
+            encode(digest(concat_ws(':',${input.school_id}::text,
+              ${input.class_section.domain_id}::text,day::date::text,
+              ${input.slot.period_number}::int::text),'sha256'),'hex') AS occurrence_key,
+            EXISTS(
+              SELECT 1 FROM school_calendar_days closure
+              WHERE closure.school_id=${input.school_id}::uuid
+                AND closure.date=day::date AND NOT closure.is_instructional
+            ) AS closed,
+            (
+              SELECT closure_event.id
+              FROM campus_model_events closure_event
+              WHERE closure_event.school_id=${input.school_id}::uuid
+                AND closure_event.event_type='calendar.closure_created'
+                AND closure_event.payload->'dates' ? day::date::text
+              ORDER BY closure_event.recorded_at DESC,closure_event.journal_sequence DESC
+              LIMIT 1
+            ) AS closure_event_id
+          FROM generate_series(${input.starts_on}::date,${input.ends_on}::date,'1 day') day
+          WHERE extract(isodow FROM day)=${input.slot.weekday}::int
+            AND NOT EXISTS(
+              SELECT 1 FROM day_plans plan
+              WHERE plan.school_id=${input.school_id}::uuid
+                AND plan.class_section_id=${input.class_section.domain_id}::uuid
+                AND plan.date=day::date AND plan.published_version IS NOT NULL
+            )
+            AND NOT EXISTS(
+              SELECT 1 FROM schedule_versions version
+              WHERE version.school_id=${input.school_id}::uuid
+                AND version.class_section_id=${input.class_section.domain_id}::uuid
+                AND version.term_id=${input.term_id}::uuid
+                AND version.state='published'
+                AND day::date BETWEEN version.starts_on AND version.ends_on
+            )
+        ), closed AS (
+          UPDATE campus_model_schedule_occurrences occurrence SET
+            recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+              occurrence.recorded_from+interval '1 microsecond'),
+            projected_at=GREATEST(${event.recorded_at}::timestamptz,
+              occurrence.recorded_from+interval '1 microsecond')
+          FROM candidates
+          WHERE occurrence.school_id=${input.school_id}::uuid
+            AND occurrence.logical_occurrence_key=candidates.occurrence_key
+            AND occurrence.recorded_until IS NULL
+          RETURNING occurrence.id,occurrence.logical_occurrence_key,
+            occurrence.recorded_until AS transition_at
+        )
+        INSERT INTO campus_model_schedule_occurrences(
+          school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+          subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+          title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+          basis_event_id,change_event_id,condition_event_id,recorded_from,
+          supersedes_occurrence_id,change_kind
+        ) SELECT
+          ${input.school_id}::uuid,${event.id}::uuid,${schedule.id}::uuid,${period.id}::uuid,
+          ${classEntity.id}::uuid,${subject?.id ?? null}::uuid,${teacher?.id ?? null}::uuid,
+          ${space?.id ?? null}::uuid,candidates.occurrence_date,
+          ((candidates.occurrence_date+${input.slot.starts_at}::time) AT TIME ZONE ${input.timezone}),
+          ((candidates.occurrence_date+${input.slot.ends_at}::time) AT TIME ZONE ${input.timezone}),
+          ${input.slot.title},${input.slot.slot_type},${input.slot.room_snapshot},
+          CASE WHEN candidates.closed THEN 'cancelled' ELSE 'expected' END,
+          ${input.source_revision},candidates.occurrence_key,${input.slot.period_number},
+          ${event.id}::uuid,${event.id}::uuid,
+          CASE WHEN candidates.closed THEN candidates.closure_event_id ELSE NULL::uuid END,
+          COALESCE(closed.transition_at,${event.recorded_at}::timestamptz),closed.id,
+          CASE
+            WHEN candidates.closed THEN 'closure_cancelled'
+            WHEN ${input.action}='created' THEN 'published'
+            ELSE 'source_changed'
+          END
+        FROM candidates
+        LEFT JOIN closed ON closed.logical_occurrence_key=candidates.occurrence_key
+        ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING
+        RETURNING id`.execute(transaction);
+      projectedCount = projected.rows.length;
+    }
+    return {
+      event_id: event.id,
+      affected_occurrence_count: retired.rows.length + projectedCount,
+      replacement_occurrence_count: retired.rows.length + projectedCount,
+      replayed: false,
+    };
   }
 
   async recordCalendarClosure(
@@ -1563,7 +2216,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const firstDate = [...input.dates].sort()[0]!;
     const lastDate = [...input.dates].sort().at(-1)!;
-    const inserted = (await sql<EventRow>`INSERT INTO campus_model_events(
+    const inserted = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
         school_id,event_kind,event_type,subject_entity_id,actor_agent_id,source_domain,
         source_record_id,source_revision,event_at,effective_from,effective_until,
         correlation_id,provenance,payload,schema_version,idempotency_key,request_hash
@@ -1575,26 +2228,105 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${input.correlation_id}::uuid,${JSON.stringify({ source: "school_calendar_days", captured_by: "school-calendar" })}::jsonb,
         ${JSON.stringify({ action: input.action, dates: input.dates, label: input.label, closure_kind: input.closure_kind })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING RETURNING id,request_hash`.execute(transaction)).rows[0];
-    const event = inserted ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
+      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
+    const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence FROM campus_model_events
       WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This calendar event key was already used for different plan evidence.");
     }
-    if (!inserted) return { event_id: event.id, affected_occurrence_count: 0, replacement_occurrence_count: 0, replayed: true };
+    if (!inserted) {
+      const existing = (await sql<{ count: number }>`SELECT count(*)::int AS count
+        FROM campus_model_schedule_occurrences
+        WHERE school_id=${input.school_id}::uuid AND change_event_id=${event.id}::uuid`.execute(transaction)).rows[0]?.count ?? 0;
+      return { event_id: event.id, affected_occurrence_count: existing, replacement_occurrence_count: existing, replayed: true };
+    }
 
-    const update = input.action === "created"
-      ? await sql`UPDATE campus_model_schedule_occurrences SET state='cancelled',projected_at=now()
-          WHERE school_id=${input.school_id}::uuid AND occurrence_date=ANY(${input.dates}::date[]) AND state='expected'`.execute(transaction)
-      : await sql`UPDATE campus_model_schedule_occurrences occurrence SET state='expected',projected_at=now()
-          WHERE occurrence.school_id=${input.school_id}::uuid AND occurrence.occurrence_date=ANY(${input.dates}::date[])
-            AND occurrence.state='cancelled'
-            AND NOT EXISTS(SELECT 1 FROM school_calendar_days closure
-              WHERE closure.school_id=occurrence.school_id AND closure.date=occurrence.occurrence_date AND NOT closure.is_instructional)`.execute(transaction);
+    const nextState = input.action === "created" ? "cancelled" : "expected";
+    const nextChange = input.action === "created" ? "closure_cancelled" : "closure_restored";
+    const priorState = input.action === "created" ? "expected" : "cancelled";
+    const update = await sql<{ id: string }>`WITH closed AS (
+        UPDATE campus_model_schedule_occurrences occurrence SET
+          recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond'),
+          projected_at=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond')
+        WHERE occurrence.school_id=${input.school_id}::uuid
+          AND occurrence.occurrence_date=ANY(${input.dates}::date[])
+          AND occurrence.recorded_until IS NULL AND occurrence.state=${priorState}
+          AND (${input.action}='created' OR occurrence.change_kind='closure_cancelled')
+          AND (${input.action}='created' OR NOT EXISTS(
+            SELECT 1 FROM school_calendar_days closure
+            WHERE closure.school_id=occurrence.school_id
+              AND closure.date=occurrence.occurrence_date AND NOT closure.is_instructional
+          ))
+        RETURNING occurrence.*
+      )
+      INSERT INTO campus_model_schedule_occurrences(
+        school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+        subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+        title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+        basis_event_id,change_event_id,condition_event_id,recorded_from,
+        supersedes_occurrence_id,change_kind
+      )
+      SELECT closed.school_id,closed.source_event_id,closed.schedule_entity_id,closed.period_entity_id,
+        closed.class_entity_id,closed.subject_entity_id,
+        CASE
+          WHEN ${input.action}='removed'
+            AND cancellation.id IS NOT NULL
+            AND cancellation.payload->>'successor_assignment'='original_teacher'
+          THEN (accepted_change.payload->>'original_teacher_agent_id')::uuid
+          WHEN ${input.action}='removed' AND cancellation.id IS NOT NULL
+          THEN NULL::uuid
+          WHEN ${input.action}='removed' AND accepted_change.id IS NOT NULL
+          THEN (accepted_change.payload->>'replacement_teacher_agent_id')::uuid
+          ELSE closed.responsible_agent_id
+        END,
+        closed.space_entity_id,
+        closed.occurrence_date,closed.starts_at,closed.ends_at,closed.title,closed.slot_type,
+        closed.room_snapshot,${nextState},closed.source_revision,closed.logical_occurrence_key,
+        closed.period_number,closed.basis_event_id,${event.id}::uuid,
+        CASE WHEN ${input.action}='created' THEN ${event.id}::uuid ELSE NULL::uuid END,
+        closed.recorded_until,
+        closed.id,${nextChange}
+      FROM closed
+      LEFT JOIN campus_model_events basis_change
+        ON basis_change.school_id=closed.school_id
+        AND basis_change.id=closed.basis_event_id
+      LEFT JOIN LATERAL (
+        SELECT accepted.*
+        FROM campus_model_events accepted
+        WHERE ${input.action}='removed'
+          AND accepted.school_id=closed.school_id
+          AND accepted.event_type='timetable.substitution_effective'
+          AND accepted.journal_sequence>basis_change.journal_sequence
+          AND accepted.journal_sequence<=${event.journal_sequence}::bigint
+          AND accepted.payload->>'occurrence_key'=closed.logical_occurrence_key
+          AND accepted.payload->>'source_record_id'=basis_change.source_record_id
+          AND accepted.payload->>'source_revision'=basis_change.source_revision::text
+          AND accepted.effective_from=closed.starts_at
+          AND accepted.effective_until=closed.ends_at
+        ORDER BY accepted.journal_sequence DESC
+        LIMIT 1
+      ) accepted_change ON basis_change.id IS NOT NULL
+      LEFT JOIN LATERAL (
+        SELECT cancelled.id,cancelled.payload
+        FROM campus_model_events cancelled
+        WHERE ${input.action}='removed'
+          AND cancelled.school_id=closed.school_id
+          AND cancelled.event_type='timetable.substitution_cancelled'
+          AND cancelled.causation_event_id=accepted_change.id
+          AND cancelled.journal_sequence>accepted_change.journal_sequence
+          AND cancelled.journal_sequence<=${event.journal_sequence}::bigint
+        ORDER BY cancelled.journal_sequence DESC
+        LIMIT 1
+      ) cancellation ON accepted_change.id IS NOT NULL
+      ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING
+      RETURNING id`.execute(transaction);
     return {
       event_id: event.id,
-      affected_occurrence_count: Number(update.numAffectedRows ?? 0),
-      replacement_occurrence_count: 0,
+      affected_occurrence_count: update.rows.length,
+      replacement_occurrence_count: update.rows.length,
       replayed: false,
     };
   }
@@ -1617,7 +2349,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const classEntity = await this.upsertEntity(transaction, input.school_id, input.class_section);
     const idempotencyKey = `timetable.day-plan-published:${input.plan_id}:${input.plan_version}:${input.plan_revision}`;
     const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
-    const inserted = (await sql<EventRow>`INSERT INTO campus_model_events(
+    const inserted = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
         school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
         source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
         correlation_id,provenance,payload,schema_version,idempotency_key,request_hash
@@ -1629,23 +2361,45 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         ${input.correlation_id}::uuid,${JSON.stringify({ source: "day_plan_versions", captured_by: "day-plans" })}::jsonb,
         ${JSON.stringify({ date: input.date, version: input.plan_version, cancelled_period_ids: input.periods.filter((period) => period.cancelled).map((period) => period.period_id) })}::jsonb,
         1,${idempotencyKey},${requestHash}
-      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING RETURNING id,request_hash`.execute(transaction)).rows[0];
-    const event = inserted ?? (await sql<EventRow>`SELECT id,request_hash FROM campus_model_events
+      ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+      RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
+    const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence FROM campus_model_events
       WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey} FOR UPDATE`.execute(transaction)).rows[0];
     if (!event || event.request_hash !== requestHash) {
       throw new ConflictException("This daily-plan event key was already used for different plan evidence.");
     }
     if (!inserted) {
       const existing = (await sql<{ count: number }>`SELECT count(*)::int AS count FROM campus_model_schedule_occurrences
-        WHERE school_id=${input.school_id}::uuid AND source_event_id=${event.id}::uuid AND state='expected'`.execute(transaction)).rows[0]?.count ?? 0;
+        WHERE school_id=${input.school_id}::uuid AND basis_event_id=${event.id}::uuid
+          AND change_event_id=${event.id}::uuid`.execute(transaction)).rows[0]?.count ?? 0;
       return { event_id: event.id, affected_occurrence_count: 0, replacement_occurrence_count: existing, replayed: true };
     }
 
-    const superseded = await sql`UPDATE campus_model_schedule_occurrences SET state='superseded',projected_at=now()
+    const superseded = await sql<{
+      id:string; logical_occurrence_key:string; recorded_until:Date|string;
+    }>`UPDATE campus_model_schedule_occurrences occurrence SET
+        recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+          occurrence.recorded_from+interval '1 microsecond'),
+        projected_at=GREATEST(${event.recorded_at}::timestamptz,
+          occurrence.recorded_from+interval '1 microsecond')
       WHERE school_id=${input.school_id}::uuid AND class_entity_id=${classEntity.id}::uuid
-        AND occurrence_date=${input.date}::date AND state IN ('expected','cancelled')`.execute(transaction);
+        AND occurrence_date=${input.date}::date AND recorded_until IS NULL
+      RETURNING id,logical_occurrence_key,recorded_until`.execute(transaction);
+    const supersededByKey = new Map(superseded.rows.map((row) => [row.logical_occurrence_key, row]));
+    const closure = (await sql<{ closed:boolean; event_id:string|null }>`SELECT
+        EXISTS(SELECT 1 FROM school_calendar_days closure
+          WHERE closure.school_id=${input.school_id}::uuid AND closure.date=${input.date}::date
+            AND NOT closure.is_instructional) AS closed,
+        (SELECT closure_event.id::text
+          FROM campus_model_events closure_event
+          WHERE closure_event.school_id=${input.school_id}::uuid
+            AND closure_event.event_type='calendar.closure_created'
+            AND closure_event.payload->'dates' ? ${input.date}
+          ORDER BY closure_event.recorded_at DESC,closure_event.journal_sequence DESC
+          LIMIT 1) AS event_id`.execute(transaction)).rows[0] ?? { closed:false, event_id:null };
+    const closureExists = closure.closed;
     let replacements = 0;
-    for (const period of input.periods.filter((item) => !item.cancelled)) {
+    for (const period of input.periods) {
       const periodEntity = await this.upsertEntity(transaction, input.school_id, {
         kind: "schedule_period", domain: "day_plan", domain_id: `${period.period_id}:${input.plan_version}`,
         label: period.title, lifecycle_state: "active", source_revision: input.plan_revision,
@@ -1656,25 +2410,927 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       const responsibleAgent = period.teacher_user_id
         ? await this.ensureHumanAgent(transaction, input.school_id, period.teacher_user_id)
         : null;
+      const logicalOccurrenceKey = createHash("sha256").update([
+        input.school_id,
+        input.class_section.domain_id,
+        input.date,
+        String(period.period_number),
+      ].join(":")).digest("hex");
+      const previous = supersededByKey.get(logicalOccurrenceKey);
+      const state = period.cancelled || closureExists ? "cancelled" : "expected";
+      const changeKind = period.cancelled
+        ? "day_plan_cancelled"
+        : closureExists
+          ? "closure_cancelled"
+          : "overridden";
       const result = await sql<{ id: string }>`INSERT INTO campus_model_schedule_occurrences(
           school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
           subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
-          title,slot_type,room_snapshot,state,source_revision
+          title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+          basis_event_id,change_event_id,condition_event_id,recorded_from,
+          supersedes_occurrence_id,change_kind
         ) VALUES (
           ${input.school_id}::uuid,${event.id}::uuid,${planEntity.id}::uuid,${periodEntity.id}::uuid,
           ${classEntity.id}::uuid,${subjectEntity?.id ?? null}::uuid,${responsibleAgent?.id ?? null}::uuid,
           ${spaceEntity?.id ?? null}::uuid,${input.date}::date,
           ((${input.date}::date+${period.starts_at}::time) AT TIME ZONE ${input.timezone}),
           ((${input.date}::date+${period.ends_at}::time) AT TIME ZONE ${input.timezone}),
-          ${period.title},${period.slot_type},${period.room_snapshot},'expected',${input.plan_revision}
-        ) ON CONFLICT(school_id,period_entity_id,occurrence_date,source_revision) DO NOTHING RETURNING id`.execute(transaction);
+          ${period.title},${period.slot_type},${period.room_snapshot},${state},${input.plan_revision},
+          ${logicalOccurrenceKey},${period.period_number},${event.id}::uuid,${event.id}::uuid,
+          ${closureExists ? closure.event_id : null}::uuid,
+          ${previous?.recorded_until ?? event.recorded_at}::timestamptz,${previous?.id ?? null}::uuid,
+          ${changeKind}
+        ) ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING RETURNING id`.execute(transaction);
       replacements += result.rows.length;
     }
     return {
       event_id: event.id,
-      affected_occurrence_count: Number(superseded.numAffectedRows ?? 0),
+      affected_occurrence_count: superseded.rows.length,
       replacement_occurrence_count: replacements,
       replayed: false,
+    };
+  }
+
+  async recordAcceptedScheduleSubstitution(
+    transaction: Transaction<Database>,
+    rawInput: AcceptedScheduleSubstitutionProjection,
+  ): Promise<SubstitutionProjectionReceipt> {
+    const input = acceptedScheduleSubstitutionProjectionSchema.parse(rawInput);
+    this.assertAcceptedSubstitutionOccurrenceKey(input);
+    const authoritativeOutboxEvidence = acceptedScheduleSubstitutionOutboxEvidence(input);
+    const outbox = (await sql<{ id: string }>`SELECT id FROM event_outbox
+      WHERE id=${input.source_outbox_event_id}::uuid AND school_id=${input.school_id}::uuid
+        AND event_type='staff.coverage.accepted'
+        AND aggregate_type='staff_coverage_task'
+        AND aggregate_id=${input.coverage_task_id}::uuid
+        AND payload @> ${JSON.stringify(authoritativeOutboxEvidence)}::jsonb
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (!outbox) {
+      throw new ConflictException(
+        "The accepted cover does not match its authoritative domain event.",
+      );
+    }
+
+    const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
+    const originalTeacher = await this.ensureHumanAgent(
+      transaction,
+      input.school_id,
+      input.original_teacher_user_id,
+    );
+    const replacementTeacher = await this.ensureHumanAgent(
+      transaction,
+      input.school_id,
+      input.replacement_teacher_user_id,
+    );
+    return this.projectAcceptedScheduleSubstitution(transaction, input, {
+      actor,
+      originalTeacher,
+      replacementTeacher,
+      provenance: {
+        source: "staff_timetable_substitutions",
+        captured_by: "staff-operations",
+      },
+    });
+  }
+
+  async recordImportedAcceptedScheduleSubstitution(
+    transaction: Transaction<Database>,
+    rawInput: ImportedAcceptedScheduleSubstitutionProjection,
+  ): Promise<SubstitutionProjectionReceipt> {
+    const importedInput = importedAcceptedScheduleSubstitutionProjectionSchema.parse(rawInput);
+    const {
+      imported_by_user_id: importedByUserId,
+      imported_at: importedAt,
+      import_reason: importReason,
+      ...acceptedInput
+    } = importedInput;
+    const input = acceptedScheduleSubstitutionProjectionSchema.parse(acceptedInput);
+    this.assertAcceptedSubstitutionOccurrenceKey(input);
+
+    // The importer authorises this repair now. The accepter and both teachers
+    // are historical identity evidence only and are never granted current
+    // authority by this lookup.
+    const importer = await this.ensureHumanAgent(transaction, input.school_id, importedByUserId);
+    const actor = await this.requireRetainedHumanAgent(
+      transaction,
+      input.school_id,
+      input.actor_user_id,
+    );
+    const originalTeacher = await this.requireRetainedHumanAgent(
+      transaction,
+      input.school_id,
+      input.original_teacher_user_id,
+    );
+    const replacementTeacher = await this.requireRetainedHumanAgent(
+      transaction,
+      input.school_id,
+      input.replacement_teacher_user_id,
+    );
+    if (actor.id !== replacementTeacher.id) {
+      throw new ConflictException(
+        "The retained accepter identity does not match the retained replacement teacher.",
+      );
+    }
+
+    // Reconciliation may encounter a substitution already projected by the
+    // live acceptance path. Its exact Core decision is authoritative and needs
+    // neither a second outbox record nor rewritten import provenance.
+    const replay = await this.replayAcceptedScheduleSubstitutionIfPresent(
+      transaction,
+      input,
+      { actor, originalTeacher, replacementTeacher },
+    );
+    if (replay) return replay;
+
+    const authoritativeOutboxEvidence =
+      importedAcceptedScheduleSubstitutionOutboxEvidence(importedInput);
+    const importIdempotencyKey = [
+      "staff.coverage.accepted-import",
+      input.substitution_id,
+      String(input.coverage_task_revision),
+    ].join(":");
+    const outbox = (await sql<{ id: string }>`SELECT id FROM event_outbox
+      WHERE id=${input.source_outbox_event_id}::uuid AND school_id=${input.school_id}::uuid
+        AND event_type='staff.coverage.accepted'
+        AND aggregate_type='staff_coverage_task'
+        AND aggregate_id=${input.coverage_task_id}::uuid
+        AND idempotency_key=${importIdempotencyKey}
+        AND payload=${JSON.stringify(authoritativeOutboxEvidence)}::jsonb
+        AND audience_user_ids=ARRAY[]::uuid[]
+        AND notification_user_ids=ARRAY[]::uuid[]
+        AND notification_payload IS NULL
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (!outbox) {
+      throw new ConflictException(
+        "The imported accepted cover does not match its canonical non-notifying domain event.",
+      );
+    }
+
+    return this.projectAcceptedScheduleSubstitution(transaction, input, {
+      actor,
+      originalTeacher,
+      replacementTeacher,
+      provenance: {
+        source: "staff_timetable_substitutions",
+        captured_by: "staff-coverage-reconciliation",
+        projection_mode: "historical_import",
+        import_reason: importReason,
+        imported_at: importedAt,
+        imported_by_agent_id: importer.id,
+        accepted_by_agent_id: actor.id,
+      },
+    });
+  }
+
+  private async replayAcceptedScheduleSubstitutionIfPresent(
+    transaction: Transaction<Database>,
+    input: AcceptedScheduleSubstitutionProjection,
+    identities: {
+      actor: AgentRow;
+      originalTeacher: AgentRow;
+      replacementTeacher: AgentRow;
+    },
+  ): Promise<SubstitutionProjectionReceipt | null> {
+    const school = (await sql<{ timezone: string }>`SELECT timezone FROM schools
+      WHERE id=${input.school_id}::uuid FOR SHARE`.execute(transaction)).rows[0];
+    if (!school) {
+      throw new ConflictException("The institution for this timetable change no longer exists.");
+    }
+    const authoritativeIdentity = {
+      ...acceptedScheduleSubstitutionOutboxEvidence(input),
+      coverage_task_id: input.coverage_task_id,
+      original_teacher_agent_id: identities.originalTeacher.id,
+      replacement_teacher_agent_id: identities.replacementTeacher.id,
+    };
+    const idempotencyKey =
+      `timetable.substitution-effective:${input.substitution_id}:${input.coverage_task_revision}`;
+    const basisDomain = input.source_kind === "daily_plan" ? "day_plan" : "timetable";
+    const existing = (await sql<ExistingSubstitutionDecisionReplayRow>`SELECT event.id,
+        (event.event_kind='decision'
+          AND event.event_type='timetable.substitution_effective'
+          AND event.actor_agent_id=${identities.actor.id}::uuid
+          AND event.source_domain='staff_coverage'
+          AND event.source_record_id=${input.substitution_id}
+          AND event.source_revision=${input.coverage_task_revision}
+          AND event.event_at=${input.accepted_at}::timestamptz
+          AND event.effective_from=((${input.duty_date}::date+${input.starts_at}::time)
+            AT TIME ZONE ${school.timezone})
+          AND event.effective_until=((${input.duty_date}::date+${input.ends_at}::time)
+            AT TIME ZONE ${school.timezone})
+          AND event.subject_entity_id=(SELECT entity.id FROM campus_model_entities entity
+            WHERE entity.school_id=${input.school_id}::uuid
+              AND entity.domain='staff_coverage' AND entity.domain_id=${input.substitution_id})
+          AND event.context_entity_id=(SELECT entity.id FROM campus_model_entities entity
+            WHERE entity.school_id=${input.school_id}::uuid
+              AND entity.domain=${input.class_section.domain}
+              AND entity.domain_id=${input.class_section.domain_id})
+          AND event.payload @> ${JSON.stringify(authoritativeIdentity)}::jsonb
+        ) AS decision_matches,
+        (SELECT count(*)::int FROM campus_model_schedule_occurrences occurrence
+          WHERE occurrence.school_id=event.school_id
+            AND occurrence.logical_occurrence_key=${input.occurrence_key}
+            AND occurrence.change_event_id=event.id) AS replacement_count,
+        EXISTS(SELECT 1 FROM campus_model_schedule_occurrences occurrence
+          JOIN campus_model_events basis
+            ON basis.id=occurrence.basis_event_id AND basis.school_id=occurrence.school_id
+          JOIN campus_model_entities schedule_entity
+            ON schedule_entity.id=occurrence.schedule_entity_id
+              AND schedule_entity.school_id=occurrence.school_id
+          JOIN campus_model_entities period_entity
+            ON period_entity.id=occurrence.period_entity_id
+              AND period_entity.school_id=occurrence.school_id
+          JOIN campus_model_entities class_entity
+            ON class_entity.id=occurrence.class_entity_id
+              AND class_entity.school_id=occurrence.school_id
+          WHERE occurrence.school_id=event.school_id
+            AND occurrence.logical_occurrence_key=${input.occurrence_key}
+            AND occurrence.change_event_id=event.id
+            AND occurrence.change_kind='substituted'
+            AND occurrence.state='expected'
+            AND occurrence.responsible_agent_id=${identities.replacementTeacher.id}::uuid
+            AND occurrence.occurrence_date=${input.duty_date}::date
+            AND occurrence.period_number=${input.period_number}
+            AND occurrence.starts_at=((${input.duty_date}::date+${input.starts_at}::time)
+              AT TIME ZONE ${school.timezone})
+            AND occurrence.ends_at=((${input.duty_date}::date+${input.ends_at}::time)
+              AT TIME ZONE ${school.timezone})
+            AND occurrence.title=${input.title} AND occurrence.slot_type=${input.slot_type}
+            AND occurrence.room_snapshot=${input.room_snapshot}
+            AND occurrence.source_revision=${input.source_revision}
+            AND basis.source_domain=${basisDomain}
+            AND basis.source_record_id=${input.source_record_id}
+            AND basis.source_revision=${input.source_revision}
+            AND schedule_entity.domain=${input.schedule.domain}
+            AND schedule_entity.domain_id=${input.schedule.domain_id}
+            AND period_entity.domain=${input.period.domain}
+            AND period_entity.domain_id=${input.period.domain_id}
+            AND class_entity.domain=${input.class_section.domain}
+            AND class_entity.domain_id=${input.class_section.domain_id}
+            AND occurrence.subject_entity_id IS NOT DISTINCT FROM (
+              SELECT entity.id FROM campus_model_entities entity
+              WHERE entity.school_id=${input.school_id}::uuid
+                AND entity.domain=${input.subject?.domain ?? null}
+                AND entity.domain_id=${input.subject?.domain_id ?? null}
+            )
+            AND occurrence.space_entity_id IS NOT DISTINCT FROM (
+              SELECT entity.id FROM campus_model_entities entity
+              WHERE entity.school_id=${input.school_id}::uuid
+                AND entity.domain=${input.space?.domain ?? null}
+                AND entity.domain_id=${input.space?.domain_id ?? null}
+            )
+        ) AS replacement_matches,
+        EXISTS(SELECT 1 FROM campus_model_schedule_occurrences occurrence
+          WHERE occurrence.school_id=event.school_id
+            AND occurrence.logical_occurrence_key=${input.occurrence_key}) AS source_history,
+        EXISTS(SELECT 1 FROM campus_model_schedule_occurrences occurrence
+          WHERE occurrence.school_id=event.school_id
+            AND occurrence.logical_occurrence_key=${input.occurrence_key}
+            AND occurrence.recorded_until IS NULL) AS current_exists,
+        EXISTS(SELECT 1 FROM campus_model_schedule_occurrences occurrence
+          JOIN campus_model_events basis
+            ON basis.id=occurrence.basis_event_id AND basis.school_id=occurrence.school_id
+          JOIN campus_model_entities schedule_entity
+            ON schedule_entity.id=occurrence.schedule_entity_id
+              AND schedule_entity.school_id=occurrence.school_id
+          JOIN campus_model_entities period_entity
+            ON period_entity.id=occurrence.period_entity_id
+              AND period_entity.school_id=occurrence.school_id
+          JOIN campus_model_entities class_entity
+            ON class_entity.id=occurrence.class_entity_id
+              AND class_entity.school_id=occurrence.school_id
+          WHERE occurrence.school_id=event.school_id
+            AND occurrence.logical_occurrence_key=${input.occurrence_key}
+            AND occurrence.recorded_until IS NULL
+            AND (
+              occurrence.state='expected'
+              OR (
+                occurrence.state='cancelled'
+                AND occurrence.change_kind='closure_cancelled'
+                AND occurrence.condition_event_id IS NOT NULL
+              )
+            )
+            AND occurrence.responsible_agent_id=${identities.originalTeacher.id}::uuid
+            AND occurrence.occurrence_date=${input.duty_date}::date
+            AND occurrence.period_number=${input.period_number}
+            AND occurrence.starts_at=((${input.duty_date}::date+${input.starts_at}::time)
+              AT TIME ZONE ${school.timezone})
+            AND occurrence.ends_at=((${input.duty_date}::date+${input.ends_at}::time)
+              AT TIME ZONE ${school.timezone})
+            AND occurrence.title=${input.title} AND occurrence.slot_type=${input.slot_type}
+            AND occurrence.room_snapshot=${input.room_snapshot}
+            AND occurrence.source_revision=${input.source_revision}
+            AND basis.source_domain=${basisDomain}
+            AND basis.source_record_id=${input.source_record_id}
+            AND basis.source_revision=${input.source_revision}
+            AND schedule_entity.domain=${input.schedule.domain}
+            AND schedule_entity.domain_id=${input.schedule.domain_id}
+            AND period_entity.domain=${input.period.domain}
+            AND period_entity.domain_id=${input.period.domain_id}
+            AND class_entity.domain=${input.class_section.domain}
+            AND class_entity.domain_id=${input.class_section.domain_id}
+            AND occurrence.subject_entity_id IS NOT DISTINCT FROM (
+              SELECT entity.id FROM campus_model_entities entity
+              WHERE entity.school_id=${input.school_id}::uuid
+                AND entity.domain=${input.subject?.domain ?? null}
+                AND entity.domain_id=${input.subject?.domain_id ?? null}
+            )
+            AND occurrence.space_entity_id IS NOT DISTINCT FROM (
+              SELECT entity.id FROM campus_model_entities entity
+              WHERE entity.school_id=${input.school_id}::uuid
+                AND entity.domain=${input.space?.domain ?? null}
+                AND entity.domain_id=${input.space?.domain_id ?? null}
+            )
+        ) AS current_source_matches,
+        EXISTS(SELECT 1 FROM campus_model_schedule_occurrences occurrence
+          WHERE occurrence.school_id=event.school_id
+            AND occurrence.logical_occurrence_key=${input.occurrence_key}
+            AND occurrence.recorded_until IS NULL
+            AND occurrence.state='cancelled'
+            AND occurrence.change_kind='closure_cancelled'
+            AND occurrence.condition_event_id IS NOT NULL
+        ) AS current_source_closed
+      FROM campus_model_events event
+      WHERE event.school_id=${input.school_id}::uuid
+        AND event.idempotency_key=${idempotencyKey}
+      FOR SHARE OF event`.execute(transaction)).rows[0];
+    if (!existing) return null;
+    if (!existing.decision_matches
+      || existing.replacement_count > 1
+      || (existing.replacement_count === 1 && !existing.replacement_matches)) {
+      throw new ConflictException(
+        "The retained accepted-cover decision contains different timetable evidence.",
+      );
+    }
+    if (existing.replacement_count === 1) {
+      return {
+        event_id: existing.id,
+        affected_occurrence_count: 1,
+        replacement_occurrence_count: 1,
+        projection_status: "applied",
+        replayed: true,
+      };
+    }
+    if (existing.current_exists && !existing.current_source_matches) {
+      return {
+        event_id: existing.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: "source_mismatch",
+        replayed: true,
+      };
+    }
+    if (existing.current_source_closed) {
+      return {
+        event_id: existing.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: "source_closed",
+        replayed: true,
+      };
+    }
+    return {
+      event_id: existing.id,
+      affected_occurrence_count: 0,
+      replacement_occurrence_count: 0,
+      projection_status: existing.source_history
+        ? "source_closed"
+        : "awaiting_source_projection",
+      replayed: true,
+    };
+  }
+
+  private async projectAcceptedScheduleSubstitution(
+    transaction: Transaction<Database>,
+    input: AcceptedScheduleSubstitutionProjection,
+    identities: {
+      actor: AgentRow;
+      originalTeacher: AgentRow;
+      replacementTeacher: AgentRow;
+      provenance: Record<string, unknown>;
+    },
+  ): Promise<SubstitutionProjectionReceipt> {
+    const { actor, originalTeacher, replacementTeacher, provenance } = identities;
+    const authoritativeOutboxEvidence = acceptedScheduleSubstitutionOutboxEvidence(input);
+    const school = (await sql<{ timezone: string }>`SELECT timezone FROM schools
+      WHERE id=${input.school_id}::uuid FOR SHARE`.execute(transaction)).rows[0];
+    if (!school) throw new ConflictException("The institution for this timetable change no longer exists.");
+
+    const schedule = await this.upsertEntity(transaction, input.school_id, input.schedule);
+    const period = await this.upsertEntity(transaction, input.school_id, input.period);
+    const classEntity = await this.upsertEntity(transaction, input.school_id, input.class_section);
+    const subject = input.subject
+      ? await this.upsertEntity(transaction, input.school_id, input.subject)
+      : null;
+    const space = input.space
+      ? await this.upsertEntity(transaction, input.school_id, input.space)
+      : null;
+    const substitution = await this.upsertEntity(transaction, input.school_id, {
+      kind: "schedule_change",
+      domain: "staff_coverage",
+      domain_id: input.substitution_id,
+      label: `${input.class_section.label} cover on ${input.duty_date}, period ${input.period_number}`,
+      lifecycle_state: "active",
+      source_revision: input.coverage_task_revision,
+      metadata: {
+        coverage_task_id: input.coverage_task_id,
+        occurrence_key: input.occurrence_key,
+      },
+    });
+
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(
+      'campus-schedule-occurrence:'||${input.school_id}::text||':'||${input.occurrence_key},0
+    ))`.execute(transaction);
+
+    const findCurrent = async () => (await sql<TemporalSubstitutionOccurrenceRow & {
+      source_matches: boolean;
+      closed_source_matches: boolean;
+    }>`
+      SELECT occurrence.*,basis.source_domain AS basis_source_domain,
+        basis.source_record_id AS basis_source_record_id,
+        basis.source_revision AS basis_source_revision,
+        occurrence.state='expected'
+          AND occurrence.schedule_entity_id=${schedule.id}::uuid
+          AND occurrence.period_entity_id=${period.id}::uuid
+          AND occurrence.class_entity_id=${classEntity.id}::uuid
+          AND occurrence.subject_entity_id IS NOT DISTINCT FROM ${subject?.id ?? null}::uuid
+          AND occurrence.space_entity_id IS NOT DISTINCT FROM ${space?.id ?? null}::uuid
+          AND occurrence.responsible_agent_id=${originalTeacher.id}::uuid
+          AND occurrence.occurrence_date=${input.duty_date}::date
+          AND occurrence.period_number=${input.period_number}
+          AND occurrence.starts_at=((${input.duty_date}::date+${input.starts_at}::time) AT TIME ZONE ${school.timezone})
+          AND occurrence.ends_at=((${input.duty_date}::date+${input.ends_at}::time) AT TIME ZONE ${school.timezone})
+          AND occurrence.title=${input.title}
+          AND occurrence.slot_type=${input.slot_type}
+          AND occurrence.room_snapshot=${input.room_snapshot}
+          AND occurrence.source_revision=${input.source_revision}
+          AND basis.source_domain=${input.source_kind === "daily_plan" ? "day_plan" : "timetable"}
+          AND basis.source_record_id=${input.source_record_id}
+          AND basis.source_revision=${input.source_revision} AS source_matches,
+        occurrence.state='cancelled'
+          AND occurrence.change_kind='closure_cancelled'
+          AND occurrence.condition_event_id IS NOT NULL
+          AND occurrence.schedule_entity_id=${schedule.id}::uuid
+          AND occurrence.period_entity_id=${period.id}::uuid
+          AND occurrence.class_entity_id=${classEntity.id}::uuid
+          AND occurrence.subject_entity_id IS NOT DISTINCT FROM ${subject?.id ?? null}::uuid
+          AND occurrence.space_entity_id IS NOT DISTINCT FROM ${space?.id ?? null}::uuid
+          AND occurrence.responsible_agent_id=${originalTeacher.id}::uuid
+          AND occurrence.occurrence_date=${input.duty_date}::date
+          AND occurrence.period_number=${input.period_number}
+          AND occurrence.starts_at=((${input.duty_date}::date+${input.starts_at}::time) AT TIME ZONE ${school.timezone})
+          AND occurrence.ends_at=((${input.duty_date}::date+${input.ends_at}::time) AT TIME ZONE ${school.timezone})
+          AND occurrence.title=${input.title}
+          AND occurrence.slot_type=${input.slot_type}
+          AND occurrence.room_snapshot=${input.room_snapshot}
+          AND occurrence.source_revision=${input.source_revision}
+          AND basis.source_domain=${input.source_kind === "daily_plan" ? "day_plan" : "timetable"}
+          AND basis.source_record_id=${input.source_record_id}
+          AND basis.source_revision=${input.source_revision} AS closed_source_matches
+      FROM campus_model_schedule_occurrences occurrence
+      JOIN campus_model_events basis
+        ON basis.id=occurrence.basis_event_id AND basis.school_id=occurrence.school_id
+      WHERE occurrence.school_id=${input.school_id}::uuid
+        AND occurrence.logical_occurrence_key=${input.occurrence_key}
+        AND occurrence.recorded_until IS NULL
+      FOR UPDATE OF occurrence`.execute(transaction)).rows[0];
+
+    let current = await findCurrent();
+    let sourceHasHistory = false;
+    if (!current) {
+      sourceHasHistory = (await sql<{ found: boolean }>`SELECT EXISTS(
+          SELECT 1 FROM campus_model_schedule_occurrences
+          WHERE school_id=${input.school_id}::uuid
+            AND logical_occurrence_key=${input.occurrence_key}
+        ) AS found`.execute(transaction)).rows[0]?.found ?? false;
+      if (!sourceHasHistory) {
+        const basisDomain = input.source_kind === "daily_plan" ? "day_plan" : "timetable";
+        const basisType = input.source_kind === "daily_plan"
+          ? "timetable.day_plan_published"
+          : "timetable.schedule_published";
+        let basis = (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence
+          FROM campus_model_events
+          WHERE school_id=${input.school_id}::uuid AND source_domain=${basisDomain}
+            AND source_record_id=${input.source_record_id}
+            AND source_revision=${input.source_revision}
+            AND event_type=${basisType}
+          ORDER BY recorded_at DESC,journal_sequence DESC LIMIT 1
+          FOR SHARE`.execute(transaction)).rows[0];
+        if (!basis) {
+          const basisInput = {
+            source_kind: input.source_kind,
+            source_record_id: input.source_record_id,
+            source_revision: input.source_revision,
+            source_version: input.source_version,
+            occurrence_key: input.occurrence_key,
+            schedule: input.schedule,
+            period: input.period,
+            class_section: input.class_section,
+            subject: input.subject,
+            space: input.space,
+            duty_date: input.duty_date,
+            period_number: input.period_number,
+            starts_at: input.starts_at,
+            ends_at: input.ends_at,
+            title: input.title,
+            slot_type: input.slot_type,
+            room_snapshot: input.room_snapshot,
+            original_teacher_agent_id: originalTeacher.id,
+          };
+          const basisRequestHash = createHash("sha256")
+            .update(JSON.stringify(basisInput))
+            .digest("hex");
+          const basisIdempotencyKey = [
+            "timetable.schedule-projection-backfilled",
+            input.source_kind,
+            input.source_record_id,
+            String(input.source_revision),
+            input.occurrence_key,
+          ].join(":");
+          const insertedBasis = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
+              school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
+              source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
+              correlation_id,provenance,payload,schema_version,idempotency_key,request_hash
+            ) VALUES(
+              ${input.school_id}::uuid,'plan','timetable.schedule_projection_backfilled',
+              ${schedule.id}::uuid,${classEntity.id}::uuid,${actor.id}::uuid,
+              ${basisDomain},${input.source_record_id},${input.source_revision},
+              ${input.accepted_at}::timestamptz,
+              ((${input.duty_date}::date+${input.starts_at}::time) AT TIME ZONE ${school.timezone}),
+              ((${input.duty_date}::date+${input.ends_at}::time) AT TIME ZONE ${school.timezone}),
+              ${input.correlation_id}::uuid,
+              ${JSON.stringify({ source: "effective_school_schedule_v3", captured_by: "staff-coverage", import_reason: "missing_temporal_occurrence" })}::jsonb,
+              ${JSON.stringify(basisInput)}::jsonb,1,${basisIdempotencyKey},${basisRequestHash}
+            ) ON CONFLICT(school_id,idempotency_key) DO NOTHING
+            RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
+          basis = insertedBasis ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence
+            FROM campus_model_events
+            WHERE school_id=${input.school_id}::uuid AND idempotency_key=${basisIdempotencyKey}
+            FOR UPDATE`.execute(transaction)).rows[0];
+          if (!basis || basis.request_hash !== basisRequestHash) {
+            throw new ConflictException("The source occurrence backfill key belongs to different schedule evidence.");
+          }
+        }
+
+        await sql`INSERT INTO campus_model_schedule_occurrences(
+            school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+            subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+            title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+            basis_event_id,change_event_id,condition_event_id,recorded_from,
+            supersedes_occurrence_id,change_kind
+          ) VALUES(
+            ${input.school_id}::uuid,${basis.id}::uuid,${schedule.id}::uuid,${period.id}::uuid,
+            ${classEntity.id}::uuid,${subject?.id ?? null}::uuid,${originalTeacher.id}::uuid,
+            ${space?.id ?? null}::uuid,${input.duty_date}::date,
+            ((${input.duty_date}::date+${input.starts_at}::time) AT TIME ZONE ${school.timezone}),
+            ((${input.duty_date}::date+${input.ends_at}::time) AT TIME ZONE ${school.timezone}),
+            ${input.title},${input.slot_type},${input.room_snapshot},'expected',${input.source_revision},
+            ${input.occurrence_key},${input.period_number},${basis.id}::uuid,${basis.id}::uuid,NULL,
+            GREATEST(${basis.recorded_at}::timestamptz,clock_timestamp()),NULL,'projection_backfill'
+          ) ON CONFLICT DO NOTHING`.execute(transaction);
+        current = await findCurrent();
+      }
+    }
+
+    const idempotencyKey = `timetable.substitution-effective:${input.substitution_id}:${input.coverage_task_revision}`;
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const inserted = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
+        school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
+        source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
+        correlation_id,provenance,payload,schema_version,idempotency_key,request_hash,
+        source_outbox_event_id
+      ) VALUES(
+        ${input.school_id}::uuid,'decision','timetable.substitution_effective',
+        ${substitution.id}::uuid,${classEntity.id}::uuid,${actor.id}::uuid,
+        'staff_coverage',${input.substitution_id},${input.coverage_task_revision},
+        ${input.accepted_at}::timestamptz,
+        ((${input.duty_date}::date+${input.starts_at}::time) AT TIME ZONE ${school.timezone}),
+        ((${input.duty_date}::date+${input.ends_at}::time) AT TIME ZONE ${school.timezone}),
+        ${input.correlation_id}::uuid,
+        ${JSON.stringify(provenance)}::jsonb,
+        ${JSON.stringify({
+          ...authoritativeOutboxEvidence,
+          coverage_task_id: input.coverage_task_id,
+          original_teacher_agent_id: originalTeacher.id,
+          replacement_teacher_agent_id: replacementTeacher.id,
+        })}::jsonb,1,${idempotencyKey},${requestHash},${input.source_outbox_event_id}::uuid
+      ) ON CONFLICT DO NOTHING
+      RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
+    const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT id,request_hash,recorded_at,journal_sequence
+      FROM campus_model_events
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey}
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!event || event.request_hash !== requestHash) {
+      throw new ConflictException("This accepted-cover key was already used for different timetable evidence.");
+    }
+
+    const priorReplacement = (await sql<{ id: string }>`SELECT id FROM campus_model_schedule_occurrences
+      WHERE school_id=${input.school_id}::uuid AND logical_occurrence_key=${input.occurrence_key}
+        AND change_event_id=${event.id}::uuid
+      LIMIT 1`.execute(transaction)).rows[0];
+    if (priorReplacement) {
+      return {
+        event_id: event.id,
+        affected_occurrence_count: 1,
+        replacement_occurrence_count: 1,
+        projection_status: "applied",
+        replayed: !inserted,
+      };
+    }
+    if (!current) {
+      return {
+        event_id: event.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: sourceHasHistory ? "source_closed" : "awaiting_source_projection",
+        replayed: !inserted,
+      };
+    }
+    if (current.closed_source_matches) {
+      return {
+        event_id: event.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: "source_closed",
+        replayed: !inserted,
+      };
+    }
+    if (!current.source_matches) {
+      return {
+        event_id: event.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: "source_mismatch",
+        replayed: !inserted,
+      };
+    }
+
+    const replacement = await sql<{ id: string }>`WITH closed AS (
+        UPDATE campus_model_schedule_occurrences occurrence SET
+          recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond'),
+          projected_at=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond')
+        WHERE occurrence.school_id=${input.school_id}::uuid
+          AND occurrence.id=${current.id}::uuid AND occurrence.recorded_until IS NULL
+        RETURNING occurrence.*
+      )
+      INSERT INTO campus_model_schedule_occurrences(
+        school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+        subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+        title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+        basis_event_id,change_event_id,condition_event_id,recorded_from,
+        supersedes_occurrence_id,change_kind
+      ) SELECT
+        closed.school_id,closed.source_event_id,closed.schedule_entity_id,closed.period_entity_id,
+        closed.class_entity_id,closed.subject_entity_id,${replacementTeacher.id}::uuid,
+        closed.space_entity_id,closed.occurrence_date,closed.starts_at,closed.ends_at,
+        closed.title,closed.slot_type,closed.room_snapshot,'expected',closed.source_revision,
+        closed.logical_occurrence_key,closed.period_number,closed.basis_event_id,${event.id}::uuid,
+        closed.condition_event_id,closed.recorded_until,closed.id,'substituted'
+      FROM closed
+      ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING
+      RETURNING id`.execute(transaction);
+    return {
+      event_id: event.id,
+      affected_occurrence_count: replacement.rows.length,
+      replacement_occurrence_count: replacement.rows.length,
+      projection_status: replacement.rows.length ? "applied" : "awaiting_source_projection",
+      replayed: !inserted,
+    };
+  }
+
+  async recordCancelledScheduleSubstitution(
+    transaction: Transaction<Database>,
+    rawInput: CancelledScheduleSubstitutionProjection,
+  ): Promise<SubstitutionInvalidationReceipt> {
+    const input = cancelledScheduleSubstitutionProjectionSchema.parse(rawInput);
+    const authoritativeOutboxEvidence = cancelledScheduleSubstitutionOutboxEvidence(input);
+    const successorAssignment = cancelledScheduleSubstitutionSuccessorAssignment(input.reason);
+    const outbox = (await sql<{ id: string }>`SELECT id FROM event_outbox
+      WHERE id=${input.source_outbox_event_id}::uuid AND school_id=${input.school_id}::uuid
+        AND event_type='staff.coverage.cancelled'
+        AND aggregate_type='staff_coverage_task'
+        AND aggregate_id=${input.coverage_task_id}::uuid
+        AND payload @> ${JSON.stringify(authoritativeOutboxEvidence)}::jsonb
+      FOR SHARE`.execute(transaction)).rows[0];
+    if (!outbox) {
+      throw new ConflictException(
+        "The cancelled cover does not match its authoritative domain event.",
+      );
+    }
+    const actor = await this.ensureHumanAgent(transaction, input.school_id, input.actor_user_id);
+
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(
+      'campus-schedule-occurrence:'||${input.school_id}::text||':'||${input.occurrence_key},0
+    ))`.execute(transaction);
+
+    const acceptedIdentity = {
+      school_id: input.school_id,
+      status: "accepted",
+      substitution_id: input.substitution_id,
+      effective_timetable: true,
+      occurrence_key: input.occurrence_key,
+      source_kind: input.source_kind,
+      source_record_id: input.source_record_id,
+      source_revision: input.source_revision,
+      source_version: input.source_version,
+      original_teacher_user_id: input.original_teacher_user_id,
+      replacement_teacher_user_id: input.replacement_teacher_user_id,
+      coverage_task_id: input.coverage_task_id,
+    } as const;
+    const accepted = (await sql<TemporalSubstitutionDecisionRow>`SELECT
+        accepted_event.id,accepted_event.request_hash,accepted_event.recorded_at,
+        accepted_event.journal_sequence,accepted_event.subject_entity_id,
+        accepted_event.context_entity_id,accepted_event.effective_from,
+        accepted_event.effective_until,accepted_event.source_revision,
+        original_agent.id AS original_teacher_agent_id,
+        replacement_agent.id AS replacement_teacher_agent_id
+      FROM campus_model_events accepted_event
+      JOIN campus_model_agents original_agent
+        ON original_agent.school_id=accepted_event.school_id
+        AND original_agent.id=(accepted_event.payload->>'original_teacher_agent_id')::uuid
+        AND original_agent.agent_kind='human'
+      JOIN campus_model_agents replacement_agent
+        ON replacement_agent.school_id=accepted_event.school_id
+        AND replacement_agent.id=(accepted_event.payload->>'replacement_teacher_agent_id')::uuid
+        AND replacement_agent.agent_kind='human'
+      WHERE accepted_event.school_id=${input.school_id}::uuid
+        AND accepted_event.event_kind='decision'
+        AND accepted_event.event_type='timetable.substitution_effective'
+        AND accepted_event.source_domain='staff_coverage'
+        AND accepted_event.source_record_id=${input.substitution_id}
+        AND accepted_event.source_revision<${input.coverage_task_revision}
+        AND accepted_event.payload @> ${JSON.stringify(acceptedIdentity)}::jsonb
+      ORDER BY accepted_event.source_revision DESC,accepted_event.recorded_at DESC,
+        accepted_event.journal_sequence DESC
+      LIMIT 1 FOR SHARE`.execute(transaction)).rows[0];
+    if (!accepted) {
+      throw new ConflictException(
+        "The cancellation does not identify a projected accepted substitution.",
+      );
+    }
+
+    const idempotencyKey = [
+      "timetable.substitution-cancelled",
+      input.substitution_id,
+      String(input.coverage_task_revision),
+    ].join(":");
+    const requestHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const inserted = (await sql<TemporalPlanEventRow>`INSERT INTO campus_model_events(
+        school_id,event_kind,event_type,subject_entity_id,context_entity_id,actor_agent_id,
+        source_domain,source_record_id,source_revision,event_at,effective_from,effective_until,
+        correlation_id,causation_event_id,provenance,payload,schema_version,idempotency_key,
+        request_hash,source_outbox_event_id
+      ) VALUES(
+        ${input.school_id}::uuid,'decision','timetable.substitution_cancelled',
+        ${accepted.subject_entity_id}::uuid,${accepted.context_entity_id}::uuid,${actor.id}::uuid,
+        'staff_coverage',${input.substitution_id},${input.coverage_task_revision},
+        ${input.cancelled_at}::timestamptz,${accepted.effective_from}::timestamptz,
+        ${accepted.effective_until}::timestamptz,${input.correlation_id}::uuid,
+        ${accepted.id}::uuid,
+        ${JSON.stringify({ source: "staff_timetable_substitutions", captured_by: "staff-operations" })}::jsonb,
+        ${JSON.stringify({
+          ...authoritativeOutboxEvidence,
+          coverage_task_id: input.coverage_task_id,
+          accepted_event_id: accepted.id,
+          accepted_coverage_task_revision: accepted.source_revision,
+          successor_assignment: successorAssignment,
+        })}::jsonb,1,${idempotencyKey},${requestHash},${input.source_outbox_event_id}::uuid
+      ) ON CONFLICT DO NOTHING
+      RETURNING id,request_hash,recorded_at,journal_sequence`.execute(transaction)).rows[0];
+    const event = inserted ?? (await sql<TemporalPlanEventRow>`SELECT
+        id,request_hash,recorded_at,journal_sequence
+      FROM campus_model_events
+      WHERE school_id=${input.school_id}::uuid AND idempotency_key=${idempotencyKey}
+      FOR UPDATE`.execute(transaction)).rows[0];
+    if (!event || event.request_hash !== requestHash) {
+      throw new ConflictException(
+        "This cover-cancellation key was already used for different timetable evidence.",
+      );
+    }
+
+    const expectedSuccessorAgentId = successorAssignment === "original_teacher"
+      ? accepted.original_teacher_agent_id
+      : null;
+    const appliedReceipt = (
+      count: number,
+      replayed: boolean,
+    ): SubstitutionInvalidationReceipt => {
+      if (expectedSuccessorAgentId) {
+        return {
+          event_id: event.id,
+          affected_occurrence_count: count,
+          replacement_occurrence_count: count,
+          projection_status: "applied_original_teacher",
+          successor_assignment: "original_teacher",
+          replayed,
+        };
+      }
+      return {
+        event_id: event.id,
+        affected_occurrence_count: count,
+        replacement_occurrence_count: count,
+        projection_status: "applied_unassigned",
+        successor_assignment: "unassigned",
+        replayed,
+      };
+    };
+    const priorSuccessor = (await sql<{ id: string; responsible_agent_id: string | null }>`SELECT
+        id,responsible_agent_id
+      FROM campus_model_schedule_occurrences
+      WHERE school_id=${input.school_id}::uuid
+        AND logical_occurrence_key=${input.occurrence_key}
+        AND change_event_id=${event.id}::uuid
+        AND change_kind='substitution_cancelled'
+      LIMIT 1`.execute(transaction)).rows[0];
+    if (priorSuccessor) {
+      if (priorSuccessor.responsible_agent_id !== expectedSuccessorAgentId) {
+        return {
+          event_id: event.id,
+          affected_occurrence_count: 0,
+          replacement_occurrence_count: 0,
+          projection_status: "source_mismatch",
+          successor_assignment: null,
+          replayed: !inserted,
+        };
+      }
+      return appliedReceipt(1, !inserted);
+    }
+
+    const current = (await sql<TemporalSubstitutionOccurrenceRow>`SELECT occurrence.*,
+        basis.source_domain AS basis_source_domain,
+        basis.source_record_id AS basis_source_record_id,
+        basis.source_revision AS basis_source_revision
+      FROM campus_model_schedule_occurrences occurrence
+      JOIN campus_model_events basis
+        ON basis.id=occurrence.basis_event_id AND basis.school_id=occurrence.school_id
+      WHERE occurrence.school_id=${input.school_id}::uuid
+        AND occurrence.logical_occurrence_key=${input.occurrence_key}
+        AND occurrence.recorded_until IS NULL
+      FOR UPDATE OF occurrence`.execute(transaction)).rows[0];
+    if (!current || current.change_event_id !== accepted.id) {
+      return {
+        event_id: event.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: "source_replaced",
+        successor_assignment: "unchanged_later_source",
+        replayed: !inserted,
+      };
+    }
+    if (successorAssignment === "unchanged_later_source"
+      || current.state !== "expected"
+      || current.responsible_agent_id !== accepted.replacement_teacher_agent_id
+      || current.basis_source_domain !== (input.source_kind === "daily_plan" ? "day_plan" : "timetable")
+      || current.basis_source_record_id !== input.source_record_id
+      || current.basis_source_revision !== input.source_revision) {
+      return {
+        event_id: event.id,
+        affected_occurrence_count: 0,
+        replacement_occurrence_count: 0,
+        projection_status: "source_mismatch",
+        successor_assignment: null,
+        replayed: !inserted,
+      };
+    }
+
+    const successor = await sql<{ id: string }>`WITH closed AS (
+        UPDATE campus_model_schedule_occurrences occurrence SET
+          recorded_until=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond'),
+          projected_at=GREATEST(${event.recorded_at}::timestamptz,
+            occurrence.recorded_from+interval '1 microsecond')
+        WHERE occurrence.school_id=${input.school_id}::uuid
+          AND occurrence.id=${current.id}::uuid
+          AND occurrence.change_event_id=${accepted.id}::uuid
+          AND occurrence.recorded_until IS NULL
+        RETURNING occurrence.*
+      )
+      INSERT INTO campus_model_schedule_occurrences(
+        school_id,source_event_id,schedule_entity_id,period_entity_id,class_entity_id,
+        subject_entity_id,responsible_agent_id,space_entity_id,occurrence_date,starts_at,ends_at,
+        title,slot_type,room_snapshot,state,source_revision,logical_occurrence_key,period_number,
+        basis_event_id,change_event_id,condition_event_id,recorded_from,
+        supersedes_occurrence_id,change_kind
+      ) SELECT
+        closed.school_id,closed.source_event_id,closed.schedule_entity_id,closed.period_entity_id,
+        closed.class_entity_id,closed.subject_entity_id,${expectedSuccessorAgentId}::uuid,
+        closed.space_entity_id,
+        closed.occurrence_date,closed.starts_at,closed.ends_at,closed.title,closed.slot_type,
+        closed.room_snapshot,'expected',closed.source_revision,closed.logical_occurrence_key,
+        closed.period_number,closed.basis_event_id,${event.id}::uuid,closed.condition_event_id,
+        closed.recorded_until,closed.id,'substitution_cancelled'
+      FROM closed
+      ON CONFLICT(school_id,change_event_id,logical_occurrence_key) DO NOTHING
+      RETURNING id`.execute(transaction);
+    if (successor.rows.length) return appliedReceipt(successor.rows.length, !inserted);
+    return {
+      event_id: event.id,
+      affected_occurrence_count: 0,
+      replacement_occurrence_count: 0,
+      projection_status: "source_replaced",
+      successor_assignment: "unchanged_later_source",
+      replayed: !inserted,
     };
   }
 
@@ -1685,18 +3341,41 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const entityDomainId = input.subject.type === "entity" ? input.subject.domain_id : null;
     const humanUserId = input.subject.type === "human_agent" ? input.subject.user_id : null;
     const rows = (await sql<TemporalAssertionRow>`
-      SELECT occurrence.id::text AS assertion_id,occurrence.id::text AS occurrence_id,
-        schedule.domain_id AS schedule_version_id,class_entity.id::text AS class_entity_id,
+      SELECT occurrence.id::text AS assertion_id,
+        occurrence.logical_occurrence_key::text AS occurrence_id,
+        occurrence.id::text AS occurrence_revision_id,
+        schedule.domain_id AS schedule_version_id,occurrence.period_number,
+        class_entity.id::text AS class_entity_id,
         class_entity.label AS class_label,subject_entity.id::text AS subject_entity_id,
         subject_entity.label AS subject_label,space_entity.id::text AS space_entity_id,
         space_entity.label AS space_label,occurrence.title,occurrence.slot_type,
-        occurrence.starts_at,occurrence.ends_at,event.recorded_at,event.id::text AS event_id,
+        occurrence.starts_at,occurrence.ends_at,occurrence.recorded_from AS recorded_at,
+        event.id::text AS event_id,event.journal_sequence::text AS journal_sequence,
         event.source_record_id,event.source_revision,event.event_type,event.source_domain,
+        change_event.id::text AS change_event_id,change_event.event_type AS change_event_type,
+        change_event.source_domain AS change_source_domain,
+        change_event.source_record_id AS change_source_record_id,
+        change_event.source_revision AS change_source_revision,
+        change_event.journal_sequence::text AS change_journal_sequence,
+        occurrence.change_kind,
+        condition_event.id::text AS condition_event_id,
+        condition_event.event_type AS condition_event_type,
+        condition_event.source_domain AS condition_source_domain,
+        condition_event.source_record_id AS condition_source_record_id,
+        condition_event.source_revision AS condition_source_revision,
+        condition_event.journal_sequence::text AS condition_journal_sequence,
         CASE WHEN ${humanUserId}::uuid IS NOT NULL THEN agent.id::text ELSE queried_entity.id::text END AS queried_subject_id,
         CASE WHEN ${humanUserId}::uuid IS NOT NULL THEN agent.label ELSE queried_entity.label END AS queried_subject_label,
-        now()>=occurrence.starts_at AND now()<occurrence.ends_at AS current
+        ${input.at}::timestamptz>=occurrence.starts_at
+          AND ${input.at}::timestamptz<occurrence.ends_at AS current
       FROM campus_model_schedule_occurrences occurrence
-      JOIN campus_model_events event ON event.id=occurrence.source_event_id AND event.school_id=occurrence.school_id
+      JOIN campus_model_events event
+        ON event.id=occurrence.basis_event_id AND event.school_id=occurrence.school_id
+      JOIN campus_model_events change_event
+        ON change_event.id=occurrence.change_event_id AND change_event.school_id=occurrence.school_id
+      LEFT JOIN campus_model_events condition_event
+        ON condition_event.id=occurrence.condition_event_id
+        AND condition_event.school_id=occurrence.school_id
       JOIN campus_model_entities schedule ON schedule.id=occurrence.schedule_entity_id
       JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
       LEFT JOIN campus_model_entities subject_entity ON subject_entity.id=occurrence.subject_entity_id
@@ -1714,14 +3393,15 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         AND queried_entity.domain=${entityDomain} AND queried_entity.domain_id=${entityDomainId}
       WHERE occurrence.school_id=${input.school_id}::uuid AND occurrence.state='expected'
         AND occurrence.starts_at<=${input.at}::timestamptz AND occurrence.ends_at>${input.at}::timestamptz
-        AND event.recorded_at<=${recordedAsOf}::timestamptz
+        AND occurrence.recorded_from<=${recordedAsOf}::timestamptz
+        AND (occurrence.recorded_until IS NULL OR occurrence.recorded_until>${recordedAsOf}::timestamptz)
         AND (
           (${humanUserId}::uuid IS NOT NULL AND agent.id IS NOT NULL)
           OR (${humanUserId}::uuid IS NULL AND queried_entity.id IS NOT NULL AND queried_entity.id IN (
             occurrence.class_entity_id,occurrence.subject_entity_id,occurrence.space_entity_id,occurrence.schedule_entity_id
           ))
         )
-      ORDER BY occurrence.starts_at,occurrence.period_entity_id
+      ORDER BY occurrence.starts_at,occurrence.period_number,occurrence.id
     `.execute(this.db)).rows;
 
     const expected: CampusTemporalAssertion[] = rows.map((row) => ({
@@ -1735,7 +3415,9 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       },
       context: {
         occurrence_id: row.occurrence_id,
+        occurrence_revision_id: row.occurrence_revision_id,
         schedule_version_id: row.schedule_version_id,
+        period_number: row.period_number,
         class_entity_id: row.class_entity_id,
         class_label: row.class_label,
         subject_entity_id: row.subject_entity_id,
@@ -1754,6 +3436,24 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
         source_domain: row.source_domain,
         source_record_id: row.source_record_id,
         source_revision: row.source_revision,
+        journal_sequence: row.journal_sequence,
+        change: {
+          event_id: row.change_event_id,
+          event_type: row.change_event_type,
+          source_domain: row.change_source_domain,
+          source_record_id: row.change_source_record_id,
+          source_revision: row.change_source_revision,
+          journal_sequence: row.change_journal_sequence,
+          change_kind: row.change_kind,
+        },
+        condition: row.condition_event_id ? {
+          event_id: row.condition_event_id,
+          event_type: row.condition_event_type!,
+          source_domain: row.condition_source_domain!,
+          source_record_id: row.condition_source_record_id!,
+          source_revision: row.condition_source_revision!,
+          journal_sequence: row.condition_journal_sequence!,
+        } : null,
       },
       certainty: "planned",
       freshness: row.current ? "current" : "historical",
@@ -1909,6 +3609,52 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
     const id = entities.get(this.key(reference));
     if (!id) throw new ConflictException("The connected campus reference is missing from this command.");
     return id;
+  }
+
+  private assertAcceptedSubstitutionOccurrenceKey(
+    input: AcceptedScheduleSubstitutionProjection,
+  ): void {
+    const expectedOccurrenceKey = createHash("sha256").update([
+      input.school_id,
+      input.class_section.domain_id,
+      input.duty_date,
+      String(input.period_number),
+    ].join(":")).digest("hex");
+    if (input.occurrence_key !== expectedOccurrenceKey) {
+      throw new ConflictException("The accepted cover does not identify this class occurrence.");
+    }
+  }
+
+  private async requireRetainedHumanAgent(
+    transaction: Transaction<Database>,
+    schoolId: string,
+    userId: string,
+  ): Promise<AgentRow> {
+    const retained = (await sql<AgentRow>`SELECT agent.id
+      FROM campus_model_agent_endpoints endpoint
+      JOIN campus_model_agents agent
+        ON agent.id=endpoint.agent_id AND agent.school_id=endpoint.school_id
+      JOIN school_people person
+        ON person.id=agent.person_id AND person.school_id=agent.school_id
+      WHERE endpoint.school_id=${schoolId}::uuid
+        AND endpoint.endpoint_kind='account'
+        AND endpoint.provider='thatcampus'
+        AND endpoint.user_id=${userId}::uuid
+        AND agent.agent_kind='human'
+      ORDER BY endpoint.effective_from DESC,endpoint.id DESC
+      FOR SHARE OF endpoint,agent,person`.execute(transaction)).rows;
+    const agentIds = [...new Set(retained.map((row) => row.id))];
+    if (agentIds.length === 0) {
+      throw new ConflictException(
+        "The historical campus account is not linked to a retained person agent.",
+      );
+    }
+    if (agentIds.length > 1) {
+      throw new ConflictException(
+        "The historical campus account resolves to more than one retained person agent.",
+      );
+    }
+    return { id: agentIds[0]! };
   }
 
   private async ensureHumanAgent(

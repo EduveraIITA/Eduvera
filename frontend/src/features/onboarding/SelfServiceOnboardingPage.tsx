@@ -61,13 +61,13 @@ export default function SelfServiceOnboardingPage() {
 
   return <main className="self-onboarding">
     <header className="self-onboarding__top">
-      <SchoolBrand name="Eduvera" marksLayout="side-by-side" />
+      <SchoolBrand name="ThatCampus" marksLayout="side-by-side" />
       <div><span>{auth.user?.display_name}</span><button type="button" onClick={() => void auth.logout()}><LogOut size={16}/>Sign out</button></div>
     </header>
     <section className="self-onboarding__shell">
       <header className="self-onboarding__intro">
         <h1>{mode === "choose" ? "Create a workspace" : mode === "institution" ? "Institution verification" : "Coaching workspace"}</h1>
-        {mode === "choose" ? null : <p>{mode === "institution" ? "Reviewed by Eduvera before activation." : "No verification required."}</p>}
+        {mode === "choose" ? null : <p>{mode === "institution" ? "Reviewed by ThatCampus before activation." : "No verification required."}</p>}
       </header>
 
       {workspace.isError ? <div className="self-onboarding__alert" role="alert">{workspace.error.message}<button type="button" onClick={() => void workspace.refetch()}>Retry</button></div> : null}
@@ -89,13 +89,13 @@ export default function SelfServiceOnboardingPage() {
           <article className="onboarding-model onboarding-model--verified">
             <div className="onboarding-model__icon"><Building2/></div><span className="onboarding-model__tag"><ShieldCheck size={14}/>Company verified</span>
             <h2>Institution workspace</h2>
-            <ul><li><Check/>Submit registration or affiliation details</li><li><Check/>Eduvera reviews the application</li><li><Check/>Workspace opens after approval</li></ul>
+            <ul><li><Check/>Submit registration or affiliation details</li><li><Check/>ThatCampus reviews the application</li><li><Check/>Workspace opens after approval</li></ul>
             <button type="button" className="self-primary" onClick={() => select("institution")}>Start institution application <ArrowRight size={17}/></button>
           </article>
           <article className="onboarding-model onboarding-model--coaching">
             <div className="onboarding-model__icon"><GraduationCap/></div><span className="onboarding-model__tag"><Clock3 size={14}/>Ready immediately</span>
             <h2>Coaching workspace</h2>
-            <ul><li><Check/>No Eduvera verification</li><li><Check/>Invite students after setup</li><li><Check/>Start with a lightweight capability pack</li></ul>
+            <ul><li><Check/>No ThatCampus verification</li><li><Check/>Invite students after setup</li><li><Check/>Start with a lightweight capability pack</li></ul>
             <button type="button" className="self-primary" onClick={() => select("coaching")}>Create coaching workspace <ArrowRight size={17}/></button>
           </article>
         </section>
@@ -114,7 +114,7 @@ export default function SelfServiceOnboardingPage() {
           <label>District<input name="district" defaultValue={editing?.district ?? ""} minLength={2} maxLength={120} required/></label>
           <label className="self-form__wide">Official website <span>(optional)</span><input type="url" name="website" defaultValue={editing?.website ?? ""} placeholder="https://…" maxLength={240}/></label>
         </div></section>
-        <section><header><span>2</span><div><h2>Verification details</h2><p>These details are visible only to the Eduvera review team.</p></div></header><div className="self-form__grid">
+        <section><header><span>2</span><div><h2>Verification details</h2><p>These details are visible only to the ThatCampus review team.</p></div></header><div className="self-form__grid">
           <label>Your role at the institution<input name="applicant_role_title" defaultValue={editing?.applicant_role_title ?? ""} placeholder="e.g. Principal, trustee, centre head" minLength={2} maxLength={120} required/></label>
           <label>Reference type<select name="regulator_type" defaultValue={editing?.regulator_type ?? "udise"}><option value="udise">UDISE+</option><option value="aishe">AISHE</option><option value="board_affiliation">Board affiliation</option><option value="trust_registration">Trust / society registration</option><option value="other">Other official registration</option></select></label>
           <label className="self-form__wide">Registration or affiliation reference<input name="regulator_reference" defaultValue={editing?.regulator_reference ?? ""} minLength={3} maxLength={180} required/><small>Do not enter Aadhaar or personal identity numbers.</small></label>

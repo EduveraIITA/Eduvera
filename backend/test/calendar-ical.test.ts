@@ -17,7 +17,7 @@ describe('provider-independent iCalendar feed',()=>{
   });
 
   it('folds long UTF-8 properties on continuation lines',()=>{
-    const result=serializeCalendar({name:'Edura',timezone:'Asia/Kolkata',generatedAt:new Date('2026-10-14T06:00:00Z'),events:[
+    const result=serializeCalendar({name:'ThatCampus',timezone:'Asia/Kolkata',generatedAt:new Date('2026-10-14T06:00:00Z'),events:[
       {uid:'long@edura',title:'विद्यालय '.repeat(20),start:new Date('2026-10-14T03:30:00Z'),end:new Date('2026-10-14T04:15:00Z')},
     ]});
     expect(result).toMatch(/SUMMARY:[^\r]+\r\n [^\r]+/);

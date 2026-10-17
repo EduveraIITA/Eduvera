@@ -135,7 +135,11 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
       await sql`UPDATE fee_gateway_orders SET state=${state},provider_payment_id=${payment.id},payment_id=${receipt}::uuid,checked_at=now() WHERE id=${order.id}::uuid`.execute(db);
       await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
         VALUES(${order.school_id}::uuid,${order.created_by}::uuid,${`fee.razorpay_test_${state}`},${order.id}::uuid,${JSON.stringify({ invoice_id: order.invoice_id, amount_paise: order.amount_paise, provider_payment_id: payment.id, sandbox: true })}::jsonb)`.execute(db);
-      const payload = { student_id: invoice.student_id, invoice_id: order.invoice_id };
+      const payload = {
+        student_id: invoice.student_id,
+        invoice_id: order.invoice_id,
+        refresh: ["fees", "parent.home", "principal.home"],
+      };
       const audience = await sql<{ user_id: string }>`SELECT DISTINCT user_id FROM school_memberships WHERE school_id=${order.school_id}::uuid AND is_active
         AND event_user_is_authorized(${order.school_id}::uuid,'fees.updated',${JSON.stringify(payload)}::jsonb,user_id)`.execute(db);
       await db.insertInto("event_outbox").values({ school_id: order.school_id, event_type: "fees.updated", aggregate_type: "fee_payment", aggregate_id: order.id,

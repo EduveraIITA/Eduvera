@@ -49,7 +49,7 @@ export interface StudentLeaveStatusData {
 }
 
 export interface StudentLeaveStatusPageProps {
-  data?: StudentLeaveStatusData;
+  data: StudentLeaveStatusData;
   routes?: Partial<StudentRouteMap>;
   onBack?: () => void;
   onApplyLeave?: () => void;
@@ -64,7 +64,7 @@ export const demoLeaveStatusData: StudentLeaveStatusData = {
   dates: "28 Oct - 29 Oct 2026 - Full School Days",
   duration: "2 Days",
   stages: [
-    { id: "submitted", title: "Submitted by Student", detail: "27 Oct, 08:30 PM", state: "complete", note: "Application generated via Edura Student Portal" },
+    { id: "submitted", title: "Submitted by Student", detail: "27 Oct, 08:30 PM", state: "complete", note: "Application generated via ThatCampus Student Portal" },
     { id: "parent", title: "Parent Sign-Off", detail: "Pooja Sharma (Mother) - 27 Oct, 09:15 PM", state: "complete", badge: "Verified", note: "Doctor prescribed complete bed rest and viral medication for 48 hours." },
     { id: "teacher", title: "Class Teacher Review", detail: "Mrs. K. Sharma (Homeroom Advisor)", state: "active", badge: "In Review" },
     { id: "register", title: "Official Attendance Record", detail: "Auto-syncs 'Excused Medical (EM)' code to portal upon teacher approval", state: "pending" },
@@ -104,7 +104,7 @@ function safeDocumentUrl(value?: string) {
 }
 
 export function StudentLeaveStatusPage({
-  data = demoLeaveStatusData,
+  data,
   routes,
   onBack,
   onApplyLeave,
@@ -143,7 +143,7 @@ export function StudentLeaveStatusPage({
   }
 
   return (
-    <StudentShell activeNav="launcher" variant="edura" routes={routes} pageTitle="Leave" onBack={onBack}>
+    <StudentShell activeNav="launcher" variant="platform" routes={routes} pageTitle="Leave" onBack={onBack}>
       <div className="student-page-stack leave-status-page">
         <div className="page-context-row">
           <span className="title-with-badge"><b>{data.activeCount} Active</b></span>

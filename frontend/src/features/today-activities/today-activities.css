@@ -33,7 +33,7 @@
   display: inline-flex;
   padding: 6px 9px;
   border: 0;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   align-items: center;
   gap: 4px;
   color: var(--activities-primary);
@@ -74,7 +74,7 @@
   min-width: min(286px, 84vw);
   padding: 16px;
   border: 1px solid rgba(29, 78, 216, .14);
-  border-radius: var(--edura-radius-card);
+  border-radius: var(--thatcampus-radius-card);
   scroll-snap-align: center;
   color: var(--activities-ink);
   background: #fff;
@@ -179,7 +179,7 @@
   height: 48px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: var(--edura-radius-card);
+  border-radius: var(--thatcampus-radius-card);
   color: #fff;
   background: var(--activity-color);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--activity-color) 20%, transparent);
@@ -225,7 +225,7 @@
 .today-activity-card footer span {
   display: inline-flex;
   padding: 5px 8px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   align-items: center;
   gap: 4px;
   color: var(--activities-ink);
@@ -237,7 +237,7 @@
 .today-activities__empty {
   display: flex;
   padding: 15px;
-  border-radius: var(--edura-radius-card);
+  border-radius: var(--thatcampus-radius-card);
   align-items: center;
   gap: 10px;
   color: var(--activities-primary);

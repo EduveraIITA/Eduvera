@@ -179,7 +179,8 @@ describe("request inbox projection", () => {
     };
 
     expect(attendanceRegisterRequestItems("principal", "2026-10-13", [register], false)).toEqual([]);
-    expect(attendanceRegisterRequestItems("principal", "2026-10-13", [register], true)).toMatchObject([
+    expect(attendanceRegisterRequestItems("principal", "2026-10-13", [register], true, false)).toEqual([]);
+    expect(attendanceRegisterRequestItems("principal", "2026-10-13", [register], true, true)).toMatchObject([
       { source_id: "class-1", kind: "attendance_register", status_label: "Not started", priority: "normal" },
     ]);
     expect(attendanceRegisterRequestItems("principal", "2026-10-13", [{ ...register, submission_status: "submitted" }], true)).toEqual([]);

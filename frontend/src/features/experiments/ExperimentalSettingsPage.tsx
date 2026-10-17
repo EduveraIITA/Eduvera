@@ -1,4 +1,5 @@
-import { CalendarDays, Check } from "lucide-react";
+import { Activity, CalendarDays, Check, ChevronRight } from "lucide-react";
+import { Link } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { setTimetableExperience, useTimetableExperience, type TimetableExperience } from "./timetableExperience";
@@ -28,6 +29,14 @@ export default function ExperimentalSettingsPage() {
         </div>
         <p className="experimental-settings__note">You can switch back at any time. Your timetable data is shared; only the interface changes.</p>
       </section>
+      {import.meta.env.DEV ? <section className="experimental-settings__lab" aria-labelledby="synthetic-school-day-title">
+        <header>
+          <span aria-hidden="true"><Activity size={20} /></span>
+          <div><h2 id="synthetic-school-day-title">Synthetic school day</h2><p>Cambridge's dummy students, staff and families perform normal app work on this local server.</p></div>
+        </header>
+        <Link to="/principal/campus"><span><strong>See synthetic activity in Campus view</strong><small>The development actors appear as an explicitly simulated layer over the normal admin feature.</small></span><ChevronRight size={19} /></Link>
+        <p className="experimental-settings__note">Development only. Campus View itself is a permanent admin feature and does not depend on this simulation.</p>
+      </section> : null}
     </div>
   </OperationsShell>;
 }

@@ -1,4 +1,4 @@
-.experimental-settings { width:min(680px,100%); margin:0 auto; padding:24px; }
+.experimental-settings { width:min(680px,100%); display:grid; gap:16px; margin:0 auto; padding:24px; }
 .experimental-settings > section { overflow:hidden; border:1px solid var(--thatcampus-border); border-radius:20px; background:var(--thatcampus-surface); box-shadow:0 10px 30px rgb(15 23 42 / .05); }
 .experimental-settings > section > header { display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; padding:20px; border-bottom:1px solid var(--thatcampus-border); }
 .experimental-settings > section > header > span { display:grid; width:40px; height:40px; place-items:center; border-radius:12px; color:var(--thatcampus-brand); background:var(--thatcampus-surface-strong); }
@@ -16,4 +16,10 @@
 .experimental-settings__choices button[aria-checked=true] i { border-color:var(--thatcampus-brand); background:var(--thatcampus-brand); }
 .experimental-settings__choices button:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
 .experimental-settings .experimental-settings__note { padding:14px 20px 18px; color:var(--thatcampus-ink-secondary); background:var(--thatcampus-surface-strong); font-size:11px; line-height:1.5; }
+.experimental-settings__lab > a { display:grid; grid-template-columns:minmax(0,1fr) 36px; align-items:center; gap:12px; min-height:76px; margin:0 20px; color:var(--thatcampus-ink); text-decoration:none; }
+.experimental-settings__lab > a > span { display:grid; gap:5px; }
+.experimental-settings__lab > a strong { font-size:15px; }
+.experimental-settings__lab > a small { color:var(--thatcampus-ink-secondary); font-size:12px; line-height:1.45; }
+.experimental-settings__lab > a > svg { justify-self:end; color:var(--thatcampus-brand); }
+.experimental-settings__lab > a:focus-visible { border-radius:10px; outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
 @media (max-width:600px) { .experimental-settings { padding:16px 24px 28px; } .experimental-settings > section { border-radius:16px; } }

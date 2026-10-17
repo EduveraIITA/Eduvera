@@ -16,13 +16,12 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { fallbackDiaryData } from "./parentDemoData";
 import { ParentShell } from "./ParentShell";
 import type { ParentDiaryData, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
 export interface ParentDiaryPageProps {
-  data?: ParentDiaryData;
+  data: ParentDiaryData;
   onSelectChild?: (childId: string) => ParentPageAction;
   onSelectDay?: (dayId: string) => ParentPageAction;
   onPackingChange?: (itemId: string, packed: boolean) => ParentPageAction;
@@ -46,7 +45,7 @@ function dayHeading(dayId: string, fallback: string) {
 }
 
 export function ParentDiaryPage({
-  data = fallbackDiaryData,
+  data,
   onSelectChild,
   onSelectDay,
   onPackingChange,
@@ -229,7 +228,7 @@ export function ParentDiaryPage({
           {signatureState === "success" ? (
             <div className="signed-box" role="status">
               <CheckCircle2 size={23} />
-              <div><strong>Digitally Signed & Acknowledged</strong><span>Signed - {data.guardian.name} ({data.guardian.relationship})</span><small>Edura Parent Verified ID: {data.guardian.verifiedId}</small></div>
+              <div><strong>Digitally Signed & Acknowledged</strong><span>Signed - {data.guardian.name} ({data.guardian.relationship})</span><small>ThatCampus Parent Verified ID: {data.guardian.verifiedId}</small></div>
             </div>
           ) : !data.requiresAcknowledgement ? (
             <div className="signed-box signed-box--neutral" role="status"><CheckCircle2 size={23} /><div><strong>No sign-off required</strong><span>There are no diary items requiring guardian acknowledgment on this date.</span></div></div>

@@ -47,8 +47,8 @@ export class PaymentEmailService implements OnModuleInit, OnModuleDestroy {
      if(!data?.eligible || (['pending','failed'].includes(job.payment_state) && data.state !== 'created')) outcome='skipped';
      else {
       const document={...data,state:job.payment_state,providerPayment:job.provider_payment_id};
-      const attachments=job.payment_state==='captured' ? [{filename:`Eduera-test-receipt-${data.receipt}.pdf`,contentType:'application/pdf',content:(await paymentReceiptPdf(document)).toString('base64')}] : [];
-      await sendTransactionalEmail({to:data.email,senderName:'Eduera · Pathyakram',...paymentEmail(document,config().PUBLIC_URL!,data.student_id,data.invoice_id),attachments});
+      const attachments=job.payment_state==='captured' ? [{filename:`ThatCampus-test-receipt-${data.receipt}.pdf`,contentType:'application/pdf',content:(await paymentReceiptPdf(document)).toString('base64')}] : [];
+      await sendTransactionalEmail({to:data.email,senderName:'ThatCampus · Pathyakram',...paymentEmail(document,config().PUBLIC_URL!,data.student_id,data.invoice_id),attachments});
       outcome='accepted';
      }
     } catch {this.logger.warn('Payment email acceptance unconfirmed; receipt remains available in the app.');}

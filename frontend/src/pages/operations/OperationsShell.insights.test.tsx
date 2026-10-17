@@ -38,4 +38,12 @@ describe("principal Insights navigation",()=>{
     expect(mobile.getByRole('link',{name:'In & Out',hidden:true})).toHaveAttribute('aria-current','page');
     expect([...container.querySelector('.operations-mobile-nav')!.children].map(item=>item.textContent)).toEqual(['Today','Attendance','Timetable','In & Out','More']);
   });
+  it("gives map-like workspaces the complete viewport without duplicate app chrome",()=>{
+    const {container}=renderShell('/principal/campus',<OperationsShell portal="principal" active="more" title="Campus view" layout="canvas"><span>Bounded campus canvas</span></OperationsShell>);
+    expect(container.querySelector('.operations-app--canvas')).toBeInTheDocument();
+    expect(container.querySelector('.operations-sidebar')).not.toBeInTheDocument();
+    expect(container.querySelector('.operations-topbar')).not.toBeInTheDocument();
+    expect(container.querySelector('.operations-mobile-nav')).not.toBeInTheDocument();
+    expect(container.querySelector('.operations-main')).toHaveTextContent('Bounded campus canvas');
+  });
 });

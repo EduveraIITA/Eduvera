@@ -81,13 +81,40 @@ export class FeeReviewService {
       await this.operations.authorize(user, schoolId, "fees.manage", db, true);
       const current = await sql<{ revision: number; payee_name: string; upi_id: string; instructions: string }>`SELECT revision,payee_name,upi_id,instructions FROM school_fee_payment_settings WHERE school_id=${schoolId}::uuid FOR UPDATE`.execute(db);
       if ((current.rows[0]?.revision ?? 0) !== data.expected_revision) throw new ConflictException("Payment instructions changed. Refresh and review before saving.");
-      await sql`INSERT INTO school_fee_payment_settings(school_id,payee_name,upi_id,instructions,updated_by)
+      const saved = (await sql<{ revision: number }>`INSERT INTO school_fee_payment_settings(school_id,payee_name,upi_id,instructions,updated_by)
         VALUES(${schoolId}::uuid,${data.payee_name},${data.upi_id},${data.instructions},${user.id}::uuid)
         ON CONFLICT(school_id) DO UPDATE SET payee_name=excluded.payee_name,upi_id=excluded.upi_id,instructions=excluded.instructions,
-        revision=school_fee_payment_settings.revision+1,updated_by=excluded.updated_by,updated_at=now()`.execute(db);
+        revision=school_fee_payment_settings.revision+1,updated_by=excluded.updated_by,updated_at=now()
+        RETURNING revision`.execute(db)).rows[0]!;
       await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
         VALUES(${schoolId}::uuid,${user.id}::uuid,'fee.instructions_updated',${schoolId}::uuid,
         ${JSON.stringify({ before: current.rows[0] ?? null, after: { payee_name: data.payee_name, upi_id: data.upi_id, instructions: data.instructions, revision: data.expected_revision + 1 } })}::jsonb)`.execute(db);
+      const payload = {
+        action: "fee_instructions_updated",
+        revision: saved.revision,
+        refresh: ["fees", "parent.home", "principal.home"],
+      };
+      const audience = await sql<{ user_id: string }>`SELECT DISTINCT membership.user_id
+        FROM school_memberships membership
+        JOIN users account ON account.id=membership.user_id AND account.is_active
+        WHERE membership.school_id=${schoolId}::uuid AND membership.is_active
+          AND event_user_is_authorized(
+            ${schoolId}::uuid,
+            'administration.updated',
+            ${JSON.stringify(payload)}::jsonb,
+            membership.user_id
+          )`.execute(db);
+      await db.insertInto("event_outbox").values({
+        school_id: schoolId,
+        event_type: "administration.updated",
+        aggregate_type: "fee_payment_settings",
+        aggregate_id: schoolId,
+        audience_user_ids: audience.rows.map((row) => row.user_id),
+        payload,
+        idempotency_key: `fee-settings:${schoolId}:${saved.revision}`,
+        notification_user_ids: [],
+        notification_payload: null,
+      }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
       return { saved: true };
     });
   }

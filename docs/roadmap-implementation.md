@@ -1,4 +1,4 @@
-# Eduera roadmap implementation
+# ThatCampus roadmap implementation
 
 ## Release 1: administration and offline collection foundation
 

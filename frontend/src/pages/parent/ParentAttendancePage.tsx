@@ -15,7 +15,6 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { fallbackAttendanceData } from "./parentDemoData";
 import { ParentShell } from "./ParentShell";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { AttendanceRankingDialog } from "../../features/school/AttendanceRankingDialog";
@@ -24,7 +23,7 @@ import "./parent-pages.css";
 import '../../features/attendance/attendance-simple.css';
 
 export interface ParentAttendancePageProps {
-  data?: ParentAttendanceData;
+  data: ParentAttendanceData;
   onSelectChild?: (childId: string) => ParentPageAction;
   onSelectDate?: (dateId: string) => ParentPageAction;
   onRequestLeave?: () => ParentPageAction;
@@ -35,7 +34,7 @@ export interface ParentAttendancePageProps {
 type MessageState = "idle" | "sending" | "sent" | "error";
 
 export function ParentAttendancePage({
-  data = fallbackAttendanceData,
+  data,
   onSelectChild,
   onSelectDate,
   onRequestLeave,

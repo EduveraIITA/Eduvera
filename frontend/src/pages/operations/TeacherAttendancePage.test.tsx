@@ -93,6 +93,37 @@ function renderRegister(overrides: Partial<React.ComponentProps<typeof TeacherAt
 }
 
 describe("teacher attendance register lifecycle", () => {
+  it("keeps a QR observation pending until staff records a review decision", async () => {
+    const interact = userEvent.setup();
+    const data: TeacherAttendanceResponse = {
+      ...attendanceData(),
+      attendance_scope: "scheduled_session",
+      session: { id: "session-1", subject_id: "subject-1", subject_name: "Mathematics", period_number: 1, starts_at: "09:00:00", ends_at: "09:45:00" },
+      pending_evidence: [{
+        id: "evidence-1",
+        student_id: "student-1",
+        student_name: "Aarav Sharma",
+        admission_number: "CIS-2026-01",
+        capture_channel: "student_qr",
+        observed_at: "2026-09-12T09:05:00.000Z",
+        updated_at: "2026-09-12T09:05:00.000Z",
+      }],
+    };
+    const onDecideEvidence = vi.fn(() => Promise.resolve({ ...data, pending_evidence: [] }));
+    renderRegister({ data, onDecideEvidence });
+    expect(screen.getByText("Review before recording")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Accept present" })).toBeEnabled();
+    await interact.type(screen.getByLabelText("Verification note"), "Verified in classroom");
+    await interact.click(screen.getByRole("button", { name: "Accept present" }));
+    await waitFor(() => expect(onDecideEvidence).toHaveBeenCalledWith("evidence-1", expect.objectContaining({
+      decision: "accepted",
+      note: "Verified in classroom",
+      expected_revision: 0,
+    })));
+    expect(await screen.findByText("Check-in accepted and attendance updated.")).toBeVisible();
+    expect(screen.queryByText("Review before recording")).not.toBeInTheDocument();
+  });
+
   it('opens the requested learner from an agent receipt and can return to the whole roster',async()=>{
     const interact=userEvent.setup();renderRegister({initialStudentId:'student-2'});
     expect(screen.getByRole('textbox',{name:'Search student or roll number'})).toHaveValue('CIS-2026-02');

@@ -14,7 +14,7 @@ export function FamilyFeePrint({ schoolName, student, ledger, view, invoice, pay
   return createPortal(<article className="family-fee-print-document" aria-hidden="true">
     <header><strong>{schoolName}</strong><h1>{payment ? "Payment receipt" : invoice ? "Fee invoice" : view === "reviews" ? "Fee reviews" : receiptView ? "Receipt register" : "Fee statement"}</h1>
       <p>{student?.user.display_name} · {student?.admission_number} · Class {student?.current_enrollment.grade}{student?.current_enrollment.section}</p>
-      <p>Issued from Eduera · {feeDate(new Date().toISOString())} · INR</p>
+      <p>Issued from ThatCampus · {feeDate(new Date().toISOString())} · INR</p>
     </header>
     {receiptView ? <>{payments.length ? payments.map(item => <section key={item.id}>
       <h2>{rupees(item.amount_paise)}</h2>{testPayment(item) ? <p><strong>TEST RECEIPT — Sandbox only. No real money collected.</strong></p> : null}

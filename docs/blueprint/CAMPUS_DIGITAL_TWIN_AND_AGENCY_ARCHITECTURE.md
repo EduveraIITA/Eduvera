@@ -127,10 +127,11 @@ The first deployment remains one NestJS modular monolith and one PostgreSQL data
 
 The twin is a connected operational model, not a second copy of every database row.
 
-Stable entity identifiers and the space hierarchy deliberately allow a later
-spatial read model. A 2D/3D interface would consume a separate geometry/rendering
+Stable entity identifiers and the space hierarchy drive the current Campus View
+spatial read model. Its canvas consumes a separate versioned geometry/rendering
 projection keyed to those identifiers; geometry is not embedded into every domain
-record and visual position is not treated as evidence of real-world presence.
+record and visual position is not treated as evidence of real-world presence. A
+generated schematic is a labelled presentation fallback, never surveyed geometry.
 
 ### 3.1 Stable things
 
@@ -675,6 +676,13 @@ The model architecture must make the existing product simpler, not expose more c
 Frontend rules:
 
 - keep established ThatCampus theme, navigation, headers and mobile interaction patterns;
+- render one authorized role/domain projection of the shared campus state; authoritative
+  fields come from the owning domain while Model Core context stays typed,
+  provenance-bearing and freshness-labelled;
+- refresh every affected role projection from the accepted domain outbox event, and
+  show delayed/unknown model context without concealing accepted domain truth;
+- never read a generic Model Core state endpoint into normal domain caches, and never
+  let rehearsal/simulation state claim accepted or live campus truth;
 - use nouns already used on campus: branch, classroom, teacher, class, period, register, route, request;
 - show one clear status and next action, with source/time/owner where relevant;
 - explain automation in plain language and link to the responsible Operating rule;
@@ -809,6 +817,29 @@ signals are rebuildable read results, not yet durable contradiction cases. Gener
 replay tooling, authenticated external sensor adapters, durable case ownership and
 inferred state remain subsequent work across Phases 2A and 5.
 
+Second implementation checkpoint (16 October 2026): migrations 111–114 give each
+dated schedule occurrence append-only recorded-time revisions and retain its plan
+basis, subsequent change and applicable condition separately. The additive shared
+schedule contracts expose exact source provenance and distinguish the originally
+planned teacher from effective staffing. An accepted schedule-backed cover decision
+is recorded by Staff Operations and projected through `TemporalContextPort` as a
+causally linked `timetable.substitution_effective` revision. Later schedule, calendar,
+leave-obligation or substitute-eligibility changes run Staff-owned reconciliation;
+the prior decision remains history while the current projection becomes the newer
+source, the restored original teacher or an explicitly unassigned occurrence as the
+domain evidence requires. This remains expected responsibility, never proof of
+lesson delivery or physical location.
+
+Disposable PostgreSQL verification covers the migration chain, exact-recipient
+acceptance, replay and mismatch guards, future substitute deactivation, elapsed-cover
+preservation, pending-assignment authorization and the canonical non-notifying import
+of retained pre-projection accepted cover. Schedule, dated-plan, closure, legacy
+timetable and staff-membership mutation boundaries use the Staff-owned reconciliation
+port and retain causal cancellation history. This checkpoint does not change the
+Phase 2A exit criteria: general projection rebuild/replay, durable contradiction
+ownership, hosted release and operator acceptance remain open until separately
+verified.
+
 ### Phase 3 - Agents and authority
 
 - register human, device, integration and deterministic software agents;
@@ -857,10 +888,15 @@ Exit: connected workflows reduce repeated entry without creating a generic contr
 
 Exit: no connector can publish accepted safety/attendance/authority facts directly, and degraded operation is visible.
 
-### Optional later phase - Spatial campus projection
+### Current read projection - Campus View; later richer spatial rendering
 
-- attach versioned floor plans/geometry to stable campus-space identities;
-- project schedules, resources and sufficiently fresh observations into 2D/3D views;
+- expose a tenant-scoped, administrator-only observability port over stable campus
+  and space identities;
+- use deterministic versioned schematics until reviewed floor geometry is available;
+- project schedules, resources and sufficiently fresh observations into the mobile
+  2D view without collapsing their truth dimensions;
+- later attach reviewed floor plans/geometry and richer 2D/3D rendering to the same
+  stable identities;
 - preserve source, freshness and uncertainty in every live visual state;
 - keep all edits routed through domain APIs rather than manipulating the scene as
   an unvalidated source of truth.

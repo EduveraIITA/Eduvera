@@ -1,0 +1,141 @@
+{
+  "schema_version": 5,
+  "version": "cambridge.behavior.v5",
+  "school_code": "cis",
+  "timezone": "Asia/Kolkata",
+  "source_label": "Cambridge development fixture v5",
+  "refresh_interval_seconds": 15,
+  "status_tick_seconds": 2,
+  "action_poll_seconds": 2,
+  "reaction_poll_seconds": 10,
+  "activity_history_limit": 30,
+  "attendance_ratios": {
+    "present": 0.88,
+    "late": 0.04,
+    "absent": 0.04,
+    "excused": 0.04
+  },
+  "phase_receipts": {
+    "include_modes": ["lesson", "break", "activity", "transition"],
+    "history_limit": 12
+  },
+  "admin_expectation": {
+    "space_code": "PRINCIPAL-OFFICE",
+    "activity": "Coordinating campus operations",
+    "phase_modes": ["lesson", "break", "activity", "transition"]
+  },
+  "staff_expectations": [
+    {
+      "designation": "Campus Operations Manager",
+      "space_code": "SCHOOL-OFFICE",
+      "activity": "Coordinating campus operations",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Front Office Executive",
+      "space_code": "RECEPTION",
+      "activity": "Supporting reception and scheduled visitors",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "School Nurse",
+      "space_code": "INFIRMARY",
+      "activity": "Covering the school infirmary",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "School Counsellor",
+      "space_code": "WELLBEING",
+      "activity": "Available for scheduled wellbeing support",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Librarian",
+      "space_code": "LIBRARY",
+      "activity": "Supporting scheduled library use",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Facilities & Safety Supervisor",
+      "space_code": "SCHOOL-OFFICE",
+      "activity": "Coordinating facilities and safety checks",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Transport Coordinator",
+      "space_code": "BUS-BAY",
+      "activity": "Coordinating scheduled transport operations",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Security Supervisor",
+      "space_code": "MAIN-GATE",
+      "activity": "Covering the scheduled main-gate duty",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "IT Support Technician",
+      "space_code": "LAB-COMPUTER",
+      "activity": "Supporting scheduled campus technology work",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Laboratory Assistant",
+      "space_code": "LAB-SCI",
+      "activity": "Preparing and supporting scheduled laboratory work",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    },
+    {
+      "designation": "Cafeteria Supervisor",
+      "space_code": "CANTEEN",
+      "activity": "Coordinating scheduled meal service",
+      "phase_modes": ["lesson", "break", "activity", "transition"]
+    }
+  ],
+  "actions": [
+    {
+      "id": "teacher-daily-attendance",
+      "type": "teacher_submit_daily_attendance",
+      "phase_mode": "lesson",
+      "period_number": 1,
+      "offset_seconds": 600,
+      "goal": "Exercise the current-day register during the first published teaching period."
+    },
+    {
+      "id": "staff-guardian-message",
+      "type": "staff_guardian_message",
+      "phase_mode": "lesson",
+      "period_number": 3,
+      "offset_seconds": 1200,
+      "goal": "Exercise a real staff-to-family conversation during a normal teaching morning."
+    },
+    {
+      "id": "publish-acknowledgement",
+      "type": "admin_publish_notice",
+      "phase_mode": "break",
+      "period_number": 4,
+      "offset_seconds": 300,
+      "goal": "Exercise the notice workflow during the published lunch break."
+    },
+    {
+      "id": "guardian-acknowledgement",
+      "type": "parent_acknowledge_notice",
+      "phase_mode": "break",
+      "period_number": 4,
+      "offset_seconds": 900,
+      "goal": "Exercise a family response after the notice has been available during lunch."
+    }
+  ],
+  "reactions": [
+    {
+      "id": "accept-exam-invigilation",
+      "type": "staff_accept_exam_invigilation",
+      "event_type": "assessment.invigilation.offered",
+      "decision": "accepted",
+      "delay_seconds": 10,
+      "scan_limit": 25,
+      "note": "Accepted by the local Cambridge development fixture.",
+      "goal": "Let the selected synthetic staff agent answer an invigilation offer through the normal assessment command during live school hours."
+    }
+  ]
+}

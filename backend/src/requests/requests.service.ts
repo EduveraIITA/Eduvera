@@ -207,8 +207,9 @@ export function attendanceRegisterRequestItems(
   date: string,
   rows: readonly AttendanceClassWorkspace[],
   submissionCutoffReached: boolean,
+  escalationReached = submissionCutoffReached,
 ): RequestInboxItem[] {
-  if (!submissionCutoffReached) return [];
+  if (!submissionCutoffReached || (portal === "principal" && !escalationReached)) return [];
   return rows.filter((row) => row.can_mark
     && !["submitted", "locked"].includes(row.submission_status)
     && !(portal === "principal" && row.submission_status !== "not_started"
@@ -422,14 +423,81 @@ export class RequestsService {
     };
   }
 
-  private async schoolAttendanceClock(scope: Scope): Promise<{ date: string; submission_cutoff_reached: boolean }> {
-    const result = await sql<{ date: string; submission_cutoff_reached: boolean }>`
+  private async schoolAttendanceClock(scope: Scope): Promise<{
+    date: string;
+    academic_mode: "daily_class" | "scheduled_session";
+    submission_cutoff_reached: boolean;
+    escalation_reached: boolean;
+  }> {
+    const result = await sql<{
+      date: string;
+      academic_mode: "daily_class" | "scheduled_session";
+      submission_cutoff_reached: boolean;
+      escalation_reached: boolean;
+    }>`
       SELECT to_char(now() AT TIME ZONE school.timezone,'YYYY-MM-DD') AS date,
-        ((now() AT TIME ZONE school.timezone)::time >= school.attendance_submission_cutoff) AS submission_cutoff_reached
-      FROM schools school
+        COALESCE(rule.attendance_academic_mode,'scheduled_session') AS academic_mode,
+        ((now() AT TIME ZONE school.timezone)::time >= school.attendance_submission_cutoff) AS submission_cutoff_reached,
+        ((now() AT TIME ZONE school.timezone) >=
+          date_trunc('day',now() AT TIME ZONE school.timezone)+school.attendance_submission_cutoff
+            +(COALESCE(rule.attendance_overdue_escalation_minutes,60)||' minutes')::interval) AS escalation_reached
+      FROM schools school LEFT JOIN institution_operating_rules rule ON rule.school_id=school.id
       WHERE school.id=${scope.school_id}::uuid
     `.execute(this.db);
     return result.rows[0]!;
+  }
+
+  private async subjectAttendanceCompletionItems(
+    user: AuthUser,
+    scope: Scope,
+    portal: "teacher" | "principal",
+    date: string,
+  ): Promise<RequestInboxItem[]> {
+    const rows = await sql<StaffActionRow>`
+      WITH policy AS (
+        SELECT COALESCE(rule.attendance_academic_mode,'scheduled_session') AS academic_mode,
+          COALESCE(rule.attendance_session_close_after_minutes,30)::int AS close_after_minutes,
+          COALESCE(rule.attendance_overdue_escalation_minutes,60)::int AS escalation_minutes
+        FROM schools school LEFT JOIN institution_operating_rules rule ON rule.school_id=school.id
+        WHERE school.id=${scope.school_id}::uuid
+      )
+      SELECT COALESCE(register.id,slot.id) AS id,register.id AS entity_id,
+        concat(COALESCE(subject.name,NULLIF(slot.title,''),'Subject'),' · Class ',section.grade,section.section)::text AS title,
+        concat(to_char(slot.starts_at,'HH24:MI'),'–',to_char(slot.ends_at,'HH24:MI'),
+          CASE WHEN register.id IS NULL OR register.revision=0 THEN ' · not started' ELSE ' · unfinished' END)::text AS detail,
+        CASE WHEN ${portal}='principal' THEN 'Escalated register' ELSE 'Register overdue' END::text AS status_label,
+        ((${date}::date+slot.ends_at) AT TIME ZONE school.timezone
+          +(policy.close_after_minutes||' minutes')::interval) AS due_at,
+        ((${date}::date+slot.starts_at) AT TIME ZONE school.timezone) AS occurs_at,
+        register.created_at,
+        (${portal}='principal')::boolean AS urgent,
+        concat('Class ',section.grade,section.section)::text AS subject_label,
+        CASE WHEN ${portal}='principal' THEN 'urgent' ELSE 'high' END::text AS priority
+      FROM policy
+      JOIN schools school ON school.id=${scope.school_id}::uuid
+      CROSS JOIN LATERAL effective_school_schedule(${scope.school_id}::uuid,${date}::date) slot
+      JOIN class_sections section ON section.id=slot.class_section_id AND section.school_id=${scope.school_id}::uuid
+      LEFT JOIN subjects subject ON subject.id=slot.subject_id AND subject.school_id=${scope.school_id}::uuid
+      LEFT JOIN attendance_session_registers register ON register.school_id=${scope.school_id}::uuid
+        AND register.session_date=${date}::date AND register.schedule_slot_id=slot.id
+      WHERE policy.academic_mode='scheduled_session' AND slot.slot_type='class'
+        AND slot.subject_id IS NOT NULL AND NOT slot.cancelled
+        AND COALESCE(register.state,'draft') NOT IN ('submitted','locked')
+        AND now() >= ((${date}::date+slot.ends_at) AT TIME ZONE school.timezone
+          +(policy.close_after_minutes||' minutes')::interval)
+        AND (
+          (${portal}='teacher' AND slot.teacher_user_id=${user.id}::uuid)
+          OR (${portal}='principal' AND now() >= ((${date}::date+slot.ends_at) AT TIME ZONE school.timezone
+            +((policy.close_after_minutes+policy.escalation_minutes)||' minutes')::interval))
+        )
+      ORDER BY slot.ends_at,section.grade,section.section,slot.period_number
+    `.execute(this.db);
+    return rows.rows.map((row) => this.item(row, {
+      kind: "attendance_session_register",
+      category: "attendance",
+      action_label: portal === "teacher" ? "Take attendance" : "Review register",
+      href: `/${portal}/attendance?date=${encodeURIComponent(date)}${row.entity_id ? `&session_id=${encodeURIComponent(row.entity_id)}` : ""}`,
+    }, row.priority ?? (portal === "principal" ? "urgent" : "high")));
   }
 
   private eventItems(rows: readonly EventActionRow[], scope: Scope): RequestInboxItem[] {
@@ -1012,8 +1080,9 @@ export class RequestsService {
     const clock = await this.schoolAttendanceClock(scope);
     const date = clock.date;
     const role = portal === "principal" ? "admin" : "staff";
-    const [classes, duties, reports, care, assignedSafeguardingReports, eventSessions] = await Promise.all([
+    const [classes, subjectAttendance, duties, reports, care, assignedSafeguardingReports, eventSessions] = await Promise.all([
       attendanceWorkspace(this.db, scope.school_id, user.id, role, date),
+      this.subjectAttendanceCompletionItems(user, scope, portal, date),
       sql<StaffActionRow>`
         SELECT event.id,event.title,
           concat(replace(staff.role,'_',' '),' duty',CASE WHEN event.venue<>'' THEN ' · '||event.venue ELSE '' END)::text AS detail,
@@ -1084,7 +1153,10 @@ export class RequestsService {
       this.eventSessionRegisterItems(user, scope, portal),
     ]);
     return [
-      ...attendanceRegisterRequestItems(portal, date, classes, clock.submission_cutoff_reached),
+      ...(clock.academic_mode === "daily_class"
+        ? attendanceRegisterRequestItems(portal, date, classes, clock.submission_cutoff_reached, clock.escalation_reached)
+        : []),
+      ...subjectAttendance,
       ...(portal === "principal" ? principalAttendanceExceptionItems(date, classes) : []),
       ...duties.rows.map((row) => this.item(row, { kind: "event_duty", category: "events", action_label: "Open duty", href: eventDutyAttentionHref(portal, row.id) }, row.urgent ? "urgent" : "normal")),
       ...reports.rows.map((row) => this.item(row, { kind: "report_card_review", category: "academics", action_label: portal === "principal" ? "Review reports" : "Open remarks", href: `/${portal}/report-cards?view=releases&batch=${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "high" : "normal"))),
@@ -1412,7 +1484,7 @@ export class RequestsService {
       this.canReadCommunication(user, scope.school_id),
       this.staffLeaveDecisionItems(user, scope),
     ]);
-    const [notices, assignments, coverage, trips, swaps, assessments, policies] = await Promise.all([
+    const [notices, assignments, coverage, trips, swaps, invigilation, assessments, policies] = await Promise.all([
       canReadCommunication ? sql<StaffActionRow>`
         SELECT notice.id,notice.title,
           CASE notice.response_mode WHEN 'acknowledgement' THEN 'Read and acknowledge.' ELSE 'Choose a response.' END::text AS detail,
@@ -1488,6 +1560,36 @@ export class RequestsService {
         ORDER BY requester_trip.service_date,swap.id
       `.execute(this.db),
       sql<StaffActionRow>`
+        SELECT assignment.id,assessment.id AS entity_id,assessment.title,
+          concat_ws(' · ',concat('Class ',section.grade,section.section),subject.name,space.name)::text AS detail,
+          'Invigilation response needed'::text AS status_label,sitting.starts_at AS due_at,
+          assignment.assigned_at AS occurs_at,assignment.assigned_at AS created_at,
+          (sitting.starts_at<=now()+interval '1 day')::boolean AS urgent,
+          subject.name AS subject_label
+        FROM assessment_sitting_invigilators assignment
+        JOIN assessment_sittings sitting ON sitting.id=assignment.sitting_id
+          AND sitting.school_id=assignment.school_id AND sitting.assessment_id=assignment.assessment_id
+        JOIN assessments assessment ON assessment.id=assignment.assessment_id
+          AND assessment.school_id=assignment.school_id
+        JOIN class_sections section ON section.id=assessment.class_section_id
+          AND section.school_id=assessment.school_id
+        JOIN subjects subject ON subject.id=assessment.subject_id
+          AND subject.school_id=assessment.school_id
+        LEFT JOIN campus_spaces space ON space.id=sitting.space_id
+          AND space.school_id=sitting.school_id AND space.campus_id=sitting.campus_id
+        WHERE assignment.school_id=${scope.school_id}::uuid AND assignment.user_id=${user.id}::uuid
+          AND assignment.status='offered' AND sitting.state='planning' AND assessment.status='draft'
+          AND EXISTS (
+            SELECT 1
+            FROM school_memberships membership
+            JOIN users account ON account.id=membership.user_id AND account.is_active
+            WHERE membership.school_id=assignment.school_id
+              AND membership.user_id=assignment.user_id
+              AND membership.is_active AND membership.role IN ('staff','admin')
+          )
+        ORDER BY sitting.starts_at,assignment.id
+      `.execute(this.db),
+      sql<StaffActionRow>`
         SELECT assessment.id,assessment.title,
           concat('Class ',section.grade,section.section,' · ',subject.name)::text AS detail,
           CASE assignment.role WHEN 'moderator' THEN 'Moderation needed' ELSE 'Marking needed' END::text AS status_label,
@@ -1530,6 +1632,7 @@ export class RequestsService {
       ...coverage.rows.map((row) => this.item(row, { kind: "coverage_offer", category: "staffing", action_label: "Review cover", href: `/teacher/responsibilities?coverage=${encodeURIComponent(row.id)}` })),
       ...trips.rows.map((row) => this.item(row, { kind: "transport_assignment", category: "transport", action_label: "Review ride", href: `/teacher/transport/${encodeURIComponent(row.id)}` })),
       ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap", category: "transport", action_label: "Respond", href: `/teacher/transport?swap=${encodeURIComponent(row.id)}` })),
+      ...invigilation.rows.map((row) => this.item(row, { kind: "assessment_invigilation", category: "academics", action_label: "Review duty", href: `/teacher/assessments?assessment=${encodeURIComponent(row.entity_id ?? row.id)}` })),
       ...assessments.rows.map((row) => this.item(row, { kind: "assessment_work", category: "academics", action_label: "Open assessment", href: `/teacher/assessments?assessment=${encodeURIComponent(row.id)}` })),
       ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: `/teacher/policies?policy=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
       ...leave,

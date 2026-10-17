@@ -233,6 +233,7 @@ export function CurriculumTargetSheet({ term, selectedClass, subject, coverage, 
 interface SchoolCalendarSheetProps {
   term: PrincipalTimetableResponse["terms"][number];
   schoolDate: string;
+  initialDate?: string;
   exceptions: PrincipalTimetableResponse["calendar_exceptions"];
   onClose: () => void;
   onCreate: (input: SchoolClosureInput) => Promise<void>;
@@ -251,10 +252,10 @@ function nextIsoDate(value: string) {
   return next.toISOString().slice(0, 10);
 }
 
-export function SchoolCalendarSheet({ term, schoolDate, exceptions, onClose, onCreate, onDelete }: SchoolCalendarSheetProps) {
+export function SchoolCalendarSheet({ term, schoolDate, initialDate, exceptions, onClose, onCreate, onDelete }: SchoolCalendarSheetProps) {
   const earliestDate = schoolDate < term.starts_on ? term.starts_on : schoolDate;
   const closedDates = new Set(exceptions.filter((item) => !item.is_instructional).map((item) => item.date));
-  let defaultDate = earliestDate;
+  let defaultDate = initialDate && initialDate >= earliestDate && initialDate <= term.ends_on ? initialDate : earliestDate;
   while (closedDates.has(defaultDate) && defaultDate < term.ends_on) defaultDate = nextIsoDate(defaultDate);
   const [input, setInput] = useState<SchoolClosureInput>({ term_id: term.id, starts_on: defaultDate, ends_on: defaultDate, kind: "public_holiday", label: "", reason: "" });
   const [busy, setBusy] = useState(false);

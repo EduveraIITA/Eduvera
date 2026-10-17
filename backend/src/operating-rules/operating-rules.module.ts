@@ -46,6 +46,54 @@ type Category = z.infer<typeof categorySchema>;
 @Controller("api/v1/operating-rules")
 export class OperatingRulesController {
   constructor(private readonly db: DatabaseService) {}
+  private async enqueueUpdate(
+    db: RulesDb,
+    schoolId: string,
+    category: Category | "attendance",
+    revision: number,
+    domainRevision?: number,
+  ) {
+    const refresh = category === "events"
+      ? ["principal.administration", "campus-events", "teacher.home", "principal.home"]
+      : category === "departure"
+        ? ["principal.administration", "departure", "student.home", "parent.home", "teacher.home", "principal.home", "campus-view"]
+        : category === "messages"
+          ? ["principal.administration", "messages", "student.home", "parent.home", "teacher.home", "principal.home"]
+          : [
+              "principal.administration", "student.home", "student.attendance", "student.eligibility",
+              "parent.home", "parent.attendance", "teacher.home", "teacher.attendance", "principal.home",
+              "principal.attendance", "principal.attendance-history", "attendance-model",
+              "attendance-continuity", "campus-view",
+            ];
+    const payload = {
+      action: "operating_rules_updated",
+      category,
+      revision,
+      ...(domainRevision === undefined ? {} : { domain_revision: domainRevision }),
+      refresh,
+    };
+    const audience = await sql<{ user_id: string }>`SELECT membership.user_id
+      FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${schoolId}::uuid AND membership.is_active
+        AND event_user_is_authorized(
+          ${schoolId}::uuid,
+          'administration.updated',
+          ${JSON.stringify(payload)}::jsonb,
+          membership.user_id
+        )`.execute(db);
+    await db.insertInto("event_outbox").values({
+      school_id: schoolId,
+      event_type: "administration.updated",
+      aggregate_type: "operating_rules",
+      aggregate_id: schoolId,
+      audience_user_ids: audience.rows.map((row) => row.user_id),
+      payload,
+      idempotency_key: `operating-rules:${schoolId}:${category}:${revision}:${domainRevision ?? "workflow"}`,
+      notification_user_ids: [],
+      notification_payload: null,
+    }).execute();
+  }
   private async authorize(db: RulesDb, user: AuthUser, schoolId: string) {
     if (user.active_school_id && user.active_school_id !== schoolId) throw new ForbiddenException("Switch to this institution first.");
     const rows = await sql`SELECT m.user_id FROM school_memberships m JOIN users u ON u.id=m.user_id
@@ -161,13 +209,14 @@ export class OperatingRulesController {
           communication_end=excluded.communication_end,retention_days=excluded.retention_days,updated_by=excluded.updated_by,
           updated_at=now(),revision=chat_policies.revision+1`.execute(db);
       }
-      await sql`INSERT INTO institution_operating_rules(school_id,attendance_finalization_mode,attendance_auto_finalize_minutes,event_entry_hours_before,event_staff_hours_after,journey_lead_minutes,message_edit_minutes,message_attachment_mb,updated_by)
-        VALUES(${schoolId}::uuid,${workflow.attendance_finalization_mode},${workflow.attendance_auto_finalize_minutes},${workflow.event_entry_hours_before},${workflow.event_staff_hours_after},${workflow.journey_lead_minutes},${workflow.message_edit_minutes},${workflow.message_attachment_mb},${req.authUser.id}::uuid)
-        ON CONFLICT(school_id) DO UPDATE SET attendance_finalization_mode=excluded.attendance_finalization_mode,attendance_auto_finalize_minutes=excluded.attendance_auto_finalize_minutes,event_entry_hours_before=excluded.event_entry_hours_before,event_staff_hours_after=excluded.event_staff_hours_after,
+      await sql`INSERT INTO institution_operating_rules(school_id,attendance_finalization_mode,attendance_auto_finalize_minutes,attendance_overdue_reminder_minutes,attendance_overdue_escalation_minutes,event_entry_hours_before,event_staff_hours_after,journey_lead_minutes,message_edit_minutes,message_attachment_mb,updated_by)
+        VALUES(${schoolId}::uuid,${workflow.attendance_finalization_mode},${workflow.attendance_auto_finalize_minutes},${workflow.attendance_overdue_reminder_minutes},${workflow.attendance_overdue_escalation_minutes},${workflow.event_entry_hours_before},${workflow.event_staff_hours_after},${workflow.journey_lead_minutes},${workflow.message_edit_minutes},${workflow.message_attachment_mb},${req.authUser.id}::uuid)
+        ON CONFLICT(school_id) DO UPDATE SET attendance_finalization_mode=excluded.attendance_finalization_mode,attendance_auto_finalize_minutes=excluded.attendance_auto_finalize_minutes,attendance_overdue_reminder_minutes=excluded.attendance_overdue_reminder_minutes,attendance_overdue_escalation_minutes=excluded.attendance_overdue_escalation_minutes,event_entry_hours_before=excluded.event_entry_hours_before,event_staff_hours_after=excluded.event_staff_hours_after,
         journey_lead_minutes=excluded.journey_lead_minutes,message_edit_minutes=excluded.message_edit_minutes,message_attachment_mb=excluded.message_attachment_mb,
         updated_by=excluded.updated_by,updated_at=now(),revision=institution_operating_rules.revision+1`.execute(db);
       const after = await this.categoryState(db, schoolId, category);
       await db.insertInto("audit_events").values({ actor_id: req.authUser.id, school_id: schoolId, action: `operating_rules.${category}.updated`, target_type: "school", target_id: schoolId, request_id: req.requestId, ip_hash: null, metadata: { before, after } }).execute();
+      await this.enqueueUpdate(db, schoolId, category, after.workflow.revision, after.domain.revision);
       return after;
     });
   }
@@ -181,14 +230,15 @@ export class OperatingRulesController {
       await sql`SELECT id FROM schools WHERE id=${schoolId}::uuid FOR UPDATE`.execute(db);
       const before=await operatingRules(db,schoolId);
       if (before.revision!==input.expected_revision) throw new ConflictException("Operating rules changed. Reload before saving.");
-      await sql`INSERT INTO institution_operating_rules(school_id,attendance_academic_mode,attendance_campus_mode,attendance_academic_channels,attendance_campus_channels,attendance_self_check_in_mode,attendance_session_open_before_minutes,attendance_session_close_after_minutes,attendance_finalization_mode,attendance_auto_finalize_minutes,event_entry_hours_before,event_staff_hours_after,journey_lead_minutes,message_edit_minutes,message_attachment_mb,updated_by)
-        VALUES(${schoolId}::uuid,${input.attendance_academic_mode},${input.attendance_campus_mode},${input.attendance_academic_channels}::text[],${input.attendance_campus_channels}::text[],${input.attendance_self_check_in_mode},${input.attendance_session_open_before_minutes},${input.attendance_session_close_after_minutes},${input.attendance_finalization_mode},${input.attendance_auto_finalize_minutes},${input.event_entry_hours_before},${input.event_staff_hours_after},${input.journey_lead_minutes},${input.message_edit_minutes},${input.message_attachment_mb},${req.authUser.id}::uuid)
-        ON CONFLICT(school_id) DO UPDATE SET attendance_academic_mode=excluded.attendance_academic_mode,attendance_campus_mode=excluded.attendance_campus_mode,attendance_academic_channels=excluded.attendance_academic_channels,attendance_campus_channels=excluded.attendance_campus_channels,attendance_self_check_in_mode=excluded.attendance_self_check_in_mode,attendance_session_open_before_minutes=excluded.attendance_session_open_before_minutes,attendance_session_close_after_minutes=excluded.attendance_session_close_after_minutes,attendance_finalization_mode=excluded.attendance_finalization_mode,attendance_auto_finalize_minutes=excluded.attendance_auto_finalize_minutes,event_entry_hours_before=excluded.event_entry_hours_before,event_staff_hours_after=excluded.event_staff_hours_after,
+      await sql`INSERT INTO institution_operating_rules(school_id,attendance_academic_mode,attendance_campus_mode,attendance_academic_channels,attendance_campus_channels,attendance_self_check_in_mode,attendance_session_open_before_minutes,attendance_session_close_after_minutes,attendance_finalization_mode,attendance_auto_finalize_minutes,attendance_overdue_reminder_minutes,attendance_overdue_escalation_minutes,event_entry_hours_before,event_staff_hours_after,journey_lead_minutes,message_edit_minutes,message_attachment_mb,updated_by)
+        VALUES(${schoolId}::uuid,${input.attendance_academic_mode},${input.attendance_campus_mode},${input.attendance_academic_channels}::text[],${input.attendance_campus_channels}::text[],${input.attendance_self_check_in_mode},${input.attendance_session_open_before_minutes},${input.attendance_session_close_after_minutes},${input.attendance_finalization_mode},${input.attendance_auto_finalize_minutes},${input.attendance_overdue_reminder_minutes},${input.attendance_overdue_escalation_minutes},${input.event_entry_hours_before},${input.event_staff_hours_after},${input.journey_lead_minutes},${input.message_edit_minutes},${input.message_attachment_mb},${req.authUser.id}::uuid)
+        ON CONFLICT(school_id) DO UPDATE SET attendance_academic_mode=excluded.attendance_academic_mode,attendance_campus_mode=excluded.attendance_campus_mode,attendance_academic_channels=excluded.attendance_academic_channels,attendance_campus_channels=excluded.attendance_campus_channels,attendance_self_check_in_mode=excluded.attendance_self_check_in_mode,attendance_session_open_before_minutes=excluded.attendance_session_open_before_minutes,attendance_session_close_after_minutes=excluded.attendance_session_close_after_minutes,attendance_finalization_mode=excluded.attendance_finalization_mode,attendance_auto_finalize_minutes=excluded.attendance_auto_finalize_minutes,attendance_overdue_reminder_minutes=excluded.attendance_overdue_reminder_minutes,attendance_overdue_escalation_minutes=excluded.attendance_overdue_escalation_minutes,event_entry_hours_before=excluded.event_entry_hours_before,event_staff_hours_after=excluded.event_staff_hours_after,
         journey_lead_minutes=excluded.journey_lead_minutes,message_edit_minutes=excluded.message_edit_minutes,message_attachment_mb=excluded.message_attachment_mb,
         updated_by=excluded.updated_by,updated_at=now(),revision=institution_operating_rules.revision+1`.execute(db);
       await sql`UPDATE schools SET attendance_submission_cutoff=${input.attendance_submission_cutoff}::time WHERE id=${schoolId}::uuid`.execute(db);
       const after=await operatingRules(db,schoolId);
       await db.insertInto("audit_events").values({actor_id:req.authUser.id,school_id:schoolId,action:"operating_rules.updated",target_type:"school",target_id:schoolId,request_id:req.requestId,ip_hash:null,metadata:{before,after}}).execute();
+      await this.enqueueUpdate(db, schoolId, "attendance", after.revision);
       return after;
     });
   }

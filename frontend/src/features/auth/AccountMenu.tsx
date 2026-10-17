@@ -64,8 +64,7 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
   }
 
   const displayName = auth.user.display_name || auth.user.username;
-  const avatarKind = auth.user.role === "student" ? "student" : auth.user.role === "parent" ? "guardian" : undefined;
-  const avatarUrl = profileAvatar(displayName, auth.user.avatar_url, avatarKind, auth.user.id);
+  const avatarUrl = profileAvatar(auth.user.avatar_url);
   const avatar = avatarUrl
     ? <img className="account-menu-trigger-avatar" src={avatarUrl} alt="" />
     : <span className="account-menu-trigger-initials" aria-hidden="true">{initials(displayName)}</span>;

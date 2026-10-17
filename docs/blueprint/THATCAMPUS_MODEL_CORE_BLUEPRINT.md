@@ -868,6 +868,8 @@ must identify their synthetic provenance. They are not production defaults.
 ## 16. Simulation and what-if analysis
 
 The core must remain simulation-capable even before a full scenario engine ships.
+The implemented campus-planning specialization and current limits are recorded in
+[Campus scenario simulation](CAMPUS_SCENARIO_SIMULATION.md).
 
 ### 16.1 Isolation
 
@@ -968,7 +970,7 @@ never writes another domain's records to “keep the twin in sync.”
 | campus/resources | campuses, spaces, gates, resources, placements | device/resource health | create/place/retire | setup/readiness tasks | not facilities/asset accounting ERP |
 | timetable/calendar | terms, schedules, periods, occurrences, closures | actual delivery evidence only if captured | publish, substitute, cancel, correct | cover and conflict resolution | plan is not presence |
 | attendance/presence | registers, sessions, roster context | staff/QR/device/paper/camera evidence | submit, accept, correct, finalize | due work, review, follow-up | one context does not prove another |
-| learning/exams | subjects, work, assessments, exams, result registers | submission/mark evidence | schedule, enter, moderate, publish | examiner/moderator tasks | submission is not publication |
+| learning/exams | subjects, work, assessments, exams, result registers | submission/mark evidence | schedule, enter, moderate, publish | invigilator Offers; examiner/moderator tasks | submission is not publication |
 | requests/communication | request sources, conversations, audiences | delivery/open/response evidence | request/respond/cancel/publish | typed mailbox/rendering | delivery is not acknowledgement |
 | events | event, session, participant, duty, option | check-in/attendance/payment evidence | create, RSVP, consent, record, close | guardian/staff work | event context is not class context |
 | gate/departure/transport | gates, plans, routes, trips, rosters | movement, boarding, vehicle location | approve plan, start/close trip, reconcile | duty offers and exceptions | no inferred learner location/handover |
@@ -1043,6 +1045,13 @@ Provider success cannot directly reduce the obligation.
 ### 19.5 Examination publication
 
 ```text
+draft physical exam + selected invigilator
+ -> assessment.invigilation.offered event for the assignment revision
+ -> configured exact-recipient reaction + typed Offer message
+ -> invited human agent accepts or declines through the Assessment response command
+ -> Assessment rechecks current recipient/revision/eligibility and records the response
+ -> correlated operational-message outcome; decline remains visible coordination work
+ -> readiness schedules only after the configured minimum accepted invigilators
 exam scheduled -> examiner Tasks at configured window
 marks submitted -> domain completeness checks
 moderation Request -> assigned moderator
@@ -1052,6 +1061,9 @@ learner/guardian Updates
 ```
 
 Reminder/escalation can be automated; publication authority remains explicit.
+The Offer/response is coordination evidence, not proof that the duty was performed. A
+revised time, room or recipient cancels and reissues the open Offer; it never transfers
+consent.
 
 ### 19.6 Departure handover
 
@@ -1283,6 +1295,13 @@ slice:
 - observation spine and retained attendance evidence from migration 103;
 - event-derived timetable/day-plan/closure temporal runtime from migration 104;
 - accepted gate observation connection from migration 105;
+- append-only recorded-time schedule-occurrence revisions, a stable journal cursor
+  and basis/change/condition provenance from migration 111;
+- provenance-bearing planned and effective schedule contracts from migrations 112
+  and 113, including explicit unassigned state during approved leave;
+- exact schedule-backed cover acceptance through the temporal port, plus
+  Staff-owned invalidation/replacement reconciliation and causal cancellation
+  lineage from migrations 113 and 114;
 - registered device/integration source lifecycle and scoped ingress authority;
 - typed ports for registry/topology change, observations, source registration and
   temporal context;
@@ -1314,6 +1333,31 @@ slice:
   rechecks; privacy-minimal core payloads; exact-owner Requests projection; and the
   existing domain-atomic cover/exchange reassignment rather than duplicated core
   transport state.
+- a bounded automatic first-Offer staff-coverage route through migration 116: exact
+  approved behaviour/subscription resolution, deterministic domain-owned eligibility
+  ordering, Core capability/scope authorization, an immutable Staff-owned route and
+  rule snapshot, and exact message/recipient/task-revision/deadline response binding
+  that delegates to the authoritative Staff accept/decline command. Configuration
+  failure is retained visibly and does not disable explicit administrator assignment.
+- a bounded examination-invigilation Offer segment through migration 119: one
+  immutable Assessment-owned assignment-revision/message binding, configured
+  explicit-recipient routing, current capability/deadline/revision rechecks,
+  replay-safe accept/decline commands, and cancellation/reissue on material
+  arrangement changes.
+- a shared isolated scenario foundation under `campus-model-core/scenarios`: immutable
+  snapshot/configuration references, distinct human/delegate/scenario-persona
+  identities, deterministic virtual time and random streams, sink-only messages and
+  evidence, fail-closed production side-effect policy, deterministic baseline versus
+  alternative comparison, optional policy-backed ensembles and bounded transient
+  storage. `campus-scenarios` is the first domain adapter, not a parallel runtime.
+
+The schedule/cover items above are local release-candidate behavior, not completion
+of MC-2. Disposable PostgreSQL verification covers migration, exact acceptance,
+future substitute deactivation, elapsed-cover history, dated-plan authorization and
+the canonical non-notifying import of retained pre-projection accepted cover. The
+verified mutation boundaries and evidence are recorded in `IMPLEMENTATION_PLAN.md`.
+Hosted release, owner-device parity and the remaining configured coordination work
+stay explicit acceptance gates.
 
 Not yet implemented at this checkpoint:
 
@@ -1331,11 +1375,17 @@ Not yet implemented at this checkpoint:
 - production administration for transport-duty behaviour versions, response timing,
   expiry and fallback; the Cambridge configuration is an explicit guarded demo seed,
   never a runtime default;
-- coverage offer/acceptance/fallback model mediation;
-- accepted cover as effective timetable substitution;
+- subsequent coverage Offer rounds, expiry execution, escalation/fallback workers
+  and production behaviour administration;
+- configured invigilation reminder rounds, expiry execution, escalation/fallback and
+  production behaviour administration; the Cambridge configuration is a guarded demo
+  seed, never a runtime default;
+- hosted and owner-device release acceptance for stale accepted-cover correction
+  across retained-data, schedule, leave and staff-lifecycle changes;
 - role-specific Today composition from the shared model;
 - automation explanation API;
-- isolated scenario/simulation runtime;
+- shared encrypted multi-instance scenario storage, eligible-candidate allocation,
+  calibrated production policy administration and reviewed scenario-to-draft hand-off;
 - general replay/rebuild/support tooling;
 - production connector credentials and provider health.
 

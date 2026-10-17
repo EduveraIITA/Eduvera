@@ -21,6 +21,8 @@ import { TimetableNavigator, timetableSummaryRange, readTimetableView, type Time
 import { CoverageResponse } from "./CoverageResponse";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { TimetableRehearsalStrip } from "../planner/TimetableRehearsalStrip";
+import { resolveTimetableDisplayDate, timetableRehearsalPeriodIsActive, type TimetableRehearsalIndicator } from "../planner/rehearsal";
 import "./day-plans.css";
 
 interface TeacherTimetableAttentionTarget {
@@ -37,9 +39,9 @@ function positiveRevision(value: string | null) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-export default function TeacherDayPage() {
+export default function TeacherDayPage({ rehearsal }: { rehearsal?: TimetableRehearsalIndicator | null } = {}) {
   const [params, setParams] = useSearchParams();
-  const date = params.get("date") || schoolDateToday();
+  const date = resolveTimetableDisplayDate(params.get("date"), rehearsal, schoolDateToday());
   const view = readTimetableView(params.get("view"));
   const attentionTarget: TeacherTimetableAttentionTarget = {
     notificationId: params.get("attention_notification_id"),
@@ -73,7 +75,8 @@ export default function TeacherDayPage() {
       contentHasHeading
     >
       <div className="day-workspace">
-        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} onNavigate={setSelection} attentionTarget={attentionTarget} />
+        {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} /> : null}
+        <TeacherDayPanel date={date} view={view} onDateChange={setDate} onViewChange={setView} onNavigate={setSelection} attentionTarget={attentionTarget} rehearsal={rehearsal} />
       </div>
     </OperationsShell>
   );
@@ -86,6 +89,7 @@ export function TeacherDayPanel({
   onNavigate,
   compact = false,
   attentionTarget,
+  rehearsal,
 }: {
   date: string;
   view?: TimetableView;
@@ -94,6 +98,7 @@ export function TeacherDayPanel({
   onNavigate?: (date: string, view: TimetableView) => void;
   compact?: boolean;
   attentionTarget?: TeacherTimetableAttentionTarget;
+  rehearsal?: TimetableRehearsalIndicator | null;
 }) {
   const auth = useAuth(),
     client = useQueryClient();
@@ -214,11 +219,14 @@ export function TeacherDayPanel({
           </div>
         ) : visible.length ? (
           <ol className="day-teaching-list">
-            {visible.map((p) => (
-              <li key={p.id} className={p.cancelled ? "is-cancelled" : ""}>
+            {visible.map((p) => {
+              const isRehearsalNow = timetableRehearsalPeriodIsActive(rehearsal, date, p.id);
+              return (
+              <li key={p.id} aria-current={isRehearsalNow ? "time" : undefined} className={`${p.cancelled ? "is-cancelled" : ""}${isRehearsalNow ? " is-rehearsal-now" : ""}`}>
                 <div className="day-teaching-time">
                   <strong>{timeLabel(p.starts_at)}</strong>
                   <small>P{p.period_number}</small>
+                  {isRehearsalNow ? <small className="day-rehearsal-now">Rehearsal now</small> : null}
                 </div>
                 <div className="day-teaching-content">
                   <header>
@@ -297,7 +305,7 @@ export function TeacherDayPanel({
                   ) : null}
                 </div>
               </li>
-            ))}
+            );})}
           </ol>
         ) : (
           <div className="day-empty">

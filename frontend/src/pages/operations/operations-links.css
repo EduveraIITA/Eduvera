@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--edura-brand);
+  color: var(--thatcampus-brand);
   font-size: 12px;
   font-weight: 800;
   text-decoration: none;
@@ -13,7 +13,7 @@
 .timetable-delete {
   border: 0;
   background: transparent;
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
   font: inherit;
   font-size: 11px;
   font-weight: 800;
@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--edura-danger);
+  color: var(--thatcampus-danger);
 }
 
 @media (max-width: 1180px) and (min-width: 681px) {

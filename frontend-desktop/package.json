@@ -1,9 +1,9 @@
 {
-  "name": "omnischool-desktop-dashboard",
+  "name": "thatcampus-desktop-dashboard",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Desktop staff dashboard for OmniSchool: principal, teacher and operations screens.",
+  "description": "Desktop staff dashboard for ThatCampus: principal, teacher and operations screens.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

@@ -58,7 +58,7 @@ export function People({ school, data, refresh }: { school: string; data: Admini
               <div className="code-box big" aria-label="Invitation code">{invite.token}</div>
               <div className="btnrow">
                 <button className="btn pri" onClick={() => void copy(invite.token, "Invitation code")}><Copy size={16} />Copy code</button>
-                <button className="btn" onClick={() => void copy(`Join ${data.school.name} on OmniSchool: ${joinUrl}\nInvitation code: ${invite.token}\nUse the email ${invite.email}. The code expires in 72 hours.`, "Message")}>Copy message</button>
+                <button className="btn" onClick={() => void copy(`Join ${data.school.name} on ThatCampus: ${joinUrl}\nInvitation code: ${invite.token}\nUse the email ${invite.email}. The code expires in 72 hours.`, "Message")}>Copy message</button>
                 <button className="btn ghost" onClick={() => setInvite(null)}>Hide</button>
               </div>
             </section>

@@ -1,6 +1,6 @@
 import {describe,it,expect} from "vitest";
-import {adaptParentHome,adaptStudentAttendance} from "./adapters";
-import type {ParentHomeResponse,StudentAttendanceResponse} from "./api";
+import {adaptParentHome,adaptStudentAttendance,adaptStudentHome} from "./adapters";
+import type {ParentHomeResponse,StudentAttendanceResponse,StudentHomeResponse} from "./api";
 import {schoolApiFixture} from "../../test/schoolApiFixtures";
 describe("Newly enrolled student presentation",()=>{
   it("does not turn missing attendance or a missing gate event into a negative fact",()=>{
@@ -21,5 +21,20 @@ describe("Newly enrolled student presentation",()=>{
       {...subject,classes_attended:0,classes_held:0,percentage:0},
     ];
     expect(adaptStudentAttendance(response).subjects.map(item=>item.safeBuffer)).toEqual([3,0,0,undefined]);
+  });
+  it("keeps gate evidence separate from academic attendance", () => {
+    const response = structuredClone(schoolApiFixture("/api/v1/screens/student/home/")) as StudentHomeResponse;
+    response.today_attendance = null;
+    response.campus_presence = {
+      occurred_at: "2026-09-16T02:34:00.000Z",
+      direction: "in",
+      gate: "North Gate",
+      source: "RFID",
+    };
+    const data = adaptStudentHome(response);
+    expect(data.presence).toMatchObject({ label: "Not recorded yet", verified: false });
+    expect(data.presence.detail).toContain("Attendance has not been marked");
+    expect(data.presence.detail).toContain("North Gate entry recorded");
+    expect(data.presence.label).not.toBe("Present");
   });
 });

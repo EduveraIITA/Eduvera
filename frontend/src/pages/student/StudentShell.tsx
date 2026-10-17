@@ -53,7 +53,7 @@ export const defaultStudentRoutes: StudentRouteMap = {
 export interface StudentShellProps {
   children: ReactNode;
   activeNav: StudentNavKey;
-  variant?: "school" | "edura";
+  variant?: "school" | "platform";
   section?: string;
   className?: string;
   schoolName?: string;
@@ -75,7 +75,7 @@ const schoolNav = [
   { key: "launcher" as const, label: "More", icon: MoreHorizontal },
 ];
 
-const eduraNav = [
+const platformNav = [
   { key: "home" as const, label: "Home", icon: Home },
   { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
   { key: "classes" as const, label: "Timetable", icon: CalendarDays },
@@ -103,7 +103,7 @@ function pageTitleFor(pathname: string, activeNav: StudentNavKey, section?: stri
 export function StudentShell({
   children,
   activeNav,
-  variant = "edura",
+  variant = "platform",
   section,
   schoolName,
   routes,
@@ -119,7 +119,7 @@ export function StudentShell({
   const location = useLocation();
   const auth = useOptionalAuth();
   const routeMap = { ...defaultStudentRoutes, ...routes };
-  const navItems = variant === "school" && location.pathname.replace(/\/$/, "") === "/student" ? schoolNav : eduraNav;
+  const navItems = variant === "school" && location.pathname.replace(/\/$/, "") === "/student" ? schoolNav : platformNav;
   const mobileActive = navItems.some((item) => item.key === activeNav) ? activeNav : "launcher";
   const studentSchools = auth?.memberships.filter((membership) => membership.role === "student") ?? [];
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;
@@ -134,7 +134,7 @@ export function StudentShell({
     <div className={`student-app student-app--${variant}`}>
       <header className={`student-topbar student-topbar--${variant}`}>
         <div className="student-topbar__top">
-          <SchoolBrand name={resolvedSchoolName ?? "Cambridge International School"} className="student-topbar__brand" />
+          <SchoolBrand name={resolvedSchoolName ?? "School"} className="student-topbar__brand" />
           <div className="student-topbar__actions">
             <NotificationCenter
               buttonClassName="student-icon-button student-notification-button"

@@ -24,8 +24,13 @@ function defaultTimes() {
   return { start: localDateTime(start.toISOString()), end: localDateTime(end.toISOString()) };
 }
 
-function initialInput(event?: CampusEventDto): CampusEventInput {
+function initialInput(event?: CampusEventDto, preferredStart?: string | null, preferredEnd?: string | null): CampusEventInput {
   const times = defaultTimes();
+  const startsAt = preferredStart && !Number.isNaN(new Date(preferredStart).getTime()) ? preferredStart : times.start;
+  const suggestedEnd = new Date(startsAt);
+  suggestedEnd.setHours(suggestedEnd.getHours() + 3);
+  const fallbackEnd = preferredStart ? localDateTime(suggestedEnd.toISOString()) : times.end;
+  const endsAt = preferredEnd && !Number.isNaN(new Date(preferredEnd).getTime()) && new Date(preferredEnd) > new Date(startsAt) ? preferredEnd : fallbackEnd;
   return event ? {
     event_type: event.event_type,
     subject_id: event.subject_id,
@@ -53,8 +58,8 @@ function initialInput(event?: CampusEventDto): CampusEventInput {
     title: "",
     description: "",
     venue: "",
-    starts_at: times.start,
-    ends_at: times.end,
+    starts_at: startsAt,
+    ends_at: endsAt,
     audience: { mode: "school", class_section_ids: [], student_ids: [] },
     participation_requirement: "optional",
     requires_rsvp: true,
@@ -62,7 +67,7 @@ function initialInput(event?: CampusEventDto): CampusEventInput {
     payment_required: false,
     payment_amount_paise: null,
     payment_due_on: null,
-    sessions: [{ title: "Main programme", session_type: "general", venue: "", starts_at: times.start, ends_at: times.end, attendance_mode: "none", participant_student_ids: [] }],
+    sessions: [{ title: "Main programme", session_type: "general", venue: "", starts_at: startsAt, ends_at: endsAt, attendance_mode: "none", participant_student_ids: [] }],
     checklist: [],
     staff: [],
   };
@@ -80,7 +85,7 @@ export function EventEditorPage({
   onSave: (input: CampusEventInput) => Promise<void>;
 }) {
   const [params] = useSearchParams();
-  const [input, setInput] = useState(() => initialInput(event));
+  const [input, setInput] = useState(() => initialInput(event, params.get("starts_at"), params.get("ends_at")));
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
   const [error, setError] = useState("");
   const prefix = portal === "principal" ? "/principal" : "/teacher";

@@ -199,7 +199,7 @@ export function StudentLeaveNewPage({
   }
 
   return (
-    <StudentShell activeNav="launcher" variant="edura" routes={routes} pageTitle="Apply leave" onBack={onBack}>
+    <StudentShell activeNav="launcher" variant="platform" routes={routes} pageTitle="Apply leave" onBack={onBack}>
       <form className="student-page-stack leave-new-page" onSubmit={submit}>
         <button className="workspace-text-action" type="button" onClick={onOpenStatus ?? (() => navigate("/student/leave"))}><History size={16} />View requests</button>
 

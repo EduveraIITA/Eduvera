@@ -14,32 +14,32 @@
   width: min(100%, 540px);
   max-height: min(780px, 90dvh);
   overflow: hidden;
-  border: 1px solid var(--edura-border);
-  border-radius: var(--edura-radius-feature);
-  background: var(--edura-surface);
-  color: var(--edura-ink);
-  box-shadow: var(--edura-shadow-raised);
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-feature);
+  background: var(--thatcampus-surface);
+  color: var(--thatcampus-ink);
+  box-shadow: var(--thatcampus-shadow-raised);
   font-family: inherit;
 }
 .attendance-ranking__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 22px 22px 16px; }
-.attendance-ranking__eyebrow { color: var(--edura-brand); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.attendance-ranking h2 { margin: 3px 0 4px; color: var(--edura-ink); font-size: 23px; letter-spacing: -.03em; }
-.attendance-ranking__header p { margin: 0; color: var(--edura-ink-muted); font-size: 12px; line-height: 1.5; }
-.attendance-ranking__close { display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; border: 0; border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); color: var(--edura-brand); cursor: pointer; }
+.attendance-ranking__eyebrow { color: var(--thatcampus-brand); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.attendance-ranking h2 { margin: 3px 0 4px; color: var(--thatcampus-ink); font-size: 23px; letter-spacing: -.03em; }
+.attendance-ranking__header p { margin: 0; color: var(--thatcampus-ink-muted); font-size: 12px; line-height: 1.5; }
+.attendance-ranking__close { display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; border: 0; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-soft); color: var(--thatcampus-brand); cursor: pointer; }
 .attendance-ranking__close:focus-visible { outline: 3px solid rgba(29,78,216,.28); outline-offset: 2px; }
 .attendance-ranking__list { display: grid; gap: 7px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 22px 18px; scrollbar-gutter: stable; }
-.attendance-ranking__row { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 9px 11px; border: 1px solid var(--edura-border); border-radius: var(--edura-radius-card); background: var(--edura-canvas); }
-.attendance-ranking__row--current { border-color: #86a7ff; background: var(--edura-brand-soft); box-shadow: inset 3px 0 var(--edura-brand); }
-.attendance-ranking__position { flex: 0 0 28px; color: var(--edura-brand); font-size: 11px; font-weight: 800; }
-.attendance-ranking__portrait { display: grid; flex: 0 0 37px; width: 37px; height: 37px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--edura-brand-soft); color: var(--edura-brand); font-size: 11px; font-weight: 800; }
+.attendance-ranking__row { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 9px 11px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-canvas); }
+.attendance-ranking__row--current { border-color: #86a7ff; background: var(--thatcampus-brand-soft); box-shadow: inset 3px 0 var(--thatcampus-brand); }
+.attendance-ranking__position { flex: 0 0 28px; color: var(--thatcampus-brand); font-size: 11px; font-weight: 800; }
+.attendance-ranking__portrait { display: grid; flex: 0 0 37px; width: 37px; height: 37px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--thatcampus-brand-soft); color: var(--thatcampus-brand); font-size: 11px; font-weight: 800; }
 .attendance-ranking__portrait img { width: 100%; height: 100%; object-fit: cover; }
 .attendance-ranking__identity { display: grid; flex: 1; min-width: 0; gap: 3px; }
 .attendance-ranking__identity strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.attendance-ranking__identity em { margin-left: 4px; color: var(--edura-brand); font-size: 11px; font-style: normal; font-weight: 700; }
-.attendance-ranking__identity small { color: var(--edura-ink-muted); font-size: 11px; }
-.attendance-ranking__percent { flex: 0 0 auto; color: var(--edura-brand); font-size: 14px; }
-.attendance-ranking__empty { padding: 24px 8px; color: var(--edura-ink-muted); font-size: 13px; }
-.attendance-ranking footer { padding: 13px 22px 17px; border-top: 1px solid var(--edura-border); color: var(--edura-ink-muted); font-size: 11px; line-height: 1.4; }
+.attendance-ranking__identity em { margin-left: 4px; color: var(--thatcampus-brand); font-size: 11px; font-style: normal; font-weight: 700; }
+.attendance-ranking__identity small { color: var(--thatcampus-ink-muted); font-size: 11px; }
+.attendance-ranking__percent { flex: 0 0 auto; color: var(--thatcampus-brand); font-size: 14px; }
+.attendance-ranking__empty { padding: 24px 8px; color: var(--thatcampus-ink-muted); font-size: 13px; }
+.attendance-ranking footer { padding: 13px 22px 17px; border-top: 1px solid var(--thatcampus-border); color: var(--thatcampus-ink-muted); font-size: 11px; line-height: 1.4; }
 @media (max-width: 480px) {
   .attendance-ranking__overlay { padding-inline: 10px; }
   .attendance-ranking__header { padding: 18px 15px 14px; }

@@ -9,6 +9,7 @@ import {IMPORT_COLUMNS,type ImportValues} from "../src/people/import-csv.js";
 import type {ImportJob} from "../src/people/import-types.js";
 import type {AuthUser,AuthenticatedRequest} from "../src/common/request.js";
 import {requireIsolatedTestDatabaseUrl} from "./test-database.js";
+import {createStaffCoverageReconciliationTestDouble} from "./staff-coverage-reconciliation.test-support.js";
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:2});
 let db:DatabaseService,imports:PeopleImportService,school:SchoolService,admin:AuthenticatedRequest,teacher:AuthenticatedRequest,parent:AuthenticatedRequest;
 let schoolId:string,termId:string,sectionA:string,today:string,parentId:string;
@@ -22,7 +23,7 @@ async function detail(id:string){return imports.detail(admin.authUser,id,schoolI
 async function commit(id:string){const current=await detail(id);return imports.commit(admin,id,{school_id:schoolId,expected_revision:current.revision,validation_token:current.review!.validation_token,verified:true});}
 async function count(){return (await pool.query('SELECT count(*)::int AS n FROM students WHERE school_id=$1',[schoolId])).rows[0].n as number;}
 beforeAll(async()=>{
-  db=new DatabaseService();const events=new SchoolEventService(db);imports=new PeopleImportService(db,events);school=new SchoolService(db,events);
+  db=new DatabaseService();const events=new SchoolEventService(db);imports=new PeopleImportService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
   const users=(await pool.query<AuthUser>("SELECT * FROM users WHERE username IN ('kavita.staff','pooja.parent') OR id=(SELECT user_id FROM school_memberships WHERE role='admin' AND is_active ORDER BY created_at LIMIT 1)")).rows;
   admin=req(users.find(u=>u.role==='admin')!);teacher=req(users.find(u=>u.username==='kavita.staff')!);parent=req(users.find(u=>u.username==='pooja.parent')!);
   schoolId=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Isolated import test school',$1,'Asia/Kolkata') RETURNING id",[`import-${randomUUID().slice(0,10)}`])).rows[0].id;

@@ -319,7 +319,7 @@ export function StudentCalendarRoute() {
   const record = records.get(cal.selected);
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
   return (
-    <StudentShell activeNav="launcher" variant="edura">
+    <StudentShell activeNav="launcher" variant="platform">
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(marks,assessments.marks)} isSchoolDay={isSchoolDay} subtitle={timetable.data ? `${timetable.data.class_name} · ${timetable.data.student.current_enrollment.term.name}` : undefined}
         legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }, { tone: "present", label: "Present" }, { tone: "late", label: "Late" }, { tone: "absent", label: "Absent" }, { tone: "leave", label: "Leave" }]}

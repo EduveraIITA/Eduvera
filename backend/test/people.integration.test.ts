@@ -9,6 +9,7 @@ import {CoordinationService} from "../src/coordination/coordination.service.js";
 import {DatabaseService} from "../src/database/database.service.js";
 import type {AuthUser,AuthenticatedRequest} from "../src/common/request.js";
 import {requireIsolatedTestDatabaseUrl} from "./test-database.js";
+import {createStaffCoverageReconciliationTestDouble} from "./staff-coverage-reconciliation.test-support.js";
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:2});
 let db:DatabaseService,people:PeopleService,school:SchoolService,events:SchoolEventService;
 let admin:AuthenticatedRequest,teacher:AuthenticatedRequest,parent:AuthenticatedRequest;
@@ -28,7 +29,7 @@ async function registerFixture(state:"submitted"|"draft"){
   return {section:id,register};
 }
 beforeAll(async()=>{
-  db=new DatabaseService();events=new SchoolEventService(db);people=new PeopleService(db,events);school=new SchoolService(db,events);
+  db=new DatabaseService();events=new SchoolEventService(db);people=new PeopleService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
   authority=new GuardianAuthorityService(db,events);
   const row=(await pool.query("SELECT u.username,m.school_id FROM users u JOIN school_memberships m ON m.user_id=u.id WHERE m.role='admin' AND m.is_active ORDER BY u.created_at LIMIT 1")).rows[0];
   admin=await account(row.username);schoolId=row.school_id;teacher=await account("kavita.staff");parent=await account("pooja.parent");

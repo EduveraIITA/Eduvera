@@ -40,7 +40,7 @@ export function CalendarConnections({portal,studentId}:{portal:Portal;studentId?
   }
   async function copy(){if(!created)return;try{await navigator.clipboard.writeText(created.feed_url);setCopied(true);}catch{setError('Copy was blocked. Open the calendar app instead.');}}
   function openCalendar(){if(created)window.location.assign(created.feed_url.replace(/^https?:/,'webcal:'));}
-  const title=query.data?.scope?.calendar_name??'Edura calendar';
+  const title=query.data?.scope?.calendar_name??'ThatCampus calendar';
   return <section className="account-profile-group account-calendar" aria-labelledby="calendar-connections-title">
     <div className="account-profile-row account-calendar__heading">
       <span className="account-profile-row__icon"><CalendarSync size={20}/></span>
@@ -53,7 +53,7 @@ export function CalendarConnections({portal,studentId}:{portal:Portal;studentId?
         <span className={`account-calendar__mark${subscription?' is-connected':''}`} aria-hidden="true">{subscription?<Check size={18}/>:<CalendarSync size={18}/>}</span>
         <span><strong>{subscription?'Subscribed calendar ready':'Connect your calendar'}</strong><small>{subscription?lastSync(subscription.last_fetched_at):'Updates automatically without Google or Microsoft access'}</small></span>
       </div>
-      {created?<div className="account-calendar__secret" role="status"><strong>Private link created</strong><p>Open it now or copy it. Edura stores only a fingerprint, so this link is shown once.</p><div>
+      {created?<div className="account-calendar__secret" role="status"><strong>Private link created</strong><p>Open it now or copy it. ThatCampus stores only a fingerprint, so this link is shown once.</p><div>
         <button type="button" onClick={openCalendar}><ExternalLink size={15}/> Open calendar app</button>
         <button type="button" onClick={()=>void copy()}>{copied?<Check size={15}/>:<Copy size={15}/>} {copied?'Copied':'Copy link'}</button>
       </div></div>:null}
@@ -65,6 +65,6 @@ export function CalendarConnections({portal,studentId}:{portal:Portal;studentId?
       {confirm?<div className="account-calendar__confirm" role="alert"><span>{confirm==='replace'?'The old calendar link will stop refreshing.':'The installed calendar will stop receiving updates.'}</span><div><button type="button" onClick={()=>setConfirm(null)}>Keep it</button><button type="button" disabled={busy} onClick={()=>void (confirm==='replace'?create():disconnect())}>{confirm==='replace'?'Replace':'Disconnect'}</button></div></div>:null}
     </div>:null}
     {error?<p className="account-channels__state security-alert" role="alert">{error}</p>:null}
-    <p className="account-profile-explainer">Edura sends only the timetable, assessments, events and school dates visible to this profile. Calendar apps cannot change school records.</p>
+    <p className="account-profile-explainer">ThatCampus sends only the timetable, assessments, events and school dates visible to this profile. Calendar apps cannot change school records.</p>
   </section>;
 }

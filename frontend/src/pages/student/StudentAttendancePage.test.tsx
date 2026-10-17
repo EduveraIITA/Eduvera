@@ -110,7 +110,7 @@ describe("StudentAttendancePage", () => {
 
     render(
       <TestQueryProvider><MemoryRouter>
-        <StudentAttendancePage />
+        <StudentAttendancePage data={demoStudentAttendanceData} />
       </MemoryRouter></TestQueryProvider>,
     );
 

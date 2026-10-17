@@ -5,17 +5,17 @@
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   align-items: start;
   gap: 16px;
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
 }
 
 .student-leave-queue,
 .student-leave-detail,
 .student-leave-not-found {
   overflow: hidden;
-  border: 1px solid var(--edura-border);
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface);
-  box-shadow: var(--edura-shadow-card);
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-card);
 }
 
 .student-leave-queue > header {
@@ -25,7 +25,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--edura-border);
+  border-bottom: 1px solid var(--thatcampus-border);
 }
 
 .student-leave-queue h2,
@@ -43,7 +43,7 @@
 
 .student-leave-queue header p {
   margin: 4px 0 0;
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -54,9 +54,9 @@
   height: 28px;
   padding: 0 8px;
   place-items: center;
-  border-radius: var(--edura-radius-pill);
-  color: var(--edura-brand);
-  background: var(--edura-brand-soft);
+  border-radius: var(--thatcampus-radius-pill);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
   font-size: 12px;
 }
 
@@ -67,31 +67,31 @@
   grid-template-columns: 38px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
   text-decoration: none;
   transition: background 140ms ease, box-shadow 140ms ease;
 }
 
 .student-leave-queue__rows > a + a {
-  border-top: 1px solid var(--edura-border);
+  border-top: 1px solid var(--thatcampus-border);
 }
 
 .student-leave-queue__rows > a:hover,
 .student-leave-queue__rows > a.is-selected {
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
 }
 
 .student-leave-queue__rows > a.is-selected {
-  box-shadow: inset 3px 0 0 var(--edura-brand);
+  box-shadow: inset 3px 0 0 var(--thatcampus-brand);
 }
 
 .student-leave-queue__avatar,
 .student-leave-detail__student > span {
   display: grid;
   place-items: center;
-  border-radius: var(--edura-radius-control);
-  color: var(--edura-brand);
-  background: var(--edura-brand-soft);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
   font-weight: 800;
 }
 
@@ -117,8 +117,8 @@
 
 .student-leave-queue__copy strong { font-size: 14px; }
 .student-leave-queue__copy small,
-.student-leave-queue__copy > span { color: var(--edura-ink-muted); font-size: 11px; }
-.student-leave-queue__rows > a > svg { color: var(--edura-ink-muted); }
+.student-leave-queue__copy > span { color: var(--thatcampus-ink-muted); font-size: 11px; }
+.student-leave-queue__rows > a > svg { color: var(--thatcampus-ink-muted); }
 
 .student-leave-queue__empty {
   display: flex;
@@ -126,19 +126,19 @@
   padding: 18px 16px;
   align-items: center;
   gap: 9px;
-  color: var(--edura-ink-secondary);
+  color: var(--thatcampus-ink-secondary);
   font-size: 13px;
 }
 
-.student-leave-queue__empty svg { color: var(--edura-positive); }
+.student-leave-queue__empty svg { color: var(--thatcampus-positive); }
 
 .student-leave-queue-warning {
   grid-column: 1 / -1;
   margin: 0;
   padding: 10px 12px;
-  border-radius: var(--edura-radius-control);
-  color: var(--edura-warning);
-  background: var(--edura-warning-soft);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
   font-size: 13px;
 }
 
@@ -147,7 +147,7 @@
 }
 
 .student-leave-detail:focus-visible {
-  outline: 2px solid var(--edura-brand);
+  outline: 2px solid var(--thatcampus-brand);
   outline-offset: 3px;
 }
 
@@ -174,23 +174,23 @@
 
 .student-leave-detail__student p {
   margin: 3px 0 0;
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
   font-size: 12px;
 }
 
 .student-leave-status {
   padding: 5px 9px;
-  border-radius: var(--edura-radius-pill);
+  border-radius: var(--thatcampus-radius-pill);
   font-size: 11px;
   font-style: normal;
   font-weight: 800;
   white-space: nowrap;
 }
 
-.student-leave-status--pending { color: var(--edura-warning); background: var(--edura-warning-soft); }
-.student-leave-status--approved { color: var(--edura-positive); background: var(--edura-positive-soft); }
-.student-leave-status--rejected { color: var(--edura-danger); background: var(--edura-danger-soft); }
-.student-leave-status--neutral { color: var(--edura-ink-secondary); background: var(--edura-surface-strong); }
+.student-leave-status--pending { color: var(--thatcampus-warning); background: var(--thatcampus-warning-soft); }
+.student-leave-status--approved { color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.student-leave-status--rejected { color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
+.student-leave-status--neutral { color: var(--thatcampus-ink-secondary); background: var(--thatcampus-surface-strong); }
 
 .student-leave-detail__facts {
   display: grid;
@@ -209,7 +209,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
   font-size: 11px;
   font-weight: 700;
 }
@@ -220,14 +220,14 @@
   font-weight: 750;
 }
 
-.student-leave-detail__facts small { color: var(--edura-ink-muted); font-size: 11px; }
+.student-leave-detail__facts small { color: var(--thatcampus-ink-muted); font-size: 11px; }
 
 .student-leave-reason,
 .student-leave-evidence,
 .student-leave-history,
 .student-leave-decision,
 .student-leave-outcome {
-  border-top: 1px solid var(--edura-border);
+  border-top: 1px solid var(--thatcampus-border);
 }
 
 .student-leave-reason,
@@ -245,7 +245,7 @@
 
 .student-leave-reason p {
   margin: 7px 0 0;
-  color: var(--edura-ink-secondary);
+  color: var(--thatcampus-ink-secondary);
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -265,18 +265,18 @@
   gap: 7px;
 }
 
-.student-leave-evidence__people svg { margin-top: 2px; color: var(--edura-brand); }
+.student-leave-evidence__people svg { margin-top: 2px; color: var(--thatcampus-brand); }
 .student-leave-evidence__people span { display: grid; gap: 2px; min-width: 0; }
-.student-leave-evidence__people small { color: var(--edura-ink-muted); font-size: 11px; }
+.student-leave-evidence__people small { color: var(--thatcampus-ink-muted); font-size: 11px; }
 .student-leave-evidence__people strong { font-size: 13px; overflow-wrap: anywhere; }
-.student-leave-evidence__people em { color: var(--edura-ink-muted); font-size: 11px; font-style: normal; }
+.student-leave-evidence__people em { color: var(--thatcampus-ink-muted); font-size: 11px; font-style: normal; }
 
 .student-leave-documents {
   margin-top: 16px;
 }
 
 .student-leave-documents h4 { font-size: 12px; }
-.student-leave-documents > p { margin: 7px 0 0; color: var(--edura-ink-muted); font-size: 12px; }
+.student-leave-documents > p { margin: 7px 0 0; color: var(--thatcampus-ink-muted); font-size: 12px; }
 
 .student-leave-documents > a {
   display: grid;
@@ -286,15 +286,15 @@
   grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
   text-decoration: none;
 }
 
-.student-leave-documents > a + a { border-top: 1px solid var(--edura-border); }
-.student-leave-documents > a > svg { color: var(--edura-brand); }
+.student-leave-documents > a + a { border-top: 1px solid var(--thatcampus-border); }
+.student-leave-documents > a > svg { color: var(--thatcampus-brand); }
 .student-leave-documents > a > span { display: grid; gap: 2px; min-width: 0; }
 .student-leave-documents > a strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.student-leave-documents > a small { color: var(--edura-ink-muted); font-size: 11px; }
+.student-leave-documents > a small { color: var(--thatcampus-ink-muted); font-size: 11px; }
 
 .student-leave-history > summary {
   display: flex;
@@ -302,7 +302,7 @@
   padding: 12px 18px;
   align-items: center;
   gap: 8px;
-  color: var(--edura-brand);
+  color: var(--thatcampus-brand);
   cursor: pointer;
   font-size: 13px;
   font-weight: 750;
@@ -313,8 +313,8 @@
   min-width: 22px;
   height: 22px;
   place-items: center;
-  border-radius: var(--edura-radius-pill);
-  background: var(--edura-brand-soft);
+  border-radius: var(--thatcampus-radius-pill);
+  background: var(--thatcampus-brand-soft);
   font-size: 10px;
 }
 
@@ -337,12 +337,12 @@
   height: 7px;
   margin-top: 5px;
   border-radius: 50%;
-  background: var(--edura-brand);
+  background: var(--thatcampus-brand);
 }
 
 .student-leave-history li strong { font-size: 12px; }
 .student-leave-history li p,
-.student-leave-history li small { display: block; margin: 2px 0 0; color: var(--edura-ink-muted); font-size: 11px; line-height: 1.45; }
+.student-leave-history li small { display: block; margin: 2px 0 0; color: var(--thatcampus-ink-muted); font-size: 11px; line-height: 1.45; }
 
 .student-leave-decision__heading {
   display: grid;
@@ -350,8 +350,8 @@
   gap: 8px;
 }
 
-.student-leave-decision__heading > svg { color: var(--edura-positive); }
-.student-leave-decision__heading p { margin: 3px 0 0; color: var(--edura-ink-muted); font-size: 12px; line-height: 1.45; }
+.student-leave-decision__heading > svg { color: var(--thatcampus-positive); }
+.student-leave-decision__heading p { margin: 3px 0 0; color: var(--thatcampus-ink-muted); font-size: 12px; line-height: 1.45; }
 
 .student-leave-decision__actions {
   display: flex;
@@ -368,7 +368,7 @@
   justify-content: center;
   gap: 7px;
   border: 1px solid transparent;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   font: inherit;
   font-size: 13px;
   font-weight: 750;
@@ -376,22 +376,22 @@
 }
 
 .student-leave-button:disabled { opacity: .55; cursor: wait; }
-.student-leave-button--primary { color: white; background: var(--edura-brand); }
-.student-leave-button--secondary { border-color: var(--edura-border); color: var(--edura-ink-secondary); background: var(--edura-surface); }
-.student-leave-button--danger { color: white; background: var(--edura-danger); }
+.student-leave-button--primary { color: white; background: var(--thatcampus-brand); }
+.student-leave-button--secondary { border-color: var(--thatcampus-border); color: var(--thatcampus-ink-secondary); background: var(--thatcampus-surface); }
+.student-leave-button--danger { color: white; background: var(--thatcampus-danger); }
 
 .student-leave-decision form { margin-top: 14px; }
-.student-leave-decision form > label { display: block; margin-top: 12px; color: var(--edura-ink-secondary); font-size: 12px; font-weight: 700; }
+.student-leave-decision form > label { display: block; margin-top: 12px; color: var(--thatcampus-ink-secondary); font-size: 12px; font-weight: 700; }
 .student-leave-decision textarea {
   width: 100%;
   min-height: 82px;
   margin-top: 6px;
   padding: 11px 12px;
   resize: vertical;
-  border: 1px solid var(--edura-border);
-  border-radius: var(--edura-radius-control);
-  color: var(--edura-ink);
-  background: var(--edura-surface);
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-ink);
+  background: var(--thatcampus-surface);
   font: inherit;
   font-size: 16px;
   line-height: 1.45;
@@ -399,14 +399,14 @@
 
 .student-leave-review {
   padding: 11px 12px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
 }
 
 .student-leave-review strong { font-size: 13px; }
 .student-leave-review p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; }
-.student-leave-review--approve { color: var(--edura-positive); background: var(--edura-positive-soft); }
-.student-leave-review--reject { color: var(--edura-danger); background: var(--edura-danger-soft); }
-.student-leave-error { margin: 8px 0 0; color: var(--edura-danger); font-size: 12px; line-height: 1.5; }
+.student-leave-review--approve { color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.student-leave-review--reject { color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
+.student-leave-error { margin: 8px 0 0; color: var(--thatcampus-danger); font-size: 12px; line-height: 1.5; }
 
 .student-leave-outcome {
   display: flex;
@@ -416,9 +416,9 @@
   font-size: 12px;
 }
 
-.student-leave-outcome--approved { color: var(--edura-positive); background: var(--edura-positive-soft); }
-.student-leave-outcome--rejected { color: var(--edura-danger); background: var(--edura-danger-soft); }
-.student-leave-outcome--neutral { color: var(--edura-ink-secondary); background: var(--edura-surface-soft); }
+.student-leave-outcome--approved { color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.student-leave-outcome--rejected { color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
+.student-leave-outcome--neutral { color: var(--thatcampus-ink-secondary); background: var(--thatcampus-surface-soft); }
 
 .student-leave-not-found {
   display: grid;
@@ -430,10 +430,10 @@
   text-align: center;
 }
 
-.student-leave-not-found > svg { color: var(--edura-brand); }
+.student-leave-not-found > svg { color: var(--thatcampus-brand); }
 .student-leave-not-found h2 { font-size: 18px; }
-.student-leave-not-found p { margin: 0; color: var(--edura-ink-muted); font-size: 13px; }
-.student-leave-not-found a { margin-top: 5px; color: var(--edura-brand); font-size: 13px; font-weight: 750; text-decoration: none; }
+.student-leave-not-found p { margin: 0; color: var(--thatcampus-ink-muted); font-size: 13px; }
+.student-leave-not-found a { margin-top: 5px; color: var(--thatcampus-brand); font-size: 13px; font-weight: 750; text-decoration: none; }
 
 .student-leave-button:focus-visible,
 .student-leave-queue__rows > a:focus-visible,
@@ -441,7 +441,7 @@
 .student-leave-not-found a:focus-visible,
 .student-leave-history > summary:focus-visible,
 .student-leave-decision textarea:focus-visible {
-  outline: 2px solid var(--edura-brand);
+  outline: 2px solid var(--thatcampus-brand);
   outline-offset: 3px;
 }
 

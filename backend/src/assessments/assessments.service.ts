@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { createReadStream } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
@@ -11,13 +11,14 @@ import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { assertActiveSchoolStaffMember, hasScopedSchoolPermission, schoolPermission } from "../roles/authorization.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { ExamOperationsService, isPhysicalAssessment } from "./exam-operations.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 export interface AssessmentUpload { filename: string; mimetype: string; data: Buffer }
 const uuid = z.string().uuid();
 const date = z.iso.date();
 const cycleInput = z.object({ term_id: uuid, name: z.string().trim().min(2).max(120), code: z.string().trim().min(2).max(32).transform((v) => v.toUpperCase()), starts_on: date, ends_on: date, result_label: z.string().trim().min(2).max(80).default("Result") });
-const assessmentInput = z.object({ cycle_id: uuid, class_section_id: uuid, subject_id: uuid, title: z.string().trim().min(2).max(160), assessment_kind: z.enum(["exam","class_test","quiz","assignment","practical","viva","project","other"]), maximum_marks: z.coerce.number().positive().max(100000), weight_percent: z.coerce.number().positive().max(100).nullable().default(null), scheduled_at: z.iso.datetime().nullable().default(null), duration_minutes: z.coerce.number().int().positive().max(1440).nullable().default(null), venue: z.string().trim().max(160).default(""), instructions: z.string().trim().max(2000).default(""), evidence_requirement: z.enum(["none","optional","required"]).default("optional"), examiner_user_id: uuid, moderator_user_id: uuid });
+const assessmentInput = z.object({ cycle_id: uuid, class_section_id: uuid, subject_id: uuid, title: z.string().trim().min(2).max(160), assessment_kind: z.enum(["exam","class_test","quiz","assignment","practical","viva","project","other"]), maximum_marks: z.coerce.number().positive().max(100000), weight_percent: z.coerce.number().positive().max(100).nullable().default(null), scheduled_at: z.iso.datetime().nullable().default(null), duration_minutes: z.coerce.number().int().positive().max(1440).nullable().default(null), venue: z.string().trim().max(160).default(""), instructions: z.string().trim().max(2000).default(""), evidence_requirement: z.enum(["none","optional","required"]).default("optional"), examiner_user_id: uuid, moderator_user_id: uuid, space_id: uuid.nullable().default(null), invigilator_user_ids: z.array(uuid).max(20).default([]) });
 const resultInput = z.object({ result_id: uuid, outcome: z.enum(["scored","absent","exempt","withheld","not_evaluated"]), marks: z.coerce.number().min(0).nullable().default(null), grade: z.string().trim().max(24).default(""), feedback: z.string().trim().max(1000).default(""), expected_revision: z.coerce.number().int().positive(), reason: z.string().trim().min(3).max(500) });
 const resultsInput = z.object({ expected_assessment_revision: z.coerce.number().int().positive(), results: z.array(resultInput).min(1).max(500) });
 const actionInput = z.object({ expected_revision: z.coerce.number().int().positive(), note: z.string().trim().max(1000).default("") });
@@ -35,7 +36,7 @@ interface AssessmentEventContractInput {
 
 export function assessmentUpdatedEvent(input: AssessmentEventContractInput) {
   const refresh = ["assessments", "teacher.home", "principal.home"];
-  if (["schedule", "cancel"].includes(input.action)) refresh.push("calendar");
+  if (["schedule", "cancel"].includes(input.action)) refresh.push("calendar","student.home","student.calendar","parent.home","parent.calendar");
   if (input.action === "publish") refresh.push("notifications", "attention");
   return {
     schoolId: input.schoolId,
@@ -57,7 +58,7 @@ export function assessmentUpdatedEvent(input: AssessmentEventContractInput) {
 
 @Injectable()
 export class AssessmentsService {
-  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService, @Optional() private readonly examOperations?: ExamOperationsService) {}
 
   private async principal(user: AuthUser, schoolId: string, db: Db = this.db) {
     uuid.parse(schoolId);
@@ -72,6 +73,24 @@ export class AssessmentsService {
     let query = db.selectFrom("assessment_staff_assignments").select("role").where("school_id","=",schoolId).where("assessment_id","=",assessmentId).where("user_id","=",user.id);
     if (role) query = query.where("role", "=", role);
     const assignment = await query.executeTakeFirst();
+    if (!assignment&&!role) {
+      const invigilator=await db.selectFrom("assessment_sitting_invigilators")
+        .innerJoin("assessment_sittings","assessment_sittings.id","assessment_sitting_invigilators.sitting_id")
+        .innerJoin("school_memberships",join=>join
+          .onRef("school_memberships.school_id","=","assessment_sitting_invigilators.school_id")
+          .onRef("school_memberships.user_id","=","assessment_sitting_invigilators.user_id"))
+        .innerJoin("users","users.id","assessment_sitting_invigilators.user_id")
+        .select("assessment_sitting_invigilators.id")
+        .where("assessment_sitting_invigilators.school_id","=",schoolId)
+        .where("assessment_sittings.assessment_id","=",assessmentId)
+        .where("assessment_sitting_invigilators.user_id","=",user.id)
+        .where("assessment_sitting_invigilators.status","in",["offered","accepted"])
+        .where("school_memberships.is_active","=",true)
+        .where("school_memberships.role","in",["staff","admin"])
+        .where("users.is_active","=",true)
+        .executeTakeFirst();
+      if(invigilator) return {role:"invigilator" as const};
+    }
     if (!assignment) throw new ForbiddenException(role ? `Only the assigned ${role} can do this.` : "This assessment is not assigned to you.");
     const action=role==="examiner" ? "assessments.mark" : role==="moderator" ? "assessments.moderate" : "assessments.view";
     if (!await hasScopedSchoolPermission(db,user.id,schoolId,action,"assessment",assessmentId)) throw new ForbiddenException("Your role does not allow this action on this assessment.");
@@ -136,6 +155,14 @@ export class AssessmentsService {
       JOIN users account ON account.id=assignment.user_id AND account.is_active
       WHERE assignment.school_id=${schoolId}::uuid AND assignment.assessment_id=${assessmentId}::uuid
         AND staff_has_resource_permission(${schoolId}::uuid,assignment.user_id,'assessments.view','assessment',${assessmentId}::uuid)
+      UNION
+      SELECT invigilator.user_id FROM assessment_sitting_invigilators invigilator
+      JOIN school_memberships membership ON membership.school_id=invigilator.school_id
+        AND membership.user_id=invigilator.user_id AND membership.is_active
+      JOIN users account ON account.id=invigilator.user_id AND account.is_active
+      JOIN assessment_sittings sitting ON sitting.id=invigilator.sitting_id
+      WHERE invigilator.school_id=${schoolId}::uuid AND sitting.assessment_id=${assessmentId}::uuid
+        AND invigilator.status IN ('offered','accepted')
     `.execute(db)).rows.map((row) => row.user_id);
     if (!includeFamily) return staff;
     const family = (await sql<{ user_id: string }>`
@@ -145,6 +172,27 @@ export class AssessmentsService {
         AND membership.user_id=student.user_id AND membership.role='student' AND membership.is_active
       JOIN users account ON account.id=student.user_id AND account.is_active
       WHERE result.school_id=${schoolId}::uuid AND result.assessment_id=${assessmentId}::uuid
+      UNION
+      SELECT student.user_id FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=assessment.class_section_id AND enrollment.term_id=cycle.term_id
+      JOIN students student ON student.id=enrollment.student_id AND student.user_id IS NOT NULL
+      JOIN school_memberships membership ON membership.school_id=assessment.school_id AND membership.user_id=student.user_id AND membership.role='student' AND membership.is_active
+      JOIN users account ON account.id=student.user_id AND account.is_active
+      WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid
+        AND enrollment.is_active
+        AND enrollment.enrolled_on<=COALESCE((assessment.scheduled_at AT TIME ZONE (SELECT timezone FROM schools WHERE id=assessment.school_id))::date,current_date)
+        AND (enrollment.inactive_from IS NULL OR enrollment.inactive_from>COALESCE((assessment.scheduled_at AT TIME ZONE (SELECT timezone FROM schools WHERE id=assessment.school_id))::date,current_date))
+      UNION
+      SELECT parent.user_id FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=assessment.class_section_id AND enrollment.term_id=cycle.term_id
+      JOIN guardian_relationships relationship ON relationship.school_id=assessment.school_id AND relationship.student_id=enrollment.student_id
+      JOIN parents parent ON parent.id=relationship.guardian_id AND parent.user_id IS NOT NULL
+      JOIN school_memberships membership ON membership.school_id=assessment.school_id AND membership.user_id=parent.user_id AND membership.role='guardian' AND membership.is_active
+      JOIN users account ON account.id=parent.user_id AND account.is_active
+      WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid
+        AND enrollment.is_active
+        AND enrollment.enrolled_on<=COALESCE((assessment.scheduled_at AT TIME ZONE (SELECT timezone FROM schools WHERE id=assessment.school_id))::date,current_date)
+        AND (enrollment.inactive_from IS NULL OR enrollment.inactive_from>COALESCE((assessment.scheduled_at AT TIME ZONE (SELECT timezone FROM schools WHERE id=assessment.school_id))::date,current_date))
       UNION
       SELECT parent.user_id FROM assessment_results result
       JOIN guardian_relationships relationship ON relationship.school_id=result.school_id AND relationship.student_id=result.student_id
@@ -188,12 +236,15 @@ export class AssessmentsService {
       FROM assessment_cycles cycle JOIN academic_terms term ON term.id=cycle.term_id
       LEFT JOIN assessments assessment ON assessment.cycle_id=cycle.id
       WHERE cycle.school_id=${schoolId}::uuid GROUP BY cycle.id,term.name,term.academic_year ORDER BY cycle.starts_on DESC`.execute(this.db);
-    const assessments = await sql`SELECT assessment.*,cycle.name AS cycle_name,subject.name AS subject_name,subject.color,subject.icon,
+    const assessments = await sql`SELECT assessment.*,COALESCE(space.name,assessment.venue) AS venue,cycle.name AS cycle_name,subject.name AS subject_name,subject.color,subject.icon,
       'Class '||section.grade||section.section AS class_name,
       examiner.user_id AS examiner_user_id,examiner_user.first_name||' '||examiner_user.last_name AS examiner_name,
       moderator.user_id AS moderator_user_id,moderator_user.first_name||' '||moderator_user.last_name AS moderator_name,
       count(result.id)::int AS roster_count,count(result.id) FILTER(WHERE result.outcome='unrecorded')::int AS unrecorded_count,
-      COALESCE((SELECT max(sequence) FROM assessment_publications publication WHERE publication.assessment_id=assessment.id),0)::int AS publication_sequence
+      COALESCE((SELECT max(sequence) FROM assessment_publications publication WHERE publication.assessment_id=assessment.id),0)::int AS publication_sequence,
+      (SELECT jsonb_build_object('id',mine.id,'status',mine.status,'revision',mine.revision,'response_note',mine.response_note)
+        FROM assessment_sitting_invigilators mine JOIN assessment_sittings mine_sitting ON mine_sitting.id=mine.sitting_id
+        WHERE mine_sitting.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid LIMIT 1) AS viewer_invigilation_assignment
       FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id
       JOIN class_sections section ON section.id=assessment.class_section_id JOIN subjects subject ON subject.id=assessment.subject_id
       LEFT JOIN assessment_staff_assignments examiner ON examiner.assessment_id=assessment.id AND examiner.role='examiner'
@@ -201,8 +252,9 @@ export class AssessmentsService {
       LEFT JOIN assessment_staff_assignments moderator ON moderator.assessment_id=assessment.id AND moderator.role='moderator'
       LEFT JOIN users moderator_user ON moderator_user.id=moderator.user_id
       LEFT JOIN assessment_results result ON result.assessment_id=assessment.id
-      WHERE assessment.school_id=${schoolId}::uuid AND (${admin} OR EXISTS(SELECT 1 FROM assessment_staff_assignments mine WHERE mine.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid))
-      GROUP BY assessment.id,cycle.name,subject.name,subject.color,subject.icon,section.grade,section.section,examiner.user_id,examiner_user.first_name,examiner_user.last_name,moderator.user_id,moderator_user.first_name,moderator_user.last_name
+      LEFT JOIN assessment_sittings sitting ON sitting.assessment_id=assessment.id LEFT JOIN campus_spaces space ON space.id=sitting.space_id
+      WHERE assessment.school_id=${schoolId}::uuid AND (${admin} OR EXISTS(SELECT 1 FROM assessment_staff_assignments mine WHERE mine.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid) OR EXISTS(SELECT 1 FROM assessment_sitting_invigilators mine JOIN assessment_sittings mine_sitting ON mine_sitting.id=mine.sitting_id WHERE mine_sitting.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid AND mine.status IN ('offered','accepted')))
+      GROUP BY assessment.id,space.name,cycle.name,subject.name,subject.color,subject.icon,section.grade,section.section,examiner.user_id,examiner_user.first_name,examiner_user.last_name,moderator.user_id,moderator_user.first_name,moderator_user.last_name
       ORDER BY assessment.scheduled_at NULLS LAST,assessment.created_at DESC`.execute(this.db);
     if (!admin) {
       const classes = (await sql<{ id:string; name:string; academic_year:string }>`
@@ -257,7 +309,8 @@ export class AssessmentsService {
     const classes = await sql`SELECT id,'Class '||grade||section AS name,academic_year FROM class_sections WHERE school_id=${schoolId}::uuid ORDER BY academic_year DESC,grade,section`.execute(this.db);
     const subjects = await sql`SELECT id,name,color,icon FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(this.db);
     const staff = await sql`SELECT DISTINCT u.id,u.first_name,u.last_name,profile.designation FROM users u JOIN school_memberships membership ON membership.user_id=u.id LEFT JOIN staff_profiles profile ON profile.school_id=membership.school_id AND profile.user_id=u.id WHERE membership.school_id=${schoolId}::uuid AND membership.role IN ('staff','admin') AND membership.is_active AND u.is_active ORDER BY u.first_name,u.last_name`.execute(this.db);
-    return { mode: "admin", cycles: cycles.rows, assessments: assessments.rows, references: { terms: terms.rows, classes: classes.rows, subjects: subjects.rows, staff: staff.rows } };
+    const spaces=await sql`SELECT space.id,space.name,space.code,space.kind,space.capacity,campus.name AS campus_name FROM campus_spaces space JOIN institution_campuses campus ON campus.id=space.campus_id WHERE space.school_id=${schoolId}::uuid AND space.status='active' AND space.is_bookable ORDER BY campus.name,space.name,space.id`.execute(this.db);
+    return { mode: "admin", cycles: cycles.rows, assessments: assessments.rows, references: { terms: terms.rows, classes: classes.rows, subjects: subjects.rows, staff: staff.rows, spaces:spaces.rows } };
   }
 
   async calendar(user:AuthUser,schoolId:string,from:string,to:string,studentId?:string) {
@@ -265,27 +318,32 @@ export class AssessmentsService {
     if(from>to||Date.parse(to)-Date.parse(from)>92*86400000)throw new BadRequestException('Choose a calendar range of up to 93 days.');
     let admin=false;
     if(studentId) { uuid.parse(studentId);await this.familyResults(user,schoolId,studentId); }
-    else { const access=await schoolPermission(this.db,user,schoolId,'assessments.view');admin=access.role==='admin'; }
+    else {
+      const access=await this.db.selectFrom("school_memberships").select("role").where("school_id","=",schoolId).where("user_id","=",user.id).where("is_active","=",true).where("role","in",["admin","staff"]).orderBy(sql`role='admin'`,"desc").executeTakeFirst();
+      if(!access) throw new ForbiddenException("Active school staff access is required.");
+      admin=access.role==='admin';
+    }
     // Calendar projection intentionally excludes results, marks, private notes,
     // drafts and cancelled assessments. It does not cancel normal teaching.
     const items=await sql<{id:string;title:string;scheduled_at:string;date:string;venue:string;subject_name:string;class_name:string;duration_minutes:number|null}>`
-      SELECT a.id,a.title,a.scheduled_at,(a.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,a.venue,s.name AS subject_name,'Class '||c.grade||c.section AS class_name,a.duration_minutes
-      FROM assessments a JOIN schools school ON school.id=a.school_id JOIN subjects s ON s.id=a.subject_id JOIN class_sections c ON c.id=a.class_section_id JOIN assessment_cycles cycle ON cycle.id=a.cycle_id
+      SELECT a.id,a.title,a.scheduled_at,(a.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,COALESCE(space.name,a.venue) AS venue,s.name AS subject_name,'Class '||c.grade||c.section AS class_name,a.duration_minutes
+      FROM assessments a JOIN schools school ON school.id=a.school_id JOIN subjects s ON s.id=a.subject_id JOIN class_sections c ON c.id=a.class_section_id JOIN assessment_cycles cycle ON cycle.id=a.cycle_id LEFT JOIN assessment_sittings sitting ON sitting.assessment_id=a.id LEFT JOIN campus_spaces space ON space.id=sitting.space_id
       WHERE a.school_id=${schoolId}::uuid AND a.status NOT IN ('draft','cancelled') AND (a.scheduled_at AT TIME ZONE school.timezone)::date BETWEEN ${from}::date AND ${to}::date
-      AND (${admin} OR (${studentId??null}::uuid IS NOT NULL AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=${studentId??null}::uuid AND e.class_section_id=a.class_section_id AND e.term_id=cycle.term_id AND e.is_active AND e.enrolled_on<=(a.scheduled_at AT TIME ZONE school.timezone)::date)) OR (${studentId??null}::uuid IS NULL AND staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',a.id)))
+      AND (${admin} OR (${studentId??null}::uuid IS NOT NULL AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=${studentId??null}::uuid AND e.class_section_id=a.class_section_id AND e.term_id=cycle.term_id AND e.is_active AND e.enrolled_on<=(a.scheduled_at AT TIME ZONE school.timezone)::date)) OR (${studentId??null}::uuid IS NULL AND (staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',a.id) OR EXISTS(SELECT 1 FROM assessment_sitting_invigilators invigilator JOIN assessment_sittings invigilator_sitting ON invigilator_sitting.id=invigilator.sitting_id WHERE invigilator_sitting.assessment_id=a.id AND invigilator.user_id=${user.id}::uuid AND invigilator.status IN ('offered','accepted')))))
       ORDER BY a.scheduled_at,a.title`.execute(this.db);
     return {items:items.rows};
   }
 
   async detail(user: AuthUser, schoolId: string, assessmentId: string) {
-    await schoolPermission(this.db,user,schoolId,"assessments.view");
     const access = await this.assigned(user,schoolId,assessmentId);
-    const assessment = (await sql`SELECT assessment.*,cycle.name AS cycle_name,cycle.term_id,subject.name AS subject_name,subject.color,subject.icon,'Class '||section.grade||section.section AS class_name,
+    if(access.role!=="invigilator") await schoolPermission(this.db,user,schoolId,"assessments.view");
+    const assessment = (await sql`SELECT assessment.*,COALESCE(space.name,assessment.venue) AS venue,cycle.name AS cycle_name,cycle.term_id,subject.name AS subject_name,subject.color,subject.icon,'Class '||section.grade||section.section AS class_name,
       examiner.user_id AS examiner_user_id,examiner_user.first_name||' '||examiner_user.last_name AS examiner_name,
       moderator.user_id AS moderator_user_id,moderator_user.first_name||' '||moderator_user.last_name AS moderator_name
       FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id JOIN subjects subject ON subject.id=assessment.subject_id JOIN class_sections section ON section.id=assessment.class_section_id
       LEFT JOIN assessment_staff_assignments examiner ON examiner.assessment_id=assessment.id AND examiner.role='examiner' LEFT JOIN users examiner_user ON examiner_user.id=examiner.user_id
       LEFT JOIN assessment_staff_assignments moderator ON moderator.assessment_id=assessment.id AND moderator.role='moderator' LEFT JOIN users moderator_user ON moderator_user.id=moderator.user_id
+      LEFT JOIN assessment_sittings sitting ON sitting.assessment_id=assessment.id LEFT JOIN campus_spaces space ON space.id=sitting.space_id
       WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid`.execute(this.db)).rows[0];
     if (!assessment) throw new NotFoundException("Assessment not found.");
     const results = await sql`SELECT result.*,person.first_name,person.last_name,student.admission_number,enrollment.roll_number,
@@ -297,7 +355,8 @@ export class AssessmentsService {
     const publications = await sql`SELECT * FROM assessment_publications WHERE assessment_id=${assessmentId}::uuid ORDER BY sequence DESC`.execute(this.db);
     const canMark=await hasScopedSchoolPermission(this.db,user.id,schoolId,"assessments.mark","assessment",assessmentId);
     const canModerate=await hasScopedSchoolPermission(this.db,user.id,schoolId,"assessments.moderate","assessment",assessmentId);
-    return { assessment, results: results.rows, publications: publications.rows, viewer_role: access.role === "admin" ? "admin" : access.role === "examiner" && canMark ? "examiner" : access.role === "moderator" && canModerate ? "moderator" : "viewer" };
+    const examOperation=this.examOperations?await this.examOperations.projection(schoolId,assessmentId,undefined,user.id):null;
+    return { assessment, results: access.role==="invigilator"?[]:results.rows, publications: access.role==="invigilator"?[]:publications.rows, exam_operation:examOperation, viewer_role: access.role === "admin" ? "admin" : access.role === "examiner" && canMark ? "examiner" : access.role === "moderator" && canModerate ? "moderator" : access.role === "invigilator" ? "invigilator" : "viewer" };
   }
 
   async createCycle(user: AuthUser, schoolId: string, body: unknown) {
@@ -314,6 +373,8 @@ export class AssessmentsService {
   async createAssessment(user: AuthUser, schoolId: string, body: unknown) {
     const data=assessmentInput.parse(body);
     if(data.examiner_user_id===data.moderator_user_id) throw new BadRequestException("Examiner and moderator must be different people.");
+    const physicalAssessment=isPhysicalAssessment(data.assessment_kind);
+    const requestsPhysicalSitting=data.space_id!==null||data.invigilator_user_ids.length>0;
     return this.db.transaction().execute(async(db)=>{
       const membership=await db.selectFrom("school_memberships").select("role").where("school_id","=",schoolId).where("user_id","=",user.id).where("is_active","=",true).where("role","in",["admin","staff"]).executeTakeFirst();
       if(!membership) throw new ForbiddenException("Active school staff access is required.");
@@ -343,6 +404,9 @@ export class AssessmentsService {
         const reviewer=await db.selectFrom("school_memberships").select("id").where("school_id","=",schoolId).where("user_id","=",data.moderator_user_id).where("role","=","admin").where("is_active","=",true).executeTakeFirst();
         if(!reviewer) throw new BadRequestException("Choose an active school administrator as the independent reviewer.");
       }
+      if(requestsPhysicalSitting&&!physicalAssessment) throw new BadRequestException("A campus space and invigilators can be assigned only to an exam, practical or viva.");
+      if(physicalAssessment&&(!data.space_id||!data.invigilator_user_ids.length)) throw new BadRequestException("A physical exam, practical or viva needs a campus space and at least one invigilator.");
+      if(physicalAssessment&&data.scheduled_at&&new Date(data.scheduled_at).getTime()<=Date.now()) throw new BadRequestException("Choose a future examination time before creating the sitting.");
       const cycle=await db.selectFrom("assessment_cycles").selectAll().where("id","=",data.cycle_id).where("school_id","=",schoolId).executeTakeFirst();
       if(!cycle) throw new BadRequestException("Choose an assessment cycle in this institution.");
       if(staffPlan&&data.scheduled_at){
@@ -359,6 +423,11 @@ export class AssessmentsService {
       const assessment=await db.insertInto("assessments").values({school_id:schoolId,cycle_id:data.cycle_id,class_section_id:data.class_section_id,subject_id:data.subject_id,title:data.title,assessment_kind:data.assessment_kind,maximum_marks:String(data.maximum_marks),weight_percent:data.weight_percent===null?null:String(data.weight_percent),scheduled_at:data.scheduled_at?new Date(data.scheduled_at):null,duration_minutes:data.duration_minutes,venue:data.venue,instructions:data.instructions,evidence_requirement:data.evidence_requirement,created_by:user.id,updated_by:user.id}).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("assessment_staff_assignments").values([{school_id:schoolId,assessment_id:assessment.id,user_id:data.examiner_user_id,role:"examiner",assigned_by:user.id},{school_id:schoolId,assessment_id:assessment.id,user_id:data.moderator_user_id,role:"moderator",assigned_by:user.id}]).execute();
       await this.audit(db,user,schoolId,assessment.id,"assessment.created",null,"draft",{examiner_user_id:data.examiner_user_id,moderator_user_id:data.moderator_user_id});
+      if(requestsPhysicalSitting){
+        if(!this.examOperations) throw new BadRequestException("Examination operations are temporarily unavailable.");
+        const sitting=await this.examOperations.createForAssessment(db,user,assessment,{space_id:data.space_id!,invigilator_user_ids:data.invigilator_user_ids});
+        return {...assessment,sitting};
+      }
       return assessment;
     });
   }
@@ -377,13 +446,36 @@ export class AssessmentsService {
       const allowed:Record<string,string[]>={schedule:["draft"],"open-marking":["scheduled"],submit:["marking"],approve:["submitted"],return:["submitted"],publish:["moderated"],cancel:["draft","scheduled","marking"]};
       if(!allowed[action]!.includes(current.status)) throw new ConflictException(`This action is not available while the assessment is ${current.status}.`);
       let next=current.status as string;
-      if(action==="schedule"){ if(!current.scheduled_at) throw new BadRequestException("Add the assessment date before scheduling."); if(current.assessment_kind==="class_test")await this.validateClassTestSchedule(db,current,current.id); next="scheduled"; }
+      if(action==="schedule"){
+        if(!current.scheduled_at) throw new BadRequestException("Add the assessment date before scheduling.");
+        if(current.assessment_kind==="class_test") await this.validateClassTestSchedule(db,current,current.id);
+        if(isPhysicalAssessment(current.assessment_kind)){
+          if(!this.examOperations) throw new ConflictException("Physical examination operations are unavailable.");
+          await this.examOperations.prepareForSchedule(db,user,current);
+        }
+        next="scheduled";
+      }
       if(action==="open-marking"){
+        if(isPhysicalAssessment(current.assessment_kind)){
+          if(!this.examOperations) throw new ConflictException("Physical examination operations are unavailable.");
+          await this.examOperations.assertCompletedBeforeMarking(db,current.id);
+        }
         const cycle=await db.selectFrom("assessment_cycles").select("term_id").where("id","=",current.cycle_id).executeTakeFirstOrThrow();
-        await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id)
-          SELECT ${schoolId}::uuid,${assessmentId}::uuid,enrollment.student_id FROM enrollments enrollment JOIN students student ON student.id=enrollment.student_id
-          WHERE enrollment.class_section_id=${current.class_section_id}::uuid AND enrollment.term_id=${cycle.term_id}::uuid AND enrollment.is_active AND student.school_id=${schoolId}::uuid
-          ON CONFLICT(assessment_id,student_id) DO NOTHING`.execute(db);
+        if(isPhysicalAssessment(current.assessment_kind)){
+          await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id)
+            SELECT candidate.school_id,candidate.assessment_id,candidate.student_id
+            FROM assessment_sitting_candidates candidate
+            JOIN assessment_sittings sitting ON sitting.id=candidate.sitting_id
+              AND sitting.school_id=candidate.school_id AND sitting.assessment_id=candidate.assessment_id
+            WHERE candidate.school_id=${schoolId}::uuid AND candidate.assessment_id=${assessmentId}::uuid
+              AND sitting.state='completed'
+            ON CONFLICT(assessment_id,student_id) DO NOTHING`.execute(db);
+        }else{
+          await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id)
+            SELECT ${schoolId}::uuid,${assessmentId}::uuid,enrollment.student_id FROM enrollments enrollment JOIN students student ON student.id=enrollment.student_id
+            WHERE enrollment.class_section_id=${current.class_section_id}::uuid AND enrollment.term_id=${cycle.term_id}::uuid AND enrollment.is_active AND student.school_id=${schoolId}::uuid
+            ON CONFLICT(assessment_id,student_id) DO NOTHING`.execute(db);
+        }
         const count=(await sql<{count:number}>`SELECT count(*)::int AS count FROM assessment_results WHERE assessment_id=${assessmentId}::uuid`.execute(db)).rows[0]!.count;
         if(!count) throw new BadRequestException("The class has no active learners in this term."); next="marking";
       }
@@ -450,8 +542,12 @@ export class AssessmentsService {
       if(action==="return"){update.submitted_by=null;update.submitted_at=null;update.moderated_by=null;update.moderated_at=null;update.moderation_note=data.note;}
       if(action==="cancel"){update.cancelled_by=user.id;update.cancelled_at=new Date();update.cancellation_reason=data.note;}
       const updated=await db.updateTable("assessments").set(update).where("id","=",assessmentId).returningAll().executeTakeFirstOrThrow();
+      if(action==="cancel"&&isPhysicalAssessment(current.assessment_kind)){
+        if(!this.examOperations) throw new ConflictException("Physical examination operations are unavailable.");
+        await this.examOperations.cancelForAssessment(db,user,schoolId,assessmentId,data.note);
+      }
       await this.audit(db,user,schoolId,assessmentId,`assessment.${action}`,current.status,next,{note:data.note});
-      await this.emitUpdated(db,updated,action,action==="publish");
+      await this.emitUpdated(db,updated,action,["schedule","cancel","publish"].includes(action));
       return updated;
     });
   }

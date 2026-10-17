@@ -9,11 +9,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const backendRoot = resolve(root, "backend");
 const frontendRoot = resolve(root, "frontend");
 const photoAttendanceRoot = resolve(root, "services/photo-attendance");
+const campusSimulatorRoot = resolve(root, "devtools/campus-simulator");
 const runtimeRoot = resolve(root, ".runtime");
 const scratchRoot = resolve(tmpdir(), "eduvera-preview-runtime");
 const backendRunRoot = process.env.PREVIEW_BACKEND_ROOT || resolve(scratchRoot, "backend");
 const frontendRunRoot = process.env.PREVIEW_FRONTEND_ROOT || resolve(scratchRoot, "frontend");
 const photoAttendanceRunRoot = process.env.PREVIEW_PHOTO_ROOT || resolve(scratchRoot, "photo-attendance");
+const campusSimulatorRunRoot = process.env.PREVIEW_CAMPUS_SIMULATOR_ROOT || resolve(scratchRoot, "campus-simulator");
 const photoDataRoot = process.env.PREVIEW_PHOTO_DATA_ROOT || resolve(runtimeRoot, "photo-attendance");
 // `process.loadEnvFile()` has failed intermittently when this supervisor runs
 // under launchd from macOS Documents. Read the small local env file directly
@@ -124,11 +126,16 @@ if (!process.env.PREVIEW_PHOTO_ROOT) {
   copyFile(resolve(photoAttendanceRoot, "requirements.txt"), resolve(photoAttendanceRunRoot, "requirements.txt"));
 }
 
+if (!process.env.PREVIEW_CAMPUS_SIMULATOR_ROOT && existsSync(campusSimulatorRoot)) {
+  replaceDirectory(campusSimulatorRoot, campusSimulatorRunRoot);
+}
+
 const photoTokenPath = resolve(runtimeRoot, "photo-attendance-token");
 if (!existsSync(photoTokenPath)) {
   writeFileSync(photoTokenPath, randomBytes(32).toString("base64url"), { mode: 0o600 });
 }
 const photoToken = readFileSync(photoTokenPath, "utf8").trim();
+const campusLabProxyKey = randomBytes(32).toString("base64url");
 const photoEncryptionKeyPath = resolve(photoDataRoot, "encryption.key");
 const photoEncryptionKey = process.env.ATTENDANCE_ENCRYPTION_KEY
   || (existsSync(photoEncryptionKeyPath) ? readFileSync(photoEncryptionKeyPath, "utf8").trim() : "");
@@ -194,12 +201,27 @@ const frontendEnv = {
   PATH: childPath,
   BROWSER: "none",
   VITE_API_PROXY_TARGET: apiOrigin,
+  VITE_CAMPUS_LAB_PROXY_TARGET: "http://127.0.0.1:8002",
+  CAMPUS_LAB_PROXY_KEY: campusLabProxyKey,
   VITE_DEV_PORT: "8000",
   VITE_DEV_HOST: "127.0.0.1",
   // ngrok free domains are assigned when the managed preview starts. This
   // process is local-development only; production host validation is handled
   // by the deployed service configuration.
   VITE_ALLOWED_HOSTS: "*",
+};
+
+const campusSimulatorEnv = {
+  ...process.env,
+  PATH: childPath,
+  NODE_ENV: "development",
+  DEPLOYMENT_ENVIRONMENT: "development",
+  CAMPUS_SIMULATOR_ENABLED: process.env.CAMPUS_SIMULATOR_ENABLED ?? "true",
+  CAMPUS_SIMULATOR_API_ORIGIN: apiOrigin,
+  CAMPUS_SIMULATOR_HOST: "127.0.0.1",
+  CAMPUS_SIMULATOR_PORT: "8002",
+  CAMPUS_LAB_PROXY_KEY: campusLabProxyKey,
+  CAMPUS_SIMULATOR_DEMO_PASSWORD: process.env.DEMO_PASSWORD ?? "",
 };
 
 const children = new Map();
@@ -321,9 +343,20 @@ if (resolve(frontendRoot) !== resolve(frontendRunRoot)) {
   mirrorSourceChanges(resolve(frontendRoot, "src"), resolve(frontendRunRoot, "src"));
   mirrorSourceChanges(resolve(frontendRoot, "public"), resolve(frontendRunRoot, "public"));
 }
+if (existsSync(campusSimulatorRoot) && resolve(campusSimulatorRoot) !== resolve(campusSimulatorRunRoot)) {
+  mirrorSourceChanges(campusSimulatorRoot, campusSimulatorRunRoot);
+}
 startProcess("api-compiler", resolve(backendRunRoot, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json", "--watch", "--preserveWatchOutput"], { env: backendEnv, cwd: backendRunRoot });
 startProcess("api", process.execPath, ["--watch", "dist/main.js"], { env: backendEnv, cwd: backendRunRoot });
 startProcess("web", "npm", ["--prefix", frontendRunRoot, "run", "dev", "--", "--host", "127.0.0.1", "--port", "8000", "--strictPort"], { env: frontendEnv });
+if (existsSync(resolve(campusSimulatorRunRoot, "src/index.mjs"))) {
+  startProcess("campus-simulator", process.execPath, ["src/index.mjs"], {
+    env: campusSimulatorEnv,
+    cwd: campusSimulatorRunRoot,
+    restartOnFailure: true,
+    restartDelayMs: 5000,
+  });
+}
 if (process.env.LIVE_NGROK === "true") {
   const ngrokConfig = process.env.NGROK_CONFIG ?? resolve(homedir(), "Library/Application Support/ngrok/ngrok.yml");
   if (!existsSync(ngrokConfig)) throw new Error(`ngrok configuration is missing at ${ngrokConfig}`);
@@ -336,4 +369,5 @@ if (process.env.LIVE_NGROK === "true") {
 console.log(`[preview] live React app: ${appOrigin}`);
 console.log(`[preview] API proxy target: ${apiOrigin}`);
 console.log("[preview] private photo-attendance service: http://127.0.0.1:8100");
+console.log("[preview] development campus rehearsal: http://127.0.0.1:8002");
 console.log(`[preview] localhost alias: ${appLocalhostOrigin}`);

@@ -12,7 +12,7 @@ export interface CampusModelChangeReceipt {
 }
 export interface CampusModelActivity {
   id: string;
-  kind: "setup" | "attendance";
+  kind: "setup" | "attendance" | "examination";
   action: string;
   subject_label: string | null;
   item_count: number;

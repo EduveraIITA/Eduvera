@@ -6,7 +6,7 @@ import type { MessagingChannelProvider } from '../src/agent/channels/provider.js
 import { InternalAgentDelegationService } from '../src/auth/internal-agent-delegation.js';
 import type { AuthUser } from '../src/common/request.js';
 
-const settings:TelegramSettings={enabled:true,token:'123456789:abcdefghijklmnopqrstuvwxyz',username:'OmniSchoolBot',webhookSecret:'0123456789abcdefghijklmn',publicUrl:'https://school.example'};
+const settings:TelegramSettings={enabled:true,token:'123456789:abcdefghijklmnopqrstuvwxyz',username:'ThatCampusBot',webhookSecret:'0123456789abcdefghijklmn',publicUrl:'https://school.example'};
 
 describe('provider-neutral assistant channels',()=>{
   it('normalizes only private Telegram text and extracts a one-time link token',()=>{
@@ -25,13 +25,13 @@ describe('provider-neutral assistant channels',()=>{
   });
 
   it('resolves the bot username from Telegram when configuration omits it',async()=>{
-    const request:typeof fetch=vi.fn(()=>Promise.resolve(new Response(JSON.stringify({ok:true,result:{is_bot:true,username:'OmniSchoolBot'}}),
+    const request:typeof fetch=vi.fn(()=>Promise.resolve(new Response(JSON.stringify({ok:true,result:{is_bot:true,username:'ThatCampusBot'}}),
       {status:200,headers:{'content-type':'application/json'}})));
     const settingsWithoutUsername:TelegramSettings={enabled:settings.enabled,token:settings.token,webhookSecret:settings.webhookSecret,publicUrl:'https://school.example'};
     const provider=new TelegramChannelProvider(settingsWithoutUsername,request);
     expect(provider.configured()).toBe(false);
     await provider.initialize();
-    expect(provider.publicIdentity()).toMatchObject({configured:true,username:'@OmniSchoolBot'});
+    expect(provider.publicIdentity()).toMatchObject({configured:true,username:'@ThatCampusBot'});
   });
 
   it('splits long replies, keeps tokens server-side and attaches review links once',async()=>{
@@ -43,12 +43,12 @@ describe('provider-neutral assistant channels',()=>{
     });
     const request:typeof fetch=requestMock;
     const provider=new TelegramChannelProvider(settings,request);
-    const result=await provider.send({externalChatId:'91',text:'A'.repeat(7801),action:{label:'Review in OmniSchool',url:'https://school.example/principal/assistant?thread=x'}});
+    const result=await provider.send({externalChatId:'91',text:'A'.repeat(7801),action:{label:'Review in ThatCampus',url:'https://school.example/principal/assistant?thread=x'}});
     expect(result.messageIds).toHaveLength(3);expect(request).toHaveBeenCalledTimes(3);
     const requestedUrl=requestMock.mock.calls[0]![0];
     expect(typeof requestedUrl==='string'?requestedUrl:requestedUrl instanceof URL?requestedUrl.href:requestedUrl.url).toContain(settings.token);
     const first=bodies[0]!;const last=bodies[2]! as {reply_markup:{inline_keyboard:Array<Array<{text:string}>>}};
-    expect(first).not.toHaveProperty('reply_markup');expect(last.reply_markup.inline_keyboard.flat()[0]).toMatchObject({text:'Review in OmniSchool'});
+    expect(first).not.toHaveProperty('reply_markup');expect(last.reply_markup.inline_keyboard.flat()[0]).toMatchObject({text:'Review in ThatCampus'});
   });
 
   it('allows another transport adapter without changing the agent contract',()=>{

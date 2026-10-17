@@ -6,7 +6,7 @@ type Group = { name: string; ids: string[] };
 const groups: Record<Portal, Group[]> = {
   principal: [
     { name: "Needs attention", ids: ["requests"] },
-    { name: "School overview", ids: ["analytics"] },
+    { name: "School overview", ids: ["campus", "analytics"] },
     { name: "People", ids: ["people", "staff", "leave", "teacher-feedback"] },
     { name: "Academics", ids: ["weekly", "assessments", "report-cards"] },
     { name: "Operations", ids: ["gate", "departure", "events", "notices", "messages", "fees", "safeguarding"] },
@@ -59,7 +59,7 @@ const adminShortcuts: Shortcut[] = [
   { owner: "staff", name: "Staff leave", path: "/principal/staff?section=leave", keywords: "absence balance applications" },
   { owner: "staff", name: "Staff settings", path: "/principal/staff?section=policies", keywords: "leave policy" },
   { owner: "weekly", name: "Schedule settings", path: "/principal/timetable/weekly", keywords: "weekly timetable manage periods schedule subjects targets" },
-  { owner: "weekly", name: "Calendar", path: "/principal/calendar", keywords: "month school dates holidays" },
+  { owner: "weekly", name: "School calendar", path: "/principal/timetable?view=month", keywords: "month school dates holidays" },
   { owner: "report-cards", name: "Grading schemes", path: "/principal/report-cards?view=schemes", keywords: "grades bands" },
   { owner: "administration", name: "Academic setup", path: "/principal/administration?section=setup", keywords: "terms classes subjects" },
   { owner: "administration", name: "Account access", path: "/principal/administration?section=access", keywords: "members active deactivate invitations" },

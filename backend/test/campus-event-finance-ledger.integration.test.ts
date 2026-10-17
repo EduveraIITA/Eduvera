@@ -5,6 +5,7 @@ import type { AuthUser } from "../src/common/request.js";
 import { DatabaseService } from "../src/database/database.service.js";
 import { OperationsService } from "../src/operations/operations.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
 
 // These tests intentionally leave immutable ledger facts behind. They run only
 // against a disposable database after migrations 001-019 have been applied.
@@ -46,7 +47,10 @@ describe.skipIf(!isolated)("campus-event finance ledger against disposable Postg
       active_school_id: schoolId,
     };
     operationsDatabase = new DatabaseService();
-    operations = new OperationsService(operationsDatabase);
+    operations = new OperationsService(
+      operationsDatabase,
+      createStaffCoverageReconciliationTestDouble(),
+    );
     otherSchoolId = (await pool.query<{ id: string }>(`
       INSERT INTO schools(name,code) VALUES('Other Ledger School',$1) RETURNING id
     `, [`other-${suffix}`.slice(0, 32)])).rows[0]!.id;

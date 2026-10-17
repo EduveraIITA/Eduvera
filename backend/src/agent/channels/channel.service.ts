@@ -105,7 +105,7 @@ export class AgentChannelService implements OnModuleInit,OnModuleDestroy {
     const connection=(await sql<Connection>`SELECT * FROM agent_channel_connections WHERE provider=${update.provider}
       AND external_user_id=${update.externalUserId} AND state='linked' LIMIT 1`.execute(this.db)).rows[0];
     if(!connection||connection.external_chat_id!==update.externalChatId){
-      await provider.send({externalChatId:update.externalChatId,text:'Connect this chat from OmniSchool Profile → Connected apps before asking about school records.'});
+      await provider.send({externalChatId:update.externalChatId,text:'Connect this chat from ThatCampus Profile → Connected apps before asking about school records.'});
       await this.terminal(update.id,'ignored');return;
     }
     const user=await this.user(connection);
@@ -113,7 +113,7 @@ export class AgentChannelService implements OnModuleInit,OnModuleDestroy {
     try{runId=(await this.agent.sendFromChannel(user,randomUUID(),connection.agent_thread_id,update.text,update.id)).run_id;}
     catch(error){
       if(error instanceof ConflictException||error instanceof ForbiddenException||error instanceof AgentLimitError){
-        await provider.send({externalChatId:update.externalChatId,text:error.message,action:{label:'Open OmniSchool',url:this.assistantUrl(connection)}});
+        await provider.send({externalChatId:update.externalChatId,text:error.message,action:{label:'Open ThatCampus',url:this.assistantUrl(connection)}});
         await this.recordDelivery(connection,update,'outbound',error.message,'sent');await this.terminal(update.id,'delivered',connection.id);return;
       }
       throw error;
@@ -124,8 +124,8 @@ export class AgentChannelService implements OnModuleInit,OnModuleDestroy {
     for(let pass=0;pass<235&&['running'].includes(result.status);pass++){await delay(1000);result=await this.agent.channelRun(user,randomUUID(),connection.agent_thread_id,runId);}
     if(result.status==='running')throw new Error('agent_timeout');
     const review=['pending','executing','uncertain'].includes(result.action?.status??'')||result.status==='confirmation';
-    const answer=review?`${result.answer}\n\nReview this action securely in OmniSchool.`:result.answer;
-    const sent=await provider.send({externalChatId:update.externalChatId,text:answer,...(review?{action:{label:'Review in OmniSchool',url:this.assistantUrl(connection)}}:{})});
+    const answer=review?`${result.answer}\n\nReview this action securely in ThatCampus.`:result.answer;
+    const sent=await provider.send({externalChatId:update.externalChatId,text:answer,...(review?{action:{label:'Review in ThatCampus',url:this.assistantUrl(connection)}}:{})});
     await this.recordDelivery(connection,update,'outbound',answer,'sent',sent.messageIds.join(','));
     await sql`UPDATE agent_channel_connections SET last_inbound_at=now(),last_outbound_at=now() WHERE id=${connection.id}::uuid`.execute(this.db);
     await this.terminal(update.id,'delivered',connection.id,runId);
@@ -137,7 +137,7 @@ export class AgentChannelService implements OnModuleInit,OnModuleDestroy {
       UPDATE agent_channel_link_tokens SET consumed_at=now() WHERE id=(SELECT id FROM agent_channel_link_tokens
         WHERE provider=${update.provider} AND token_hash=${tokenHash} AND consumed_at IS NULL AND expires_at>now() FOR UPDATE)
       RETURNING id,owner_id,school_id,portal,student_id`.execute(tx)).rows[0]));
-    if(!token){await provider.send({externalChatId:update.externalChatId,text:'This connection link is invalid or expired. Generate a new one from OmniSchool Profile.'});await this.terminal(update.id,'ignored');return;}
+    if(!token){await provider.send({externalChatId:update.externalChatId,text:'This connection link is invalid or expired. Generate a new one from ThatCampus Profile.'});await this.terminal(update.id,'ignored');return;}
     const user=await this.user({owner_id:token.owner_id,school_id:token.school_id});
     const thread=await this.agent.createChannelThread(user,randomUUID(),token.portal,token.student_id);
     const connection=await this.db.transaction().execute(async tx=>{
@@ -147,7 +147,7 @@ export class AgentChannelService implements OnModuleInit,OnModuleDestroy {
         VALUES(${token.owner_id}::uuid,${token.school_id}::uuid,${token.portal},${token.student_id}::uuid,${update.provider},${update.externalUserId},${update.externalChatId},${thread.id}::uuid)
         RETURNING *`.execute(tx)).rows[0]!;
     });
-    const message=`Connected to OmniSchool as ${user.first_name||user.username}. You can now ask about the school records and actions available to this account.`;
+    const message=`Connected to ThatCampus as ${user.first_name||user.username}. You can now ask about the school records and actions available to this account.`;
     const sent=await provider.send({externalChatId:update.externalChatId,text:message});
     await this.recordDelivery(connection,update,'outbound',message,'sent',sent.messageIds.join(','));
     await this.audit(token.owner_id,token.school_id,'agent.channel.linked',randomUUID(),{provider:update.provider,portal:token.portal,connection_id:connection.id});
@@ -157,7 +157,7 @@ export class AgentChannelService implements OnModuleInit,OnModuleDestroy {
   private async user(connection:Pick<Connection,'owner_id'|'school_id'>):Promise<AuthUser>{
     const row=(await sql<AuthUser>`SELECT id,username,email,first_name,last_name,avatar_url,role,is_active,email_verified_at,
       ${connection.school_id}::uuid AS active_school_id FROM users WHERE id=${connection.owner_id}::uuid AND is_active`.execute(this.db)).rows[0];
-    if(!row)throw new ForbiddenException('The linked OmniSchool account is no longer active.');return row;
+    if(!row)throw new ForbiddenException('The linked ThatCampus account is no longer active.');return row;
   }
   private assistantUrl(connection:Connection){
     const base=config().PUBLIC_URL;if(!base)throw new Error('public_url_missing');

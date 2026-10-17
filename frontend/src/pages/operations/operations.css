@@ -6,17 +6,17 @@
 }
 
 .operations-app {
-  --op-blue: var(--edura-brand);
-  --op-blue-bright: var(--edura-brand-bright);
-  --op-blue-soft: var(--edura-brand-soft);
-  --op-ink: var(--edura-ink);
-  --op-muted: var(--edura-ink-muted);
-  --op-border: var(--edura-border);
+  --op-blue: var(--thatcampus-brand);
+  --op-blue-bright: var(--thatcampus-brand-bright);
+  --op-blue-soft: var(--thatcampus-brand-soft);
+  --op-ink: var(--thatcampus-ink);
+  --op-muted: var(--thatcampus-ink-muted);
+  --op-border: var(--thatcampus-border);
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100dvh;
   color: var(--op-ink);
-  background: var(--edura-canvas);
+  background: var(--thatcampus-canvas);
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
@@ -66,20 +66,20 @@
   padding: 0 13px;
   align-items: center;
   gap: 11px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-muted);
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
   transition:
-    color var(--edura-motion),
-    background var(--edura-motion),
-    transform var(--edura-motion);
+    color var(--thatcampus-motion),
+    background var(--thatcampus-motion),
+    transform var(--thatcampus-motion);
 }
 .operations-sidebar nav a > .attention-indicator { margin-left: auto; }
 .operations-sidebar nav a:hover {
   color: var(--op-blue);
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
 }
 .operations-sidebar nav a:active {
   transform: scale(0.98);
@@ -91,8 +91,8 @@
 .operations-sidebar__scope {
   margin-top: auto;
   padding: 14px;
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface-soft);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface-soft);
   box-shadow: inset 0 0 0 1px rgba(29, 78, 216, 0.06);
 }
 .operations-sidebar__scope span,
@@ -157,16 +157,16 @@
   padding: 0;
   place-items: center;
   border-radius: 50%;
-  color: var(--edura-ink-secondary);
+  color: var(--thatcampus-ink-secondary);
   background: transparent;
   transition:
-    color var(--edura-motion),
-    background var(--edura-motion),
-    transform var(--edura-motion);
+    color var(--thatcampus-motion),
+    background var(--thatcampus-motion),
+    transform var(--thatcampus-motion);
 }
 .operations-icon-button:hover {
   color: var(--op-blue);
-  background: var(--edura-surface-strong);
+  background: var(--thatcampus-surface-strong);
 }
 .operations-profile-button {
   width: 40px;
@@ -183,6 +183,44 @@
   width: min(100%, 1280px);
   margin: 0 auto;
   padding: 28px clamp(22px, 4vw, 52px) 64px;
+}
+.operations-app--immersive {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.operations-app--immersive .operations-workspace {
+  min-height: 0;
+  display: grid;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.operations-app--immersive .operations-main {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.operations-app--canvas {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  display: block;
+  overflow: hidden;
+  background: var(--thatcampus-surface);
+}
+.operations-app--canvas .operations-workspace,
+.operations-app--canvas .operations-main {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 .operations-stack {
   display: grid;
@@ -208,7 +246,7 @@
   overflow: hidden;
   padding: 20px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: var(--edura-radius-card);
+  border-radius: var(--thatcampus-radius-card);
   color: #fff;
   background:
     radial-gradient(circle at 92% 0%, rgba(129, 241, 220, 0.24), transparent 32%),
@@ -268,7 +306,7 @@
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   cursor: pointer;
-  transition: background var(--edura-motion), transform var(--edura-motion);
+  transition: background var(--thatcampus-motion), transform var(--thatcampus-motion);
 }
 .teacher-home__day label:hover { background: rgba(255, 255, 255, 0.2); }
 .teacher-home__day label:active { transform: scale(0.95); }
@@ -291,10 +329,10 @@
   height: 4px;
   margin-top: 15px;
   overflow: hidden;
-  border-radius: var(--edura-radius-pill);
+  border-radius: var(--thatcampus-radius-pill);
   background: rgba(255, 255, 255, 0.18);
 }
-.teacher-home__progress i { display: block; height: 100%; border-radius: inherit; background: #8cebdc; box-shadow: 0 0 16px rgba(140, 235, 220, 0.32); transition: width var(--edura-motion); }
+.teacher-home__progress i { display: block; height: 100%; border-radius: inherit; background: #8cebdc; box-shadow: 0 0 16px rgba(140, 235, 220, 0.32); transition: width var(--thatcampus-motion); }
 .teacher-home__primary-action,
 .teacher-home__caught-up {
   display: grid;
@@ -305,7 +343,7 @@
   align-items: center;
   gap: 14px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: #fff;
   background: rgba(255, 255, 255, 0.13);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
@@ -314,7 +352,7 @@
 }
 .teacher-home__primary-action {
   text-decoration: none;
-  transition: background var(--edura-motion), border-color var(--edura-motion), transform var(--edura-motion);
+  transition: background var(--thatcampus-motion), border-color var(--thatcampus-motion), transform var(--thatcampus-motion);
 }
 .teacher-home__primary-action:hover {
   border-color: rgba(255, 255, 255, 0.3);
@@ -351,12 +389,12 @@
   font-weight: 800;
   white-space: nowrap;
 }
-.teacher-home__primary-action-cta svg { transition: transform var(--edura-motion); }
+.teacher-home__primary-action-cta svg { transition: transform var(--thatcampus-motion); }
 .teacher-home__primary-action:hover .teacher-home__primary-action-cta svg { transform: translateX(2px); }
 .teacher-home__caught-up { grid-template-columns: auto minmax(0, 1fr); }
 .teacher-home__caught-up > svg { color: #9cf2df; }
 .teacher-home__caught-up small { font-weight: 600; letter-spacing: 0; text-transform: none; }
-.teacher-home__classes { border: 0; box-shadow: var(--edura-shadow-card); }
+.teacher-home__classes { border: 0; box-shadow: var(--thatcampus-shadow-card); }
 .teacher-home__classes > header { min-height: 56px; padding-block: 12px; }
 .teacher-home__classes > header h2 { margin: 0; font-size: 17px; }
 .teacher-home__classes .teacher-class-list > article { min-height: 70px; }
@@ -369,9 +407,9 @@
   justify-content: space-between;
   gap: 24px;
   overflow: hidden;
-  border-radius: var(--edura-radius-feature);
-  background: var(--edura-surface);
-  box-shadow: var(--edura-shadow-card);
+  border-radius: var(--thatcampus-radius-feature);
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-card);
 }
 .operations-hero::after {
   position: absolute;
@@ -427,7 +465,7 @@
   min-height: 42px;
   padding: 0 12px;
   border: 1px solid var(--op-border);
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-ink);
   background: #fff;
 }
@@ -444,9 +482,9 @@
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: 10px;
   align-items: center;
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface);
-  box-shadow: var(--edura-shadow-card);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-card);
 }
 .operations-metrics article > span {
   display: grid;
@@ -454,7 +492,7 @@
   height: 38px;
   grid-row: 1/3;
   place-items: center;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-blue);
   background: var(--op-blue-soft);
 }
@@ -483,15 +521,15 @@
   display: block;
 }
 .operations-metrics--compact article.is-incomplete {
-  color: var(--edura-warning);
-  background: var(--edura-warning-soft);
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
 }
 
 .operations-panel {
   overflow: hidden;
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface);
-  box-shadow: var(--edura-shadow-card);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-card);
 }
 .operations-panel > header {
   display: flex;
@@ -556,24 +594,24 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  border-radius: var(--edura-radius-pill);
-  color: var(--edura-warning);
-  background: var(--edura-warning-soft);
+  border-radius: var(--thatcampus-radius-pill);
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
   font-size: 11px !important;
   font-weight: 800;
   text-transform: capitalize;
 }
 .submission-chip.is-submitted {
-  color: var(--edura-positive);
-  background: var(--edura-positive-soft);
+  color: var(--thatcampus-positive);
+  background: var(--thatcampus-positive-soft);
 }
 .submission-chip.is-locked {
-  color: var(--edura-warning);
-  background: var(--edura-warning-soft);
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
 }
 .submission-chip.is-upcoming {
   color: var(--op-muted);
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
 }
 .teacher-class-list__inactive {
   color: var(--op-muted);
@@ -608,9 +646,9 @@
   padding: 14px 16px;
   align-items: end;
   gap: 12px;
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface);
-  box-shadow: var(--edura-shadow-card);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-card);
 }
 .attendance-register-toolbar > span {
   margin-left: auto;
@@ -624,12 +662,12 @@
 .operations-primary-button {
   min-height: 42px;
   padding: 0 14px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: #fff;
   background: var(--op-blue);
   transition:
-    background var(--edura-motion),
-    transform var(--edura-motion);
+    background var(--thatcampus-motion),
+    transform var(--thatcampus-motion);
 }
 .attendance-register-toolbar .mark-all-button:hover,
 .operations-primary-button:hover {
@@ -654,7 +692,7 @@
   min-height: 42px;
   padding: 0 13px !important;
   border: 1px solid var(--op-border);
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   white-space: nowrap;
 }
 .register-lifecycle {
@@ -668,15 +706,15 @@
   align-items: center;
   gap: 14px;
   border: 1px solid var(--op-border);
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
 }
 .register-lifecycle__icon {
   display: grid;
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-blue);
   background: var(--op-blue-soft);
 }
@@ -699,12 +737,12 @@
   white-space: nowrap;
 }
 .register-lifecycle.is-locked {
-  border-color: color-mix(in srgb, var(--edura-warning) 26%, var(--op-border));
-  background: var(--edura-warning-soft);
+  border-color: color-mix(in srgb, var(--thatcampus-warning) 26%, var(--op-border));
+  background: var(--thatcampus-warning-soft);
 }
 .register-lifecycle.is-locked .register-lifecycle__icon {
-  color: var(--edura-warning);
-  background: var(--edura-surface);
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-surface);
 }
 .attendance-unlock-panel {
   display: grid;
@@ -713,9 +751,9 @@
   align-items: end;
   gap: 12px;
   border: 1px solid
-    color-mix(in srgb, var(--edura-warning) 26%, var(--op-border));
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-warning-soft);
+    color-mix(in srgb, var(--thatcampus-warning) 26%, var(--op-border));
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-warning-soft);
 }
 .attendance-unlock-panel > div:first-child strong,
 .attendance-unlock-panel > div:first-child p {
@@ -739,7 +777,7 @@
   padding: 9px 11px;
   resize: vertical;
   border: 1px solid var(--op-border);
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-ink);
   background: #fff;
   font: inherit;
@@ -758,9 +796,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-muted);
-  background: var(--edura-surface);
+  background: var(--thatcampus-surface);
   font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
@@ -784,7 +822,7 @@
   font-size: 12px;
 }
 .attendance-history__state.is-error {
-  color: var(--edura-danger);
+  color: var(--thatcampus-danger);
 }
 .attendance-history__state button {
   margin-left: 6px;
@@ -817,7 +855,7 @@
   width: 38px;
   height: 38px;
   place-items: center;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-blue);
   background: var(--op-blue-soft);
   font-size: 11px;
@@ -839,7 +877,7 @@
 .attendance-history__list details > div {
   max-height: 360px;
   overflow: auto;
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
 }
 .attendance-history__list details > div > article {
   display: grid;
@@ -881,9 +919,9 @@
   padding: 0 10px;
   align-items: center;
   gap: 7px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-muted);
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
 }
 .operations-search input {
   width: 210px;
@@ -903,12 +941,12 @@
 .attendance-roster > article.is-unmarked {
   background: color-mix(
     in srgb,
-    var(--edura-warning-soft) 44%,
-    var(--edura-surface)
+    var(--thatcampus-warning-soft) 44%,
+    var(--thatcampus-surface)
   );
 }
 .attendance-roster > article.has-conflict {
-  box-shadow: inset 3px 0 0 var(--edura-warning);
+  box-shadow: inset 3px 0 0 var(--thatcampus-warning);
 }
 .roster-avatar {
   display: grid;
@@ -916,7 +954,7 @@
   height: 40px;
   overflow: hidden;
   place-items: center;
-  border-radius: var(--edura-radius-card);
+  border-radius: var(--thatcampus-radius-card);
   color: var(--op-blue);
   background: var(--op-blue-soft);
   font-size: 11px;
@@ -943,14 +981,14 @@
   min-height: 40px;
   padding: 0 10px;
   border: 1px solid var(--op-border);
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-ink);
   background: #fff;
 }
 .attendance-roster select:disabled,
 .attendance-roster input:disabled {
   color: var(--op-muted);
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
   cursor: not-allowed;
 }
 .attendance-correction-reason {
@@ -958,7 +996,7 @@
   padding: 16px 19px;
   gap: 6px;
   border-top: 1px solid rgba(220, 227, 240, 0.72);
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
 }
 .attendance-correction-reason label {
   font-size: 11px;
@@ -970,7 +1008,7 @@
   padding: 10px 12px;
   resize: vertical;
   border: 1px solid var(--op-border);
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: var(--op-ink);
   background: #fff;
   font: inherit;
@@ -997,10 +1035,10 @@
   gap: 6px;
 }
 .attendance-register > footer span:has(svg) {
-  color: var(--edura-positive);
+  color: var(--thatcampus-positive);
 }
 .attendance-register > footer span.is-error {
-  color: var(--edura-danger);
+  color: var(--thatcampus-danger);
 }
 .attendance-register > footer button,
 .timetable-form > footer button:last-child {
@@ -1009,7 +1047,7 @@
   padding: 0 14px;
   align-items: center;
   gap: 7px;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: #fff;
   background: var(--op-blue);
   font-weight: 800;
@@ -1018,14 +1056,14 @@
 .operations-success {
   margin: 0 14px 14px;
   padding: 11px 13px;
-  border-radius: var(--edura-radius-control);
-  color: var(--edura-danger);
-  background: var(--edura-danger-soft);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-danger);
+  background: var(--thatcampus-danger-soft);
   font-size: 11px;
 }
 .operations-success {
-  color: var(--edura-positive);
-  background: var(--edura-positive-soft);
+  color: var(--thatcampus-positive);
+  background: var(--thatcampus-positive-soft);
 }
 .attendance-register__guidance {
   margin: -4px 19px 15px !important;
@@ -1070,7 +1108,7 @@
 }
 .principal-table__head {
   color: var(--op-muted);
-  background: var(--edura-surface-soft);
+  background: var(--thatcampus-surface-soft);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -1107,9 +1145,9 @@
   width: 44px;
   height: 44px;
   place-items: center;
-  border-radius: var(--edura-radius-card);
-  color: var(--edura-danger);
-  background: var(--edura-danger-soft);
+  border-radius: var(--thatcampus-radius-card);
+  color: var(--thatcampus-danger);
+  background: var(--thatcampus-danger-soft);
   font-size: 11px;
   font-weight: 900;
 }
@@ -1127,7 +1165,7 @@
   width: 42px;
   height: 42px;
   place-items: center;
-  border-radius: var(--edura-radius-card);
+  border-radius: var(--thatcampus-radius-card);
   color: var(--op-blue);
   background: var(--op-blue-soft);
   font-weight: 900;
@@ -1137,8 +1175,8 @@
   height: 5px;
   margin-bottom: 5px;
   overflow: hidden;
-  border-radius: var(--edura-radius-pill);
-  background: var(--edura-surface-strong);
+  border-radius: var(--thatcampus-radius-pill);
+  background: var(--thatcampus-surface-strong);
 }
 .coverage-meter i b {
   display: block;
@@ -1151,13 +1189,13 @@
   padding: 13px 15px;
   align-items: center;
   gap: 11px;
-  border-radius: var(--edura-radius-card);
-  color: var(--edura-warning);
-  background: var(--edura-warning-soft);
+  border-radius: var(--thatcampus-radius-card);
+  color: var(--thatcampus-warning);
+  background: var(--thatcampus-warning-soft);
 }
 .operations-alert.is-success {
-  color: var(--edura-positive);
-  background: var(--edura-positive-soft);
+  color: var(--thatcampus-positive);
+  background: var(--thatcampus-positive-soft);
 }
 .operations-alert.is-neutral {
   color: var(--op-blue);
@@ -1188,7 +1226,7 @@
   gap: 6px;
   flex: none;
   border: 1px solid currentColor;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   color: inherit;
   background: transparent;
   font-size: 11px;
@@ -1348,7 +1386,7 @@
   }
   .operations-topbar {
     min-height: calc(116px + env(safe-area-inset-top, 0px));
-    padding: env(safe-area-inset-top, 0px) var(--edura-page-gutter) 4px;
+    padding: env(safe-area-inset-top, 0px) var(--thatcampus-page-gutter) 4px;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "brand actions" "heading heading";
     column-gap: 8px;
@@ -1378,7 +1416,19 @@
     font-size: 18px;
   }
   .operations-main {
-    padding: 16px var(--edura-page-gutter) 28px;
+    padding: 16px var(--thatcampus-page-gutter) 28px;
+  }
+  .operations-app--immersive {
+    padding-bottom: 0;
+  }
+  .operations-app--canvas {
+    padding-bottom: 0;
+  }
+  .operations-app--immersive .operations-main {
+    padding: 0;
+  }
+  .operations-app--canvas .operations-main {
+    padding: 0;
   }
   .teacher-home__day { padding: 18px; }
   .teacher-home__day-summary { margin-top: 20px; }

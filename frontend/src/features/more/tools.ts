@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Award, BookOpen, Bus, CalendarDays, CalendarRange, CalendarX2,
-  FileText, FlaskConical, Handshake, Inbox, Megaphone, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
+  FileText, FlaskConical, Handshake, Inbox, MapPinned, Megaphone, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
 import { ChartNoAxesCombined } from "lucide-react";
@@ -78,6 +78,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "requests", name: "Requests", description: "Prioritised school decisions and operational reviews", icon: Inbox, tone: "blue", path: "/principal/requests" },
     { id: "notices", name: "Notices", description: "School-wide updates, delivery and responses", icon: Megaphone, tone: "blue", path: "/principal/notices" },
     { id: "teacher-feedback", name: "Teacher feedback", description: "Create quick check-ins and review private results", icon: MessageCircle, tone: "teal", path: "/principal/teacher-feedback" },
+    { id: "campus", name: "Campus view", description: "See spaces, expected activity and recent recorded signals", icon: MapPinned, tone: "teal", path: "/principal/campus" },
     { id: "analytics", name: "Insights", description: "Trends, results, follow-ups and school operations", icon: ChartNoAxesCombined, tone: "blue", path: "/principal/insights" },
     { id: "departure", name: "Transport & departure", description: "Routes, rosters and student handover", icon: Bus, tone: "blue", path: "/principal/departure" },
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },
@@ -87,7 +88,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "governance", name: "Policies & governance", description: "Policies, authority and decision rules", icon: Scale, tone: "blue", path: "/principal/governance" },
     { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },
     { id: "events", name: "Events & activities", description: "Publish school activities, manage consent and event attendance", icon: CalendarDays, tone: "blue", path: "/principal/events" },
-    { id: "weekly", name: "Timetable & calendar", description: "Daily plan, weekly schedule and school dates", icon: CalendarDays, tone: "violet", path: "/principal/timetable" },
+    { id: "weekly", name: "Timetable", description: "Classes, events, holidays and school dates", icon: CalendarDays, tone: "violet", path: "/principal/timetable" },
     { id: "messages", name: "Messages", description: "School and family conversations", icon: MessageCircle, tone: "teal", path: "/principal/messages" },
     { id: "safeguarding", name: "Student concerns", description: "Confidential care and reported messages", icon: ShieldAlert, tone: "rose", path: "/principal/safeguarding" },
     { id: "administration", name: "Institute settings", description: "Academic setup, account access and history", icon: Settings2, tone: "slate", path: "/principal/administration" },

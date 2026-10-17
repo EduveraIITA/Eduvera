@@ -1,4 +1,4 @@
-import { CheckCircle2, GraduationCap, KeyRound } from "lucide-react";
+import { CheckCircle2, KeyRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
@@ -28,8 +28,8 @@ export function InvitationPage() {
     <div className="login">
       <form onSubmit={submit} className="login-card">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="icon-sq fill" style={{ width: 36, height: 36, borderRadius: 12 }}><GraduationCap size={20} strokeWidth={2} /></span>
-          <div><div className="t-hsm">OmniSchool</div><div className="lbl" style={{ color: "var(--brand-text)", letterSpacing: ".06em" }}>Portal</div></div>
+          <span className="icon-sq brand-icon" style={{ width: 58, height: 36, borderRadius: 12 }}><img className="thatcampus-logo" src="/thatcampus-logo-light.png" alt="" /></span>
+          <div><div className="t-hsm">ThatCampus</div><div className="lbl" style={{ color: "var(--brand-text)", letterSpacing: ".06em" }}>Portal</div></div>
         </div>
 
         {accepted ? (

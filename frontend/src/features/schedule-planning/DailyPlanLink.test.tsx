@@ -1,7 +1,7 @@
 import { cleanup,render,screen } from '@testing-library/react';
 import { afterEach,expect,it,vi } from 'vitest';
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { ScheduleSettingsRoute } from './ScheduleSettingsRoute';
 import PrincipalDayPlanPage from '../day-plans/PrincipalDayPlanPage';
@@ -19,6 +19,19 @@ it('links to the day schedule without a separate editing mode',async()=>{
   const url=new URL(link.getAttribute('href')!,'http://localhost');
   expect(url.searchParams.has('mode')).toBe(false);expect(url.searchParams.get('view')).toBe('day');
   expect(url.searchParams.get('class')).toBe('c1');expect(url.searchParams.get('date')).toBe('2026-10-12');
+});
+it('redirects the old class editor to the unified calendar and preserves its scope',async()=>{
+  function CalendarLocation(){const location=useLocation();return <output>{location.pathname}{location.search}</output>;}
+  mount(<Routes><Route path="/principal/timetable/weekly" element={<ScheduleSettingsRoute/>}/><Route path="/principal/timetable" element={<CalendarLocation/>}/></Routes>,'/principal/timetable/weekly?settings=pattern&class=c1&date=2026-10-12&view=year');
+  const target=await screen.findByText('/principal/timetable?class=c1&date=2026-10-12&view=week');
+  expect(target).toHaveTextContent('/principal/timetable?class=c1&date=2026-10-12&view=week');
+  expect(screen.queryByRole('heading',{name:'Class timetable'})).not.toBeInTheDocument();
+});
+it('keeps academic settings free of a second class timetable editor',async()=>{
+  mount(<ScheduleSettingsRoute/>,'/principal/timetable/weekly');
+  await screen.findByRole('button',{name:/Prepare next year/});
+  expect(screen.queryByRole('heading',{name:'Class timetables'})).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:/Working days & holidays/})).toBeVisible();
 });
 it('opens editing from the ordinary schedule menu without writing on navigation',async()=>{
   mount(<PrincipalDayPlanPage/>,'/principal/timetable?date=2026-10-12&class=c1');

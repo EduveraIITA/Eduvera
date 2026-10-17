@@ -9,6 +9,8 @@ const devAllowedHosts = (process.env.VITE_ALLOWED_HOSTS ?? "")
   .filter(Boolean);
 const allowAllDevHosts = devAllowedHosts.includes("*");
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
+const campusLabProxyTarget = process.env.VITE_CAMPUS_LAB_PROXY_TARGET ?? "http://127.0.0.1:8002";
+const campusLabProxyKey = process.env.CAMPUS_LAB_PROXY_KEY ?? "";
 const trustedProxyOrigin = `http://${devHost}:${devPort}`;
 const backendProxy = {
   target: apiProxyTarget,
@@ -41,6 +43,14 @@ export default defineConfig({
       "/metrics": backendProxy,
       "/readyz": backendProxy,
       "/release": backendProxy,
+      ...(campusLabProxyKey ? {
+        "/__campus-lab": {
+          target: campusLabProxyTarget,
+          changeOrigin: true,
+          headers: { "X-Campus-Lab-Key": campusLabProxyKey },
+          rewrite: (path: string) => path.replace(/^\/__campus-lab/u, ""),
+        },
+      } : {}),
     },
   },
   preview: {

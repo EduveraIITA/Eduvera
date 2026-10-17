@@ -100,6 +100,15 @@ export interface TeacherAttendanceResponse {
   class: { id: string; school_id: string; term_id: string; name: string; grade: string; section: string; room: string; board: string; term: string };
   periods: Array<{ id: string; period_number: number; starts_at: string; ends_at: string; display_title: string; room: string }>;
   roster: TeacherRosterStudent[];
+  pending_evidence?: Array<{
+    id: string;
+    student_id: string;
+    student_name: string;
+    admission_number: string;
+    capture_channel: string;
+    observed_at: string;
+    updated_at: string;
+  }>;
   register: AttendanceRegister;
   continuity_snapshot: {
     roster_fingerprint: string;
@@ -295,6 +304,18 @@ export function saveSessionAttendance(sessionId: string, input: TeacherAttendanc
     method: "POST",
     headers: { "Idempotency-Key": input.idempotency_key },
     body: JSON.stringify({ records: input.records, expected_revision: input.expected_revision, photo_session_id: input.photo_session_id, reason: input.reason }),
+  });
+}
+
+export function decideSessionAttendanceEvidence(
+  sessionId: string,
+  evidenceId: string,
+  input: { decision: "accepted" | "rejected"; note: string; expected_revision: number; idempotency_key: string },
+) {
+  return apiFetch<TeacherAttendanceResponse>(`/api/v1/attendance-model/sessions/${encodeURIComponent(sessionId)}/evidence/${encodeURIComponent(evidenceId)}/decision`, {
+    method: "POST",
+    headers: { "Idempotency-Key": input.idempotency_key },
+    body: JSON.stringify({ decision: input.decision, note: input.note, expected_revision: input.expected_revision }),
   });
 }
 

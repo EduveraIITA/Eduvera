@@ -42,7 +42,7 @@ const nav = {
   ],
 } as const;
 
-export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack, beforeBack, pageTitleTrailing }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void; beforeBack?: () => boolean | void; pageTitleTrailing?: ReactNode }) {
+export function OperationsShell({ portal, active, title, children, schoolName: selectedSchoolName, backTo, onBack, beforeBack, pageTitleTrailing, layout = "standard" }: { portal: Portal; active: Active; title: string; subtitle?: string; children: ReactNode; schoolName?: string; contentHasHeading?: boolean; backTo?: string; onBack?: () => void; beforeBack?: () => boolean | void; pageTitleTrailing?: ReactNode; layout?: "standard" | "immersive" | "canvas" }) {
   const auth = useOptionalAuth();
   const mobileNavIds = new Set(["home", "attendance", portal === "principal" ? "insights" : "timetable", "gate", "more"]);
   const { pathname } = useLocation();
@@ -73,10 +73,11 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
   const navigationActive = planning ? "timetable" : active === "events" ? "more" : active;
   const mobileActive = mobileNavIds.has(navigationActive) ? navigationActive : "more";
   const mobileNavigation = navigation.filter(({ id }) => mobileNavIds.has(id));
-  const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "Cambridge International School";
+  const schoolName = selectedSchoolName ?? auth?.memberships.find((membership) => membership.role === (portal === "teacher" ? "staff" : "admin"))?.school_name ?? "School";
+  const canvasLayout = layout === "canvas";
   return (
-    <div className={`operations-app operations-app--${portal}`}>
-      <aside className="operations-sidebar">
+    <div className={`operations-app operations-app--${portal}${layout !== "standard" ? ` operations-app--${layout}` : ""}`}>
+      {!canvasLayout ? <aside className="operations-sidebar">
         <SchoolBrand name={schoolName} className="operations-brand" />
         <nav aria-label={`${portal} portal navigation`}>
           {navigation.map(({ id, label, path, icon: Icon }, index) => (
@@ -93,16 +94,16 @@ export function OperationsShell({ portal, active, title, children, schoolName: s
         </nav>
         <div className="operations-sidebar__scope"><span>Current scope</span><strong>School operations</strong><small>Attendance, timetable, and secure communication.</small></div>
         <PoweredBy />
-      </aside>
+      </aside> : null}
       <div className="operations-workspace">
-        <header className="operations-topbar">
+        {!canvasLayout ? <header className="operations-topbar">
           <SchoolBrand name={schoolName} className="operations-topbar__brand" />
           <div className="operations-topbar__heading"><PortalPageTitle title={title} rootPath={`/${portal}`} backTo={backTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} /></div>
           <div className="operations-topbar__actions"><NotificationCenter buttonClassName="operations-icon-button" iconSize={20} /><AccountMenu buttonClassName="operations-profile-button" ariaLabel={`Open ${portal} profile`} iconSize={20} /></div>
-        </header>
-        <main className="operations-main" inert={assistantOpen}>{planningTabs ? <PlanningNavigation/> : null}{children}{active === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
-        {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal, pageTitle: title, permissions: member?.permissions }} /> : null}
-        {!(assistantEnabled && chat.fullPage) ? <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
+        </header> : null}
+        <main className="operations-main" inert={!canvasLayout && assistantOpen}>{!canvasLayout && planningTabs ? <PlanningNavigation/> : null}{children}{!canvasLayout && active === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
+        {!canvasLayout && assistantEnabled ? <AssistantPanel chat={chat} context={{ portal, pageTitle: title, permissions: member?.permissions }} /> : null}
+        {!canvasLayout && !(assistantEnabled && chat.fullPage) ? <nav className="operations-mobile-nav" aria-label={`${portal} portal navigation`}>
           {mobileNavigation.map(({ id, label, path, icon: Icon }, index) => <Fragment key={id}>
             {assistantEnabled && index === Math.min(2, mobileNavigation.length - 1) ? <AssistantTab chat={chat} /> : null}
             <NavLink to={path} end={id === "home"} aria-current={assistantActive ? false : mobileActive === id ? "page" : undefined}

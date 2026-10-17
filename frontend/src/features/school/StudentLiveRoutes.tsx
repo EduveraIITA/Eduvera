@@ -2,8 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Navigate,useNavigate,useSearchParams } from "react-router-dom";
 import { useProFeatures } from '../auth/useProFeatures';
+import { useOptionalAuth } from "../auth/AuthContext";
 import { schoolDateToday, shiftSchoolDate } from "../../lib/schoolTime";
 import { timetableSummaryRange, readTimetableView } from "../timetable/TimetableNavigator";
+import { resolveTimetableDisplayDate, type TimetableRehearsalIndicator } from "../planner/rehearsal";
 import { askAttendanceCopilot } from "../attendance/api";
 import { StudentAttendancePage } from "../../pages/student/StudentAttendancePage";
 import { StudentHomePage } from "../../pages/student/StudentHomePage";
@@ -67,13 +69,15 @@ function StudentAttendanceExperience({ openCopilot = false }: { openCopilot?: bo
 
 export function StudentHomeRoute() {
   const pro=useProFeatures();
+  const auth = useOptionalAuth();
   const query = useQuery({
     queryKey: ["school", "student", "home"],
     queryFn: getStudentHome,
   });
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
-  return <StudentHomePage data={adaptStudentHome(query.data)} proFeaturesEnabled={pro.enabled} />;
+  const schoolName = auth?.memberships.find((membership) => membership.role === "student")?.school_name;
+  return <StudentHomePage data={adaptStudentHome(query.data)} schoolName={schoolName} proFeaturesEnabled={pro.enabled} />;
 }
 
 export function StudentDiaryRoute() {
@@ -222,11 +226,11 @@ export function StudentLeaveStatusRoute() {
   );
 }
 
-export function StudentTimetableRoute() {
+export function StudentTimetableRoute({ rehearsal }: { rehearsal?: TimetableRehearsalIndicator | null } = {}) {
   const [params,setParams]=useSearchParams();
-  const date=params.get('date')||undefined;
+  const date=resolveTimetableDisplayDate(params.get('date'),rehearsal,schoolDateToday());
   const view = readTimetableView(params.get("view"));
-  const anchor=date??schoolDateToday();
+  const anchor=date;
   const range=timetableSummaryRange(anchor,view);
   const query = useQuery({
     queryKey: ["school", "student", "timetable",date],
@@ -241,6 +245,7 @@ export function StudentTimetableRoute() {
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   return (
     <StudentTimetablePage
+      rehearsal={rehearsal}
       dayPlan={query.data.day_plan} selectedDate={anchor} scheduleLoading={query.isPlaceholderData} onDateChange={date=>{const next=new URLSearchParams(params);next.set('date',date);setParams(next,{replace:true});}}
       view={view} onViewChange={nextView=>{const next=new URLSearchParams(params);next.set("view",nextView);setParams(next,{replace:true});}}
       onNavigate={(nextDate,nextView)=>{const next=new URLSearchParams(params);next.set("date",nextDate);next.set("view",nextView);setParams(next,{replace:true});}}

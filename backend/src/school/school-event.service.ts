@@ -1,8 +1,10 @@
 import {
+  Inject,
   Injectable,
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
   OnApplicationBootstrap,
   BeforeApplicationShutdown,
   ServiceUnavailableException,
@@ -17,6 +19,8 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import { postgresClientConnectionConfig } from "../database/connection-policy.js";
 import type { Database } from "../database/types.js";
+import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
+import { COORDINATION_RUNTIME_PORT, type CoordinationRuntimePort } from "../campus-model-core/coordination-runtime.port.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -92,9 +96,15 @@ interface AttendanceEventInput {
   classSectionId: string;
   termId: string;
   date: string;
+  sessionId?: string;
   requestId: string;
   records: AttendanceEventRecord[];
   suppressNotifications?: boolean;
+}
+
+export interface AttendanceEventReceipt {
+  studentEventIds: Map<string, string>;
+  classEventId: string | null;
 }
 
 interface RegisterEventInput {
@@ -102,10 +112,12 @@ interface RegisterEventInput {
   classSectionId: string;
   termId: string;
   date: string;
+  sessionId?: string;
   requestId: string;
   state: "submitted" | "locked" | "draft" | "unlocked";
   revision: number;
   actorId: string;
+  action?: string;
 }
 
 interface UserEventInput {
@@ -152,7 +164,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     oldestPendingSeconds: number;
   } | null = null;
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Optional() @Inject(CAMPUS_MODEL_CORE_PORT) private readonly campusModelCore?: CampusModelCorePort,
+    @Optional() @Inject(COORDINATION_RUNTIME_PORT) private readonly coordinationRuntime?: CoordinationRuntimePort,
+  ) {}
 
   onApplicationBootstrap(): void {
     void this.connectBroker();
@@ -269,8 +285,8 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     ].join("\n");
   }
 
-  async enqueueAttendanceUpdates(db: Db, input: AttendanceEventInput): Promise<void> {
-    if (!input.records.length) return;
+  async enqueueAttendanceUpdates(db: Db, input: AttendanceEventInput): Promise<AttendanceEventReceipt> {
+    if (!input.records.length) return { studentEventIds: new Map(), classEventId: null };
     const studentIds = [...new Set(input.records.map((record) => record.student_id))];
     const recipients = await sql<{
       student_id: string;
@@ -331,12 +347,13 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           class_section_id: input.classSectionId,
           term_id: input.termId,
           date: input.date,
+          ...(input.sessionId ? { session_id: input.sessionId } : {}),
           status: record.status,
           previous_status: record.previous_status ?? null,
           revision: record.revision ?? null,
-          refresh: ["student.home", "student.attendance", "student.eligibility", "parent.home", "parent.attendance", "teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "notifications", "attention"],
+          refresh: ["student.home", "student.attendance", "student.eligibility", "parent.home", "parent.attendance", "teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "attendance-model", "attendance-continuity", "campus-view", "notifications", "attention"],
         },
-        idempotency_key: `attendance:${input.requestId}:${input.date}:${record.student_id}`,
+        idempotency_key: `attendance:${input.requestId}:${input.date}:${record.student_id}${input.sessionId ? `:${input.sessionId}` : ""}`,
         notification_user_ids: material
           ? [...(recipient.student_user_id ? [recipient.student_user_id] : []), ...recipient.guardian_user_ids]
           : [],
@@ -384,7 +401,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
         WHERE e.class_section_id=${input.classSectionId}::uuid AND e.is_active
       ) audience
     `.execute(db);
-    await db.insertInto("event_outbox").values([
+    const eventRows = [
       ...rows,
       {
         school_id: input.schoolId,
@@ -396,17 +413,35 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           class_section_id: input.classSectionId,
           term_id: input.termId,
           date: input.date,
+          ...(input.sessionId ? { session_id: input.sessionId } : {}),
           reason: "class_ranking_changed",
-          refresh: ["student.attendance", "parent.attendance"],
+          refresh: ["student.attendance", "parent.attendance", "attendance-model", "attendance-continuity", "campus-view"],
         },
-        idempotency_key: `attendance-ranking:${input.requestId}:${input.date}:${input.classSectionId}`,
+        idempotency_key: `attendance-ranking:${input.requestId}:${input.date}:${input.classSectionId}${input.sessionId ? `:${input.sessionId}` : ""}`,
         notification_user_ids: [],
         notification_payload: null,
       },
-    ]).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
+    ];
+    const eventKeys = eventRows.map((row) => row.idempotency_key);
+    const inserted = await db.insertInto("event_outbox").values(eventRows)
+      .onConflict((conflict) => conflict.column("idempotency_key").doNothing())
+      .returning(["id", "aggregate_type", "aggregate_id", "idempotency_key"])
+      .execute();
+    const retained = inserted.length === eventRows.length
+      ? inserted
+      : await db.selectFrom("event_outbox")
+        .select(["id", "aggregate_type", "aggregate_id", "idempotency_key"])
+        .where("school_id", "=", input.schoolId)
+        .where("idempotency_key", "in", eventKeys)
+        .execute();
+    const studentEventIds = new Map(retained
+      .filter((event) => event.aggregate_type === "student")
+      .map((event) => [event.aggregate_id, event.id]));
+    const classEventId = retained.find((event) => event.aggregate_type === "class_section")?.id ?? null;
+    return { studentEventIds, classEventId };
   }
 
-  async enqueueRegisterEvent(db: Db, input: RegisterEventInput): Promise<void> {
+  async enqueueRegisterEvent(db: Db, input: RegisterEventInput): Promise<string> {
     const audience = await sql<{ user_id: string }>`
       SELECT DISTINCT m.user_id FROM school_memberships m
       JOIN users u ON u.id=m.user_id AND u.is_active
@@ -418,24 +453,34 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           WHERE p.class_section_id=${input.classSectionId}::uuid AND p.term_id=${input.termId}::uuid
             AND p.teacher_user_id=m.user_id AND NOT p.cancelled AND p.coverage_status='accepted'))))
     `.execute(db);
-    await db.insertInto("event_outbox").values({
+    const idempotencyKey = `attendance-register:${input.requestId}:${input.state}:${input.revision}${input.sessionId ? `:${input.sessionId}` : ""}`;
+    const inserted = await db.insertInto("event_outbox").values({
       school_id: input.schoolId,
       event_type: `attendance.register.${input.state}`,
-      aggregate_type: "class_section",
-      aggregate_id: input.classSectionId,
+      aggregate_type: input.sessionId ? "attendance_session" : "class_section",
+      aggregate_id: input.sessionId ?? input.classSectionId,
       audience_user_ids: audience.rows.map((row) => row.user_id),
       payload: {
         class_section_id: input.classSectionId,
         term_id: input.termId,
         date: input.date,
+        ...(input.sessionId ? { session_id: input.sessionId } : {}),
         state: input.state === "unlocked" ? "submitted" : input.state,
-        action: input.state,
+        action: input.action ?? input.state,
         revision: input.revision,
         actor_id: input.actorId,
-        refresh: ["teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "attention"],
+        refresh: ["teacher.attendance", "teacher.home", "principal.home", "principal.attendance", "principal.attendance-history", "attendance-model", "attendance-continuity", "campus-view", "attention"],
       },
-      idempotency_key: `attendance-register:${input.requestId}:${input.state}:${input.revision}`,
-    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
+      idempotency_key: idempotencyKey,
+    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing())
+      .returning("id").executeTakeFirst();
+    if (inserted) return inserted.id;
+    const retained = await db.selectFrom("event_outbox").select("id")
+      .where("school_id", "=", input.schoolId)
+      .where("idempotency_key", "=", idempotencyKey)
+      .executeTakeFirst();
+    if (!retained) throw new Error("Attendance register event could not be retained.");
+    return retained.id;
   }
 
   async enqueueUserEvent(db: Db, input: UserEventInput): Promise<void> {
@@ -505,7 +550,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             AND (now() AT TIME ZONE school.timezone)::date BETWEEN term.starts_on AND term.ends_on
           JOIN class_sections section ON section.school_id=school.id
             AND section.academic_year=term.academic_year
-          WHERE (now() AT TIME ZONE school.timezone)::time >= school.attendance_submission_cutoff
+          LEFT JOIN institution_operating_rules rule ON rule.school_id=school.id
+          WHERE (now() AT TIME ZONE school.timezone) >=
+              date_trunc('day',now() AT TIME ZONE school.timezone)+school.attendance_submission_cutoff
+                +(COALESCE(rule.attendance_overdue_reminder_minutes,15)||' minutes')::interval
+            AND COALESCE(rule.attendance_academic_mode,'scheduled_session')='daily_class'
             AND COALESCE((
               SELECT calendar.is_instructional
               FROM school_calendar_days calendar
@@ -533,20 +582,34 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               FROM school_memberships membership
               JOIN users account ON account.id=membership.user_id AND account.is_active
               WHERE membership.school_id=due.school_id AND membership.is_active
+                AND membership.role='staff'
                 AND (
-                  membership.role='admin'
-                  OR (membership.role='staff' AND EXISTS (
-                    SELECT 1 FROM effective_school_schedule(
-                      due.school_id,
-                      due.school_date
-                    ) slot
-                    WHERE slot.class_section_id=due.class_section_id
-                      AND slot.term_id=due.term_id
-                      AND slot.teacher_user_id=membership.user_id
-                      AND slot.slot_type IN ('class','activity')
-                      AND NOT slot.cancelled
-                      AND slot.coverage_status IN ('not_required','accepted')
-                  ))
+                  staff_has_class_permission(
+                    due.school_id,membership.user_id,'attendance.record',
+                    due.class_section_id,due.school_date
+                  )
+                  OR (
+                    NOT EXISTS (
+                      SELECT 1 FROM school_memberships owner_membership
+                      JOIN users owner_account ON owner_account.id=owner_membership.user_id
+                        AND owner_account.is_active
+                      WHERE owner_membership.school_id=due.school_id
+                        AND owner_membership.role='staff' AND owner_membership.is_active
+                        AND staff_has_class_permission(
+                          due.school_id,owner_membership.user_id,'attendance.record',
+                          due.class_section_id,due.school_date
+                        )
+                    )
+                    AND EXISTS (
+                      SELECT 1 FROM effective_school_schedule(due.school_id,due.school_date) slot
+                      WHERE slot.class_section_id=due.class_section_id
+                        AND slot.term_id=due.term_id
+                        AND slot.teacher_user_id=membership.user_id
+                        AND slot.slot_type IN ('class','activity')
+                        AND NOT slot.cancelled
+                        AND slot.coverage_status IN ('not_required','accepted')
+                    )
+                  )
                 )
               ORDER BY membership.user_id
             ) AS audience
@@ -564,6 +627,9 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             'term_id', prepared.term_id,
             'date', prepared.school_date,
             'state', 'overdue',
+            'owner_scope', 'effective_teacher',
+            'owner_user_id', prepared.audience[1],
+            'operating_rule_revision', COALESCE((SELECT revision FROM institution_operating_rules WHERE school_id=prepared.school_id),0),
             'refresh', jsonb_build_array(
               'teacher.home', 'teacher.attendance', 'principal.home',
               'principal.attendance', 'notifications', 'attention'
@@ -572,7 +638,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           concat('attendance-register-overdue:', prepared.school_id, ':', prepared.class_section_id, ':', prepared.school_date),
           prepared.audience,
           jsonb_build_object(
-            'title', 'Attendance register overdue',
+            'title', 'Attendance register reminder',
             'body', concat('Class ', prepared.grade, prepared.section, ' attendance has not been submitted.'),
             'staff_link', concat('/teacher/attendance?class_section_id=', prepared.class_section_id, '&date=', prepared.school_date),
             'admin_link', concat('/principal/attendance?class_section_id=', prepared.class_section_id, '&date=', prepared.school_date),
@@ -580,12 +646,221 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             'date', prepared.school_date
           )
         FROM prepared
-        WHERE cardinality(prepared.audience) > 0
+        WHERE cardinality(prepared.audience) = 1
         ON CONFLICT (idempotency_key) DO NOTHING
       `.execute(this.db);
+      await sql`
+        WITH active_schools AS MATERIALIZED (
+          SELECT school.id AS school_id,school.timezone,
+            (now() AT TIME ZONE school.timezone)::date AS school_date,
+            COALESCE(rule.attendance_session_close_after_minutes,30)::int AS close_after_minutes,
+            COALESCE(rule.attendance_overdue_reminder_minutes,15)::int AS reminder_minutes,
+            COALESCE(rule.revision,0)::int AS rule_revision
+          FROM schools school
+          JOIN academic_terms term ON term.school_id=school.id AND term.is_active
+            AND (now() AT TIME ZONE school.timezone)::date BETWEEN term.starts_on AND term.ends_on
+          LEFT JOIN institution_operating_rules rule ON rule.school_id=school.id
+          WHERE COALESCE(rule.attendance_academic_mode,'scheduled_session')='scheduled_session'
+            AND COALESCE((SELECT calendar.is_instructional FROM school_calendar_days calendar
+              WHERE calendar.school_id=school.id
+                AND calendar.date=(now() AT TIME ZONE school.timezone)::date),true)
+        ), materialized AS (
+          INSERT INTO attendance_session_registers(
+            school_id,class_section_id,term_id,subject_id,schedule_slot_id,session_date,
+            period_number,starts_at,ends_at,title,room,scheduled_teacher_id
+          )
+          SELECT scope.school_id,slot.class_section_id,slot.term_id,slot.subject_id,slot.id,scope.school_date,
+            slot.period_number,slot.starts_at,slot.ends_at,COALESCE(NULLIF(subject.name,''),NULLIF(slot.title,''),'Scheduled session'),
+            slot.room,slot.teacher_user_id
+          FROM active_schools scope
+          CROSS JOIN LATERAL effective_school_schedule(scope.school_id,scope.school_date) slot
+          JOIN subjects subject ON subject.id=slot.subject_id AND subject.school_id=scope.school_id
+          WHERE slot.slot_type='class' AND slot.subject_id IS NOT NULL AND NOT slot.cancelled
+          ON CONFLICT(school_id,session_date,schedule_slot_id) DO NOTHING
+          RETURNING id
+        ), due AS MATERIALIZED (
+          SELECT register.id,register.school_id,register.class_section_id,register.term_id,
+            register.subject_id,register.session_date,register.period_number,register.ends_at,
+            register.scheduled_teacher_id,scope.rule_revision,section.grade,section.section,subject.name AS subject_name
+          FROM active_schools scope
+          JOIN attendance_session_registers register ON register.school_id=scope.school_id
+            AND register.session_date=scope.school_date
+          JOIN class_sections section ON section.id=register.class_section_id
+          JOIN subjects subject ON subject.id=register.subject_id
+          JOIN school_memberships membership ON membership.school_id=register.school_id
+            AND membership.user_id=register.scheduled_teacher_id AND membership.role='staff' AND membership.is_active
+          JOIN users account ON account.id=membership.user_id AND account.is_active
+          WHERE register.state='draft' AND register.scheduled_teacher_id IS NOT NULL
+            AND now() >= ((register.session_date+register.ends_at) AT TIME ZONE scope.timezone
+              +((scope.close_after_minutes+scope.reminder_minutes)||' minutes')::interval)
+        )
+        INSERT INTO event_outbox(
+          school_id,event_type,aggregate_type,aggregate_id,audience_user_ids,payload,idempotency_key,
+          notification_user_ids,notification_payload
+        )
+        SELECT due.school_id,'attendance.session.overdue','attendance_session',due.id,
+          ARRAY[due.scheduled_teacher_id],jsonb_build_object(
+            'session_id',due.id,'class_section_id',due.class_section_id,'term_id',due.term_id,
+            'subject_id',due.subject_id,'date',due.session_date,'period_number',due.period_number,
+            'state','overdue','owner_user_id',due.scheduled_teacher_id,
+            'operating_rule_revision',due.rule_revision,
+            'refresh',jsonb_build_array('teacher.home','teacher.attendance','notifications','attention')
+          ),concat('attendance-session-overdue:',due.id),ARRAY[due.scheduled_teacher_id],
+          jsonb_build_object(
+            'title','Subject attendance reminder',
+            'body',concat(due.subject_name,' · Class ',due.grade,due.section,' has not been submitted.'),
+            'staff_link',concat('/teacher/attendance?date=',due.session_date,'&session_id=',due.id),
+            'session_id',due.id,'class_section_id',due.class_section_id,'date',due.session_date
+          )
+        FROM due
+        ON CONFLICT(idempotency_key) DO NOTHING
+      `.execute(this.db);
+      await this.coordinateOverdueRegisters();
     } catch (error) {
       this.logger.warn(`Overdue attendance register scan failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async coordinateOverdueRegisters(batchSize = 100): Promise<number> {
+    const coordinationRuntime = this.coordinationRuntime;
+    if (!coordinationRuntime) return 0;
+    return this.db.transaction().execute(async (db) => {
+      const work = await sql<{
+        outbox_id: string;
+        school_id: string;
+        event_type: "attendance.register.overdue" | "attendance.session.overdue";
+        aggregate_id: string;
+        owner_user_id: string;
+        rule_revision: number;
+        approved_by: string;
+        occurred_at: Date | string;
+        payload: Record<string, unknown>;
+        class_label: string;
+        subject_label: string | null;
+      }>`SELECT outbox.id AS outbox_id,outbox.school_id,outbox.event_type,
+          outbox.aggregate_id::text AS aggregate_id,outbox.audience_user_ids[1] AS owner_user_id,
+          rule.revision::int AS rule_revision,rule.updated_by AS approved_by,
+          outbox.created_at AS occurred_at,outbox.payload,
+          concat('Class ',section.grade,section.section) AS class_label,
+          CASE WHEN outbox.event_type='attendance.session.overdue' THEN subject.name ELSE NULL END AS subject_label
+        FROM event_outbox outbox
+        JOIN institution_operating_rules rule ON rule.school_id=outbox.school_id AND rule.updated_by IS NOT NULL
+        JOIN class_sections section ON section.id=(outbox.payload->>'class_section_id')::uuid
+          AND section.school_id=outbox.school_id
+        LEFT JOIN subjects subject ON subject.id=(outbox.payload->>'subject_id')::uuid
+          AND subject.school_id=outbox.school_id
+        WHERE outbox.event_type IN ('attendance.register.overdue','attendance.session.overdue')
+          AND cardinality(outbox.audience_user_ids)=1
+          AND NOT EXISTS(SELECT 1 FROM campus_model_events event
+            WHERE event.school_id=outbox.school_id AND event.source_outbox_event_id=outbox.id)
+        ORDER BY outbox.created_at,outbox.id
+        LIMIT ${Math.max(1, Math.min(500, Math.trunc(batchSize)))}
+        FOR UPDATE OF outbox SKIP LOCKED`.execute(db);
+      for (const item of work.rows) {
+        const occurredAt = new Date(item.occurred_at).toISOString();
+        const date = typeof item.payload.date === "string" ? item.payload.date : occurredAt.slice(0, 10);
+        const sessionId = typeof item.payload.session_id === "string" ? item.payload.session_id : null;
+        const classSectionId = typeof item.payload.class_section_id === "string"
+          ? item.payload.class_section_id
+          : null;
+        if (!classSectionId) throw new Error("An overdue attendance event is missing its class context.");
+        const subject = item.subject_label ? `${item.subject_label} · ${item.class_label}` : `${item.class_label} daily attendance`;
+        await coordinationRuntime.publishAcceptedEvent(db, {
+          school_id: item.school_id,
+          source_outbox_event_id: item.outbox_id,
+          event_kind: "domain_event",
+          event_type: item.event_type,
+          subject: {
+            kind: "attendance_register",
+            domain: "attendance",
+            domain_id: sessionId ?? `${item.aggregate_id}:${date}`,
+            label: subject,
+            lifecycle_state: "active",
+            source_revision: Math.max(1, item.rule_revision),
+            metadata: { class_section_id: classSectionId, session_id: sessionId, date },
+          },
+          context: null,
+          actor_user_id: item.approved_by,
+          occurred_at: occurredAt,
+          effective_from: occurredAt,
+          effective_until: null,
+          source_domain: "attendance",
+          source_record_id: item.aggregate_id,
+          source_revision: Math.max(1, item.rule_revision),
+          correlation_id: randomUUID(),
+          causation_event_id: null,
+          idempotency_key: `attendance-completion:${item.outbox_id}`,
+          payload: {
+            workflow: "attendance_completion",
+            class_section_id: classSectionId,
+            session_id: sessionId,
+            date,
+            operating_rule_revision: item.rule_revision,
+          },
+          message: {
+            subject: "Attendance register needs completion",
+            summary: `${subject} has not been submitted after its configured deadline.`,
+            payload: {
+              workflow: "attendance_completion",
+              class_section_id: classSectionId,
+              session_id: sessionId,
+              date,
+              operating_rule_revision: item.rule_revision,
+              action_path: `/teacher/attendance?date=${encodeURIComponent(date)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : `&class_section_id=${encodeURIComponent(classSectionId)}`}`,
+            },
+          },
+          selector_input: {
+            selector_key: "attendance_register_owner",
+            recipient_agents: [{ agent_kind: "human", user_id: item.owner_user_id }],
+            scope: null,
+          },
+        });
+      }
+      const satisfied = await sql<{
+        message_id: string;
+        school_id: string;
+        register_state: "submitted" | "locked";
+      }>`SELECT message.id AS message_id,message.school_id,
+          CASE
+            WHEN message.payload->>'session_id' IS NOT NULL THEN session_register.state
+            ELSE daily_register.state
+          END AS register_state
+        FROM campus_model_operational_messages message
+        LEFT JOIN attendance_session_registers session_register
+          ON session_register.school_id=message.school_id
+          AND session_register.id=(message.payload->>'session_id')::uuid
+        LEFT JOIN attendance_registers daily_register
+          ON daily_register.school_id=message.school_id
+          AND daily_register.class_section_id=(message.payload->>'class_section_id')::uuid
+          AND daily_register.date=(message.payload->>'date')::date
+        WHERE message.state IN ('queued','delivered','acknowledged')
+          AND message.payload->>'workflow'='attendance_completion'
+          AND (
+            (message.payload->>'session_id' IS NOT NULL
+              AND session_register.state IN ('submitted','locked'))
+            OR
+            (message.payload->>'session_id' IS NULL
+              AND daily_register.state IN ('submitted','locked'))
+          )
+        ORDER BY message.queued_at,message.id
+        FOR UPDATE OF message SKIP LOCKED`.execute(db);
+      const occurredAt = new Date().toISOString();
+      for (const item of satisfied.rows) {
+        await coordinationRuntime.recordMessageOutcome(db, {
+          school_id: item.school_id,
+          message_id: item.message_id,
+          state: "cancelled",
+          actor: null,
+          source_outbox_event_id: null,
+          code: "attendance_register_completed",
+          explanation: `The authoritative attendance register is ${item.register_state}; the completion task is no longer actionable.`,
+          response: null,
+          occurred_at: occurredAt,
+          idempotency_key: `attendance-completion-satisfied:${item.message_id}:${item.register_state}`,
+        });
+      }
+      return work.rows.length + satisfied.rows.length;
+    });
   }
 
   private async finalizeDueAttendanceRegisters(batchSize = 100): Promise<number> {
@@ -639,19 +914,62 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               automated: true,
             },
           }).execute();
-          await this.enqueueRegisterEvent(db, {
+          const registerEventId = await this.enqueueRegisterEvent(db, {
             schoolId: register.school_id, classSectionId: register.class_section_id,
             termId: register.term_id, date: register.date, requestId,
             state: "locked", revision, actorId: register.submitted_by,
           });
+          if (this.campusModelCore) await this.campusModelCore.recordAcceptedChange(db, {
+            school_id: register.school_id,
+            actor_user_id: register.submitted_by,
+            command_type: "attendance.register.finalize_automatically",
+            target: { domain: "attendance", domain_id: register.id },
+            idempotency_key: `attendance-register-auto-finalize:${register.id}:${revision}`,
+            correlation_id: requestId,
+            causation_id: null,
+            expected_revision: Number(register.revision),
+            authority_evidence: [
+              `attendance_register:${register.id}`,
+              `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
+            ],
+            operating_rule_version_ref: `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
+            source_domain: "attendance",
+            safe_context: {
+              class_section_id: register.class_section_id,
+              term_id: register.term_id,
+              date: register.date,
+              automation_executor: "attendance_register_auto_finalize",
+            },
+            entities: [{
+              kind: "attendance_register",
+              domain: "attendance",
+              domain_id: register.id,
+              label: `Daily attendance · ${register.date}`,
+              lifecycle_state: "active",
+              source_revision: revision,
+              metadata: { class_section_id: register.class_section_id, term_id: register.term_id, date: register.date },
+            }],
+            relationships: [],
+            outcome: {
+              code: "finalized_automatically",
+              explanation: "The submitted attendance register became final under the institution's snapshotted Operating rule.",
+              resulting_revision: revision,
+              metadata: {
+                scheduled_at: new Date(register.auto_finalize_at).toISOString(),
+                finalization_policy_revision: register.finalization_policy_revision,
+                automation_executor: "attendance_register_auto_finalize",
+              },
+            },
+            domain_event_id: registerEventId,
+          });
         }
         const sessionLimit = Math.max(0, limit - due.rows.length);
         const dueSessions = sessionLimit ? await sql<{
-          id: string; school_id: string; class_section_id: string; subject_id: string;
+          id: string; school_id: string; class_section_id: string; term_id: string; subject_id: string;
           session_date: string; period_number: number; revision: number; submitted_by: string;
           auto_finalize_at: Date; finalization_policy_revision: number | null;
         }>`
-          SELECT register.id,register.school_id,register.class_section_id,register.subject_id,
+          SELECT register.id,register.school_id,register.class_section_id,register.term_id,register.subject_id,
             register.session_date::text,register.period_number,register.revision,register.submitted_by,
             register.auto_finalize_at,register.finalization_policy_revision
           FROM attendance_session_registers register
@@ -687,6 +1005,69 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               automated: true,
             },
           }).execute();
+          const registerEventId = await this.enqueueRegisterEvent(db, {
+            schoolId: register.school_id,
+            classSectionId: register.class_section_id,
+            termId: register.term_id,
+            date: register.session_date,
+            sessionId: register.id,
+            requestId,
+            state: "locked",
+            revision,
+            actorId: register.submitted_by,
+            action: "finalized_automatically",
+          });
+          if (this.campusModelCore) await this.campusModelCore.recordAcceptedChange(db, {
+            school_id: register.school_id,
+            actor_user_id: register.submitted_by,
+            command_type: "attendance.session.finalize_automatically",
+            target: { domain: "attendance", domain_id: register.id },
+            idempotency_key: `attendance-session-auto-finalize:${register.id}:${revision}`,
+            correlation_id: requestId,
+            causation_id: null,
+            expected_revision: Number(register.revision),
+            authority_evidence: [
+              `attendance_session_register:${register.id}`,
+              `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
+            ],
+            operating_rule_version_ref: `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
+            source_domain: "attendance",
+            safe_context: {
+              class_section_id: register.class_section_id,
+              term_id: register.term_id,
+              subject_id: register.subject_id,
+              date: register.session_date,
+              period_number: register.period_number,
+              automation_executor: "attendance_register_auto_finalize",
+            },
+            entities: [{
+              kind: "attendance_register",
+              domain: "attendance",
+              domain_id: register.id,
+              label: `Subject attendance · ${register.session_date} · Period ${register.period_number}`,
+              lifecycle_state: "active",
+              source_revision: revision,
+              metadata: {
+                class_section_id: register.class_section_id,
+                term_id: register.term_id,
+                subject_id: register.subject_id,
+                session_date: register.session_date,
+                period_number: register.period_number,
+              },
+            }],
+            relationships: [],
+            outcome: {
+              code: "finalized_automatically",
+              explanation: "The submitted subject attendance register became final under the institution's snapshotted Operating rule.",
+              resulting_revision: revision,
+              metadata: {
+                scheduled_at: new Date(register.auto_finalize_at).toISOString(),
+                finalization_policy_revision: register.finalization_policy_revision,
+                automation_executor: "attendance_register_auto_finalize",
+              },
+            },
+            domain_event_id: registerEventId,
+          });
         }
         return due.rows.length + dueSessions.rows.length;
       });

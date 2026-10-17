@@ -85,4 +85,29 @@ describe("RequestInboxView", () => {
       "/work/staff-leave?school=school-1&request=10000000-0000-4000-a000-000000000001&context=teacher",
     );
   });
+
+  it("opens an invigilation request in the existing assessment duty workspace", () => {
+    const invigilation: RequestInboxItem = {
+      ...item("invigilation-offer", "high", "academics", "Mathematics mid-term"),
+      kind: "assessment_invigilation",
+      source_id: "10000000-0000-4000-a000-000000000001",
+      status_label: "Invigilation response needed",
+      action_label: "Review duty",
+      href: "/teacher/assessments?assessment=20000000-0000-4000-a000-000000000002",
+      subject_label: "Mathematics",
+    };
+    const teacherData: RequestInboxResponse = {
+      ...data,
+      portal: "teacher",
+      summary: { total: 1, urgent: 0, high: 1, normal: 0, categories: { academics: 1 } },
+      items: [invigilation],
+    };
+
+    render(<MemoryRouter><RequestInboxView data={teacherData} /></MemoryRouter>);
+
+    const link = screen.getByRole("link", { name: /Mathematics mid-term/ });
+    expect(link).toHaveAttribute("href", "/teacher/assessments?assessment=20000000-0000-4000-a000-000000000002");
+    expect(screen.getByText("Invigilation response needed")).toBeVisible();
+    expect(screen.getByText("Review duty")).toBeVisible();
+  });
 });

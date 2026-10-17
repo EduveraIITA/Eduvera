@@ -12,6 +12,10 @@ import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
+import {
+  STAFF_COVERAGE_RECONCILIATION_PORT,
+  type StaffCoverageReconciliationPort,
+} from "../staff-operations/staff-coverage-reconciliation.service.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import { SchoolService } from "../school/school.service.js";
 import {
@@ -73,6 +77,7 @@ export class DayPlanService {
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
     private readonly school: SchoolService,
+    @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
     @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
   ) {}
   options(user: AuthUser, schoolId: string, date: string) {
@@ -458,6 +463,28 @@ export class DayPlanService {
           throw new ConflictException(
             "The underlying timetable changed after this draft was prepared. Discard the draft and prepare a fresh revision.",
           );
+        const coverageReconciliationInput = {
+          school_id: plan.school_id,
+          from: String(plan.date),
+          to: String(plan.date),
+          class_section_id: plan.class_section_id,
+          actor_user_id: req.authUser.id,
+          correlation_id: req.requestId,
+          cause: {
+            kind: "day_plan_published",
+            source_domain: "day_plan",
+            source_record_id: plan.id,
+            source_revision: plan.revision + 1,
+          },
+        };
+        // Capture retained accepted cover against the still-current plan before
+        // this publication supersedes it. The post-write phase below then
+        // reconciles that projected decision against the new effective plan.
+        const coveragePreparation =
+          await this.coverage.prepareEffectiveCoverageProjection(
+            db,
+            coverageReconciliationInput,
+          );
         const oldStored = plan.published_version
           ? await periods(db, id, plan.published_version)
           : [];
@@ -504,9 +531,15 @@ export class DayPlanService {
         ).rows.map((r) => r.student_id);
         await this.school.refreshSubjectAttendance(db, recorded);
         await this.projectPublishedPlan(db, req, plan, plan.draft_version, plan.revision + 1);
+        const coverageReceipt = await this.coverage.reconcileEffectiveCoverage(
+          db,
+          coverageReconciliationInput,
+        );
         await audit(db, req, plan, "published", {
           version: plan.draft_version,
           reason: version.reason,
+          coverage_projection_preparation: coveragePreparation,
+          coverage_reconciliation: coverageReceipt,
         });
         await planEvent(
           db,

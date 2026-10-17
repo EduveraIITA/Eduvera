@@ -416,6 +416,15 @@ describe("campus event planning", () => {
     expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/teacher/events?view=past");
   });
 
+  it("prefills an event from the planner and returns there on cancel", () => {
+    const returnTo = "/principal/planner?date=2026-10-14&view=month";
+    render(<MemoryRouter initialEntries={[`/principal/events/new?starts_at=2026-10-14T09%3A00&ends_at=2026-10-14T12%3A00&return_to=${encodeURIComponent(returnTo)}`]}><EventEditorPage catalog={catalog} onSave={vi.fn()} /></MemoryRouter>);
+
+    expect(screen.getAllByLabelText("Starts")[0]).toHaveValue("2026-10-14T09:00");
+    expect(screen.getAllByLabelText("Ends")[0]).toHaveValue("2026-10-14T12:00");
+    expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", returnTo);
+  });
+
   it("keeps session subsets scoped and searchable without rendering an always-open student wall", async () => {
     render(<MemoryRouter><EventEditorPage catalog={catalog} onSave={vi.fn()} /></MemoryRouter>);
     const user = userEvent.setup();

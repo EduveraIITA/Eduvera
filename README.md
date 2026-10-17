@@ -1,6 +1,6 @@
-# OmniSchool — Edura attendance vertical
+# ThatCampus — ThatCampus attendance vertical
 
-OmniSchool is being built as a complete School OS. This repository contains the
+ThatCampus is being built as a complete School OS. This repository contains the
 first vertical: student, parent, teacher, and principal attendance and timetable
 operations, leave, diary, secure accounts, notifications, and an attendance AI assistant. The visual language is
 implemented from the supplied Stitch screens; product behavior that was not
@@ -298,7 +298,7 @@ The primary development baseline is
 Use the [implementation record](docs/blueprint/IMPLEMENTATION_PLAN.md) for current
 delivery evidence, accepted decisions, dependency order, and remaining gaps.
 
-The repository also includes the broader Eduvera planning documents:
+The repository also includes the broader ThatCampus planning documents:
 
 - [`01_DESIGN.md`](01_DESIGN.md)
 - [`02_TECHNICAL_ARCHITECTURE.md`](02_TECHNICAL_ARCHITECTURE.md)

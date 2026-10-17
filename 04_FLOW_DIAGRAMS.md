@@ -1,4 +1,4 @@
-# EDUVERA — Flow Diagrams
+# THATCAMPUS — Flow Diagrams
 
 **Document:** 04_FLOW_DIAGRAMS.md  
 **Format:** Mermaid  
@@ -12,7 +12,7 @@
 
 ```mermaid
 flowchart TD
-    START[Open EDUVERA]
+    START[Open THATCAMPUS]
 
     START --> PUB{Authenticated?}
     PUB -- No --> WEBSITE[Public School Website]
@@ -327,7 +327,7 @@ sequenceDiagram
 sequenceDiagram
     participant P as Parent
     participant APP as Mobile/Web
-    participant API as EDUVERA API
+    participant API as THATCAMPUS API
     participant PAY as Payment Provider
     participant W as Payment Webhook
     participant LED as Fee Ledger

@@ -7,21 +7,21 @@
   align-items: center;
   gap: .75rem;
   padding: 1rem;
-  border: 1px solid var(--edura-border);
-  border-radius: var(--edura-radius-card);
-  background: var(--edura-surface);
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
 }
 .invitation-confirmation__icon {
   display: grid;
   place-items: center;
   flex: 0 0 3rem;
   height: 3rem;
-  color: var(--edura-warning);
+  color: var(--thatcampus-warning);
 }
-.invitation-confirmation--sent .invitation-confirmation__icon { color: var(--edura-positive); }
+.invitation-confirmation--sent .invitation-confirmation__icon { color: var(--thatcampus-positive); }
 .invitation-confirmation__icon svg { width: 3rem; height: 3rem; }
 .invitation-confirmation--sent circle {
-  fill: var(--edura-positive-soft);
+  fill: var(--thatcampus-positive-soft);
   transform-origin: center;
   animation: invitation-sent-pop 420ms ease-out both;
 }
@@ -35,8 +35,8 @@
   animation: invitation-sent-check 360ms 200ms ease-out both;
 }
 .invitation-confirmation__message { min-width: 0; flex: 1; }
-.invitation-confirmation__message h2 { margin: 0 0 .25rem; font-size: 1rem; color: var(--edura-ink); }
-.invitation-confirmation__message p { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--edura-ink-secondary); overflow-wrap: anywhere; }
+.invitation-confirmation__message h2 { margin: 0 0 .25rem; font-size: 1rem; color: var(--thatcampus-ink); }
+.invitation-confirmation__message p { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--thatcampus-ink-secondary); overflow-wrap: anywhere; }
 .invitation-confirmation__message .invitation-confirmation__help { margin-top: .5rem; }
 .invitation-confirmation__close {
   display: grid;
@@ -45,13 +45,13 @@
   height: 2.75rem;
   padding: 0;
   border: 0;
-  border-radius: var(--edura-radius-control);
+  border-radius: var(--thatcampus-radius-control);
   background: transparent;
-  color: var(--edura-ink-secondary);
+  color: var(--thatcampus-ink-secondary);
   cursor: pointer;
 }
-.invitation-confirmation__close:hover { background: var(--edura-surface-soft); }
-.invitation-confirmation__close:focus-visible { outline: 2px solid var(--edura-brand); outline-offset: 2px; }
+.invitation-confirmation__close:hover { background: var(--thatcampus-surface-soft); }
+.invitation-confirmation__close:focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 2px; }
 @keyframes invitation-sent-pop { from { transform: scale(.65); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes invitation-sent-check { from { stroke-dashoffset: 32; } to { stroke-dashoffset: 0; } }
 @media (prefers-reduced-motion: reduce) {
@@ -72,11 +72,11 @@
   padding: 2.5rem 1.5rem 2rem;
   gap: 1rem;
   text-align: center;
-  background: color-mix(in srgb, var(--edura-surface) 78%, transparent);
-  border-color: color-mix(in srgb, var(--edura-border) 60%, transparent);
+  background: color-mix(in srgb, var(--thatcampus-surface) 78%, transparent);
+  border-color: color-mix(in srgb, var(--thatcampus-border) 60%, transparent);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
-  box-shadow: var(--edura-shadow-raised);
+  box-shadow: var(--thatcampus-shadow-raised);
   animation: invitation-popup-enter 240ms ease-out both;
 }
 .invitation-confirmation--popup::backdrop {
@@ -96,7 +96,7 @@
   .invitation-confirmation--popup { animation: none; }
 }
 .invitation-confirmation--popup:not([open]) { display: none; }
-.invitation-confirmation__spinner { color: var(--edura-brand); animation: invitation-sending-spin 1s linear infinite; }
+.invitation-confirmation__spinner { color: var(--thatcampus-brand); animation: invitation-sending-spin 1s linear infinite; }
 @keyframes invitation-sending-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .invitation-confirmation__spinner { animation: none; } }
-@media (prefers-reduced-transparency: reduce) { .invitation-confirmation--popup { background: var(--edura-surface); backdrop-filter: none; } }
+@media (prefers-reduced-transparency: reduce) { .invitation-confirmation--popup { background: var(--thatcampus-surface); backdrop-filter: none; } }

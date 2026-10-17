@@ -12,6 +12,17 @@ export interface ScheduleRow extends PlanPeriod {
   plan_version: number | null;
   notice: string;
   coverage_status: string;
+  occurrence_key: string;
+  source_kind: "daily_plan" | "published_timetable" | "legacy_timetable";
+  source_record_id: string;
+  source_revision: number;
+  source_version: number | null;
+  coverage_record_id: string | null;
+  coverage_task_id: string | null;
+  coverage_task_revision: number | null;
+  original_teacher_user_id: string | null;
+  replacement_staff_profile_id: string | null;
+  coverage_accepted_at: Date | null;
 }
 export async function effectiveSchedule(
   db: PlanDb,
@@ -19,7 +30,7 @@ export async function effectiveSchedule(
   date: string,
 ) {
   return (
-    await sql<ScheduleRow>`SELECT * FROM effective_school_schedule(${schoolId}::uuid,${date}::date) ORDER BY starts_at,period_number`.execute(
+    await sql<ScheduleRow>`SELECT * FROM effective_school_schedule_v3(${schoolId}::uuid,${date}::date) ORDER BY starts_at,period_number`.execute(
       db,
     )
   ).rows;
@@ -29,6 +40,7 @@ export async function lockSchedule(db: PlanDb, schoolId: string) {
     db,
   );
 }
+
 export interface ScheduleConflict {
   period_number: number;
   other_period: number;

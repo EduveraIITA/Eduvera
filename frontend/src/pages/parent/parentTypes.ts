@@ -70,8 +70,9 @@ export interface ParentHomeData {
     homeworkRecent?: number;
     homeworkPrevious?: number;
     homeworkDetail: string;
-    duesStatus: string;
-    duesDetail: string;
+    feeStatus: string;
+    feeDetail: string;
+    feeState: "unavailable" | "not_configured" | "clear" | "outstanding" | "overdue" | "refund_due" | "mixed";
     termLabel: string;
   };
   homeroomTeacher: {

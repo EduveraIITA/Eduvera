@@ -7,7 +7,7 @@ export async function sendTransactionalEmail(input: {to: string; subject: string
   if (settings.INVITATION_EMAIL_PROVIDER === 'resend') {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
-      headers: {Authorization: `Bearer ${settings.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'User-Agent': 'Eduera/1.0'},
+      headers: {Authorization: `Bearer ${settings.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'User-Agent': 'ThatCampus/1.0'},
       body: JSON.stringify({from: `${input.senderName} <${settings.INVITATION_EMAIL_FROM}>`, to: [input.to], subject: input.subject, text: input.text, html: input.html, ...((input.inlineImages?.length || input.attachments?.length)?{attachments:[...(input.inlineImages??[]).map(image=>({filename:image.filename,content:image.content,content_type:image.contentType,content_id:image.cid})),...(input.attachments??[]).map(file=>({filename:file.filename,content:file.content,content_type:file.contentType}))]}:{})}),
     });
     if (!response.ok) throw Object.assign(new Error('Email API rejected request'), {code: [401,403].includes(response.status) ? 'EAPI_AUTH' : 'EAPI'});

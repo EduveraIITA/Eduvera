@@ -1,12 +1,12 @@
 # Fee, payment and review behavior
 
 Decision date: 2 October 2026. User confirmed that “review” means fee/payment
-review, not school ratings. This extends the existing Eduera ledger; the primary
+review, not school ratings. This extends the existing ThatCampus ledger; the primary
 product reference is School Operations Blueprint section 17.
 
 ## Research and product decisions
 
-| Evidence | Implication for Eduera |
+| Evidence | Implication for ThatCampus |
 | --- | --- |
 | Fedena exposes paid/unpaid fees and historical fee records to families [1] | Keep invoice, balance and receipt history together, scoped to the selected child. |
 | Fedena documents partial/full fee payment [2] | Accept positive partial amounts up to the current balance. Do not infer that one receipt clears an invoice. |

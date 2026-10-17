@@ -544,13 +544,21 @@ typed operational response or become the source of campus truth.
 
 7. The configured rule either finalizes automatically after its delay or routes a
    review request to the authorized owner.
-8. A missing submission becomes attention only after the configured deadline.
+8. A missing submission becomes attention only after the configured deadline. The
+   responsible teacher receives the first reminder; an authorized administrator queue
+   receives it only after the separate configured escalation delay.
+9. The reminder is one typed Task for one effective owner. A missing or ambiguous
+   owner fails closed for configuration review; it never becomes a broadcast alert.
+10. Submitting, finalizing or locking the authoritative register closes the still-open
+    completion Task. Reading its notification does not close it.
 
 **UI result**
 
 - Teacher sees one primary action: **Take attendance**, **Continue** or **Submit**.
 - Principal grouping says `6 of 8 submitted`; the two unresolved child rows explain
   why.
+- Scheduled-session and daily-class completion work never appear together for one
+  active attendance mode.
 - Correcting an accepted register creates revision history rather than rewriting it.
 
 ### 13.2 Staff leave and cover
@@ -696,6 +704,35 @@ accepted evidence.
 
 The following are conceptual versioned API contracts. Exact code ownership may differ,
 but equivalent evidence is required.
+
+### 14.1 One campus state, role-appropriate projections
+
+A user-visible operational state may be rendered only through an authorized
+role/domain projection. Authoritative fields come from the owning domain's committed
+records; Model Core fields are typed, provenance-bearing context (`expected`,
+`observed`, `accepted`, `derived` or `unknown`), never a second writable truth.
+
+Every material mutation retains one correlated chain in the same owning-domain
+transaction where applicable:
+
+```text
+actor command or observation
+ -> current authority and Operating-rule evaluation
+ -> domain state, correction lineage and audit
+ -> durable outbox event
+ -> Model Core evidence/message where applicable
+ -> targeted role-projection invalidation and refetch
+```
+
+The browser never reads Model Core persistence tables or a generic `/dt/state` and
+never writes a domain cache from a simulator/model response. Application composition
+APIs combine domain truth with only the minimum authorized model context needed by the
+role. If model projection processing is delayed, the UI labels that context
+**Delayed** or **Unknown** with its `asOf` time; it does not hide, downgrade or replace
+the already accepted domain result. Rehearsal/simulation state remains isolated and
+labelled and cannot enter a normal query cache or claim accepted/live campus state.
+
+### 14.2 Conceptual projection contracts
 
 ```ts
 type OperationalWorkItem = {

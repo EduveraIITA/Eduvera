@@ -195,7 +195,7 @@ export class PhotoAttendanceService {
     if (binding && classes.some((item) => item.id === binding.provider_class_id)) {
       return binding.provider_class_id;
     }
-    const stableName = `Edura ${className} [${classSectionId}]`;
+    const stableName = `ThatCampus ${className} [${classSectionId}]`;
     const provider = classes.find((item) => item.name === stableName) ?? await this.vision.createClass(stableName);
     if (binding) {
       await this.db.transaction().execute(async (tx) => {

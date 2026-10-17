@@ -10,5 +10,6 @@ backend/storage/leave-documents/*
 gha-creds-*.json
 .runtime
 tmp
+devtools/campus-simulator/
 **/.env
 **/.env.*

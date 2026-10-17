@@ -15,7 +15,7 @@ export class RazorpayController {
   @Get('schools/:schoolId/fees/invoices/:id/razorpay/receipts/:receiptId/pdf/')
   async receipt(@Req() req: AuthenticatedRequest,@Param('schoolId') school:string,@Param('id') id:string,@Param('receiptId') receiptId:string,@Res() reply:FastifyReply) {
     const pdf=await this.payments.receipt(req.authUser,school,id,receiptId);
-    return reply.header('Cache-Control','private, no-store').header('Content-Disposition',`attachment; filename="Eduera-test-receipt-${receiptId}.pdf"`).type('application/pdf').send(pdf);
+    return reply.header('Cache-Control','private, no-store').header('Content-Disposition',`attachment; filename="ThatCampus-test-receipt-${receiptId}.pdf"`).type('application/pdf').send(pdf);
   }
   @Public()
   @SkipCsrf()

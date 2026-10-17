@@ -105,6 +105,13 @@ const PrincipalDayPlanPage = lazy(() => import('./features/day-plans/PrincipalDa
 const PrincipalTimetableExperienceRoute = lazy(async () => ({ default: (await import("./features/experiments/TimetableExperienceRoutes")).PrincipalTimetableExperienceRoute }));
 const PrincipalCalendarExperienceRoute = lazy(async () => ({ default: (await import("./features/experiments/TimetableExperienceRoutes")).PrincipalCalendarExperienceRoute }));
 const ExperimentalSettingsPage = lazy(() => import("./features/experiments/ExperimentalSettingsPage"));
+const CampusViewPage = lazy(() => import("./features/campus-view/CampusViewPage"));
+const CampusViewDevelopmentPage = import.meta.env.DEV ? lazy(() => import("./dev/campus-lab/CampusViewDevelopmentPage")) : null;
+const PrincipalTimetableDevelopmentRoute = import.meta.env.DEV ? lazy(() => import("./dev/campus-lab/PrincipalTimetableDevelopmentRoute")) : null;
+const CampusLabProjectionProvider = import.meta.env.DEV ? lazy(() => import("./dev/campus-lab/CampusLabProjectionContext")) : null;
+const ParentTimetableDevelopmentRoute = import.meta.env.DEV ? lazy(() => import("./dev/campus-lab/ParentTimetableDevelopmentRoute")) : null;
+const StudentTimetableDevelopmentRoute = import.meta.env.DEV ? lazy(() => import("./dev/campus-lab/StudentTimetableDevelopmentRoute")) : null;
+const TeacherTimetableDevelopmentRoute = import.meta.env.DEV ? lazy(() => import("./dev/campus-lab/TeacherTimetableDevelopmentRoute")) : null;
 const TeacherDayPage = lazy(() => import('./features/day-plans/TeacherDayPage'));
 const PeoplePage = lazy(() => import("./features/people/PeoplePage"));
 const PeopleImportPage = lazy(() => import("./features/people/PeopleImportPage"));
@@ -206,12 +213,18 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
   }
 }
 
+function CampusLabProjectionBoundary({ children }: { children: ReactNode }) {
+  if (!CampusLabProjectionProvider) return children;
+  return <CampusLabProjectionProvider>{children}</CampusLabProjectionProvider>;
+}
+
 export function App() {
   return (
     <AppProviders>
       <AppErrorBoundary>
         <PortalScreenFrame>
           <Suspense fallback={<ThatCampusLoader label="Opening your school portal…" />}>
+            <CampusLabProjectionBoundary>
             <Routes>
               <Route path="/gate" element={<AuthenticatedOnly><GatePage /></AuthenticatedOnly>} />
               <Route path="/teacher/gate" element={<PortalOnly portal="teacher"><GatePage /></PortalOnly>} />
@@ -248,7 +261,7 @@ export function App() {
               <Route path="/parent/attendance" element={<PortalOnly portal="parent"><ParentAttendanceRoute /></PortalOnly>} />
               <Route path="/parent/leave" element={<PortalOnly portal="parent"><ParentLeaveRoute /></PortalOnly>} />
               <Route path="/parent/diary" element={<PortalOnly portal="parent"><ParentDiaryRoute /></PortalOnly>} />
-              <Route path="/parent/timetable" element={<PortalOnly portal="parent"><ParentTimetableRoute /></PortalOnly>} />
+              <Route path="/parent/timetable" element={<PortalOnly portal="parent">{ParentTimetableDevelopmentRoute ? <ParentTimetableDevelopmentRoute /> : <ParentTimetableRoute />}</PortalOnly>} />
               <Route path="/parent/messages" element={<PortalOnly portal="parent"><ParentChatRoute /></PortalOnly>} />
               <Route path="/parent/events" element={<PortalOnly portal="parent"><ParentEventsRoute /></PortalOnly>} />
               <Route path="/parent/events/:eventId" element={<PortalOnly portal="parent"><ParentEventDetailRoute /></PortalOnly>} />
@@ -270,7 +283,7 @@ export function App() {
               <Route path="/student/classes" element={<Navigate to="/student/timetable" replace />} />
               <Route path="/student/leave/new" element={<PortalOnly portal="student"><StudentLeaveNewRoute /></PortalOnly>} />
               <Route path="/student/leave" element={<PortalOnly portal="student"><StudentLeaveStatusRoute /></PortalOnly>} />
-              <Route path="/student/timetable" element={<PortalOnly portal="student"><StudentTimetableRoute /></PortalOnly>} />
+              <Route path="/student/timetable" element={<PortalOnly portal="student">{StudentTimetableDevelopmentRoute ? <StudentTimetableDevelopmentRoute /> : <StudentTimetableRoute />}</PortalOnly>} />
               <Route path="/student/timetable/week" element={<PortalOnly portal="student"><StudentWeekGridRoute /></PortalOnly>} />
 
               <Route path="/student/copilot" element={<PortalOnly portal="student"><StudentCopilotRoute /></PortalOnly>} />
@@ -286,7 +299,7 @@ export function App() {
 
               <Route path="/teacher" element={<PortalOnly portal="teacher"><TeacherHomeRoute /></PortalOnly>} />
               <Route path="/teacher/attendance" element={<PortalOnly portal="teacher"><TeacherAttendanceRoute /></PortalOnly>} />
-              <Route path="/teacher/timetable" element={<PortalOnly portal="teacher"><TeacherDayPage /></PortalOnly>} />
+              <Route path="/teacher/timetable" element={<PortalOnly portal="teacher">{TeacherTimetableDevelopmentRoute ? <TeacherTimetableDevelopmentRoute /> : <TeacherDayPage />}</PortalOnly>} />
               <Route path="/teacher/timetable/weekly" element={<PortalOnly portal="teacher"><TeacherTimetableRoute /></PortalOnly>} />
               <Route path="/teacher/messages" element={<PortalOnly portal="teacher"><TeacherChatRoute /></PortalOnly>} />
               <Route path="/teacher/safeguarding" element={<PortalOnly portal="teacher"><TeacherSafeguardingRoute /></PortalOnly>} />
@@ -319,7 +332,7 @@ export function App() {
               {(["review", "recording", "followups", "learning-review", "operations", "finance"] as const).map(topic => <Route key={`insight-review-${topic}`} path={`/principal/insights/${topic}`} element={<PortalOnly portal="principal"><PrincipalInsightsPage topic={topic} /></PortalOnly>} />)}
               <Route path="/principal/insights/review/:studentId" element={<PortalOnly portal="principal"><PrincipalInsightsPage topic="review" /></PortalOnly>} />
               <Route path="/principal/attendance" element={<PortalOnly portal="principal"><PrincipalAttendanceRoute /></PortalOnly>} />
-              <Route path="/principal/timetable" element={<PortalOnly portal="principal"><PrincipalTimetableExperienceRoute /></PortalOnly>} />
+              <Route path="/principal/timetable" element={<PortalOnly portal="principal">{PrincipalTimetableDevelopmentRoute ? <PrincipalTimetableDevelopmentRoute /> : <PrincipalTimetableExperienceRoute />}</PortalOnly>} />
               <Route path="/principal/timetable/day" element={<PortalOnly portal="principal"><PrincipalDayPlanPage /></PortalOnly>} />
               <Route path="/principal/timetable/weekly" element={<PortalOnly portal="principal"><PrincipalTimetableRoute /></PortalOnly>} />
               <Route path="/principal/students" element={<PortalOnly portal="principal"><PeoplePage /></PortalOnly>} />
@@ -339,6 +352,8 @@ export function App() {
               <Route path="/principal/events/:eventId/sessions/:sessionId/attendance" element={<PortalOnly portal="principal"><PrincipalEventRegisterRoute /></PortalOnly>} />
               <Route path="/principal/more" element={<PortalOnly portal="principal"><PrincipalMoreRoute /></PortalOnly>} />
               <Route path="/principal/experimental" element={<PortalOnly portal="principal"><ExperimentalSettingsPage /></PortalOnly>} />
+              <Route path="/principal/campus" element={<PortalOnly portal="principal">{CampusViewDevelopmentPage ? <CampusViewDevelopmentPage /> : <CampusViewPage />}</PortalOnly>} />
+              {CampusViewDevelopmentPage ? <Route path="/principal/campus-lab" element={<PortalOnly portal="principal"><Navigate to="/principal/campus" replace /></PortalOnly>} /> : null}
               <Route path="/principal/requests" element={<PortalOnly portal="principal"><PrincipalRequestsRoute /></PortalOnly>} />
               <Route path="/principal/student-leave" element={<PortalOnly portal="principal"><PrincipalStudentLeavePage /></PortalOnly>} />
               <Route path="/principal/notices" element={<PortalOnly portal="principal"><PrincipalNoticesRoute /></PortalOnly>} />
@@ -354,6 +369,7 @@ export function App() {
 
               <Route path="*" element={<RoleLanding />} />
             </Routes>
+            </CampusLabProjectionBoundary>
           </Suspense>
         </PortalScreenFrame>
       </AppErrorBoundary>

@@ -192,7 +192,7 @@ describe("implemented application routes", () => {
       expect(container.querySelector<HTMLImageElement>(".powered-by img")?.src).toContain("/assets/thatcampus-logo.png");
     }
     cleanup();
-    const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><OperationsShell portal="teacher" active="home" title="Today" subtitle="Your day"><span /></OperationsShell></MemoryRouter></QueryClientProvider>);
+    const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><OperationsShell portal="teacher" active="home" title="Today" subtitle="Your day" schoolName="Cambridge International School"><span /></OperationsShell></MemoryRouter></QueryClientProvider>);
     expect(container.querySelectorAll(".school-brand__crest")).toHaveLength(2);
     container.querySelectorAll(".school-brand__crest").forEach((crest) => expect(crest).toHaveTextContent("CIS"));
     container.querySelectorAll(".school-brand__name").forEach((name) => expect(name).toHaveTextContent("Cambridge International School"));
@@ -474,6 +474,11 @@ describe("implemented application routes", () => {
     expect(homeworkTrend.closest(".metric-card__value-row")).toContainElement(homework.getByText("1/12"));
     expect(homeworkTrend.querySelector("svg.lucide-trending-down")).toBeInTheDocument();
     expect(homework.getByText("last 30d vs prior 30d")).toBeVisible();
+    const fees = within(screen.getByText("Fees", { selector: ".metric-card__header span" }).closest("article")!);
+    expect(fees.getByText("₹8,500.00 due")).toBeVisible();
+    expect(fees.getByText(/₹6,000\.00 overdue/)).toBeVisible();
+    expect(fees.getByText("₹8,500.00 due")).not.toHaveClass("is-positive");
+    expect(screen.queryByText("All Cleared")).not.toBeInTheDocument();
   });
 
   it("formats homework as pending over all assignments in the term", async () => {
@@ -662,7 +667,7 @@ describe("implemented application routes", () => {
     await waitFor(()=>expect(view.container.querySelector(".parent-app")).toHaveAttribute("data-child-accent","violet"));
     const parentApp=view.container.querySelector<HTMLElement>(".parent-app")!;
     expect(parentApp.style.getPropertyValue("--parent-primary")).toBe("#5b279b");
-    expect(parentApp.style.getPropertyValue("--edura-feature-gradient")).toContain("#7436bd");
+    expect(parentApp.style.getPropertyValue("--thatcampus-feature-gradient")).toContain("#7436bd");
     expect(parentApp.style.getPropertyValue("--parent-stack-secondary-gradient")).toContain("#2969e7");
     const profileColors=Array.from(view.container.querySelectorAll<HTMLElement>(".parent-child-profiles__layer")).map((layer)=>layer.style.getPropertyValue("--profile-accent"));
     expect(profileColors).toEqual(["#7436bd","#1d4ed8"]);

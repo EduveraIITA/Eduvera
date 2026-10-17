@@ -100,7 +100,7 @@ suite("institution activation and account trust against PostgreSQL 17", () => {
     const created = await request("onboarding/coaching-workspaces/", {
       name: "Kiran Tutorials", code: `coach-${suffix.slice(0, 8)}`, timezone: "Asia/Kolkata", delivery_mode: "hybrid", minors_enrolled: true,
     });
-    expect(created.status).toBe(201);
+    expect(created.status, JSON.stringify(created.data)).toBe(201);
     schoolId = created.data.id;
     const before = await request(`schools/${schoolId}/activation/`);
     expect(before.status).toBe(200);
@@ -116,9 +116,46 @@ suite("institution activation and account trust against PostgreSQL 17", () => {
       contact_name: "Kiran Tutorials office", contact_phone: "+91 9000000000", contact_email: "",
       teaching_days: [1, 2, 3, 4, 5, 6], starts_at: "17:00", ends_at: "18:00",
     });
-    expect(quick.status).toBe(201);
+    expect(quick.status, JSON.stringify(quick.data)).toBe(201);
     expect(quick.data.counts).toMatchObject({ terms: 1, cohorts: 1, subjects: 1, schedule: 6 });
     expect((await pool.query("SELECT count(*)::int AS count FROM attendance_policies policy JOIN academic_terms term ON term.id=policy.term_id WHERE term.school_id=$1", [schoolId])).rows[0].count).toBe(1);
+    const convergenceEvents = await pool.query(
+      "SELECT event_type,aggregate_type,payload,audience_user_ids FROM event_outbox WHERE school_id=$1 AND (idempotency_key LIKE 'activation:%') ORDER BY sequence",
+      [schoolId],
+    );
+    expect(convergenceEvents.rows.filter((row) => row.event_type === "administration.updated")).toHaveLength(3);
+    expect(convergenceEvents.rows.filter((row) => row.event_type === "timetable.updated")).toHaveLength(6);
+    expect(convergenceEvents.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ aggregate_type: "term", payload: expect.objectContaining({ catalog_kind: "terms" }) }),
+      expect.objectContaining({ aggregate_type: "class", payload: expect.objectContaining({ catalog_kind: "classes" }) }),
+      expect.objectContaining({ aggregate_type: "subject", payload: expect.objectContaining({ catalog_kind: "subjects" }) }),
+      expect.objectContaining({ aggregate_type: "timetable_slot", payload: expect.objectContaining({ class_section_id: expect.any(String), refresh: expect.arrayContaining(["calendar", "institution-activation"]) }) }),
+    ]));
+    expect(convergenceEvents.rows.every((row) => row.audience_user_ids.includes(userId))).toBe(true);
+    const temporalFoundation = (await pool.query(`SELECT
+        (SELECT count(DISTINCT event.source_record_id)::int
+          FROM campus_model_events event
+          WHERE event.school_id=$1 AND event.event_type='timetable.legacy_slot_created') AS source_count,
+        (SELECT count(*)::int
+          FROM campus_model_schedule_occurrences occurrence
+          JOIN campus_model_events basis ON basis.id=occurrence.basis_event_id
+            AND basis.school_id=occurrence.school_id
+          WHERE occurrence.school_id=$1 AND occurrence.recorded_until IS NULL
+            AND basis.event_type='timetable.legacy_slot_created') AS occurrence_count,
+        EXISTS(SELECT 1 FROM campus_model_agent_endpoints endpoint
+          WHERE endpoint.school_id=$1 AND endpoint.endpoint_kind='account'
+            AND endpoint.provider='thatcampus' AND endpoint.user_id=$2
+            AND endpoint.status='active' AND endpoint.effective_until IS NULL) AS owner_identity,
+        (SELECT bool_and(slot.revision=1 AND slot.updated_by=$2)
+          FROM timetable_slots slot
+          JOIN class_sections section ON section.id=slot.class_section_id
+          WHERE section.school_id=$1) AS sources_versioned`, [schoolId, userId])).rows[0];
+    expect(temporalFoundation).toMatchObject({
+      source_count: 6,
+      owner_identity: true,
+      sources_versioned: true,
+    });
+    expect(temporalFoundation.occurrence_count).toBeGreaterThan(0);
     expect((await request(`schools/${schoolId}/activation/quick-start/`, {
       academic_year: "2026-27", term_name: "Again", starts_on: "2026-04-01", ends_on: "2027-03-31",
       grade_or_program: "Again", section: "A", subjects: [{ code: "SCI", name: "Science", short_name: "Science" }],

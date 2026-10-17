@@ -28,7 +28,7 @@ describe("ParentLeavePage", () => {
 
     render(
       <TestQueryProvider><MemoryRouter>
-        <ParentLeavePage onAuthorize={onAuthorize} />
+        <ParentLeavePage data={fallbackLeaveData} onAuthorize={onAuthorize} />
       </MemoryRouter></TestQueryProvider>,
     );
 
@@ -73,7 +73,7 @@ describe("ParentLeavePage", () => {
     const user = userEvent.setup();
     render(
       <TestQueryProvider><MemoryRouter initialEntries={["/sentinel", "/parent/leave"]} initialIndex={1}>
-        <ParentLeavePage />
+        <ParentLeavePage data={fallbackLeaveData} />
         <HistoryProbe />
       </MemoryRouter></TestQueryProvider>,
     );

@@ -8,7 +8,7 @@ capture/evidence requirements of School Operations Blueprint section 17.
 
 User override, 9 October 2026: the supplied test credentials are temporary server-side defaults when `DEPLOYMENT_ENVIRONMENT=stage`. Sandbox checkout defaults to enabled in that scope. Environment variables override the defaults; set `RAZORPAY_ENABLED=false` to disable it. Payment sandbox access is independent of demo login access; managed deployments keep `DEMO_MODE=false`.
 
-Optional **server environment overrides** on the existing Eduera Stage service:
+Optional **server environment overrides** on the existing ThatCampus Stage service:
 
 - `RAZORPAY_ENABLED=true`
 - `RAZORPAY_KEY_ID`: the account's `rzp_test_...` key

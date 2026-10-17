@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Pool } from "pg";
 import { DatabaseService } from "../src/database/database.service.js";
 import type { AuthenticatedRequest, AuthUser } from "../src/common/request.js";
@@ -13,6 +13,8 @@ import {
   requireIsolatedTestDatabaseUrl,
   requireManagedTestApiBaseUrl,
 } from "./test-database.js";
+import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
+import type { CampusModelCorePort } from "../src/campus-model-core/campus-model-core.port.js";
 
 const port = 8022;
 const base = requireManagedTestApiBaseUrl(process.env.API_BASE_URL, `http://127.0.0.1:${port}`);
@@ -173,7 +175,7 @@ afterAll(async () => {
   server?.kill("SIGTERM");
 });
 
-describe("OmniSchool API", () => {
+describe("ThatCampus API", () => {
   it("serves reviewed import APIs with session, role, CSRF and private download enforcement",async()=>{
     const principal=new BrowserSession();expect((await principal.login("meera.principal")).status).toBe(200);
     const scope=(await pool.query("SELECT t.school_id,t.id FROM academic_terms t JOIN school_memberships m ON m.school_id=t.school_id JOIN users u ON u.id=m.user_id WHERE u.username='meera.principal' AND m.role='admin' AND t.is_active LIMIT 1")).rows[0];
@@ -1010,6 +1012,26 @@ describe("OmniSchool API", () => {
     expect(currentStudent).toMatchObject({ name: "Aarav Sharma", rank: expect.any(Number) });
     expect(home.semester_metrics.attendance_rank).toBe(currentStudent.rank);
     expect(home.semester_metrics.attendance_trend_percent === null || Number.isFinite(home.semester_metrics.attendance_trend_percent)).toBe(true);
+    const feeLedger = await json(await browser.request(`/api/v1/schools/${home.student.school.id}/fees/?student_id=${home.student.id}`));
+    const term = home.student.current_enrollment.term;
+    const applicableInvoices = feeLedger.invoices.filter((invoice: any) =>
+      (invoice.due_on >= term.starts_on && invoice.due_on <= term.ends_on)
+      || ((invoice.balance_paise > 0 || invoice.refund_due_paise > 0) && invoice.due_on <= term.ends_on));
+    const expectedOutstanding = applicableInvoices.reduce((sum: number, invoice: any) => sum + invoice.balance_paise, 0);
+    const expectedOverdue = applicableInvoices
+      .filter((invoice: any) => invoice.due_on < home.semester_metrics.fee_status.as_of)
+      .reduce((sum: number, invoice: any) => sum + invoice.balance_paise, 0);
+    const expectedRefund = applicableInvoices.reduce((sum: number, invoice: any) => sum + invoice.refund_due_paise, 0);
+    expect(home.semester_metrics).not.toHaveProperty("dues_status");
+    expect(home.semester_metrics.fee_status).toMatchObject({
+      source: "fee_ledger",
+      scope: "current_term_and_carried_balance",
+      term_id: term.id,
+      invoice_count: applicableInvoices.length,
+      outstanding_paise: applicableInvoices.length ? expectedOutstanding : null,
+      overdue_paise: applicableInvoices.length ? expectedOverdue : null,
+      refund_due_paise: applicableInvoices.length ? expectedRefund : null,
+    });
     expect(home.contacts[0]).toMatchObject({ name: "Ms. Kavita Mehta", email: "kavita.mehta@cambridge.example.test" });
     const parentLeave = await json(await browser.request(`/api/v1/screens/parent/leave/${home.action_required.id}/`));
     expect(parentLeave.constraints).toMatchObject({
@@ -1058,6 +1080,7 @@ describe("OmniSchool API", () => {
     const item = before.homework_items.find((entry: any) => !entry.completed_at);
     expect(item).toBeDefined();
     const path = `/api/v1/homework/${item.id}/complete/`;
+    const existingEvents = Number((await pool.query("SELECT count(*) AS count FROM event_outbox WHERE event_type='diary.updated' AND aggregate_type='homework_completion' AND aggregate_id=$1 AND payload->>'student_id'=$2", [item.id, before.student.id])).rows[0].count);
     try {
       const marked = await guardian.request(path, { method: "POST", body: JSON.stringify({ student_id: before.student.id }) }, true);
       expect(marked.status).toBe(200);
@@ -1072,6 +1095,8 @@ describe("OmniSchool API", () => {
     } finally {
       expect((await guardian.request(`${path}?student_id=${before.student.id}`, { method: "DELETE" }, true)).status).toBe(200);
     }
+    const events = await pool.query("SELECT payload FROM event_outbox WHERE event_type='diary.updated' AND aggregate_type='homework_completion' AND aggregate_id=$1 AND payload->>'student_id'=$2 ORDER BY sequence", [item.id, before.student.id]);
+    expect(events.rows.slice(existingEvents).map((row) => row.payload.action)).toEqual(["completed", "reopened"]);
   });
 
   it("keeps clarification non-destructive and records the guardian note", async () => {
@@ -1099,7 +1124,7 @@ describe("OmniSchool API", () => {
     expect((await browser.request("/api/v1/leave-requests/", { method: "POST", body: withoutCsrf })).status).toBe(403);
     const form = new FormData();
     form.set("category", "medical"); form.set("starts_on", "2026-10-12"); form.set("ends_on", "2026-10-13"); form.set("reason", "Doctor advised two days of rest and observation.");
-    form.set("file", new File(["%PDF-1.4\nOmniSchool integration note"], "doctor-note.pdf", { type: "application/pdf" }));
+    form.set("file", new File(["%PDF-1.4\nThatCampus integration note"], "doctor-note.pdf", { type: "application/pdf" }));
     const response = await browser.request("/api/v1/leave-requests/", { method: "POST", body: form }, true);
     expect(response.status).toBe(201);
     const leave = await json(response); cleanupLeaves.push(leave.id);
@@ -1107,7 +1132,7 @@ describe("OmniSchool API", () => {
     expect(leave.documents).toHaveLength(1);
     const download = await browser.request(new URL(leave.documents[0].file_url).pathname);
     expect(download.status).toBe(200);
-    expect(await download.text()).toContain("OmniSchool integration note");
+    expect(await download.text()).toContain("ThatCampus integration note");
   });
 
   it("enforces the medical-document threshold published by the attendance policy", async () => {
@@ -1594,7 +1619,11 @@ describe("OmniSchool API", () => {
   it("revalidates teacher authority inside the attendance write transaction", async () => {
     const database = new DatabaseService();
     const events = new SchoolEventService(database);
-    const school = new SchoolService(database, events);
+    const school = new SchoolService(
+      database,
+      events,
+      createStaffCoverageReconciliationTestDouble(),
+    );
     const user = (await pool.query<{
       id: string; username: string; email: string; first_name: string;
       last_name: string; role: "staff"; is_active: boolean;
@@ -1943,7 +1972,7 @@ describe("OmniSchool API", () => {
     });
   });
 
-  it("deduplicates overdue register alerts and targets only the assigned teacher and school administrator", async () => {
+  it("deduplicates overdue register reminders and targets only the assigned teacher", async () => {
     const schoolId = randomUUID();
     const termId = randomUUID();
     const classSectionId = randomUUID();
@@ -1986,6 +2015,12 @@ describe("OmniSchool API", () => {
         VALUES ($1, $3, 'staff', true), ($2, $3, 'admin', true)
       `, [actor.teacher_id, actor.admin_id, schoolId]);
       await pool.query(`
+        INSERT INTO institution_operating_rules(
+          school_id,attendance_academic_mode,attendance_overdue_reminder_minutes,
+          attendance_overdue_escalation_minutes,updated_by
+        ) VALUES($1,'daily_class',0,60,$2)
+      `, [schoolId, actor.admin_id]);
+      await pool.query(`
         INSERT INTO timetable_slots (
           id, class_section_id, term_id, weekday, period_number,
           starts_at, ends_at, slot_type, title, room,
@@ -2022,9 +2057,9 @@ describe("OmniSchool API", () => {
         SELECT event_type, audience_user_ids, notification_user_ids, payload
         FROM event_outbox WHERE id=$1
       `, [eventId]);
-      const expectedAudience = [actor.teacher_id, actor.admin_id].sort();
-      expect([...event.rows[0]!.audience_user_ids].sort()).toEqual(expectedAudience);
-      expect([...event.rows[0]!.notification_user_ids].sort()).toEqual(expectedAudience);
+      const expectedAudience = [actor.teacher_id];
+      expect(event.rows[0]!.audience_user_ids).toEqual(expectedAudience);
+      expect(event.rows[0]!.notification_user_ids).toEqual(expectedAudience);
       expect(event.rows[0]).toMatchObject({
         event_type: "attendance.register.overdue",
         payload: {
@@ -2032,6 +2067,8 @@ describe("OmniSchool API", () => {
           term_id: termId,
           date: schoolDate,
           state: "overdue",
+          owner_scope: "effective_teacher",
+          owner_user_id: actor.teacher_id,
         },
       });
 
@@ -2044,7 +2081,7 @@ describe("OmniSchool API", () => {
       `, [`event:${eventId}`]);
       expect(notifications.rows.map((row) => row.recipient_id).sort()).toEqual(expectedAudience);
       expect(notifications.rows.find((row) => row.role === "staff")?.link).toBe(`/teacher/attendance?class_section_id=${classSectionId}&date=${schoolDate}`);
-      expect(notifications.rows.find((row) => row.role === "admin")?.link).toBe(`/principal/attendance?class_section_id=${classSectionId}&date=${schoolDate}`);
+      expect(notifications.rows.find((row) => row.role === "admin")).toBeUndefined();
 
       await pool.query(`
         UPDATE event_maintenance_leases SET last_claimed_at=NULL
@@ -2057,7 +2094,7 @@ describe("OmniSchool API", () => {
           (SELECT count(*)::text FROM event_outbox WHERE idempotency_key=$1) AS events,
           (SELECT count(*)::text FROM notifications WHERE dedupe_key=$2) AS notifications
       `, [fullIdempotencyKey, `event:${eventId}`]);
-      expect(duplicateCounts.rows[0]).toEqual({ events: "1", notifications: "2" });
+      expect(duplicateCounts.rows[0]).toEqual({ events: "1", notifications: "1" });
     } finally {
       if (eventId) await pool.query("DELETE FROM notifications WHERE dedupe_key=$1", [`event:${eventId}`]);
       await pool.query("DELETE FROM event_outbox WHERE school_id=$1", [schoolId]);
@@ -2076,7 +2113,10 @@ describe("OmniSchool API", () => {
     const registerId = randomUUID();
     const code = `AUTO-FINAL-${randomUUID().slice(0, 8)}`;
     const eventDatabase = new DatabaseService();
-    const scanner = new SchoolEventService(eventDatabase);
+    const recordAcceptedChange = vi.fn().mockResolvedValue({});
+    const scanner = new SchoolEventService(eventDatabase, {
+      recordAcceptedChange,
+    } as unknown as CampusModelCorePort);
     let actorId = "";
     try {
       const actor = await pool.query<{ id: string }>("SELECT id FROM users WHERE username='kavita.staff'");
@@ -2155,6 +2195,16 @@ describe("OmniSchool API", () => {
         event_type: "attendance.register.locked",
         payload: { state: "locked", action: "locked", revision: 8 },
       });
+      expect(recordAcceptedChange).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        school_id: schoolId,
+        actor_user_id: actorId,
+        command_type: "attendance.register.finalize_automatically",
+        target: { domain: "attendance", domain_id: registerId },
+        expected_revision: 7,
+        operating_rule_version_ref: "institution_operating_rules:12",
+        outcome: expect.objectContaining({ code: "finalized_automatically", resulting_revision: 8 }),
+        domain_event_id: expect.any(String),
+      }));
 
       await pool.query(`
         UPDATE event_maintenance_leases SET last_claimed_at=NULL
@@ -2184,7 +2234,11 @@ describe("OmniSchool API", () => {
     const suffix = randomUUID().slice(0, 8);
     const database = new DatabaseService();
     const events = new SchoolEventService(database);
-    const school = new SchoolService(database, events);
+    const school = new SchoolService(
+      database,
+      events,
+      createStaffCoverageReconciliationTestDouble(),
+    );
     try {
       await pool.query(`
         INSERT INTO users (

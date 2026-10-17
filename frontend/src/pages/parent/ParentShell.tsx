@@ -23,7 +23,6 @@ import { getAccessibleStudents } from "../../features/school/api";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import { AssistantPanel, AssistantTab } from "../../features/assistant/DemoChat";
 import { useDemoChat } from "../../features/assistant/useDemoChat";
-import { demoParentChild } from "./parentDemoData";
 import type { ParentChildSummary, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
@@ -54,10 +53,10 @@ function accentVariables(theme: (typeof childAccentThemes)[number]) {
     "--parent-soft-2": theme.strong,
     "--parent-soft-3": theme.fixed,
     "--parent-accent-shadow": theme.shadow,
-    "--edura-brand": theme.primary,
-    "--edura-brand-bright": theme.bright,
-    "--edura-brand-soft": theme.fixed,
-    "--edura-feature-gradient": theme.gradient,
+    "--thatcampus-brand": theme.primary,
+    "--thatcampus-brand-bright": theme.bright,
+    "--thatcampus-brand-soft": theme.fixed,
+    "--thatcampus-feature-gradient": theme.gradient,
     "--primary": theme.primary,
     "--primary-bright": theme.bright,
     "--primary-fixed": theme.fixed,
@@ -102,7 +101,7 @@ export interface ParentShellProps {
 export function ParentShell({
   active,
   pageLabel,
-  child = demoParentChild,
+  child,
   children,
   onSelectChild,
   childOptions,
@@ -118,7 +117,8 @@ export function ParentShell({
   const auth = useOptionalAuth();
   const navigationActive = active === "events" ? "more" : active;
   const mobileActive = ["home", "attendance", "diary"].includes(navigationActive) ? navigationActive : "more";
-  const schoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name ?? "Cambridge International School";
+  const guardianSchoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name?.trim();
+  const schoolName = guardianSchoolName || (!auth ? "School" : auth.status === "loading" ? "Loading school" : "School information unavailable");
   const [searchParams,setSearchParams] = useSearchParams();
   const selectedStudentId = searchParams.get("student_id");
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -152,24 +152,23 @@ export function ParentShell({
   }));
   const selectableChildren = accessibleChildren?.length
     ? accessibleChildren
-    : childOptions?.length ? childOptions : [child];
-  const currentChildId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id ?? childOptions?.[0]?.id ?? child.id;
+    : childOptions?.length ? childOptions : child ? [child] : [];
+  const currentChildId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id ?? childOptions?.[0]?.id ?? child?.id;
   const attentionStudentId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id
-    ?? (child.id !== demoParentChild.id ? child.id : undefined);
+    ?? childOptions?.[0]?.id ?? child?.id;
   const attention = useAttention("parent", attentionStudentId);
-  // A failed child-scope lookup must never look like a clean attention state.
+  // An unresolved child scope must never look like a clean attention state.
   // When a route already supplies a real child id, the attention request can
   // still establish its own scope and remains authoritative.
-  const attentionScopeUnavailable = !attentionStudentId
-    && auth?.status === "authenticated"
-    && (studentsQuery.isError || studentsQuery.isSuccess);
+  const attentionScopeUnavailable = !attentionStudentId && auth?.status === "authenticated";
   const currentChildIndex = selectableChildren.findIndex((option) => option.id === currentChildId);
   const activeTheme = childTheme(currentChildIndex, selectableChildren.length);
   const orderedChildren = currentChildIndex < 0 ? selectableChildren : [
     ...selectableChildren.slice(currentChildIndex), ...selectableChildren.slice(0, currentChildIndex),
   ];
-  const displayedChild=selectableChildren.find((option)=>option.id===currentChildId)??child;
-  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:parent:${currentChildId}`);
+  const displayedChild=selectableChildren.find((option)=>option.id===currentChildId)
+    ?? (child && (!currentChildId || child.id === currentChildId) ? child : undefined);
+  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:parent:${currentChildId ?? "unavailable"}`);
   const proFeatures = useProFeatures();
   const assistantEnabled = proFeatures.enabled;
   const assistantActive = assistantEnabled && chat.active;
@@ -205,8 +204,10 @@ export function ParentShell({
                   aria-haspopup={selectableChildren.length > 2 ? "dialog" : undefined}
                   disabled={childSwitchDisabled || studentsQuery.isPending}
                   onClick={() => {
-                    if (selectableChildren.length === 2) void chooseChild(selectableChildren.find((option) => option.id !== currentChildId)?.id ?? currentChildId);
-                    else setSelectorOpen((open) => !open);
+                    if (selectableChildren.length === 2) {
+                      const nextChildId = selectableChildren.find((option) => option.id !== currentChildId)?.id ?? selectableChildren[0]?.id;
+                      if (nextChildId) void chooseChild(nextChildId);
+                    } else setSelectorOpen((open) => !open);
                   }}>
                   {orderedChildren.slice(0, 3).map((option, index) => {
                     const optionIndex=selectableChildren.findIndex((childOption)=>childOption.id===option.id);
@@ -241,7 +242,9 @@ export function ParentShell({
           <PortalPageTitle title={pageLabel} rootPath="/parent/home" backTo={contextualBackTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
           {active !== "home" && active !== "events" && !institutionLevel ? <span className="parent-header__child-label">
             {presenceStatus ? <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : "presence-dot presence-dot--away"} /> : null}
-            <span className="parent-header__child-name">{displayedChild.name} · Class {displayedChild.grade.replace("Grade ", "")}{displayedChild.section}</span>
+            <span className="parent-header__child-name">{displayedChild
+              ? `${displayedChild.name} · Class ${displayedChild.grade.replace("Grade ", "")}${displayedChild.section}`
+              : studentsQuery.isPending ? "Loading student…" : "Student information unavailable"}</span>
           </span> : null}
         </div>
       </header>

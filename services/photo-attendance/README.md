@@ -1,11 +1,11 @@
-# Edura photo-attendance inference service
+# ThatCampus photo-attendance inference service
 
 This is a private inference sidecar adapted from the MIT-licensed Attendance Lab prototype.
 It contains the tested image decoding, tiled YuNet detection, SFace embeddings, conservative
 one-to-one matching, encrypted local templates and short-lived analysis evidence. The prototype
 interface, local access credentials, database and test images are deliberately not copied.
 
-OmniSchool owns authentication, tenant/class authorization, authorization references, review,
+ThatCampus owns authentication, tenant/class authorization, authorization references, review,
 audit and final attendance submission. The sidecar only proposes likely present students. A face
 that is not detected or matched never becomes an absence. The ordinary register remains usable
 when this optional service is unavailable.

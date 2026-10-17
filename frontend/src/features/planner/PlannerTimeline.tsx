@@ -8,6 +8,7 @@ import "@fullcalendar/react/themes/monarch/theme.css";
 import "@fullcalendar/react/themes/monarch/palettes/blue.css";
 import type { CampusEventDto } from "../campus-events/types";
 import type { PlannerPeriod } from "./PrincipalPlannerRoute";
+import { timetableRehearsalPeriodIsActive, type TimetableRehearsalIndicator } from "./rehearsal";
 
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
@@ -48,13 +49,13 @@ function localParts(value: Date) {
 
 function plusMinutes(time: string, minutes: number) { return timeFromMinutes(minutesFromTime(time) + minutes); }
 
-function periodEvents(periods: PlannerPeriod[], date: string, grouped: boolean): EventInput[] {
+export function periodEvents(periods: PlannerPeriod[], date: string, grouped: boolean, rehearsal?: TimetableRehearsalIndicator | null): EventInput[] {
   if (!grouped) return periods.map((period) => ({
     id: `period:${period.id}:${date}`, title: period.display_title,
     start: `${date}T${period.starts_at.slice(0, 5)}`, end: `${date}T${period.ends_at.slice(0, 5)}`,
     editable: period.version_state === "draft", durationEditable: period.version_state === "draft", startEditable: period.version_state === "draft",
     color: period.slot_type === "class" ? "#eaf1ff" : "#f1f4f6", contrastColor: "#15345b",
-    extendedProps: { kind: period.slot_type, meta: period.slot_type === "class" ? `${period.teacher_name ?? "Teacher needed"}${period.room ? ` · ${period.room}` : ""}` : "", periodId: period.id, date, isDraft: period.version_state === "draft" },
+    extendedProps: { kind: period.slot_type, meta: period.slot_type === "class" ? `${period.teacher_name ?? "Teacher needed"}${period.room ? ` · ${period.room}` : ""}` : "", periodId: period.id, date, isDraft: period.version_state === "draft", isRehearsalActive: timetableRehearsalPeriodIsActive(rehearsal, date, period.id) },
   }));
   const groups = periods.reduce((result, period) => {
     const key = `${period.starts_at}:${period.ends_at}:${period.period_number}`;
@@ -65,8 +66,18 @@ function periodEvents(periods: PlannerPeriod[], date: string, grouped: boolean):
     const isBreak = items.every((period) => period.slot_type !== "class");
     return { id: `group:${date}:${key}`, title: isBreak ? first.display_title : `Period ${first.period_number}`, start: `${date}T${first.starts_at.slice(0, 5)}`, end: `${date}T${first.ends_at.slice(0, 5)}`, editable: false,
       color: isBreak ? "#f1f4f6" : "#eaf1ff", contrastColor: "#15345b",
-      extendedProps: { kind: isBreak ? "break" : "class", meta: `${items.length} ${items.length === 1 ? "class" : "classes"}${isBreak ? "" : ` · ${subjects.size} subjects`}`, groupDate: date, groupStart: first.starts_at } };
+      extendedProps: { kind: isBreak ? "break" : "class", meta: `${items.length} ${items.length === 1 ? "class" : "classes"}${isBreak ? "" : ` · ${subjects.size} subjects`}`, groupDate: date, groupStart: first.starts_at, isRehearsalActive: items.some((period) => timetableRehearsalPeriodIsActive(rehearsal, date, period.id)) } };
   });
+}
+
+export function timelineNowInstant(
+  rehearsal: TimetableRehearsalIndicator | null | undefined,
+  visibleDates: string[],
+  fallback = new Date(),
+) {
+  if (!rehearsal || !visibleDates.includes(rehearsal.referenceDate)) return fallback;
+  const simulated = new Date(rehearsal.simulatedAt);
+  return Number.isNaN(simulated.getTime()) ? fallback : simulated;
 }
 
 function eventContent(info: EventDisplayInfo) {
@@ -74,22 +85,24 @@ function eventContent(info: EventDisplayInfo) {
   return <div className="school-calendar-event__content"><strong>{info.event.title}</strong>{info.timeText && !info.isShort ? <time>{info.timeText}</time> : null}{meta && !info.isShort ? <small>{meta}</small> : null}</div>;
 }
 
-export function PlannerTimeline({ dates, selected, periodsForDate, events, closures, grouped, onSelectDate, onPlan, onOpen, onMove, onLesson, onGroup }: {
+export function PlannerTimeline({ dates, selected, periodsForDate, events, closures, grouped, rehearsal, onSelectDate, onPlan, onOpen, onMove, onLesson, onGroup }: {
   dates: string[]; selected: string; periodsForDate: (date: string) => PlannerPeriod[]; events: CampusEventDto[];
   closures: Array<{ date: string; label: string; is_instructional: boolean }>; grouped: boolean;
+  rehearsal?: TimetableRehearsalIndicator | null;
   onSelectDate: (date: string) => void; onPlan: (slot: TimelineSlot) => void; onOpen: (href: string) => void; onMove: (move: TimelineMove) => Promise<boolean>;
   onLesson: (period: PlannerPeriod, date: string) => void; onGroup: (date: string, startsAt: string) => void;
 }) {
   const mobile = useSyncExternalStore(subscribeMobile, () => window.matchMedia(mobileQuery).matches, () => false);
   const visibleDates = useMemo(() => mobile && dates.length > 1 ? [selected] : dates, [mobile, dates, selected]);
-  const today = localParts(new Date()).date;
+  const displayedNow = timelineNowInstant(rehearsal, visibleDates);
+  const today = localParts(displayedNow).date;
   const visiblePeriods = useMemo(() => visibleDates.flatMap((date) => periodsForDate(date).map((period) => ({ period, date }))), [visibleDates, periodsForDate]);
   const calendarEvents = useMemo(() => {
-    const items = dates.flatMap((date) => periodEvents(visiblePeriods.filter((item) => item.date === date).map((item) => item.period), date, grouped));
+    const items = dates.flatMap((date) => periodEvents(visiblePeriods.filter((item) => item.date === date).map((item) => item.period), date, grouped, rehearsal));
     for (const event of events) if (event.status !== "cancelled") items.push({ id: `event:${event.id}`, title: event.title, start: event.starts_at, end: event.ends_at, editable: false, color: "#e4f5f1", contrastColor: "#165d54", extendedProps: { kind: "event", meta: event.venue || "", href: `/principal/events/${event.id}` } });
     for (const closure of closures.filter((item) => !item.is_instructional && dates.includes(item.date))) items.push({ id: `closure:${closure.date}`, title: closure.label, start: closure.date, allDay: true, display: "background", classNames: ["school-calendar-event--closure"], extendedProps: { kind: "closure" } });
     return items;
-  }, [closures, dates, events, grouped, visiblePeriods]);
+  }, [closures, dates, events, grouped, rehearsal, visiblePeriods]);
   const ranges = visiblePeriods.map(({ period }) => ({ start: minutesFromTime(period.starts_at), end: minutesFromTime(period.ends_at) }));
   for (const event of events) {
     if (event.status === "cancelled") continue;
@@ -97,7 +110,7 @@ export function PlannerTimeline({ dates, selected, periodsForDate, events, closu
     if (visibleDates.includes(start.date)) ranges.push({ start: start.minutes, end: start.date === end.date ? end.minutes : 1440 });
     else if (visibleDates.includes(end.date)) ranges.push({ start: 0, end: end.minutes });
   }
-  const currentMinutes = visibleDates.includes(today) ? localParts(new Date()).minutes : undefined;
+  const currentMinutes = visibleDates.includes(today) ? localParts(displayedNow).minutes : undefined;
   const bounds = timelineBounds(ranges, currentMinutes);
   const toSlot = (start: Date, end: Date): TimelineSlot => { const first = localParts(start); const last = localParts(end); return { date: first.date, startsAt: first.time, endsAt: first.date === last.date ? last.time : "23:59" }; };
   const finishMove = async (info: EventDropInfo | EventResizeDoneInfo) => {
@@ -121,9 +134,9 @@ export function PlannerTimeline({ dates, selected, periodsForDate, events, closu
     {closures.filter((closure) => !closure.is_instructional && visibleDates.includes(closure.date)).map((closure) => <div className="planner-closure" key={closure.date}>{closure.label}<small>No scheduled classes</small></div>)}
     <div className="school-calendar__scroll"><div className="school-calendar__canvas">
       <FullCalendar key={`${initialView}:${visibleDates[0]}`} plugins={[timeGridPlugin, interactionPlugin, monarchThemePlugin]} initialView={initialView} initialDate={selected}
-        timeZone={INDIA_TIME_ZONE} headerToolbar={false} firstDay={1} weekends allDaySlot={false} height="auto" dayHeaders={!mobile || dates.length === 1}
+        timeZone={INDIA_TIME_ZONE} now={displayedNow.toISOString()} headerToolbar={false} firstDay={1} weekends allDaySlot={false} height="auto" dayHeaders={!mobile || dates.length === 1}
         className="school-calendar-engine" viewClass="school-calendar-view"
-        blockEventClass={(info) => `school-calendar-block school-calendar-block--${info.event.extendedProps.kind ?? "class"}`}
+        blockEventClass={(info) => `school-calendar-block school-calendar-block--${info.event.extendedProps.kind ?? "class"}${info.event.extendedProps.isRehearsalActive ? " school-calendar-block--rehearsal-now" : ""}`}
         blockEventInnerClass="school-calendar-block__inner" eventClass="school-calendar-hit"
         dayHeaderClass="school-calendar-day" dayHeaderInnerClass="school-calendar-day__inner"
         dayHeaderContent={(info) => <><span>{info.weekdayText}</span><strong className={info.isToday ? "is-today" : ""}>{info.dayNumberText}</strong></>}

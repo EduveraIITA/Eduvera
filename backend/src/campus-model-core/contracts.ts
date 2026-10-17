@@ -171,6 +171,76 @@ export const publishedScheduleProjectionSchema = z.object({
   message: "Schedule end must not precede its start.",
 });
 
+const legacyTimetableSlotSnapshotSchema = z.object({
+  weekday: z.number().int().min(1).max(7),
+  period_number: z.number().int().min(1).max(24),
+  starts_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  ends_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  title: z.string().trim().min(1).max(120),
+  slot_type: z.enum(["class", "break", "activity"]),
+  teacher_user_id: z.string().uuid().nullable().default(null),
+  subject: campusModelEntitySchema.nullable().default(null),
+  space: campusModelEntitySchema.nullable().default(null),
+  room_snapshot: z.string().trim().max(80).default(""),
+}).strict().refine((value) => value.ends_at > value.starts_at, {
+  path: ["ends_at"],
+  message: "Legacy timetable slot end must follow its start.",
+});
+
+/**
+ * One authoritative legacy-slot mutation. The mutable timetable row and its
+ * term remain domain truth; this contract only appends the corresponding
+ * recorded-time occurrence revision to the Campus Model Core.
+ */
+export const legacyTimetableSlotChangeProjectionSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  action: z.enum(["created", "updated", "deleted"]),
+  source_record_id: z.string().uuid(),
+  source_revision: z.number().int().positive(),
+  previous_source_revision: z.number().int().positive().nullable().default(null),
+  term_id: z.string().uuid(),
+  starts_on: z.iso.date(),
+  ends_on: z.iso.date(),
+  timezone: timezoneSchema,
+  occurred_at: z.string().datetime({ offset: true }),
+  class_section: campusModelEntitySchema,
+  slot: legacyTimetableSlotSnapshotSchema,
+  correlation_id: z.string().uuid(),
+}).strict().superRefine((value, context) => {
+  if (value.ends_on < value.starts_on) {
+    context.addIssue({
+      code: "custom",
+      path: ["ends_on"],
+      message: "Legacy timetable term end must not precede its start.",
+    });
+  }
+  if (value.class_section.kind !== "class") {
+    context.addIssue({
+      code: "custom",
+      path: ["class_section"],
+      message: "Use a class entity snapshot for a legacy timetable slot.",
+    });
+  }
+  const expectedPrevious = value.source_revision - 1;
+  if (value.action === "created" && (
+    value.source_revision !== 1 || value.previous_source_revision !== null
+  )) {
+    context.addIssue({
+      code: "custom",
+      path: ["source_revision"],
+      message: "A newly created legacy timetable slot begins at revision one.",
+    });
+  }
+  if (value.action !== "created" && value.previous_source_revision !== expectedPrevious) {
+    context.addIssue({
+      code: "custom",
+      path: ["previous_source_revision"],
+      message: "A changed legacy timetable slot must identify its immediately preceding revision.",
+    });
+  }
+});
+
 export const campusTemporalContextQuerySchema = z.object({
   school_id: z.string().uuid(),
   at: z.string().datetime({ offset: true }),
@@ -226,6 +296,221 @@ export const publishedDayPlanProjectionSchema = z.object({
   periods: z.array(publishedDayPlanPeriodSchema).max(24),
   correlation_id: z.string().uuid(),
 }).strict();
+
+export const acceptedScheduleSubstitutionProjectionSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  substitution_id: z.string().uuid(),
+  coverage_task_id: z.string().uuid(),
+  coverage_task_revision: z.number().int().positive(),
+  source_outbox_event_id: z.string().uuid(),
+  occurrence_key: z.string().regex(/^[0-9a-f]{64}$/),
+  source_kind: z.enum(["daily_plan", "published_timetable", "legacy_timetable"]),
+  source_schedule_id: z.string().uuid(),
+  source_record_id: z.string().uuid(),
+  source_revision: z.number().int().positive(),
+  source_version: z.number().int().positive().nullable().default(null),
+  schedule: campusModelEntitySchema,
+  period: campusModelEntitySchema,
+  class_section: campusModelEntitySchema,
+  subject: campusModelEntitySchema.nullable().default(null),
+  space: campusModelEntitySchema.nullable().default(null),
+  duty_date: z.iso.date(),
+  period_number: z.number().int().min(1).max(24),
+  starts_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  ends_at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  title: z.string().trim().min(1).max(120),
+  slot_type: z.enum(["class", "break", "activity"]),
+  room_snapshot: z.string().trim().max(80).default(""),
+  original_teacher_user_id: z.string().uuid(),
+  replacement_teacher_user_id: z.string().uuid(),
+  accepted_at: z.string().datetime({ offset: true }),
+  correlation_id: z.string().uuid(),
+}).strict().superRefine((value, context) => {
+  if (value.ends_at <= value.starts_at) {
+    context.addIssue({ code: "custom", path: ["ends_at"], message: "Cover end must follow its start." });
+  }
+  if (value.actor_user_id !== value.replacement_teacher_user_id) {
+    context.addIssue({
+      code: "custom",
+      path: ["actor_user_id"],
+      message: "The accepted cover actor must be the replacement teacher.",
+    });
+  }
+  if (value.original_teacher_user_id === value.replacement_teacher_user_id) {
+    context.addIssue({
+      code: "custom",
+      path: ["replacement_teacher_user_id"],
+      message: "The replacement teacher must differ from the original teacher.",
+    });
+  }
+  if (value.source_kind === "daily_plan" && value.source_version === null) {
+    context.addIssue({
+      code: "custom",
+      path: ["source_version"],
+      message: "A dated plan substitution requires its published plan version.",
+    });
+  }
+  if (value.source_kind !== "daily_plan" && value.source_version !== null) {
+    context.addIssue({
+      code: "custom",
+      path: ["source_version"],
+      message: "Only a dated plan substitution has a plan version.",
+    });
+  }
+  const dailyPlan = value.source_kind === "daily_plan";
+  const expectedScheduleDomainId = dailyPlan
+    ? `${value.source_record_id}:${value.source_version}`
+    : value.source_kind === "published_timetable"
+      ? value.source_record_id
+      : `legacy:${value.source_record_id}`;
+  const expectedPeriodDomainId = dailyPlan
+    ? `${value.source_schedule_id}:${value.source_version}`
+    : value.source_schedule_id;
+  const expectedDomain = dailyPlan ? "day_plan" : "timetable";
+  const entityIssues: Array<[boolean, string, string]> = [
+    [value.schedule.kind !== "schedule", "schedule", "Use a schedule entity snapshot."],
+    [value.schedule.domain !== expectedDomain || value.schedule.domain_id !== expectedScheduleDomainId,
+      "schedule", "The schedule snapshot must identify the accepted source revision."],
+    [value.period.kind !== "schedule_period", "period", "Use a schedule-period entity snapshot."],
+    [value.period.domain !== expectedDomain || value.period.domain_id !== expectedPeriodDomainId,
+      "period", "The period snapshot must identify the accepted source occurrence."],
+    [value.class_section.kind !== "class", "class_section", "Use a class entity snapshot."],
+    [value.subject !== null && value.subject.kind !== "subject", "subject", "Use a subject entity snapshot."],
+    [value.space !== null && value.space.kind !== "space", "space", "Use a space entity snapshot."],
+    [value.schedule.source_revision !== value.source_revision,
+      "schedule", "The schedule snapshot revision must match the accepted source revision."],
+    [value.period.source_revision !== value.source_revision,
+      "period", "The period snapshot revision must match the accepted source revision."],
+  ];
+  for (const [invalid, path, message] of entityIssues) {
+    if (invalid) context.addIssue({ code: "custom", path: [path], message });
+  }
+});
+
+/**
+ * A recovery-only projection request for an accepted substitution that already
+ * exists in the Staff Operations domain but predates its Campus Model Core
+ * projection. The importer is an active operator authorising the repair; it is
+ * deliberately distinct from the historical teacher who accepted the cover.
+ */
+export const importedAcceptedScheduleSubstitutionProjectionSchema =
+  acceptedScheduleSubstitutionProjectionSchema.safeExtend({
+    imported_by_user_id: z.string().uuid(),
+    imported_at: z.string().datetime({ offset: true }),
+    import_reason: z.literal("pre_core_projection_backfill"),
+  });
+
+/**
+ * The authoritative subset of a staff.coverage.accepted outbox payload that
+ * permits the temporal projection. Delivery-only fields such as `refresh` are
+ * intentionally excluded; every field that identifies the accepted decision
+ * and its exact timetable occurrence is retained and compared as typed JSON.
+ */
+export function acceptedScheduleSubstitutionOutboxEvidence(
+  input: z.infer<typeof acceptedScheduleSubstitutionProjectionSchema>,
+) {
+  return {
+    school_id: input.school_id,
+    status: "accepted" as const,
+    revision: input.coverage_task_revision,
+    substitution_id: input.substitution_id,
+    effective_timetable: true as const,
+    occurrence_key: input.occurrence_key,
+    source_kind: input.source_kind,
+    source_record_id: input.source_record_id,
+    source_revision: input.source_revision,
+    source_version: input.source_version,
+    source_schedule_id: input.source_schedule_id,
+    original_teacher_user_id: input.original_teacher_user_id,
+    replacement_teacher_user_id: input.replacement_teacher_user_id,
+  };
+}
+
+/** Exact, non-notifying staff.coverage.accepted recovery-event payload. */
+export function importedAcceptedScheduleSubstitutionOutboxEvidence(
+  input: z.infer<typeof importedAcceptedScheduleSubstitutionProjectionSchema>,
+) {
+  return {
+    ...acceptedScheduleSubstitutionOutboxEvidence(input),
+    import_reason: input.import_reason,
+    imported_at: input.imported_at,
+  };
+}
+
+export const cancelledScheduleSubstitutionProjectionSchema = z.object({
+  school_id: z.string().uuid(),
+  actor_user_id: z.string().uuid(),
+  substitution_id: z.string().uuid(),
+  coverage_task_id: z.string().uuid(),
+  coverage_task_revision: z.number().int().positive(),
+  source_outbox_event_id: z.string().uuid(),
+  occurrence_key: z.string().regex(/^[0-9a-f]{64}$/),
+  reason: z.enum([
+    "source_changed",
+    "coverage_obligation_changed",
+    "replacement_unavailable",
+  ]),
+  source_kind: z.enum(["daily_plan", "published_timetable", "legacy_timetable"]),
+  source_record_id: z.string().uuid(),
+  source_revision: z.number().int().positive(),
+  source_version: z.number().int().positive().nullable().default(null),
+  original_teacher_user_id: z.string().uuid(),
+  replacement_teacher_user_id: z.string().uuid(),
+  cancelled_at: z.string().datetime({ offset: true }),
+  correlation_id: z.string().uuid(),
+}).strict().superRefine((value, context) => {
+  if (value.original_teacher_user_id === value.replacement_teacher_user_id) {
+    context.addIssue({
+      code: "custom",
+      path: ["replacement_teacher_user_id"],
+      message: "The invalidated replacement must differ from the original teacher.",
+    });
+  }
+  if (value.source_kind === "daily_plan" && value.source_version === null) {
+    context.addIssue({
+      code: "custom",
+      path: ["source_version"],
+      message: "A dated plan substitution cancellation requires its published plan version.",
+    });
+  }
+  if (value.source_kind !== "daily_plan" && value.source_version !== null) {
+    context.addIssue({
+      code: "custom",
+      path: ["source_version"],
+      message: "Only a dated plan substitution cancellation has a plan version.",
+    });
+  }
+});
+
+/** Exact authoritative fields required from staff.coverage.cancelled. */
+export function cancelledScheduleSubstitutionOutboxEvidence(
+  input: z.infer<typeof cancelledScheduleSubstitutionProjectionSchema>,
+) {
+  return {
+    school_id: input.school_id,
+    status: "cancelled" as const,
+    revision: input.coverage_task_revision,
+    substitution_id: input.substitution_id,
+    occurrence_key: input.occurrence_key,
+    reason: input.reason,
+    source_kind: input.source_kind,
+    source_record_id: input.source_record_id,
+    source_revision: input.source_revision,
+    source_version: input.source_version,
+    original_teacher_user_id: input.original_teacher_user_id,
+    replacement_teacher_user_id: input.replacement_teacher_user_id,
+    effective_timetable: false as const,
+  };
+}
+
+export function cancelledScheduleSubstitutionSuccessorAssignment(
+  reason: z.infer<typeof cancelledScheduleSubstitutionProjectionSchema>["reason"],
+): "original_teacher" | "unassigned" | "unchanged_later_source" {
+  if (reason === "coverage_obligation_changed") return "original_teacher";
+  if (reason === "replacement_unavailable") return "unassigned";
+  return "unchanged_later_source";
+}
 
 export const coordinationRecipientSelectorConfigSchema = z.object({
   selector_key: identifier,
@@ -329,6 +614,10 @@ export const acceptedCoordinationEventSchema = z.object({
   correlation_id: z.string().uuid(),
   causation_event_id: z.string().uuid().nullable().default(null),
   idempotency_key: z.string().trim().min(8).max(240),
+  expected_route: z.object({
+    behaviour_version_id: z.string().uuid(),
+    subscription_id: z.string().uuid(),
+  }).strict().nullable().optional(),
   payload: z.record(z.string(), z.unknown()).default({}),
   message: z.object({
     subject: z.string().trim().min(1).max(200),
@@ -412,9 +701,13 @@ export type AcceptedCampusModelChange = z.infer<typeof acceptedCampusModelChange
 export type CampusModelObservation = z.infer<typeof campusModelObservationSchema>;
 export type CampusModelObservationTransition = z.infer<typeof campusModelObservationTransitionSchema>;
 export type PublishedScheduleProjection = z.infer<typeof publishedScheduleProjectionSchema>;
+export type LegacyTimetableSlotChangeProjection = z.infer<typeof legacyTimetableSlotChangeProjectionSchema>;
 export type CampusTemporalContextQuery = z.infer<typeof campusTemporalContextQuerySchema>;
 export type CalendarClosureProjection = z.infer<typeof calendarClosureProjectionSchema>;
 export type PublishedDayPlanProjection = z.infer<typeof publishedDayPlanProjectionSchema>;
+export type AcceptedScheduleSubstitutionProjection = z.infer<typeof acceptedScheduleSubstitutionProjectionSchema>;
+export type ImportedAcceptedScheduleSubstitutionProjection = z.infer<typeof importedAcceptedScheduleSubstitutionProjectionSchema>;
+export type CancelledScheduleSubstitutionProjection = z.infer<typeof cancelledScheduleSubstitutionProjectionSchema>;
 export type CoordinationRecipientSelectorConfig = z.infer<typeof coordinationRecipientSelectorConfigSchema>;
 export type CoordinationRecipientAgentRef = z.infer<typeof coordinationRecipientAgentRefSchema>;
 export type HumanAgentAccountEndpointLink = z.infer<typeof humanAgentAccountEndpointLinkSchema>;

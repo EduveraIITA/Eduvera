@@ -3,9 +3,9 @@
   align-items: flex-start;
   gap: 0.875rem;
   padding: 1.125rem;
-  background: var(--edura-surface-soft);
-  border: 1px solid var(--edura-border);
-  border-radius: var(--edura-radius-card);
+  background: var(--thatcampus-surface-soft);
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-card);
 }
 .published-day-notice__icon {
   width: 40px;
@@ -13,9 +13,9 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  border-radius: var(--edura-radius-control);
-  background: var(--edura-brand-soft);
-  color: var(--edura-brand);
+  border-radius: var(--thatcampus-radius-control);
+  background: var(--thatcampus-brand-soft);
+  color: var(--thatcampus-brand);
 }
 .published-day-notice > div {
   min-width: 0;
@@ -29,18 +29,18 @@
   justify-content: space-between;
 }
 .published-day-notice strong {
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
   font-size: 0.9375rem;
 }
 .published-day-notice p {
   white-space: pre-wrap;
   margin: 0.5rem 0;
-  color: var(--edura-ink-secondary);
+  color: var(--thatcampus-ink-secondary);
   font-size: 0.875rem;
   line-height: 1.65;
 }
 .published-day-notice small {
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
   font-size: 0.75rem;
   line-height: 1.6;
 }
@@ -49,12 +49,12 @@
   align-items: center;
   gap: 0.375rem;
   min-height: 44px;
-  color: var(--edura-brand);
+  color: var(--thatcampus-brand);
   font-size: 0.8125rem;
   font-weight: 700;
   text-decoration: none;
 }
 .published-day-notice a:focus-visible {
-  outline: 3px solid var(--edura-brand-bright);
+  outline: 3px solid var(--thatcampus-brand-bright);
   outline-offset: 3px;
 }

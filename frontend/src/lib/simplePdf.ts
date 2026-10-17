@@ -50,7 +50,7 @@ export function downloadTextPdf(filename: string, title: string, sourceLines: st
   });
   objects.set(fontObject, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
 
-  let document = "%PDF-1.4\n%EduraOS\n";
+  let document = "%PDF-1.4\n%ThatCampusOS\n";
   const offsets = [0];
   for (let number = 1; number <= fontObject; number += 1) {
     offsets[number] = byteLength(document);

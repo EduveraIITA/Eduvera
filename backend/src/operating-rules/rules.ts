@@ -12,13 +12,18 @@ export const rulesSchema = z.object({
   attendance_session_close_after_minutes: z.number().int().min(0).max(1440),
   attendance_finalization_mode: z.enum(["automatic", "principal_review"]),
   attendance_auto_finalize_minutes: z.number().int().min(0).max(1440),
+  attendance_overdue_reminder_minutes: z.number().int().min(0).max(1440),
+  attendance_overdue_escalation_minutes: z.number().int().min(1).max(2880),
   event_entry_hours_before: z.number().int().min(0).max(168),
   event_staff_hours_after: z.number().int().min(0).max(720),
   journey_lead_minutes: z.number().int().min(0).max(240),
   message_edit_minutes: z.number().int().min(0).max(60),
   message_attachment_mb: z.number().int().min(1).max(10),
   attendance_submission_cutoff: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-}).strict();
+}).strict().refine(
+  (value) => value.attendance_overdue_escalation_minutes > value.attendance_overdue_reminder_minutes,
+  { path: ["attendance_overdue_escalation_minutes"], message: "Escalation must happen after the first reminder." },
+);
 export type OperatingRules = z.infer<typeof rulesSchema> & { revision: number };
 export type RulesDb = Kysely<Database> | Transaction<Database>;
 export async function operatingRules(db: RulesDb, schoolId: string): Promise<OperatingRules> {
@@ -32,6 +37,8 @@ export async function operatingRules(db: RulesDb, schoolId: string): Promise<Ope
     COALESCE(r.attendance_session_close_after_minutes,30)::int attendance_session_close_after_minutes,
     COALESCE(r.attendance_finalization_mode,'automatic') attendance_finalization_mode,
     COALESCE(r.attendance_auto_finalize_minutes,30)::int attendance_auto_finalize_minutes,
+    COALESCE(r.attendance_overdue_reminder_minutes,15)::int attendance_overdue_reminder_minutes,
+    COALESCE(r.attendance_overdue_escalation_minutes,60)::int attendance_overdue_escalation_minutes,
     COALESCE(r.event_entry_hours_before,2)::int event_entry_hours_before,
     COALESCE(r.event_staff_hours_after,24)::int event_staff_hours_after,
     COALESCE(r.journey_lead_minutes,30)::int journey_lead_minutes,

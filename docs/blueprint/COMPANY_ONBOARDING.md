@@ -54,7 +54,7 @@ an existing active account, records a company audit event, and creates neither
 accounts nor passwords. Grant only company personnel. Its changes take effect
 on the next request and pending invitations recheck the operator.
 
-In Stage demo mode, **Company view — Eduera** uses `company.demo`, an operator
+In Stage demo mode, **Company view — ThatCampus** uses `company.demo`, an operator
 with no school memberships. `seed-roles.ts` creates this synthetic identity only
 alongside the verified Cambridge demo school and refuses production seeding.
 Production already prohibits `DEMO_MODE`; no demo operator is bootstrapped there.

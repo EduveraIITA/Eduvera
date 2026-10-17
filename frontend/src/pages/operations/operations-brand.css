@@ -2,11 +2,11 @@
   width: 37px;
   height: 37px;
   color: #fff;
-  background: var(--edura-brand);
+  background: var(--thatcampus-brand);
 }
 
 .operations-brand .school-brand__name {
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
   font-size: 14px;
   font-weight: 700;
 }

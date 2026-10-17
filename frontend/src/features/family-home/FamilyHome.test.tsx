@@ -63,4 +63,13 @@ describe("family home touch-up", () => {
     fireEvent.click(screen.getByRole("button", { name: "Timetable" }));
     expect(screen.getByLabelText("Location")).toHaveTextContent("/student/timetable");
   });
+  it("does not invent checklist items when the timetable publishes no materials", () => {
+    mount({
+      ...data,
+      schedule: data.schedule.map((period) => ({ ...period, materials: [] })),
+    });
+    expect(screen.queryByRole("button", { name: /Today checklist/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("School ID")).not.toBeInTheDocument();
+    expect(screen.queryByText("Water bottle")).not.toBeInTheDocument();
+  });
 });

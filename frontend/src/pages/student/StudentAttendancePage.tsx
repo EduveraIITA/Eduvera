@@ -75,7 +75,7 @@ export interface StudentAttendanceData {
 
 export interface StudentAttendancePageProps {
   proFeaturesEnabled?: boolean;
-  data?: StudentAttendanceData;
+  data: StudentAttendanceData;
   routes?: Partial<StudentRouteMap>;
   onApplyMedicalExcuse?: () => void;
   onAskCopilot?: AttendanceCopilotHandler;
@@ -231,7 +231,7 @@ function SubjectAttendanceRow({subject,minimum}:{subject:StudentAttendanceSubjec
 type SubjectFilter = "all" | "near" | "core" | "language" | "activity";
 
 export function StudentAttendancePage({
-  data = demoStudentAttendanceData,
+  data,
   routes,
   onApplyMedicalExcuse,
   onAskCopilot,

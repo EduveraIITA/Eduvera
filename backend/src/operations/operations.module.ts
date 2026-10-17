@@ -6,6 +6,7 @@ import { FeeReviewService } from "./fee-review.service.js";
 import { Module } from "@nestjs/common";
 import { OperationsController } from "./operations.controller.js";
 import { OperationsService } from "./operations.service.js";
+import { StaffCoverageReconciliationModule } from "../staff-operations/staff-coverage-reconciliation.module.js";
 
-@Module({ controllers: [OperationsController, RazorpayController], providers: [OperationsService, FeeReviewService, RazorpayClient, RazorpayService, PaymentEmailService] })
+@Module({ imports: [StaffCoverageReconciliationModule], controllers: [OperationsController, RazorpayController], providers: [OperationsService, FeeReviewService, RazorpayClient, RazorpayService, PaymentEmailService] })
 export class OperationsModule {}

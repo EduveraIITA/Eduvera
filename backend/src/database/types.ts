@@ -32,7 +32,8 @@ export interface ParentTable { id: Generated<string>; user_id: string | null; ph
 export interface GuardianRelationshipTable { id: Generated<string>; school_id: Generated<string>; guardian_id: string; student_id: string; relationship: "mother" | "father" | "guardian"; is_primary: Generated<boolean>; can_authorize_leave: Generated<boolean>; authority_revision: Generated<number>; leave_valid_from: Generated<string|null>; leave_valid_until: Generated<string|null>; authority_source: Generated<"legacy"|"enrollment"|"reviewed">; created_at: Timestamp }
 export interface AcademicTermTable { id: Generated<string>; school_id: string; academic_year: string; name: string; starts_on: DateOnly; ends_on: DateOnly; attendance_threshold: string; is_active: Generated<boolean>; revision: Generated<number>; updated_at: Timestamp; updated_by: string | null }
 export interface ClassSectionTable { id: Generated<string>; school_id: string; academic_year: string; grade: string; section: string; board: Generated<string>; room_number: Generated<string>; revision: Generated<number>; updated_at: Timestamp; updated_by: string | null }
-export interface EnrollmentTable { id: Generated<string>; student_id: string; class_section_id: string; term_id: string; roll_number: number; enrolled_on: Generated<string>; is_active: Generated<boolean> }
+export interface EnrollmentTable { id: Generated<string>; student_id: string; class_section_id: string; term_id: string; roll_number: number; enrolled_on: Generated<string>; is_active: Generated<boolean>; inactive_from: Generated<string|null>; exit_kind: Generated<"class_move"|"withdrawn"|"transferred_out"|"term_completed"|null>; exit_reason: Generated<string|null>; ended_by: Generated<string|null>; ended_at: Generated<Date|null>; revision: Generated<number> }
+export interface StudentEnrollmentChangeReviewTable { id:Generated<string>; school_id:string; student_id:string; created_by:string; expected_enrollment_id:string; expected_revision:number; action:"move_class"|"withdraw"|"transfer_out"; input:Json; impact:Json; expires_at:Generated<Date>; committed_at:Generated<Date|null>; result_enrollment_id:string|null; created_at:Generated<Date> }
 export interface SubjectTable { id: Generated<string>; school_id: string; code: string; name: string; short_name: string; color: Generated<string>; icon: Generated<string>; revision: Generated<number>; updated_at: Timestamp; updated_by: string | null }
 export interface SubjectAttendanceTable { id: Generated<string>; student_id: string; subject_id: string; term_id: string; classes_held: Generated<number>; classes_attended: Generated<number>; classes_excused: Generated<number> }
 export interface AttendanceRecordTable { id: Generated<string>; student_id: string; class_section_id: string; date: DateOnly; status: "present" | "absent" | "late" | "excused" | "half_day"; check_in_at: NullableTimestamp; check_out_at: NullableTimestamp; remarks: Generated<string>; marked_by: string | null; revision: Generated<number>; source_request_id: Generated<string | null>; created_at: Timestamp; updated_at: Timestamp }
@@ -75,7 +76,7 @@ export interface CurriculumSubjectTargetTable {
   created_at: Timestamp; updated_at: Timestamp;
 }
 export interface GateEventTable { id: Generated<string>; student_id: string; occurred_at: Timestamp; direction: "in" | "out"; gate: string; source: Generated<string>; device_reference: Generated<string>; recorded_by: Generated<string|null>; command_id: Generated<string|null> }
-export interface TimetableSlotTable { id: Generated<string>; class_section_id: string; term_id: string; subject_id: string | null; weekday: number; period_number: number; starts_at: TimeOnly; ends_at: TimeOnly; slot_type: Generated<"class" | "break" | "activity">; title: Generated<string>; room: Generated<string>; space_id: string | null; teacher_user_id: string | null; teacher_designation: Generated<string> }
+export interface TimetableSlotTable { id: Generated<string>; class_section_id: string; term_id: string; subject_id: string | null; weekday: number; period_number: number; starts_at: TimeOnly; ends_at: TimeOnly; slot_type: Generated<"class" | "break" | "activity">; title: Generated<string>; room: Generated<string>; space_id: string | null; teacher_user_id: string | null; teacher_designation: Generated<string>; revision: Generated<number>; updated_by: string | null; updated_at: Timestamp }
 export interface AttendancePolicyTable { id: Generated<string>; term_id: string; name: string; minimum_percentage: string; medical_document_after_days: Generated<number>; policy_text: Generated<string> }
 export interface LeaveRequestTable { id: Generated<string>; student_id: string; term_id: string; requested_by: string; category: "medical" | "family" | "travel" | "personal"; starts_on: DateOnly; ends_on: DateOnly; reason: string; status: "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn"; submitted_at: NullableTimestamp; guardian_authorized_by: string | null; guardian_authorized_at: NullableTimestamp; decided_by: string | null; decided_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
 export interface LeaveDocumentTable { id: Generated<string>; leave_request_id: string; storage_key: string; original_name: string; content_type: string; size_bytes: number; uploaded_by: string; created_at: Timestamp }
@@ -303,6 +304,7 @@ export interface CampusModelEventTable {
   correlation_id: string; causation_event_id: string | null; supersedes_event_id: string | null;
   provenance: Json; payload: Json; schema_version: Generated<number>; idempotency_key: string; request_hash: string;
   source_outbox_event_id: string | null;
+  journal_sequence: Generated<string>;
 }
 export interface CampusModelScheduleOccurrenceTable {
   id: Generated<string>; school_id: string; source_event_id: string; schedule_entity_id: string;
@@ -310,7 +312,12 @@ export interface CampusModelScheduleOccurrenceTable {
   responsible_agent_id: string | null; space_entity_id: string | null; occurrence_date: DateOnly;
   starts_at: Timestamp; ends_at: Timestamp; title: string; slot_type: "class" | "break" | "activity";
   room_snapshot: Generated<string>; state: Generated<"expected" | "cancelled" | "superseded">;
-  source_revision: number; projected_at: Timestamp;
+  source_revision: number; projected_at: Timestamp; logical_occurrence_key: string;
+  period_number: number; basis_event_id: string; change_event_id: string;
+  condition_event_id: string | null;
+  recorded_from: Timestamp; recorded_until: NullableTimestamp;
+  supersedes_occurrence_id: string | null;
+  change_kind: "published" | "overridden" | "closure_cancelled" | "closure_restored" | "day_plan_cancelled" | "substituted" | "substitution_cancelled" | "projection_backfill";
 }
 export interface StaffOnboardingItemTable {
   id: Generated<string>; school_id: string; staff_profile_id: string;
@@ -397,8 +404,45 @@ export interface StaffCoverageTaskTable {
 }
 export interface StaffCoverageTaskAuditTable {
   id: Generated<string>; school_id: string; task_id: string; actor_id: string;
-  action: "created" | "offered" | "accepted" | "declined" | "reassigned" | "completed" | "cancelled" | "fallback_applied" | "expired_unconfirmed";
+  action: "created" | "offered" | "accepted" | "declined" | "reassigned" | "completed" | "cancelled" | "fallback_applied" | "expired_unconfirmed" | "reopened" | "offer_cancelled";
   from_status: string | null; to_status: string; note: Generated<string>; automated: Generated<boolean>; created_at: Timestamp;
+}
+export interface StaffCoverageOfferRouteTable {
+  id: Generated<string>; school_id: string; coverage_task_id: string; route_round: number;
+  route_kind: "automatic" | "manual_override";
+  status: "configuration_missing" | "configuration_invalid" | "no_eligible_candidate" |
+    "offered" | "accepted" | "declined" | "expired" | "cancelled";
+  source_task_revision: number; offered_task_revision: number | null;
+  source_outbox_event_id: string; response_outbox_event_id: string | null;
+  routed_by: string; selected_staff_profile_id: string | null; selected_user_id: string | null;
+  behaviour_version_id: string | null; subscription_id: string | null;
+  model_event_id: string | null; reaction_id: string | null; message_id: string | null;
+  correlation_id: string; selector_key: string; required_capability: string | null;
+  candidate_strategy: string | null; response_due_at: NullableTimestamp; expires_at: NullableTimestamp;
+  behaviour_snapshot: Json; selector_snapshot: Json; eligibility_snapshot: Json;
+  explanation: string; routed_at: Timestamp; responded_at: NullableTimestamp;
+}
+export interface StaffTimetableSubstitutionTable {
+  id: Generated<string>; school_id: string; coverage_task_id: string;
+  class_section_id: string; subject_id: string | null; duty_date: DateOnly;
+  period_number: number; starts_at: TimeOnly; ends_at: TimeOnly;
+  source_schedule_id: string; source_occurrence_key: string;
+  source_kind: "daily_plan" | "published_timetable" | "legacy_timetable";
+  source_record_id: string; source_revision: number; source_version: number | null;
+  original_teacher_user_id: string; replacement_staff_profile_id: string;
+  replacement_teacher_user_id: string;
+  state: Generated<"effective" | "superseded" | "cancelled">;
+  coverage_task_revision: number; accepted_by: string; accepted_at: Timestamp;
+  effective_event_id: string | null; superseded_at: NullableTimestamp;
+  created_at: Timestamp;
+}
+export interface StaffCoverageCommandTable {
+  id: Generated<string>; school_id: string; actor_id: string; command_id: string;
+  command_type: "respond"; decision: "accepted" | "declined";
+  target_task_id: string; request_hash: string; source_task_revision: number;
+  resulting_task_revision: number; result: Json; outbox_event_id: string;
+  substitution_id: string | null; authority_receipt: Json;
+  schedule_provenance: Json; created_at: Timestamp;
 }
 export interface StaffCoveragePolicyTable {
   school_id: string; enabled: Generated<boolean>; deadline_minutes_before: Generated<number>;
@@ -703,6 +747,29 @@ export interface AssessmentEvidenceTable { id: Generated<string>; school_id: str
 export interface AssessmentPublicationTable { id: Generated<string>; school_id: string; assessment_id: string; sequence: number; source_revision: number; reason: string; published_by: string; published_at: Timestamp }
 export interface AssessmentPublicationResultTable { school_id: string; publication_id: string; assessment_id: string; student_id: string; source_result_id: string; source_result_revision: number; outcome: "scored"|"absent"|"exempt"|"withheld"|"not_evaluated"; marks: string|null; grade: Generated<string>; feedback: Generated<string> }
 export interface AssessmentAuditTable { id: Generated<number>; school_id: string; assessment_id: string|null; actor_id: string; action: string; from_status: string|null; to_status: string|null; metadata: Json; created_at: Timestamp }
+export interface AssessmentOperationPolicyTable { school_id:string; readiness_minutes_before:Generated<number>; attendance_close_after_minutes:Generated<number>; minimum_invigilators:Generated<number>; require_all_candidate_attendance:Generated<boolean>; post_completion_marking_mode:Generated<"manual"|"automatic">; revision:Generated<number>; updated_by:string|null; updated_at:Timestamp }
+export interface AssessmentSittingTable { id:Generated<string>; school_id:string; assessment_id:string; campus_id:string; space_id:string; starts_at:Timestamp; ends_at:Timestamp; state:Generated<"planning"|"ready"|"in_progress"|"completed"|"cancelled">; policy_revision:number; policy_snapshot:Json; roster_frozen_at:NullableTimestamp; started_by:string|null; started_at:NullableTimestamp; completed_by:string|null; completed_at:NullableTimestamp; cancelled_by:string|null; cancelled_at:NullableTimestamp; cancellation_reason:Generated<string>; revision:Generated<number>; created_by:string; updated_by:string; created_at:Timestamp; updated_at:Timestamp }
+export interface AssessmentSittingInvigilatorTable { id:Generated<string>; school_id:string; sitting_id:string; assessment_id:string; user_id:string; status:Generated<"offered"|"accepted"|"declined"|"revoked">; response_note:Generated<string>; revision:Generated<number>; assigned_by:string; assigned_at:Timestamp; responded_at:NullableTimestamp; updated_at:Timestamp }
+export interface AssessmentInvigilationOfferBindingTable {
+  id:Generated<string>; school_id:string; assignment_id:string; sitting_id:string; assessment_id:string;
+  route_round:number; status:"offered"|"accepted"|"declined"|"expired"|"cancelled";
+  source_assignment_revision:number; source_outbox_event_id:string; response_outbox_event_id:string|null;
+  routed_by:string; selected_user_id:string; behaviour_version_id:string; subscription_id:string;
+  model_event_id:string; reaction_id:string; message_id:string; correlation_id:string;
+  selector_key:string; required_capability:string; response_due_at:Timestamp; expires_at:Timestamp;
+  behaviour_snapshot:Json; selector_snapshot:Json; explanation:string;
+  routed_at:Timestamp; responded_at:NullableTimestamp;
+}
+export interface AssessmentInvigilationCommandTable {
+  school_id:string; actor_id:string; command_id:string; assignment_id:string;
+  command_type:"respond"; decision:"accepted"|"declined"; request_hash:string;
+  source_assignment_revision:number; resulting_assignment_revision:number; result:Json;
+  response_outbox_event_id:string; message_id:string; correlation_id:string; created_at:Timestamp;
+}
+export interface AssessmentSittingCandidateTable { id:Generated<string>; school_id:string; sitting_id:string; assessment_id:string; student_id:string; enrollment_id:string; roll_number_snapshot:number|null; frozen_at:Timestamp }
+export interface AssessmentCandidateAttendanceTable { id:Generated<string>; school_id:string; sitting_id:string; candidate_id:string; student_id:string; status:Generated<"unrecorded"|"present"|"late"|"absent"|"left_early">; observed_at:NullableTimestamp; note:Generated<string>; revision:Generated<number>; recorded_by:string|null; updated_at:Timestamp }
+export interface AssessmentSittingIncidentTable { id:Generated<string>; school_id:string; sitting_id:string; candidate_id:string|null; student_id:string|null; category:"conduct"|"health"|"materials"|"timing"|"other"; severity:"info"|"minor"|"major"; summary:string; observed_at:Timestamp; state:Generated<"open"|"resolved">; resolution:Generated<string>; recorded_by:string; resolved_by:string|null; resolved_at:NullableTimestamp; revision:Generated<number>; created_at:Timestamp; updated_at:Timestamp }
+export interface AssessmentOperationAuditTable { id:Generated<number>; school_id:string; assessment_id:string|null; sitting_id:string|null; actor_id:string; action:string; from_state:string|null; to_state:string|null; metadata:Json; created_at:Timestamp }
 export interface GradingSchemeTable { id: Generated<string>; school_id: string; term_id: string; class_section_id: string; name: string; code: string; status: Generated<"draft"|"active"|"archived">; absence_treatment: Generated<"incomplete"|"zero">; review_mode: Generated<"owner_review"|"independent">; revision: Generated<number>; created_by: string; updated_by: string; activated_by: string|null; activated_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
 export interface GradingSchemeBandTable { id: Generated<string>; school_id: string; scheme_id: string; code: string; label: string; minimum_percentage: string; maximum_percentage: string; display_order: number }
 export interface GradingSchemeSubjectTable { id: Generated<string>; school_id: string; scheme_id: string; subject_id: string; pass_percentage: string|null; display_order: Generated<number>; created_at: Timestamp }
@@ -754,6 +821,7 @@ export interface Database {
   academic_terms: AcademicTermTable;
   class_sections: ClassSectionTable;
   enrollments: EnrollmentTable;
+  student_enrollment_change_reviews: StudentEnrollmentChangeReviewTable;
   subjects: SubjectTable;
   subject_attendance: SubjectAttendanceTable;
   attendance_records: AttendanceRecordTable;
@@ -816,6 +884,9 @@ export interface Database {
   staff_responsibility_audits: StaffResponsibilityAuditTable;
   staff_coverage_tasks: StaffCoverageTaskTable;
   staff_coverage_task_audits: StaffCoverageTaskAuditTable;
+  staff_coverage_offer_routes: StaffCoverageOfferRouteTable;
+  staff_timetable_substitutions: StaffTimetableSubstitutionTable;
+  staff_coverage_commands: StaffCoverageCommandTable;
   staff_coverage_policies: StaffCoveragePolicyTable;
   institution_regulatory_profiles: InstitutionRegulatoryProfileTable;
   institution_policy_families: InstitutionPolicyFamilyTable;
@@ -884,6 +955,15 @@ export interface Database {
   assessment_publications: AssessmentPublicationTable;
   assessment_publication_results: AssessmentPublicationResultTable;
   assessment_audits: AssessmentAuditTable;
+  assessment_operation_policies: AssessmentOperationPolicyTable;
+  assessment_sittings: AssessmentSittingTable;
+  assessment_sitting_invigilators: AssessmentSittingInvigilatorTable;
+  assessment_invigilation_offer_bindings: AssessmentInvigilationOfferBindingTable;
+  assessment_invigilation_commands: AssessmentInvigilationCommandTable;
+  assessment_sitting_candidates: AssessmentSittingCandidateTable;
+  assessment_candidate_attendance: AssessmentCandidateAttendanceTable;
+  assessment_sitting_incidents: AssessmentSittingIncidentTable;
+  assessment_operation_audits: AssessmentOperationAuditTable;
   grading_schemes: GradingSchemeTable;
   grading_scheme_bands: GradingSchemeBandTable;
   grading_scheme_subjects: GradingSchemeSubjectTable;

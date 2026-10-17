@@ -10,14 +10,15 @@ import { effectiveSchedule } from '../src/day-plans/schedule.js';
 import type { AuthenticatedRequest,AuthUser } from '../src/common/request.js';
 import type { Period } from '../src/schedule-planning/contracts.js';
 import { requireIsolatedTestDatabaseUrl } from './test-database.js';
+import { createStaffCoverageReconciliationTestDouble, type StaffCoverageReconciliationTestDouble } from './staff-coverage-reconciliation.test-support.js';
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL)});
-let db:DatabaseService,service:SchedulePlanningService,req:AuthenticatedRequest,school:string,term:string,classId:string,otherClass:string,from:string,to:string,today:string;
+let db:DatabaseService,service:SchedulePlanningService,coverage:StaffCoverageReconciliationTestDouble,req:AuthenticatedRequest,school:string,term:string,classId:string,otherClass:string,from:string,to:string,today:string;
 const cmd=()=>({school_id:school,idempotency_key:randomUUID()});
 const add=(d:string,n:number)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 const rows=(title='Changed'):Period[]=>[{id:randomUUID(),weekday:1,period_number:1,starts_at:'18:00',ends_at:'18:30',subject_id:null,teacher_user_id:null,title,slot_type:'activity',room:''}];
 const begin=()=>service.start(req,{...cmd(),term_id:term,class_section_id:classId,starts_on:from,ends_on:to});
 beforeAll(async()=>{
-  db=new DatabaseService();const events=new SchoolEventService(db);service=new SchedulePlanningService(db,events,new SchoolService(db,events));
+  db=new DatabaseService();const events=new SchoolEventService(db);coverage=createStaffCoverageReconciliationTestDouble();const schoolService=new SchoolService(db,events,coverage);service=new SchedulePlanningService(db,events,schoolService,coverage);
   const user=(await pool.query<AuthUser>("SELECT u.* FROM users u JOIN school_memberships m ON m.user_id=u.id WHERE m.role='admin' AND m.is_active LIMIT 1")).rows[0]!;
   school=(await pool.query("SELECT school_id FROM school_memberships WHERE user_id=$1 AND role='admin' AND is_active LIMIT 1",[user.id])).rows[0].school_id;
   req={authUser:{...user,active_school_id:school},requestId:randomUUID(),ip:'127.0.0.1'} as AuthenticatedRequest;
@@ -42,6 +43,8 @@ describe('annual scheduling',()=>{
   it('publishes a bounded timetable and restores the previous pattern afterwards',async()=>{
     const v=await begin();await service.save(req,v.id,{...cmd(),expected_revision:1,starts_on:from,ends_on:to,periods:rows()});
     const input={...cmd(),expected_revision:2};await service.publish(req,v.id,input);await service.publish(req,v.id,input);
+    expect(coverage.preparationInputs).toContainEqual(expect.objectContaining({school_id:school,from,to,class_section_id:classId,actor_user_id:req.authUser.id,correlation_id:req.requestId,cause:expect.objectContaining({kind:'schedule_published',source_domain:'timetable',source_record_id:v.id})}));
+    expect(coverage.reconciliationInputs).toContainEqual(expect.objectContaining({school_id:school,from,to,class_section_id:classId,actor_user_id:req.authUser.id,correlation_id:req.requestId,cause:expect.objectContaining({kind:'schedule_published',source_domain:'timetable',source_record_id:v.id})}));
     const title=async(date:string)=>(await effectiveSchedule(db,school,date)).find(r=>r.class_section_id===classId)?.title;
     expect(await title(add(from,-7))).toBe('Original');expect(await title(from)).toBe('Changed');expect(await title(add(from,7))).toBe('Original');
     await expect(service.save(req,v.id,{...cmd(),expected_revision:3,starts_on:from,ends_on:to,periods:rows()})).rejects.toThrow('read-only');

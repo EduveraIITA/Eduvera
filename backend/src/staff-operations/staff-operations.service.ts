@@ -1,6 +1,6 @@
 import { issueInvitationCode } from '../common/invitation-code.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { createHash } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
@@ -8,7 +8,14 @@ import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { accessRoleCatalogue, staffRoleAssignments } from "../roles/access-roles.service.js";
 import { roleOptions } from "../roles/scoped-role-policy.js";
+import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
+import {
+  STAFF_COVERAGE_RECONCILIATION_PORT,
+  type CoverageReconciliationInput,
+  type StaffCoverageReconciliationPort,
+} from "./staff-coverage-reconciliation.service.js";
 import { StaffLeaveModelBridgeService } from "./staff-leave-model-bridge.service.js";
+import { StaffCoverageOfferBridgeService } from "./staff-coverage-offer-bridge.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type MembershipRole = "staff" | "admin";
@@ -81,8 +88,15 @@ const withdrawLeaveInput = z.object({
   expected_revision: z.number().int().positive(),
   command_id: uuid,
 }).strict();
+const respondCoverageInput = z.object({
+  decision: z.enum(["accepted", "declined"]),
+  note: z.string().trim().max(500).default(""),
+  expected_revision: z.number().int().positive(),
+  command_id: uuid,
+}).strict();
 
 type StaffLeaveCommandType = "submit" | "decide" | "withdraw";
+type StaffCoverageCommandType = "respond";
 type RetainedOutboxEvent = {
   id: string;
   school_id: string;
@@ -100,6 +114,109 @@ type StaffLeaveCommandEvidence = {
   authority_receipt: Record<string, unknown> | null;
   coordination_receipt: Record<string, unknown> | null;
 };
+type EffectiveCoverageSource = {
+  id: string;
+  class_section_id: string;
+  subject_id: string | null;
+  period_number: number;
+  starts_at: string;
+  ends_at: string;
+  teacher_user_id: string | null;
+  occurrence_key: string;
+  source_kind: "daily_plan" | "published_timetable" | "legacy_timetable";
+  source_record_id: string;
+  source_revision: number;
+  source_version: number | null;
+  title: string;
+  slot_type: "class" | "break" | "activity";
+  room: string;
+  timezone: string;
+  class_label: string;
+  subject_name: string | null;
+  subject_code: string | null;
+  space_id: string | null;
+  space_name: string | null;
+  space_revision: number | null;
+};
+
+export type StaffProjectionMutation =
+  | "profile_created"
+  | "onboarding_updated"
+  | "leave_policy_created"
+  | "leave_policy_updated"
+  | "leave_balance_adjusted"
+  | "coverage_policy_updated";
+
+const STAFF_PROJECTION_EVENTS = {
+  profile_created: {
+    eventType: "staff.access.updated",
+    aggregateType: "staff_profile",
+    refresh: ["staff-operations", "principal.home", "institution-activation", "campus-view"],
+  },
+  onboarding_updated: {
+    eventType: "staff.access.updated",
+    aggregateType: "staff_profile",
+    refresh: [
+      "staff.access",
+      "staff-operations",
+      "teacher.home",
+      "teacher.attendance",
+      "principal.home",
+      "institution-activation",
+      "campus-view",
+    ],
+  },
+  leave_policy_created: {
+    eventType: "administration.updated",
+    aggregateType: "staff_leave_policy",
+    refresh: ["staff-operations"],
+  },
+  leave_policy_updated: {
+    eventType: "administration.updated",
+    aggregateType: "staff_leave_policy",
+    refresh: ["staff-operations"],
+  },
+  leave_balance_adjusted: {
+    eventType: "administration.updated",
+    aggregateType: "staff_leave_balance_adjustment",
+    refresh: ["staff-operations"],
+  },
+  coverage_policy_updated: {
+    eventType: "administration.updated",
+    aggregateType: "staff_coverage_policy",
+    refresh: ["staff-operations"],
+  },
+} as const satisfies Record<StaffProjectionMutation, {
+  eventType: "staff.access.updated" | "administration.updated";
+  aggregateType: string;
+  refresh: readonly string[];
+}>;
+
+export function staffProjectionUpdateEvent(input: {
+  mutation: StaffProjectionMutation;
+  schoolId: string;
+  aggregateId: string;
+  revision: number;
+  audienceUserIds: string[];
+  metadata?: Record<string, unknown>;
+  extraRefresh?: string[];
+}) {
+  const contract = STAFF_PROJECTION_EVENTS[input.mutation];
+  return {
+    eventType: contract.eventType,
+    aggregateType: contract.aggregateType,
+    aggregateId: input.aggregateId,
+    audienceUserIds: [...new Set(input.audienceUserIds)].sort(),
+    idempotencyNamespace: `staff.${input.mutation}`,
+    payload: {
+      school_id: input.schoolId,
+      action: input.mutation,
+      revision: input.revision,
+      ...(input.metadata ?? {}),
+      refresh: [...new Set([...contract.refresh, ...(input.extraRefresh ?? [])])],
+    },
+  };
+}
 
 function canonicalJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalJson);
@@ -113,6 +230,10 @@ function canonicalJson(value: unknown): unknown {
 
 export function staffLeaveCommandHash(operation: StaffLeaveCommandType, targetRequestId: string | null, input: unknown) {
   return createHash("sha256").update(JSON.stringify(canonicalJson({ operation, target_request_id: targetRequestId, input }))).digest("hex");
+}
+
+export function staffCoverageCommandHash(operation: StaffCoverageCommandType, targetTaskId: string, input: unknown) {
+  return createHash("sha256").update(JSON.stringify(canonicalJson({ operation, target_task_id: targetTaskId, input }))).digest("hex");
 }
 
 export function assertRetainedStaffLeaveOutbox(
@@ -130,7 +251,7 @@ export function assertRetainedStaffLeaveOutbox(
 
 export {
   profileInput, policyInput, assignmentInput, coveragePolicyInput,
-  requestLeaveInput, decideLeaveInput, withdrawLeaveInput,
+  requestLeaveInput, decideLeaveInput, withdrawLeaveInput, respondCoverageInput,
 };
 
 @Injectable()
@@ -140,6 +261,9 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly db: DatabaseService,
     private readonly staffLeaveModel: StaffLeaveModelBridgeService,
+    private readonly coverageOffers: StaffCoverageOfferBridgeService,
+    @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
+    @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal: TemporalContextPort,
   ) {}
 
   onModuleInit() {
@@ -192,9 +316,44 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       VALUES (${schoolId}::uuid,${user.id}::uuid,${action},${targetId}::uuid,${JSON.stringify(metadata)}::jsonb)`.execute(db);
   }
 
-  private async enqueue(db: Transaction<Database>, schoolId: string, requestId: string, event: string, audience: string[], notificationUsers: string[], notification: Record<string, unknown> | null, payload: Record<string, unknown>, aggregateType = "staff_leave_request") {
+  private async activeMemberAudience(
+    db: Transaction<Database>,
+    schoolId: string,
+    roles: MembershipRole[],
+  ) {
+    const rows = await db.selectFrom("school_memberships as membership")
+      .innerJoin("users as account", "account.id", "membership.user_id")
+      .select("membership.user_id")
+      .where("membership.school_id", "=", schoolId)
+      .where("membership.is_active", "=", true)
+      .where("membership.role", "in", roles)
+      .where("account.is_active", "=", true)
+      .execute();
+    return rows.map((row) => row.user_id);
+  }
+
+  private async enqueueStaffProjectionUpdate(
+    db: Transaction<Database>,
+    input: Parameters<typeof staffProjectionUpdateEvent>[0],
+  ) {
+    const event = staffProjectionUpdateEvent(input);
+    await this.enqueue(
+      db,
+      input.schoolId,
+      event.aggregateId,
+      event.eventType,
+      event.audienceUserIds,
+      [],
+      null,
+      event.payload,
+      event.aggregateType,
+      event.idempotencyNamespace,
+    );
+  }
+
+  private async enqueue(db: Transaction<Database>, schoolId: string, requestId: string, event: string, audience: string[], notificationUsers: string[], notification: Record<string, unknown> | null, payload: Record<string, unknown>, aggregateType = "staff_leave_request", idempotencyNamespace = event) {
     const revision = typeof payload.revision === "number" ? payload.revision : 1;
-    const idempotencyKey = `${event}:${requestId}:${revision}`;
+    const idempotencyKey = `${idempotencyNamespace}:${requestId}:${revision}`;
     const exactAudience = [...new Set(audience)].sort();
     const exactNotificationUsers = [...new Set(notificationUsers)].sort();
     const inserted = await db.insertInto("event_outbox").values({
@@ -271,6 +430,66 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         ${evidence.correlation_id}::uuid,${evidence.causation_event_id}::uuid,
         ${evidence.authority_receipt ? JSON.stringify(evidence.authority_receipt) : null}::jsonb,
         ${evidence.coordination_receipt ? JSON.stringify(evidence.coordination_receipt) : null}::jsonb
+      )`.execute(db);
+  }
+
+  private async priorCoverageCommand<T>(
+    db: Transaction<Database>,
+    schoolId: string,
+    actorId: string,
+    commandId: string,
+    targetTaskId: string,
+    requestHash: string,
+  ) {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`staff-coverage:${schoolId}:${actorId}:${commandId}`},0))`.execute(db);
+    const prior = (await sql<{
+      command_type: StaffCoverageCommandType;
+      target_task_id: string;
+      request_hash: string;
+      result: T;
+    }>`SELECT command_type,target_task_id,request_hash,result
+      FROM staff_coverage_commands
+      WHERE school_id=${schoolId}::uuid
+        AND actor_id=${actorId}::uuid
+        AND command_id=${commandId}::uuid`.execute(db)).rows[0];
+    if (!prior) return null;
+    if (prior.command_type !== "respond"
+      || prior.target_task_id !== targetTaskId
+      || prior.request_hash !== requestHash) {
+      throw new ConflictException("This command ID was already used for different cover details.");
+    }
+    return prior.result;
+  }
+
+  private async saveCoverageCommand(
+    db: Transaction<Database>,
+    input: {
+      school_id: string;
+      actor_id: string;
+      command_id: string;
+      decision: "accepted" | "declined";
+      target_task_id: string;
+      request_hash: string;
+      source_task_revision: number;
+      resulting_task_revision: number;
+      result: unknown;
+      outbox_event_id: string;
+      substitution_id: string | null;
+      authority_receipt: Record<string, unknown>;
+      schedule_provenance: Record<string, unknown>;
+    },
+  ) {
+    await sql`INSERT INTO staff_coverage_commands(
+        school_id,actor_id,command_id,command_type,decision,target_task_id,
+        request_hash,source_task_revision,resulting_task_revision,result,
+        outbox_event_id,substitution_id,authority_receipt,schedule_provenance
+      ) VALUES(
+        ${input.school_id}::uuid,${input.actor_id}::uuid,${input.command_id}::uuid,
+        'respond',${input.decision},${input.target_task_id}::uuid,${input.request_hash},
+        ${input.source_task_revision},${input.resulting_task_revision},
+        ${JSON.stringify(input.result)}::jsonb,${input.outbox_event_id}::uuid,
+        ${input.substitution_id}::uuid,${JSON.stringify(input.authority_receipt)}::jsonb,
+        ${JSON.stringify(input.schedule_provenance)}::jsonb
       )`.execute(db);
   }
 
@@ -409,7 +628,7 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           status: nextStatus,
           revision: updated.revision,
           fallback_kind: updated.fallback_kind,
-          refresh: ["principal.staff", "teacher.responsibilities", "requests", "notifications", "attention"],
+          refresh: ["staff-operations", "requests", "notifications", "attention"],
         }, "staff_coverage_task");
         await sql`INSERT INTO school_operations_audit(school_id,actor_id,action,target_id,metadata)
           VALUES(${item.school_id}::uuid,${item.policy_actor_id}::uuid,${`staff.coverage.${nextStatus}`},${item.id}::uuid,
@@ -455,40 +674,28 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         supervisor_staff_profile_id: policy.supervisor_staff_profile_id,
         revision: policy.revision,
       });
+      const audience = await this.activeMemberAudience(db, schoolId, ["admin", "staff"]);
+      await this.enqueueStaffProjectionUpdate(db, {
+        mutation: "coverage_policy_updated",
+        schoolId,
+        aggregateId: schoolId,
+        revision: policy.revision,
+        audienceUserIds: audience,
+        metadata: { enabled: policy.enabled },
+      });
       return policy;
     });
     await this.reconcileCoverageDeadlines(schoolId);
     return saved;
   }
 
-  private async createCoverageTasks(db: Transaction<Database>, user: AuthUser, schoolId: string, request: { id: string; staff_profile_id: string; starts_on: string; ends_on: string; portion: string; handover_note: string }, profile: { user_id: string | null }) {
-    const scheduleTasks = await sql<{ id: string }>`INSERT INTO staff_coverage_tasks(
-        school_id,leave_request_id,absent_staff_profile_id,source_schedule_id,class_section_id,subject_id,
-        duty_date,period_number,starts_at,ends_at,title,location,handover_note)
-      SELECT ${schoolId}::uuid,${request.id}::uuid,${request.staff_profile_id}::uuid,schedule.id,schedule.class_section_id,schedule.subject_id,
-        day::date,schedule.period_number,schedule.starts_at,schedule.ends_at,schedule.title,schedule.room,${request.handover_note}
-      FROM generate_series(${request.starts_on}::date,${request.ends_on}::date,interval '1 day') day
-      CROSS JOIN LATERAL effective_school_schedule(${schoolId}::uuid,day::date) schedule
-      WHERE schedule.teacher_user_id=${profile.user_id}::uuid AND schedule.slot_type='class' AND NOT schedule.cancelled
-        AND (${request.portion}='full_day' OR (${request.portion}='first_half' AND schedule.starts_at < time '12:00') OR (${request.portion}='second_half' AND schedule.starts_at >= time '12:00'))
-      ON CONFLICT DO NOTHING RETURNING id`.execute(db);
-    const responsibilityTasks = await sql<{ id: string }>`INSERT INTO staff_coverage_tasks(
-        school_id,leave_request_id,absent_staff_profile_id,responsibility_assignment_id,class_section_id,subject_id,
-        duty_date,starts_at,ends_at,title,location,handover_note)
-      SELECT assignment.school_id,${request.id}::uuid,assignment.staff_profile_id,assignment.id,assignment.class_section_id,assignment.subject_id,
-        assignment.starts_on,assignment.starts_at,assignment.ends_at,type.name || CASE WHEN assignment.scope_label='' THEN '' ELSE ' · ' || assignment.scope_label END,
-        assignment.location,${request.handover_note}
-      FROM staff_responsibility_assignments assignment
-      JOIN staff_responsibility_types type ON type.id=assignment.responsibility_type_id
-      WHERE assignment.school_id=${schoolId}::uuid AND assignment.staff_profile_id=${request.staff_profile_id}::uuid
-        AND assignment.status='active' AND type.scope_kind IN ('event','scheduled_duty')
-        AND assignment.starts_on BETWEEN ${request.starts_on}::date AND ${request.ends_on}::date
-        AND (${request.portion}='full_day' OR assignment.starts_at IS NULL OR (${request.portion}='first_half' AND assignment.starts_at < time '12:00') OR (${request.portion}='second_half' AND assignment.starts_at >= time '12:00'))
-      ON CONFLICT DO NOTHING RETURNING id`.execute(db);
-    const ids = [...scheduleTasks.rows, ...responsibilityTasks.rows].map((row) => row.id);
-    if (ids.length) {
-      await db.insertInto("staff_coverage_task_audits").values(ids.map((task_id) => ({ school_id: schoolId, task_id, actor_id: user.id, action: "created" as const, from_status: null, to_status: "open", note: "Created automatically from approved leave." }))).execute();
-    }
+  private async createCoverageTasks(db: Transaction<Database>, actorId: string, schoolId: string, request: { id: string; staff_profile_id: string; starts_on: string; ends_on: string; portion: string; handover_note: string }, profile: { user_id: string | null }) {
+    const ids = await this.coverage.createTasksForApprovedLeave(db, {
+      school_id: schoolId,
+      actor_user_id: actorId,
+      request,
+      absent_teacher_user_id: profile.user_id,
+    });
     return ids.length;
   }
 
@@ -528,7 +735,7 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
     const requests = await sql`SELECT r.*,p.name AS policy_name,p.code AS policy_code,
         profile.first_name,profile.last_name,profile.staff_code,profile.designation,profile.user_id,
         COALESCE((SELECT count(*)::int FROM generate_series(r.starts_on,r.ends_on,interval '1 day') day
-          CROSS JOIN LATERAL effective_school_schedule(r.school_id,day::date) schedule
+          CROSS JOIN LATERAL planned_school_schedule_v2(r.school_id,day::date) schedule
           WHERE schedule.teacher_user_id=profile.user_id AND schedule.slot_type='class'),0) AS affected_periods,
         COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id),0) AS coverage_tasks,
         COALESCE((SELECT count(*)::int FROM staff_coverage_tasks task WHERE task.leave_request_id=r.id AND task.status IN ('open','offered','declined')),0) AS coverage_open,
@@ -585,6 +792,11 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         fallback_supervisor.first_name AS fallback_supervisor_first_name,fallback_supervisor.last_name AS fallback_supervisor_last_name,
         CASE WHEN section.id IS NULL THEN '' ELSE 'Class ' || section.grade || section.section END AS class_name,
         subject.name AS subject_name,
+        offer_route.status AS offer_route_status,
+        offer_route.route_kind AS offer_route_kind,
+        offer_route.explanation AS offer_route_explanation,
+        offer_route.response_due_at AS offer_response_due_at,
+        offer_route.expires_at AS offer_expires_at,
         CASE WHEN ${canReviewStaffLeave} OR absent.user_id=${user.id}::uuid
           THEN leave_request.reason ELSE NULL END AS leave_reason
       FROM staff_coverage_tasks task
@@ -593,6 +805,14 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       LEFT JOIN staff_profiles fallback_supervisor ON fallback_supervisor.id=task.fallback_supervisor_staff_profile_id
       LEFT JOIN class_sections section ON section.id=task.class_section_id
       LEFT JOIN subjects subject ON subject.id=task.subject_id
+      LEFT JOIN LATERAL (
+        SELECT route.status,route.route_kind,route.explanation,
+          route.response_due_at,route.expires_at
+        FROM staff_coverage_offer_routes route
+        WHERE route.school_id=task.school_id AND route.coverage_task_id=task.id
+        ORDER BY route.route_round DESC
+        LIMIT 1
+      ) offer_route ON true
       JOIN staff_leave_requests leave_request ON leave_request.id=task.leave_request_id
       WHERE task.school_id=${schoolId}::uuid
         AND (${member.role}='admin' OR absent.user_id=${user.id}::uuid OR (
@@ -671,6 +891,16 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           invitation = { ...invite.rows[0]!, token };
         }
         await this.audit(db, user, schoolId, "staff.profile.created", profile.id, { staff_kind: profile.staff_kind, position: profile.designation, invitation_created: Boolean(invitation) });
+        const audience = await this.activeMemberAudience(db, schoolId, ["admin"]);
+        await this.enqueueStaffProjectionUpdate(db, {
+          mutation: "profile_created",
+          schoolId,
+          aggregateId: profile.id,
+          revision: profile.revision,
+          audienceUserIds: [...audience, ...(profile.user_id ? [profile.user_id] : [])],
+          metadata: { status: profile.status },
+          extraRefresh: invitation ? ["principal.administration"] : [],
+        });
         return { profile, invitation };
       });
     } catch (error) {
@@ -684,6 +914,10 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
     const data = z.object({ item_id: uuid, completed: z.boolean(), note: z.string().trim().max(500).default(""), expected_revision: z.number().int().positive() }).parse(body);
     return this.db.transaction().execute(async (db) => {
       await this.principal(user, schoolId, db);
+      // All staff eligibility paths acquire the school schedule lock before
+      // profile rows. Cover acceptance uses the same order, preventing a
+      // schedule/profile lock inversion under concurrent decisions.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`schedule:${schoolId}`},0))`.execute(db);
       const profile = await db.selectFrom("staff_profiles").selectAll().where("id", "=", profileId).where("school_id", "=", schoolId).forUpdate().executeTakeFirst();
       if (!profile) throw new NotFoundException();
       if (profile.revision !== data.expected_revision) throw new ConflictException("This staff record changed. Refresh before continuing.");
@@ -692,9 +926,73 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       await db.updateTable("staff_onboarding_items").set({ completed_at: data.completed ? new Date() : null, completed_by: data.completed ? user.id : null, note: data.note, updated_at: new Date() }).where("id", "=", item.id).execute();
       const remaining = await sql<{ count: number }>`SELECT count(*)::int AS count FROM staff_onboarding_items WHERE staff_profile_id=${profileId}::uuid AND required AND completed_at IS NULL`.execute(db);
       const nextStatus = remaining.rows[0]!.count === 0 && profile.user_id ? "active" : "onboarding";
+      const losesCoverageEligibility = profile.status === "active" && nextStatus !== "active";
+      const correlationId = losesCoverageEligibility ? randomUUID() : null;
+      let coverageInput: CoverageReconciliationInput | null = null;
+      let coveragePreparation: { model_event_ids: string[] } | null = null;
+      if (losesCoverageEligibility) {
+        // Profile eligibility and timetable substitution truth share the same
+        // school schedule lock. Bootstrap retained accepted evidence while the
+        // actor endpoint is still eligible, then let the prospective reconciler
+        // close only future accepted cover after the authoritative status write.
+        const range = (await sql<{ today: string; last_date: string }>`SELECT
+            (now() AT TIME ZONE school.timezone)::date::text AS today,
+            GREATEST(
+              (now() AT TIME ZONE school.timezone)::date,
+              COALESCE((SELECT max(substitution.duty_date)
+                FROM staff_timetable_substitutions substitution
+                WHERE substitution.school_id=school.id
+                  AND substitution.replacement_staff_profile_id=${profileId}::uuid
+                  AND substitution.state='effective'
+                  AND substitution.duty_date>=(now() AT TIME ZONE school.timezone)::date),
+                (now() AT TIME ZONE school.timezone)::date)
+            )::text AS last_date
+          FROM schools school WHERE school.id=${schoolId}::uuid`.execute(db)).rows[0]!;
+        coverageInput = {
+          school_id: schoolId,
+          from: range.today,
+          to: range.last_date,
+          actor_user_id: user.id,
+          correlation_id: correlationId!,
+          cause: {
+            kind: "staff_profile_eligibility_changed",
+            source_domain: "staff_operations",
+            source_record_id: profileId,
+            source_revision: profile.revision + 1,
+          },
+        };
+        coveragePreparation = await this.coverage.prepareEffectiveCoverageProjection(
+          db,
+          coverageInput,
+        );
+      }
       const updated = await db.updateTable("staff_profiles").set({ status: nextStatus, updated_by: user.id, updated_at: new Date() }).where("id", "=", profileId).returningAll().executeTakeFirstOrThrow();
-      await this.audit(db, user, schoolId, "staff.onboarding.updated", profileId, { item_key: item.item_key, completed: data.completed, revision: updated.revision });
-      return updated;
+      if (coverageInput && updated.revision !== coverageInput.cause.source_revision) {
+        throw new ConflictException("The staff eligibility revision changed while coverage was being prepared.");
+      }
+      const coverageReceipt = coverageInput
+        ? await this.coverage.reconcileEffectiveCoverage(db, coverageInput)
+        : null;
+      await this.audit(db, user, schoolId, "staff.onboarding.updated", profileId, {
+        item_key: item.item_key,
+        completed: data.completed,
+        revision: updated.revision,
+        previous_status: profile.status,
+        status: updated.status,
+        correlation_id: correlationId,
+        coverage_preparation: coveragePreparation,
+        coverage_reconciliation: coverageReceipt,
+      });
+      const audience = await this.activeMemberAudience(db, schoolId, ["admin"]);
+      await this.enqueueStaffProjectionUpdate(db, {
+        mutation: "onboarding_updated",
+        schoolId,
+        aggregateId: profileId,
+        revision: updated.revision,
+        audienceUserIds: [...audience, ...(profile.user_id ? [profile.user_id] : [])],
+        metadata: { status: updated.status },
+      });
+      return { ...updated, coverage_reconciliation: coverageReceipt };
     });
   }
 
@@ -839,6 +1137,15 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
           is_paid: data.is_paid, is_statutory: data.is_statutory, is_active: data.is_active, updated_by: user.id,
         }).returningAll().executeTakeFirstOrThrow();
         await this.audit(db, user, schoolId, "staff.leave_policy.created", created.id);
+        const audience = await this.activeMemberAudience(db, schoolId, ["admin", "staff"]);
+        await this.enqueueStaffProjectionUpdate(db, {
+          mutation: "leave_policy_created",
+          schoolId,
+          aggregateId: created.id,
+          revision: created.revision,
+          audienceUserIds: audience,
+          metadata: { academic_year: created.academic_year, active: created.is_active },
+        });
         return created;
       }
       if (!data.expected_revision) throw new BadRequestException("Refresh this policy before editing it.");
@@ -849,6 +1156,15 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       }).where("id", "=", policyId).where("school_id", "=", schoolId).where("revision", "=", data.expected_revision).returningAll().executeTakeFirst();
       if (!updated) throw new ConflictException("This policy changed. Refresh and review the latest values.");
       await this.audit(db, user, schoolId, "staff.leave_policy.updated", updated.id, { revision: updated.revision });
+      const audience = await this.activeMemberAudience(db, schoolId, ["admin", "staff"]);
+      await this.enqueueStaffProjectionUpdate(db, {
+        mutation: "leave_policy_updated",
+        schoolId,
+        aggregateId: updated.id,
+        revision: updated.revision,
+        audienceUserIds: audience,
+        metadata: { academic_year: updated.academic_year, active: updated.is_active },
+      });
       return updated;
     });
   }
@@ -858,8 +1174,22 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
     const data = z.object({ staff_profile_id: uuid, policy_id: uuid, days: z.coerce.number().min(-366).max(366).refine((value) => value !== 0), reason: z.string().trim().min(8).max(500) }).parse(body);
     return this.db.transaction().execute(async (db) => {
       await this.principal(user, schoolId, db);
+      const profile = await db.selectFrom("staff_profiles").select(["id", "user_id"])
+        .where("id", "=", data.staff_profile_id).where("school_id", "=", schoolId).executeTakeFirst();
+      const policy = await db.selectFrom("staff_leave_policies").select("id")
+        .where("id", "=", data.policy_id).where("school_id", "=", schoolId).executeTakeFirst();
+      if (!profile || !policy) throw new BadRequestException("Choose a staff member and leave policy from this school.");
       const adjustment = await db.insertInto("staff_leave_balance_adjustments").values({ school_id: schoolId, staff_profile_id: data.staff_profile_id, policy_id: data.policy_id, days: data.days.toFixed(2), reason: data.reason, recorded_by: user.id }).returningAll().executeTakeFirstOrThrow();
       await this.audit(db, user, schoolId, "staff.leave_balance.adjusted", adjustment.id, { staff_profile_id: data.staff_profile_id, policy_id: data.policy_id, days: data.days, reason: data.reason });
+      const audience = await this.activeMemberAudience(db, schoolId, ["admin"]);
+      await this.enqueueStaffProjectionUpdate(db, {
+        mutation: "leave_balance_adjusted",
+        schoolId,
+        aggregateId: adjustment.id,
+        revision: 1,
+        audienceUserIds: [...audience, ...(profile.user_id ? [profile.user_id] : [])],
+        metadata: { staff_profile_id: profile.id, policy_id: policy.id },
+      });
       return adjustment;
     });
   }
@@ -990,11 +1320,11 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
       }
       const updated = await db.updateTable("staff_leave_requests").set({ status: data.decision, revision: request.revision + 1, decided_by: user.id, decided_at: new Date(), decision_note: data.note, updated_at: new Date() }).where("id", "=", request.id).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_leave_request_audits").values({ school_id: schoolId, request_id: request.id, actor_id: user.id, action: data.decision, from_status: request.status, to_status: data.decision, note: data.note }).execute();
-      if (data.decision === "approved") await this.createCoverageTasks(db, user, schoolId, request, profile);
+      if (data.decision === "approved") await this.createCoverageTasks(db, user.id, schoolId, request, profile);
       const coverage = data.decision === "approved"
         ? await sql<{ affected: number }>`SELECT count(*)::int AS affected FROM staff_coverage_tasks WHERE leave_request_id=${request.id}::uuid`.execute(db)
         : await sql<{ affected: number }>`SELECT count(*)::int AS affected FROM generate_series(${request.starts_on}::date,${request.ends_on}::date,interval '1 day') day
-          CROSS JOIN LATERAL effective_school_schedule(${schoolId}::uuid,day::date) schedule
+          CROSS JOIN LATERAL planned_school_schedule_v2(${schoolId}::uuid,day::date) schedule
           WHERE schedule.teacher_user_id=${profile.user_id}::uuid AND schedule.slot_type='class'`.execute(db);
       const coverageCount = coverage.rows[0]?.affected ?? 0;
       const audience = [decisionAuthority.user_id, ...(profile.user_id ? [profile.user_id] : [])];
@@ -1102,21 +1432,147 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
 
   async respondCoverage(user: AuthUser, schoolId: string, taskId: string, body: unknown) {
     uuid.parse(taskId);
-    const data = z.object({ decision: z.enum(["accepted", "declined"]), note: z.string().trim().max(500).default(""), expected_revision: z.number().int().positive() }).parse(body);
+    const data = respondCoverageInput.parse(body);
+    const { command_id: commandId, ...commandInput } = data;
+    const requestHash = staffCoverageCommandHash("respond", taskId, commandInput);
     return this.db.transaction().execute(async (db) => {
       await this.membership(user, schoolId, ["staff"], db);
-      const result = await sql<any>`SELECT task.*,profile.user_id,profile.first_name,profile.last_name FROM staff_coverage_tasks task
+      // Serialize acceptance with timetable publication, dated plans, closures,
+      // and membership deactivation so exact-source validation cannot race.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`schedule:${schoolId}`},0))`.execute(db);
+      const prior = await this.priorCoverageCommand<Record<string, unknown>>(
+        db, schoolId, user.id, commandId, taskId, requestHash,
+      );
+      if (prior) return prior;
+      const result = await sql<any>`SELECT task.*,profile.user_id,profile.first_name,profile.last_name,
+          absent.user_id AS absent_user_id
+        FROM staff_coverage_tasks task
         JOIN staff_profiles profile ON profile.id=task.replacement_staff_profile_id
+        JOIN staff_profiles absent ON absent.id=task.absent_staff_profile_id
         WHERE task.id=${taskId}::uuid AND task.school_id=${schoolId}::uuid
           AND profile.user_id=${user.id}::uuid AND profile.status='active' FOR UPDATE`.execute(db);
       const task = result.rows[0];
       if (!task) throw new NotFoundException();
       if (task.status !== "offered" || task.revision !== data.expected_revision) throw new ConflictException("This cover offer changed. Refresh before responding.");
       if (data.decision === "declined" && data.note.length < 4) throw new BadRequestException("Add a short reason when declining cover.");
+      const offerBinding = await this.coverageOffers.currentResponseBinding(db, {
+        school_id: schoolId,
+        task_id: task.id,
+        task_revision: task.revision,
+        selected_staff_profile_id: task.replacement_staff_profile_id,
+        selected_user_id: task.user_id,
+      });
+
+      let substitutionId: string | null = null;
+      let scheduleProvenance: Record<string, unknown> = {
+        effective_timetable: false,
+        reason: "non_schedule_duty",
+      };
+      let sourceSchedule: EffectiveCoverageSource | null = null;
+
+      if (data.decision === "accepted" && task.source_schedule_id) {
+        if (!task.class_section_id || !task.period_number || !task.starts_at || !task.ends_at) {
+          throw new ConflictException("This cover offer has incomplete timetable provenance.");
+        }
+        sourceSchedule = (await sql<EffectiveCoverageSource>`SELECT
+            schedule.id,schedule.class_section_id,schedule.subject_id,schedule.period_number,
+            schedule.starts_at::text,schedule.ends_at::text,schedule.teacher_user_id,
+            schedule.occurrence_key,schedule.source_kind,schedule.source_record_id,
+            schedule.source_revision,schedule.source_version,schedule.title,
+            schedule.slot_type,schedule.room,school.timezone,
+            concat('Class ',section.grade,section.section) AS class_label,
+            subject.name AS subject_name,subject.code AS subject_code,
+            space.id AS space_id,space.name AS space_name,space.revision AS space_revision
+          FROM planned_school_schedule_v2(${schoolId}::uuid,${task.duty_date}::date) schedule
+          JOIN schools school ON school.id=${schoolId}::uuid
+          JOIN class_sections section ON section.id=schedule.class_section_id
+            AND section.school_id=${schoolId}::uuid
+          LEFT JOIN subjects subject ON subject.id=schedule.subject_id
+          LEFT JOIN schedule_periods recurring_period
+            ON schedule.source_kind='published_timetable' AND recurring_period.id=schedule.id
+          LEFT JOIN day_plan_periods dated_period
+            ON schedule.source_kind='daily_plan' AND dated_period.id=schedule.id
+              AND dated_period.version=schedule.source_version
+          LEFT JOIN timetable_slots legacy_period
+            ON schedule.source_kind='legacy_timetable' AND legacy_period.id=schedule.id
+          LEFT JOIN campus_spaces space ON space.school_id=${schoolId}::uuid
+            AND space.id=COALESCE(dated_period.space_id,recurring_period.space_id,legacy_period.space_id)
+          WHERE schedule.id=${task.source_schedule_id}::uuid
+            AND schedule.class_section_id=${task.class_section_id}::uuid
+            AND schedule.period_number=${task.period_number}
+            AND schedule.starts_at=${task.starts_at}::time
+            AND schedule.ends_at=${task.ends_at}::time
+            AND NOT schedule.cancelled
+          LIMIT 1`.execute(db)).rows[0] ?? null;
+        if (!sourceSchedule || sourceSchedule.teacher_user_id !== task.absent_user_id
+          || sourceSchedule.subject_id !== task.subject_id) {
+          throw new ConflictException("The timetable occurrence changed after this cover was offered. Ask the coordinator to review it again.");
+        }
+
+        const leaveConflict = await sql`SELECT 1 FROM staff_leave_requests
+          WHERE staff_profile_id=${task.replacement_staff_profile_id}::uuid
+            AND status='approved'
+            AND ${task.duty_date}::date BETWEEN starts_on AND ends_on
+          LIMIT 1`.execute(db);
+        const scheduleConflict = await sql`SELECT 1
+          FROM effective_school_schedule(${schoolId}::uuid,${task.duty_date}::date) schedule
+          WHERE schedule.teacher_user_id=${task.user_id}::uuid
+            AND schedule.id<>${task.source_schedule_id}::uuid
+            AND schedule.starts_at<${task.ends_at}::time
+            AND schedule.ends_at>${task.starts_at}::time
+            AND NOT schedule.cancelled
+          LIMIT 1`.execute(db);
+        const coverConflict = await sql`SELECT 1 FROM staff_coverage_tasks
+          WHERE replacement_staff_profile_id=${task.replacement_staff_profile_id}::uuid
+            AND duty_date=${task.duty_date}::date
+            AND status='accepted'
+            AND id<>${task.id}::uuid
+            AND starts_at<${task.ends_at}::time
+            AND ends_at>${task.starts_at}::time
+          LIMIT 1`.execute(db);
+        if (leaveConflict.rows.length || scheduleConflict.rows.length || coverConflict.rows.length) {
+          throw new ConflictException("This cover can no longer be accepted because the replacement is unavailable at that time.");
+        }
+        substitutionId = randomUUID();
+        scheduleProvenance = {
+          effective_timetable: true,
+          occurrence_key: sourceSchedule.occurrence_key,
+          source_kind: sourceSchedule.source_kind,
+          source_record_id: sourceSchedule.source_record_id,
+          source_revision: sourceSchedule.source_revision,
+          source_version: sourceSchedule.source_version,
+          source_schedule_id: sourceSchedule.id,
+          original_teacher_user_id: sourceSchedule.teacher_user_id,
+          replacement_teacher_user_id: task.user_id,
+        };
+      }
+
       const updated = await db.updateTable("staff_coverage_tasks").set({ status: data.decision, responded_at: new Date(), response_note: data.note, updated_at: new Date() }).where("id", "=", task.id).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("staff_coverage_task_audits").values({ school_id: schoolId, task_id: task.id, actor_id: user.id, action: data.decision, from_status: "offered", to_status: data.decision, note: data.note }).execute();
+
+      if (substitutionId && sourceSchedule) {
+        await sql`INSERT INTO staff_timetable_substitutions(
+            id,school_id,coverage_task_id,class_section_id,subject_id,duty_date,
+            period_number,starts_at,ends_at,source_schedule_id,source_occurrence_key,
+            source_kind,source_record_id,source_revision,source_version,
+            original_teacher_user_id,replacement_staff_profile_id,
+            replacement_teacher_user_id,coverage_task_revision,accepted_by,accepted_at
+          ) VALUES(
+            ${substitutionId}::uuid,${schoolId}::uuid,${task.id}::uuid,
+            ${sourceSchedule.class_section_id}::uuid,${sourceSchedule.subject_id}::uuid,
+            ${task.duty_date}::date,${sourceSchedule.period_number},
+            ${sourceSchedule.starts_at}::time,${sourceSchedule.ends_at}::time,
+            ${sourceSchedule.id}::uuid,${sourceSchedule.occurrence_key},
+            ${sourceSchedule.source_kind},${sourceSchedule.source_record_id}::uuid,
+            ${sourceSchedule.source_revision},${sourceSchedule.source_version},
+            ${sourceSchedule.teacher_user_id}::uuid,
+            ${task.replacement_staff_profile_id}::uuid,${task.user_id}::uuid,
+            ${updated.revision},${user.id}::uuid,${updated.responded_at}
+          )`.execute(db);
+      }
+
       const admins = await sql<{ user_id: string }>`SELECT user_id FROM school_memberships WHERE school_id=${schoolId}::uuid AND role='admin' AND is_active`.execute(db);
-      await this.enqueue(db, schoolId, task.id, `staff.coverage.${data.decision}`, [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), {
+      const outboxEventId = await this.enqueue(db, schoolId, task.id, `staff.coverage.${data.decision}`, [user.id, ...admins.rows.map((row) => row.user_id)], admins.rows.map((row) => row.user_id), {
         kind: "general",
         title: `Cover duty ${data.decision}`,
         body: `${task.first_name} ${task.last_name} ${data.decision} ${task.title}.`,
@@ -1129,9 +1585,184 @@ export class StaffOperationsService implements OnModuleInit, OnModuleDestroy {
         attention_source_revision: updated.revision,
         attention_topic_key: `staff-coverage:${task.id}`,
         attention_subject_label: `${task.first_name} ${task.last_name}`.trim(),
-      }, { school_id: schoolId, status: data.decision, revision: updated.revision }, "staff_coverage_task");
-      await this.audit(db, user, schoolId, `staff.coverage.${data.decision}`, task.id, { note: data.note });
-      return updated;
+      }, {
+        school_id: schoolId,
+        status: data.decision,
+        revision: updated.revision,
+        substitution_id: substitutionId,
+        effective_timetable: Boolean(substitutionId),
+        ...(substitutionId ? scheduleProvenance : {}),
+        refresh: substitutionId ? [
+          "staff-operations", "requests", "attention", "teacher.home",
+          "teacher.attendance", "principal.home", "principal.timetable",
+          "student.home", "student.timetable", "parent.home", "parent.timetable",
+          "calendar", "campus-view",
+        ] : ["staff-operations", "requests", "attention", "teacher.home", "principal.home"],
+      }, "staff_coverage_task");
+      if (substitutionId) {
+        await sql`UPDATE staff_timetable_substitutions
+          SET effective_event_id=${outboxEventId}::uuid
+          WHERE id=${substitutionId}::uuid AND school_id=${schoolId}::uuid`.execute(db);
+      }
+      if (substitutionId && sourceSchedule) {
+        const dailyPlan = sourceSchedule.source_kind === "daily_plan";
+        const scheduleDomain = dailyPlan ? "day_plan" : "timetable";
+        const scheduleDomainId = dailyPlan
+          ? `${sourceSchedule.source_record_id}:${sourceSchedule.source_version}`
+          : sourceSchedule.source_kind === "published_timetable"
+            ? sourceSchedule.source_record_id
+            : `legacy:${sourceSchedule.source_record_id}`;
+        const periodDomainId = dailyPlan
+          ? `${sourceSchedule.id}:${sourceSchedule.source_version}`
+          : sourceSchedule.id;
+        const projection = await this.temporal.recordAcceptedScheduleSubstitution(db, {
+          school_id: schoolId,
+          actor_user_id: user.id,
+          substitution_id: substitutionId,
+          coverage_task_id: task.id,
+          coverage_task_revision: updated.revision,
+          source_outbox_event_id: outboxEventId,
+          occurrence_key: sourceSchedule.occurrence_key,
+          source_kind: sourceSchedule.source_kind,
+          source_schedule_id: sourceSchedule.id,
+          source_record_id: sourceSchedule.source_record_id,
+          source_revision: sourceSchedule.source_revision,
+          source_version: sourceSchedule.source_version,
+          schedule: {
+            kind: "schedule",
+            domain: scheduleDomain,
+            domain_id: scheduleDomainId,
+            label: dailyPlan
+              ? `${sourceSchedule.class_label} plan for ${task.duty_date}`
+              : `${sourceSchedule.class_label} timetable`,
+            lifecycle_state: "active",
+            source_revision: sourceSchedule.source_revision,
+            metadata: { source_kind: sourceSchedule.source_kind },
+          },
+          period: {
+            kind: "schedule_period",
+            domain: scheduleDomain,
+            domain_id: periodDomainId,
+            label: sourceSchedule.title,
+            lifecycle_state: "active",
+            source_revision: sourceSchedule.source_revision,
+            metadata: { period_number: sourceSchedule.period_number },
+          },
+          class_section: {
+            kind: "class",
+            domain: "academic_structure",
+            domain_id: sourceSchedule.class_section_id,
+            label: sourceSchedule.class_label,
+            lifecycle_state: "active",
+            source_revision: 1,
+            metadata: {},
+          },
+          subject: sourceSchedule.subject_id ? {
+            kind: "subject",
+            domain: "academic_structure",
+            domain_id: sourceSchedule.subject_id,
+            label: sourceSchedule.subject_name ?? sourceSchedule.subject_code ?? sourceSchedule.title,
+            lifecycle_state: "active",
+            source_revision: 1,
+            metadata: { code: sourceSchedule.subject_code },
+          } : null,
+          space: sourceSchedule.space_id ? {
+            kind: "space",
+            domain: "campus_topology",
+            domain_id: sourceSchedule.space_id,
+            label: sourceSchedule.space_name ?? sourceSchedule.room,
+            lifecycle_state: "active",
+            source_revision: sourceSchedule.space_revision ?? 1,
+            metadata: {},
+          } : null,
+          duty_date: String(task.duty_date),
+          period_number: sourceSchedule.period_number,
+          starts_at: sourceSchedule.starts_at,
+          ends_at: sourceSchedule.ends_at,
+          title: sourceSchedule.title,
+          slot_type: sourceSchedule.slot_type,
+          room_snapshot: sourceSchedule.room,
+          original_teacher_user_id: sourceSchedule.teacher_user_id!,
+          replacement_teacher_user_id: task.user_id,
+          accepted_at: new Date(updated.responded_at!).toISOString(),
+          correlation_id: commandId,
+        });
+        if (projection.projection_status !== "applied") {
+          throw new ConflictException(
+            "The timetable changed while this cover was being accepted. Refresh and ask the coordinator to offer it again.",
+          );
+        }
+        scheduleProvenance = {
+          ...scheduleProvenance,
+          campus_model_event_id: projection.event_id,
+          campus_model_projection_status: projection.projection_status,
+          campus_model_replayed: projection.replayed,
+        };
+      }
+      const coordinationOutcome = offerBinding
+        ? await this.coverageOffers.recordResponse(db, {
+          school_id: schoolId,
+          actor_user_id: user.id,
+          task_id: task.id,
+          decision: data.decision,
+          source_task_revision: task.revision,
+          resulting_task_revision: updated.revision,
+          source_outbox_event_id: outboxEventId,
+          command_id: commandId,
+          occurred_at: new Date(updated.responded_at!).toISOString(),
+          binding: offerBinding,
+        })
+        : null;
+      const response = {
+        ...updated,
+        effective_substitution: substitutionId ? {
+          id: substitutionId,
+          ...scheduleProvenance,
+        } : null,
+      };
+      const authorityReceipt = {
+        authority_kind: offerBinding
+          ? "exact_configured_coverage_offer_recipient"
+          : "exact_manual_coverage_task_recipient",
+        task_id: task.id,
+        offered_revision: task.revision,
+        replacement_staff_profile_id: task.replacement_staff_profile_id,
+        recipient_user_id: user.id,
+        ...(offerBinding ? {
+          route_id: offerBinding.route_id,
+          message_id: offerBinding.message_id,
+          behaviour_version_id: offerBinding.behaviour_version_id,
+          subscription_id: offerBinding.subscription_id,
+          response_due_at: offerBinding.response_due_at,
+          expires_at: offerBinding.expires_at,
+          message_outcome_id: coordinationOutcome!.outcome_id,
+        } : {}),
+      };
+      await this.audit(db, user, schoolId, `staff.coverage.${data.decision}`, task.id, {
+        command_id: commandId,
+        source_task_revision: task.revision,
+        resulting_task_revision: updated.revision,
+        source_outbox_event_id: outboxEventId,
+        substitution_id: substitutionId,
+        authority: authorityReceipt,
+        schedule_provenance: scheduleProvenance,
+      });
+      await this.saveCoverageCommand(db, {
+        school_id: schoolId,
+        actor_id: user.id,
+        command_id: commandId,
+        decision: data.decision,
+        target_task_id: task.id,
+        request_hash: requestHash,
+        source_task_revision: task.revision,
+        resulting_task_revision: updated.revision,
+        result: response,
+        outbox_event_id: outboxEventId,
+        substitution_id: substitutionId,
+        authority_receipt: authorityReceipt,
+        schedule_provenance: scheduleProvenance,
+      });
+      return response;
     });
   }
 

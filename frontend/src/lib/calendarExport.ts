@@ -56,10 +56,10 @@ export function downloadWeekCalendar(rows: CalendarRow[], weekOffset: number) {
   const calendar = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//OmniSchool//Edura OS//EN",
+    "PRODID:-//ThatCampus//ThatCampus//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:Edura OS Class 7A",
+    "X-WR-CALNAME:ThatCampus Class 7A",
     "BEGIN:VTIMEZONE",
     "TZID:Asia/Kolkata",
     "BEGIN:STANDARD",
@@ -76,7 +76,7 @@ export function downloadWeekCalendar(rows: CalendarRow[], weekOffset: number) {
   const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
   const anchor = window.document.createElement("a");
   anchor.href = url;
-  anchor.download = `edura-class-7a-week-${12 + weekOffset}.ics`;
+  anchor.download = `thatcampus-class-7a-week-${12 + weekOffset}.ics`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

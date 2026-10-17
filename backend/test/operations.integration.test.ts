@@ -70,6 +70,16 @@ suite("school operations against disposable PostgreSQL", () => {
     const student = await schoolRequest("students", input); expect(student.status).toBe(201); studentId = student.data.id;
     expect((await schoolRequest("students", input)).status).toBe(409);
     expect((await schoolRequest(`students/${studentId}`, { first_name: "Mira", last_name: "Sen", admission_number: "S1", date_of_birth: "2020-02-30" }, "PATCH")).status).toBe(400);
+    expect((await schoolRequest(`students/${studentId}`, { first_name: "Mira", last_name: "Sen", admission_number: "S1", date_of_birth: "2020-02-20" }, "PATCH")).status).toBe(200);
+    const peopleEvents = await pool.query("SELECT payload FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2 ORDER BY sequence", [school, studentId]);
+    expect(peopleEvents.rows.map((row) => row.payload.action)).toEqual(["student_created", "student_updated"]);
+    const guardian = await schoolRequest("guardians", {
+      email: `guardian.${suffix}@example.test`, first_name: "Rhea", last_name: "Sen", student_id: studentId,
+      phone: "+91 9000000000", relationship: "mother", is_primary: true, can_authorize_leave: true,
+    });
+    expect(guardian.status).toBe(201);
+    expect((await pool.query("SELECT payload FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2", [school, guardian.data.id])).rows[0].payload)
+      .toMatchObject({ action: "guardian_linked", student_id: studentId });
   });
   it("protects linked catalogue edits with impact review, revision conflicts, audit context and an outbox event", async () => {
     const overview = await schoolRequest("administration");
@@ -109,6 +119,7 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await schoolRequest("student-import", { csv, confirm: true })).status).toBe(201);
     expect((await schoolRequest("student-import", { csv, confirm: true })).status).toBe(409);
     expect((await schoolRequest("administration")).data.students).toHaveLength(2);
+    expect(Number((await pool.query("SELECT count(*) AS count FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_type='people_import' AND payload->>'action'='students_imported'", [school])).rows[0].count)).toBe(1);
   });
   it("posts immutable invoices and idempotent partial payments", async () => {
     const invoice = await schoolRequest("fees/invoices", { student_id: studentId, reference: "F1", description: "Term tuition", amount_paise: 10000, due_on: "2030-04-15" });
@@ -119,12 +130,23 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await schoolRequest(`fees/invoices/${invoiceId}/payments`, { ...payment, amount_paise: 100 })).status).toBe(409);
     expect((await schoolRequest(`fees/invoices/${invoiceId}/payments`, { ...payment, reference: "R2", idempotency_key: randomUUID() })).status).toBe(400);
     const fees = await schoolRequest("fees"); expect(fees.data.invoices[0].balance_paise).toBe(4000); expect(fees.data.payments).toHaveLength(1);
+    const events = await pool.query("SELECT event_type,aggregate_type,aggregate_id,payload FROM event_outbox WHERE school_id=$1 AND (aggregate_id=$2 OR aggregate_id=$3) ORDER BY sequence", [school, invoiceId, first.data.id]);
+    expect(events.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event_type: "fees.updated", aggregate_type: "fee_invoice", aggregate_id: invoiceId, payload: expect.objectContaining({ student_id: studentId, action: "invoice_posted" }) }),
+      expect.objectContaining({ event_type: "fees.updated", aggregate_type: "fee_payment", aggregate_id: first.data.id, payload: expect.objectContaining({ student_id: studentId, invoice_id: invoiceId, action: "payment_recorded" }) }),
+    ]));
     await expect(pool.query("UPDATE fee_invoices SET amount_paise=1 WHERE id=$1", [invoiceId])).rejects.toThrow("cannot be updated or deleted");
   });
   it("preserves the last administrator and previews promotion without writes", async () => {
     const overview = await schoolRequest("administration");
     const admin = overview.data.members.find((item: { user_id: string }) => item.user_id === adminId);
     expect((await schoolRequest(`members/${admin.id}`, { is_active: false }, "PATCH")).status).toBe(409);
+    const learnerMembership = (await pool.query("SELECT membership.id,membership.user_id FROM school_memberships membership JOIN students student ON student.user_id=membership.user_id WHERE membership.school_id=$1 AND student.id=$2 AND membership.role='student'", [school, studentId])).rows[0];
+    expect((await schoolRequest(`members/${learnerMembership.id}`, { is_active: false }, "PATCH")).status).toBe(200);
+    const revokedSignal = (await pool.query("SELECT payload,audience_user_ids,event_user_is_authorized(school_id,event_type,payload,$2) AS deliverable FROM event_outbox WHERE school_id=$1 AND event_type='staff.access.updated' AND aggregate_id=$3 ORDER BY sequence DESC LIMIT 1", [school, learnerMembership.user_id, learnerMembership.id])).rows[0];
+    expect(revokedSignal).toMatchObject({ payload: { action: "membership_deactivated", affected_user_id: learnerMembership.user_id }, deliverable: true });
+    expect(revokedSignal.audience_user_ids).toEqual(expect.arrayContaining([adminId, learnerMembership.user_id]));
+    expect((await schoolRequest(`members/${learnerMembership.id}`, { is_active: true }, "PATCH")).status).toBe(200);
     const target = await schoolRequest("catalog/terms", { name: "Term 1", academic_year: "2031-32", starts_on: "2031-04-01", ends_on: "2032-03-31" });
     const section = await schoolRequest("catalog/classes", { grade: "6", section: "A", academic_year: "2031-32" });
     const body = { source_term_id: termId, target_term_id: target.data.id, mappings: [{ from_class_id: classId, to_class_id: section.data.id }] };
@@ -132,6 +154,7 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await schoolRequest("administration")).data.enrollments).toHaveLength(2);
     expect((await schoolRequest("rollover", { ...body, confirm: true })).data.confirmed).toBe(true);
     expect((await schoolRequest("administration")).data.enrollments).toHaveLength(4);
+    expect(Number((await pool.query("SELECT count(*) AS count FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2 AND payload->>'action'='term_rollover_completed'", [school, target.data.id])).rows[0].count)).toBe(1);
     expect((await schoolRequest("rollover", { ...body, confirm: true })).status).toBe(409);
   });
   it("delivers a single-use invitation without storing its raw token", async () => {
@@ -144,6 +167,11 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await request("invitations/accept/", { ...payload, email: "wrong@example.test" })).status).toBe(400);
     expect((await request("invitations/accept/", payload)).status).toBe(200);
     expect((await pool.query("SELECT email_verified_at FROM users WHERE email=$1", [studentEmail])).rows[0].email_verified_at).not.toBeNull();
+    const events = await pool.query("SELECT event_type,payload FROM event_outbox WHERE school_id=$1 AND aggregate_id=$2 ORDER BY sequence", [school, invitation.data.id]);
+    expect(events.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event_type: "administration.updated", payload: expect.objectContaining({ action: "invitation_created" }) }),
+      expect.objectContaining({ event_type: "administration.updated", payload: expect.objectContaining({ action: "invitation_accepted" }) }),
+    ]));
     expect((await request("invitations/accept/", payload)).status).toBe(400);
   });
   it("limits the student to their own fees and denies administration", async () => {
@@ -170,5 +198,9 @@ suite("school operations against disposable PostgreSQL", () => {
     const eligible = await schoolRequest("fees/students");
     expect(eligible.status).toBe(200);
     expect(eligible.data.results).toContainEqual(expect.objectContaining({ id: student.rows[0].id, first_name: "Accountless" }));
+    const enrollment = await schoolRequest("enrollments", { student_id: student.rows[0].id, class_section_id: classId, term_id: termId, roll_number: 3 });
+    expect(enrollment.status).toBe(201);
+    expect((await pool.query("SELECT payload FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2", [school, enrollment.data.id])).rows[0].payload)
+      .toMatchObject({ action: "student_enrolled", student_id: student.rows[0].id, class_section_id: classId, term_id: termId });
   });
 });

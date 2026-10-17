@@ -157,6 +157,19 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const replacement = await request(adminCookies, staffPath("profiles"), { first_name: "Rohan", last_name: "Sen", email: replacementEmail, phone: "+91 9000000001", staff_code: "T-002", staff_kind: "teaching", designation: "Science teacher", department: "Secondary", employment_type: "full_time", joined_on: "2030-04-01" });
     expect(replacement.status).toBe(201);
     replacementProfileId = replacement.data.profile.id;
+    const profileEvents = await pool.query(
+      "SELECT aggregate_id,event_type,payload,notification_payload FROM event_outbox WHERE aggregate_id=ANY($1::uuid[]) ORDER BY created_at",
+      [[profileId, replacementProfileId]],
+    );
+    expect(profileEvents.rows).toHaveLength(2);
+    expect(profileEvents.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        aggregate_id: profileId,
+        event_type: "staff.access.updated",
+        notification_payload: null,
+        payload: expect.objectContaining({ action: "profile_created", refresh: expect.arrayContaining(["staff-operations", "principal.home"]) }),
+      }),
+    ]));
     await pool.query("UPDATE staff_profiles SET status='active' WHERE id IN ($1,$2)", [profileId, replacementProfileId]);
     const workspace = await request(adminCookies, staffPath("workspace"));
     expect(workspace.data.profiles).toContainEqual(expect.objectContaining({ id: profileId, onboarding_total: 5, onboarding_complete: 1 }));
@@ -165,6 +178,12 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
   it("configures school leave policy and enforces role boundaries", async () => {
     const policy = await request(adminCookies, staffPath("leave-policies"), { academic_year: "2030-31", code: "CASUAL", name: "Casual leave", annual_allowance: 12, carry_forward_limit: 0, requires_document_after_days: null, is_paid: true, is_statutory: false, is_active: true });
     expect(policy.status).toBe(201); policyId = policy.data.id;
+    const policyEvent = (await pool.query("SELECT event_type,payload,notification_payload FROM event_outbox WHERE aggregate_id=$1", [policyId])).rows[0];
+    expect(policyEvent).toMatchObject({
+      event_type: "administration.updated",
+      notification_payload: null,
+      payload: { action: "leave_policy_created", refresh: ["staff-operations"] },
+    });
     await request(teacherCookies, "auth/csrf/");
     expect((await request(teacherCookies, "auth/login/", { identifier: teacherEmail, password })).status).toBe(200);
     await request(replacementCookies, "auth/csrf/");
@@ -375,6 +394,8 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     },"PATCH");
     expect(saved.status).toBe(200);
     expect(saved.data).toMatchObject({enabled:true,fallback_kind:"physical_activity",fallback_label:"Games period",revision:1});
+    const policyEvent=(await pool.query("SELECT event_type,payload,notification_payload FROM event_outbox WHERE aggregate_id=$1 AND aggregate_type='staff_coverage_policy'",[schoolId])).rows[0];
+    expect(policyEvent).toMatchObject({event_type:"administration.updated",notification_payload:null,payload:{action:"coverage_policy_updated",refresh:["staff-operations"]}});
 
     const workspace=await request(adminCookies,staffPath("workspace"));
     expect(workspace.data.coverage_policy).toMatchObject({enabled:true,deadline_minutes_before:1440,supervisor_staff_profile_id:replacementProfileId});
@@ -413,8 +434,290 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const replacementView = await request(replacementCookies, staffPath("workspace"));
     const coverOffer = replacementView.data.coverage_tasks.find((item: { id: string }) => item.id === task.id);
     expect(coverOffer).toMatchObject({ status: "offered", title: "Mathematics" });
-    const coverAccepted = await request(replacementCookies, staffPath(`coverage-tasks/${task.id}/response`), { decision: "accepted", note: "I have reviewed the handover.", expected_revision: coverOffer.revision });
+    const coverCommandId = randomUUID();
+    const coverResponse = { decision: "accepted", note: "I have reviewed the handover.", expected_revision: coverOffer.revision, command_id: coverCommandId };
+    const coverAccepted = await request(replacementCookies, staffPath(`coverage-tasks/${task.id}/response`), coverResponse);
     expect(coverAccepted.data.status).toBe("accepted");
+    expect(coverAccepted.data.effective_substitution).toMatchObject({
+      effective_timetable: true,
+      source_kind: "legacy_timetable",
+      original_teacher_user_id: teacherId,
+      replacement_teacher_user_id: expect.any(String),
+    });
+    const replayedCover = await request(replacementCookies, staffPath(`coverage-tasks/${task.id}/response`), coverResponse);
+    expect(replayedCover.status).toBe(201);
+    expect(replayedCover.data).toEqual(coverAccepted.data);
+    expect((await request(replacementCookies, staffPath(`coverage-tasks/${task.id}/response`), {
+      ...coverResponse,
+      note: "Different response details",
+    })).status).toBe(409);
+    const effective = (await pool.query(`SELECT teacher_user_id,coverage_status,coverage_record_id,
+        coverage_task_id,coverage_task_revision,original_teacher_user_id,
+        replacement_staff_profile_id,source_kind,source_record_id,source_revision
+      FROM effective_school_schedule_v3($1,'2030-04-08')
+      WHERE class_section_id=$2 AND period_number=1`, [schoolId,sectionId])).rows[0];
+    expect(effective).toMatchObject({
+      teacher_user_id: coverAccepted.data.effective_substitution.replacement_teacher_user_id,
+      coverage_status: "accepted",
+      coverage_record_id: coverAccepted.data.effective_substitution.id,
+      coverage_task_id: task.id,
+      coverage_task_revision: coverAccepted.data.revision,
+      original_teacher_user_id: teacherId,
+      replacement_staff_profile_id: replacementProfileId,
+      source_kind: "legacy_timetable",
+    });
+    const evidence = (await pool.query(`SELECT command_id,decision,source_task_revision,
+        resulting_task_revision,substitution_id,authority_receipt,schedule_provenance
+      FROM staff_coverage_commands WHERE school_id=$1 AND target_task_id=$2`, [schoolId,task.id])).rows;
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      command_id: coverCommandId,
+      decision: "accepted",
+      source_task_revision: coverOffer.revision,
+      resulting_task_revision: coverAccepted.data.revision,
+      substitution_id: coverAccepted.data.effective_substitution.id,
+      authority_receipt: {
+        authority_kind: "exact_coverage_offer_recipient",
+        recipient_user_id: coverAccepted.data.effective_substitution.replacement_teacher_user_id,
+      },
+      schedule_provenance: {
+        effective_timetable: true,
+        occurrence_key: coverAccepted.data.effective_substitution.occurrence_key,
+      },
+    });
+
+    // Cancellation retains the first decision as history but must release the
+    // planned occurrence for a new linked obligation. The database also owns
+    // the invariant that only the offered replacement can accept that cover.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "UPDATE staff_timetable_substitutions SET state='cancelled',superseded_at=now() WHERE id=$1",
+        [coverAccepted.data.effective_substitution.id],
+      );
+      await client.query("UPDATE staff_coverage_tasks SET status='cancelled' WHERE id=$1", [task.id]);
+      const linkedTask = (await client.query(`INSERT INTO staff_coverage_tasks(
+          school_id,leave_request_id,absent_staff_profile_id,replacement_staff_profile_id,
+          source_schedule_id,class_section_id,subject_id,duty_date,period_number,
+          starts_at,ends_at,title,location,status,handover_note,assigned_by,
+          offered_at,responded_at,response_note
+        ) SELECT school_id,leave_request_id,absent_staff_profile_id,replacement_staff_profile_id,
+          source_schedule_id,class_section_id,subject_id,duty_date,period_number,
+          starts_at,ends_at,title,location,'accepted',handover_note,assigned_by,
+          now(),now(),'Replacement decision after cancellation'
+        FROM staff_coverage_tasks WHERE id=$1 RETURNING id,revision`, [task.id])).rows[0];
+      expect(linkedTask.id).toEqual(expect.any(String));
+
+      await client.query("SAVEPOINT wrong_accepting_actor");
+      await expect(client.query(`INSERT INTO staff_timetable_substitutions(
+          school_id,coverage_task_id,class_section_id,subject_id,duty_date,
+          period_number,starts_at,ends_at,source_schedule_id,source_occurrence_key,
+          source_kind,source_record_id,source_revision,source_version,
+          original_teacher_user_id,replacement_staff_profile_id,
+          replacement_teacher_user_id,coverage_task_revision,accepted_by,accepted_at
+        ) SELECT school_id,$2,class_section_id,subject_id,duty_date,
+          period_number,starts_at,ends_at,source_schedule_id,source_occurrence_key,
+          source_kind,source_record_id,source_revision,source_version,
+          original_teacher_user_id,replacement_staff_profile_id,
+          replacement_teacher_user_id,$3,$4,now()
+        FROM staff_timetable_substitutions WHERE id=$1`, [
+        coverAccepted.data.effective_substitution.id,
+        linkedTask.id,
+        linkedTask.revision,
+        adminId,
+      ])).rejects.toThrow(/active offered staff account/i);
+      await client.query("ROLLBACK TO SAVEPOINT wrong_accepting_actor");
+
+      const linkedSubstitution = (await client.query(`INSERT INTO staff_timetable_substitutions(
+          school_id,coverage_task_id,class_section_id,subject_id,duty_date,
+          period_number,starts_at,ends_at,source_schedule_id,source_occurrence_key,
+          source_kind,source_record_id,source_revision,source_version,
+          original_teacher_user_id,replacement_staff_profile_id,
+          replacement_teacher_user_id,coverage_task_revision,accepted_by,accepted_at
+        ) SELECT school_id,$2,class_section_id,subject_id,duty_date,
+          period_number,starts_at,ends_at,source_schedule_id,source_occurrence_key,
+          source_kind,source_record_id,source_revision,source_version,
+          original_teacher_user_id,replacement_staff_profile_id,
+          replacement_teacher_user_id,$3,replacement_teacher_user_id,now()
+        FROM staff_timetable_substitutions WHERE id=$1 RETURNING id`, [
+        coverAccepted.data.effective_substitution.id,
+        linkedTask.id,
+        linkedTask.revision,
+      ])).rows[0];
+      expect(linkedSubstitution.id).toEqual(expect.any(String));
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+  });
+
+  it("preserves accepted cover through a temporary closure and after task completion", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const accepted = (await client.query(`SELECT substitution.id AS substitution_id,
+          substitution.coverage_task_id,substitution.duty_date::text,
+          substitution.replacement_teacher_user_id
+        FROM staff_timetable_substitutions substitution
+        JOIN staff_coverage_tasks task ON task.id=substitution.coverage_task_id
+          AND task.school_id=substitution.school_id
+        WHERE substitution.school_id=$1 AND substitution.state='effective'
+          AND task.status='accepted'
+        ORDER BY substitution.created_at DESC LIMIT 1`, [schoolId])).rows[0];
+      expect(accepted).toBeTruthy();
+
+      await client.query(`INSERT INTO school_calendar_days(
+          school_id,date,is_instructional,label
+        ) VALUES($1,$2,false,'Temporary weather closure')`, [schoolId, accepted.duty_date]);
+      expect((await client.query(
+        "SELECT * FROM reconcile_staff_timetable_substitution_details($1,$2,$2,NULL)",
+        [schoolId, accepted.duty_date],
+      )).rows).toEqual([]);
+      expect((await client.query(
+        "SELECT state FROM staff_timetable_substitutions WHERE id=$1",
+        [accepted.substitution_id],
+      )).rows[0].state).toBe("effective");
+
+      await client.query(
+        "DELETE FROM school_calendar_days WHERE school_id=$1 AND date=$2",
+        [schoolId, accepted.duty_date],
+      );
+      const restored = (await client.query(`SELECT teacher_user_id,coverage_status
+        FROM effective_school_schedule_v3($1,$2)
+        WHERE coverage_task_id=$3`, [
+        schoolId, accepted.duty_date, accepted.coverage_task_id,
+      ])).rows[0];
+      expect(restored).toMatchObject({
+        teacher_user_id: accepted.replacement_teacher_user_id,
+        coverage_status: "accepted",
+      });
+
+      await client.query(
+        "UPDATE staff_coverage_tasks SET status='completed' WHERE id=$1",
+        [accepted.coverage_task_id],
+      );
+      await client.query(
+        "UPDATE staff_profiles SET status='onboarding' WHERE id=$1",
+        [replacementProfileId],
+      );
+      expect((await client.query(
+        "SELECT * FROM reconcile_staff_timetable_substitution_details($1,$2,$2,NULL)",
+        [schoolId, accepted.duty_date],
+      )).rows).toEqual([]);
+      expect((await client.query(
+        "SELECT state FROM staff_timetable_substitutions WHERE id=$1",
+        [accepted.substitution_id],
+      )).rows[0].state).toBe("effective");
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+  });
+
+  it("retains elapsed accepted cover when the replacement later becomes inactive", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const acceptedTask = (await client.query(`SELECT task.*,request.policy_id,
+          absent.user_id AS absent_user_id,replacement.user_id AS replacement_user_id,
+          slot.weekday,slot.term_id,school.timezone
+        FROM staff_coverage_tasks task
+        JOIN staff_leave_requests request ON request.id=task.leave_request_id
+        JOIN staff_profiles absent ON absent.id=task.absent_staff_profile_id
+        JOIN staff_profiles replacement ON replacement.id=task.replacement_staff_profile_id
+        JOIN timetable_slots slot ON slot.id=task.source_schedule_id
+        JOIN schools school ON school.id=task.school_id
+        WHERE task.school_id=$1 AND task.status='accepted' AND task.source_schedule_id IS NOT NULL
+        ORDER BY task.created_at LIMIT 1`, [schoolId])).rows[0];
+      const pastDate = (await client.query(`SELECT (
+          (now() AT TIME ZONE $1)::date
+          - ((((extract(isodow FROM now() AT TIME ZONE $1)::int-$2::int)+7)%7)+7)
+        )::date AS duty_date`, [acceptedTask.timezone, acceptedTask.weekday])).rows[0].duty_date;
+      // The fixture's academic term is intentionally future-dated. Extend it
+      // only inside this rolled-back transaction so the same recurring source
+      // row can represent an elapsed school date.
+      await client.query(`UPDATE academic_terms
+        SET starts_on=LEAST(starts_on,$2::date),ends_on=GREATEST(ends_on,$2::date)
+        WHERE id=$1`, [acceptedTask.term_id, pastDate]);
+      const planned = (await client.query(`SELECT * FROM planned_school_schedule_v2($1,$2)
+        WHERE id=$3 AND class_section_id=$4 AND period_number=$5`, [
+        schoolId, pastDate, acceptedTask.source_schedule_id,
+        acceptedTask.class_section_id, acceptedTask.period_number,
+      ])).rows[0];
+      expect(planned.teacher_user_id).toBe(acceptedTask.absent_user_id);
+
+      const historicalLeave = (await client.query(`INSERT INTO staff_leave_requests(
+          school_id,staff_profile_id,policy_id,starts_on,ends_on,portion,
+          requested_days,reason,handover_note,status,revision,submitted_at,
+          decided_by,decided_at,decision_note
+        ) VALUES($1,$2,$3,$4,$4,'full_day',1,'Historical cover validation',
+          'Validate elapsed timetable truth','approved',2,now(),$5,now(),'Approved')
+        RETURNING id`, [
+        schoolId, acceptedTask.absent_staff_profile_id, acceptedTask.policy_id,
+        pastDate, adminId,
+      ])).rows[0];
+      const historicalTask = (await client.query(`INSERT INTO staff_coverage_tasks(
+          school_id,leave_request_id,absent_staff_profile_id,replacement_staff_profile_id,
+          source_schedule_id,class_section_id,subject_id,duty_date,period_number,
+          starts_at,ends_at,title,location,status,handover_note,assigned_by,
+          offered_at,responded_at,response_note
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'accepted',
+          'Historical cover validation',$14,now(),now(),'Accepted')
+        RETURNING id,revision`, [
+        schoolId, historicalLeave.id, acceptedTask.absent_staff_profile_id,
+        replacementProfileId, planned.id, planned.class_section_id, planned.subject_id,
+        pastDate, planned.period_number, planned.starts_at, planned.ends_at,
+        planned.title, planned.room ?? "", adminId,
+      ])).rows[0];
+      await client.query(`INSERT INTO staff_coverage_task_audits(
+          school_id,task_id,actor_id,action,from_status,to_status,note
+        ) VALUES($1,$2,$3,'accepted','offered','accepted','Accepted')`, [
+        schoolId, historicalTask.id, acceptedTask.replacement_user_id,
+      ]);
+      const historicalSubstitution = (await client.query(`INSERT INTO staff_timetable_substitutions(
+          school_id,coverage_task_id,class_section_id,subject_id,duty_date,
+          period_number,starts_at,ends_at,source_schedule_id,source_occurrence_key,
+          source_kind,source_record_id,source_revision,source_version,
+          original_teacher_user_id,replacement_staff_profile_id,
+          replacement_teacher_user_id,coverage_task_revision,accepted_by,accepted_at
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+          $15,$16,$17,$18,$17,now()) RETURNING id`, [
+        schoolId, historicalTask.id, planned.class_section_id, planned.subject_id,
+        pastDate, planned.period_number, planned.starts_at, planned.ends_at,
+        planned.id, planned.occurrence_key, planned.source_kind,
+        planned.source_record_id, planned.source_revision, planned.source_version,
+        acceptedTask.absent_user_id, replacementProfileId,
+        acceptedTask.replacement_user_id, historicalTask.revision,
+      ])).rows[0];
+
+      await client.query("UPDATE staff_profiles SET status='inactive' WHERE id=$1", [replacementProfileId]);
+      await client.query("UPDATE users SET is_active=false WHERE id=$1", [acceptedTask.replacement_user_id]);
+      await client.query(`UPDATE school_memberships SET is_active=false
+        WHERE school_id=$1 AND user_id=$2 AND role='staff'`, [
+        schoolId, acceptedTask.replacement_user_id,
+      ]);
+      const historicalEffective = (await client.query(`SELECT teacher_user_id,
+          coverage_status,coverage_record_id,coverage_task_id
+        FROM effective_school_schedule_v3($1,$2)
+        WHERE id=$3 AND class_section_id=$4 AND period_number=$5`, [
+        schoolId, pastDate, planned.id, planned.class_section_id, planned.period_number,
+      ])).rows[0];
+      expect(historicalEffective).toMatchObject({
+        teacher_user_id: acceptedTask.replacement_user_id,
+        coverage_status: "accepted",
+        coverage_record_id: historicalSubstitution.id,
+        coverage_task_id: historicalTask.id,
+      });
+      const reconciled = await client.query(
+        "SELECT * FROM reconcile_staff_timetable_substitution_details($1,$2,$2,$3)",
+        [schoolId, pastDate, planned.class_section_id],
+      );
+      expect(reconciled.rows).toEqual([]);
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
   });
 
   it("withdraws offers when a linked profile leaves active service and preserves an exact revocation outcome", async () => {
@@ -433,7 +736,48 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     ) VALUES($1,$2,$3,$4,'2030-04-20','Transition cover','offered',$5,now()) RETURNING id,revision`,
     [schoolId,requestId,profileId,replacementProfileId,adminId])).rows[0];
 
-    await pool.query("UPDATE staff_profiles SET status='onboarding' WHERE id IN ($1,$2)",[profileId,replacementProfileId]);
+    const replacementProfile = adminView.data.profiles.find(
+      (profile: { id: string }) => profile.id === replacementProfileId,
+    );
+    const replacementOnboardingItem = adminView.data.onboarding_items.find(
+      (item: { staff_profile_id: string; completed_at: string | null }) =>
+        item.staff_profile_id === replacementProfileId && item.completed_at === null,
+    );
+    const eligibilityChanged = await request(
+      adminCookies,
+      staffPath(`profiles/${replacementProfileId}/onboarding`),
+      {
+        item_id: replacementOnboardingItem.id,
+        completed: false,
+        note: "Return to onboarding while eligibility is reviewed.",
+        expected_revision: replacementProfile.revision,
+      },
+      "PATCH",
+    );
+    expect(eligibilityChanged.status).toBe(200);
+    expect(eligibilityChanged.data).toMatchObject({
+      status: "onboarding",
+      coverage_reconciliation: {
+        superseded_substitution_ids: [expect.any(String)],
+        cancelled_task_ids: [expect.any(String)],
+        reopened_task_ids: [expect.any(String)],
+        model_event_ids: [expect.any(String)],
+      },
+    });
+    const onboardingAudit = (await pool.query(`SELECT metadata
+      FROM school_operations_audit
+      WHERE school_id=$1 AND target_id=$2 AND action='staff.onboarding.updated'
+      ORDER BY created_at DESC LIMIT 1`, [schoolId, replacementProfileId])).rows[0];
+    expect(onboardingAudit.metadata).toMatchObject({
+      previous_status: "active",
+      status: "onboarding",
+      correlation_id: expect.any(String),
+      coverage_preparation: { model_event_ids: expect.any(Array) },
+      coverage_reconciliation: {
+        superseded_substitution_ids: eligibilityChanged.data.coverage_reconciliation.superseded_substitution_ids,
+      },
+    });
+    await pool.query("UPDATE staff_profiles SET status='onboarding' WHERE id=$1",[profileId]);
     const teacherWorkspace = await request(teacherCookies, staffPath("workspace"));
     expect(teacherWorkspace.data.assignments.some((item:{id:string})=>item.id===created.data.id)).toBe(false);
     const replacementWorkspace = await request(replacementCookies, staffPath("workspace"));
@@ -443,7 +787,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const replacementRequests = await request(replacementCookies, "requests/?portal=teacher");
     expect(replacementRequests.data.items.some((item:{kind:string;source_id:string})=>item.kind==="coverage_offer"&&item.source_id===cover.id)).toBe(false);
     expect((await request(teacherCookies, staffPath(`responsibilities/${created.data.id}/response`), { decision:"accepted", note:"Confirmed", expected_revision:created.data.revision })).status).toBe(404);
-    expect((await request(replacementCookies, staffPath(`coverage-tasks/${cover.id}/response`), { decision:"accepted", note:"Confirmed cover", expected_revision:cover.revision })).status).toBe(404);
+    expect((await request(replacementCookies, staffPath(`coverage-tasks/${cover.id}/response`), { decision:"accepted", note:"Confirmed cover", expected_revision:cover.revision, command_id:randomUUID() })).status).toBe(404);
 
     const revoked = await request(adminCookies, staffPath(`responsibilities/${created.data.id}/revoke`), { reason:"Profile moved back to onboarding.", expected_revision:created.data.revision });
     expect(revoked.status).toBe(201);
@@ -454,6 +798,26 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
       attention_source_kind:"responsibility_revocation", attention_source_revision:revoked.data.revision,
       staff_link:`/teacher/responsibilities?assignment=${created.data.id}&assignment_revision=${revoked.data.revision}`,
     });
+
+    const futureEffective = (await pool.query(`SELECT teacher_user_id,coverage_status,
+        coverage_record_id,coverage_task_id
+      FROM effective_school_schedule_v3($1,'2030-04-08')
+      WHERE class_section_id=$2 AND period_number=1`, [schoolId, sectionId])).rows[0];
+    expect(futureEffective).toMatchObject({
+      teacher_user_id: null,
+      coverage_status: "unassigned",
+      coverage_record_id: null,
+      coverage_task_id: null,
+    });
+    const stale = (await pool.query(`SELECT *
+      FROM reconcile_staff_timetable_substitution_details($1,'2030-04-08','2030-04-08',$2)`, [
+      schoolId, sectionId,
+    ])).rows;
+    expect(stale).toEqual([]);
+    expect((await pool.query(`SELECT state FROM staff_timetable_substitutions
+      WHERE id=ANY($1::uuid[])`, [
+      eligibilityChanged.data.coverage_reconciliation.superseded_substitution_ids,
+    ])).rows.every((row) => row.state === "superseded")).toBe(true);
 
     await pool.query("UPDATE staff_profiles SET status='active' WHERE id IN ($1,$2)",[profileId,replacementProfileId]);
     await pool.query("UPDATE staff_coverage_tasks SET status='cancelled' WHERE id=$1",[cover.id]);
@@ -557,5 +921,43 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     expect((await pool.query("SELECT action FROM school_operations_audit WHERE target_id=$1",[assignment.data.id])).rows).toContainEqual({action:"staff.role.assigned"});
     expect((await request(adminCookies,staffPath(`responsibilities/${assignment.data.id}/revoke`),{reason:"Gate cover completed.",expected_revision:assignment.data.revision})).status).toBe(201);
     expect((await request(teacherCookies,gatePath)).status).toBe(403);
+  });
+
+  it("publishes onboarding and balance changes only to affected staff projections", async () => {
+    const workspace = await request(adminCookies, staffPath("workspace"));
+    const profile = workspace.data.profiles.find((item: { id: string }) => item.id === profileId);
+    const onboardingItem = workspace.data.onboarding_items.find((item: { staff_profile_id: string }) => item.staff_profile_id === profileId);
+    const onboarding = await request(adminCookies, staffPath(`profiles/${profileId}/onboarding`), {
+      item_id: onboardingItem.id,
+      completed: true,
+      note: "Checked in the test workflow.",
+      expected_revision: profile.revision,
+    }, "PATCH");
+    expect(onboarding.status).toBe(200);
+    const onboardingEvent = (await pool.query(
+      "SELECT event_type,payload,notification_payload FROM event_outbox WHERE aggregate_id=$1 AND idempotency_key LIKE 'staff.onboarding_updated:%' ORDER BY created_at DESC LIMIT 1",
+      [profileId],
+    )).rows[0];
+    expect(onboardingEvent).toMatchObject({
+      event_type: "staff.access.updated",
+      notification_payload: null,
+      payload: { action: "onboarding_updated", refresh: expect.arrayContaining(["staff.access", "staff-operations", "teacher.home", "principal.home"]) },
+    });
+
+    const adjustment = await request(adminCookies, staffPath("balance-adjustments"), {
+      staff_profile_id: profileId,
+      policy_id: policyId,
+      days: 1,
+      reason: "Opening balance correction for test evidence.",
+    });
+    expect(adjustment.status).toBe(201);
+    const balanceEvent = (await pool.query("SELECT event_type,payload,notification_payload,audience_user_ids FROM event_outbox WHERE aggregate_id=$1", [adjustment.data.id])).rows[0];
+    expect(balanceEvent).toMatchObject({
+      event_type: "administration.updated",
+      notification_payload: null,
+      payload: { action: "leave_balance_adjusted", staff_profile_id: profileId, policy_id: policyId, refresh: ["staff-operations"] },
+    });
+    expect(balanceEvent.audience_user_ids).toEqual(expect.arrayContaining([adminId, otherAdminId, teacherId]));
+    await pool.query("UPDATE staff_profiles SET status='active' WHERE id=$1", [profileId]);
   });
 });

@@ -12,6 +12,10 @@ import type { PlanDb } from '../day-plans/contracts.js';
 import { uuid } from '../day-plans/contracts.js';
 import { action, start, save, year, localConflicts, type Version, type Period } from './contracts.js';
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from '../campus-model-core/temporal-context.port.js';
+import {
+  STAFF_COVERAGE_RECONCILIATION_PORT,
+  type StaffCoverageReconciliationPort,
+} from '../staff-operations/staff-coverage-reconciliation.service.js';
 
 interface PublishedScheduleProjectionRow extends Period {
   school_id:string; timezone:string; published_at:Date|string; class_section_id:string;
@@ -25,6 +29,7 @@ export class SchedulePlanningService {
     private readonly db:DatabaseService,
     private readonly events:SchoolEventService,
     private readonly school:SchoolService,
+    @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage:StaffCoverageReconciliationPort,
     @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?:TemporalContextPort,
   ) {}
 
@@ -192,14 +197,29 @@ export class SchedulePlanningService {
       await activeTeachers(db,v.school_id,rows.flatMap(p=>p.teacher_user_id?[p.teacher_user_id]:[]),true);
       if((await sql`SELECT 1 FROM schedule_versions WHERE class_section_id=${v.class_section_id}::uuid AND term_id=${v.term_id}::uuid AND state='published' AND NOT baseline AND starts_on=${v.starts_on}::date`.execute(db)).rows.length)throw new ConflictException('A published timetable already starts on this date. Choose a later date or a daily change.');
       if((await sql`SELECT 1 FROM schedule_versions WHERE class_section_id=${v.class_section_id}::uuid AND term_id=${v.term_id}::uuid AND state='published' AND NOT baseline AND starts_on>${v.starts_on}::date AND starts_on<=${v.ends_on}::date`.execute(db)).rows.length)throw new ConflictException('A later timetable is already scheduled within this range. End this arrangement before it, or choose a later start date.');
+      const publishedRevision=v.revision+1;
+      const coverageReconciliationInput={
+        school_id:v.school_id,from:v.starts_on,to:v.ends_on,
+        class_section_id:v.class_section_id,actor_user_id:req.authUser.id,
+        correlation_id:req.requestId,
+        cause:{kind:'schedule_published',source_domain:'timetable',source_record_id:id,source_revision:publishedRevision},
+      };
+      // Retained pre-Core acceptances must be projected while their old source
+      // is still the effective schedule. Publishing below can make that exact
+      // source non-current, after which normal reconciliation cancels it.
+      const coveragePreparation=await this.coverage.prepareEffectiveCoverageProjection(
+        db,
+        coverageReconciliationInput,
+      );
       // Freeze the original baseline, including its original slot identities.
+      let frozenBaselineId:string|null=null;
       if(!(await sql`SELECT 1 FROM schedule_versions WHERE class_section_id=${v.class_section_id}::uuid AND term_id=${v.term_id}::uuid AND baseline`.execute(db)).rows.length) {
         const frozen=(await sql<{id:string}>`INSERT INTO schedule_versions(school_id,term_id,class_section_id,starts_on,ends_on,created_by,baseline) SELECT ${v.school_id}::uuid,t.id,${v.class_section_id}::uuid,t.starts_on,t.ends_on,${req.authUser.id}::uuid,true FROM academic_terms t WHERE t.id=${v.term_id}::uuid RETURNING id`.execute(db)).rows[0]!;
-        await sql`INSERT INTO schedule_periods(version_id,id,weekday,period_number,starts_at,ends_at,subject_id,teacher_user_id,title,slot_type,room) SELECT ${frozen.id}::uuid,s.id,s.weekday,s.period_number,s.starts_at,s.ends_at,s.subject_id,s.teacher_user_id,COALESCE(subject.name,NULLIF(s.title,''),'Period'),s.slot_type,s.room FROM timetable_slots s LEFT JOIN subjects subject ON subject.id=s.subject_id WHERE s.class_section_id=${v.class_section_id}::uuid AND s.term_id=${v.term_id}::uuid`.execute(db);
+        const copied=await sql`INSERT INTO schedule_periods(version_id,id,weekday,period_number,starts_at,ends_at,subject_id,teacher_user_id,title,slot_type,room) SELECT ${frozen.id}::uuid,s.id,s.weekday,s.period_number,s.starts_at,s.ends_at,s.subject_id,s.teacher_user_id,COALESCE(subject.name,NULLIF(s.title,''),'Period'),s.slot_type,s.room FROM timetable_slots s LEFT JOIN subjects subject ON subject.id=s.subject_id WHERE s.class_section_id=${v.class_section_id}::uuid AND s.term_id=${v.term_id}::uuid`.execute(db);
+        if(Number(copied.numAffectedRows ?? 0)>0)frozenBaselineId=frozen.id;
         await sql`UPDATE schedule_versions SET state='published',published_at=now() WHERE id=${frozen.id}::uuid`.execute(db);
       }
       await sql`UPDATE schedule_versions SET state='published',published_at=now(),revision=revision+1 WHERE id=${id}::uuid`.execute(db);
-      const publishedRevision=v.revision+1;
       // Validate actual dates, including other versions and existing daily plans.
       const conflict=(await sql<{date:string;period_number:number;type:string}>`
         WITH days AS (SELECT d::date AS date FROM generate_series(${v.starts_on}::date,${v.ends_on}::date,'1 day') d),
@@ -208,8 +228,19 @@ export class SchedulePlanningService {
         FROM periods a JOIN periods b ON a.date=b.date AND a.id<>b.id AND a.starts_at<b.ends_at AND b.starts_at<a.ends_at
         WHERE a.class_section_id=${v.class_section_id}::uuid AND (a.class_section_id=b.class_section_id OR (a.teacher_user_id IS NOT NULL AND a.teacher_user_id=b.teacher_user_id) OR (a.slot_type<>'break' AND b.slot_type<>'break' AND trim(a.room)<>'' AND lower(trim(a.room))=lower(trim(b.room)))) LIMIT 1`.execute(db)).rows[0];
       if(conflict)throw new ConflictException(`Resolve the ${conflict.type} clash on ${conflict.date}, period ${conflict.period_number}, before publishing.`);
+      // Project the frozen term baseline before the dated change. Otherwise the
+      // Model Core has no expected plan outside this new version's date range.
+      if(frozenBaselineId)await this.projectPublishedSchedule(db,req,frozenBaselineId,1);
       await this.projectPublishedSchedule(db,req,id,publishedRevision);
-      await this.audit(db,req,v.school_id,id,'published',{starts_on:v.starts_on,ends_on:v.ends_on,revision:v.revision+1});
+      const coverageReceipt=await this.coverage.reconcileEffectiveCoverage(
+        db,
+        coverageReconciliationInput,
+      );
+      await this.audit(db,req,v.school_id,id,'published',{
+        starts_on:v.starts_on,ends_on:v.ends_on,revision:v.revision+1,
+        coverage_projection_preparation:coveragePreparation,
+        coverage_reconciliation:coverageReceipt,
+      });
       await this.events.enqueueTimetableUpdate(db,{schoolId:v.school_id,classSectionId:v.class_section_id,slotId:id,requestId:req.requestId,action:'updated'});
       await sql`
         WITH recipients AS (

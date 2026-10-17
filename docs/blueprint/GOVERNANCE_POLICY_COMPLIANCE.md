@@ -6,7 +6,7 @@ which rules apply with their board, university, regulator, state authority and a
 
 ## Product decision
 
-OmniSchool is intended to support schools, colleges and coaching institutions. The existing
+ThatCampus is intended to support schools, colleges and coaching institutions. The existing
 `schools` table remains the tenancy anchor so that current enrolment, attendance and timetable
 workflows are not destabilised. New governance capabilities use institution-neutral names and
 an explicit institution regulatory profile. Product capability packs determine which workflows

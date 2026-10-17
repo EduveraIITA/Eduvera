@@ -11,7 +11,7 @@ import { InvitationReceipt } from './InvitationReceipt';
 import { createCoachingWorkspace,createInstitution,getCompany,getInvitations,getOnboardingWorkspace,inviteMember,resendMemberInvitation,submitInstitutionApplication } from './api';
 import { apiFetch } from '../../lib/api';
 import { authDestination } from '../auth/AuthContext';
-const auth=vi.hoisted(()=>({status:'authenticated',companyOperator:true,memberships:[{school_id:'school',role:'admin',school_name:'School',permissions:['members.invite']}],user:{display_name:'Eduera Company'},hasPortal:vi.fn(()=>true),logout:vi.fn(),refresh:vi.fn()}));
+const auth=vi.hoisted(()=>({status:'authenticated',companyOperator:true,memberships:[{school_id:'school',role:'admin',school_name:'School',permissions:['members.invite']}],user:{display_name:'ThatCampus Company'},hasPortal:vi.fn(()=>true),logout:vi.fn(),refresh:vi.fn()}));
 vi.mock('../auth/AuthContext',async original=>({...await original(),useAuth:()=>auth}));
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children}:{children:React.ReactNode})=><main>{children}</main>}));
 vi.mock('./api',async original=>({...await original(),getCompany:vi.fn(),createInstitution:vi.fn(),getInvitations:vi.fn(),inviteMember:vi.fn(),resendMemberInvitation:vi.fn(),getOnboardingWorkspace:vi.fn(),submitInstitutionApplication:vi.fn(),createCoachingWorkspace:vi.fn()}));
@@ -178,7 +178,7 @@ describe('company and school onboarding',()=>{
     expect(await screen.findByRole('heading',{name:'Create a workspace'})).toBeVisible();
     expect(await screen.findByRole('button',{name:/Start institution application/i})).toBeVisible();
     expect(screen.getByRole('button',{name:/Create coaching workspace/i})).toBeVisible();
-    expect(screen.getByText('No Eduvera verification')).toBeVisible();
+    expect(screen.getByText('No ThatCampus verification')).toBeVisible();
     expect(screen.getByText('Workspace opens after approval')).toBeVisible();
     expect(screen.queryByText(/focused learner community/i)).not.toBeInTheDocument();
   });

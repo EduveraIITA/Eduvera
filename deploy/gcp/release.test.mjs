@@ -30,6 +30,20 @@ const fixture = () => {
 test('a bounded runtime with durable files and an isolated migrator passes', () => {
   const { service, job } = fixture(); assert.equal(assertRuntime(service, job), 'old');
 });
+test('development simulator variables are rejected from the Stage runtime', () => {
+  for (const [name, value] of [
+    ['CAMPUS_SIMULATOR_ENABLED', 'false'],
+    ['CAMPUS_SIMULATOR_API_ORIGIN', 'http://127.0.0.1:8001'],
+    ['SYNTHETIC_ACTOR_ENABLED', 'false'],
+  ]) {
+    const { service, job } = fixture();
+    service.spec.template.spec.containers[0].env.push({ name, value });
+    assert.throws(
+      () => assertRuntime(service, job),
+      new RegExp(`Development simulator variable is forbidden in Stage: ${name}`),
+    );
+  }
+});
 test('public demo bootstrap accepts only the known private-demo predecessor states', () => {
   const { service, job } = fixture();
   const app = service.spec.template.spec.containers[0];

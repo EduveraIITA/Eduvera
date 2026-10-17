@@ -1,7 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import { sql } from "kysely";
 import { z } from "zod";
+import {
+  HUMAN_AGENT_IDENTITY_PORT,
+  type HumanAgentIdentityPort,
+} from "../campus-model-core/human-agent-identity.port.js";
 import { AuditService } from "../common/audit.service.js";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
@@ -34,7 +38,12 @@ const coachingWorkspace = z.object({
 
 @Injectable()
 export class InstitutionOnboardingService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly audit: AuditService,
+    @Inject(HUMAN_AGENT_IDENTITY_PORT)
+    private readonly identities: HumanAgentIdentityPort,
+  ) {}
 
   async workspace(user: AuthUser) {
     const applications = await sql`SELECT a.id,a.institution_name,a.requested_code,a.institution_kind,a.timezone,
@@ -101,6 +110,23 @@ export class InstitutionOnboardingService {
           VALUES(${input.name},${input.code},${input.timezone},'coaching','self_service_coaching','not_required',${user.id}::uuid)
           RETURNING id,name,code`.execute(db)).rows[0]!;
         await sql`INSERT INTO school_memberships(user_id,school_id,role) VALUES(${user.id}::uuid,${school.id}::uuid,'admin')`.execute(db);
+        const ownerPerson = (await sql<{ id: string }>`INSERT INTO school_people(
+            school_id,first_name,last_name,contact_email
+          ) VALUES(
+            ${school.id}::uuid,${user.first_name},${user.last_name},${user.email}
+          ) RETURNING id`.execute(db)).rows[0]!;
+        await this.identities.linkAccountEndpoint(db, {
+          school_id: school.id,
+          person_id: ownerPerson.id,
+          user_id: user.id,
+          actor_user_id: user.id,
+          effective_from: new Date().toISOString(),
+          effective_until: null,
+          source_domain: "institution_onboarding",
+          source_record_id: school.id,
+          source_revision: 1,
+          metadata: { relationship: "workspace_creator" },
+        });
         await sql`UPDATE institution_regulatory_profiles SET institution_kind='coaching',management_kind='other',
           delivery_mode=${input.delivery_mode},education_levels=ARRAY['coaching']::text[],capability_packs=ARRAY['coaching_core']::text[],
           minors_enrolled=${input.minors_enrolled},staff_count_band='0_9',review_note='Self-service coaching workspace; company verification is not required.',updated_by=${user.id}::uuid

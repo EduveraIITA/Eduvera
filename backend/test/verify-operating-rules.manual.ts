@@ -41,6 +41,12 @@ try {
     await assert.rejects(() => controller.get({ ...request, authUser: { ...request.authUser, active_school_id: randomUUID() } }, admin.school_id), /Switch/);
     const audit = await tx.selectFrom("audit_events").select("metadata").where("request_id", "=", request.requestId).where("action", "=", "operating_rules.updated").execute();
     assert.equal(audit.length, 1);
+    const workflowEvent = await tx.selectFrom("event_outbox").select(["event_type", "payload"])
+      .where("school_id", "=", admin.school_id)
+      .where("idempotency_key", "=", `operating-rules:${admin.school_id}:attendance:${after.revision}:workflow`)
+      .executeTakeFirst();
+    assert.equal(workflowEvent?.event_type, "administration.updated");
+    assert.equal((workflowEvent?.payload as { category?: string } | undefined)?.category, "attendance");
     const categoryBefore = await controller.getCategory(request, admin.school_id, "events");
     const eventDomain = categoryBefore.domain as { revision: number; observation_hours_before: number; observation_hours_after: number };
     request.body = {
@@ -60,6 +66,12 @@ try {
     await assert.rejects(() => controller.saveCategory(request, admin.school_id, "events"), /changed/);
     const categoryAudit = await tx.selectFrom("audit_events").select("metadata").where("request_id", "=", request.requestId).where("action", "=", "operating_rules.events.updated").execute();
     assert.equal(categoryAudit.length, 1);
+    const categoryEvent = await tx.selectFrom("event_outbox").select(["event_type", "payload"])
+      .where("school_id", "=", admin.school_id)
+      .where("idempotency_key", "=", `operating-rules:${admin.school_id}:events:${categoryAfter.workflow.revision}:${savedEventDomain.revision}`)
+      .executeTakeFirst();
+    assert.equal(categoryEvent?.event_type, "administration.updated");
+    assert.equal((categoryEvent?.payload as { category?: string } | undefined)?.category, "events");
     const departureBefore = await controller.getCategory(request, admin.school_id, "departure");
     const departureDomain = departureBefore.domain as { revision: number; enabled: boolean; enabled_modes: string[]; change_cutoff: string; location_retention_hours: number; location_stale_seconds: number };
     request.body = {
@@ -97,7 +109,7 @@ try {
     const savedMessageDomain = messagesAfter.domain as { revision: number };
     assert.equal(messagesAfter.workflow.message_edit_minutes, 3);
     assert.equal(savedMessageDomain.revision, messageDomain.revision + 1);
-    console.log("Verified: single and category saves, revision conflicts, staff read/write denial, cross-school denial, atomic audit. All changes rolled back.");
+    console.log("Verified: single and category saves, revision conflicts, staff read/write denial, cross-school denial, atomic audit and refresh outbox. All changes rolled back.");
     throw rollback;
   });
 } catch (error) { if (error !== rollback) throw error; }

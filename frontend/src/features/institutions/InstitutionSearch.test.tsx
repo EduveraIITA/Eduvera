@@ -21,7 +21,7 @@ describe("Institution autocomplete", () => {
     expect(apiMock).not.toHaveBeenCalled();
     await user.type(screen.getByRole("combobox"), "elhi");
     expect(screen.getByText("Searching institutions…")).toBeVisible();
-    expect(await screen.findByRole("option")).toHaveTextContent("Create Eduera account");
+    expect(await screen.findByRole("option")).toHaveTextContent("Create ThatCampus account");
     expect(apiMock).toHaveBeenCalledTimes(1);
     await user.keyboard("{ArrowDown}{Enter}");
     expect(selected).toHaveBeenCalledWith(available);
@@ -29,16 +29,16 @@ describe("Institution autocomplete", () => {
   });
 
   it.each([
-    ["active", "View institution", "✓ Already on Eduera"],
+    ["active", "View institution", "✓ Already on ThatCampus"],
     ["setup_in_progress", "Continue setup", "Setup in progress"],
-    ["suspended", "View institution", "Already on Eduera · Suspended"],
+    ["suspended", "View institution", "Already on ThatCampus · Suspended"],
   ] as const)("shows %s without a create action", async (status, action, badge) => {
     apiMock.mockResolvedValue({ results: [{ ...available, is_onboarded: true, eduera_institution_id: "school-1", onboarding_status: status }] });
     render(<InstitutionSearch onSelect={vi.fn()} onManual={vi.fn()} />);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "Delhi" } });
     expect(await screen.findByRole("option")).toHaveTextContent(action);
     expect(screen.getByText(badge)).toBeVisible();
-    expect(screen.queryByText("Create Eduera account")).not.toBeInTheDocument();
+    expect(screen.queryByText("Create ThatCampus account")).not.toBeInTheDocument();
   });
 
   it("shows no-results and manual fallback, closes on outside pointer and Escape", async () => {

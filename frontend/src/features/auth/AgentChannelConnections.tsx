@@ -44,6 +44,6 @@ export function AgentChannelConnections({portal,studentId}:{portal:Portal;studen
     </div>)}
     {!query.isPending&&!query.isError&&!providers.length?<p className="account-channels__state">No messaging provider is configured yet.</p>:null}
     {error?<p className="account-channels__state security-alert" role="alert">{error}</p>:null}
-    <p className="account-profile-explainer">Connected chats use your current school access and AI allowance. Actions that require review still open securely in OmniSchool.</p>
+    <p className="account-profile-explainer">Connected chats use your current school access and AI allowance. Actions that require review still open securely in ThatCampus.</p>
   </section>;
 }

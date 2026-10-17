@@ -49,6 +49,7 @@ const moduleByKind: Readonly<Record<string, AttentionModuleId>> = {
   coverage_offer: "responsibilities",
   transport_assignment: "transport",
   transport_swap: "transport",
+  assessment_invigilation: "assessments",
   assessment_work: "assessments",
   staff_leave_review: "staff",
   departure_change: "departure",

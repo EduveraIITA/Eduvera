@@ -53,7 +53,7 @@ export interface StudentEligibilityData {
 
 export interface StudentEligibilityPageProps {
   proFeaturesEnabled?: boolean;
-  data?: StudentEligibilityData;
+  data: StudentEligibilityData;
   routes?: Partial<StudentRouteMap>;
   onAskCopilot?: AttendanceCopilotHandler;
   onViewTimetable?: () => void;
@@ -87,7 +87,7 @@ export const demoEligibilityData: StudentEligibilityData = {
 };
 
 export function StudentEligibilityPage({
-  data = demoEligibilityData,
+  data,
   routes,
   onAskCopilot,
   proFeaturesEnabled = false,

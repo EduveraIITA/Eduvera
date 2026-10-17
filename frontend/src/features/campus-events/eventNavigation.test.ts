@@ -12,4 +12,18 @@ describe("event navigation context", () => {
     expect(eventListHref("/teacher", "")).toBe("/teacher/events");
     expect(eventDetailSuffix("view=sessions")).toBe("");
   });
+
+  it("returns planner-created events to the planner without allowing arbitrary redirects", () => {
+    const returnTo = "/principal/planner?date=2026-10-14&view=week";
+    const search = new URLSearchParams({ return_to: returnTo });
+    expect(eventListHref("/principal", search)).toBe(returnTo);
+    expect(eventDetailHref("/principal", "event-1", search)).toBe(`/principal/events/event-1?return_to=${encodeURIComponent(returnTo)}`);
+    expect(eventListHref("/principal", "return_to=https%3A%2F%2Fevil.example")).toBe("/principal/events");
+  });
+
+  it("returns newly created events to the canonical timetable", () => {
+    const returnTo = "/principal/timetable?date=2026-10-14&view=month";
+    const search = new URLSearchParams({ return_to: returnTo });
+    expect(eventListHref("/principal", search)).toBe(returnTo);
+  });
 });

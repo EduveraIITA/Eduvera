@@ -60,6 +60,7 @@ const mappingCases: Array<[RequestPortal, string, RequestCategory, AttentionItem
   ["teacher", "coverage_offer", "staffing", "responsibilities"],
   ["teacher", "transport_assignment", "transport", "transport"],
   ["teacher", "transport_swap", "transport", "transport"],
+  ["teacher", "assessment_invigilation", "academics", "assessments"],
   ["teacher", "assessment_work", "academics", "assessments"],
   ["principal", "staff_leave_review", "leave", "staff"],
   ["principal", "departure_change", "transport", "departure"],

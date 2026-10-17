@@ -36,6 +36,18 @@ describe("settings-style More", () => {
     expect(screen.getByRole("link", { name: "Open Experimental settings" })).toHaveAttribute("href", "/principal/experimental");
   });
 
+  it("places Campus view directly in admin More and hides it without admin authority", () => {
+    session.value = { status: "authenticated", user: { id: "admin", active_school_id: "school" }, memberships: [{ role: "admin", school_id: "school" }] };
+    const adminView = show("principal");
+    expect(screen.getByRole("link", { name: "Open Campus view" })).toHaveAttribute("href", "/principal/campus");
+    expect(screen.getByRole("heading", { name: "School overview" })).toBeVisible();
+    adminView.unmount();
+
+    session.value = { status: "authenticated", user: { id: "staff", active_school_id: "school" }, memberships: [{ role: "staff", school_id: "school" }] };
+    show("principal");
+    expect(screen.queryByRole("link", { name: "Open Campus view" })).not.toBeInTheDocument();
+  });
+
   it.each(["principal", "teacher", "parent", "student"] as const)("makes Analytics discoverable from %s More", portal => {
     show(portal);
     expect(screen.getByRole("link", { name: "Open Insights" })).toHaveAttribute("href", `/${portal}/insights`);
@@ -145,7 +157,7 @@ describe("settings-style More", () => {
 
     show("principal");
 
-    expect(await screen.findByRole("link", { name: "Read Timetable & calendar, 1 new timetable & calendar" }))
+    expect(await screen.findByRole("link", { name: "Read Timetable, 1 new timetable" }))
       .toHaveAttribute("href", "/principal/calendar?date=2026-10-14&calendar_change_id=calendar-1&attention_notification_id=notification-1");
   });
 
@@ -166,7 +178,7 @@ describe("settings-style More", () => {
 
     show("principal");
 
-    expect(await screen.findByRole("link", { name: "Read Timetable & calendar, 2 new timetable & calendar" }))
+    expect(await screen.findByRole("link", { name: "Read Timetable, 2 new timetable" }))
       .toHaveAttribute("href", "/principal/calendar?date=2026-10-14&calendar_change_id=calendar-1&attention_notification_id=notification-1");
   });
 

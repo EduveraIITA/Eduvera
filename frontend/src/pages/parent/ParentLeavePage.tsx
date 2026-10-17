@@ -16,7 +16,6 @@ import {
   Upload,
   UsersRound,
 } from "lucide-react";
-import { fallbackLeaveData } from "./parentDemoData";
 import { ParentShell } from "./ParentShell";
 import type { ParentLeaveData, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
@@ -31,7 +30,7 @@ export interface ParentLeaveDraft {
 }
 
 export interface ParentLeavePageProps {
-  data?: ParentLeaveData;
+  data: ParentLeaveData;
   onSelectChild?: (childId: string) => ParentPageAction;
   onAuthorize?: (requestId: string, guardianRemark: string) => ParentPageAction;
   onRequestClarification?: (requestId: string, note: string) => ParentPageAction;
@@ -96,7 +95,7 @@ function LeaveHistory({ data, focusRequestId }: { data: ParentLeaveData; focusRe
 }
 
 export function ParentLeavePage({
-  data = fallbackLeaveData,
+  data,
   onSelectChild,
   onAuthorize,
   onRequestClarification,

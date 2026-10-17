@@ -21,6 +21,7 @@ import {
   Save,
   Search,
   UnlockKeyhole,
+  X,
 } from "lucide-react";
 import type {
   AttendanceCaptureSource,
@@ -329,6 +330,10 @@ interface TeacherAttendancePageProps {
   onLock?: () => Promise<TeacherAttendanceResponse>;
   onUnlock?: (reason: string) => Promise<TeacherAttendanceResponse>;
   onLoadHistory?: () => Promise<AttendanceRegisterHistoryResponse>;
+  onDecideEvidence?: (
+    evidenceId: string,
+    input: { decision: "accepted" | "rejected"; note: string; expected_revision: number; idempotency_key: string },
+  ) => Promise<TeacherAttendanceResponse>;
   portal?: "teacher" | "principal";
   initialCaptureSource?: AttendanceCaptureSource;
   initialStudentId?: string;
@@ -343,6 +348,7 @@ export function TeacherAttendancePage({
   onLock,
   onUnlock,
   onLoadHistory,
+  onDecideEvidence,
   portal = "teacher",
   initialCaptureSource = "live_app",
   initialStudentId,
@@ -376,6 +382,9 @@ export function TeacherAttendancePage({
   const [captureSource, setCaptureSource] = useState<AttendanceCaptureSource>(initialCaptureSource);
   const [sourceReference, setSourceReference] = useState("");
   const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
+  const [pendingEvidence, setPendingEvidence] = useState(() => data.pending_evidence ?? []);
+  const [evidenceNotes, setEvidenceNotes] = useState<Record<string, string>>({});
+  const [evidenceBusy, setEvidenceBusy] = useState<string | null>(null);
   const saveAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const incomingSnapshot = useMemo(() => attendanceSnapshot(data), [data]);
   useEffect(() => {
@@ -477,7 +486,42 @@ export function TeacherAttendancePage({
     setStatusMessage(message);
     setState("saved");
     setPhotoSessionId(null);
+    setPendingEvidence(result.pending_evidence ?? []);
     saveAttempt.current = null;
+  };
+
+  const decideEvidence = async (evidenceId: string, decision: "accepted" | "rejected") => {
+    if (!onDecideEvidence || evidenceBusy) return;
+    if (dirty) {
+      setError("Save or discard your register edits before reviewing a check-in.");
+      return;
+    }
+    const note = evidenceNotes[evidenceId]?.trim() ?? "";
+    if (note.length < 3) {
+      setError("Add a brief verification note before deciding this check-in.");
+      return;
+    }
+    setEvidenceBusy(evidenceId);
+    setError("");
+    try {
+      const result = await onDecideEvidence(evidenceId, {
+        decision,
+        note,
+        expected_revision: activeBaseline.register.revision,
+        idempotency_key: newIdempotencyKey(),
+      });
+      setEvidenceNotes((current) => {
+        const next = { ...current };
+        delete next[evidenceId];
+        return next;
+      });
+      applyServerResult(result, decision === "accepted" ? "Check-in accepted and attendance updated." : "Check-in rejected. The register was not changed.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The check-in decision could not be saved.");
+      setState("error");
+    } finally {
+      setEvidenceBusy(null);
+    }
   };
 
   const update = (studentId: string, value: Partial<EditableRecord>) => {
@@ -843,6 +887,47 @@ export function TeacherAttendancePage({
             </div>
           ) : null}
         </section>
+
+        {data.attendance_scope === "scheduled_session" && pendingEvidence.length ? (
+          <section className="operations-panel attendance-evidence-review" aria-labelledby="attendance-evidence-review-heading">
+            <header>
+              <div>
+                <span>Student check-ins</span>
+                <h2 id="attendance-evidence-review-heading">Review before recording</h2>
+              </div>
+              <b>{pendingEvidence.length} pending</b>
+            </header>
+            <p>These observations stay separate from the register until an authorized staff member decides them.</p>
+            <div className="attendance-evidence-review__list">
+              {pendingEvidence.map((evidence) => (
+                <article key={evidence.id}>
+                  <div>
+                    <strong>{evidence.student_name}</strong>
+                    <small>{evidence.admission_number} · {evidence.capture_channel === "student_qr" ? "QR check-in" : evidence.capture_channel.replaceAll("_", " ")}</small>
+                  </div>
+                  <label>
+                    Verification note
+                    <input
+                      value={evidenceNotes[evidence.id] ?? ""}
+                      maxLength={500}
+                      disabled={evidenceBusy === evidence.id}
+                      onChange={(event) => setEvidenceNotes((current) => ({ ...current, [evidence.id]: event.target.value }))}
+                      placeholder="Example: Student verified in class"
+                    />
+                  </label>
+                  <div className="attendance-evidence-review__actions">
+                    <button type="button" disabled={Boolean(evidenceBusy) || dirty} onClick={() => void decideEvidence(evidence.id, "rejected")}>
+                      <X size={15} /> Reject
+                    </button>
+                    <button className="is-primary" type="button" disabled={Boolean(evidenceBusy) || dirty} onClick={() => void decideEvidence(evidence.id, "accepted")}>
+                      {evidenceBusy === evidence.id ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} Accept present
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {data.attendance_scope !== "scheduled_session" ? <section className={`attendance-continuity-status${!online ? " is-offline" : data.latest_capture?.status === "quarantined" ? " needs-review" : ""}`} role="status" aria-live="polite">
           {!online ? <CloudOff size={20} /> : data.latest_capture?.status === "quarantined" ? <AlertTriangle size={20} /> : <Cloud size={20} />}

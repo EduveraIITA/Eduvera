@@ -86,7 +86,7 @@ export class CalendarIntegrationsService {
     const input=rangeInput.parse(query);if(input.from>input.to||durationDays(input.from,input.to)>370)throw new BadRequestException('Choose a calendar range of up to 370 days.');
     const scope=await this.scope(request.authUser,input);const body=await this.calendar(scope,request.authUser,input.from,input.to);
     await this.audit(this.db,request,scope,'calendar.exported',null,{portal:scope.portal,student_id:scope.studentId,from:input.from,to:input.to});
-    return {body,filename:`edura-${input.from}-${input.to}.ics`};
+    return {body,filename:`thatcampus-${input.from}-${input.to}.ics`};
   }
 
   async feed(rawToken:string){
@@ -146,7 +146,7 @@ export class CalendarIntegrationsService {
               AND enrollment.term_id=schedule.term_id AND enrollment.is_active AND enrollment.enrolled_on<=day::date AND day::date BETWEEN term.starts_on AND term.ends_on)))
       ORDER BY day,schedule.starts_at,schedule.period_number`.execute(this.db)).rows;
     return rows.map(row=>({uid:`period-${row.id}-${row.date}@edura`,title:scope.portal==='teacher'?`${row.title} · ${row.class_name}`:row.title,
-      description:`Period ${row.period_number}. Open Edura for current school details.`,location:row.room,start:row.starts_at,end:row.ends_at,sequence:row.plan_version??0}));
+      description:`Period ${row.period_number}. Open ThatCampus for current school details.`,location:row.room,start:row.starts_at,end:row.ends_at,sequence:row.plan_version??0}));
   }
 
   private async events(scope:Scope,user:AuthUser,from:string,to:string):Promise<ICalendarEvent[]>{
@@ -162,14 +162,14 @@ export class CalendarIntegrationsService {
     }));
     const unique=new Map(lists.flat().map(item=>[item.id,item]));
     return [...unique.values()].map(item=>({uid:`event-${item.id}@edura`,title:item.status==='cancelled'?`Cancelled · ${item.title}`:item.title,
-      description:'Open Edura for current event details.',location:item.venue,start:item.starts_at,end:item.ends_at,sequence:item.revision,cancelled:item.status==='cancelled'}));
+      description:'Open ThatCampus for current event details.',location:item.venue,start:item.starts_at,end:item.ends_at,sequence:item.revision,cancelled:item.status==='cancelled'}));
   }
 
   private async assessmentEvents(scope:Scope,user:AuthUser,from:string,to:string):Promise<ICalendarEvent[]>{
     const items:Array<{id:string;title:string;scheduled_at:string;venue:string;subject_name:string;class_name:string;duration_minutes?:number|null}>=[];
     for(let cursor=from;cursor<=to;){const end=[plusDays(cursor,92),to].sort()[0]!;const page=await this.assessments.calendar(user,scope.schoolId,cursor,end,scope.studentId??undefined);items.push(...page.items);cursor=plusDays(end,1);}
     return items.map(item=>{const start=new Date(item.scheduled_at);const end=new Date(start.getTime()+(item.duration_minutes??60)*60_000);return {
-      uid:`assessment-${item.id}@edura`,title:`${item.subject_name} · ${item.title}`,description:`${item.class_name}. Open Edura for assessment details.`,
+      uid:`assessment-${item.id}@edura`,title:`${item.subject_name} · ${item.title}`,description:`${item.class_name}. Open ThatCampus for assessment details.`,
       location:item.venue,start,end,
     };});
   }

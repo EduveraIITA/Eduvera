@@ -37,7 +37,7 @@ function setup() {
     .mockResolvedValueOnce(matched(ids.target))
     .mockResolvedValueOnce(matched(ids.owner));
   const recordRecipientResponse=vi.fn().mockResolvedValue({message_id:ids.message,reaction_id:ids.reaction,state:"responded",outcome_id:ids.outcome,replayed:false});
-  const coordination:CoordinationRuntimePort={publishAcceptedEvent,recordRecipientResponse,
+  const coordination:CoordinationRuntimePort={resolveEventRoute:vi.fn(),authorizeCandidateRecipients:vi.fn(),publishAcceptedEvent,recordRecipientResponse,
     recordMessageOutcome:vi.fn()};
   return {service:new TransportDutyModelBridgeService(authority,coordination),mocks:{resolveDecisionOwner,assertDecisionAuthority,publishAcceptedEvent,recordRecipientResponse}};
 }

@@ -86,7 +86,7 @@ it('shows and revokes the linked Telegram assistant from Profile',async()=>{
     if(path==='/api/v1/auth/pro-features/')return Promise.resolve({enabled:true,preview:true});
     if(path==='/api/v1/auth/demo-profiles/')return Promise.resolve({enabled:false,profiles:[]});
     if(path==='/api/v1/agent/memories')return Promise.resolve({items:[],budget:{used_tokens:0,max_tokens:1200,used_items:0,max_items:32},contract:'2026-10-10.1'});
-    if(path==='/api/v1/agent/channels'&&init?.method!=='DELETE')return Promise.resolve({providers:[{name:'telegram',label:'Telegram',configured:true,username:'@OmniSchoolBot',connection:{portal:'student',student_id:null,linked_at:'2026-10-14T00:00:00Z',last_inbound_at:null,last_outbound_at:null}}]});
+    if(path==='/api/v1/agent/channels'&&init?.method!=='DELETE')return Promise.resolve({providers:[{name:'telegram',label:'Telegram',configured:true,username:'@ThatCampusBot',connection:{portal:'student',student_id:null,linked_at:'2026-10-14T00:00:00Z',last_inbound_at:null,last_outbound_at:null}}]});
     if(path==='/api/v1/agent/channels/telegram'&&init?.method==='DELETE')return Promise.resolve({provider:'telegram',connected:false});
     return Promise.resolve({});
   });

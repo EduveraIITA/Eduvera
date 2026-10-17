@@ -1,11 +1,17 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { sql, type Transaction } from "kysely";
 import { z } from "zod";
+import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
 import { AuditService } from "../common/audit.service.js";
-import type { AuthUser } from "../common/request.js";
+import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
+import {
+  STAFF_COVERAGE_RECONCILIATION_PORT,
+  type StaffCoverageReconciliationPort,
+} from "../staff-operations/staff-coverage-reconciliation.service.js";
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const quickStartSchema = z.object({
@@ -48,7 +54,13 @@ interface ReadinessCheck {
 
 @Injectable()
 export class InstitutionActivationService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly audit: AuditService,
+    @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal: TemporalContextPort,
+    @Inject(STAFF_COVERAGE_RECONCILIATION_PORT)
+    private readonly coverage: StaffCoverageReconciliationPort,
+  ) {}
 
   private async requireAdmin(user: AuthUser, schoolId: string, db: Db = this.db) {
     const membership = await db.selectFrom("school_memberships").select(["id", "role"])
@@ -72,6 +84,37 @@ export class InstitutionActivationService {
       WHERE school.id=${schoolId}::uuid`.execute(db)).rows[0];
     if (!row) throw new NotFoundException("Institution activation workspace not found.");
     return row;
+  }
+
+  private async enqueueUpdate(db: Transaction<Database>, input: {
+    schoolId: string;
+    eventType: "administration.updated" | "timetable.updated";
+    aggregateType: string;
+    aggregateId: string;
+    payload: Record<string, unknown>;
+    idempotencyKey: string;
+  }) {
+    const audience = await sql<{ user_id: string }>`SELECT DISTINCT membership.user_id
+      FROM school_memberships membership
+      JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${input.schoolId}::uuid AND membership.is_active
+        AND event_user_is_authorized(
+          ${input.schoolId}::uuid,
+          ${input.eventType},
+          ${JSON.stringify(input.payload)}::jsonb,
+          membership.user_id
+        )`.execute(db);
+    await db.insertInto("event_outbox").values({
+      school_id: input.schoolId,
+      event_type: input.eventType,
+      aggregate_type: input.aggregateType,
+      aggregate_id: input.aggregateId,
+      audience_user_ids: audience.rows.map((row) => row.user_id),
+      payload: { school_id: input.schoolId, ...input.payload },
+      idempotency_key: input.idempotencyKey,
+      notification_user_ids: [],
+      notification_payload: null,
+    }).onConflict((conflict) => conflict.column("idempotency_key").doNothing()).execute();
   }
 
   private async readiness(user: AuthUser, schoolId: string, db: Db = this.db) {
@@ -145,7 +188,7 @@ export class InstitutionActivationService {
     return { ...result, history };
   }
 
-  async quickStart(user: AuthUser, schoolId: string, body: unknown, request: FastifyRequest) {
+  async quickStart(user: AuthUser, schoolId: string, body: unknown, request: AuthenticatedRequest) {
     const data = quickStartSchema.parse(body);
     const result = await this.db.transaction().execute(async (db) => {
       await this.requireAdmin(user, schoolId, db);
@@ -159,27 +202,157 @@ export class InstitutionActivationService {
       if (existing.terms || existing.cohorts || existing.subjects) {
         throw new ConflictException("Quick start is only available for an empty workspace. Continue with the existing records in School administration.");
       }
-      const term = (await sql<{ id: string }>`INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,attendance_threshold,is_active,updated_by)
+      const term = (await sql<{ id: string; revision: number }>`INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,attendance_threshold,is_active,updated_by)
         VALUES(${schoolId}::uuid,${data.academic_year},${data.term_name},${data.starts_on}::date,${data.ends_on}::date,${data.attendance_threshold},true,${user.id}::uuid)
-        RETURNING id`.execute(db)).rows[0]!;
-      const cohort = (await sql<{ id: string }>`INSERT INTO class_sections(school_id,academic_year,grade,section,updated_by)
-        VALUES(${schoolId}::uuid,${data.academic_year},${data.grade_or_program},${data.section},${user.id}::uuid) RETURNING id`.execute(db)).rows[0]!;
-      const subjects: Array<{ id: string; name: string }> = [];
+        RETURNING id,revision`.execute(db)).rows[0]!;
+      const cohort = (await sql<{ id: string; revision: number }>`INSERT INTO class_sections(school_id,academic_year,grade,section,updated_by)
+        VALUES(${schoolId}::uuid,${data.academic_year},${data.grade_or_program},${data.section},${user.id}::uuid) RETURNING id,revision`.execute(db)).rows[0]!;
+      const subjects: Array<{ id: string; name: string; revision: number }> = [];
       for (const subject of data.subjects) {
-        const row = (await sql<{ id: string; name: string }>`INSERT INTO subjects(school_id,code,name,short_name,updated_by)
-          VALUES(${schoolId}::uuid,${subject.code},${subject.name},${subject.short_name},${user.id}::uuid) RETURNING id,name`.execute(db)).rows[0]!;
+        const row = (await sql<{ id: string; name: string; revision: number }>`INSERT INTO subjects(school_id,code,name,short_name,updated_by)
+          VALUES(${schoolId}::uuid,${subject.code},${subject.name},${subject.short_name},${user.id}::uuid) RETURNING id,name,revision`.execute(db)).rows[0]!;
         subjects.push(row);
       }
       await sql`INSERT INTO attendance_policies(term_id,name,minimum_percentage,medical_document_after_days,policy_text)
         VALUES(${term.id}::uuid,${`${data.term_name} attendance policy`},${data.attendance_threshold},${data.medical_document_after_days},'Attendance is recorded for each scheduled teaching day. Corrections remain auditable.')`.execute(db);
       await sql`INSERT INTO school_contacts(school_id,label,name,phone,email,availability,priority)
         VALUES(${schoolId}::uuid,'Operations fallback',${data.contact_name},${data.contact_phone},${data.contact_email},'During teaching hours',1)`.execute(db);
-      for (const [index, weekday] of [...new Set(data.teaching_days)].sort().entries()) {
-        const subject = subjects[index % subjects.length]!;
-        await sql`INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,slot_type,title)
-          VALUES(${cohort.id}::uuid,${term.id}::uuid,${subject.id}::uuid,${weekday},1,${data.starts_at}::time,${data.ends_at}::time,'class',${subject.name})`.execute(db);
+      const slotSeeds = [...new Set(data.teaching_days)].sort().map((weekday, index) => ({
+        id: randomUUID(),
+        weekday,
+        subject: subjects[index % subjects.length]!,
+      }));
+      const coverageInput = {
+        school_id: schoolId,
+        from: data.starts_on,
+        to: data.ends_on,
+        class_section_id: cohort.id,
+        actor_user_id: user.id,
+        correlation_id: request.requestId,
+        cause: {
+          kind: "institution_quick_start_timetable_created",
+          source_domain: "timetable",
+          source_record_id: slotSeeds[0]!.id,
+          source_revision: 1,
+        },
+      } as const;
+      const coveragePreparation = await this.coverage.prepareEffectiveCoverageProjection(
+        db,
+        coverageInput,
+      );
+      const slots: Array<{
+        id: string;
+        weekday: number;
+        subject_id: string;
+        revision: number;
+        title: string;
+      }> = [];
+      for (const seed of slotSeeds) {
+        const slot = (await sql<{
+          id: string;
+          weekday: number;
+          subject_id: string;
+          revision: number;
+          title: string;
+        }>`INSERT INTO timetable_slots(
+            id,class_section_id,term_id,subject_id,weekday,period_number,
+            starts_at,ends_at,slot_type,title,updated_by
+          ) VALUES(
+            ${seed.id}::uuid,${cohort.id}::uuid,${term.id}::uuid,${seed.subject.id}::uuid,
+            ${seed.weekday},1,${data.starts_at}::time,${data.ends_at}::time,'class',
+            ${seed.subject.name},${user.id}::uuid
+          ) RETURNING id,weekday,subject_id,revision,title`.execute(db)).rows[0]!;
+        slots.push(slot);
       }
-      const snapshot = { academic_year: data.academic_year, term_id: term.id, cohort_id: cohort.id, subject_count: subjects.length, teaching_days: data.teaching_days };
+      const school = (await sql<{ timezone: string }>`SELECT timezone FROM schools
+        WHERE id=${schoolId}::uuid`.execute(db)).rows[0]!;
+      const subjectById = new Map(subjects.map((subject) => [subject.id, subject]));
+      const temporalProjection = [];
+      for (const slot of slots) {
+        const subject = subjectById.get(slot.subject_id)!;
+        temporalProjection.push(await this.temporal.recordLegacyTimetableSlotChange(db, {
+          school_id: schoolId,
+          actor_user_id: user.id,
+          action: "created",
+          source_record_id: slot.id,
+          source_revision: slot.revision,
+          previous_source_revision: null,
+          term_id: term.id,
+          starts_on: data.starts_on,
+          ends_on: data.ends_on,
+          timezone: school.timezone,
+          occurred_at: new Date().toISOString(),
+          class_section: {
+            kind: "class",
+            domain: "academic_structure",
+            domain_id: cohort.id,
+            label: `Class ${data.grade_or_program}${data.section}`,
+            lifecycle_state: "active",
+            source_revision: cohort.revision,
+            metadata: {},
+          },
+          slot: {
+            weekday: slot.weekday,
+            period_number: 1,
+            starts_at: data.starts_at,
+            ends_at: data.ends_at,
+            title: slot.title,
+            slot_type: "class",
+            teacher_user_id: null,
+            subject: {
+              kind: "subject",
+              domain: "academic_structure",
+              domain_id: subject.id,
+              label: subject.name,
+              lifecycle_state: "active",
+              source_revision: subject.revision,
+              metadata: {},
+            },
+            space: null,
+            room_snapshot: "",
+          },
+          correlation_id: request.requestId,
+        }));
+      }
+      const coverageReconciliation = await this.coverage.reconcileEffectiveCoverage(
+        db,
+        coverageInput,
+      );
+      const administrationRefresh = ["principal.administration", "principal.timetable", "institution-activation"];
+      await this.enqueueUpdate(db, {
+        schoolId, eventType: "administration.updated", aggregateType: "term", aggregateId: term.id,
+        payload: { action: "created", catalog_kind: "terms", revision: term.revision, refresh: administrationRefresh },
+        idempotencyKey: `activation:term:${term.id}:${term.revision}:created`,
+      });
+      await this.enqueueUpdate(db, {
+        schoolId, eventType: "administration.updated", aggregateType: "class", aggregateId: cohort.id,
+        payload: { action: "created", catalog_kind: "classes", revision: cohort.revision, refresh: administrationRefresh },
+        idempotencyKey: `activation:class:${cohort.id}:${cohort.revision}:created`,
+      });
+      for (const subject of subjects) await this.enqueueUpdate(db, {
+        schoolId, eventType: "administration.updated", aggregateType: "subject", aggregateId: subject.id,
+        payload: { action: "created", catalog_kind: "subjects", revision: subject.revision, refresh: administrationRefresh },
+        idempotencyKey: `activation:subject:${subject.id}:${subject.revision}:created`,
+      });
+      for (const slot of slots) await this.enqueueUpdate(db, {
+        schoolId, eventType: "timetable.updated", aggregateType: "timetable_slot", aggregateId: slot.id,
+        payload: {
+          action: "created", class_section_id: cohort.id, term_id: term.id, subject_id: slot.subject_id,
+          slot_id: slot.id, weekday: slot.weekday,
+          refresh: ["day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.timetable", "principal.home", "calendar", "institution-activation"],
+        },
+        idempotencyKey: `activation:timetable:${slot.id}:created`,
+      });
+      const snapshot = {
+        academic_year: data.academic_year,
+        term_id: term.id,
+        cohort_id: cohort.id,
+        subject_count: subjects.length,
+        teaching_days: data.teaching_days,
+        coverage_projection_preparation: coveragePreparation,
+        temporal_projection: temporalProjection,
+        coverage_reconciliation: coverageReconciliation,
+      };
       await sql`INSERT INTO institution_activation_audits(school_id,actor_id,action,from_status,to_status,snapshot)
         VALUES(${schoolId}::uuid,${user.id}::uuid,'quick_start_applied',${state.status},'draft',${JSON.stringify(snapshot)}::jsonb)`.execute(db);
       return snapshot;

@@ -41,6 +41,8 @@ import { AttentionModule } from "./attention/attention.module.js";
 import { AttendanceModelModule } from "./attendance-model/attendance-model.module.js";
 import { AgentChannelModule } from "./agent/channels/channel.module.js";
 import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-integrations.module.js";
+import { CampusViewModule } from "./campus-view/campus-view.module.js";
+import { CampusScenarioModule } from "./campus-scenarios/campus-scenario.module.js";
 
 @Module({
   imports: [
@@ -79,6 +81,8 @@ import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-int
     AttendanceModelModule,
     AgentChannelModule,
     CalendarIntegrationsModule,
+    CampusViewModule,
+    CampusScenarioModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

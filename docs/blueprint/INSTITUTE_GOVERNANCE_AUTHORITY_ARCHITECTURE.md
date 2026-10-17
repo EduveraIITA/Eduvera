@@ -7,7 +7,7 @@ Primary specification: `Institute_Configuration_and_Operations_Framework_V2_1.do
 
 ## Product decision
 
-OmniSchool has one institute model and two management experiences:
+ThatCampus has one institute model and two management experiences:
 
 - **Institute Setup** records how the institute is organised, where authority comes from,
   who currently holds offices or body seats, which matters are reserved, and which

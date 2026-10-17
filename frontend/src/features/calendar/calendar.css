@@ -1,23 +1,23 @@
-/* Calendar: a month grid on Edura tokens so it reads the same in every shell.
+/* Calendar: a month grid on ThatCampus tokens so it reads the same in every shell.
    Marks are dots under the day number; the selected day expands below. */
 .cal-page { display: flex; flex-direction: column; gap: 16px; padding-bottom: 18px; }
 .cal-date-navigation { padding:0 12px; }
 .cal-key { margin:0; }
-.cal-card { border: 1px solid rgba(226, 232, 240, 0.72); border-radius: var(--edura-radius-card); background: var(--edura-surface); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(29, 78, 216, 0.02); }
-.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 12px; padding: 12px 0 8px; border-bottom: 1px solid var(--edura-border); }
-.cal-toolbar > span { min-width: 0; color: var(--edura-ink-secondary); font-size: 12px; }
+.cal-card { border: 1px solid rgba(226, 232, 240, 0.72); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(29, 78, 216, 0.02); }
+.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 12px; padding: 12px 0 8px; border-bottom: 1px solid var(--thatcampus-border); }
+.cal-toolbar > span { min-width: 0; color: var(--thatcampus-ink-secondary); font-size: 12px; }
 .cal-toolbar label { flex: 0 0 auto; }
-.cal-key > summary { width: fit-content; min-height: 44px; align-content: center; padding: 0 14px; color: var(--edura-ink-secondary); font-size: 12px; cursor: pointer; }
-.cal-page :focus-visible { outline: 2px solid var(--edura-brand); outline-offset: 2px; }
-.cal-day:hover { background: var(--edura-surface-strong); }
+.cal-key > summary { width: fit-content; min-height: 44px; align-content: center; padding: 0 14px; color: var(--thatcampus-ink-secondary); font-size: 12px; cursor: pointer; }
+.cal-page :focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 2px; }
+.cal-day:hover { background: var(--thatcampus-surface-strong); }
 .cal-dots { display: flex; gap: 3px; height: 5px; }
-.cal-dot { width: 5px; height: 5px; border-radius: 999px; background: var(--edura-ink-muted); }
-.cal-dot--present { background: var(--edura-positive); }
-.cal-dot--late { background: var(--edura-warning); }
-.cal-dot--absent { background: var(--edura-danger); }
+.cal-dot { width: 5px; height: 5px; border-radius: 999px; background: var(--thatcampus-ink-muted); }
+.cal-dot--present { background: var(--thatcampus-positive); }
+.cal-dot--late { background: var(--thatcampus-warning); }
+.cal-dot--absent { background: var(--thatcampus-danger); }
 .cal-dot--excused { background: #7c8aa5; }
 .cal-dot--leave { background: #7c3aed; }
-.cal-dot--school { background: var(--edura-brand-bright); opacity: .55; }
+.cal-dot--school { background: var(--thatcampus-brand-bright); opacity: .55; }
 .cal-dot--event { background: #087f72; }
 .cal-dot--test { background: #6d3ee8; }
 .cal-dot--holiday { width: 8px; border-radius: 2px; background: #e53e55; }
@@ -28,51 +28,51 @@
 /* Day detail */
 .cal-detail { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
 .cal-detail__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.cal-detail__head h3 { margin: 0; color: var(--edura-ink); font-size: 15px; letter-spacing: -.02em; }
-.cal-detail__head small { display: block; margin-top: 2px; color: var(--edura-ink-muted); font-size: 11px; }
+.cal-detail__head h3 { margin: 0; color: var(--thatcampus-ink); font-size: 15px; letter-spacing: -.02em; }
+.cal-detail__head small { display: block; margin-top: 2px; color: var(--thatcampus-ink-muted); font-size: 11px; }
 .cal-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; color: #46536a; background: #e6ebf3; }
-.cal-pill--present { color: var(--edura-positive); background: var(--edura-positive-soft); }
-.cal-pill--late { color: var(--edura-warning); background: var(--edura-warning-soft); }
-.cal-pill--absent { color: var(--edura-danger); background: var(--edura-danger-soft); }
+.cal-pill--present { color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.cal-pill--late { color: var(--thatcampus-warning); background: var(--thatcampus-warning-soft); }
+.cal-pill--absent { color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
 .cal-pill--excused { color: #46536a; background: #e6ebf3; }
 .cal-pill--leave { color: #57408e; background: #eee8ff; }
-.cal-pill--brand { color: var(--edura-brand); background: var(--edura-brand-soft); }
+.cal-pill--brand { color: var(--thatcampus-brand); background: var(--thatcampus-brand-soft); }
 .cal-list { display: flex; flex-direction: column; border-top: 1px solid rgba(226, 232, 240, .8); }
 .cal-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 8px 0; border-bottom: 1px solid rgba(226, 232, 240, .6); text-decoration: none; color: inherit; }
 .cal-row:last-child { border-bottom: 0; }
 .cal-row > span:first-child { display: flex; flex-direction: column; }
-.cal-row > span:first-child strong { color: var(--edura-ink); font-size: 13px; }
-.cal-row > span:first-child small { color: var(--edura-ink-muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.cal-row > span:first-child strong { color: var(--thatcampus-ink); font-size: 13px; }
+.cal-row > span:first-child small { color: var(--thatcampus-ink-muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .cal-row__body { display: flex; flex-direction: column; min-width: 0; }
-.cal-row__body strong { overflow: hidden; color: var(--edura-ink); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.cal-row__body small { overflow: hidden; color: var(--edura-ink-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.cal-row--cancelled .cal-row__body strong { text-decoration: line-through; color: var(--edura-ink-muted); }
-.cal-section-title { margin: 4px 0 0; color: var(--edura-ink-secondary); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-.cal-event-icon { display: grid !important; width: 36px; height: 36px; place-items: center; border-radius: var(--edura-radius-control); color: var(--edura-brand); background: var(--edura-brand-soft); }
+.cal-row__body strong { overflow: hidden; color: var(--thatcampus-ink); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.cal-row__body small { overflow: hidden; color: var(--thatcampus-ink-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.cal-row--cancelled .cal-row__body strong { text-decoration: line-through; color: var(--thatcampus-ink-muted); }
+.cal-section-title { margin: 4px 0 0; color: var(--thatcampus-ink-secondary); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.cal-event-icon { display: grid !important; width: 36px; height: 36px; place-items: center; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-brand); background: var(--thatcampus-brand-soft); }
 .cal-event-icon--test { color: #5b31c8; background: #eee8ff; }
-.cal-event-icon--event { color: #006c62; background: var(--edura-positive-soft); }
-.cal-event-icon--holiday { color: #ad2338; background: var(--edura-danger-soft); }
+.cal-event-icon--event { color: #006c62; background: var(--thatcampus-positive-soft); }
+.cal-event-icon--holiday { color: #ad2338; background: var(--thatcampus-danger-soft); }
 .cal-row--holiday .cal-row__body strong { color: #a41f34; }
 .cal-row--attention {
   margin-inline: -6px;
   padding-inline: 6px;
-  border-radius: var(--edura-radius-control);
-  outline: 2px solid color-mix(in srgb, var(--edura-brand) 66%, transparent);
+  border-radius: var(--thatcampus-radius-control);
+  outline: 2px solid color-mix(in srgb, var(--thatcampus-brand) 66%, transparent);
   outline-offset: 2px;
 }
-.cal-row--attention:focus { outline-color: var(--edura-brand); }
-.cal-row--calendar-change .cal-row__body strong { color: var(--edura-ink); }
-.cal-inline-error { display: flex; min-height: 48px; padding: 8px 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--edura-danger); font-size: 12px; }
-.cal-inline-error button { min-height: 34px; padding: 0 10px; border: 1px solid currentColor; border-radius: var(--edura-radius-control); color: inherit; background: transparent; font-weight: 800; }
-.cal-empty { padding: 10px 0 2px; color: var(--edura-ink-muted); font-size: 12px; }
+.cal-row--attention:focus { outline-color: var(--thatcampus-brand); }
+.cal-row--calendar-change .cal-row__body strong { color: var(--thatcampus-ink); }
+.cal-inline-error { display: flex; min-height: 48px; padding: 8px 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--thatcampus-danger); font-size: 12px; }
+.cal-inline-error button { min-height: 34px; padding: 0 10px; border: 1px solid currentColor; border-radius: var(--thatcampus-radius-control); color: inherit; background: transparent; font-weight: 800; }
+.cal-empty { padding: 10px 0 2px; color: var(--thatcampus-ink-muted); font-size: 12px; }
 .cal-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.cal-stats article { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--edura-radius-control); background: var(--edura-surface-soft); }
-.cal-stats small { color: var(--edura-ink-muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.cal-stats strong { color: var(--edura-ink); font-size: 18px; letter-spacing: -.02em; }
-.cal-stats em { color: var(--edura-ink-secondary); font-size: 11px; font-style: normal; }
+.cal-stats article { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-soft); }
+.cal-stats small { color: var(--thatcampus-ink-muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.cal-stats strong { color: var(--thatcampus-ink); font-size: 18px; letter-spacing: -.02em; }
+.cal-stats em { color: var(--thatcampus-ink-secondary); font-size: 11px; font-style: normal; }
 .cal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.cal-action { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: var(--edura-radius-control); color: var(--edura-brand); background: var(--edura-brand-soft); font-size: 12px; font-weight: 800; text-decoration: none; }
-.cal-action:hover { background: var(--edura-surface-strong); }
-.cal-loading { padding: 14px; color: var(--edura-ink-muted); font-size: 12px; }
+.cal-action { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-brand); background: var(--thatcampus-brand-soft); font-size: 12px; font-weight: 800; text-decoration: none; }
+.cal-action:hover { background: var(--thatcampus-surface-strong); }
+.cal-loading { padding: 14px; color: var(--thatcampus-ink-muted); font-size: 12px; }
 @media (min-width: 900px) { .cal-page { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; } .cal-page > .cal-card:first-child { position: sticky; top: 90px; } }
 @media (max-width: 390px) { .cal-head h2 { font-size: 15px; } .cal-nav { gap: 0; } .cal-nav button { width: 32px; } .cal-nav button.cal-today { padding-inline: 4px; } .cal-weekdays, .cal-grid { gap: 3px; padding-inline: 9px; } .cal-day-strip { gap: 3px; padding-inline: 9px; } }

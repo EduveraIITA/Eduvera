@@ -2,7 +2,9 @@ import type { Transaction } from "kysely";
 import type { Database } from "../database/types.js";
 import type {
   AcceptedCoordinationEvent,
+  CampusModelEntitySnapshot,
   CoordinationRecipientAgentRef,
+  CoordinationRecipientSelectorConfig,
   OperationalMessageOutcome,
   OperationalMessageState,
   RecipientOperationalMessageResponse,
@@ -22,6 +24,12 @@ export interface MatchedCoordinationPublishReceipt {
     message_id: string;
     recipient: CoordinationRecipientAgentRef;
   }>;
+  route_snapshot?: {
+    message_kind: "request" | "task" | "offer" | "update";
+    message_schema_version: number;
+    response_due_at: string | null;
+    expires_at: string | null;
+  };
   replayed: boolean;
 }
 
@@ -52,7 +60,69 @@ export interface OperationalMessageOutcomeReceipt {
   replayed: boolean;
 }
 
+export interface CoordinationRouteResolutionInput {
+  school_id: string;
+  source_domain: string;
+  event_type: string;
+  selector_key: string;
+  occurred_at: string;
+}
+
+export interface MatchedCoordinationRouteResolution {
+  status: "matched";
+  behaviour_version_id: string;
+  behaviour_key: string;
+  behaviour_version: number;
+  behaviour_configuration: unknown;
+  configuration_schema_version: number;
+  subscription_id: string;
+  subscription_key: string;
+  reaction_kind: string;
+  message_kind: "request" | "task" | "offer" | "update";
+  message_schema_version: number;
+  selector: CoordinationRecipientSelectorConfig;
+  response_due_after_seconds: number | null;
+  expires_after_seconds: number | null;
+  max_attempts: number;
+  retry_after_seconds: number | null;
+  priority: number;
+}
+
+export interface UnmatchedCoordinationRouteResolution {
+  status: "unmatched";
+  exception_code: "configuration_missing" | "configuration_invalid";
+  explanation: string;
+  matching_behaviour_version_ids: string[];
+}
+
+export type CoordinationRouteResolution =
+  | MatchedCoordinationRouteResolution
+  | UnmatchedCoordinationRouteResolution;
+
+export interface CoordinationCandidateAuthorizationInput {
+  school_id: string;
+  behaviour_version_id: string;
+  subscription_id: string;
+  occurred_at: string;
+  recipients: CoordinationRecipientAgentRef[];
+  scope: CampusModelEntitySnapshot | null;
+}
+
+export interface CoordinationCandidateAuthorizationReceipt {
+  authorised: CoordinationRecipientAgentRef[];
+  unresolved: CoordinationRecipientAgentRef[];
+  unauthorized: CoordinationRecipientAgentRef[];
+}
+
 export interface CoordinationRuntimePort {
+  resolveEventRoute(
+    transaction: Transaction<Database>,
+    input: CoordinationRouteResolutionInput,
+  ): Promise<CoordinationRouteResolution>;
+  authorizeCandidateRecipients(
+    transaction: Transaction<Database>,
+    input: CoordinationCandidateAuthorizationInput,
+  ): Promise<CoordinationCandidateAuthorizationReceipt>;
   publishAcceptedEvent(
     transaction: Transaction<Database>,
     input: AcceptedCoordinationEvent,

@@ -2,8 +2,8 @@
   display: grid;
   overflow: hidden;
   border-radius: 22px;
-  color: var(--edura-ink);
-  background: var(--edura-surface);
+  color: var(--thatcampus-ink);
+  background: var(--thatcampus-surface);
   box-shadow: 0 2px 10px rgba(20, 38, 63, 0.05);
 }
 
@@ -25,7 +25,7 @@
 
 .coverage-rule__header p {
   margin: 5px 0 0;
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -89,7 +89,7 @@
 .coverage-rule__row + .coverage-rule__row { border-top: 1px solid #e4e8ef; }
 .coverage-rule__row > span { display: grid; min-width: 0; gap: 2px; }
 .coverage-rule__row strong { font-size: 14px; line-height: 1.3; }
-.coverage-rule__row small { color: var(--edura-ink-muted); font-size: 11px; line-height: 1.35; }
+.coverage-rule__row small { color: var(--thatcampus-ink-muted); font-size: 11px; line-height: 1.35; }
 
 .coverage-rule__row input,
 .coverage-rule__row select {
@@ -98,7 +98,7 @@
   padding: 0 12px;
   border: 1px solid #d7dee9;
   border-radius: 11px;
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
   background: #fff;
   font: inherit;
   font-size: 13px;
@@ -107,7 +107,7 @@
 
 .coverage-rule__row input:focus-visible,
 .coverage-rule__row select:focus-visible {
-  border-color: var(--edura-brand);
+  border-color: var(--thatcampus-brand);
   outline: 3px solid rgba(29, 78, 216, 0.12);
 }
 
@@ -116,7 +116,7 @@
   margin: 14px 18px 0;
   align-items: flex-start;
   gap: 8px;
-  color: var(--edura-ink-muted);
+  color: var(--thatcampus-ink-muted);
 }
 
 .coverage-rule__note svg { flex: 0 0 auto; margin-top: 1px; color: #718096; }
@@ -147,7 +147,7 @@
   border: 0;
   border-radius: 14px;
   color: #fff;
-  background: var(--edura-brand);
+  background: var(--thatcampus-brand);
   font: inherit;
   font-size: 14px;
   font-weight: 750;
@@ -189,10 +189,10 @@
   padding: 0 14px;
   align-items: center;
   gap: 12px;
-  color: var(--edura-ink);
+  color: var(--thatcampus-ink);
   font-size: 14px;
   font-weight: 650;
 }
 
 .operating-category__switches label + label { border-top: 1px solid #e4e8ef; }
-.operating-category__switches input { width: 18px; height: 18px; accent-color: var(--edura-brand); }
+.operating-category__switches input { width: 18px; height: 18px; accent-color: var(--thatcampus-brand); }

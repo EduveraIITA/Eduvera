@@ -19,6 +19,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useAttention } from "../attention/useAttention";
 import { ScopedStaffHomePage } from "../auth/ScopedStaffHomePage";
 import { currentStaffMembership, hasStaffPermission, isGateOnlyMember } from "../auth/staffAccess";
+import { principalRegisterHistoryQueryKey } from "./attendanceQueryKeys";
 import {
   applyQueuedCapture,
   attendanceDeviceId,
@@ -32,6 +33,7 @@ import {
   createTimetableSlot,
   createSchoolClosure,
   copyTimetableDay,
+  decideSessionAttendanceEvidence,
   decideAttendanceReconciliation,
   deleteSchoolClosure,
   deleteTimetableSlot,
@@ -247,6 +249,7 @@ export function TeacherAttendanceRoute() {
       onDateChange={setDate}
       onSave={save}
       onRefresh={refresh}
+      onDecideEvidence={sessionId ? (evidenceId, input) => decideSessionAttendanceEvidence(sessionId, evidenceId, input) : undefined}
     />
   );
 }
@@ -270,7 +273,7 @@ export function PrincipalAttendanceRoute() {
   const detailOpen = Boolean(classId || sessionId);
   const reviewCaseId = params.get("review_case") ?? undefined;
   const registerKey = ["principal-register", sessionId ? "session" : "daily", sessionId ?? classId, date] as const;
-  const historyKey = ["principal-register-history", sessionId ? "session" : "daily", sessionId ?? classId, date] as const;
+  const historyKey = principalRegisterHistoryQueryKey(sessionId, classId, date);
   const model = useQuery({
     queryKey: ["attendance-model", date],
     queryFn: () => getAttendanceModelWorkspace(date),
@@ -292,7 +295,7 @@ export function PrincipalAttendanceRoute() {
     enabled: detailOpen,
   });
   const loadHistory = useCallback(() => queryClient.fetchQuery({
-    queryKey: ["principal-register-history", classId, date],
+    queryKey: principalRegisterHistoryQueryKey(sessionId, classId, date),
     queryFn: () => sessionId ? getSessionAttendanceHistory(sessionId) : getAttendanceRegisterHistory(classId!, date),
     staleTime: 0,
   }), [classId, date, queryClient, sessionId]);
@@ -338,6 +341,7 @@ export function PrincipalAttendanceRoute() {
         onLock={() => storeResult(sessionId ? lockSessionAttendance(sessionId) : lockAttendanceRegister(classId!, date))}
         onUnlock={(reason) => storeResult(sessionId ? unlockSessionAttendance(sessionId, reason) : unlockAttendanceRegister(classId!, date, reason))}
         onLoadHistory={loadHistory}
+        onDecideEvidence={sessionId ? (evidenceId, input) => storeResult(decideSessionAttendanceEvidence(sessionId, evidenceId, input)) : undefined}
       />
     );
   }

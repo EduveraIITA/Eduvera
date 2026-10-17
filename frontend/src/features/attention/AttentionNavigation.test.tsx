@@ -12,8 +12,9 @@ const state = vi.hoisted<{
   attentionError: boolean;
   studentLookupError: boolean;
   emptyStudents: boolean;
+  guardianSchoolName: string | null;
   useAttention: ReturnType<typeof vi.fn>;
-}>(() => ({ data: undefined, bellUnread: 0, attentionError: false, studentLookupError: false, emptyStudents: false, useAttention: vi.fn() }));
+}>(() => ({ data: undefined, bellUnread: 0, attentionError: false, studentLookupError: false, emptyStudents: false, guardianSchoolName: "Cambridge International School", useAttention: vi.fn() }));
 
 vi.mock("./useAttention", () => ({
   useAttention: (...arguments_: unknown[]) => {
@@ -26,7 +27,7 @@ vi.mock("../auth/AuthContext", () => ({
     status: "authenticated",
     user: { id: "user-1", active_school_id: "school-1" },
     memberships: [
-      { role: "guardian", school_id: "school-1", school_name: "Cambridge International School" },
+      { role: "guardian", school_id: "school-1", school_name: state.guardianSchoolName },
       { role: "admin", school_id: "school-1", school_name: "Cambridge International School" },
       { role: "staff", school_id: "school-1", school_name: "Cambridge International School", permissions: ["attendance.view", "timetable.view", "messages.view", "safeguarding.review"] },
     ],
@@ -58,6 +59,7 @@ beforeEach(() => {
   state.attentionError = false;
   state.studentLookupError = false;
   state.emptyStudents = false;
+  state.guardianSchoolName = "Cambridge International School";
   state.useAttention.mockReset();
 });
 afterEach(cleanup);
@@ -216,8 +218,8 @@ describe("attention navigation", () => {
   it("does not present an authenticated guardian with no linked learner as clear", async () => {
     state.emptyStudents = true;
     const view = renderWithProviders(
-      <ParentShell active="home" pageLabel="Home"><span>Content</span></ParentShell>,
-      "/parent/home",
+      <ParentShell active="attendance" pageLabel="Attendance"><span>Content</span></ParentShell>,
+      "/parent/attendance",
     );
 
     expect(await screen.findByRole("link", { name: "Attendance, attention status unavailable" })).toBeInTheDocument();
@@ -225,5 +227,20 @@ describe("attention navigation", () => {
     expect(screen.getByRole("link", { name: "More, attention status unavailable" })).toBeInTheDocument();
     expect(view.container.querySelectorAll(".attention-indicator--unavailable")).toHaveLength(3);
     expect(state.useAttention).toHaveBeenLastCalledWith("parent", undefined);
+    expect(
+      await screen.findByText("Student information unavailable"),
+    ).toBeVisible();
+    expect(screen.queryByText(/Aarav Sharma/)).not.toBeInTheDocument();
+  });
+
+  it("uses neutral school context when an authenticated guardian profile has no school name", () => {
+    state.guardianSchoolName = null;
+    renderWithProviders(
+      <ParentShell active="home" pageLabel="Home" selectedChildId="child-2"><span>Content</span></ParentShell>,
+      "/parent/home?student_id=child-2",
+    );
+
+    expect(screen.getByLabelText("School information unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Cambridge International School")).not.toBeInTheDocument();
   });
 });

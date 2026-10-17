@@ -8,6 +8,8 @@ import { profileAvatar } from "../../lib/profileAvatars";
 import { enrollmentOptions, listStudents, type DirectoryStudent } from "./api";
 import { EnrollmentForm } from "./EnrollmentForm";
 import { GuardianAuthorityPanel } from "./GuardianAuthorityPanel";
+import { StudentEnrollmentLifecycle } from "./StudentEnrollmentLifecycle";
+import type { EnrollmentOption } from "./api";
 import "./people.css";
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -27,14 +29,14 @@ function StudentContact({ student, to }: {
   to: string;
 }) {
   return <Link className="people-contact people-contact-link" to={to} aria-label={`Open ${student.name} student profile`}>
-      <PersonAvatar name={student.name} src={profileAvatar(student.name, student.avatar_url, "student", student.admission_number)} />
+      <PersonAvatar name={student.name} src={profileAvatar(student.avatar_url)} />
       <span className="people-contact__identity">
         <strong>{student.name}</strong>
-        <small>{student.class_name} · Roll {student.roll_number} · {student.admission_number}</small>
+        <small>{student.class_name ? `${student.class_name} · Roll ${student.roll_number} · ` : "Not currently enrolled · "}{student.admission_number}</small>
       </span>
       <span className="people-contact__family" aria-label={`${student.guardians.length} linked guardians`}>
         <span className="people-avatar-stack" aria-hidden="true">
-          {student.guardians.slice(0, 2).map((guardian) => <PersonAvatar key={guardian.id} name={guardian.name} src={profileAvatar(guardian.name, guardian.avatar_url, "guardian", guardian.id)} guardian />)}
+          {student.guardians.slice(0, 2).map((guardian) => <PersonAvatar key={guardian.id} name={guardian.name} src={profileAvatar(guardian.avatar_url)} guardian />)}
         </span>
         <small>{student.guardians.length} {student.guardians.length === 1 ? "guardian" : "guardians"}</small>
       </span>
@@ -42,15 +44,16 @@ function StudentContact({ student, to }: {
   </Link>;
 }
 
-function StudentProfile({student,onManage}:{student:DirectoryStudent;onManage?:(id:string)=>void}) {
+function StudentProfile({student,schoolId,options,onManage}:{student:DirectoryStudent;schoolId:string;options:EnrollmentOption[];onManage?:(id:string)=>void}) {
   return <section className="people-panel people-profile">
-    <header><PersonAvatar name={student.name} src={profileAvatar(student.name,student.avatar_url,"student",student.admission_number)}/><div><h2>{student.name}</h2><p>{student.class_name} · Roll {student.roll_number}</p></div></header>
+    <header><PersonAvatar name={student.name} src={profileAvatar(student.avatar_url)}/><div><h2>{student.name}</h2><p>{student.class_name ? `${student.class_name} · Roll ${student.roll_number}` : "Not currently enrolled"}</p></div></header>
     <dl><div><dt>Admission number</dt><dd>{student.admission_number}</dd></div><div><dt>Enrolled</dt><dd>{student.enrolled_on ? new Date(student.enrolled_on).toLocaleDateString("en-IN") : "Not recorded"}</dd></div><div><dt>Student account</dt><dd>{student.has_account ? "Active" : "Not created"}</dd></div></dl>
+    <StudentEnrollmentLifecycle schoolId={schoolId} student={student} options={options}/>
     <h3>Guardians</h3>
     <div className="people-contact__details">
       <ul aria-label={`Guardians for ${student.name}`}>
         {student.guardians.map((guardian) => <li key={guardian.id}>
-          <PersonAvatar name={guardian.name} src={profileAvatar(guardian.name, guardian.avatar_url, "guardian", guardian.id)} guardian />
+          <PersonAvatar name={guardian.name} src={profileAvatar(guardian.avatar_url)} guardian />
           <span><strong>{guardian.name}</strong><small>{guardian.relationship} · {guardian.phone || "Phone not recorded"}</small></span>
           {onManage ? <button type="button" className="people-contact__permission" aria-label={`Manage ${guardian.name}'s permissions for ${student.name}`} onClick={() => onManage(guardian.id)}>Permissions</button> : null}
         </li>)}
@@ -135,7 +138,7 @@ function Directory({ schoolId }: { schoolId: string }) {
   };
 
   if(authorityId) return <GuardianAuthorityPanel key={authorityId} schoolId={schoolId} id={authorityId} onClose={()=>setAuthorityId(null)}/>;
-  if(profileId) return profileQuery.isPending ? <p role="status">Loading student…</p> : profileQuery.isError ? <p role="alert">Student details could not load. <button type="button" onClick={()=>void profileQuery.refetch()}>Try again</button></p> : profile ? <StudentProfile student={profile} onManage={auth.hasPortal("principal")?setAuthorityId:undefined}/> : <p role="status">Student not found in this institution. Return to the directory to select a student.</p>;
+  if(profileId) return profileQuery.isPending ? <p role="status">Loading student…</p> : profileQuery.isError ? <p role="alert">Student details could not load. <button type="button" onClick={()=>void profileQuery.refetch()}>Try again</button></p> : profile ? <StudentProfile student={profile} schoolId={schoolId} options={options.data?.results??[]} onManage={auth.hasPortal("principal")?setAuthorityId:undefined}/> : <p role="status">Student not found in this institution. Return to the directory to select a student.</p>;
   if(adding) return options.isPending ? <p role="status">Loading enrollment options…</p> : options.data?.results.length ? <EnrollmentForm schoolId={schoolId} options={options.data.results} onCancel={()=>setAdding(false)} onSaved={(name)=>{setSaved(name);setAdding(false);setInitial(undefined);setSearch(name);setSubmitted(name);}}/> : <p role="alert">Enrollment options are unavailable. Set up an active term and class, then try again.</p>;
 
   return <>

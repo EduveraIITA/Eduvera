@@ -8,6 +8,7 @@ import type { AuthUser } from "../src/common/request.js";
 import { SchoolService } from "../src/school/school.service.js";
 import type { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
 
 const suite = process.env.TEST_DATABASE_ISOLATED === "true" ? describe : describe.skip;
 suite("permission-scoped analytics against PostgreSQL", () => {
@@ -17,7 +18,14 @@ suite("permission-scoped analytics against PostgreSQL", () => {
 
   async function fixture(tx: Transaction<Database>) {
     const db = tx as unknown as DatabaseService;
-    const service = new AnalyticsService(db, new SchoolService(db, {} as SchoolEventService));
+    const service = new AnalyticsService(
+      db,
+      new SchoolService(
+        db,
+        {} as SchoolEventService,
+        createStaffCoverageReconciliationTestDouble(),
+      ),
+    );
     const school = randomUUID(), otherSchool = randomUUID(), term = randomUUID(), classA = randomUUID(), classB = randomUUID();
     const pupilA = randomUUID(), pupilB = randomUUID(), parentId = randomUUID(), subject = randomUUID(), cycle = randomUUID();
     const today = (await sql<{ date: string }>`SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS date`.execute(tx)).rows[0]!.date;

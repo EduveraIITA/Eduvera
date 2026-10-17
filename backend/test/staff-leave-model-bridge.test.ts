@@ -10,6 +10,8 @@ import type {
 } from "../src/governance/decision-authority.port.js";
 import { StaffLeaveModelBridgeService } from "../src/staff-operations/staff-leave-model-bridge.service.js";
 import { StaffOperationsService } from "../src/staff-operations/staff-operations.service.js";
+import type { TemporalContextPort } from "../src/campus-model-core/temporal-context.port.js";
+import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
 
 const ids = {
   school: "00000000-0000-4000-8000-000000000001",
@@ -130,6 +132,8 @@ function setup(receipt: ReturnType<typeof matchedReceipt> | {
     replayed: false,
   });
   const coordination: CoordinationRuntimePort = {
+    resolveEventRoute: vi.fn(),
+    authorizeCandidateRecipients: vi.fn(),
     publishAcceptedEvent,
     recordMessageOutcome,
     recordRecipientResponse,
@@ -323,7 +327,13 @@ describe("staff leave model bridge", () => {
       assertDecisionAuthority,
     };
     const database = {};
-    const staff = new StaffOperationsService(database as never, modelBridge as never);
+    const staff = new StaffOperationsService(
+      database as never,
+      modelBridge as never,
+      {} as never,
+      createStaffCoverageReconciliationTestDouble(),
+      {} as TemporalContextPort,
+    );
     await expect((staff as unknown as {
       canReviewStaffLeave: (
         user: { id: string },

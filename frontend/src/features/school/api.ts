@@ -170,6 +170,20 @@ export interface ApiSchoolContact {
   availability: string;
 }
 
+export interface ApiParentFeeStatus {
+  state: "not_configured" | "clear" | "outstanding" | "overdue" | "refund_due" | "mixed";
+  source: "fee_ledger";
+  scope: "current_term_and_carried_balance";
+  as_of: string;
+  term_id: string;
+  invoice_count: number;
+  currency: "INR";
+  outstanding_paise: number | null;
+  overdue_paise: number | null;
+  refund_due_paise: number | null;
+  next_due_on: string | null;
+}
+
 export interface ParentHomeResponse {
   day_plan?:PublishedDayNotice|null;
   student: ApiStudent;
@@ -195,8 +209,7 @@ export interface ParentHomeResponse {
     homework_total?: number;
     homework_recent?: number;
     homework_previous?: number;
-    dues_status: string;
-    dues_status_scope?: string;
+    fee_status?: ApiParentFeeStatus;
   };
   contacts: ApiSchoolContact[];
 }

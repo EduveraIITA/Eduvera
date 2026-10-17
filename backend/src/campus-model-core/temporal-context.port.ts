@@ -1,10 +1,14 @@
 import type { Transaction } from "kysely";
 import type { Database } from "../database/types.js";
 import type {
+  AcceptedScheduleSubstitutionProjection,
+  CancelledScheduleSubstitutionProjection,
   CalendarClosureProjection,
   CampusTemporalContextQuery,
   PublishedDayPlanProjection,
   PublishedScheduleProjection,
+  ImportedAcceptedScheduleSubstitutionProjection,
+  LegacyTimetableSlotChangeProjection,
 } from "./contracts.js";
 
 export const TEMPORAL_CONTEXT_PORT = Symbol("TEMPORAL_CONTEXT_PORT");
@@ -23,6 +27,29 @@ export interface PlanReconciliationReceipt {
   replayed: boolean;
 }
 
+export interface SubstitutionProjectionReceipt extends PlanReconciliationReceipt {
+  projection_status: "applied" | "awaiting_source_projection" | "source_closed" | "source_mismatch";
+}
+
+export type SubstitutionInvalidationReceipt = PlanReconciliationReceipt & (
+  | {
+    projection_status: "applied_original_teacher";
+    successor_assignment: "original_teacher";
+  }
+  | {
+    projection_status: "applied_unassigned";
+    successor_assignment: "unassigned";
+  }
+  | {
+    projection_status: "source_replaced";
+    successor_assignment: "unchanged_later_source";
+  }
+  | {
+    projection_status: "source_mismatch";
+    successor_assignment: null;
+  }
+);
+
 export interface ExpectedTemporalAssertion {
   assertion_id: string;
   dimension: "expected";
@@ -34,7 +61,9 @@ export interface ExpectedTemporalAssertion {
   };
   context: {
     occurrence_id: string;
+    occurrence_revision_id: string;
     schedule_version_id: string;
+    period_number: number;
     class_entity_id: string;
     class_label: string;
     subject_entity_id: string | null;
@@ -49,10 +78,45 @@ export interface ExpectedTemporalAssertion {
   recorded_at: Date | string;
   source: {
     event_id: string;
-    event_type: "timetable.schedule_published" | "timetable.day_plan_published";
+    event_type:
+      | "timetable.schedule_published"
+      | "timetable.day_plan_published"
+      | "timetable.schedule_projection_backfilled"
+      | "timetable.legacy_slot_imported"
+      | "timetable.legacy_slot_created"
+      | "timetable.legacy_slot_updated"
+      | "timetable.legacy_slot_deleted";
     source_domain: "timetable" | "day_plan";
     source_record_id: string;
     source_revision: number;
+    journal_sequence: string;
+    change: {
+      event_id: string;
+      event_type: string;
+      source_domain: string;
+      source_record_id: string;
+      source_revision: number;
+      journal_sequence: string;
+      change_kind:
+        | "published"
+        | "overridden"
+        | "closure_cancelled"
+        | "closure_restored"
+        | "day_plan_cancelled"
+        | "substituted"
+        | "substitution_cancelled"
+        | "source_changed"
+        | "source_removed"
+        | "projection_backfill";
+    };
+    condition: {
+      event_id: string;
+      event_type: string;
+      source_domain: string;
+      source_record_id: string;
+      source_revision: number;
+      journal_sequence: string;
+    } | null;
   };
   certainty: "planned";
   freshness: "current" | "historical";
@@ -102,6 +166,10 @@ export interface TemporalContextPort {
     transaction: Transaction<Database>,
     input: PublishedScheduleProjection,
   ): Promise<ScheduleProjectionReceipt>;
+  recordLegacyTimetableSlotChange(
+    transaction: Transaction<Database>,
+    input: LegacyTimetableSlotChangeProjection,
+  ): Promise<PlanReconciliationReceipt>;
   recordCalendarClosure(
     transaction: Transaction<Database>,
     input: CalendarClosureProjection,
@@ -110,5 +178,17 @@ export interface TemporalContextPort {
     transaction: Transaction<Database>,
     input: PublishedDayPlanProjection,
   ): Promise<PlanReconciliationReceipt>;
+  recordAcceptedScheduleSubstitution(
+    transaction: Transaction<Database>,
+    input: AcceptedScheduleSubstitutionProjection,
+  ): Promise<SubstitutionProjectionReceipt>;
+  recordImportedAcceptedScheduleSubstitution(
+    transaction: Transaction<Database>,
+    input: ImportedAcceptedScheduleSubstitutionProjection,
+  ): Promise<SubstitutionProjectionReceipt>;
+  recordCancelledScheduleSubstitution(
+    transaction: Transaction<Database>,
+    input: CancelledScheduleSubstitutionProjection,
+  ): Promise<SubstitutionInvalidationReceipt>;
   resolveAt(input: CampusTemporalContextQuery): Promise<CampusTemporalAssertion[]>;
 }

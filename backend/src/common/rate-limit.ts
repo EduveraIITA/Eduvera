@@ -22,7 +22,9 @@ setInterval(() => {
   for (const [key, bucket] of memoryBuckets) if (bucket.expiresAt <= now) memoryBuckets.delete(key);
 }, 60_000).unref();
 
-function rule(path: string): { limit: number; windowMs: number } {
+export function rateLimitRule(path: string, method = "GET"): { limit: number; windowMs: number } {
+  if (/\/campus-view\/scenarios\/targets\/$/.test(path)) return { limit: 12, windowMs: 60_000 };
+  if (method === "POST" && /\/campus-view\/scenarios\/$/.test(path)) return { limit: 6, windowMs: 60_000 };
   if (/\/agent\/threads\/[^/]+\/messages\/?$/.test(path)) return { limit: 10, windowMs: 60_000 };
   if (/\/agent\/threads\/?$/.test(path)) return { limit: 60, windowMs: 60_000 };
   if (path.replace(/\/$/, "").endsWith("/invitations/accept")) return { limit: 10, windowMs: 60_000 };
@@ -40,7 +42,7 @@ export function rateLimitHook(db: DatabaseService) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const path = (request.url.split("?")[0] ?? request.url).replace(/\/+$/, '') + '/';
     if (!path.startsWith("/api/")) return;
-    const { limit, windowMs } = rule(path);
+    const { limit, windowMs } = rateLimitRule(path, request.method);
     const normalizedPath = path.replace(/\/agent\/threads\/[^/]+\/messages\/?$/, '/agent/messages');
     const bucketKey = createHash("sha256").update(`${request.ip}:${request.method}:${normalizedPath}`).digest("hex");
     const expiresAt = new Date(Date.now() + windowMs);

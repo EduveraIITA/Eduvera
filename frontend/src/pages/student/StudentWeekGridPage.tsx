@@ -17,7 +17,7 @@ import {
 import { downloadTextPdf } from "../../lib/simplePdf";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { StudentShell, type StudentRouteMap } from "./StudentShell";
-import { weekGridRows, type SchoolDayKey, type WeekGridRow } from "./student-timetable-data";
+import { type SchoolDayKey, type WeekGridRow } from "./student-timetable-data";
 import "./student-pages.css";
 
 const bellAlertStorageKey = "omnischool.timetable.bell-alerts";
@@ -31,7 +31,7 @@ type GridFilter = "all" | "core" | "humanities" | "lab" | "activity";
 const weekdayKeys: Array<SchoolDayKey | undefined> = [undefined, "mon", "tue", "wed", "thu", "fri", "sat"];
 
 export interface StudentWeekGridPageProps {
-  rows?: WeekGridRow[];
+  rows: WeekGridRow[];
   weekOffset?: number;
   selectedDate?: string;
   className?: string;
@@ -83,7 +83,7 @@ function cellColumnKey(cell: WeekGridRow["cells"][number], index: number) {
 }
 
 export function StudentWeekGridPage({
-  rows = weekGridRows,
+  rows,
   weekOffset: controlledWeekOffset,
   selectedDate,
   className,
@@ -156,7 +156,7 @@ export function StudentWeekGridPage({
     if (!onDownload) {
       downloadTextPdf(
         `${(className ?? "student").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-timetable.pdf`,
-        `Edura OS - ${className ?? "Student"} - ${currentWeekLabel}`,
+        `ThatCampus - ${className ?? "Student"} - ${currentWeekLabel}`,
         rows.map((row) => `${row.label}: ${row.cells.map((cell) => cell.label).join(" | ")}`),
       );
     }
@@ -176,7 +176,7 @@ export function StudentWeekGridPage({
   }
 
   return (
-    <StudentShell activeNav="classes" variant="edura" routes={routes} className={className}>
+    <StudentShell activeNav="classes" variant="platform" routes={routes} className={className}>
       <div className="student-page-stack week-grid-page">
         <section className="week-grid-title">
           <header><p className="workspace-context">{className} · {currentWeekLabel}</p><button className="square-soft-button" type="button" aria-label={onSyncCalendar ? "Sync calendar" : "Calendar sync unavailable"} disabled={!onSyncCalendar} onClick={syncCalendar}><RefreshCw size={20} /></button></header>

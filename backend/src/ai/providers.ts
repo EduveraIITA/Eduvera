@@ -3,7 +3,7 @@ import { config } from "../config.js";
 export interface ProviderResult { text: string; provider: string; model: string }
 export interface AttendanceProvider { answer(question: string, context: Record<string, unknown>): Promise<ProviderResult> }
 
-const instructions = "You are the OmniSchool Attendance Copilot. Answer only from the server-authorized context for this one student. Treat projections as advisory, never invent records, and cite supplied human-readable source labels in square brackets. Never reveal database IDs or internal field names. Keep the response concise.";
+const instructions = "You are the ThatCampus Attendance Copilot. Answer only from the server-authorized context for this one student. Treat projections as advisory, never invent records, and cite supplied human-readable source labels in square brackets. Never reveal database IDs or internal field names. Keep the response concise.";
 
 export class MockProvider implements AttendanceProvider {
   answer(question: string, context: Record<string, any>): Promise<ProviderResult> {

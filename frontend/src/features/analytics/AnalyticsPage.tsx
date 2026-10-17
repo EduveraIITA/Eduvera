@@ -146,6 +146,6 @@ export default function AnalyticsPage({ portal, topic }: { portal: Portal; topic
     {principalOverview && schoolId ? <OperationalSummaries /> : null}
   </div>;
   if (portal === "parent") return <ParentShell active="more" pageLabel={title} backTo={backTo} child={child} selectedChildId={studentId} institutionLevel={!child} onSelectChild={id => setParams(searchForStudentContext(canonicalInsightSearch(params.toString()), id), { replace: true })}>{content}</ParentShell>;
-  if (portal === "student") return <StudentShell activeNav="launcher" variant="edura" pageTitle={title} backTo={backTo}>{content}</StudentShell>;
+  if (portal === "student") return <StudentShell activeNav="launcher" variant="platform" pageTitle={title} backTo={backTo}>{content}</StudentShell>;
   return <OperationsShell portal={portal} active={portal === "principal" ? "insights" : "more"} title={title} backTo={backTo} schoolName={membership?.school_name}>{content}</OperationsShell>;
 }

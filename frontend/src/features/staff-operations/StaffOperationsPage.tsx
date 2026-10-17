@@ -50,6 +50,12 @@ import {
   pendingStaffLeaveCommand,
   type StaffLeaveCommandScope,
 } from "./pendingLeaveCommand";
+import {
+  clearPendingStaffCoverageCommand,
+  isDefinitiveStaffCoverageFailure,
+  pendingStaffCoverageCommand,
+  type StaffCoverageCommandScope,
+} from "./pendingCoverageCommand";
 import { AccessRolesPanel } from "./AccessRolesPanel";
 import { MyRoleAssignments, StaffRoleAssignments } from "./StaffRoleAssignments";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
@@ -116,6 +122,7 @@ export function StaffOperationsPage({
         schoolName={schoolName}
         data={data}
         refresh={refresh}
+        actorId={actorId}
       />
     ) : (
       <TeacherLeavePage
@@ -1557,11 +1564,13 @@ function TeacherResponsibilitiesPage({
   schoolName,
   data,
   refresh,
+  actorId,
 }: {
   schoolId: string;
   schoolName?: string;
   data: TeacherStaffWorkspace;
   refresh: () => Promise<void>;
+  actorId: string;
 }) {
   const [params] = useSearchParams();
   const focusAssignmentId = params.get("assignment");
@@ -1628,14 +1637,33 @@ function TeacherResponsibilitiesPage({
   ) {
     setBusy(item.id);
     setError("");
+    const material = {
+      decision,
+      note,
+      expected_revision: item.revision,
+    };
+    const commandScope: StaffCoverageCommandScope = {
+      schoolId,
+      actorId,
+      targetId: item.id,
+    };
+    let command: Awaited<ReturnType<typeof pendingStaffCoverageCommand>> | undefined;
     try {
+      command = await pendingStaffCoverageCommand(commandScope, material);
       await respondCoverage(schoolId, item.id, {
-        decision,
-        note,
-        expected_revision: item.revision,
+        ...material,
+        command_id: command.commandId,
       });
-      await refresh();
+      clearPendingStaffCoverageCommand(commandScope, command);
+      try {
+        await refresh();
+      } catch {
+        setError("Your response was saved, but the latest cover status could not be loaded. Refresh this page before responding again.");
+      }
     } catch (cause) {
+      if (command && isDefinitiveStaffCoverageFailure(cause)) {
+        clearPendingStaffCoverageCommand(commandScope, command);
+      }
       setError((cause as Error).message);
     } finally {
       setBusy("");

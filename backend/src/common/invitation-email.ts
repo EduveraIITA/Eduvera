@@ -27,7 +27,7 @@ export async function deliverInvitation<T extends Invitation>(invitation: T) {
   }
   const message = invitationTemplate({...invitation, publicUrl: settings.PUBLIC_URL!});
   try {
-    await sendTransactionalEmail({to: invitation.email, ...message, senderName: 'Eduera · Pathyakram'});
+    await sendTransactionalEmail({to: invitation.email, ...message, senderName: 'ThatCampus · Pathyakram'});
     return { ...invitation, delivery: 'email_accepted' as const };
   } catch (error) {
     const failure = invitationEmailFailure(error);

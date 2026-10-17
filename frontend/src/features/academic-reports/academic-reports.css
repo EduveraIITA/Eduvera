@@ -44,9 +44,9 @@
 }
 
 .report-detail.attention-focus {
-  border-color: color-mix(in srgb, var(--edura-brand, #1557da) 48%, #e0e7f2);
+  border-color: color-mix(in srgb, var(--thatcampus-brand, #1557da) 48%, #e0e7f2);
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--edura-brand, #1557da) 9%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--thatcampus-brand, #1557da) 9%, transparent);
 }
 
 .report-library > header {
@@ -388,7 +388,7 @@
 .family-report-cards > header span { color: #1753c2; font-size: 11px; font-weight: 850; letter-spacing: .08em; }
 .family-report-cards > header h2 { margin: 3px 0; }
 .family-report-cards > header button { border-color: #c8d5e8; background: #fff; color: #1452c3; }
-.marksheet { --marksheet-accent: var(--parent-primary-bright, var(--edura-brand-bright)); --marksheet-soft: color-mix(in srgb, var(--marksheet-accent) 9%, #fff); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 21px; background: #fff; box-shadow: 0 9px 25px rgba(28, 58, 112, .06); }
+.marksheet { --marksheet-accent: var(--parent-primary-bright, var(--thatcampus-brand-bright)); --marksheet-soft: color-mix(in srgb, var(--marksheet-accent) 9%, #fff); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 21px; background: #fff; box-shadow: 0 9px 25px rgba(28, 58, 112, .06); }
 .marksheet__document-header { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; color: #fff; background: var(--marksheet-accent); }
 .marksheet__document-type { display: inline-flex; min-width: 0; align-items: center; gap: 9px; }
 .marksheet__document-header strong { font-size: 18px; line-height: 1.2; }

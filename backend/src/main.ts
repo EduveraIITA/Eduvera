@@ -85,14 +85,14 @@ async function bootstrap(): Promise<void> {
   server.addHook("onRequest", rateLimitHook(app.get(DatabaseService)));
   app.useGlobalFilters(new ApiExceptionFilter());
 
-  const swagger = new DocumentBuilder().setTitle("OmniSchool API").setDescription("Versioned APIs powering the OmniSchool parent and student experiences.").setVersion("1.0.0").addCookieAuth(settings.SESSION_COOKIE_NAME).build();
+  const swagger = new DocumentBuilder().setTitle("ThatCampus API").setDescription("Versioned APIs powering the ThatCampus parent and student experiences.").setVersion("1.0.0").addCookieAuth(settings.SESSION_COOKIE_NAME).build();
   const document = SwaggerModule.createDocument(app, swagger);
   SwaggerModule.setup("api/docs", app, document, { jsonDocumentUrl: "/api/schema" });
 
   await app.init();
   app.enableShutdownHooks();
   await app.listen({ host: settings.HOST, port: settings.PORT });
-  Logger.log(`OmniSchool API listening on http://${settings.HOST}:${settings.PORT}`);
+  Logger.log(`ThatCampus API listening on http://${settings.HOST}:${settings.PORT}`);
 }
 
 void bootstrap();

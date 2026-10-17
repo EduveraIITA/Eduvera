@@ -1,6 +1,6 @@
-# OmniSchool Node backend
+# ThatCampus Node backend
 
-NestJS 11 + Fastify 5 API for the first OmniSchool vertical: student attendance and parent/student workflows. PostgreSQL is the only datastore; Kysely provides a strict typed query layer. The API preserves the React client's existing `/api/v1` contracts while keeping room for later School OS modules.
+NestJS 11 + Fastify 5 API for the first ThatCampus vertical: student attendance and parent/student workflows. PostgreSQL is the only datastore; Kysely provides a strict typed query layer. The API preserves the React client's existing `/api/v1` contracts while keeping room for later School OS modules.
 
 ## What is implemented
 
