@@ -75,6 +75,11 @@ export interface CurriculumSubjectTargetTable {
   created_at: Timestamp; updated_at: Timestamp;
 }
 export interface GateEventTable { id: Generated<string>; student_id: string; occurred_at: Timestamp; direction: "in" | "out"; gate: string; source: Generated<string>; device_reference: Generated<string>; recorded_by: Generated<string|null>; command_id: Generated<string|null> }
+export interface GateStaffEventTable { id: Generated<string>; school_id: string; staff_profile_id: string; occurred_at: Timestamp; direction: "in" | "out"; gate: string; source: Generated<string>; recorded_by: string; command_id: string }
+export interface OrganizationStructureTable { school_id: string; revision: Generated<number>; updated_at: Timestamp }
+export interface OrganizationNodeTable { school_id: string; id: string; parent_id: string | null; kind: "leadership" | "department" | "team" | "position"; name: string; description: Generated<string>; tone: "violet" | "blue" | "teal" | "rose" | "slate"; head_staff_id: string | null; sort_order: number }
+export interface OrganizationNodeMemberTable { school_id: string; node_id: string; staff_id: string }
+export interface OrganizationStructureRevisionTable { school_id: string; revision: number; actor_user_id: string; request_id: string; request_hash: string; nodes: Json; event_id: string; created_at: Timestamp }
 export interface TimetableSlotTable { id: Generated<string>; class_section_id: string; term_id: string; subject_id: string | null; weekday: number; period_number: number; starts_at: TimeOnly; ends_at: TimeOnly; slot_type: Generated<"class" | "break" | "activity">; title: Generated<string>; room: Generated<string>; teacher_user_id: string | null; teacher_designation: Generated<string> }
 export interface AttendancePolicyTable { id: Generated<string>; term_id: string; name: string; minimum_percentage: string; medical_document_after_days: Generated<number>; policy_text: Generated<string> }
 export interface LeaveRequestTable { id: Generated<string>; student_id: string; term_id: string; requested_by: string; category: "medical" | "family" | "travel" | "personal"; starts_on: DateOnly; ends_on: DateOnly; reason: string; status: "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn"; submitted_at: NullableTimestamp; guardian_authorized_by: string | null; guardian_authorized_at: NullableTimestamp; decided_by: string | null; decided_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
@@ -573,6 +578,11 @@ export interface Database {
   school_calendar_days: SchoolCalendarDayTable;
   curriculum_subject_targets: CurriculumSubjectTargetTable;
   gate_events: GateEventTable;
+  gate_staff_events: GateStaffEventTable;
+  organization_structures: OrganizationStructureTable;
+  organization_nodes: OrganizationNodeTable;
+  organization_node_members: OrganizationNodeMemberTable;
+  organization_structure_revisions: OrganizationStructureRevisionTable;
   timetable_slots: TimetableSlotTable;
   attendance_policies: AttendancePolicyTable;
   leave_requests: LeaveRequestTable;

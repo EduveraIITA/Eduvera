@@ -76,4 +76,28 @@ suite('visitor approval delivery and current host authority',()=>{
   expect((await query('SELECT revision FROM gate_visitors WHERE id=$1',[visitor.id])).revision).toBe(2);
   expect((await query("SELECT count(*)::int total FROM event_outbox WHERE aggregate_id=$1 AND event_type='gate.visitor.updated'",[visitor.id])).total).toBe(2);
  });
+ it('records a host-free arrival without inventing an approval',async()=>{
+  const body={...request(),host_user_id:'',category:'delivery'};
+  const visitor=await gate.visitor(guard,school,body);
+  expect(visitor).toMatchObject({state:'inside',host_user_id:null,category:'delivery',revision:1});
+  expect(visitor.checked_in_at).toBeTruthy();expect(visitor.decided_at).toBeNull();
+  expect((await gate.visitor(guard,school,body)).id).toBe(visitor.id);
+  expect((await gate.workspace(guard,school)).visitors.map(row=>row.id)).toContain(visitor.id);
+  expect((await gate.approvals(host)).map(row=>row.id)).not.toContain(visitor.id);
+  const event=await query("SELECT * FROM event_outbox WHERE aggregate_id=$1",[visitor.id]);
+  expect(event.notification_user_ids).toEqual([]);
+  await expect(gate.visitor(unrelated,school,body)).rejects.toThrow(/permission/);
+  await expect(gate.visitorAction(host,school,visitor.id,'approve',{expected_revision:1})).rejects.toThrow();
+  expect((await gate.visitorAction(guard,school,visitor.id,'out',{expected_revision:1})).visitor.state).toBe('out');
+ });
+ it('keeps a visitor photo private to the current host, administrators and gate operators',async()=>{
+  const data=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=','base64');
+  const upload={data,mimetype:'image/png'};const body=request();
+  const visitor=await gate.visitor(guard,school,body,upload);
+  expect(visitor.photo_url).toContain(`/visitors/${visitor.id}/photo/`);
+  expect((await gate.approvals(host)).find(row=>row.id===visitor.id)?.photo_url).toBe(visitor.photo_url);
+  for(const actor of [host,admin,guard]){const photo=await gate.visitorPhoto(actor,school,visitor.id);expect(photo.type).toBe('image/png');const chunks:Buffer[]=[];for await(const chunk of photo.stream)chunks.push(Buffer.from(chunk));expect(Buffer.concat(chunks)).toEqual(data);}
+  await expect(gate.visitorPhoto(unrelated,school,visitor.id)).rejects.toThrow(/permission/);
+  await expect(gate.visitorPhoto(host,otherSchool,visitor.id)).rejects.toThrow(/not found/);
+ });
 });

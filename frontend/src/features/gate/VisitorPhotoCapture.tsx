@@ -1,0 +1,58 @@
+import { useEffect, useRef, useState } from 'react';
+import { Camera, X } from 'lucide-react';
+
+export function VisitorPhotoCapture({hindi,busy,onChange,onProcessing}:{hindi:boolean;busy:boolean;onChange:(file:File|null)=>void;onProcessing:(value:boolean)=>void}) {
+ const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),generation=useRef(0);
+ const [preview,setPreview]=useState(''),[error,setError]=useState('');
+ const [open,setOpen]=useState(false),[ready,setReady]=useState(false),[saving,setSaving]=useState(false);
+ useEffect(()=>()=>{generation.current++;stream.current?.getTracks().forEach(track=>track.stop());},[]);
+ function close(){
+  generation.current++;stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;
+  if(video.current)video.current.srcObject=null;
+  setOpen(false);setReady(false);setSaving(false);onProcessing(false);
+ }
+ async function start(){
+  const attempt=++generation.current;
+  setError('');setOpen(true);setReady(false);onProcessing(true);
+  try{
+   const media=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});
+   if(attempt!==generation.current){media.getTracks().forEach(track=>track.stop());return;}
+   stream.current=media;
+   if(!video.current)throw new Error('Camera unavailable');
+   video.current.srcObject=media;await video.current.play();
+  }catch{
+   if(attempt!==generation.current)return;
+   close();setError(hindi?'कैमरा नहीं खुल सका। कैमरे की अनुमति दें और फिर कोशिश करें।':'Could not open the camera. Allow camera access and try again.');
+  }
+ }
+ async function capture(){
+  if(!video.current?.videoWidth||!video.current.videoHeight||saving)return;
+  const attempt=generation.current;setSaving(true);setError('');
+  try{
+   const source=video.current,scale=Math.min(1,1200/Math.max(source.videoWidth,source.videoHeight));
+   const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(source.videoWidth*scale));canvas.height=Math.max(1,Math.round(source.videoHeight*scale));
+   const context=canvas.getContext('2d');if(!context)throw new Error('Photo unavailable');
+   context.drawImage(source,0,0,canvas.width,canvas.height);
+   // Encode camera pixels directly, including on iPhones configured for HEIF.
+   const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));
+   if(attempt!==generation.current)return;
+   if(!blob||blob.type!=='image/jpeg'||blob.size>2*1024*1024)throw new Error('Photo unavailable');
+   const file=new File([blob],'visitor.jpg',{type:'image/jpeg'});
+   const image=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{if(typeof reader.result==='string')resolve(reader.result);else reject(new Error('Photo unavailable'));};reader.onerror=()=>reject(new Error('Photo unavailable'));reader.readAsDataURL(file);});
+   if(attempt!==generation.current)return;
+   setPreview(image);onChange(file);close();
+  }catch{
+   if(attempt!==generation.current)return;
+   setSaving(false);setError(hindi?'फोटो नहीं ली जा सकी। फिर कोशिश करें।':'Could not capture the photo. Try again.');
+  }
+ }
+ return <section className="gate-photo-field" aria-label={hindi?'आगंतुक की फोटो':'Visitor photo'}>
+  {preview?<div className="gate-photo-thumbnail"><img src={preview} alt={hindi?'आगंतुक की फोटो का पूर्वावलोकन':'Visitor photo preview'}/><button className="gate-photo-remove" type="button" disabled={busy||open} aria-label={hindi?'फोटो हटाएँ':'Remove photo'} onClick={()=>{setPreview('');setError('');onChange(null);}}><X size={16}/></button></div>:!open?<button className="gate-photo-take" aria-label={hindi?'फोटो लें':'Take photo'} type="button" disabled={busy} onClick={()=>{void start();}}><Camera size={22} aria-hidden="true"/></button>:null}
+  {open?<div className="gate-photo-camera" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();close();}}}>
+   <video ref={video} autoPlay playsInline muted aria-label={hindi?'कैमरे का दृश्य':'Visitor camera preview'} onCanPlay={()=>setReady(true)}/>
+   {!ready?<p role="status">{hindi?'कैमरा खुल रहा है…':'Opening camera…'}</p>:null}
+   <div className="gate-photo-actions"><button type="button" disabled={!ready||saving} onClick={()=>{void capture();}}><Camera size={16}/>{saving?(hindi?'फोटो तैयार हो रही है…':'Preparing photo…'):(hindi?'फोटो खींचें':'Capture photo')}</button><button type="button" onClick={close}>{hindi?'रद्द करें':'Cancel camera'}</button></div>
+  </div>:null}
+  {error?<p className="gate-error" role="alert">{error}</p>:null}
+ </section>;
+}

@@ -5,6 +5,38 @@ v1.0, 15 September 2026, supplied by Abhishek. The repository-root PDF is the pr
 blueprint reference; consult its relevant sections for each development increment.
 Explicit user decisions and documented architecture decisions clarify its application.
 
+## Current-system integration boundary — 18 October 2026
+
+The owner selected `main` as the authority for continued product development and
+deferred the Campus Digital Twin direction for later exploration. The complete local
+Digital Twin working tree was preserved on `codex/campus-digital-twin` at commit
+`3f50ffd`; it was not rebased or merged into the current-system branch. The active
+integration branch was created directly from fetched `origin/main`, which avoids
+carrying experimental commits while giving the current product a clean Main base.
+
+Stage was audited rather than merged wholesale. Its useful product work was then
+reimplemented against Main's existing contracts:
+
+- Gate & Safety adds roll-number lookup, separate staff boundary movements,
+  visitor camera photos, optional-host direct arrival, the host approval inbox and
+  a combined recent-activity view. These remain normal Gate domain records with
+  scoped authorization, idempotency, audit and outbox handling; they do not depend
+  on the Digital Twin observation runtime.
+- Organization adds an administrator-only descriptive hierarchy for leadership,
+  departments, teams and positions. Saving uses one revisioned transaction with
+  immutable history, audit and an outbox event. It explicitly cannot grant access,
+  change governance authority or create a statutory appointment.
+- The latest Assistant reply and compact ThatCampus attribution treatments were
+  ported as bounded visual/accessibility refinements using Main's tokens and shells.
+
+Local verification on the combined branch: frontend and backend typechecks and
+production builds pass; 81 focused frontend tests and 9 backend unit tests pass;
+focused lint and `git diff --check` pass. Sixteen migration-backed tests are present
+but skipped locally because an isolated PostgreSQL test database is unavailable.
+Migrations 100–102 therefore still require the normal isolated-database CI run.
+Physical-phone review of Gate, Organization and the Assistant response treatment is
+also still required. No push, database migration or deployment is claimed here.
+
 This is the implementation record, not a claim that the entire blueprint is complete.
 The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
 scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,

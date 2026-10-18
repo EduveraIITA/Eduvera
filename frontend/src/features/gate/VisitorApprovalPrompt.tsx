@@ -24,10 +24,10 @@ export function VisitorApprovalPrompt({visitor,hindi,busy,error,outcome,onComple
       <button className="gate-approval-later" ref={done} onClick={onComplete}>{hindi?'ठीक है':'Done'}</button>
     </section>:<>
     <header><span className="gate-approval-eyebrow"><ShieldCheck size={15}/>{hindi?'गेट से अनुरोध':'REQUEST FROM THE GATE'}</span><button className="gate-approval-close" disabled={busy} aria-label={hindi?'बाद में देखें':'Review later'} onClick={onLater}><X size={19}/></button></header>
-    <span className="gate-approval-avatar"><UserRound size={32}/></span>
+    <span className="gate-approval-avatar">{visitor.photo_url?<img src={visitor.photo_url} alt={hindi?`${visitor.name} की फोटो`:`Photo of ${visitor.name}`}/>:<UserRound size={32}/>}</span>
     <h2 id={title}>{hindi?'आगंतुक को अनुमति दें?':'Approve this visitor?'}</h2>
     <p className="gate-approval-name">{visitor.name}</p><p className="gate-approval-school">{visitor.school_name}</p>
-    <dl><div><dt>{hindi?'आने का कारण':'Purpose'}</dt><dd>{visitor.purpose}</dd></div>{visitor.phone?<div><dt>{hindi?'मोबाइल':'Mobile'}</dt><dd>{visitor.phone}</dd></div>:null}</dl>
+    <dl>{visitor.purpose?<div><dt>{hindi?'आने का कारण':'Purpose'}</dt><dd>{visitor.purpose}</dd></div>:null}{visitor.phone?<div><dt>{hindi?'मोबाइल':'Mobile'}</dt><dd>{visitor.phone}</dd></div>:null}</dl>
     <p className="gate-approval-wait"><Clock3 size={16}/>{hindi?'आगंतुक आपसे मिलने के लिए गेट पर इंतज़ार कर रहा है।':'Waiting at the gate to meet you.'}</p>
     {error?<div className="gate-approval-error" role="alert"><p>{error}</p><button className="gate-approval-retry" disabled={busy} onClick={onRetry}>{hindi?'फिर कोशिश करें':'Retry request'}</button></div>:null}
     {busy?<p className="gate-approval-wait" role="status">{hindi?'निर्णय दर्ज हो रहा है…':'Saving your decision…'}</p>:null}

@@ -34,6 +34,8 @@ const RESTRICTED_CARE_EVENT_TYPES = [
 
 export const SCHOOL_EVENT_TYPES = [
   "gate.visitor.updated",
+  "gate.movement.updated",
+  "organization.structure.updated",
   "departure.updated",
   "transport.updated",
   "staff.access.updated",
@@ -70,6 +72,7 @@ export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
 
 export const REFRESH_TARGETS = [
   "gate",
+  "organization",
   "departure",
   "staff.access",
   "staff-operations",
@@ -150,6 +153,8 @@ function eventDefaults<T extends readonly SchoolEventType[]>(
 
 const defaultsByType = {
   "gate.visitor.updated": ["gate", "notifications"],
+  "gate.movement.updated": ["gate"],
+  "organization.structure.updated": ["organization"],
   "departure.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "transport.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "staff.access.updated": ["staff.access","teacher.home","teacher.attendance","principal.home"],
@@ -206,6 +211,7 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["gate"] },
   { queryKey: ["gate-admin"] },
   { queryKey: ["gate-approvals"] },
+  { queryKey: ["organization"] },
   { queryKey: ["departure"] },
   { queryKey: ["analytics"] },
   { queryKey: ["staff-operations"] },
@@ -310,6 +316,7 @@ function scopedOperationsInvalidation(
 function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPayload, userId?: string): QueryInvalidation[] {
   switch (target) {
     case "departure": return [{ queryKey: ["departure"] }];
+    case "organization": return [{ queryKey: ["organization"] }];
     case "staff.access": return [{queryKey:["staff-operations"]},{queryKey:["roles"]},{queryKey:["assessments"]},{queryKey:["academic-reports"]}];
     case "staff-operations":
     case "principal.staff":

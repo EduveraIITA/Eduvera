@@ -25,6 +25,10 @@ describe("school event protocol", () => {
     expect(resolution.usedFallback).toBe(false);
     expect(resolution.invalidations).toEqual(expect.arrayContaining([{queryKey:['gate']},{queryKey:['gate-admin']},{queryKey:['gate-approvals']},{queryKey:['notifications','host']}]));
   });
+  it('refreshes gate desks when a staff boundary movement is recorded',()=>{
+    const resolution=resolveSchoolEvent(eventData('gate.movement.updated',{refresh:['gate']}),'gate.movement.updated','gatekeeper');
+    expect(resolution.invalidations).toEqual(expect.arrayContaining([{queryKey:['gate']}]));
+  });
   it("subscribes to every current attention-producing custom event name", () => {
     expect(SCHOOL_EVENT_TYPES).toEqual(expect.arrayContaining([
       "staff.responsibility.offered",

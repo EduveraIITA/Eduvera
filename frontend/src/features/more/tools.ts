@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Award, BookOpen, Bus, CalendarDays, CalendarRange, CalendarX2,
-  FileText, FlaskConical, Handshake, Inbox, Megaphone, MessageCircle, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
+  FileText, FlaskConical, Handshake, Inbox, Megaphone, MessageCircle, Network, ReceiptIndianRupee, Scale, Settings2, ShieldAlert, ShieldCheck, UserRoundCheck, Users, UsersRound,
 } from "lucide-react";
 import type { Portal } from "../auth/AuthContext";
 import { ChartNoAxesCombined } from "lucide-react";
@@ -83,6 +83,7 @@ const TOOLS: Record<Portal, Tool[]> = {
     { id: "assessments", name: "Assessments", description: "Tests, marking and moderation", icon: Award, tone: "blue", path: "/principal/assessments" },
     { id: "report-cards", name: "Report cards", description: "Grading schemes and term reports", icon: FileText, tone: "blue", path: "/principal/report-cards" },
     { id: "staff", name: "Staff", description: "People, roles, assignments and leave", icon: UserRoundCheck, tone: "teal", path: "/principal/staff" },
+    { id: "organization", name: "Organization", description: "Departments, teams and reporting lines", icon: Network, tone: "violet", path: "/principal/organization" },
     { id: "leave", name: "Student leave", description: "Review guardian-authorised student leave", icon: CalendarX2, tone: "violet", path: "/principal/student-leave" },
     { id: "governance", name: "Policies & governance", description: "Policies, authority and decision rules", icon: Scale, tone: "blue", path: "/principal/governance" },
     { id: "people", name: "Students & guardians", description: "Directory, enrolment and guardian authority", icon: UsersRound, tone: "teal", path: "/principal/students" },

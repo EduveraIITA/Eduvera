@@ -72,6 +72,25 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   const bounded=await service.students(guard,school,'SearchBound');
   expect(bounded).toHaveLength(30);expect(bounded[0]?.name).toBe('SearchBound 001');expect(bounded[29]?.name).toBe('SearchBound 030');
  });
+ it('finds roll numbers and records staff movements independently of classroom attendance',async()=>{
+  const term=await query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on) VALUES($1,'2026-27','Gate term',CURRENT_DATE,CURRENT_DATE+30) RETURNING id",[school]);
+  const section=await query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','A') RETURNING id",[school]);
+  await query('INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number) VALUES($1,$2,$3,7)',[student,section.id,term.id]);
+  expect((await service.students(guard,school,'7')).map(row=>row.id)).toContain(student);
+  const tag=randomUUID();
+  const profile=await query(`INSERT INTO staff_profiles(school_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status)
+   VALUES($1,$2,'Neha','Gate Test',$3,'teaching','Science Teacher','full_time',CURRENT_DATE,'active') RETURNING id`,[school,'GT-'+tag.slice(0,8),tag+'@example.test']);
+  expect(await service.staff(guard,school,'Neha')).toMatchObject([{id:profile.id,name:'Neha Gate Test',direction:null}]);
+  const entry={staff_profile_id:profile.id,direction:'in',command_id:randomUUID(),identity_verified:true};
+  const saved=await service.staffMovement(guard,school,entry);
+  expect(await service.staffMovement(guard,school,entry)).toEqual(saved);
+  await expect(service.staffMovement(guard,school,{...entry,command_id:randomUUID()})).rejects.toThrow(/Movement changed/);
+  await service.staffMovement(guard,school,{...entry,direction:'out',command_id:randomUUID()});
+  expect(await service.staffProfile(guard,school,profile.id)).toMatchObject({id:profile.id,direction:'out'});
+  expect((await query('SELECT count(*)::int count FROM gate_staff_events WHERE staff_profile_id=$1',[profile.id])).count).toBe(2);
+  expect((await service.workspace(guard,school)).activity.some(item=>item.kind==='staff'&&item.person_id===profile.id)).toBe(true);
+  await expect(service.staff(outsider,school,'Neha')).rejects.toThrow(/permission/);
+ });
  it('blocks exit without a pickup pass and rejects QR from another institution',async()=>{
   await expect(service.movement(guard,school,{student_id:student,direction:'out',command_id:randomUUID(),identity_verified:true})).rejects.toThrow(/pickup QR/);
   const pass=await service.issuePass(admin,school,{student_id:student,kind:'pickup'});
@@ -95,7 +114,8 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   expect(events.enqueueUserEvent).toHaveBeenCalled();
  });
  it('requires visitor approval and allows QR check-in and checkout only in order',async()=>{
-  const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',purpose:'Meeting principal',host_user_id:admin.id});
+  const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',host_user_id:admin.id});
+  expect(visitor.purpose).toBe('');
   await expect(service.visitorAction(guard,school,visitor.id,'in')).rejects.toThrow(/not ready/);
   await expect(service.visitorAction(guard,school,visitor.id,'approve')).rejects.toThrow(/requested host/);
   await service.visitorAction(admin,school,visitor.id,'approve');

@@ -1,11 +1,12 @@
 import "./powered-by.css";
+import { useLoginTheme } from "./useLoginTheme";
 
 export function PoweredBy({ className = "" }: { className?: string }) {
-  return <div className={`powered-by ${className}`.trim()}>
-    <div className="powered-by__ribbon">
+  const dark = useLoginTheme();
+  return <div className={`powered-by ${className}`.trim()} data-appearance={dark ? "dark" : "light"}>
+    <div className="powered-by__inline">
       <span>Powered by</span>
-      <i aria-hidden="true" />
-      <img src="/assets/thatcampus-logo.png" alt="ThatCampus" width="56" height="32" />
+      <img src={dark ? "/assets/thatcampus-logo-dark.png" : "/assets/thatcampus-logo.png"} alt="ThatCampus" width="56" height="34" />
     </div>
   </div>;
 }

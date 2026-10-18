@@ -137,6 +137,7 @@ const TeacherCalendarRoute = lazy(async () => ({ default: (await import("./featu
 const TeacherClassesPage = lazy(() => import("./features/classes/TeacherClassesPage"));
 const TeacherClassPage = lazy(() => import("./features/classes/TeacherClassPage"));
 const AdministrationPage = lazy(() => import("./features/office/AdministrationPage"));
+const OrganizationPage = lazy(() => import("./features/organization/OrganizationPage"));
 const FeeLedgerPage = lazy(() => import("./features/office/FeeLedgerPage"));
 const FamilyFeesPage = lazy(async () => ({ default: (await import("./features/office/FamilyFeesPage")).FamilyFeesPage }));
 const PrincipalStaffRoute = lazy(async () => ({ default: (await import("./features/staff-operations/StaffOperationsRoutes")).PrincipalStaffRoute }));
@@ -324,6 +325,7 @@ export function App() {
               <Route path="/principal/students/import" element={<PortalOnly portal="principal"><PeopleImportPage /></PortalOnly>} />
               <Route path="/principal/roles" element={<PortalOnly portal="principal"><Navigate to="/principal/staff?section=roles" replace /></PortalOnly>} />
               <Route path="/principal/administration" element={<PortalOnly portal="principal"><AdministrationPage /></PortalOnly>} />
+              <Route path="/principal/organization" element={<PortalOnly portal="principal"><OrganizationPage /></PortalOnly>} />
               <Route path="/principal/activation" element={<PortalOnly portal="principal"><InstitutionActivationPage /></PortalOnly>} />
               <Route path="/principal/fees" element={<PortalOnly portal="principal"><FeeLedgerPage /></PortalOnly>} />
               <Route path="/principal/staff" element={<PortalOnly portal="principal"><PrincipalStaffRoute /></PortalOnly>} />

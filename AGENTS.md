@@ -25,3 +25,16 @@
   record material deviations and ask before resolving consequential ambiguity.
 - Do not represent a proposed target, untested behavior, or incomplete release gate
   as implemented, measured, or production-ready.
+
+## Current-system branch boundary — 18 October 2026
+
+- `main` is the authority for the current product experience and architecture. New
+  work intended for the current product must preserve Main's shells, navigation,
+  design tokens, domain ownership, authorization and audit/outbox patterns.
+- The Campus Digital Twin, simulator, Campus View and responsibility-composed
+  workspace remain preserved separately on `codex/campus-digital-twin` for later
+  exploration. Do not merge or re-create those dependencies in Main-based work
+  unless the owner explicitly reopens that direction.
+- `Stage` may contain useful product behavior interleaved with the Digital Twin
+  exploration. Port only the required behavior, tests and data changes; do not
+  merge Stage wholesale or import a Stage-only runtime dependency.

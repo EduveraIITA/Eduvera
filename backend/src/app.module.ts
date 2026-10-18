@@ -40,6 +40,7 @@ import { AttentionModule } from "./attention/attention.module.js";
 import { AttendanceModelModule } from "./attendance-model/attendance-model.module.js";
 import { AgentChannelModule } from "./agent/channels/channel.module.js";
 import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-integrations.module.js";
+import { OrganizationModule } from "./organization/organization.module.js";
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-int
     AttendanceModelModule,
     AgentChannelModule,
     CalendarIntegrationsModule,
+    OrganizationModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [

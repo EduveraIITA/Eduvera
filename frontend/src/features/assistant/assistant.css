@@ -37,6 +37,10 @@
   outline: none;
 }
 .parent-app .assistant-dock { --assistant-nav-height: 72px; }
+/* Programmatic panel focus must not inherit the global focus ring. Individual
+   buttons, links and the composer keep their own visible focus treatment. */
+.assistant-dock:focus,
+.assistant-dock:focus-visible { outline: none; }
 .assistant-response {
   padding: 4px 16px 12px;
   background: var(--edura-surface);
@@ -241,6 +245,8 @@
 .assistant-conversation li { display: grid; gap: 16px; }
 .assistant-question { justify-self: end; max-width: 88%; padding: 12px 16px; border-radius: var(--edura-radius-card); background: var(--edura-surface-strong); color: var(--edura-ink); font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-full-reply { padding: 0 4px; }
+.assistant-latest-reply { display: grid; min-width: 0; gap: 6px; }
+.assistant-latest-reply__mark { display: flex; min-height: 36px; align-items: center; padding-left: 16px; }
 .assistant-page__empty { margin: 24px 0; font-size: 16px; line-height: 1.7; color: var(--edura-ink-secondary); }
 .assistant-page__composer { --assistant-nav-height: 0px; padding-top: 16px; background: linear-gradient(to bottom, color-mix(in srgb,var(--edura-canvas) 0%, transparent), var(--edura-canvas) 18px); border-radius: var(--edura-radius-card); }
 .assistant-page__composer > p { margin: 0; padding: 0 8px; font-size: 11px; line-height: 1.5; color: var(--edura-ink-muted); }
@@ -252,11 +258,47 @@
   .operations-app .assistant-page__composer { left: calc(50% + 120px); width: min(720px, calc(100% - 288px)); }
 }
 
-/* React Bits current stays close to the edge; decorative canvas never blocks input. */
-.assistant-electric-border { --assistant-electric-glow: #4f46e5; min-width: 0; box-shadow: 0 0 0 .35px color-mix(in srgb, var(--assistant-electric-glow) 30%, transparent), 0 0 12px color-mix(in srgb, var(--assistant-electric-glow) 16%, transparent); }
-.assistant-electric-border > .electric-border__canvas { opacity: 1; }
+/* Response-only highlight. The edge moves slowly, never flashes, and cannot
+   intercept input. Colours stay tied to Main's established brand tokens. */
+@property --assistant-flow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.assistant-electric-border {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--edura-brand-bright) 16%, transparent);
+}
+.assistant-electric-border::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1.25px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--assistant-flow-angle),
+    color-mix(in srgb, var(--edura-brand-bright) 22%, transparent) 0deg,
+    color-mix(in srgb, var(--edura-brand-bright) 22%, transparent) 235deg,
+    color-mix(in srgb, var(--edura-brand-bright) 50%, transparent) 275deg,
+    color-mix(in srgb, var(--edura-brand-bright) 95%, transparent) 305deg,
+    color-mix(in srgb, #0095fc 90%, transparent) 318deg,
+    color-mix(in srgb, var(--edura-brand-bright) 22%, transparent) 350deg
+  );
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: assistant-response-flow 7s linear infinite;
+}
+@keyframes assistant-response-flow {
+  to { --assistant-flow-angle: 360deg; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .assistant-electric-border > .electric-border__canvas { display: none; }
+  .assistant-electric-border::after { animation: none; }
 }
 
 .assistant-conversation .assistant-electric-border > .assistant-full-reply { padding: 12px 16px; border-radius: inherit; background: var(--edura-surface); }
