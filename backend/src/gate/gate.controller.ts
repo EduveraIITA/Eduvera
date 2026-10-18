@@ -15,10 +15,16 @@ export class GateController {
  students(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Query("q") q='') {return this.service.students(r.authUser,s,q);}
  @Get("schools/:schoolId/students/:studentId/") @RequirePermission("gate.manage")
  student(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Param("studentId") id:string) {return this.service.student(r.authUser,s,id);}
+ @Get("schools/:schoolId/staff/") @RequirePermission("gate.manage")
+ staff(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Query("q") q='') {return this.service.staff(r.authUser,s,q);}
+ @Get("schools/:schoolId/staff/:staffId/") @RequirePermission("gate.manage")
+ staffProfile(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Param("staffId") id:string) {return this.service.staffProfile(r.authUser,s,id);}
  @Post("schools/:schoolId/scan/") @RequirePermission("gate.manage")
  scan(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Body() b:unknown) {return this.service.scan(r.authUser,s,b);}
  @Post("schools/:schoolId/movements/") @RequirePermission("gate.manage")
  movement(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Body() b:unknown) {return this.service.movement(r.authUser,s,b);}
+ @Post("schools/:schoolId/staff-movements/") @RequirePermission("gate.manage")
+ staffMovement(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Body() b:unknown) {return this.service.staffMovement(r.authUser,s,b);}
  @Post("schools/:schoolId/passes/")
  pass(@Req() r:AuthenticatedRequest,@Param("schoolId") s:string,@Body() b:unknown) {return this.service.issuePass(r.authUser,s,b);}
  @Post("schools/:schoolId/visitors/") @RequirePermission("gate.manage")

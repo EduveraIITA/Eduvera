@@ -9267,3 +9267,27 @@ timeouts. These are not represented as a passing full regression gate.
 Both parent route tests passed on targeted rerun (24.69s); the complete suite was
 not rerun to replace the recorded initial result. Production builds pass, with
 the existing Vite large-chunk advisory unchanged.
+
+## 18 October 2026 — gate and safety reference flow refresh
+
+Updated the gate-only home to the supplied two-action Scan QR / Manually layout,
+with recent recorded movements and Home / Approvals / Logs / More navigation.
+Manual search covers both students and staff; detail pages display current
+school-recorded state and expose transitions allowed by that state. Logs retain
+revision-bound visitor arrival/departure actions. The scanner also supports
+user-selected QR images and a capability-detected flashlight; visitor photo
+capture remains camera-only under the prior owner direction.
+
+Added migration 136 and staff gate movement endpoints. Staff boundary events
+remain separate from classroom attendance, check current staff and permissions
+transactionally, apply transition/idempotency checks and write audit plus
+boundary-scoped Model Core evidence. Host approval remains limited to the
+addressed active host or school administrator; no account or permission
+assignments changed. See `GATE_WORKSPACE.md` for the domain boundary and UI
+contract.
+
+Local evidence: frontend typecheck/build, backend typecheck/build, 16 focused
+gate/form tests, changed-file ESLint and synthetic-data Chromium checks at
+320/390/768/1024/1440 px pass. The browser checks reached student search/detail
+and entry controls with no page errors or horizontal overflow. Hosted
+PostgreSQL-backed integration and Stage release verification remain required.

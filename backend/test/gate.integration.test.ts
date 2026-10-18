@@ -73,6 +73,23 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   const bounded=await service.students(guard,school,'SearchBound');
   expect(bounded).toHaveLength(30);expect(bounded[0]?.name).toBe('SearchBound 001');expect(bounded[29]?.name).toBe('SearchBound 030');
  });
+ it('records idempotent staff gate movements separately from classroom attendance',async()=>{
+  const tag=randomUUID();
+  const staffPerson=(await query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Neha','Gate Test') RETURNING id",[school])).id;
+  const profile=(await query(`INSERT INTO staff_profiles(school_id,person_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status)
+   VALUES($1,$2,$3,'Neha','Gate Test',$4,'teaching','Science Teacher','full_time',CURRENT_DATE,'active') RETURNING id`,[school,staffPerson,'GT-'+tag.slice(0,8),tag+'@example.test'])).id;
+  expect(await service.staff(guard,school,'Neha')).toMatchObject([{id:profile,name:'Neha Gate Test',direction:null}]);
+  const entry={staff_profile_id:profile,direction:'in',command_id:randomUUID(),identity_verified:true};
+  const saved=await service.staffMovement(guard,school,entry);
+  expect(await service.staffMovement(guard,school,entry)).toEqual(saved);
+  await expect(service.staffMovement(guard,school,{...entry,command_id:randomUUID()})).rejects.toThrow(/Movement changed/);
+  await service.staffMovement(guard,school,{...entry,direction:'out',command_id:randomUUID()});
+  expect(await service.staffProfile(guard,school,profile)).toMatchObject({id:profile,direction:'out'});
+  expect((await query('SELECT count(*)::int count FROM gate_staff_events WHERE staff_profile_id=$1',[profile])).count).toBe(2);
+  expect((await query('SELECT count(*)::int count FROM attendance_records WHERE student_id=$1',[student])).count).toBe(0);
+  expect((await service.workspace(guard,school)).activity.some(item=>item.kind==='staff'&&item.person_id===profile)).toBe(true);
+  await expect(service.staff(outsider,school,'Neha')).rejects.toThrow(/permission/);
+ });
  it('blocks exit without a pickup pass and rejects QR from another institution',async()=>{
   await expect(service.movement(guard,school,{student_id:student,direction:'out',command_id:randomUUID(),identity_verified:true})).rejects.toThrow(/pickup QR/);
   const pass=await service.issuePass(admin,school,{student_id:student,kind:'pickup'});

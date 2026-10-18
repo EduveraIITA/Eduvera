@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authDestination, useOptionalAuth } from '../auth/AuthContext';
-import { gateCommand, getVisitorApprovals, type Visitor } from './api';
+import { gateApprovalsQueryKey, gateCommand, getVisitorApprovals, type Visitor } from './api';
 import { VisitorApprovalPrompt } from './VisitorApprovalPrompt';
 import { gateError } from './gateError';
 import './visitor-approvals.css';
@@ -20,7 +20,7 @@ function ApprovalInbox({home}:{home:string}) {
   const [dismissed,setDismissed]=useState<string[]>([]);const [busy,setBusy]=useState(false);const [error,setError]=useState<{id:string;message:string}|null>(null);
   const [outcome,setOutcome]=useState<{visitor:Visitor;action:'approve'|'deny'}|null>(null);
   const isHome=location.pathname.replace(/\/$/,'')===home;
-  const queryKey=['gate-approvals',auth.user?.id,auth.user?.active_school_id??'all'];
+  const queryKey=gateApprovalsQueryKey(auth.user?.id,auth.user?.active_school_id);
   const query=useQuery({queryKey,queryFn:({signal})=>getVisitorApprovals(signal),enabled:isHome,staleTime:0,refetchOnMount:'always',refetchOnWindowFocus:true,refetchInterval:isHome?30000:false,retry:false});
   const marker=new URLSearchParams(location.search).get('visitor_request');
   const requested=marker&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(marker)?marker:null;

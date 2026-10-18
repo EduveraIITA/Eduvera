@@ -17,6 +17,8 @@ import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from '../campus
 import { assertGateTransition, assertPassUsable, gateTokenHash, newGateToken } from './gate.rules.js';
 type Db=DatabaseService|Transaction<Database>;
 interface Person {id:string;name:string;avatar_url:string;admission_number:string;class_label:string;direction:string|null;plan_id:string|null;plan_revision:number|null;plan_state:string|null;mode:string|null;authority_id:string|null;collector_name:string|null;collector_photo:string|null}
+interface GateStaff {id:string;name:string;avatar_url:string;staff_code:string;designation:string;department:string;direction:'in'|'out'|null;last_movement_at:Date|null;revision:number}
+interface GateActivity {id:string;kind:'student'|'staff'|'visitor';person_id:string;name:string;avatar_url:string|null;detail:string;direction:'in'|'out';occurred_at:Date;state:string|null}
 interface Pass {id:string;student_id:string;plan_id:string|null;kind:'student'|'pickup';expires_at:Date;used_at:Date|null;revoked_at:Date|null}
 interface VisitorRecord {id:string;school_id:string;name:string;phone:string;purpose:string;host_user_id:string|null;photo_key:string|null;photo_type:string|null;photo_hash:string|null;category:string;recorded_by:string;decided_by:string|null;state:string;revision:number;request_id:string|null;created_at:Date;expires_at:Date;decided_at:Date|null;checked_in_at:Date|null;checked_out_at:Date|null;host_name?:string;school_name?:string}
 function visitorView(v:VisitorRecord) {
@@ -119,6 +121,55 @@ export class GateService {
   if(!student)throw new NotFoundException('Student not found.');
   return student;
  }
+ async staff(user:AuthUser,school:string,q:string) {
+  await this.access(user,school);
+  const term=z.string().trim().max(100).parse(q).toLowerCase();
+  if(term.length<2)return [];
+  const pattern=`%${term.replace(/[\\%_]/g,'\\$&')}%`;
+  return (await sql<GateStaff>`SELECT profile.id,concat(person.first_name,' ',person.last_name) name,person.avatar_url,
+    profile.staff_code,profile.designation,profile.department,profile.revision,movement.direction,movement.occurred_at last_movement_at
+   FROM staff_profiles profile JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
+   LEFT JOIN LATERAL (SELECT event.direction,event.occurred_at FROM gate_staff_events event
+     WHERE event.school_id=profile.school_id AND event.staff_profile_id=profile.id
+     ORDER BY event.occurred_at DESC,event.id DESC LIMIT 1) movement ON true
+   WHERE profile.school_id=${school}::uuid AND profile.status='active'
+    AND (lower(concat(person.first_name,' ',person.last_name)) LIKE ${pattern} ESCAPE '\\'
+      OR lower(profile.staff_code) LIKE ${pattern} ESCAPE '\\' OR lower(profile.email) LIKE ${pattern} ESCAPE '\\')
+   ORDER BY person.first_name,person.last_name LIMIT 30`.execute(this.db)).rows;
+ }
+ async staffProfile(user:AuthUser,school:string,id:string,db:Db=this.db) {
+  z.uuid().parse(id);await this.access(user,school,db);
+  const profile=(await sql<GateStaff>`SELECT profile.id,concat(person.first_name,' ',person.last_name) name,person.avatar_url,
+    profile.staff_code,profile.designation,profile.department,profile.revision,movement.direction,movement.occurred_at last_movement_at
+   FROM staff_profiles profile JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
+   LEFT JOIN LATERAL (SELECT event.direction,event.occurred_at FROM gate_staff_events event
+     WHERE event.school_id=profile.school_id AND event.staff_profile_id=profile.id
+     ORDER BY event.occurred_at DESC,event.id DESC LIMIT 1) movement ON true
+   WHERE profile.school_id=${school}::uuid AND profile.id=${id}::uuid AND profile.status='active'`.execute(db)).rows[0];
+  if(!profile)throw new NotFoundException('Active staff profile not found.');
+  return profile;
+ }
+ async staffMovement(user:AuthUser,school:string,body:unknown) {
+  const b=z.object({staff_profile_id:z.uuid(),direction:z.enum(['in','out']),command_id:z.uuid(),identity_verified:z.literal(true),gate:z.string().trim().min(1).max(80).default('Main gate')}).strict().parse(body);
+  return this.db.transaction().execute(async tx=>{
+   await this.lock(tx,school);await this.access(user,school,tx);
+   const previous=(await tx.selectFrom('gate_staff_events').select(['id','staff_profile_id','direction','recorded_by']).where('command_id','=',b.command_id).executeTakeFirst());
+   if(previous){if(previous.staff_profile_id!==b.staff_profile_id||previous.direction!==b.direction||previous.recorded_by!==user.id)throw new ConflictException('Movement reference was already used.');return{id:previous.id,saved:true};}
+   const current=await this.staffProfile(user,school,b.staff_profile_id,tx);
+   assertGateTransition(current.direction??undefined,b.direction);
+   const observedAt=new Date();
+   const row=await tx.insertInto('gate_staff_events').values({school_id:school,staff_profile_id:b.staff_profile_id,direction:b.direction,gate:b.gate,source:'gatekeeper',recorded_by:user.id,command_id:b.command_id,occurred_at:observedAt}).returning('id').executeTakeFirstOrThrow();
+   await this.observationIngress.recordObservations(tx,[{
+    school_id:school,captured_by:{kind:'human',user_id:user.id},kind:'movement.gate_observed',
+    subject:{kind:'staff',domain:'people',domain_id:b.staff_profile_id,label:current.name,lifecycle_state:'active',source_revision:current.revision,metadata:{staff_code:current.staff_code}},context:null,
+    source_type:'gate.staff_movement',source_ref:b.command_id,source_record_id:row.id,observed_at:observedAt.toISOString(),received_at:new Date().toISOString(),
+    evidence_refs:[`gate_staff_event:${row.id}`],payload:{direction:b.direction,gate:b.gate,capture_source:'gatekeeper',identity_verified:true,evidence_scope:'campus_boundary'},
+    schema_version:1,state:'accepted',idempotency_key:`gate-staff-observation:${row.id}`,domain_event_id:null,
+   }]);
+   await this.audit(tx,user,school,`staff_${b.direction}`,row.id);
+   return{id:row.id,saved:true};
+  });
+ }
  async workspace(user:AuthUser,school:string) {
   await this.access(user,school);
   const visitors=(await sql<VisitorRecord>`SELECT v.*,u.first_name||' '||u.last_name host_name,
@@ -128,7 +179,28 @@ export class GateService {
    ORDER BY v.created_at DESC,v.id DESC LIMIT 100`.execute(this.db)).rows;
   const hosts=await this.db.selectFrom('school_memberships as m').innerJoin('users as u','u.id','m.user_id').select(['u.id','u.first_name','u.last_name']).where('m.school_id','=',school).where('m.is_active','=',true).where('u.is_active','=',true).where('m.role','in',['admin','staff']).execute();
   const office=await this.db.selectFrom('school_contacts').select(['name','phone']).where('school_id','=',school).where('phone','!=','').orderBy('priority').executeTakeFirst();
-  return {office:office??null,visitors:visitors.map(visitorView),hosts:hosts.map(h=>({id:h.id,name:`${h.first_name} ${h.last_name}`})),pending:visitors.filter(v=>v.state==='pending').length};
+  const activity=(await sql<GateActivity>`WITH rows AS (
+    SELECT 'student'::text kind,event.id::text id,student.id::text person_id,concat(person.first_name,' ',person.last_name) name,
+      COALESCE(NULLIF(student.avatar_url,''),person.avatar_url) avatar_url,COALESCE(class.grade||' '||class.section,'Student') detail,
+      event.direction,event.occurred_at,NULL::text state
+    FROM gate_events event JOIN students student ON student.id=event.student_id
+    JOIN school_people person ON person.id=student.person_id AND person.school_id=student.school_id
+    LEFT JOIN LATERAL (SELECT section.grade,section.section FROM enrollments enrollment JOIN class_sections section ON section.id=enrollment.class_section_id
+      WHERE enrollment.student_id=student.id AND enrollment.is_active AND section.school_id=${school}::uuid
+      ORDER BY enrollment.enrolled_on DESC,enrollment.id DESC LIMIT 1) class ON true
+    WHERE student.school_id=${school}::uuid
+    UNION ALL
+    SELECT 'staff',event.id::text,profile.id::text,concat(person.first_name,' ',person.last_name),person.avatar_url,
+      COALESCE(NULLIF(profile.designation,''),'Staff'),event.direction,event.occurred_at,NULL::text
+    FROM gate_staff_events event JOIN staff_profiles profile ON profile.id=event.staff_profile_id AND profile.school_id=event.school_id
+    JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id WHERE event.school_id=${school}::uuid
+    UNION ALL
+    SELECT 'visitor',visitor.id::text,visitor.id::text,visitor.name,NULL::text,visitor.category,
+      CASE WHEN visitor.checked_out_at IS NOT NULL THEN 'out' ELSE 'in' END,
+      COALESCE(visitor.checked_out_at,visitor.checked_in_at),visitor.state
+    FROM gate_visitors visitor WHERE visitor.school_id=${school}::uuid AND visitor.checked_in_at IS NOT NULL
+  ) SELECT * FROM rows ORDER BY occurred_at DESC,id DESC LIMIT 12`.execute(this.db)).rows;
+  return {office:office??null,visitors:visitors.map(visitorView),hosts:hosts.map(h=>({id:h.id,name:`${h.first_name} ${h.last_name}`})),pending:visitors.filter(v=>v.state==='pending').length,activity};
  }
  async issuePass(user:AuthUser,school:string,body:unknown) {
   const b=z.object({student_id:z.uuid(),kind:z.enum(['student','pickup'])}).parse(body);

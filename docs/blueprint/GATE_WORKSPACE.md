@@ -229,3 +229,35 @@ Remove the repeated Manage In & Out / Gate & Safety heading and introduction und
 shared navigation. Keep the language switch as a small footer control. Place the
 camera-only icon immediately above visitor name, replacing the visible Take photo
 text with an accessible label. Keep the captured thumbnail and overlaid remove control.
+
+## 18 October 2026 — gate home and staff movement reference
+
+The latest owner reference reshapes the gate-only home into two centered actions:
+Scan QR and Manually, followed by recent recorded activity. Manually offers the
+school-scoped student/staff search and the existing visitor form. Search has
+Students and Staff tabs; current status is shown before a person is opened. The
+QR camera scans live frames, offers an image-gallery fallback, and shows a
+flashlight control only on cameras that advertise torch support. Visitor capture
+remains camera-only, with the existing removable preview, Guest category,
+optional purpose, and optional host/direct-entry distinction.
+
+Gate-only navigation has Home, Approvals, Logs and More. Approval rows come only
+from the authenticated user's host/admin-authorized queue; gate staff do not gain
+authority to approve requests for another host. Logs show actual boundary
+movements and keep the existing revision-checked visitor entry/exit actions
+available. Mixed-access staff continue to use the shared OperationsShell
+navigation.
+
+Active staff search and detail are school-scoped. Staff entry/exit records use
+`gate_staff_events`, migration 136, separate from classroom attendance. Each
+accepted staff movement is idempotent, rechecks current permission/profile and
+transition state inside the transaction, and emits boundary-scoped Model Core
+evidence plus an audit record. Existing student pickup pass and identity checks,
+visitor authority, school data boundaries and app theme remain in force.
+
+Local evidence for this revision: frontend typecheck/build, backend typecheck/build,
+focused frontend gate/form tests and changed-file lint pass. A synthetic-data
+headless browser checked the actual app at 320/390/768/1024/1440 px, student
+search/detail/action, no horizontal overflow and no page errors. It did not use
+live school records or verify a physical device's camera/flashlight. PostgreSQL
+integration coverage for migration 136 and staff movement is required in hosted CI.
