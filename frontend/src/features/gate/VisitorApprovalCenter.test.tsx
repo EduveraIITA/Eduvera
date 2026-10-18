@@ -9,7 +9,7 @@ const state=vi.hoisted(()=>({auth:{status:'authenticated',publicDemo:false,user:
 vi.mock('../auth/AuthContext',async importOriginal=>({
   ...await importOriginal<typeof import('../auth/AuthContext')>(),useOptionalAuth:()=>state.auth,
 }));
-vi.mock('./api',()=>({getVisitorApprovals:state.get,gateCommand:state.command}));
+vi.mock('./api',()=>({gateApprovalsQueryKey:(userId:string,schoolId:string)=>['gate-approvals',userId,schoolId],getVisitorApprovals:state.get,gateCommand:state.command}));
 vi.mock('../../lib/api',async importOriginal=>({...await importOriginal<typeof import('../../lib/api')>(),apiFetch:state.notification}));
 const requestId='10000000-0000-4000-a000-000000000001';
 const visitor={id:requestId,school_id:'school',school_name:'Cambridge School',name:'Visitor Test',phone:'9876543210',purpose:'Document delivery',state:'pending',revision:1};
