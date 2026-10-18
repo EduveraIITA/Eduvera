@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, Languages, LogIn, LogOut, QrCode, Search, UserRound, UserRoundPlus } from 'lucide-react';
 import { useAuth, authDestination } from '../auth/AuthContext';
-import { createGateVisitor, gateCommand, getGateStaff, getGateStudent, getGateWorkspace, getVisitorApprovals, type GateActivity, type GateStaff, type GateStudent, type Visitor, type Workspace } from './api';
+import { createGateVisitor, gateApprovalsQueryKey, gateCommand, getGateStaff, getGateStudent, getGateWorkspace, getVisitorApprovals, type GateActivity, type GateStaff, type GateStudent, type Visitor, type Workspace } from './api';
 import { GateFrame } from './GateFrame';
 import { GateStudentSearch } from './GateStudentSearch';
 import { GateVisitorForm } from './GateVisitorForm';
@@ -40,7 +40,7 @@ export default function GatePage(){
  const queryClient=useQueryClient();
  useEffect(()=>{if(!success)return;const timer=window.setTimeout(()=>setSuccess(''),4000);return()=>window.clearTimeout(timer);},[success]);
  const workspace=useQuery({queryKey:['gate',auth.user?.id,school],queryFn:()=>getGateWorkspace(school),enabled:Boolean(school),refetchInterval:30000,retry:false});
- const approvals=useQuery({queryKey:['gate-approvals'],queryFn:({signal})=>getVisitorApprovals(signal),enabled:Boolean(school),refetchInterval:30000,retry:false});
+ const approvals=useQuery({queryKey:gateApprovalsQueryKey(auth.user?.id,auth.user?.active_school_id),queryFn:({signal})=>getVisitorApprovals(signal),enabled:Boolean(school),refetchInterval:30000,retry:false});
  if(!member)return <Navigate to={authDestination(auth)} replace/>;
  function clearPerson(){setPerson(null);setStaffPerson(null);setQr(undefined);setKind('student');}
  function reset(){setMode('home');setNav('home');clearPerson();setError('');setSuccess('');setCommandId(crypto.randomUUID());setVisitorRequestId(crypto.randomUUID());setRequestResult(null);}

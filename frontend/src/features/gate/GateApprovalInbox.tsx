@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Clock3, ShieldCheck, UserRound, X } from 'lucide-react';
-import { gateCommand, getVisitorApprovals, type Visitor } from './api';
+import { useAuth } from '../auth/AuthContext';
+import { gateApprovalsQueryKey, gateCommand, getVisitorApprovals, type Visitor } from './api';
 import { gateError } from './gateError';
 
 export function GateApprovalInbox({hindi}:{hindi:boolean}) {
+  const auth=useAuth();
   const client=useQueryClient();
   const [error,setError]=useState('');
-  const query=useQuery({queryKey:['gate-approvals'],queryFn:({signal})=>getVisitorApprovals(signal),staleTime:0,refetchOnWindowFocus:true,refetchInterval:30_000,retry:false});
+  const query=useQuery({queryKey:gateApprovalsQueryKey(auth.user?.id,auth.user?.active_school_id),queryFn:({signal})=>getVisitorApprovals(signal),staleTime:0,refetchOnWindowFocus:true,refetchInterval:30_000,retry:false});
   async function decide(visitor:Visitor,action:'approve'|'deny') {
     setError('');
     try {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import GatePage from './GatePage';
 const state=vi.hoisted(()=>({auth:{status:'authenticated',user:{id:'guard'},memberships:[{school_id:'school',school_name:'Test school',role:'staff',permissions:['gate.manage']}],logout:vi.fn()},command:vi.fn(),createVisitor:vi.fn(),workspace:vi.fn(),find:vi.fn(),findStaff:vi.fn(),student:vi.fn(),staff:vi.fn()}));
 vi.mock('../auth/AuthContext',()=>({useAuth:()=>state.auth,authDestination:()=>'/teacher'}));
-vi.mock('./api',()=>({gateCommand:state.command,createGateVisitor:state.createVisitor,getGateWorkspace:state.workspace,findGateStudents:state.find,findGateStaff:state.findStaff,getGateStudent:state.student,getGateStaff:state.staff,getVisitorApprovals:vi.fn().mockResolvedValue([])}));
+vi.mock('./api',()=>({gateApprovalsQueryKey:(userId:string,schoolId:string)=>['gate-approvals',userId,schoolId],gateCommand:state.command,createGateVisitor:state.createVisitor,getGateWorkspace:state.workspace,findGateStudents:state.find,findGateStaff:state.findStaff,getGateStudent:state.student,getGateStaff:state.staff,getVisitorApprovals:vi.fn().mockResolvedValue([])}));
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children}:{children:React.ReactNode})=><div data-testid="staff-shell">{children}</div>}));
 vi.mock('./QRScanner',()=>({default:({onScan}:{onScan:(s:string)=>void})=><button onClick={()=>onScan('qr')}>Scan test pass</button>}));
 function mount(){render(<MemoryRouter><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><GatePage/></QueryClientProvider></MemoryRouter>);}

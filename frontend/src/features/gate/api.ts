@@ -14,5 +14,6 @@ export const getGateStudent=(school:string,id:string)=>apiFetch<GateStudent>(`${
 export const findGateStaff=(school:string,q:string,signal?:AbortSignal)=>apiFetch<GateStaff[]>(`${gateRoot(school)}/staff/?q=${encodeURIComponent(q)}`,{signal});
 export const getGateStaff=(school:string,id:string)=>apiFetch<GateStaff>(`${gateRoot(school)}/staff/${encodeURIComponent(id)}/`);
 export const getVisitorApprovals=(signal?:AbortSignal)=>apiFetch<Visitor[]>('/api/v1/gate/visitor-approvals/',{signal});
+export const gateApprovalsQueryKey=(userId:string|undefined,activeSchoolId:string|null|undefined)=>['gate-approvals',userId,activeSchoolId??'all'] as const;
 
 export const createGateVisitor=(school:string,form:FormData)=>apiFetch<Visitor>(`${gateRoot(school)}/visitors/`,{method:'POST',body:form});
