@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 170964)
-Total output lines: 9293
-
 # ThatCampus Blueprint v2 implementation
 
 Baseline: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md), accepted
@@ -514,7 +511,8223 @@ school continue to act as real wall-clock time advances. The accepted contract i
 with the managed local preview and has no play, pause, replay, scrub, speed or
 fast-forward controls. The owner rejected the earlier rapidly cycling sequence. The
 latest owner decision also rejects translating or borrowing a school day for convenient
-after-hours review. The runner…150964 tokens truncated…ueries run only inside the matching
+after-hours review. The runner must resolve the current date in Cambridge's configured
+timezone, use only that date's calendar-approved effective schedule, and map each phase
+to its actual campus-local instant. It may remain online while paused, but weekends,
+holidays, closures, empty effective schedules and time before the first or after the last effective slot
+must expose zero synthetic actors and execute zero synthetic actions. Restarting during
+the day must not catch up an already-expired action, and institution-local date rollover
+must resolve the new calendar day rather than wrap or replay the prior one.
+
+The runner uses existing authenticated demo identities and ordinary domain
+APIs. Accepted/refused outcomes therefore pass through current authorization,
+invariants, idempotency, audit/outbox and live-update paths instead of a direct
+database or frontend-fixture shortcut. All Cambridge fixture people may appear in the
+read-only development routine, but a planned marker remains **expected**; it is never
+presented as an observed physical location without source-bearing domain evidence.
+People without an acting demo account do not sign material commands through hidden
+impersonation.
+
+This harness is not the Model Core what-if/scenario runtime. It may mutate only the
+disposable local Cambridge fixture through normal APIs, uses the real wall clock and
+is excluded from production artifacts. At this checkpoint the scenario runtime remained
+separately
+gated by an isolated namespace, virtual clock, deterministic seed, snapshot/fake
+domain executors, sink-only delivery and zero production mutation/contact. The Model
+Core `ExecutionContext` simulation/rehearsal/replay seam therefore remains
+unimplemented at this checkpoint. That historical gap is superseded by the transient
+scenario slice recorded below and in `CAMPUS_SCENARIO_SIMULATION.md`; Campus Lab and
+scenario execution remain separate facilities.
+
+The first local runner slice is implemented. `devtools/campus-simulator/` contains the
+standalone wall-clock runner and versioned Cambridge behaviour fixture;
+`frontend/src/dev/campus-lab/` contains only the development-only status/overlay
+adapter; and the managed preview starts the runner on loopback and exposes its status
+only through an ephemeral-key same-origin development proxy. Campus View itself has
+moved to permanent production feature code as recorded above. The synthetic adapter
+is reachable only in a Vite development build and exposes no time or playback controls.
+
+The earlier runner replaced the rejected fixed short cycle with a
+timetable-derived 1:1 routine, but it selected another published weekday when needed
+and anchored that day's first instant to process start. That behavior is now explicitly
+retired. The corrected runner now obtains the current
+institution-local date, instructional/closure context and effective daily schedule
+from the ordinary calendar/day-plan domain API; retains actual lesson, break and
+uncovered-gap instants; and fails closed outside the first/last effective-slot school
+window. A development-only
+**Rehearsal now** indication may appear beside the matching row in the normal
+timetable only while the live current date and exact effective slot identity also
+match Campus View. Timetable/calendar source-revision parity remains a hardening gate
+until the source API supplies and the status contract exposes those revisions
+explicitly.
+This is an additive presentation overlay only: normal pages still fetch the
+authoritative timetable API, published times and row state stay unchanged, and runner
+status is not written to domain records or injected into the domain query cache. The
+indication and its status client must remain absent from production artifacts.
+
+The development-only timetable indication now reaches the normal principal, teacher,
+learner and guardian timetable routes through one shared Campus Lab projection. An
+explicit URL date always wins. During an active school window, the current
+institution-local date may supply the labelled simulated-current instant; while the
+runner is paused it must not navigate any role to another weekday/date or highlight a
+synthetic current period. Teacher rows use the exact active effective-slot identifier,
+while learner and family bell/current/next calculations use that same real
+campus-local instant. Every strip is explicitly **Read-only**. Authoritative timetable queries, published times, API
+`context.today`, coverage eligibility and attendance mutations remain unchanged; the
+rehearsal projection is not written into a domain cache or record. Production routes
+retain their full components and load these wrappers only through `import.meta.env.DEV`
+guards.
+
+Verified locally for this cross-role display slice: 19 focused timetable/rehearsal
+tests passed across projection-date precedence, principal mapping, teacher active-row
+state, learner/family bell state and shared presentation; the three production
+simulator-exclusion tests passed; focused lint passed; and the production Vite bundle
+completed without Campus Lab route chunks. The full TypeScript command remains blocked
+only by the unrelated duplicate test artifacts recorded below.
+
+Verified locally for the real school-day/window correction: the runner suite passes
+18/18 across the current institution date, exact effective-slot instants, explicit
+calendar closure, all-slots-cancelled closure, no-schedule Sunday, configured Saturday,
+before/after-hours zero-presence state, action-phase bounds, midday restart suppression
+and institution-date rollover. The focused development-presentation suite passes 8/8:
+a paused or closed runner cannot drive normal principal, teacher, learner or family
+timetable dates, clocks, bells or active-row state, and Campus View retains its
+source-backed map while showing a neutral paused badge with no simulated people. The
+three production-exclusion checks pass. At 20:30 IST the managed local and Cloudflare
+status endpoints both reported `paused`, `after-school-hours`, current date
+`2026-10-16`, source `effective_school_schedule`, zero actors and zero synthetic phase
+activity; both readiness endpoints were healthy. This is local/preview evidence, not a
+managed deployment or owner-device acceptance claim.
+
+Retained local evidence predating the latest school-day/window correction:
+
+- runner tests pass 8/8 across published-slot timing, retained gaps/breaks, one-shot
+  completion, safety gates and the protected status surface; these tests did not prove
+  current-date selection or off-hours/closure suppression and are superseded by the
+  corrected 18/18 runner evidence above;
+- focused frontend tests pass across projection-date precedence, exact principal and
+  teacher slot matching, learner/family bell state, normal current-timetable parity,
+  shared presentation and event-driven role-projection invalidation;
+- the production simulator-exclusion checks and production Vite bundle pass without
+  Campus Lab route chunks; and
+- the managed local and Cloudflare readiness endpoints returned successfully, but the
+  observed 221-person after-hours routine exposed the contract gap corrected above;
+  it is not acceptance evidence for the new timing rule.
+
+Earlier evidence remains useful only for the retained safety,
+ordinary-domain-action and production-exclusion boundaries:
+
+- focused runner tests pass 6/6 for wall-clock phase progression, all-person expected
+  projection, safe development gates, production/managed-host/connector refusal,
+  private Cambridge API verification and protected read-only status;
+- the earlier card-grid scene and its test were retired when the permanent Canvas
+  Campus View replaced that development UI; current evidence is recorded above;
+- the live routine recorded a teacher-to-family chat, principal acknowledgement
+  notice, family acknowledgement and 25-student Class 6A attendance through the
+  ordinary application APIs; the feed links each accepted result back to its normal
+  domain screen. This proves the retained API path only, not that those actions were
+  scheduled within a valid school window;
+- the local and Cloudflare readiness and Campus Lab status endpoints return
+  successfully;
+- focused release/exclusion tests pass 13/13; the permanent Campus View is expected in
+  production while the synthetic adapter/status client and simulator markers remain
+  excluded. The production Docker context ignores `devtools/`, and the release
+  contract rejects simulator environment variables.
+
+The full frontend TypeScript command remains blocked by unrelated duplicate
+`* 2.tsx`/`* 3.tsx` files already present in the shared dirty checkout. Those files
+were not changed or removed by this slice. The focused TypeScript check and production
+bundle complete successfully.
+
+Remaining acceptance before the harness itself is marked complete:
+
+- expose and verify the published source revision in the source API/status contract,
+  then prove Campus View and every development timetable indication resolve the same
+  calendar/effective-schedule revision, current date and slot identity;
+- retain regression coverage proving that cross-role rehearsal indication cannot
+  mutate timetable/domain caches, records or API-controlled action eligibility;
+- add durable action receipts and restart/idempotency coverage rather than relying on
+  one-process action memory;
+- add explicit refused/conflicted/unavailable domain-outcome tests and connector
+  spies, while retaining the already verified fail-closed connector gate;
+- complete automated 320/390px overflow, sheet focus-return and reduced-motion checks;
+- verify production-mode route/proxy absence and final container image contents in
+  addition to the completed source-context, release-contract and frontend-bundle
+  checks;
+- owner review through the managed local/Cloudflare preview.
+
+External Telegram/email/SMS/payment/model providers, physical observations and
+non-Cambridge institutions remain out of scope for Campus Lab. This historical
+checkpoint does not claim scenario-runtime evidence; the later isolated scenario
+slice below records its own implementation and acceptance limits.
+
+The Campus Lab activity projection now uses the versioned Cambridge v6 behaviour
+fixture. During an open school window it reconstructs a bounded expected-only receipt
+for each already-started effective timetable phase, so joining the local preview at
+mid-day shows the school-day sequence without replaying any missed material command.
+Current class entries name the class, subject and expected teacher, remain explicitly
+simulated, and carry `planned_rehearsal_only` / `spatial_evidence=false`. Accepted
+ordinary-domain rehearsal actions carry `domain_record_only` /
+`spatial_evidence=false`; neither category increments a physical room-evidence count.
+The same fixture now maps exact non-teaching designations and the representative demo
+administrator to stable configured space codes for expected duty positions; missing
+codes remain unplaced rather than falling back to a staff home space or the first
+available office. Expected actor and zone markers expose their development source
+label/version and current phase validity bounds; these remain planning provenance,
+not physical evidence.
+
+The Cambridge source fixture has also been upgraded in place to
+`cambridge-campus-replica.v1`. Its guarded, explicit-opt-in seed now provides 36
+connected spaces across academic, administration/student-services, community,
+arrival and outdoor zones; eight class home rooms; specialist learning, wellbeing,
+staff, dining, gate, transport and sports locations; four bounded resource holdings;
+and 11 wholly synthetic non-teaching operational staff profiles with current campus
+assignments and existing-contract duties. It does not create acting accounts for
+those people or turn their planned home space into presence evidence. Stable fixture
+IDs and conflict guards allow the existing local database to upgrade without a full
+medium-school reset; two consecutive verification runs produced zero new spaces,
+resources, staff, assignments, duties or orphan people on the second run. The
+authenticated institution-setup projection returned 36 active spaces, 28 staff, all
+28 staff campus-assigned, all eight classes with home rooms, and the four seeded
+resource holdings. Focused fixture tests pass 5/5; backend lint and typecheck pass.
+This is local synthetic-fixture evidence, not production seed behaviour or owner UI
+acceptance.
+Focused Campus Lab verification passes 24/24 tests, including open/closed windows,
+phase receipts, configuration-only staff and administrator placement, missing-space
+fail-closed behavior, no catch-up, synthetic staff reactions, evidence scope and the
+protected loopback status server.
+
+### Model-mediated workflow gap - 16 October 2026
+
+The current core foundation registers identities, authority, temporal plans,
+observations, commands and outcomes, but several existing workflows still execute
+entirely inside their domain service and only notify or project afterward. Staff leave
+and coverage are a concrete example: they have strong typed records, revision checks,
+audits, outbox events, attention and Operating-rule fallbacks, but their human actions
+do not yet enter through a stable model-agent command and approved leave/substitution
+does not yet supersede the affected temporal occurrences in the model.
+
+Do not call such workflows fully digital-twin-driven. Horizontal migrations must wrap
+the existing domain command—not duplicate it—so actor identity, authority, causation,
+rule version, domain outcome and next-agent ownership are recorded atomically or by a
+durable idempotent bridge. First priority is staff leave -> authorized decision ->
+coverage hand-off -> accepted substitution/fallback -> effective timetable context,
+because it exercises human-to-human coordination without weakening the existing
+leave, staffing or timetable invariants.
+
+The first bounded coordination-runtime foundation is now implemented locally in
+migration 106 and the provider-neutral `CoordinationRuntimePort`. It retains approved
+behaviour versions and exact event subscriptions, verifies every accepted source
+outbox event, creates idempotent per-recipient reactions and typed operational
+messages, keeps queued/delivered/acknowledged/responded/expired/cancelled/dead-letter
+states distinct, and records a visible unmatched exception when configuration or
+authority is absent. It installs no behaviour, subscription, role or fallback. Public
+ports use domain-facing agent references rather than private core IDs; human
+resolution requires active institution membership and current configured capability.
+Team routing deliberately fails closed until dated membership and claim semantics
+exist.
+
+Migration 107 now makes a human agent stable by institution person rather than login.
+It backfills only explicit student, guardian, staff and governance relationships,
+adds dated account/external-channel endpoints and audited idempotent endpoint
+close/revoke/replace operations, and preserves the originally addressed recipient on
+coordination replay. Exact replay cannot reactivate a suspended or revoked endpoint.
+The Core no longer creates a missing People identity lazily: an unlinked account fails
+closed until the owning Auth/People workflow supplies the explicit relation. The
+remaining identity gates are that Auth/People onboarding and live Agent Channels
+link/revoke changes do not yet publish through this lifecycle, dated team membership
+is absent, and a purpose-specific identity-management authority is not yet exposed.
+
+This is not yet a full agent runtime. The first bounded, domain-owned staff-leave
+bridge is now implemented locally through migration 108 and
+`StaffLeaveModelBridgeService`. Submission resolves the exact effective
+`staff_leave_decision` officeholder, commits the authoritative leave request, domain
+outbox event, configured core event and exactly one durable Request in the same
+transaction, and rolls the transaction back if authority or approved routing is
+missing or ambiguous. The core payload excludes the private leave reason and handover
+note. The exact decision owner is rechecked at execution time, including a locked
+current capability grant, and the decision, response and outcome share retained
+correlation/causation evidence. Command receipts and outbox collision checks preserve
+actor-scoped idempotent retries. Staff Operations and Requests expose private leave
+text only to the requester or exact current decision owner; technical administrators
+do not inherit review access merely from the admin role. The original requester can
+cancel the exact durable Request after the decision route changes or disappears.
+
+Staff leave and coverage are now partially model-mediated, but this remains a bounded
+segment rather than the complete configured workflow. Submission and decision retain
+the exact configured decision-owner Request trace. For a schedule-backed coverage
+task, the offered staff member's replay-safe acceptance records the authoritative
+Staff substitution and outbox evidence and invokes the Model Core temporal port in
+the same transaction. The effective schedule keeps planned teaching separate from
+operational staffing: while approved leave is effective it exposes either the exact
+valid accepted replacement or an explicit unassigned occurrence, never the absent
+planned teacher. This is plan and responsibility truth, not evidence that the lesson
+was physically delivered.
+
+Approve/reject still fails closed if the governance officeholder changes after
+submission; configured rerouting and transfer evidence are not yet implemented.
+Coverage-task creation and manual assignment remain domain-owned. Migration 116 and
+`StaffCoverageOfferBridgeService` now provide the first bounded automatic route: an
+exact approved `staff.coverage.opened` subscription configures candidate strategy,
+capability/scope and response timing; Staff Operations deterministically filters real
+active staff against effective schedules and approved leave; and one exact typed
+Offer, route snapshot and task revision are committed atomically. Missing, ambiguous
+or invalid automation configuration is retained as a visible domain exception while
+the existing explicit administrator assignment path remains available. A configured
+recipient response is bound to the exact current Offer, teacher, task revision and
+deadline before delegating to the existing authoritative accept/decline path. Later
+rounds, expiry workers, escalation/fallback execution and administration UI remain
+open. A role-neutral `/work/staff-leave`
+action surface reuses the domain review card for either a staff or admin officeholder
+and fails closed unless the workspace confirms current decision authority.
+Owner-device acceptance remains open. The runtime also has no administration API,
+filter language, durable lease/retry worker, mailbox query or channel-delivery
+adapter. Existing domain outbox events, notifications, Requests and AI/channel
+transcripts remain adapters, not substitutes for the spine. Leave, staffing and
+timetable records stay authoritative throughout.
+
+The second bounded coordination segment now connects existing transport-duty cover
+and exchange operations through migration 109 and
+`TransportDutyModelBridgeService`. It does not introduce a parallel transport
+workflow or new UI. The assigned collector's replay-safe command creates the
+authoritative domain request and one private typed Offer for the explicitly selected
+colleague. A rejection closes that Offer without creating school work. An acceptance
+records the exact Offer response and creates one typed Request for the effective
+`transport_duty_change_decision` officeholder; unrelated administrators do not receive
+the actionable notification or Requests item. The officeholder's replay-safe decision
+is bound to that exact Request and the existing transport transaction changes both
+trip assignments for an exchange, or neither.
+
+The transport adapter rechecks current human-agent capability, governance authority,
+message recipient, trip/offer revisions, assignees, duty conflicts and the configured
+journey window. Private request reasons and response/decision notes remain in the
+authorized transport domain; the core retains identifiers, revisions, route-to-action
+and minimum explanation only. The existing Teacher Transport and Principal Transport
+& departure screens remain the sole action surfaces and now retain a command identity
+across a mobile reload or ambiguous network response. The resulting assignment is a
+plan/responsibility fact only; it is not evidence of trip start, vehicle movement,
+boarding, learner location or physical handover.
+
+This transport segment is also bounded. The Cambridge behaviour, capability and
+governance configuration is an explicit guarded demo seed, not a production default.
+There is no administration UI for activating or rehearsing those versions, and a
+changed colleague or officeholder fails closed rather than silently inheriting an old
+Offer/Request. Missing routing rolls back the domain command safely, but the resulting
+configuration exception is not yet retained outside that rolled-back transaction.
+Physical transport observations and handover evidence remain separate later slices.
+
+Verified local evidence for the transport-duty segment: backend build and focused
+lint pass; 42 focused backend coordination, governance, Requests, idempotency and seed
+contract tests pass; and 26 focused frontend transport/leave retry tests pass with
+focused lint. In a disposable PostgreSQL clone of the full local database, migrations
+106 through 109 applied transactionally and the transport lifecycle passed 24/24
+integration tests, including exact command replay, stale-offer rejection and atomic
+exchange rollback. The guarded transport demo seed ran twice without duplication and
+retained one decision rule, two exact event subscriptions and 20 explicitly linked
+demo response/decision authorities. The disposable databases were dropped and the
+shared local database remained at migration 105. This evidence proves the bounded
+software path; it does not constitute physical transport acceptance or production
+behaviour-configuration readiness.
+
+Verified local evidence for this bounded foundation: backend build and targeted ESLint
+pass; 32 focused coordination/core/migration tests pass; migration 106 passed
+transaction-only PostgreSQL validation and was rolled back rather than applied. The
+tests verify no installed default behaviour, explicit recipient selection, current
+authority checks, idempotency evidence, distinct message states and fail-closed team
+queues. Runtime domain integration and physical operator acceptance remain open.
+
+Verified local evidence for the staff-leave segment: backend build and focused ESLint
+pass; 92 focused backend contract tests pass, with the four database-only governance
+tests skipped in the ordinary no-test-database run. Thirty focused frontend route,
+authority, reload/retry and idempotency tests pass with focused lint. In a separate
+loopback-only disposable PostgreSQL database, migrations 106, 107 and 108 applied
+transactionally; governance authority passed 4/4 integration tests, Staff Operations
+passed 12/12 integration tests, and the real identity service passed link, resolve,
+revoke, exact-replay and inactive-resolution checks. The disposable database was
+dropped and the shared development database remained unmigrated. This proves the
+bounded software trace, not physical operator acceptance or full MC-2 completion.
+
+The same gap applies to behaviour configuration: current domain services contain a
+mixture of explicit Operating rules and code-owned workflow routing. Phase 3 must
+introduce a validated `behaviourVersion` contract before any new reactive automation
+is called agentic. The first migrated workflow must demonstrate that recipients,
+timing, fallback and autonomy change through an approved configuration version, that
+the reaction evidence retains that version, and that removing the active version
+fails closed. Existing domain invariants remain in code and are not made
+administrator-editable.
+
+### Delivery-shape decision - 16 October 2026
+
+Digital-twin delivery must proceed as useful horizontal campus workflows rather than
+an infrastructure spear that repeatedly deepens one adapter or one core abstraction.
+After a minimum contract exists, each substantial slice should cross the necessary
+plan, observation, accepted-domain, authorization, explanation, correction and UI
+boundaries far enough to reduce real operator burden. This does not weaken domain
+ownership or justify a generic control panel. It prevents model infrastructure from
+growing without a domain-language use path that administrators can validate.
+
+### Accepted temporal-runtime direction - 16 October 2026
+
+The next core foundation is an event-derived temporal runtime, not another setup or
+domain UI. Versioned timetable definitions and concrete dated occurrences become
+first-class model contexts. Published schedules establish expected state and may
+trigger versioned Operating rules; human/device/integration captures establish
+observed evidence; owning domains establish accepted decisions; rebuildable
+projections may expose bounded inferences with provenance, freshness and uncertainty.
+
+In particular, a timetable may place a teacher in Room 201 and a gate reader may
+observe a valid campus check-in, but the combination does not prove that the teacher
+is physically in Room 201. The context resolver must report expected, observed,
+accepted and inferred dimensions separately, expire stale evidence and surface
+contradictions as owned work. Missing observations never become absence. Commands and
+delivery outcomes never become evidence of physical execution without a later
+observation or explicit owning-domain decision.
+
+Before connecting further domains, implement and verify the Phase 2A contracts in
+`CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md`: typed event/effective/recorded time,
+schedule occurrence identity, supersession lineage, idempotent replay, `asOf` context
+resolution and source-backed state assertions. This is target architecture only at
+this checkpoint.
+
+The temporal implementation slices are now present locally on the digital-twin branch.
+Migration `104_campus_model_temporal_runtime.sql` adds a private, tenant-constrained
+event journal and rebuildable schedule-occurrence projection. Schedule publication
+uses `TemporalContextPort` in the same database transaction to register the schedule,
+period and related identities, retain an idempotent plan event, and expand expected
+occurrences in the institution timezone. A typed `resolveAt` query returns planned
+context with source, revision, valid interval and recording time for a human agent or
+connected entity. Existing published schedules are backfilled without creating
+attendance or location observations. Calendar-closure creation and removal and daily
+plan publication now use the same port in their owning transactions. Closures cancel
+matching expectations without erasing history; closure removal restores only
+unblocked expectations; and a published daily plan supersedes recurring occurrences
+for the same class/date with explicit dated replacements. Migration
+`105_campus_model_gate_observations.sql` connects accepted gate movements to the
+immutable observation spine, backfills retained gate history with honest import
+provenance, and adds context-time lookup support. New gate movements record their
+normalized observation in the same transaction as the owning gate event. The
+observation envelope now supports identified human, device and integration capture
+agents; this is an internal contract and does not yet expose an unauthenticated device
+or biometric ingestion endpoint. Entity `resolveAt` results may contain both expected
+schedule assertions and direct observations, whose freshness is explicitly
+`point_in_time` so a gate entry is not presented as continuous location truth.
+The first horizontal consumer is included in the existing Campus setup workspace:
+current timetable occurrences and enrollment are cross-checked with the latest
+accepted same-day gate movement and accepted attendance evidence. Only explicit exit
+evidence can create a signal. A present/late observation recorded after that exit is
+routed to Attendance; otherwise the expected-after-exit cross-check is routed to
+Gate. The UI calls these **Signals to review**, explains that no attendance or absence
+decision is made automatically, and stays hidden when there is nothing to review.
+
+The next horizontal slice adds an administrator-owned **Devices & connections**
+lifecycle to Campus setup. A device or software connector must be registered with
+a stable source ID, narrow observation capabilities and an institution, campus or
+space scope before the model core will accept its evidence. Observation ingress no
+longer creates an active external actor merely because an unknown `external_ref`
+appears. It resolves a current active authority, checks the requested source type and
+connected scope, and rejects unknown, suspended, revoked or out-of-scope sources.
+Device and integration evidence cannot enter as accepted truth; it remains pending
+until the owning attendance or gate workflow reviews it.
+
+Administrators can pause and resume a source immediately or revoke it permanently.
+Registration and lifecycle changes are transactionally audited and published through
+the setup outbox; each authority retains the then-current institution Operating-rules
+revision as provenance. Revocation closes current grants and is intentionally
+irreversible for that source identity. This slice does not expose a public device
+ingestion endpoint, issue provider credentials, or claim that a camera/biometric
+adapter is production-ready.
+
+Verified evidence: backend build and focused lint pass; 20 focused core/migration
+contract tests pass; migration 104 completes under transaction validation and is
+applied to the loopback development database; a disposable runtime verification
+verified the full recurring expectation → closure cancellation → closure removal
+restoration → daily-plan supersession/replacement sequence, then resolved the dated
+replacement from its retained `timetable.day_plan_published` source and removed the
+fixture. Migration 105 is applied to the loopback development database and normalized
+9,429 retained gate events. A direct resolver verification returned the latest gate
+evidence as an `accepted` / `point_in_time` assertion from `gate.movement`. The current
+local database contained no pre-existing published recurring versions to backfill.
+Authenticated external device adapters, freshness rules, contradiction ownership,
+movement inference and campus-wide replay remain open and must not be represented as
+implemented.
+
+Horizontal-slice verification: a disposable, rolled-back runtime fixture joined a
+current Mathematics occurrence, active enrollment, accepted gate exit and later
+accepted present observation into exactly one Attendance-owned
+`attendance_after_exit` signal. Three focused Campus setup UI tests pass, including
+the no-automatic-conclusion copy. The focused frontend test is green; the full
+frontend TypeScript build remains blocked by unrelated duplicate untracked test files
+with names ending in ` 2.tsx` / ` 3.tsx`, which are outside this slice and were not
+modified or deleted.
+
+### Effective schedule lineage and staff-cover convergence — 16 October 2026 (local)
+
+Migrations `111_campus_model_temporal_schedule_lineage.sql` through
+`114_campus_model_substitution_cancellation_lineage.sql` extend the temporal runtime
+without replacing the timetable, daily-plan, calendar or Staff domains. A logical
+dated occurrence now has append-only recorded-time revisions and a stable journal
+cursor. Its plan basis, later change and applicable condition remain separate, and
+`resolveAt(at, recordedAsOf)` returns both logical-occurrence and revision identities
+with basis/change/condition provenance. No schedule assertion is physical-presence
+evidence.
+
+The shared schedule resolver now separates the original planned occurrence from its
+effective staffing. Exact accepted cover retains the source kind, source record and
+revision, occurrence key, original teacher, replacement, task revision, accepting
+actor and authoritative outbox event. Every role-facing timetable consumer continues
+to read the shared effective schedule: approved leave with no valid accepted
+replacement is shown as unassigned, while a valid accepted replacement is the
+effective teacher with an explanation reference. A later account or membership
+change does not rewrite elapsed accepted cover.
+
+Acceptance rechecks the offered recipient, approved-leave source, exact current
+schedule occurrence and overlapping work under the shared schedule lock. The Staff
+task, audit, substitution, command receipt and domain event are committed with the
+Model Core `timetable.substitution_effective` decision or all roll back. Schedule or
+daily-plan publication, calendar-closure changes, legacy timetable mutations and
+staff-membership deactivation call a narrow Staff-owned reconciliation port in their
+own transaction. Reconciliation retains the old substitution as history, closes the
+invalid task decision, creates a new linked obligation when approved leave still
+requires cover, emits exact non-duplicated domain evidence and records a causally
+linked Model Core cancellation. Replacement loss leaves the occurrence explicitly
+unassigned; removal of the leave obligation restores the original teacher; a newer
+schedule source remains untouched.
+
+The retained accepted-cover bootstrap is also a separate typed Staff-domain
+preparation port, so schedule owners can establish missing model lineage before they
+change authoritative source truth. A non-instructional calendar closure is a
+temporary condition: it hides the occurrence for that day but does not supersede an
+accepted substitution, which can become effective again after the closure is
+removed. Prospective reconciliation considers only tasks still in `accepted` state;
+`completed` cover is elapsed evidence and is never rewritten by this reconciler.
+Moving a replacement profile from `active` back to onboarding now prepares and
+reconciles its future effective substitutions under the school schedule lock, and
+retains the shared correlation plus preparation/reconciliation receipts in the Staff
+audit.
+
+Verified locally at this checkpoint: the backend build, full backend typecheck and
+focused lint pass; 47 focused lineage/provenance/substitution/bootstrap/Campus View
+contract tests pass; and migrations `111`–`114` apply on a fresh disposable
+PostgreSQL clone. The Staff Operations PostgreSQL suite passes 15/15, including exact
+acceptance replay, wrong-actor rejection, linked-task uniqueness after cancellation,
+future substitute deactivation through onboarding, temporary-closure retention,
+completed-cover immutability, and preservation of past accepted cover. Day Plans
+passes 19/19 and Schedule Planning passes 10/10 on the disposable clone. The dated
+assignment authorization regression proves that a pending coverage recipient cannot
+inherit attendance, photo, messaging or follow-up class authority before acceptance,
+and that declining later revokes the accepted date-scoped access.
+
+Retained accepted substitutions without a live command receipt now enter through a
+narrow recovery bridge before reconciliation. The bridge resolves exact planned or
+retained source evidence, emits one deterministic empty-audience/non-notifying import
+event, requires an active importing operator, resolves the historical accepter and
+teachers only from retained People/endpoint identity, and invokes the typed temporal
+port. It never manufactures a teacher command, authority grant or notification, and
+fails closed on identity, source or idempotency mismatch. Five focused bridge tests
+and the disposable database suites above verify this path. Configured
+cover-recipient selection, Offer routing, expiry, escalation and fallback remain open
+MC-2 work. No hosted deployment or owner-device acceptance is claimed.
+
+## Active delivery: connected student lifecycle — 16 October 2026 (local)
+
+The first connected-student lifecycle slice extends the existing student profile rather than creating
+another roster or administration module. An authorized `sis.manage` operator can review and apply one
+of three same-day decisions: move the student to another class in the current term, withdraw the
+student, or record a transfer to another institution. Next-term bulk progression remains owned by the
+existing **Promote class** workflow.
+
+The data model now retains inactive enrollment rows and enforces uniqueness only for the current
+active student/term placement and active class roll number. A short-lived review command freezes the
+expected enrollment and revision, effective date, reason and calculated impact. Commit serializes the
+student boundary and rejects expired, stale, cross-tenant, conflicting-roll and final-register changes.
+Class movement creates a new active placement; withdrawal and transfer-out leave no active placement.
+None of the paths deletes the student identity, guardian relationships, attendance, assessments, fees,
+transport or departure history.
+
+Routine propagation is automatic after the human decision: affected submitted attendance registers
+return to Draft with roster-change audit entries, destination subject-attendance rows are seeded, the
+decision is audited with its reviewed impact, and a scoped `people.updated` outbox event refreshes
+authorized principal, teacher, guardian, transport and departure consumers. Final attendance registers
+remain an explicit blocker. This follows the operating-rule automation principle: software performs
+bounded mechanical propagation, while the consequential enrollment decision is never inferred.
+
+The student profile adds one compact current-placement card, a three-choice progressive change flow,
+an impact confirmation, and expandable enrollment history. The UI keeps the established ThatCampus
+tokens, shared page shell and mobile hierarchy; it does not introduce a competing student workspace.
+Detailed contract and boundaries: [Connected student lifecycle](STUDENT_ENROLLMENT_LIFECYCLE.md).
+
+Verified locally: backend TypeScript build and lint pass; the Vite production bundle passes; focused
+student-directory/lifecycle coverage passes **7/7**. Migration 100 was applied transactionally to the
+loopback-only preview database and all **3/3** PostgreSQL lifecycle scenarios pass, covering idempotent
+movement, preserved history, register reopening, audit/outbox, transfer-out and stale-decision rejection.
+The ordinary migration runner remains blocked by the pre-existing migration 047 checksum drift, so the
+reviewed migration and its checksum were recorded directly in the local ledger. The managed preview is
+healthy. A task-scoped mobile preview is available at
+`https://shore-brandon-obligations-researchers.trycloudflare.com`; physical phone review and deployment
+remain open release evidence.
+
+## Active delivery: one principal timetable — 14 October 2026
+
+User decision: end the Timetable / Calendar / Planner comparison and keep one principal-facing
+planning concept. **Timetable** is now the canonical browsing destination because it is the familiar
+school term and the blueprint already assigns it ownership of classes, rooms, staff allocation and
+conflict-aware scheduling. Calendar is a view of that timetable, not a peer module; Planner was the
+interaction experiment, not a lasting product label.
+
+- `/principal/timetable` now presents the retained planner interaction with Day, Week and Month views.
+  Month contains school dates, closures and events, so the separate Calendar decision block is gone.
+  The previous preview/current switch, explanatory preview card and redundant colour key were removed.
+- The screen has one compact view switch, one class scope and one **New** menu. The later UX refinement
+  below moves recurring lesson editing and publication into calendar sheets. **Academic settings** now
+  holds term/year preparation, holidays and teaching-time targets. One-day changes still open the dated-plan editor, while recurring classes,
+  events and closures continue to write through their existing authoritative APIs and review rules.
+- Existing `/principal/calendar` and `/principal/planner` links redirect to the canonical Timetable while
+  preserving date, class, view and typed attention parameters. Calendar links default to Month. Calendar
+  attention acknowledgement is evaluated inside the retained Timetable, and event creation returns there.
+  Search and More now use the single Timetable name; School calendar search opens its Month view.
+- No timetable, event or school-calendar data was migrated or duplicated. Teacher, parent and student
+  reading experiences are unchanged in this slice.
+
+The retained Day and Week surfaces now use FullCalendar v7's MIT-licensed React time-grid rather than
+another bespoke positioning engine. Lesson and event blocks are placed and sized by their real start and
+end times, the current day has a live time indicator, empty time can be selected by click, drag or touch,
+and the week remains horizontally navigable at phone widths. Selecting free time opens one compact
+planning sheet with the date and time already filled. Recurring classes can be composed without leaving
+the timetable; event and one-day-change choices continue into their existing authoritative editors.
+
+An in-range timetable draft is projected into the same calendar instead of a separate preview mode.
+Draft lessons can be moved or resized in place and save through the existing versioned timetable API;
+editing a published lesson prepares a future draft through the same API, while dragging remains scoped
+to existing drafts. The month grid remains the better density for long-range browsing, but its
+selected-day detail now uses the same proportional day timeline.
+
+Verified locally: 94 focused timetable, calendar-attention, event-navigation, More and hierarchy tests
+pass; changed files pass focused ESLint; the Vite production bundle succeeds. The authenticated mobile
+preview was checked in Week and Month, including the canonical Calendar redirect, with no runtime error
+or horizontal page overflow observed. The repository-wide TypeScript build remains blocked only by the
+preserved, unrelated untracked duplicate `* 2.tsx` tests. No cloud deployment or database migration was
+performed. Physical-phone acceptance remains requested.
+
+Additional timeline verification: the focused planner suite passes **5/5**, the changed planner files pass
+focused ESLint, and the Vite production build succeeds. The authenticated mobile preview was exercised in
+Day and Week, including free-time selection, recurring-class prefill and the touch-sized planning sheet.
+FullCalendar is lazy-loaded with the principal timetable route; its route chunk is approximately 89 kB
+gzip. The optional local photo-attendance sidecar still lacks `psycopg` and is unrelated to this slice.
+
+### Calendar interaction and visual refinement — 14 October 2026
+
+The user's phone screenshots rejected the initial library skin and the remaining duplicate class editor.
+The recurring timetable now has one principal-facing editing surface:
+
+- New and Academic settings live in the shared page header. Selecting a lesson opens a native modal
+  sheet with its time, teacher, room and recurrence; **Edit recurring class** edits it in that sheet.
+  Selecting free time opens the small creation menu with the selected date/time and class preserved.
+- A class draft has one contextual review control. Dates and publication are reviewed over the calendar,
+  using the existing revision-checked save/publish commands. No school timetable was published during
+  visual verification. Published-lesson edits create future drafts; matching copied lesson IDs uses the
+  original weekday, period number, subject and start time, not subject alone.
+- Academic settings no longer lists a second set of class timetable editors. Old pattern links redirect
+  to the calendar with class/date/period or review context. Unavailable period links show an explicit
+  state instead of selecting a different lesson. Annual setup and coverage configuration remain there.
+- Phone Week view uses a compact seven-day strip with a full-width proportional timeline for the chosen
+  day. Larger screens retain the seven-column week. Blue lesson blocks have dark readable text; breaks
+  use a quiet neutral fill. Details are shown on demand. Short blocks retain their title without clipped
+  text. The current-time marker and selected-day treatment use the established brand/severity colours.
+- Styling now uses FullCalendar v7 public class hooks and theme variables. The previous v6-style selectors
+  did not match v7's generated classes, which caused the default dark blocks and inconsistent spacing.
+
+Verification: 32 focused planner, draft, navigation and event-return tests pass across the final runs;
+changed files pass focused ESLint and the production Vite bundle builds. Browser inspection covered
+320, 390, 768, 1024 and 1440 CSS-pixel widths, with document width equal to viewport width; calendar-only
+overflow at narrower tablet widths remains intentional. Lesson details/editing, free-slot selection,
+publication review and the live current-time line were visually checked. Repository-wide TypeScript
+checking still reports the pre-existing unrelated duplicate `* 2.tsx` test matcher errors; no new planner
+type errors were reported. The managed local preview remains available. No cloud deployment was performed.
+
+Design references: [Teams calendar interaction](https://support.microsoft.com/en-us/teams/meetings/get-started-with-the-microsoft-teams-calendar)
+and [FullCalendar v7 styling API](https://fullcalendar.io/docs/css-customization). Physical-phone review
+is still required; these local checks do not claim school acceptance or complete release readiness.
+
+## Superseded comparison record: unified planning preview — 14 October 2026
+
+A second, explicitly labelled **Planner preview** was implemented locally for principal review without
+replacing the current Timetable, Calendar or Schedule settings experience. A top-level comparison
+control switches between the current experience and `/principal/planner`; it preserves date, class and
+the originating current view so the trial does not introduce a second navigation hierarchy.
+
+The preview follows the interaction rhythm of a modern work calendar while retaining ThatCampus's
+existing visual tokens and domain boundaries:
+
+- Day, week and month views project the authoritative dated timetable versions, legacy weekly
+  baseline where no dated version applies, school closures and campus events. The all-class week
+  overview groups lessons by period to prevent a forty-register school from rendering hundreds of
+  competing cards; selecting a class reveals the individual lessons.
+- One **New** menu is the only creation entry point in the preview. Its templates distinguish a
+  recurring class, an event/activity, a holiday/closure and a one-day change. This is progressive
+  disclosure, not four permanently competing action bars.
+- Recurring class creation writes to the existing versioned timetable draft API and requires the
+  established publish review before becoming live. Event creation opens the canonical event editor
+  with the chosen date/time prefilled and a safe return to the planner. Holidays reuse the existing
+  audited closure command and editor. A one-day change opens the existing dated day-plan workflow.
+  No second scheduling store, event store, permission path or approval engine was added.
+- The comparison UI described below has now been removed by the decision above. Its data ownership
+  remains valid: removing the preview did not orphan records because all writes belonged to the
+  authoritative domains.
+
+Verified locally: the focused planner, comparison-navigation and event-return coverage passes **9/9**;
+changed files pass focused ESLint; the Vite production bundle succeeds. Repository-wide TypeScript
+checking remains blocked only by the preserved, unrelated untracked duplicate `* 2.tsx` tests already
+recorded above. The authenticated managed preview was inspected at the mobile breakpoint in week and
+month views, including the grouped all-class overview and recurring-class composer. The core preview
+is running; its optional photo-attendance sidecar currently lacks the local `psycopg` package and is
+not part of this planning slice. This was the evidence used for the consolidation decision recorded
+above. No cloud deployment or database migration was performed for this comparison slice.
+
+## Active delivery: cross-app behaviour consolidation — 13 October 2026
+
+The first two locally implemented slices of the cross-app consistency audit reduce overlapping
+navigation concepts without changing domain authority. The AI destination is now named
+**Assistant** in navigation, compact controls, the full-page header and history controls;
+person-to-person communication remains **Messages**. Student and teacher More catalogues no
+longer repeat their primary Attendance and Timetable destinations, while those destinations remain
+directly available in bottom navigation and searchable from More. Parent, student, teacher and
+principal transport catalogue labels now use the stable domain name **Transport & departure**.
+
+Pro-off presentation now hides Assistant memory as well as assistant navigation and direct routes.
+The Student More catalogue no longer exposes a separate Attendance Copilot tile; contextual
+attendance help remains inside Attendance when Pro is enabled. Duplicate page-level H1s were
+removed from student Home, notice detail and teacher-feedback content so the shared portal app bar
+is the single page-title owner.
+
+The leave-cover operating rule now has one fallback meaning rather than an independently editable
+type and label. The UI sends the canonical display label for the chosen fallback and the service
+derives it again before persistence, preventing contradictory combinations from old or external
+clients. The form now reports successful persistence. Focused frontend coverage passes 38 tests
+across Assistant, More, account profile, transport and staff operating rules; the changed frontend
+files pass ESLint. Backend typecheck, build and targeted lint pass. Full frontend typecheck/build
+remain blocked by preserved, untracked duplicate `* 2.tsx` files that TypeScript includes; this is
+pre-existing workspace state and those files were not removed or edited. Phone review and cloud
+deployment remain pending.
+
+The authoritative class-test ownership slice is now locally implemented. New class tests are
+planned in Assessments, not Campus events: an assigned subject teacher may create only a draft
+class test for the same class, subject and effective assignment dates; the teacher remains the
+examiner, an active school administrator is selected as the independent reviewer, and principal
+scheduling remains the release gate. That scheduling transaction serializes the class boundary and
+rechecks the future instructional day, effective subject period, same-day duration and conflicts
+with already scheduled assessments or published events. The Events screen links to this workflow, its teacher-facing
+name is now Events & activities, and the campus-event API rejects every new `class_test` creation.
+Existing event-based class-test records remain readable and editable in their existing draft path
+so audit history is not rewritten. The focused frontend assessment, event and More-navigation pass
+covers 54 tests. Backend typecheck, build, targeted lint and four
+assessment event-contract tests pass. Full frontend typecheck/build remain blocked only by the
+preserved untracked duplicate test files already recorded above. Physical phone review remains open.
+
+Dirty-navigation protection is now wired through every operating-rule editor. A changed value
+guards in-app links, browser Back/swipe and refresh/close; the guard remains active after a failed
+save and clears only after that section saves successfully. The parent category owns the guard so
+categories with more than one stored rule source do not show duplicate prompts. Focused operating
+rules/navigation/staff tests pass 24 tests and the changed files pass ESLint. Physical phone review
+remains open.
+
+The one-save operating-rule transaction slice is now implemented locally. Event attendance,
+Departure & transport and Messaging each render as one category editor with one save action. The
+category command locks the institution, checks both the shared workflow revision and domain-rule
+revision, writes both records in one PostgreSQL transaction, and creates one before/after audit event.
+Coverage and Daily attendance were already single-record editors. Messaging rules now carry their
+own optimistic revision (`084_chat_policy_revision.sql`), including the existing standalone chat-policy
+write path. The rollback-only database verification covers all three category commands, stale revisions,
+tenant/admin authorization and atomic audit; focused frontend coverage passes 25 tests. Backend
+typecheck/build/targeted lint and changed frontend lint pass. The local database received migration 084
+directly for preview compatibility because the migration runner stops on a pre-existing checksum drift in
+applied migration 047; that migration-ledger discrepancy must be reconciled before a normal deployment.
+Physical phone review remains open.
+
+The shared register lifecycle terminology slice is now implemented locally. Class attendance and event
+attendance keep their existing domain-specific storage states and command contracts, but every user-facing
+surface now uses the same lifecycle language: **Draft** while work is editable, **Submitted** when a class
+register awaits principal review, **Final** when the authoritative register is immutable, and **Correction**
+when an authorized user reopens or changes recorded decisions. The shared mapping is consumed by class
+queues, class register details, event registers, event details, family schedules and paper/offline
+reconciliation. User actions now say **Finalize register** and **Reopen for correction**; event changes are
+saved explicitly as a draft or correction. Backend `open`, `submitted` and `locked` values remain unchanged,
+avoiding an unsafe data migration or a generic cross-domain status enum.
+
+This matches the blueprint's requirement for explicit state machines while keeping an unsubmitted register
+as a staff task rather than an inferred student absence. Focused lifecycle, class attendance, continuity and
+campus-event coverage passes **78/78** tests, and focused lint passes. The repository-wide frontend typecheck
+continues to be blocked only by the preserved untracked duplicate `* 2.tsx` test files documented above.
+Physical phone review remains open.
+
+The configurable class-register finalization slice is now implemented locally. A full-roster submission
+remains the durable audit boundary, but it no longer always creates a second principal task. The
+institution-wide **Daily attendance** operating rule chooses one of two explicit paths: **Finalize
+automatically** after a 0–1,440 minute delay, or **Require principal review**. Each new submission
+snapshots the operating-rule revision and, for automatic mode, its exact due time. Previously submitted
+registers are intentionally not rescheduled by a later rule change.
+
+A leased background worker claims due submitted registers with row locks, makes them final exactly once,
+records automatic versus manual provenance, writes an audit event and emits the existing register refresh
+event. Principal attendance separates scheduled automatic work from the review queue, while the teacher
+register shows the scheduled finalization time and removes the redundant Finalize action. Reopening a
+final register remains an explicit correction workflow. Migration
+`085_attendance_register_finalization_policy.sql` is applied to the local preview database; it was also
+applied directly to the disposable integration database because those local databases retain the previously
+documented migration-ledger drift.
+
+Verified locally: backend typecheck/build and focused lint pass; operating-rule validation passes **15/15**;
+the automatic-finalization database integration passes with state, revision, policy snapshot, audit and
+outbox assertions; focused operating-rule and class-attendance UI coverage passes **36/36** with focused
+lint clean. Repository-wide frontend typecheck remains blocked only by the preserved untracked duplicate
+`* 2.tsx` tests documented above. Authenticated phone review and cloud deployment remain pending.
+
+The shared temporal-input containment slice is now implemented locally. All **77** date, time and
+date-time controls across **39** application files use one ref-forwarding `TemporalInput` component.
+It preserves the browser and operating system's native picker, keyboard, locale, validation and form
+semantics while enforcing `width`, `min-width`, `max-width` and `border-box` containment. A defensive
+selector applies the same constraint to temporal inputs rendered by older or external composition.
+Physical iPhone review exposed WebKit bug 301648: iOS repaints temporal controls as menu-list buttons
+and can restore `content-box` sizing after the cascade, placing horizontal padding outside a 100%-wide
+field. The component now applies prefixed and standard `appearance: none`, after which WebKit honors
+the bounded border-box; internal date/time parts have normalized padding and alignment. The native
+picker remains attached to the input type, so this fixes the overflow without a custom calendar.
+
+The component has attribute, ref, class-composition and submitted-value coverage. A source-level
+regression test fails if a new raw date/time input bypasses the component, and asserts the required
+iOS appearance opt-out cannot be removed accidentally. Focused component, date-navigation and
+operating-rule coverage passes **12/12**; all 39 consuming files pass ESLint and
+the Vite production bundle succeeds. The broader frontend run passes **920/921** tests; the remaining
+More-page attention-count expectation fails independently of these form-control changes and is retained
+as an existing active-worktree issue. Repository-wide TypeScript checking remains blocked only by the
+preserved duplicate `* 2.tsx` test files documented above. Physical iPhone review remains pending.
+
+Remaining consolidation slices are attention/escalation operating rules; and shared loading, empty, error,
+unauthorized and stale-state components.
+
+## Active delivery: role-aware Requests inbox — 13 October 2026
+
+Transport drill-down correction (13 October, local): the principal Transport & pickup
+landing screen now lists the exact departure/transport attention items from the same
+read model as More, including dates and direct review destinations. The reviewed local
+five-item queue consists of unstarted planned demo journeys, not unread messages.
+No journeys or rider outcomes were silently closed. Journey, roster and pickup mutations
+invalidate Attention/Requests immediately. Loading failures remain visible with retry.
+Twenty focused transport tests and a clean frontend build pass; phone acceptance and
+cloud deployment remain pending.
+
+Event badge correction (13 October, local): routine open-register attention now expires
+at the configured event staff-entry deadline for principals as well as staff. Recorded
+check-ins awaiting checkout remain principal exceptions; no attendance, session state,
+or audit history is changed. Events now shows the authoritative attention items above
+Upcoming/Drafts/Past filters, with exact action links independent of event-list pagination.
+Event writes invalidate Requests/Attention, and the shared read model refreshes each minute
+while active. A live local principal projection confirms zero event-register attention for
+the three expired, unrecorded 10 October picnic sessions. 59 focused event/More tests pass;
+backend build passes. Cloud rollout and authenticated phone acceptance remain pending.
+
+Parents, staff and principals now have one **Requests** module for work that needs their attention.
+It is a read-only, role-scoped projection over authoritative domain workflows, not a second approval
+engine: selecting an item opens the owning attendance, event, leave, staffing, transport, finance,
+governance, academic or student-care screen, where the existing domain rules perform any change.
+
+- The common contract separates category, status, subject, due time, priority and destination. It
+  orders **Act now**, **Review soon** and **When you can** deterministically by urgency and deadline.
+- Parent scope is restricted to a linked child and includes existing family actions, required policy
+  acknowledgements and outstanding fee obligations. Staff scope includes assigned registers, cover,
+  responsibility offers, transport duty, assessment work and policy acknowledgements. Principal
+  scope includes institution-wide leave, departure and transport decisions, finance review, policy
+  review, assessment moderation, attendance reconciliation and open student concerns.
+- Requests are reachable first in each applicable More menu, carry a live attention indicator, and
+  the principal Home attention section links to the full inbox. Students intentionally do not receive
+  this adult operational inbox.
+- Cross-role calls were exercised against the local seeded school: parent-to-principal,
+  staff-to-parent and principal-to-staff contexts each return `403`. The seeded principal receives
+  three scoped items, the teacher four and the parent currently has a truthful empty state. Mobile
+  Chromium checks at 390 px show no horizontal overflow or browser errors for all three views.
+
+Focused request projection/UI tests, both typechecks, both linters and both production builds are
+release evidence for this increment. Physical phone review by the product owner remains open; the
+broader B5 acceptance gaps above are not claimed as complete.
+
+## Active delivery: notices and response tracking — 13 October 2026
+
+The next B5 slice is implemented locally as an explicit **Notices** workflow rather than an
+announcement-shaped chat message. A notice is a draft until an authorized publisher releases an
+immutable recipient snapshot. Principals can address staff, all guardians or one class; staff can
+address guardians only in a class where their current `messages.send` assignment is effective.
+Publication rechecks that authority and fails when the audience resolves to nobody.
+
+- Notice modes are **information**, **acknowledgement** and **choice**. Choice is a generic response,
+  not legal consent: event consent remains in the event workflow and cannot be manufactured by a
+  notice. Information notices never create a Request.
+- Delivery attempts (`app`, `SMS`, `paper`, `phone`, `in person`), opening and the recorded response
+  are separate records. An app delivery does not imply that the person opened or acknowledged it.
+  Guardians without an app account remain in the audience and start with a queued paper route.
+- Parents and directly addressed staff respond in their own portal. Administrators can record the
+  effective time, channel and attributed actor for an assisted response, or append manual delivery
+  evidence. All state changes use revision checks, command idempotency, domain audit rows, the common
+  audit ledger and a content-free transactional outbox envelope.
+- Pending acknowledgements and choices project into the role-aware Requests inbox. Principals receive
+  a separate exception only for a latest failed delivery or an overdue missing response. Notice text
+  does not enter realtime event payloads.
+- The web flow has focused list, compose, review/publish and detail pages. It preserves the shared
+  app bars and navigation, uses one page title, and keeps recipient progress and manual follow-up
+  progressively disclosed rather than stacking summary cards.
+
+Verified locally: migration `061_school_notices.sql` applied successfully to a disposable clone of
+the current local schema; the focused backend workflow suite passes **4/4** across audience scope,
+idempotency, delivery/response separation, Requests projection, assisted non-app capture and neutral
+events. Backend typecheck, lint and production build pass. Focused Notices/Requests/navigation UI
+tests pass **12/12**, and the frontend regression excluding unrelated duplicate files passes
+**682/682 across 94 files**. The new frontend files pass lint and typechecking; the repository-wide frontend
+typecheck remains obstructed by pre-existing untracked duplicate `* 2.tsx` test files and is not
+claimed. No cloud/shared database migration or deployment is claimed. Physical parent/staff/principal
+review, real provider delivery and operating-policy sign-off remain B5 acceptance gates.
+
+## Active delivery: institution governance and policy centre — 4 October 2026
+
+The next large delivery increment is tracked in
+[Institution governance and policy centre](GOVERNANCE_POLICY_COMPLIANCE.md). G1-G4 are implemented
+locally and automated focused checks pass: configurable institution/regulatory profile,
+India-school policy catalogue, versioned draft/review/publication, member acknowledgement and the
+separate [restricted care workflow](RESTRICTED_CARE_WORKFLOW.md) with encrypted narratives,
+explicit assignments and alternate intake routing.
+The complete frontend regression suite passes locally (35 files, 222 tests). Visual user sign-off
+remains open, so this is not yet a release gate. This is domain hardening and does not represent
+compliance certification. G5-G10 remain planned and must not be represented as implemented until
+their separate high-risk workflows and evidence pass.
+
+### Authority and mobile-governance overhaul — 7 October 2026
+
+The user-supplied governance framework has been reviewed against the repository blueprint and
+adopted as Version 2.1. The engineering contract is
+[Institute governance, authority and mobile operations](INSTITUTE_GOVERNANCE_AUTHORITY_ARCHITECTURE.md).
+It supersedes any interpretation that a software role, administrator account or generic approval
+creates institutional authority. Effective operational assignments activate technical capability;
+offices, body seats, appointments, mandates and decision rules establish
+the separate institutional-authority model.
+
+The A1 foundation is implemented locally in migration
+`048_governance_authority_foundation.sql`. It adds typed authority sources, offices, bodies, seats,
+appointments, standing/delegated mandates and matter-specific decision routes with institution-scoped
+foreign keys, revisions, RLS and revoked browser-role grants. Migration
+`049_governance_authority_integrity.sql` also rejects cross-institution source citations and linked-user
+appointments at the database boundary. The governance workspace now leads with
+a concise **Authority** surface and **Who can decide what?** view. An empty institution supplies four
+necessary facts and the app prepares a reviewable draft; no generated record silently becomes adopted
+authority. The repeat-safe Cambridge seed supplies two verified sources, five appointments, two mandates
+and five confirmed routes for demonstration.
+
+Verified locally on 7 October 2026: a fresh PostgreSQL 14 database migrated from `001` through `049`,
+the focused governance API suite passed 6/6, the governance UI suite passed 3/3, both applications built,
+both linters passed, the repeat seed remained stable, and the live workspace returned two sources, two
+active office appointments and five confirmed routes. The fresh-database run also exposed and corrected
+an older PostgreSQL-15-only column-list `SET NULL` clause in migration `033`; the invitation relationship
+now uses the already-adopted restricted deletion path and fresh PostgreSQL 14 setup succeeds.
+
+A2 remains planned, but is not the active product slice. The user explicitly prioritised simple
+institution setup and daily operations before further governance expansion. Physical mobile review and
+the full automated regression remain open for A1; it is not yet claimed as deployed or institutionally accepted.
+
+### Scoped roles and assignments — 7 October 2026 (current)
+
+The rejected work-type alias editor is replaced by **People / Roles / Leave / Settings**.
+The contract is [Roles and contextual assignments](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
+
+- Built-in roles are ready to assign. Custom roles can start from a template or blank and select
+  real supported actions in plain language, with automatic prerequisites. The context limits the
+  available actions; naming a role never creates a new workflow or institutional authority.
+- One profile projects direct class/institution assignments and native event, assessment and
+  journey staffing. The same native record carries its optional custom access role; no second
+  responsibility or eligibility record is required. Assignment links open their owning work.
+- Role edits are revision/impact checked, tenant scoped and audited. Native assignment changes
+  have revision checks; ending a class grant retains history and prevents timetable fallback from
+  restoring removed permissions. Access-update events refresh staff navigation and data.
+- Per-resource checks tie actions to the same class, event, assessment or trip. Teaching does not
+  automatically make someone an examiner. Marking and independent review remain separate.
+  Class follow-up, photo attendance and messaging use the contextual checks as well.
+- Migration `052_scoped_access_roles.sql` keeps existing data and evolves the physical catalogue;
+  it removes the immutable-workflow alias restriction. Old work-type mutation routes return 410.
+  Compatibility role/eligibility records do not grant operational access or appear in setup.
+- An add-only, repeat-safe seed demonstrates **Anil Sharma → Attendance reviewer → Class 6A**.
+  It grants read-only attendance, not marking or unrelated institution access. Existing local
+  staffing choices were not reset by a full reseed.
+
+Verified locally: fresh PostgreSQL `001`–`052` migration and full demo seed; repeat access-role seed;
+**282 backend tests in 39 files**, **253 frontend tests in 42 files**, both typechecks/linters and
+production builds. Real Chromium checks cover 320, 390 and 768 px: role catalogue, action editor,
+automatic prerequisites, staff profile, assignment form, no horizontal overflow, Escape dismissal
+and no page errors. The frontend-engineering workflow retained existing theme/header/navigation
+and used an accessible modal rather than introducing another setup surface. Final regression rerun
+on 7 October passed the same 282 backend / 253 frontend tests after the access-event refresh and
+database-type changes. Local `/healthz`, `/readyz` and the app returned 200; the ngrok health check
+also returned 200.
+
+Local migration `052` and the add-only example are applied to `omnischool_node`. The pre-existing
+local checksum difference for migration `033` was not rewritten: `052` was applied independently
+after checking its `051` prerequisite. Reconcile that older checksum before using the ordinary
+migration runner for deployment. No production push/deployment is claimed. Physical phone/product
+review and the broader blueprint release gates remain open.
+
+### Staff profile role overview — 7 October 2026
+
+User feedback: repeating every exam/journey assignment as a full card made it difficult to see
+which roles a person holds. Staff profiles now group assignments by role identity, with a compact
+role/assignment total and expandable rows. Class roles appear first. Search matches role names,
+classes, subjects, exams and journeys, and opens matching scoped work when appropriate.
+
+**Assigned / Not assigned / History** separates current/planned/offered bindings from ended records
+and identifies available roles not held by the selected person. Scheduled and offered states retain
+their actual labels; they are not relabelled as active. Historical assignments have no edit action.
+Choosing an unassigned class/institution role preselects it in the existing assignment form; event,
+exam and journey roles still link to their authoritative planning screens. Allowed actions appear
+once per role group, not on every repeated assignment.
+
+Verification: **262 frontend tests in 43 files**, frontend lint, typecheck and production build pass.
+Chromium checks at **320, 390, 768, 1024 and 1440 px** verify grouping, exact-work search, unassigned
+roles, preselected assignment forms, read-only history, keyboard expansion and no horizontal
+overflow or page errors. Cambridge demo Kavita's **28 current assignments appear as six roles**.
+The frontend-engineering pass preserves the established theme, shared headers and navigation.
+No permissions, staffing records, migrations or seed data changed in this UI increment. Physical
+phone/product review remains open; no push or production deployment is claimed.
+
+### Staff setup simplification — 7 October 2026 (superseded)
+
+Historical record only. The work-type model below was rejected by the user and replaced by the
+scoped-role implementation above. Its former verification counts describe that older revision.
+
+The current operations priority is implemented locally around one clear administrator entry:
+**Staff setup & leave**. Its tabs are People, Work types, Leave and Settings.
+
+- **People** is the only individual setup surface. A staff record contains descriptive position,
+  active scoped assignments, onboarding and leave balance. Assignments are created from the record.
+- The People directory and an individual staff record are separate mobile pages. Directory rows use
+  the stable `/principal/staff/:staffProfileId` route, and each record returns explicitly to People;
+  a selected profile is never appended below the directory list.
+- An unfinished onboarding checklist remains visible and actionable. Once every check is recorded,
+  the profile replaces it with one compact **Onboarding complete** disclosure; the historical checks
+  remain available on demand without occupying the normal staff-profile workflow.
+- **Work types** lets an institution name supported kinds of work. Each one is based on an immutable
+  platform workflow family; required access, scope kind and safety restrictions are not editable.
+- **Leave** contains leave review and the resulting cover queue. Cover is temporary and does not
+  create another role or permanent responsibility.
+- **My work** is staff self-service only. It is not another administrator configuration surface.
+  The old standalone Roles URL redirects into Staff setup → Work types.
+- The effective-access query no longer joins the legacy role/eligibility tables. Active dated
+  assignments and domain-native staffing records activate their controlled capability packages
+  directly, with resource checks retained in each owning service.
+- Staff onboarding and ordinary invitations no longer ask for a role. Account type remains separate;
+  position and work are completed in Staff setup.
+- Migration `050` adds workflow family, institute clone lineage, revision and update attribution to
+  the work-type catalogue. Migration `051` enforces the lineage at the database boundary: every
+  institute work type must clone a same-institution built-in workflow and keep its scope, capability
+  package, safety restriction and access explanation unchanged.
+- The Cambridge seed contains three institute examples—Primary class guide, Route collector and
+  Exam room supervisor—and an active Class 7A Primary class guide assignment for Kavita Mehta.
+- Legacy role tables and API identifiers remain read-only compatibility details. Dated access
+  exceptions remain an internal support mechanism and are removed from the normal setup experience.
+
+The current contract is [Staff position, work types, assignments and automatic access](WORK_PROFILE_ACCESS_ARCHITECTURE.md).
+Migrations `050` and `051` are applied to the local review database and the repeat-safe demo work
+types and assignment are present. A fresh isolated PostgreSQL database migrated from `001` through
+`051` and loaded the complete demo seed. The full backend regression passes **281 tests in 39 files**;
+the full frontend regression passes **252 tests in 42 files**. Both linters and production builds
+pass. Local API health, database/event readiness, the frontend document and the active ngrok tunnel
+all return success. Physical mobile review by the product owner remains the only local acceptance
+check for this overhaul; no production deployment is claimed.
+
+## Active delivery: offline assessments and results — 5 October 2026
+
+The first Stage E academic-operations increment is tracked in
+[Offline assessments and results](OFFLINE_ASSESSMENTS_RESULTS.md). It intentionally supports the
+institution's physical exam/class-test workflow rather than becoming an online examination system.
+The local implementation covers configurable cycles and assessment kinds, explicit examiner and
+moderator assignments, a frozen enrolment roster, truthful non-score outcomes, optional protected
+evidence, revision-checked marks, independent moderation, immutable family publication snapshots,
+and corrected republication. UI acceptance, institutional grading-policy validation, production
+object storage/malware scanning and Stage deployment remain open release gates.
+
+## Section coverage
+
+| PDF sections | Delivery evidence / decision |
+| --- | --- |
+| 1-4: Definition, principles, boundaries, outcomes | Above baseline and staged roadmap; operational-obligation metric definitions remain to be field validated |
+| 5-6: Roles and experience | Existing role shells retained; new follow-ups use deliberate guardian/staff contexts; purpose grants and office/transport/care roles remain B1/C |
+| 7-9: Domains, invariants, observations | New CoordinationModule; separate journal; tenant FK; actor and effective/recording time; attendance source observations and reconciliation are implemented locally; other adapters remain D |
+| 10: Closed loops | WF-LOCAL-001 below; remaining domain state machines scheduled C/E |
+| 11-12: Configuration, non-app and offline | Assisted follow-up channel and account-scoped encrypted attendance device queue implemented locally; policy lifecycle and other non-app channels remain D/D2 |
+| 13-15: Architecture, concurrency, tenancy | Retain modular Node backend; transaction + outbox, replay, scope checks, command receipts; runtime-role RLS and purpose grants remain B1/B6 |
+| 16-18: Privacy, finance, AI | Restricted-care application encryption, explicit access and metadata-only event envelopes implemented locally; evidence storage/retention/privacy-rights gates remain open; no finance-provider or care AI enablement |
+| 19: Measurable targets | Targets are not measured SLAs. 100k-student workload, latency and recovery tests remain unproven |
+| 20-22: Discovery, SDLC, people | This traceability record and UI checkpoints; school sponsor/process owner and independent review not yet assigned |
+| 23-24: Verification, deployment | Local tests and managed preview; physical school drills and production rollout not performed |
+| 25-27: Roadmap, decisions, definition | Dependency sequence above; preserve human verification and narrow release gates |
+
+## WF-LOCAL-001: Attendance-to-guardian follow-up
+
+Actors: assigned teacher or administrator; linked guardian. A principal can see school-scoped
+follow-ups. A teacher sees only currently assigned students. A teacher's unrelated parent
+context grants no staff access. No student action or device is required.
+
+1. Teacher opens a saved absent, late or half-day attendance record and explicitly raises a
+   question with a due time. The creator owns the follow-up. No automatic case for an unmarked register.
+2. Guardian sees the child's follow-up on Home and responds. The state becomes `in_review`.
+3. Staff can instead record a phone, paper or in-person response, naming the linked guardian,
+   time received, staff recorder and entry time. This is an attributed statement, not a consent artifact.
+4. Owner or administrator records `absence_explained`, `record_corrected`, or `query_withdrawn`
+   with an explanation. A claimed correction requires an actually newer attendance revision.
+5. Closure does not rewrite attendance or imply any physical supervision, handover, consent,
+   fee payment or receipt. Closing a notification never closes the case.
+
+Invariants:
+
+- INV-LOCAL-001: tenant/student/attendance/date links agree, enforced in PostgreSQL.
+- INV-LOCAL-002: current membership, account, assigned class and guardian scope are checked;
+  write transactions lock relevant authority rows and revalidate before accepting a command.
+- INV-LOCAL-003: one open follow-up per attendance record; one command outcome per actor/key.
+- INV-LOCAL-004: duplicate key/same payload replays; changed payload or stale revision conflicts.
+- INV-LOCAL-005: factual attendance changes only through the attendance correction API.
+- INV-LOCAL-006: ordinary response content stays in the scoped thread; SSE contains IDs/revision only.
+- INV-LOCAL-007: closed cases reject new replies; school review is separate from guardian response.
+
+Implementation: `backend/src/coordination`, migration `007_attendance_followups.sql`,
+`frontend/src/features/coordination`. Both browser bundles recognize coordination invalidations,
+so an SSE leader in the staff bundle can relay them to the responsive web app.
+
+Current boundaries: follow-ups now support students and guardians without login accounts;
+staff can record assisted responses. App delivery still requires an authorized linked account.
+No SMS/WhatsApp was sent or integrated. Attendance offline writes are explicitly shown as device-pending until accepted or quarantined by the server; other offline writes remain unsupported.
+No care/medical details should be entered in this routine thread. Dedicated action navigation,
+coverage/reassignment and reminders are subsequent B4/B5 extensions.
+
+The guardian Home screen places the attendance follow-up inbox inside **Guardian Actions** and
+does not render the inbox until the selected child has an open follow-up. Staff inboxes retain
+their explicit loading, error and empty states for operational visibility.
+
+## WF-LOCAL-002: Reviewed student and guardian enrollment
+
+Implemented first B1 slice: principal **Students & guardians** at `/principal/students`.
+This extends the existing responsive principal shell without replacing its theme or navigation.
+
+1. Administrator selects the school, student details, active class/term and effective start date.
+2. Add a guardian identity without requiring a login, or search and explicitly select an existing
+   same-school guardian. Shared names/phones produce warnings, never automatic merges.
+3. Review the complete proposed relationship and enrollment. Explicitly confirm verification
+   before saving. Reviewing creates no student, guardian, enrollment or account.
+4. Commit rechecks current administrator authority, tenant scope, dates, admission number,
+   roll availability and register state in a transaction. Repeated commits return the same student.
+5. Save person, student, guardian relationship and enrollment together, with audit and outbox.
+   No attendance marks or login accounts are fabricated. The student enters rosters only from
+   the enrollment date. Affected submitted registers return to draft with a roster-change audit;
+   locked registers block the enrollment until reopened or a valid later date is chosen.
+
+Implementation: `backend/src/people`, migrations 008–010, `frontend/src/features/people`.
+PostgreSQL enforces same-school person/student/guardian links; admissions are case-insensitively
+unique per school. Table ownership matches the existing runtime tables, without PUBLIC grants.
+Existing logins retain their links; optional accounts are separate from canonical person details.
+The API retains its legacy display-name container for compatibility and adds explicit `person`
+and nullable `account` fields. Login-free identities work in teacher rosters, parent child data,
+attendance event generation and assisted follow-ups.
+
+Boundaries: this is individual enrollment, not a completed admissions/import or authority system.
+The legacy leave-authorization flag is explicit and defaults off; a guardian relationship does
+not grant collection authority. Account provisioning, purpose grants beyond leave signing,
+enrollment end dates and transfer/withdrawal remain open. Bulk enrollment is covered by WF-LOCAL-004. Individual reviews expire after
+one hour and committed review payloads are cleared; automated expired-draft retention cleanup
+is still required before production. Non-owner RLS execution remains a B6 release gate.
+
+## WF-LOCAL-003: Guardian leave-signing authority
+
+Principal directory → guardian **Manage permissions** → **Review permission** → dated grant
+or immediate revocation → school-verified reason → review → explicit confirmation.
+The existing React shell, palette and typography remain unchanged.
+
+- Purpose is strictly **sign leave requests**. This is not collection permission or revocation
+  of the family relationship, record access, account, staff membership or existing signatures.
+- Start/end dates use the school timezone; the end date is inclusive. New grants cannot be
+  backdated. Expired and future grants cannot sign; an end date is optional. Expiry is checked
+  at use, without a polling loop or a scheduled database mutation. An already-open UI may
+  need navigation/focus/manual refresh to update a time-bound label; the server remains authoritative.
+- Current school administrator membership is required at every command. Changes lock the
+  relationship and authority rows, reject stale revisions, and persist prior/new settings,
+  actor, verification statement, reason and an idempotent command receipt in one transaction
+  with audit and an ID-only outbox event. History is read-only in the application, latest 50 shown.
+- Leave submission and guardian actions now check current effective authority inside the
+  transaction under a relationship lock, including after waiting behind a revocation. Previous
+  signatures are retained rather than silently undone. Date-aware eligibility also drives the
+  parent leave screen and eligible-guardian notifications.
+- Lost-response retries reuse the same command even if SSE has already delivered its new
+  revision. A changed payload/key reuse is rejected. Unsubmitted stale forms must be reviewed again.
+- Legacy grants retain their settings and are labelled **not yet reverified here**. Enrollment
+  still defaults leave permission off. Seed upserts preserve reviewed permissions and their dates.
+
+Implementation: migration `011_guardian_leave_authority.sql`,
+`backend/src/people/guardian-authority.service.ts`, `GuardianAuthorityPanel.tsx` and the existing
+SchoolService leave command boundary. The module is deliberately not a generic authorization
+engine; additional purposes require their own enforcement and acceptance work.
+
+## WF-LOCAL-004: Complete reviewed bulk enrollment
+
+Delivered as a substantial onboarding workflow, not an isolated import button:
+
+1. Principal opens **Students & guardians → Import students**, downloads the CSV template,
+   selects an existing active school term and uploads/pastes up to 500 student rows / 512 KB.
+2. A resumable 24-hour draft is saved; no operational student or guardian records are created.
+   Upload retries deduplicate by actor/school/key and reject changed content under the same key.
+3. Validation checks required data, calendar dates, class/term scope, admission numbers,
+   per-class rolls, existing records, explicit family groups and attendance-register state.
+4. Staff edit individual rows, select a verified existing guardian, or skip unwanted/duplicate
+   students. Repeated names/phones never merge records automatically. An explicit family key
+   creates one shared guardian only when all included rows agree on that identity.
+5. The final review shows included/excluded counts, new/reused guardians, identity warnings and
+   submitted registers requiring review. Explicit confirmation binds to the draft revision and
+   a fingerprint of the current validation state. Changed school data requires a new review.
+6. The entire included batch saves atomically: people, students, guardians, primary family links,
+   effective-date enrollments, empty subject-attendance totals, audits and outbox events.
+   No login accounts, leave-signing permission or factual attendance marks are generated.
+7. A persisted receipt and private CSV report are available through paginated import history.
+   Committed raw rows are cleared. Discarded/expired drafts clear uploaded personal details;
+   a 15-minute bounded retention sweep and direct expired-draft reads perform cleanup.
+
+The mutation uses bounded batched inserts and ordered admission/class/guardian/register locks.
+Duplicate commands replay the existing receipt. Locked registers block the batch; submitted
+registers reopen once per affected register, keeping all marks and an audit of the roster change.
+Historical teacher rosters exclude new students before their enrollment dates. Draft changes
+emit administrator-only, ID-only events; commits coalesce roster invalidations by affected class.
+No polling or outside provider is required.
+
+Implementation: migration 012; `backend/src/people/import-*` and `people-import.*`;
+`frontend/src/features/people/PeopleImportPage.tsx` and focused upload/review/editor components.
+Detailed scope, CSV contract and limitations: [Bulk enrollment guide](BULK_IMPORT.md).
+
+## ADR-001: Preserve the current web clients
+
+Status: adopted for local implementation, 15 September 2026.
+The PDF recommends Next.js/Expo as a starting point without auditing this repository. The
+existing app already uses React, TypeScript, Vite and a same-origin Nest backend. The user
+explicitly asks to preserve UI/UX. Replacing routing/build frameworks now adds migration work
+without enabling the first daily loop. Retain them; evaluate native offline storage separately.
+
+## Review checkpoints
+
+1. Attendance follow-up: teacher creation, parent reply, assisted response and outcome review.
+2. People/import/authority and day-plan changes: inspect role-specific workflows before approval.
+3. Offline/paper operation: demonstrate pending, conflict and revoked-access scenarios.
+4. Departure/care/transport: review documented authority and physical fallback before implementation
+   is enabled for a live pilot. Synthetic tests are not a physical-safety approval.
+5. Finance/intelligence: independent contracts and permission tests before widening scope.
+
+## WF-STAFF-001: Staff onboarding and leave operations
+
+Delivered as a bounded school-operations workflow on 3 October 2026. This is deliberately not
+a payroll, salary, expense, recruitment-pipeline, appraisal or employee-surveillance system.
+
+1. **Principal → More → Staff & leave** provides one mobile-first workspace for the staff
+   directory, onboarding checks, leave approvals and leave-policy settings. A staff record holds
+   service-record essentials only: school code, contact identity, teaching/non-teaching kind,
+   designation, department, employment type and joining date.
+2. New staff onboarding creates a single-use 72-hour school invitation when no active account
+   already exists. Existing staff accounts are linked instead of duplicated. Invitation acceptance
+   completes the account-access check; the record becomes active only after all required checks
+   are complete. Existing staff memberships are backfilled with completed legacy checks.
+3. The five auditable onboarding checks are identity, service contract, qualifications, emergency
+   contact and account access. This aligns with the blueprint's staff-import/onboarding scope and
+   CBSE's service-record and contract expectations without claiming that a checklist itself proves
+   legal compliance.
+4. Leave policies are school/year configuration. Leadership can set allowance, carry-forward cap,
+   evidence threshold, paid/unpaid status, statutory label and availability. Starter Casual and
+   Medical policies are editable examples, not statutory declarations. Statutory eligibility must
+   be confirmed by the school against current applicable law.
+5. **Teacher → More → My leave** shows allowance, adjustments, used, pending and available days;
+   accepts full- or half-day applications with reason and handover note; and supports withdrawal
+   while pending. The server counts working dates, rejects closure-only/overlapping/out-of-year
+   requests, and rechecks balances at approval.
+6. The principal approval card combines request reason, balance and derived timetable coverage.
+   Approval records the affected published periods, writes immutable request history, emits an
+   outbox event, notifies the teacher and invalidates staff/leave/timetable consumers. It does not
+   silently rewrite teaching assignments; cover remains an explicit day-planning action.
+7. School/role boundaries are checked for every read and mutation. Writes use row/advisory locks,
+   optimistic revisions, cross-school database constraints, scoped foreign keys, audit records and
+   RLS/revocation defense in depth for direct Supabase Data API roles.
+
+Implementation: migration `028_staff_onboarding_and_leave.sql`,
+`backend/src/staff-operations/`, `frontend/src/features/staff-operations/`, and the existing
+invitation acceptance flow. Research inputs: CBSE Affiliation Bye-Laws 2018 (staff service records
+and contracts), Ministry of Labour's current Maternity Benefit Act summary, and Microsoft Shifts'
+employee-request/manager-decision interaction model. The product uses configurable policies rather
+than treating example balances as universal legal entitlements.
+
+Verified evidence:
+
+- Clean disposable PostgreSQL migration from `001` through `028`.
+- `staff-operations.integration.test.ts`: four passing end-to-end API cases covering existing-account
+  onboarding, role denial, policy configuration, leave submission, timetable impact, approval,
+  balance update, invalid withdrawal, audit and outbox delivery.
+- Backend and frontend TypeScript/lint clean; full frontend suite: 32 files / 210 tests passing,
+  including focused principal and teacher staff-workspace rendering/interaction checks.
+- Local preview database migrated; local API `/readyz` reports database and event broker healthy.
+
+Remaining acceptance gate: a school operator should review the principal and teacher mobile views
+with its own leave rules before pilot use. Policy values and statutory categories are school-owned.
+
+Do not silently change navigation or theme at any checkpoint. Record actual user acceptance
+and keep open work visible. No release dates or production-complete claim are inferred here.
+
+## Local verification — 15 September 2026
+
+- Backend: source build and lint passed; 68 tests passed, including nine coordination
+  integration tests for scope, graph integrity, duplicate commands, stale/concurrent replies,
+  assisted attribution, closure rules and unchanged factual attendance.
+- Responsive frontend: source build and lint passed; 78 tests passed. Staff desktop bundle:
+  source build and seven tests passed. The new inbox is in the responsive teacher/principal
+  shells, not yet in the separate `/staff` desktop workspace.
+- Browser: signed in as the demo teacher, raised a follow-up from Aarav's saved 25 August
+  absence, signed in as the linked parent and replied, then returned as the owner and resolved
+  it. The three attributed journal entries persisted. PostgreSQL confirmed that attendance
+  stayed `absent` at its original revision. The example is available under **Resolved**.
+- Responsive checks at 320, 768, 1024 and 1440 px: no horizontal page overflow in the new
+  inbox; phone and desktop layouts visually inspected. Native iPhone/Safari device acceptance
+  and a full assistive-technology audit are still required.
+- Runtime recovery: an open SSE stream exposed a shutdown-order deadlock. Moved stream
+  closure into `beforeApplicationShutdown`, added a regression test, then repeated SIGTERM
+  with the browser connected. launchd replaced PID 13282 with 13324; `/readyz` returned
+  database/events OK and the browser resumed live updates. The readiness test now waits
+  for readiness rather than only HTTP liveness, avoiding a broker-startup race.
+- Local launchd registration lasts for this macOS login session. It cannot provide availability
+  while the Mac sleeps, PostgreSQL stops, or the machine is off. No ngrok deployment in this slice.
+- UI checkpoint: awaiting Abhishek's validation. No school/pilot acceptance is implied.
+
+Lifecycle reference for the recovery fix: [NestJS lifecycle events](https://docs.nestjs.com/fundamentals/lifecycle-events).
+
+## People/enrollment verification — 15 September 2026
+
+- Backend build and lint passed; 83 tests passed, including 15 people integration cases for
+  account-free enrollment, scoped relationship constraints, explicit guardian reuse, pagination,
+  duplicate/concurrent commands, revoked authority, expired reviews, effective-date rosters,
+  submitted-register invalidation and locked-register rejection.
+- Responsive frontend build and lint passed; all 83 tests passed, including enrollment review,
+  retry/guardian selection, event invalidation and empty-attendance presentation. The separate
+  staff desktop build and seven tests passed; its event protocol recognizes people updates.
+- Browser enrollment saved synthetic **Ishaan Deshmukh**, admission **CIS-2026-0201**, Class 7A,
+  roll 26, starting 15 September, with guardian **Nandita Deshmukh**. Neither has a login account.
+  The current teacher register displays 26 students and Ishaan remains **Not marked**.
+- Local database check: 201 students, 201 guardian relationships, zero students missing a
+  guardian and zero students missing enrollment. Existing records were retained. A private
+  pre-migration backup is in `.runtime/pre-people-20260915-2215.sql`.
+- Enrollment/review layouts checked at 320, 768, 1024 and 1440 px without horizontal overflow;
+  phone and desktop screenshots inspected. Physical iPhone acceptance remains outstanding.
+- New students with no attendance history show **Not recorded**, not a failing 0% score.
+  Missing gate evidence shows neutral **Not confirmed**, not an off-campus assertion.
+- Local managed preview restarted for this increment. No ngrok or production deployment.
+- User authorized continuing development; explicit UI acceptance of this new flow is pending.
+
+## Guardian-authority verification — 15 September 2026
+
+- Backend build/lint and all 89 tests passed. Six new integration cases cover account-free
+  grants, actor/school scope, revoked administrator membership, optimistic revision conflicts,
+  concurrent retry deduplication, inclusive dates/expiry, actual leave commands, retained past
+  signatures and a signing query demonstrably waiting behind a revocation lock.
+- Frontend build/lint and all 88 tests passed, including five permission-panel cases for
+  confirmation, same-key retry after a newer SSE revision, stale forms, dates/cancellation,
+  focus and load failure. All four Python data-generator tests passed, including preserving
+  reviewed permissions during reseeding.
+- Reviewed the working local form and confirmation at 320, 768, 1024 and 1440 px; no horizontal
+  overflow. Phone and desktop screenshots inspected. Physical-device and assistive-technology
+  acceptance are still pending.
+- Migration applied to the backed-up local database. Private restore point:
+  `.runtime/pre-authority-20260915-2247.sql`. `/readyz` reports database/events OK.
+- The safety reviewer blocked saving the proposed Nandita/Ishaan preview grant without explicit
+  user approval. No preview authority change was made; persistence and real leave enforcement
+  were verified in the isolated test database. UI confirmation remains for the user to validate.
+- Bulk import and the remainder of B1 are not yet complete. No ngrok or production deployment.
+
+## Bulk-enrollment verification — 15 September 2026
+
+- Backend source build/lint and **114 tests** passed: 17 dedicated import integration cases,
+  seven CSV parser/export cases, plus an authenticated HTTP contract test for role, session,
+  CSRF and private CSV downloads. Tests commit both 200- and 500-student batches in a separate
+  synthetic school and assert complete family/enrollment graphs, no accounts/authority grants,
+  no invented attendance, idempotent retries, conflict rollback and class-coalesced events.
+- Frontend source build/lint and **99 tests** passed, including 11 import interaction cases for
+  upload, retry, row correction, explicit guardian selection, skip/cancel, pagination, review
+  verification and stale confirmation protection.
+- Actual local browser flow: uploaded a three-row synthetic CSV; fixed Ved Kulkarni's invalid
+  date, skipped already-enrolled Aarav, confirmed two siblings. Kaira (7A / roll 27) and Ved
+  (7B / roll 26) share one new guardian, Madhuri Kulkarni, with no account or signing authority.
+  Import receipt: `b1624c66-6a90-4979-a837-7440f108f5eb`. The school now has 203 students,
+  zero students without guardian links, and zero students without enrollments.
+- A separate three-row correction draft is available for UI validation; it has intentional
+  invalid/duplicate rows and creates no additional students until confirmed.
+- Responsive overflow checks at 320, 768, 1024 and 1440 px passed. Phone form and desktop
+  validation table were visually inspected. Physical iPhone and full assistive-tech acceptance
+  remain open. The existing school header, navigation, palette and typography were preserved.
+- Migration 012 applied to local PostgreSQL after private backup
+  `.runtime/pre-bulk-import-20260915-2332.sql`. Managed localhost preview updated; no ngrok or
+  production deployment. These local tests are not evidence for a production-scale SLA.
+- This completes the bounded CSV bulk-enrollment workflow, not all of Stage B or the blueprint.
+  Next substantial milestone: daily plans and timetable-change coordination, with a complete
+  staff-to-family change flow. Account invitations and other authority purposes remain explicit gaps.
+
+## WF-LOCAL-003: Daily plan and coverage coordination — 16 September 2026
+
+Blueprint traceability: sections 6–10 (adult-operated school day, timetable domain and closed
+loops), 11–15 (non-app participation, versions, tenancy and reliable commands), and Stage B.
+The dated plan is an exception to the weekly baseline, not a replacement timetable generator.
+
+- The principal selects a school, class and date, prepares a private draft, adjusts periods,
+  teacher, room, linked subject and materials, and records the reason and family notice.
+  Saved drafts can be resumed or discarded without changing the currently shared schedule.
+- Review/publish validates teacher and room conflicts, within-class overlaps, current teacher
+  memberships, the school calendar, optimistic revision and the underlying weekly baseline.
+  Started periods cannot be rewritten. Prior published versions are retained; a revision's
+  author, reason and publication time are visible in history.
+- Changed teaching arrangements request a teacher response. Accepting, declining, and an
+  office-recorded phone/paper/in-person response are separate from student attendance.
+  Assisted responses retain the actual receiving time, channel, note and recording actor.
+  The publishing administrator owns unresolved coverage; the day desk highlights affected classes.
+- A newly assigned substitute gets the class register only after accepting and only for that
+  assigned date. Decline, cancellation or superseding reassignment removes that additional
+  access. Existing weekly-teacher permissions remain unchanged. Register writes recheck scope
+  inside the transaction; outbox audiences and replay also recognize accepted substitutes.
+- Student/parent Home and Timetable consume the same dated schedule. Notices and materials
+  appear only after publication; cancelled periods are excluded from the live day and kit.
+  Subject attendance projections use the linked subjects from effective dated periods, excluding
+  cancelled slots. Publishing or responding never invents an attendance mark.
+- Publication, private in-app notices and events commit atomically. Command receipts deduplicate
+  retries; current membership and family relationships are rechecked before event delivery.
+  No periodic 30-second refresh was added. Weekly edits invalidate daily-plan caches and cannot
+  create conflicts with published day allocations.
+- The principal and teacher use the existing school header/navigation and blue/mint tokens.
+  Native dialogs provide focus containment, Escape dismissal, labelled controls and focus return.
+  Unsaved drafts warn on page exit and school/date/class changes. Published plans can be printed.
+
+### Verification and local handoff
+
+- Backend build/lint and **133 tests** pass, including 19 daily-plan integration cases against
+  an isolated PostgreSQL database. Coverage includes publish/discard, shared family data, private
+  drafts, conflicting/concurrent commands, retries, revoked authority, assisted attribution,
+  superseded responses, weekly-source staleness, date-scoped register permissions, event audience
+  revalidation and dated subject-attendance projections.
+- Responsive frontend build/lint and **116 tests** pass; the staff desktop build and **7 tests**
+  also pass. Frontend tests cover period editing, linked subjects/materials, save/publish confirmation,
+  retry keys, stale edits, discard, coverage responses, cancelled periods, event invalidation
+  the first-draft baseline regression, Sunday dates and named-room labels. There are **256 passing automated tests** across the three bundles.
+- Browser: prepared a Class 7A / 16 September Mathematics cover draft. The safety reviewer
+  requested explicit approval for publication; Abhishek approved publishing this specific demo
+  plan. Published version 1, with Period 1 assigned to Kavita Mehta in the Activity Studio and
+  Graph notebook/Ruler as materials. The already-open parent timetable updated via SSE without
+  reload. Kavita accepted in the teacher UI, and the principal screen changed live to **Teacher
+  confirmed**. Aarav's Home and Timetable showed the same notice; the actual checklist included
+  both materials and its check/uncheck interaction worked. Test packing was reset afterwards.
+- A rebuild during this walkthrough exposed an old lazy-chunk URL in an already-open session.
+  Both Vite clients now retain hashed assets between local builds; the old tab was reloaded once.
+  After a subsequent build, an already-open principal session successfully lazy-loaded the weekly
+  editor and returned to the published plan; its previous asset URL still returned HTTP 200.
+  Remote releases still need deployment-level multi-version asset retention (fresh container
+  images do not inherit files from the previous image).
+- Principal draft and period editor checked on a 320 px phone viewport; overall layout measured
+  at 320, 768, 1024 and 1440 px without horizontal page overflow. Teacher day and parent timetable
+  visually checked at 390 px. Physical iPhone/Safari and full assistive-technology acceptance remain open.
+- Local migrations 013–016 applied after a private backup at
+  `.runtime/pre-day-plans-20260916-0053.sql`. Existing synthetic school data retained. The managed
+  local preview is updated; no ngrok, remote database migration, git push or production deployment.
+  Final database check: **203 students**, zero missing guardian relationships, zero missing
+  enrollments. Plan `05c5a956-74c2-42f8-ad55-6190cec378e7` is at published version 1 / revision 4,
+  with an accepted app response (response revision 1) and no draft. All four day-plan events
+  were published by the worker. Class 7A still has zero attendance marks for 16 September.
+  `/readyz` reports database/events OK;
+  launchd reports the managed preview running after restart (PID 53090 at verification).
+- Local review starts at `/principal/timetable`, with the weekly editor still available at
+  `/principal/timetable/weekly`. Teachers use `/teacher/timetable`; family routes stay unchanged.
+- B3 attendance observation/offline/paper reconciliation is implemented locally below and awaits
+  physical-device and school-operating acceptance. Do not widen into departure, transport or
+  restricted care before their separate authority and safety gates.
+- This completes the bounded implementation, not all Stage B, a production-scale SLA, or school
+  operational acceptance. Await Abhishek's UI validation before further UI expansion.
+
+## Teacher timetable UI upgrade — 16 September 2026
+
+Implemented as an extension of WF-LOCAL-003, not a new scheduling domain.
+
+- Replaced the teacher timetable's plain date input with a horizontally scrollable day strip.
+  Teachers can step one week backward/forward, return to today and select any visible date.
+- Added month and year views backed by a staff-authorized summary endpoint. The endpoint derives
+  daily and yearly workload numbers from `effective_school_schedule`, including published dated
+  plan overrides, coverage responses, cancellations and empty days.
+- The month view shows the selected month's daily period load. The year view rolls the same
+  authoritative daily summaries into monthly totals, keeping the page useful for workload scanning
+  without introducing a separate projection table. These aggregate views expand in the date
+  navigation area above the selected day's schedule, so the daily timetable card stays focused
+  only on that day.
+- Preserved the existing operations shell, blue/mint tokens, navigation and timetable list.
+  The new controls use labelled buttons, visible focus states and large touch targets.
+
+Verification:
+
+- `npm --prefix frontend test -- day-plans.test.tsx`: 16 passing tests, including teacher
+  calendar range and aggregation helpers.
+- `DATABASE_URL=postgresql://abhishekyadav@127.0.0.1:5432/omnischool_node_test npm --prefix backend test -- day-plans.integration.test.ts`:
+  19 passing integration tests, including the real teacher summary counts for an accepted
+  coverage assignment.
+- `npm --prefix frontend run build`: TypeScript and Vite production build passed.
+- Managed local preview restarted; `/readyz` reports database/events OK, launchd reports the
+  preview running. Browser check on `/teacher/timetable` showed the day strip, month/year views,
+  the published 16 September schedule and no console errors or page-level overflow at the
+  available viewport. Physical iPhone and full assistive-technology acceptance remain pending.
+
+## Teacher attendance UI polish and live review runtime — 16 September 2026
+
+Implemented as a design-quality pass on the existing attendance register, not a
+new attendance workflow.
+
+- Reworked `/teacher/attendance` into the established student/parent visual language:
+  a blue register hero, clear class context, polished register status cards, compact
+  attendance counters, softer roster cards, neutral unmarked rows, photo avatars,
+  labelled search, and mobile-first controls.
+- Preserved the existing register behavior: full-roster marking, revision/status
+  metadata, principal lock/history actions, follow-up constraints and attendance
+  submission guards.
+- Changed the managed local preview so `http://127.0.0.1:8000` is now the live Vite
+  app with hot React/CSS updates, while the compiled NestJS API runs behind it on
+  `http://127.0.0.1:8001`. This keeps the review URL stable while avoiding rebuilds
+  for frontend UI edits.
+
+Verification:
+
+- `npm --prefix frontend test -- TeacherAttendancePage.test.tsx`: 6 passing tests.
+- `npm --prefix frontend run build`: TypeScript and Vite production build passed.
+- `node --check scripts/preview-server.mjs` and `node --check scripts/local-preview.mjs` passed.
+- Managed live preview restarted once to swap runtime modes. `curl -I http://127.0.0.1:8000/readyz`
+  returned HTTP 200 and `curl -I http://127.0.0.1:8000/@vite/client` returned HTTP 200.
+- Browser check on `/teacher/attendance?class_section_id=581087ee-9894-4b69-ad7c-f02861129c8b&date=2026-09-16`
+  showed the refreshed register. A follow-up CSS contrast edit to the hero status pill
+  appeared in the already-open browser without restarting, confirming HMR for frontend
+  edits. Physical iPhone acceptance remains pending.
+
+## Teacher register interaction and layout revision — 16 September 2026
+
+Abhishek rejected the previous attendance UI pass. This revision replaces its tall
+blue hero and repeated status cards with a compact class/date summary and inline
+totals, following the existing family-portal tokens and blueprint section 6.
+
+- Student rows expose one-tap Present/Absent choices, with Late, Excused, Half day
+  and Not marked available through the same accessible native status selector.
+  Optional remarks open on request; failed photos fall back to initials.
+- All students / Not marked / Exceptions filters and search operate on the current
+  editable roster. Submission still includes the entire class, including students
+  hidden by filters. No blank mark is inferred as presence or absence.
+- A fixed submit bar sits above the existing phone navigation and within the staff
+  workspace on desktop. Locking, correction reasons, concurrent-change handling,
+  retry keys, history and guardian follow-ups retain their existing behavior.
+- Removed the superseded teacher-specific CSS and isolated the new register styles.
+  The shared shell supports a page-owned heading without duplicate H1s.
+
+Verification:
+
+- Eight register tests pass, including quick marks/hidden-note preservation across
+  filters, complete-roster submission, locked controls and existing lifecycle cases.
+- Frontend lint and production build pass. Readiness returns database/events OK.
+- Browser exercised Present, Late, note open/close and explicit reset to Not marked;
+  these unsaved test changes were reset, and no attendance was submitted to the demo DB.
+- Checked 320, 390, 768, 1024 and 1440 px layouts for page overflow. A 320 px filter
+  overflow was corrected and rechecked (client and scroll widths equal).
+- Frontend edits appeared through hot reload without a service restart. The local
+  attendance screen is left open for Abhishek's UI review. Physical iPhone and full
+  assistive-technology acceptance remain pending.
+
+## Teacher timetable date-strip refinement — 16 September 2026
+
+- Removed the standalone Today and previous/next-week controls at Abhishek's request.
+  The date strip opens centered on the active date (today on the default route),
+  supports horizontal scrolling, and recenters after date selection or resizing.
+- Week, Month and Year share one equal-width control row below the strip. Week
+  opens the existing weekly timetable; month/year aggregate views expand above
+  the selected day's teaching schedule.
+- The introductory headline, description and separate weekly link were removed.
+  Following visual review, the selector uses a continuous blue date band with the
+  shared student-home gradient and a uniform contrast overlay, transparent adjacent
+  dates and one white selected-date pill. A small month/year context replaces the
+  old headline. The dark nested tiles and boxed blue buttons were removed.
+- Week/Month/Year sit in a quiet white footer; expanded month/year totals are a
+  separate white section rather than nested inside the blue selector. Scroll-edge
+  fades soften clipped dates, and interactive targets remain at least 44 px high.
+- Date chips use the existing blue theme and full-date accessible labels. Pending
+  totals show a loading state rather than incorrectly labelling missing data as free.
+- Verified centering at initial load and after selecting 17 September, and verified
+  month/year placement in the browser. Frontend build and 16 day-plan tests passed.
+  Local Vite preview updates live without a service restart.
+- The follow-up visual pass verified date selection to 16 September, month/year
+  toggles, and no page overflow at 320, 440, 768, 1024 and 1440 px. Selected dates
+  remained centered within 0.3 px across these checks. Lint and all 16 day-plan
+  tests pass; the revised local timetable is available for user validation.
+
+## Experimental photo-assisted attendance — 16 September 2026
+
+This is an explicit user-directed deviation from the blueprint's initial privacy baseline and
+Stage-D sequencing. It is implemented as a feature-flagged local experiment, not approved as a
+production biometric capability. A real-student pilot still requires school privacy/legal review,
+purpose-specific authorization, a non-biometric alternative, accuracy calibration, liveness and
+operating procedures. The UI and API make no accuracy or liveness claim.
+
+- Adapted the MIT-licensed Attendance Lab inference core into a private Python sidecar. Copied
+  capabilities are limited to image validation, tiled YuNet detection, SFace embeddings,
+  conservative one-to-one matching, encrypted local templates and seven-day analysis evidence.
+  The prototype UI, database, credentials, test images and local data were not copied. Model
+  binaries remain ignored and are obtained with manifest/hash verification.
+- NestJS owns authenticated school/class scope, current staff assignment, principal-only reference
+  enrollment, authorization references, audit events and final attendance. PostgreSQL stores only
+  opaque provider identifiers and analysis provenance, not raw photos or embedding vectors. The
+  sidecar is loopback/private-network only and uses a generated service token plus an encrypted
+  SQLite store. The original classroom photo is not retained by the platform.
+- A teacher opens **Take from photo** inside the existing class register, captures or selects one
+  image, and reviews every roster row. Only strong one-to-one matches can suggest Present. Missing,
+  unmatched and low-quality faces remain unmarked; photo processing never infers absence. All rows
+  must be explicitly marked before returning to the register, and the result remains an unsaved
+  draft until the normal revision-checked bulk submit succeeds.
+- Principals see a separate **Reference setup** tab with an authorization reference, explicit
+  authority acknowledgement, roster coverage and per-student enrollment. Teachers cannot enroll
+  references. The ordinary manual register is always available if setup or inference is unavailable.
+- Migration 017 adds tenant/class/person-constrained bindings, profiles and seven-day analysis
+  sessions. A successful register submission links and atomically marks its source photo session
+  applied; mismatched, expired, already-applied or cross-school sessions are rejected. Existing
+  register idempotency, locks, corrections, events and audit behavior remain authoritative.
+- The managed local preview now keeps the private sidecar alive alongside NestJS and the hot Vite
+  client. A project-local Python environment avoids macOS launch-service access stalls. Docker
+  Compose has the same service boundary, persistent encrypted data/model volumes and health gate.
+
+Verification:
+
+- Photo sidecar: **6 tests passed**, including private-route authentication, no prototype web UI,
+  no accuracy claim, zero-face behavior and the invariant that not-seen is never absence.
+- Backend: lint/build pass; the isolated clean PostgreSQL suite passes **134 tests** (133 existing
+  cases plus the photo proposal-mapping invariant). Migration 017 was applied to the local demo
+  database and to the isolated test fixture.
+- Frontend: lint/build pass and **120 tests pass**, including reviewed photo marks remaining an
+  unsaved draft and carrying their source session into the audited register submission.
+- Runtime: `/readyz` reports database/events OK. The private health endpoint reports OpenCV,
+  verified model files present, seven-day retention and `accuracy_validated=false`. The actual
+  teacher register showed the new entry point and safe zero-reference fallback. The principal
+  view showed the authorization-gated, principal-only roster enrollment flow. The themed dialog
+  was visually inspected at the current phone-sized viewport without horizontal overflow.
+- No real biometric reference was enrolled and no attendance was submitted during verification.
+  Physical iPhone/camera capture, real classroom calibration, assistive-technology acceptance,
+  privacy/legal approval and production operations remain open release gates. Await Abhishek's UI
+  validation before widening or enabling this outside the local review environment.
+
+## Attendance register action polish — 17 September 2026
+
+- Kept the existing theme, class summary, roster, shared navigation and attendance lifecycle.
+  On phone layouts, Take from photo and Mark all present now share an equal-width action row
+  below the section heading instead of stacking against its right edge.
+- Replaced inherited full-width management-button styling with scoped, compact History and
+  Lock/Unlock controls. Icons and labels stay together; all four actions retain 44 px target
+  heights, keyboard focus styling and existing permission/disabled behavior.
+- Verified no page or action-label overflow at 320, 390, 768, 1024 and 1440 px. Reviewed the
+  live phone layout and opened/closed history and the photo dialog. The nine existing register
+  tests, frontend lint and production build pass. Local readiness reports database/events OK.
+- Changes appeared through Vite hot reload without restarting services. No register was
+  submitted or locked, and no student data was changed. Local UI is available for user review;
+  physical-device and assistive-technology validation remain separate acceptance checks.
+
+## Live mobile preview tunnel — 17 September 2026
+
+- Repointed the reserved ngrok URL from the old attendance-lab process to the active local
+  ThatCampus preview on port 8000. Vite now accepts the reserved ngrok host during local review,
+  so phone sessions reach the hot React dev server instead of receiving a host-header 403.
+- Verified `http://127.0.0.1:8000` returns HTTP 200, the ngrok inspector reports
+  `https://dalene-miraculous-sweepingly.ngrok-free.dev` forwarding to `http://localhost:8000`,
+  and the public URL returns HTTP 200. The tunnel is intentionally a running local review
+  session, not a production deployment.
+
+## Photo roll-call mobile sheet polish — 17 September 2026
+
+- Changed the photo roll-call dialog to match the existing class schedule bottom-sheet behavior
+  on phone widths: bottom aligned, edge-to-edge, top grab handle, safe-area aware height and
+  internal scrolling. Desktop/tablet keeps the centered modal treatment.
+- Verified in the live browser at 320 x 760 and 390 x 844 with no horizontal overflow and exact
+  viewport-width sheet geometry. At 768 x 900 it returns to the 720 px centered modal. Frontend
+  lint, the nine attendance-register tests and the production build pass.
+
+## Reference photo source choices — 17 September 2026
+
+- Principal reference setup now offers separate Camera and Upload actions for each student.
+  Camera keeps the user-facing camera capture hint; Upload opens the normal photo/file chooser.
+  Successful enrollment shows a short animated Added tick on the student row after the setup
+  data refreshes.
+- Verified the reference setup tab at 390 px: the actions are side-by-side, equal width and
+  there is no horizontal overflow. Frontend lint, the nine attendance-register tests and the
+  production build pass. No biometric reference sample was enrolled during verification.
+
+## Reference enrollment angle handling — 17 September 2026
+
+- Separated broad face detection from the stricter classroom matching quality gate. The
+  principal-authorized reference path now accepts a usable three-quarter left/right angle at a
+  lower detector confidence and wider landmark asymmetry without changing classroom automatic
+  match thresholds, absence safeguards or the one-person-only rule.
+- Zero-face and multi-face failures now use plain, actionable guidance. Internal labels such as
+  `weak_detection` and messages such as `expected exactly one face, found 0` are no longer shown
+  to school staff. Full profiles are still rejected because the active five-landmark model needs
+  both eyes for a dependable reference embedding.
+- Added sidecar coverage for a usable lower-confidence enrollment angle and a zero-face failure;
+  all **8 photo-attendance tests pass**. The live React/API/photo sidecar and reserved ngrok tunnel
+  were restarted together, and the public app returned HTTP 200. A real side-view student photo
+  was not retained or reused for automated verification.
+
+## Photo review evidence and proposal repair — 17 September 2026
+
+- Traced the broken face cards to the provider returning raw JPEG base64 while the web client
+  requires an image data URL. The NestJS boundary now normalizes provider thumbnails to
+  `data:image/jpeg;base64,...`; the React evidence card also has a themed, non-broken fallback if
+  evidence cannot be decoded.
+- Traced the missing Present suggestion to a clear enrolled face scoring 0.784 at the detector
+  stage while the default detector floor was 0.88. The detector floor is now 0.75. Identity
+  similarity, match margin, duplicate-face protection and teacher review remain unchanged, so
+  lowering this detector-confidence gate does not allow unmatched classmates to be guessed.
+- Only students with authorized reference samples can receive automatic Present suggestions.
+  Unmatched/not-seen students deliberately stay unmarked; the teacher must review every roster row,
+  return reviewed marks to the register, and submit through the existing audited register flow.
+- Added provider regression coverage for a clear face above the revised detector floor and backend
+  coverage for raw-base64 thumbnail normalization. Photo sidecar **9 tests pass**; the targeted
+  backend service test, frontend lint and production build pass. The local web/API/photo stack was
+  restarted and `/healthz` returned OK. The real classroom photo was not retained or replayed by
+  the implementation verification.
+
+## Nested detection suppression and local vision cross-check — 20 September 2026
+
+- Investigated a real demo analysis without retaining or printing biometric pixels. The correct
+  full-face detection was approximately 1083×1329 px; a second 336×443 px detection was completely
+  contained inside it and corresponded to the subject's nose. Standard IoU NMS did not suppress it
+  because the inner region was small relative to the outer face.
+- Added asymmetric nested-detection suppression after ordinary NMS. A smaller detection is removed
+  only when at least 90% contained by a box roughly three times larger; this targets facial-region
+  artifacts without merging ordinary partially overlapping classmates. A regression case verifies
+  that the larger full-face box wins even when the nested artifact has the higher detector score.
+- Reconnected the existing provider-neutral analysis-mode field through React, NestJS and the
+  private photo service. Setup now reports local vision-model availability, and the capture sheet
+  offers an accessible **Local AI cross-check** option. In local development it uses the installed
+  Ollama `qwen3-vl:4b-instruct` model; unavailable or malformed model output fails safely to manual
+  review. LLM output remains a proposal and cannot infer absence, bypass full-roster review, or
+  submit the authoritative register.
+- The local analysis timeout is aligned to five minutes for the on-device vision model. Photo
+  service **11 tests pass**, including nested suppression and an end-to-end local-LLM request;
+  the backend targeted test/build, frontend lint and production build pass. Local `/healthz` and
+  the approved dummy-data ngrok URL returned HTTP 200 after restart. Physical UI inspection is
+  awaiting an unlocked host and user validation on the phone.
+
+## Local vision-model fallback — 20 September 2026
+
+- Fixed a local photo-attendance failure where Ollama could be running with a text-only model and
+  return `Multimodal data provided, but model does not support multimodal requests`. The photo
+  sidecar now checks model image capabilities when available and, more importantly, catches this
+  provider error during analysis.
+- A failed or non-image-capable local AI cross-check no longer fails the whole photo roll-call.
+  The system falls back to the existing face-embedding proposals, returns a staff-facing warning,
+  and keeps the full roster review requirement. It still never infers absence from a photo.
+- Verification: frontend production build passed; backend production build passed from the
+  hydrated preview copy; a direct sidecar regression covered normal vision mode, non-vision model
+  status and the exact multimodal provider error. The live local preview was restarted and both
+  `http://127.0.0.1:8000/login` and the reserved ngrok `/login` returned HTTP 200.
+- Follow-up correction: separated the photo-attendance vision model from the backend text copilot
+  model. Local preview and Compose now pass `qwen3-vl:4b-instruct` to the photo sidecar through
+  `PHOTO_ATTENDANCE_OLLAMA_MODEL`, while `OLLAMA_MODEL=qwen3:8b` remains available for text-only
+  assistant work. The running sidecar reported `supports_images=true` for `qwen3-vl:4b-instruct`;
+  local and ngrok `/login` returned HTTP 200 after restart.
+
+## Dated attendance eligibility and register integrity — 20 September 2026
+
+- Replaced term-wide teacher assignments as the daily attendance source with the effective
+  timetable for the selected school date. A teacher now sees and can act only on an active
+  class/activity period assigned to them, or accepted dated cover. Administrators retain
+  school-wide oversight only for classes that actually have an attendance-eligible period.
+- Enforced the same rule at every write boundary. Direct/stale register URLs are read-only,
+  photo analysis cannot start, the transactional bulk-save path rechecks the effective schedule
+  after locking the class/register context, and overdue-alert generation ignores cancelled or
+  unscheduled lessons. Future dates and empty rosters remain non-actionable.
+- Daily teacher/principal summaries, due/submitted counts, empty states and monthly/yearly period
+  totals now derive from the same dated schedule semantics. Existing records are never silently
+  deleted: records without a lesson stay visible for principal review as schedule mismatches.
+- Added a second integrity check for the saved submitter. A submitted register counts complete
+  only when its submitter is an active administrator or matches the current dated teacher/accepted
+  cover assignment. The local Saturday Class 6A legacy record is therefore shown as an
+  **Assignment mismatch**, remains auditable, and no longer inflates the submitted count.
+- Verification: frontend targeted suites pass **17 tests**, frontend production build and lint
+  pass, backend build and lint pass, photo/event service suites pass **4 tests**, and the focused
+  PostgreSQL integration suite passes all **4** dated-schedule, future-date, authorized-submit and
+  overdue-alert cases. Live browser review confirmed Sunday shows zero due registers for teacher
+  and principal, a stale teacher link is fully read-only, Thursday shows only three genuinely
+  assigned classes, and Saturday surfaces the legacy assignment mismatch. Local and reserved
+  ngrok `/login` endpoints both returned HTTP 200 after restart.
+
+## Persistent local mobile-review supervisor — 21 September 2026
+
+- Consolidated the React dev server, NestJS API, private photo-attendance worker and reserved
+  ngrok tunnel under the detached `preview-daemon` supervisor. The supervisor remains attached to
+  PID 1 for the current macOS session and stops the whole stack if a required child exits, avoiding
+  a misleading tunnel that serves only part of the application.
+- Isolated frontend, backend and photo-service execution under the OS temporary directory so
+  iCloud-backed `Documents` hydration cannot stall dependency discovery after screen lock.
+  Dependency installs are content-hash cached; frontend/backend source edits are mirrored into
+  the runtime automatically, and transient Python caches are excluded from runtime copies.
+- Replaced `tsx` execution with a TypeScript build/watch plus Node watch process because NestJS
+  constructor injection requires emitted decorator metadata. This repaired the frontend shell
+  loading while `/api/v1/auth/session/` returned 500.
+- Verification: the detached supervisor is running with PPID 1; local web and photo health return
+  HTTP 200; the local and public session endpoints return HTTP 200; and a teacher/staff demo session
+  is created successfully through `https://dalene-miraculous-sweepingly.ngrok-free.dev`.
+
+## Stage feature-line integration — 29 September 2026
+
+- Integrated the latest `origin/Stage` administration, fees, governed chat and safeguarding work
+  with this branch's attendance, timetable, people, day-plan, event-delivery and photo-attendance
+  modules. Both backend module graphs and all mobile routes remain registered; teacher attendance
+  access keeps the stricter dated-assignment rule.
+- Kept Stage's already-published chat/operations migration filenames unchanged so previously
+  applied migration checksums remain valid. The independent attendance/event migrations coexist
+  under their distinct full filenames and are serialized by the existing advisory-locked runner.
+- Preserved release-time migrations and explicit demo seeding in the Stage workflow; container
+  startup remains schema read-only. The repeat-safe operations seed now runs in isolated CI and
+  only during an explicitly requested Stage re-seed.
+- Verification from an index-backed local copy: backend build, typecheck and lint pass; **37**
+  backend unit/safety tests pass; mobile typecheck, lint and production build pass with **134**
+  tests; desktop typecheck and production build pass. Database integration remains delegated to
+  the workflow's disposable PostgreSQL service because no isolated local PostgreSQL server was
+  available during this merge.
+
+## Campus events and activities — 30 September 2026
+
+- Added school-scoped event drafts, publishing, cancellation and completion for excursions,
+  annual functions, sports, workshops, competitions, assemblies, PTMs, clubs and other school
+  activities. Teachers can create assigned class tests within their dated class/subject scope.
+  Event participation and event-session attendance remain explicitly separate from the daily
+  academic attendance register.
+- Principal operations cover audiences, independently configured mandatory/optional participation,
+  RSVP, purpose-specific guardian consent, staff duties, programme sessions, subgroup rosters,
+  packing requirements and event attendance. Family views expose only linked-child participation
+  and per-session attendance. Cursor pagination uses an explicit Load more action rather than an
+  unbounded background fetch, and event routes preserve each role's established primary navigation.
+- Paid optional events create the authoritative invoice only after acceptance. A pre-event family
+  withdrawal removes the place, preserves the invoice/payment record and appends a full credit.
+  Collected money becomes refund due; authorized finance staff record a manual cash, bank-transfer
+  or cheque refund with amount, reference and reason. No gateway refund is claimed. Event
+  cancellation uses the same immutable credit/refund reconciliation path and is deliberately
+  blocked after the event starts; a post-start abort/reconciliation workflow is a separate release.
+- Migration 019 adds append-only withdrawal, invoice-credit and refund facts with integer paise,
+  school-scoped references, over-credit/over-refund guards, audit, idempotency and outbox delivery.
+  Broad event invalidations contain no child identity; linked-family notifications retain their
+  private context. Ordinary event staff receive only coarse payment readiness, while authorized
+  finance users and the linked family can see the relevant ledger-derived amounts.
+- The final clean-copy backend campus-event, authorization, finance, migration and privacy gate
+  passes **34 tests**; backend typecheck, lint, production build and the **8-case** repeat-safe seed
+  verification pass. Responsive frontend typecheck, lint and production build pass, alongside
+  **37 focused event/API/realtime/navigation tests** run serially to avoid the workspace worker
+  startup issue.
+- The local PostgreSQL review tenant was migrated and loaded successfully with **203 students and
+  203 guardian relationships**, including the three legitimate post-fixture students. The event
+  reconciliation seed was then run again successfully: immutable payments/consent authorities are
+  guarded before their validation triggers, upcoming Class 7A rosters reconcile to **27 students**,
+  and completed/locked event history is not expanded by later enrollments.
+- UI checkpoint: principal/teacher operations plus parent/student event and reconciliation screens
+  are ready for Abhishek's review. Physical-phone and assistive-technology acceptance remain open.
+- Principal event creation was blocked by malformed SQL in the subject catalog's lateral query.
+  Removed the extra closing parenthesis and added a principal/teacher catalog integration case.
+  Verified the live principal and teacher catalog APIs each return HTTP 200, the local and ngrok
+  `/principal/events/new` routes each return HTTP 200, and backend typecheck passes. The new
+  automated integration case could not run locally because the existing disposable test database
+  role lacks `campus_events` access; the real local review database endpoint was exercised instead.
+- Release boundaries remain explicit: generic events do not yet perform the new symmetric
+  participant-level collision pass against an already-published class test; accountless assisted
+  event consent/RSVP needs a school-approved purpose-authority and attribution design; and the
+  repository-wide non-owner PostgreSQL runtime/RLS context remains the existing B6 release gate.
+
+### Event-register attendance interaction consolidation — 13 October 2026
+
+- The event-session register now renders participants through the same reusable attendance row,
+  search/filter controls and fixed submit bar as the class register. Event statuses are supplied
+  as typed configuration rather than implemented through a second roster interaction, while
+  event-only readiness, observed-time, check-in/out and immutable correction evidence remain
+  contextual details inside that shared row.
+- Replaced the competing summary tiles and permanently visible lock controls with one compact
+  progress summary and one current next action. Register locking remains an explicit, reasoned
+  disclosure after all decisions are complete; event attendance remains separate from academic
+  attendance.
+- Verified the focused class/event attendance regression suites (**47 tests**), targeted frontend
+  lint, and a clean production build excluding unrelated local duplicate scratch files. Physical
+  phone review and user acceptance of the consolidated interaction remain open.
+- Follow-up from phone review: styled the History control consistently, restored the 16px
+  separation between filters and roster, and omitted empty row detail containers (React arrays
+  containing only null children had produced blank dividers). The 47 focused tests still pass.
+- Historical event entry now requires an explicit observed time instead of assigning receipt time
+  to old sessions. A batch time applies to unsaved physical marks, with individual editing retained;
+  client validation prevents out-of-window submission, and bulk marking preserves existing decisions.
+- Migration 082 adds school-scoped observation-window settings (0–168 hours before/after, defaults
+  2/4). The central Operating rules screen exposes the editor; backend membership checks restrict
+  updates to active administrators, revision checks prevent stale updates, and policy changes plus
+  the policy used for each attendance save are audited. This user-requested parameter configuration
+  is immediate; the blueprint's broader draft/rehearsal/scheduled-policy lifecycle remains unimplemented.
+- Verification: 49 focused frontend tests pass, backend build and targeted lint pass. Migration 082
+  applied to the local review database. Cloud deployment and real-phone acceptance remain pending.
+
+## Stage navigation and deployment integration — 30 September 2026
+
+### Central operating rules — 13 October 2026 (local)
+
+Phone-review correction: text-only category rows now use a two-column label/chevron
+layout rather than occupying the shared list's 39px icon column. Removed the nested
+outer card and shortened the introductory copy. The actual component with shared CSS
+was visually checked in 320/390px constrained browser fixtures, with larger widths
+also measured; labels remain full-width and all rows retain 58px touch targets.
+The category navigation regression test passes. Authenticated phone acceptance remains open.
+
+Follow-up: migration 083 adds bounded institution-wide submission, event entry/locking,
+journey lead-time and message edit/upload-size rules. Admin writes are scope-checked,
+revision-checked and audited transactionally. Event capability checks and Requests use
+the same timing values as write gates; message edit affordances use a server-provided
+expiry. Runtime AI model/tool budgets are now bounded environment configuration; shared
+billing caps and safety invariants are not tenant-editable. Current defaults are preserved.
+The local migration is applied. Rollback-only verification passed save/read, stale-write
+rejection, staff read/write denial, cross-school denial and audit creation. Cloud rollout,
+cross-device proactive rule refresh and authenticated phone acceptance remain pending.
+Follow-up checks passed: 106 focused backend tests, 39 focused frontend tests, backend
+build and a clean frontend production build (excluding the previously noted duplicate
+scratch files). Local and Cloudflare readiness both report database/events healthy.
+
+- Added admin-only Institute settings → Operating rules, with separate event attendance,
+  leave cover, departure/transport and messaging editors using the existing domain APIs.
+- Removed transaction-screen event settings, moved cover fallback controls out of leave
+  entitlements, and linked transport setup and messaging privacy to the central editors.
+- Collected additional code/runtime-controlled rules and their ownership in
+  `docs/blueprint/OPERATING_RULES.md`; those are not represented as editable or migrated.
+- Verification: 51 focused event/staff/rule-index tests passed; backend compilation and a
+  clean frontend production build passed. The clean build excludes pre-existing duplicate
+  scratch files whose test typings fail the unfiltered workspace build. Local and Cloudflare
+  `/readyz` both report database/events healthy. Authenticated phone visual acceptance and
+  cloud deployment are pending. Messaging still lacks optimistic revision checks.
+- Merged Stage's mobile More, Calendar and Teacher Classes routes and desktop design-system update
+  with the campus-event routes. Teacher and principal event entry points now live in More rather
+  than duplicate home-page actions; parent events are also reachable from More, and event screens
+  keep More selected in each role's navigation.
+- Reconciled Stage's desktop fee-ledger presentation with the event-credit accounting rules:
+  adjusted billed, outstanding and refund-due figures remain ledger-derived, credited invoices
+  cannot accept further payments, and the displayed collection state reflects refunds.
+- Verified mobile, desktop and backend typechecks and production builds; desktop's 11 tests,
+  the 23 focused campus-event UI tests, and the event-navigation route test pass. Backend lint and
+  52 non-database tests pass. Full backend integration still requires CI's isolated PostgreSQL
+  service; the local test command has no `DATABASE_URL` and therefore cannot run those suites.
+- Stage deployment verification remains pending until its push-triggered CI workflow and Railway
+  health gate complete; this line does not claim a successful deployment before that evidence.
+- The first push (`d95b7cf`) passed the secret scan and isolated backend integration tests but
+  did not deploy: mobile CI failed on two timing-sensitive parent-home tests and one event-time
+  assertion that depended on the runner's timezone. Event and attendance times are now rendered
+  in `Asia/Kolkata`, and the mobile test runner uses bounded worker concurrency and realistic
+  timeouts. The follow-up full CI and Railway health gate are still pending.
+- Mobile navigation now shows at most four tabs per role, including More; teacher/principal
+  messages and safeguarding, parent timetable/leave, and student diary/messages remain reachable
+  in More. Removed the redundant More shortcut beside each top-bar avatar and added a regression
+  test for the four-tab/header rule.
+
+## Responsive school administration and fees — 30 September 2026
+
+- The principal More catalogue now opens responsive **School administration** and **Fee ledger**
+  routes in the established operations shell. Administration includes academic terms/classes/
+  subjects, reviewed class promotion, existing student/guardian enrolment and import links,
+  invitations, member permissions, audit history and new-school provisioning. Existing backend
+  permission, transaction and audit boundaries remain authoritative for every command.
+- Principal fees show ledger-derived adjusted billed, received, outstanding and refund due,
+  student filtering, immutable invoice posting, confirmed offline cash/bank/cleared-cheque
+  receipts and a printable statement. Parent/student More pages now expose linked-child
+  read-only invoices and receipts through the existing family-scoped fee endpoint. This is
+  **not** an online payment gateway or completed bank reconciliation workflow.
+- The operations overview and invoice picker now include accountless canonical students;
+  the overview guardian list also reads canonical school people rather than requiring a login.
+  An isolated-database integration case covers accountless invoice eligibility, but was not
+  run in the local live review database because that test mutates records. The local demo
+  administrator API returned 203 students in administration and the fee picker, and 16
+  invoices; linked demo parent and student fee reads each returned HTTP 200 with one invoice.
+- Responsive frontend typecheck, lint and production build pass; the 42 route tests and five
+  backend operations unit tests pass. Backend typecheck and build pass. The managed local
+  preview returned HTTP 200 for `/principal/fees`, and `/readyz` reported database/events OK.
+  Visual acceptance on the user's phone remains open; no Stage/Railway deployment is claimed.
+- Mobile principal administration now uses a compact school overview, current-term context,
+  sticky icon tabs, task-first setup links and collapsed high-consequence workflows for class
+  promotion and school creation. Access management separates invitations from members and keeps
+  every existing authorization, confirmation and audit path intact.
+- Mobile fees now leads with collectible balance and supporting ledger totals, separates invoice
+  and receipt registers, exposes invoice and print tasks as large controls, and presents each
+  invoice as an actionable balance card. The linked-family read-only ledger retains its compact
+  invoice layout. The refreshed frontend passes typecheck, lint, production build and all **163**
+  tests; the live local routes `/principal/administration`, `/principal/fees` and the shared office
+  stylesheet each return HTTP 200. Physical-phone visual acceptance remains open.
+- Academic setup is now a persistent catalogue workflow rather than an inline demo form. Terms,
+  classes and subjects open in an accessible desktop dialog/mobile bottom sheet, preserve the
+  selected record, expose dependency counts, and save all supported fields. Term availability and
+  subject timetable color/icon are editable. Member access editing now uses the same immediately
+  visible sheet instead of rendering below the long staff directory. Linked-record changes require
+  an explicit impact review and reason; academic-year transitions remain new records instead of
+  rewriting history.
+- Migration `021_school_catalog_concurrency.sql` adds catalogue revisions, accountable editor/time
+  fields and structured operations-audit metadata. Updates use optimistic concurrency, retain
+  stable record IDs, reject no-op/stale writes, append target/reason/dependency context to audit,
+  and enqueue `administration.updated` in the same transaction for authorized event-driven cache
+  refresh. Hard deletion is deliberately not exposed because referenced timetable, enrollment and
+  attendance history must remain intact.
+- Verification after this change: backend typecheck, lint and production build pass with the
+  focused catalogue validation test; frontend typecheck, lint, production build and all **169**
+  tests pass. The local migration is applied, `/readyz` reports database/events OK, and the live
+  administration read model returns HTTP 200 with **203 students, 1 term, 8 classes and 8
+  subjects**. The new isolated-PostgreSQL conflict/audit/outbox integration case is committed for
+  CI but was not run against the shared local demo database. Physical-phone UI acceptance remains
+  open.
+
+## Role-aware Home action inbox — 1 October 2026
+
+- Replaced permanent empty action panels with a role-scoped, priority-sorted Home action projection.
+  Parent and student views derive the next event step from RSVP, guardian consent, fee balance and
+  required checklist state; declined or withdrawn participation no longer leaks into preparation
+  actions. Leave signatures and diary acknowledgements share the same queue.
+- Teacher Home exposes only assigned attendance registers, owned attendance follow-ups and assigned
+  event duties. Principal Home consolidates all incomplete registers into one operational action so
+  event and coordination work is not crowded out. Empty action, follow-up, diary and class modules
+  are omitted rather than showing reassuring placeholders.
+- Domain records remain authoritative. The Home queue contains links and summaries only, and each
+  mutation still executes in its owning leave, diary, coordination, attendance, fee or event module.
+  Diary acknowledgement now writes its outbox event in the same transaction; campus-event and
+  coordination events invalidate only affected Home caches over the existing SSE channel.
+- Verified against the seeded local database for parent, student, teacher and principal personas.
+  Backend/frontend typechecks, lint and production builds pass. The focused Home, realtime protocol
+  and route suite passes **60 tests**. `/readyz` reports database/events OK; physical-phone visual
+  acceptance of the new Home hierarchy remains open.
+
+## Role-aware Home hierarchy — 1 October 2026
+
+- Reworked the teacher Home first as the design pilot, then applied the approved hierarchy to parent,
+  student and principal Home while preserving each role's established navigation and identity patterns.
+  Teacher and principal use the cobalt feature surface for current operational state, progress and the
+  single highest-priority action. Parent and student retain the blue digital identity card and attach the
+  single live action as a separate accessible dock, so tapping the card still opens student identity.
+- Lower-priority work moves into a quiet, single-heading `Later` list. Empty action, follow-up and
+  principal exception modules do not reserve space. Principal totals no longer compete with exceptions
+  and register workload, while parent term metrics now read as one grouped surface rather than four
+  unrelated cards.
+- Attendance progress is represented once, with the full register rows remaining authoritative and
+  directly actionable. Detailed follow-ups still render only when open, and timetable detail remains
+  one tap away. The established ThatCampus type, cobalt accent, shell, headers and navigation are unchanged.
+- The teacher pilot received user visual approval. Cross-role typecheck, focused tests, production build
+  and local route health are the acceptance checks for the expanded implementation; phone review of
+  parent, student and principal Home remains the final visual gate.
+
+## Shared heading hierarchy — 2 October 2026
+
+- Standardized the parent and staff shells around one direct page label. Staff shell subtitles no
+  longer create an uppercase heading above the page title, and routes with their own content heading
+  suppress the duplicate shell title. Parent page labels now use the same formal title treatment on
+  every route.
+- Replaced promotional or ambiguous labels including “Academic Pulse,” “Presence Pulse,” “School
+  pulse,” “Next best actions,” and “work desk” with task-oriented names such as “Current class,”
+  “Today's attendance,” “Today,” “Class registers,” and “Diary.” Administration, fees, events, More,
+  and student services use the same plain-language hierarchy without changing the established theme,
+  navigation or workflow behavior.
+- Frontend typecheck, lint, production build, and all **177** tests pass. The rebuilt local Docker
+  preview reports database/events ready and the teacher Home hierarchy was visually checked at the
+  mobile breakpoint. Cross-role user visual review remains the acceptance gate; no external deployment
+  or production-readiness claim is made by this entry.
+
+## Operational surface density — 2 October 2026
+
+- Consolidated the teacher/principal attendance summary to one editable date, one set of authoritative
+  register totals and one list heading. Removed the repeated human-readable date, duplicate due count,
+  decorative icon and explanatory paragraph while preserving assignment-mismatch, review and audit
+  behavior.
+- Reduced minimum height and padding across shared timetable, class and campus-event feature surfaces.
+  Generic explanatory copy was removed where the adjacent data and controls already communicate the
+  task. Student attendance no longer repeats its percentage inside the donut, eligibility policy copy
+  is concise, and the diary summary no longer repeats shell-level student identity.
+- Teacher and student Home identity/day cards were explicitly excluded and are unchanged by this pass.
+  Frontend typecheck, lint and all **177** tests pass. The local teacher attendance route was visually
+  checked at the mobile breakpoint; cross-role physical-phone review remains open.
+
+## Principal family contact directory — 2 October 2026
+
+- Reworked Students & guardians into a mobile-first contact directory. Students are grouped by
+  name initial, represented by their persisted profile photo with an initials fallback, and paired
+  with compact guardian avatar stacks. Expanding a student reveals linked guardian phone,
+  relationship, login state and the existing authority-management action without duplicating every
+  family record in the default scan view.
+- Search now updates after a short debounce and A–Z controls request an exact server-side initial.
+  The people API returns student `avatar_url`, orders stable cursor pages by student name, and
+  preserves authorization and 25-row pagination. The frontend includes a compatibility fallback for
+  older review backends so alphabet filtering remains accurate while the backend release catches up.
+- Frontend typecheck, lint and all **177** tests pass; backend typecheck and lint pass. The local
+  principal directory, expanded guardian row and alphabet filtering were visually checked at the
+  mobile breakpoint. The isolated people integration suite could not complete against the already
+  active shared database and remains an open release check.
+
+## Adult profile imagery — 2 October 2026
+
+- Added six consistent, square directory portraits for four seeded guardians (Pooja Sharma, Rashmi
+  Joshi, Nandita Deshmukh and Pooja Chauhan), principal Meera Kapoor and teacher Kavita Mehta. The
+  assets are bundled with the application rather than referenced from expiring external URLs.
+- Added additive `avatar_url` fields to account and school-person identities. Authentication now
+  carries adult account imagery, the people directory returns the guardian image, and chat recipient
+  discovery falls back from a student portrait to the adult account portrait. The deterministic school
+  generator preserves all six mappings across reseeds.
+- The shared account menu, demo persona picker and family contact directory render the same identity
+  image with initials retained as the fallback. A temporary exact-person frontend fallback keeps the
+  local review UI complete while an older backend remains connected.
+- All seeded student directory rows now have a stable visual fallback when an older API omits
+  `avatar_url`. The four generated guardian portraits are distributed deterministically across every
+  seeded guardian profile and parent account; local verification reports **201/201** guardian school
+  profiles and **199/199** parent accounts with persisted imagery.
+- The migration was applied transactionally to the local PostgreSQL database and verified for all six
+  intended people. Frontend/backend typecheck and lint pass, all **177** frontend tests pass, all seed
+  integrity tests pass, and backend unit tests pass; database integration suites still require their
+  isolated `DATABASE_URL` test database.
+
+## Role-aware operational calendar — 2 October 2026
+
+- Replaced the month-only calendar with URL-addressable Month and Day modes. Month navigation,
+  day navigation, Today, direct date selection and the seven-day Day strip all keep the selected
+  school date in the URL, so refresh and back/forward navigation preserve the current context.
+- Calendar indicators now aggregate the records relevant to each role: campus events and class tests
+  for all authorized audiences, attendance and leave for students and families, and school holidays for every
+  portal. Selecting a date opens the existing authoritative timetable, register, leave or event
+  workflow rather than duplicating mutations inside the calendar.
+- Added a tenant-scoped school-calendar read endpoint with active-membership authorization, strict
+  ISO date validation and a bounded 92-day range. The deterministic school seed and additive
+  migrations include Gandhi Jayanti as a non-instructional day. Non-instructional overrides suppress
+  recurring periods and register workload while retaining explicitly scheduled events.
+- Loading, empty, error/retry and selected-day states are present, indicators pair shape/labels with
+  colour, and controls retain keyboard-visible native button semantics. The existing ThatCampus cobalt
+  visual system, role headers and navigation remain unchanged.
+- Frontend/backend typecheck and lint pass, the production frontend build passes, all **180** frontend
+  tests, **53** backend non-integration tests and all **8** deterministic seed integrity tests pass. The localhost preview is healthy
+  and Month, Day, event and holiday states were visually checked at the mobile breakpoint. Physical
+  phone and cross-role visual acceptance remain the release gate; the additive calendar migrations
+  still need to be applied through each deployment environment's normal migration pipeline. Database
+  integration suites remain unverified because this workspace has no isolated integration-test
+  `DATABASE_URL`; they were not pointed at the active shared database.
+
+## Principal timetable mobile hierarchy — 2 October 2026
+
+- Simplified the principal daily timetable without changing its workflow or navigation. The page now
+  has one `Timetable` heading, a compact date/class selector, concise class context and the existing
+  weekly-view path. Repeated date headings and promotional schedule labels were removed.
+- Replaced the overlapping iOS date/class row with a responsive grid that stacks the native controls
+  on phones. Non-instructional days hide the class selector because class choice cannot change a
+  school-wide closure. The native date/select controls use grid stretching rather than percentage
+  widths, preventing iOS Safari from resolving the date input against the outer card and overflowing
+  its padded content area.
+- A non-instructional date with no explicit plan now renders one compact school-closure surface. It
+  does not offer prepare or print actions that cannot produce a valid regular schedule. Explicitly
+  published dated plans remain visible and editable under the existing authorization and validation
+  rules. Its action opens the school calendar instead of repeating the weekly-view action.
+- Normal school days retain plan preparation, revisions, printing, coverage, history and the full
+  period list. Empty instructional schedules use a compact inline state rather than reserving a large
+  card. The established ThatCampus type, cobalt palette, staff header and four-tab phone navigation are
+  unchanged. The selected class, schedule status, revision control and print control now share one
+  schedule header rather than repeating the class context in a separate block.
+- All **180** frontend tests, the production build, typecheck and lint pass. The Gandhi Jayanti closure state and a
+  populated Class 6A day were visually inspected at the mobile breakpoint in the live local preview.
+  Physical-phone acceptance remains open.
+
+## Mobile term timetable management — 2 October 2026
+
+- Replaced the principal's flat weekly management list and single-period form with a class-first,
+  term-scoped management workspace. The primary `Timetable` module continues to open the published
+  schedule; principals enter `Manage timetable` only when changing the weekly plan, targets or school
+  dates. A principal can select an academic term, swipe between classes and weekdays,
+  see completed class-days, total periods and teacher/room conflicts, then edit only the focused
+  day's ordered schedule. The weekly baseline remains the authoritative pattern repeated throughout
+  the selected term; dated day plans continue to own exceptions and cover changes.
+- Period editing now uses a phone bottom sheet with large native controls and automatic next-period
+  defaults. New periods start five minutes after the focused day's final period and retain the
+  selected class, room, term and weekday. Class periods require a subject; breaks and activities use
+  a descriptive title. Existing period edit and removal paths remain available from each row.
+- Added an atomic Copy day workflow for one or more target weekdays. Existing days are visibly
+  identified and require an explicit replace confirmation. The server validates term/class scope,
+  active school ownership, target contents and teacher/room clashes while holding the school's
+  schedule transaction lock; replacement, audit history and the timetable outbox event commit in the
+  same transaction. Published dated plans remain protected from silent baseline changes.
+- The principal timetable read model now exposes all school terms, selects one explicitly through
+  the URL and filters class/slot/conflict data to that term and academic year. Existing slot creation
+  also accepts the selected term and rejects cross-year class/term combinations. No database schema
+  migration was required.
+- Backend and frontend typecheck, lint and production builds pass. All **183** frontend tests and
+  **49** backend non-integration tests pass; the focused builder suite contributes **3** workflow
+  tests. An isolated-database API case now covers the term read model and atomic day copy, but was
+  not run against the active shared demo database. The authenticated Class 6A builder, automatic P7
+  defaults and guarded Monday-to-Tuesday copy flow were visually checked at a 393 px mobile viewport.
+  Physical-phone acceptance remains open.
+
+## Timetable calendar exceptions and curriculum coverage — 2 October 2026
+
+- Extended the mobile term builder without replacing the accepted weekly-baseline model. Principals
+  can now record public holidays, school holidays and emergency closures as dated school-calendar
+  exceptions, while the existing daily-plan workspace remains the path for teacher cover, moved
+  periods and cancellations on an otherwise instructional date. Closures suppress both recurring
+  slots and published dated schedules in the effective projection without deleting their history.
+- Added class-and-subject curriculum targets expressed as minutes per academic term. The principal
+  coverage view compares those targets with projected effective periods and hours across the whole
+  term, including dated plans and excluding closures. Each class reports configured subjects,
+  weekly period counts, projected hours and remaining gaps; school-level totals identify ready
+  classes, subject gaps and configured targets.
+- Target and closure writes are principal-only, tenant-scoped and transactionally serialized. They
+  use optimistic revisions, database constraints, audit entries and outbox events. A date cannot be
+  closed or reopened after attendance has been recorded, submitted or locked. Emergency closures
+  additionally create role-appropriate in-app notices, while all calendar changes invalidate the
+  affected role calendars, timetables and Home projections through the existing event channel.
+- Added migration `027_timetable_curriculum_and_calendar_management.sql`, including the target table,
+  richer school-calendar metadata, tenant indexes, row-level security and explicit privilege
+  revocation. It was applied to the local Docker database after a recoverable backup. The API image
+  was rebuilt and is healthy on port 8001; the Vite hot-reload preview remains on port 8000 and is
+  exposed through the existing ngrok tunnel.
+- Frontend typecheck, lint and production build pass; all **185** frontend tests and **53** backend
+  non-integration tests pass. A focused isolated-database API test covers target creation, stale-write
+  rejection, closure creation, projected-hour reduction and closure removal. Weekly plan, term
+  coverage, target editor and school-date sheet were visually checked at the mobile breakpoint.
+  Physical-phone acceptance and the normal deployment migration pipeline remain open release gates.
+
+## Shared role-aware timetable views — 2 October 2026
+
+- Standardized the primary timetable module around one shared date strip and Day, Week, Month and
+  Year switcher for principals, teachers, students and parents. The selected date and view are URL
+  state, so browser navigation, refresh and shared links retain context. The existing weekly
+  timetable management workspace remains a separate principal-only editing workflow rather than
+  being mislabeled as a read-only Week view.
+- Kept role context in the data, not in four competing navigation designs. Principals see the
+  selected class and unresolved coverage counts; teachers see only their assigned and accepted
+  teaching periods; students see their class schedule; parents see the selected child's schedule.
+  Student and parent Day/Week content remains read-only, while staff actions stay in the authorized
+  day-plan and timetable-management workflows.
+- Added tenant- and role-authorized timetable summary reads for principal and family portals. Month
+  and Year totals are calculated from `effective_school_schedule`, so closures, cancellations and
+  published dated plans are reflected instead of extrapolating an obsolete recurring template in
+  the browser. Summary ranges are validated and capped at 370 days.
+- Interaction research used the official Google Calendar and Microsoft Outlook/Teams patterns:
+  quick view switching, stable selection, previous/next date navigation and a selected-day agenda.
+  The implementation retains ThatCampus's established cobalt strip, compact mobile surfaces, headers
+  and four-item navigation rather than copying those products' visual styling.
+- Frontend/backend typecheck, lint and production builds pass. All **186** frontend tests and **53**
+  database-free backend tests pass. Database integration suites remain gated on an isolated test
+  `DATABASE_URL`; the active shared demo database was not used as a test target. Visual validation
+  and physical-phone acceptance remain open because the managed local preview could not bind ports
+  inside the restricted execution environment for this run.
+
+### Principal summary compatibility follow-up — 2 October 2026
+
+- The live principal preview was still connected to an older API image that did not expose the new
+  `/api/v1/day-plans/admin/summary` route, leaving Week, Month and Year in an error fallback even
+  though the published timetable builder read model was available. The principal client now falls
+  back only on an explicit 404 and derives the requested range from the authorized published
+  timetable read model, including term boundaries, the selected class, weekly slots, unassigned
+  periods and non-instructional school-calendar exceptions. Other server errors still surface and
+  are not hidden.
+- Corrected Month totals to include only dates in the displayed month; the wider summary range used
+  to populate the scrolling date strip no longer inflates the visible month total.
+- Removed staffing-warning badges from the compact date, Week, Month and Year cells after phone
+  validation showed that any corner badge competed with the weekday label. Assignment gaps remain
+  available in the detailed timetable-management workflow where they have adequate context.
+- Moved the principal class selector into the blue timetable scope header, ahead of the date strip
+  and view switcher. Week, Month, Year and the selected-day schedule now visibly inherit one class
+  choice; the detached selector surface below the overview was removed.
+- A focused fallback test passes, and frontend typecheck and lint pass. The authenticated local
+  principal view was visually verified with populated Week, Month and Year views; October Class 6A
+  shows the Gandhi Jayanti closure as zero periods and a 141-period month total. The new API remains
+  the authoritative path once the backend image is rebuilt because it also accounts for published
+  dated-plan overrides.
+
+### Fail-safe sign-out — 2 October 2026
+
+- Sign-out now clears cached school data and authenticated client state immediately, before the
+  revocation request. An explicit local logout marker prevents a stale HttpOnly session cookie from
+  silently signing the user back in after a refresh when the API is temporarily unavailable; a
+  successful login, registration or demo selection clears that marker.
+- The logout marker also retains the server-advertised demo-mode flag, so the test persona buttons
+  stay available after logout and browser reload in local and Railway testing environments.
+- The logout endpoint is public and CSRF-independent because it only removes authority. It clears
+  both cookies before doing database work, then best-effort revokes the hashed session and records
+  the audit event. An expired session, stale CSRF token, audit failure or transient database error can
+  no longer trap the user inside the signed-in UI.
+- The complete authentication loop is now covered: transient CSRF bootstrap failures retry before
+  login, registration or demo entry; a stale CSRF rejection refreshes once; and integration coverage
+  verifies demo login -> logout -> anonymous session -> password login in one browser. The signup
+  password guidance and browser validation now match the backend's 12-character policy.
+- The local live-preview supervisor builds backend artifacts in a scratch runtime rather than the
+  macOS Documents/File Provider folder, mirrors edits through descriptor-free polling, and restarts
+  ngrok/photo attendance independently so an optional service failure cannot take authentication down.
+- The Vite development proxy now normalizes the internal API-hop `Origin` to its trusted localhost
+  origin. This prevents ngrok phone requests from being rejected by the intentionally strict backend
+  CORS allowlist while leaving browser-facing tunnel URLs, cookies and production CORS unchanged.
+
+### Family timetable summary compatibility — 2 October 2026
+
+- The parent and student Week, Month and Year views now survive rolling deployments where the
+  published weekly timetable endpoint is available before the newer summary endpoint. Only an
+  explicit summary-route 404 activates the compatibility path; authorization, database and other
+  server failures remain visible rather than being masked.
+- Compatibility totals are derived from each authorized effective weekly schedule, including dated
+  periods and cancellations, and requests are bounded in six-week batches for a Year view. The
+  dedicated summary API remains the primary path and automatically takes over as soon as the backend
+  deployment exposes it.
+- A focused regression test covers complete date ranges, weekday mapping, free days and cancelled
+  periods. Frontend typecheck and lint pass. Parent Week and Month views were verified both on the
+  localhost mobile preview and through the active ngrok URL; the former error surface is replaced by
+  populated daily counts and the selected week reports 33 periods.
+
+## Fee payment submissions and review — 2 October 2026
+
+- Preserved the incoming Stage fee-review workflow while integrating the timetable, calendar and
+  authentication work. Migration `022_fee_payment_reviews.sql` adds revisioned school payment
+  instructions, immutable guardian submissions and immutable reviewer decisions.
+- Parents can review balances, use school payment instructions, report an already-made payment or
+  question a fee. Pending claims do not create receipts or reduce balances. Principals and delegated
+  finance reviewers can verify or reject claims; verification rechecks the collectible balance and
+  writes the receipt and decision atomically.
+- Scoped `fees.updated` outbox events refresh the mobile and desktop finance views. Existing invoice,
+  receipt, event-credit and refund records remain the financial source of truth. No gateway, automatic
+  reconciliation or real school bank/UPI destination is introduced by the demo seed.
+- The upstream implementation record and detailed acceptance evidence remain in
+  [FEE_PAY_REVIEW.md](FEE_PAY_REVIEW.md). The merged workflow is revalidated by Stage CI against its
+  isolated PostgreSQL service before migrations and Railway deployment.
+
+## Principal timetable week navigation and coverage settings — 3 October 2026
+
+- Restored the weekly plan as the principal timetable manager's primary workflow. Curriculum
+  coverage is now a secondary `Coverage targets` setting rather than a peer timetable view, and the
+  redundant subject selector has been removed. Every configured subject is visible for the selected
+  class and opens its existing revisioned target editor directly.
+- Added term-bounded week navigation with previous/next controls and a native date jump. The selected
+  week and class are URL state. The focused schedule keeps baseline editing explicit as a repeating
+  instructional-week pattern, while `Adjust date` carries the selected class and date into the dated-
+  plan workflow. A closure is explained without deleting or hiding its preserved recurring pattern.
+- Follow-up mobile acceptance restored the original compact weekday-and-period-count rail. Week
+  changes are now deliberately limited to the visible previous/next buttons and native date picker;
+  the redundant start/week/end divider and horizontal swipe gesture were removed. The selected
+  date remains available to assistive technology on each weekday control and closures remain
+  explained in the selected-day content.
+- The authenticated localhost preview was checked at the mobile breakpoint after the follow-up. The
+  compact scrollable day rail, visible date picker and arrow controls were inspected visually.
+  Coverage settings, direct target rows, schedule actions and closure explanations remain unchanged.
+  Frontend typecheck, lint and production build pass; all **201** frontend tests pass, including
+  focused week navigation, date jump, compact-rail and target-editing coverage. Physical-phone
+  acceptance remains open.
+
+## ThatCampus supplied brand artwork rollout — 14 October 2026
+
+- Extracted the approved complete two-line ThatCampus lockup directly from the supplied artwork
+  without redrawing its letterforms or changing the blue palette. The app uses an opaque light
+  version (navy `That` on white) and an opaque dark version (white `That` on black); the dark version
+  uses a slightly lighter blue `Campus` for contrast while preserving the original ray colours. The
+  complete lockup is used on every current brand surface.
+- Login, signup and onboarding now show the school crest and complete ThatCampus lockup side by side. Authenticated
+  student, parent, teacher and principal headers inherit the same shared component with a compact
+  paired lockup, while retaining the established school name, theme, navigation and accessible
+  label.
+- Replaced the old `TC` monogram and browser/install artwork with complete-lockup PNG assets: light and dark browser favicons, a
+  180-pixel Safari touch icon, and 192/512-pixel manifest icons with maskable declarations. The manifest
+  and document head reference the new files directly so newly added iOS home-screen shortcuts use the
+  complete ThatCampus identity.
+- The desktop staff portal, transactional invitation route and generated payment receipts now use the
+  same supplied lockup. The production SPA server exposes both browser variants, the Safari touch icon,
+  manifest icons and both in-app background variants. The Stage release smoke test requests each install/brand asset, preventing a healthy
+  application deployment from silently shipping broken home-screen artwork.
+- Focused route, branding, invitation, receipt and deployment-contract checks cover the lockup paths.
+  The production mobile, desktop and backend builds are part of the release gate; physical-phone
+  acceptance of the final complete-lockup treatment remains open.
+
+## Consistent portal page headers — 3 October 2026
+
+- Added one shared, semantic page-title row to the parent, student, teacher and principal shells.
+  Every authenticated route now presents its current page name in the same position beneath the
+  school identity and account actions. The mobile operations stylesheet no longer hides the title.
+- Added a 40-pixel accessible Back control on non-root pages. Explicit parent routes and protected
+  edit workflows can provide a stable destination or guarded callback; otherwise the control uses
+  valid browser history and safely falls back to the portal home. Parent Home, Student Home, Teacher
+  Today and Principal Overview deliberately omit the control.
+- Removed redundant local page titles and Back links from timetable management, attendance register,
+  student leave and diary, school administration, people import, finance and campus-event workflows.
+  Contextual headings such as a class, event or session name remain where they identify the content
+  rather than repeat the page title.
+- The complete route regression file passes (**45** tests), including title and root/non-root Back
+  visibility across all four portal shells and the existing selected-navigation checks. Frontend
+  lint and the production build pass. The authenticated localhost
+  principal root/detail views and parent root/detail views were inspected; Back is absent on the two
+  roots, visible on the detail pages, and the parent Back action returns to Parent Home.
+
+## Shared family Today activities — 3 October 2026
+
+- Renamed the student Home schedule rail from `Today's flow` to the plain-language
+  `Today's activities`. Parent Home now uses the same responsive activity rail instead of a
+  separate single-class card, while retaining the selected child's presence status and its
+  child-scoped timetable destination.
+- Parent and student Home both consume the full authoritative effective schedule for the school
+  date. The rail centres the current period, or the next/last meaningful period when nothing is
+  in progress, and keeps adjacent context available without turning the Home screen into a full
+  timetable.
+- Subject catalogue color and icon now travel with timetable slots. The shared cards render the
+  configured Mathematics, Science, Language, Art, Physical Education, Computing and Social Science
+  glyphs, with a deterministic subject-name fallback for older rolling deployments or unconfigured
+  activities.
+- Every activity card exposes an accessible progress bar: completed periods are 100%, upcoming
+  periods are 0%, and the active period is calculated from its published start/end time. Empty days
+  remain explicit and link to the role-appropriate timetable.
+- Focused component, adapter and parent child-switching/route regressions pass. Frontend and backend
+  lint and production builds pass. Physical-phone acceptance remains open.
+
+## Full-screen digital student identity — 3 October 2026
+
+- The expanded student ID now opens as a true viewport-level modal above the shared header and
+  bottom navigation in both student and parent contexts. The entire application becomes a dark,
+  blurred background so the school identity, portrait, admission details and verification QR remain
+  visually isolated and readable.
+- The close control is fixed inside the safe area and remains available while a short-height device
+  scrolls the card. Opening locks background scrolling; Escape, the close control and backdrop
+  dismissal close the modal, return focus to the identity card and restore the previous page scroll
+  behavior. Keyboard focus is contained on the close control because the identity itself has no
+  secondary actions.
+- The complete frontend regression suite passes (**206 tests**), and frontend lint and production
+  builds pass. The local readiness probe reports healthy database and event dependencies. Physical-
+  phone visual acceptance remains open.
+
+## Student timetable discovery and compact calendar summaries — 3 October 2026
+
+- The existing student Day, Week, Month and Year timetable is now presented as a first-class
+  `Timetable` destination in both the four-item bottom navigation and the More service catalogue.
+  The former `Classes & Leave` tile was split into clear Timetable and Leave requests destinations,
+  without changing the authorized student timetable or leave workflows.
+- The shared Month summary now follows a recognizable Monday-first calendar: weekday headings sit
+  above aligned date cells, leading spacers preserve the correct weekday position, the selected date
+  remains explicit, and each date exposes its scheduled-period count or a free-day state.
+- The shared Year summary no longer uses twelve large month cards. It is one compact horizontal load
+  chart with Month, Scheduled load and Periods columns, twelve keyboard-accessible month rows and a
+  stable zero state. Because the navigator is shared, parent, student, teacher and principal timetable
+  readers receive the same calendar structure while retaining their role-specific data.
+- Focused month/year and student-route regressions pass. The complete frontend suite passes
+  (**208 tests**); frontend lint, type checking and production build pass. Physical-phone visual
+  acceptance remains open.
+
+## Staff responsibilities, leave coverage and contextual duties — 3 October 2026
+
+Historical foundation record. The People/Duties split and “My responsibilities” vocabulary below
+were superseded on 7 October 2026 by **People / Work types / Leave / Settings** and **My work**.
+The current architecture contract is linked in the Staff setup simplification section above.
+
+- Added the research-backed product and engineering specification in
+  [STAFF_RESPONSIBILITIES_AND_COVERAGE.md](STAFF_RESPONSIBILITIES_AND_COVERAGE.md). It keeps a
+  person's account role stable while modelling class ownership, subject teaching, mentoring,
+  coordination, event, examination, safety and committee work as dated, scoped appointments with
+  acceptance, revocation, backup and audit history.
+- Added tenant-scoped responsibility types, assignments, assignment audits, leave coverage tasks and
+  coverage audits. Migration `029_staff_responsibilities_and_coverage.sql` validates scope ownership,
+  seeds the standard catalogue for existing and future schools, imports existing class and event
+  assignments without duplicating them, enables RLS and preserves the established application-owner
+  deployment model.
+- Leave approval now creates actionable timetable, event and operational coverage tasks in the same
+  transaction. Principals can offer a task to an eligible replacement; the replacement must accept or
+  decline it. Approved leave, timetable overlap, duplicate responsibility scope and conflicting cover
+  are checked before assignment. Every transition emits an operations audit record and scoped outbox
+  event.
+- Principal Staff operations now has distinct People, Duties, Leave and Settings workflows. The mobile
+  Duties board prioritizes uncovered leave and dated/special duties, keeps routine academic ownership
+  collapsed, and provides contextual appointment and replacement pickers. Teachers receive a dedicated
+  My responsibilities destination with pending offers, active appointments and accepted cover.
+- A clean PostgreSQL database applies all migrations through **029**, loads and verifies the canonical
+  200-student demo school, and passes all **210 backend tests** across **23 files**. Backend typecheck,
+  lint and production build pass. The complete frontend suite passes all **211 tests** across **32
+  files**; frontend typecheck, lint and production build pass. The authenticated localhost principal
+  Duties board and assignment sheet were inspected at the mobile breakpoint. Physical-phone acceptance
+  remains open.
+
+## Compact published timetable rows — 3 October 2026
+
+- Rebalanced each published period into a compact three-part row: the period rail now owns the complete
+  start/end time, the subject and schedule state share the primary line, and teacher and room share a
+  two-column metadata line. The former duplicate time entry and mobile-only vertical metadata stack were
+  removed without hiding schedule, staffing, room, cancellation, materials or editing information.
+- The focused daily-plan suite passes all **17 tests**. Frontend typecheck, lint and production build pass,
+  and the authenticated principal published timetable was inspected at the mobile breakpoint with three
+  periods visible in substantially less vertical space. Physical-phone acceptance remains open.
+
+## Timetable overview drill-down — 3 October 2026
+
+- Made the shared timetable hierarchy directly navigable across principal, teacher, parent and student
+  portals. Selecting a Year load row now selects that month and opens Month view; selecting a Month date
+  or Week date selects the exact school date and opens Day view. The current role, class or child context
+  remains unchanged.
+- Date and view are written through one atomic navigation callback on URL-backed screens, preventing one
+  search-parameter update from overwriting the other. Accessible labels now state the destination action
+  (`open month view` or `open day view`) for keyboard and assistive-technology users.
+- Today is now distinct from the selected date: the date header exposes a persistent `Today · 3 Oct`
+  shortcut, current dates use a ring in the day rail and Week/Month calendars, and Year view marks the
+  current month separately. Corrected cumulative rail centering so the selected date remains centred
+  instead of drifting to the clipped edge after resize updates.
+- The complete frontend suite passes all **212 tests** across **32 files**. Frontend typecheck, lint and
+  production build pass. The authenticated principal Year → May → 10 May flow was exercised in the local
+  mobile preview, including the correct Day-view empty state for a free Sunday and the distinct selected
+  2 October/current 3 October markers. Physical-phone acceptance remains open.
+
+## Attendance continuity and reconciliation — 3 October 2026
+
+- Migrations `030_attendance_continuity.sql` and `031_attendance_snapshot_provenance.sql` separate immutable field observations from accepted
+  attendance facts. Capture batches retain source, actor, observation/receipt time, roster fingerprint,
+  roster capture/expiry time, expected register revision, device/source reference and resolution. Tenant-consistency triggers,
+  append-only observation enforcement, RLS and public-role revocation protect the evidence tables.
+- Teacher registers now issue an 18-hour, actor-bound HMAC-signed roster snapshot. A matching live or offline capture can publish
+  through the existing revision-checked/idempotent attendance command; expired snapshots, roster or
+  assignment changes, permission loss and write conflicts are quarantined instead of silently discarded.
+  Unrecorded roster rows remain null and are never converted into absence.
+- The browser stores roster snapshots and pending captures with non-extractable AES-GCM keys in IndexedDB.
+  Records, keys, device identifiers and queue keys are scoped to the authenticated staff account on a
+  shared device. Pending observations survive expiry so the server can retain and review the evidence;
+  reconnect sync never describes a device-only capture as submitted.
+- Principal Attendance includes an evidence/reconciliation desk, current revision and lock context,
+  explicit accept/reject notes, and a paper/office capture path. Applying a reviewed observation creates
+  an ordinary audited attendance revision; it does not bypass register locks or rewrite observation
+  history. History identifies the source and paper/office reference.
+- Focused migration, API integration and responsive component regressions cover automatic acceptance,
+  expired-snapshot quarantine/rejection, paper review/application, append-only evidence, pending-device
+  messaging, source-reference requirements and locked-register review. Backend/frontend type checking
+  and both production builds pass. Migrations 030–031 are applied to the local application and isolated
+  test databases. Targeted evidence is green (2 migration assertions, 1 end-to-end API workflow and 16 UI
+  regressions); the complete automated suites also pass (164 backend and 216 frontend tests). The
+  authenticated local mobile preview was exercised through the principal continuity
+  desk and into a Class 6A paper-register capture, including the source/reference and review-only states.
+  A physical-device offline/reconnect drill must still be recorded before calling this release gate complete.
+
+## Stage release, Supabase migration and demo seed verification — 3 October 2026
+
+- The Stage release workflow applied migrations `028`–`031` to Supabase through the persistent
+  session/migration connection before the application rollout. The database seed entry points now use
+  the same validated managed-PostgreSQL TLS adapter as the migrator, fixing the certificate-chain
+  rejection that previously affected the explicit Stage re-seed path without weakening TLS policy.
+- The repeat-safe Stage seed completed with 200 students, 200 guardian links, 12,825 attendance rows,
+  264 timetable slots, four campus events, seven event sessions, 450 event participants, 289 event-session
+  roster rows, 215 event attendance rows and 16 event fee invoices. The operations seed reported no new
+  invoices or payments, confirming that its existing demo records were preserved rather than duplicated.
+- GitHub Stage run `37143689643` passed the secret scan, isolated migration and seed preparation, complete
+  backend integration suite, mobile typecheck/build/test suite, desktop build, real Supabase migration and
+  seed, Railway deployment and public smoke gate. Railway served release `8c5c29b0bac2b2c5f47c69818ca0ccafb2b31d6d`
+  with `/readyz` reporting ready database and event dependencies.
+- An independent authenticated principal smoke check against Stage returned 17 staff profiles, two leave
+  policies and the imported responsibility assignment. Both SPAs, install icons, OpenAPI, demo login and
+  protected metrics were also verified by the release gate.
+
+
+## WF-LOCAL-016: Custom school roles and permission assignment
+
+Historical implementation record. The administrator-facing custom-role workflow below was removed
+from normal navigation on 7 October 2026. `/principal/roles` now redirects to **Staff setup → Work
+types**; invitations do not grant a staff role, and effective access comes from current scoped work.
+
+Admins/principals open **More → Roles & permissions** (`/principal/roles`),
+create a named role, choose grouped permission checkboxes, and assign the role
+to an active staff member. Role edits affect existing sessions on their next
+guarded API request. One custom role replaces the default staff tool permissions
+and old individual SIS/fee grants for that school. Clearing it explicitly restores
+the default staff permissions and existing individual grants.
+
+Implemented domains: student administration (`sis.manage`), fees (`fees.manage`),
+assigned attendance read/write, photo attendance, timetable/day-plan reading,
+coverage response, attendance follow-ups, chat read/send, class group creation,
+assigned safeguarding review, event read/manage/attendance, and scoped AI.
+No role changes membership, class assignments, guardian relationships, event
+responsibilities, or school boundaries. Existing domain authority remains an
+additional requirement. School leadership commands (including staff onboarding,
+weekly timetable editing, access/invitations, school policy and school-wide
+safeguarding assignment) remain built-in admin/principal capabilities. Personal
+staff leave/responsibility responses and family rights remain separate.
+
+Role create/edit/delete/assignment is admin-only and recorded in the school
+operations audit. Case-insensitive role names are unique in-school; built-in
+names are reserved. Revisions guard concurrent role edits; assignment changes
+compare the previous role. Used roles cannot be deleted, and admin accounts
+cannot be downgraded through the staff assignment endpoint. Composite foreign
+keys prevent cross-school role assignment. No new PUBLIC database grants.
+
+Stage demo seeding adds **Arjun Rao** (`arjun.admin`) with a random unusable-as-demo
+password and separate **Admin view** one-click persona behind `DEMO_MODE`, plus
+Accountant, Class Teacher and Teaching Observer role examples. Existing teacher
+assignments are not changed automatically. The deployment workflow seeds only
+these examples after migrations; it does not reseed the school.
+
+Verification before release: backend/frontend typechecks, backend lint/build,
+frontend build and existing 216 UI tests passed; the new checkbox editor tests
+and 23 local PostgreSQL-backed service/guard assertions passed. All migrations
+including `032_custom_school_roles.sql` applied to a disposable PostgreSQL
+engine. Real PostgreSQL HTTP integration tests are included in the Stage CI
+gate; the local socket emulator cannot reliably multiplex the app's event
+listener and request transactions, so that attempted run is not API release
+evidence. Physical school acceptance, stronger privileged auth and non-owner
+RLS gates remain separate from this role-management increment.
+
+## WF-LOCAL-017: Company provisioning and delegated institution onboarding
+
+User decision (4 October 2026): institution provisioning belongs to the company
+backend superuser, then the institution admin handles academic setup, invites
+staff/students and delegates onboarding through custom roles. This supersedes
+WF-LOCAL-016's leadership-only invitation/enrollment boundary.
+
+Implemented: a separately bootstrapped `company_operators` authority and `/company`
+console; transactional school/college creation with first-admin invitation;
+operator metadata-only workspace; admin invitation replacement/revocation;
+main-app `/join` acceptance with new/existing account protection; empty-institution
+setup routing; school member invitations with native student/guardian record
+activation; staff custom role on joining; `members.invite` permission and delegated
+native directory/reviewed enrollment/import through `sis.manage`. School admins
+can no longer self-provision another school through the old API or either UI.
+Custom role assignment, administrator invitations, HR authority and guardian
+leave-authority edits remain protected leadership operations. Company authority
+cannot be granted from signup, role checkboxes or school APIs.
+
+Migration `033` adds institution kind, company grants/audit, invitation origin,
+record targets and same-institution invited custom-role linkage. Codes remain
+single-use, email-bound, hashed, expiring and manually delivered. Acceptance
+rechecks the original company/admin/delegated inviter's live authority. College
+records reuse the established term/class model; dedicated degree/credit workflows
+and automatic email delivery are not included.
+
+Local validation: backend typecheck/lint/build, frontend typecheck/build; five new
+onboarding UI tests plus auth/import checks; migration 033 and 22 direct
+PostgreSQL-engine service checks (company/school separation, first-admin handoff,
+role delegation, native student linkage, pending-invitation revocation). Eleven
+HTTP integration scenarios against real disposable PostgreSQL are added to the
+Stage release gate. See `COMPANY_ONBOARDING.md` for production operator bootstrap.
+
+WF-LOCAL-016 release evidence: Stage run `37184577063` passed 219 backend and 219
+frontend tests, migrated/seeded, deployed and verified exact release
+`07b5ce6be1657f7ceb1082690ac3b5f2064df388`. Live dummy-admin login, role list,
+assignment controls and checkbox grouping were verified through the browser.
+
+### Local merge reconciliation — 4 October 2026
+
+The Stage custom-role/company-provisioning work and the local governance/restricted-care
+slice were merged without dropping either route, module or authorization layer. The local
+governance migrations were renumbered to `034`–`036`; existing local migration history was
+remapped by exact filename and checksum before applying Stage migrations `032` and `033`.
+Migration `033` now uses a PostgreSQL-compatible restrictive composite foreign key for invited
+custom roles, preserving cross-institution integrity and the rule that a role still referenced
+by an invitation cannot be deleted.
+
+Verified locally after reconciliation: both development and isolated-test databases contain
+the ordered `032`–`036` migration set; backend typecheck/lint/build and all 240 backend tests
+pass; responsive frontend typecheck/lint/build and all 230 UI tests pass; and the desktop staff
+bundle typechecks and builds. This is local merge evidence only, not Stage deployment evidence.
+
+Follow-up seed correction: the original local `db:seed` command loaded the base Cambridge
+dataset but did not invoke the new role/company demo seeder, leaving `/company` unavailable even
+though migrations `032`–`033` existed. `db:seed` now chains the repeat-safe role/operator seeder,
+and `db:seed:roles` provides a narrow repair path. The seeder fills each missing named example role
+independently rather than skipping all examples when any custom role already exists. The repaired
+development database was verified with the `company.demo` session, company-operator profile claim,
+two-institution company workspace and the local/ngrok `/company` route.
+
+Company creation usability correction: the institution code is now derived from the entered name and
+normalizes spaces, capitals, punctuation and accented characters while it is edited. This removes the
+browser-native pattern-validation dead end that could make the create action appear unresponsive, while
+preserving the backend's lowercase tenant-code invariant. Verified evidence includes the company UI
+regression test for generated and manually edited codes plus an authenticated browser creation through
+the local ngrok preview; the transactional service and database constraints remain the authority.
+
+## WF-LOCAL-018: Two-lane self-service onboarding
+
+User decision (4 October 2026): the product must support both company-verified onboarding for
+formal institutions and immediate, no-company-verification creation for small coaching/tutor
+workspaces. Detailed contract: [Self-service institution onboarding](SELF_SERVICE_ONBOARDING.md).
+
+Implemented locally in migrations `037`–`038`, `backend/src/institution-onboarding`, the company review
+service, and `frontend/src/features/onboarding`:
+
+- Signup accepts an **Institution owner** account choice but grants no tenant access by itself.
+- Formal school/college/hybrid submission creates an audited application only. Company operators
+  can request information, reject or approve; only approval creates the tenant, regulatory profile
+  and applicant's first admin membership in one transaction.
+- Coaching creation immediately creates a `coaching` tenant, admin membership and `coaching_core`
+  profile labelled `self_service_coaching` / `not_required`. The product explicitly says this is
+  not a verified school or college. One coaching workspace per creating account is the initial
+  bounded anti-abuse rule.
+- Applicant status and resubmission, company queue and decisions, loading/error states, mobile
+  layout, tenant-code conflicts, current-session switching, RLS enablement/revokes and global plus
+  workflow audits are included.
+
+Verified local evidence: migrations 037–038 applied to development PostgreSQL and from-scratch to
+a disposable seeded PostgreSQL database; backend/frontend typecheck, lint and production build pass.
+The complete backend suite passes against that clean database (29 files, 241 tests), including the
+real-PostgreSQL HTTP test for the immediate coaching path, duplicate guard,
+application-without-tenant boundary, information request, resubmission, approval, membership
+creation and repeat-decision rejection.
+The complete frontend suite passes locally (37 files, 233 tests), including the two-model selector,
+formal submission boundary and updated no-membership routing.
+The signup, two-model selector and formal form were visually inspected through the local preview at
+desktop and mobile breakpoints with no browser console warnings/errors. This is not Stage deployment
+or company operating-policy acceptance. The user UI review, Stage migration/seed/Railway smoke,
+decision notification delivery, email verification/MFA, ownership transfer and coaching/college
+policy packs remain open release work.
+
+Release migration correction (4 October 2026): applied migration `033_company_provisioning.sql`
+is restored byte-for-byte to its Stage checksum. The later decision to prevent deletion of a custom
+role referenced by an invitation is now an append-only change in migration `039`, after migrations
+037–038. This preserves migration-history integrity while retaining the intended final foreign-key
+behavior. Fresh-schema PostgreSQL 17 verification and Stage application remain guarded by the Stage
+workflow; the local Homebrew PostgreSQL 14 server cannot parse migration 033's PostgreSQL 15+
+column-list `SET NULL` syntax and is not accepted as release evidence for this correction.
+The Stage runtime repair step now also preserves or generates a dedicated restricted-care encryption
+key (distinct from cookie and metrics secrets) and binds the service to `0.0.0.0`; both are required
+by the managed-environment configuration before Railway can become ready.
+
+## WF-LOCAL-019: Institution activation and first-day readiness
+
+Implemented locally on 5 October 2026. Detailed contract:
+[Institution activation and first-day readiness](INSTITUTION_ACTIVATION.md).
+
+- Both formal and coaching onboarding now require a verified owner email. New tenants begin in a
+  revisioned `draft` activation state selected from a configurable school, college or coaching
+  capability pack; successful review moves the current evidence to `ready`, and a fresh locked
+  recheck is required for `active`.
+- New account trust includes hashed expiring email-verification/password-reset tokens,
+  authenticator TOTP with encrypted secrets and replay prevention, single-use hashed recovery codes,
+  MFA login challenges, enumeration-safe reset requests and all-session revocation on reset.
+- **Principal → More → Institution setup** computes readiness from real term, class/batch, subject,
+  attendance-policy, contact, staff, enrolment and timetable records. Empty workspaces can create the
+  academic foundation transactionally; partly configured workspaces deep-link to the established
+  administration, people, invitation, governance and timetable modules instead of being overwritten.
+- Review and activation are admin-only in addition to `sis.manage`, revision checked, globally audited
+  and recorded in an append-only activation history. Activation emits an `InstitutionActivated`
+  outbox event. New tables have RLS enabled and direct browser-role grants revoked.
+
+Verified local evidence: migration 040 applies from scratch on PostgreSQL 17; the local development
+database was reconciled to the restored migration-033 checksum, then migrations 039–040 applied.
+Backend lint/typecheck/build and all 253 tests pass across 31 files on a clean, seeded PostgreSQL 17
+database, including five new HTTP integration scenarios. Frontend lint/typecheck/build and all 237
+tests across 38 files pass, including computed checklist, optional-requirement and transactional
+quick-start UI coverage. The running local API reports ready database/events and its authenticated
+activation workspace returns 200. Mobile user acceptance and Stage migration/deployment/mailbox smoke
+remain open; this record does not claim those gates have passed.
+
+Demo-context correction (5 October 2026): every institution demo session now starts with the
+seeded Cambridge International School (`cis`) as its server-side active institution. Student,
+guardian, staff, principal and school-admin profiles therefore enter their contextual Cambridge
+workspace instead of the institution-onboarding flow; the company persona intentionally remains
+institution-free. The repeat-safe demo seeder also marks only the known, populated Cambridge
+reference tenant active, while real customer tenants keep the full readiness and verification
+gates. API regression coverage asserts the active-school and onboarding contract for all six demo
+personas, and a local browser check confirmed Principal view lands on `/principal` with Cambridge
+data rather than `/onboarding/start`.
+
+## WF-LOCAL-020: Offline assessment operations and results
+
+Implemented locally on 5 October 2026. Detailed contract:
+[Offline assessments and results](OFFLINE_ASSESSMENTS_RESULTS.md).
+
+- Principals create active assessment cycles inside an academic term, plan a class/subject
+  assessment, and assign different active members as examiner and moderator. Assessment kinds are
+  institution-neutral (`exam`, `class_test`, `quiz`, `assignment`, `practical`, `viva`, `project`,
+  `other`) so school, college and coaching capability packs can apply their own policy later.
+- Opening marking freezes the roster from active term enrolments. An assigned examiner records a
+  score or the explicit `absent`, `exempt`, `withheld` or `not_evaluated` outcome for every learner;
+  zero is a real score and never substitutes for absence. Bounds, evidence requirements and stale
+  revisions are enforced by the service and database-backed workflow, not only the browser.
+- The assigned moderator independently approves or returns a complete register. Principal
+  publication creates an immutable, sequenced result snapshot and notifies each account at its
+  correct student or guardian route. A later mark correction reopens marking and must pass the same
+  moderation/publication sequence; previous releases remain auditable.
+- Learner and guardian pages query only the latest published snapshot for the selected learner.
+  Draft marks, evidence and moderation data stay private. Evidence files are kept outside the public
+  web root and require current scoped staff authority to retrieve.
+- Migration `041_offline_assessments_and_results.sql` adds tenant-scoped cycles, assessments,
+  assignments, result revisions, evidence, publications and audits; direct browser-role grants are
+  revoked and RLS is enabled as defence in depth. `assessments.view`, `assessments.mark` and
+  `assessments.moderate` extend configurable staff roles without granting publication authority.
+
+Verified local evidence: migration 041 is applied to the development database; the repeat-safe demo
+seed provides a Class 7A marking register with 27 learners. Principal and assigned-teacher workspace
+smokes return the same scoped assessment. The isolated PostgreSQL lifecycle test passes creation,
+roster freeze, complete marking, self-moderation denial, independent approval, publication,
+relationship-scoped family access, correction and second publication while preserving release one.
+Focused family UI tests cover published correction display and private/empty states. Complete-suite
+verification now passes on a clean isolated PostgreSQL database: backend lint/typecheck/build and all
+256 tests across 32 files; frontend lint/typecheck/build and all 239 tests across 39 files. The local
+API reports ready database and event dependencies and both the login and principal-assessment routes
+return successfully.
+
+Responsive shell correction verified on 5 October 2026: role portals now share one 16 px mobile page
+gutter owned by the parent, student or operations shell. Assessments/results, institution setup and
+governance/policy workspaces no longer add a second horizontal page gutter, while intentionally
+full-bleed rails remain unchanged. The authenticated principal assessment route was measured at both
+390 px and 320 px: its hero is exactly 16 px from both viewport edges, the narrow metric row does not
+overflow or add a scrollbar, and the page has no horizontal overflow. Frontend lint, typecheck,
+production build and all 239 tests across 39 files pass after the correction. Representative physical-
+device acceptance across every role remains open and must not be inferred from this targeted browser
+verification.
+
+Content-density correction verified on 5 October 2026: newly added assessment/results, institution
+setup, account-security and self-service onboarding screens now follow the established concise portal
+pattern. Repeated page headings, promotional hero copy and implementation explanations were removed;
+operational counts, state, required choices, safety warnings and actionable next steps remain. The
+principal assessment and institution-setup routes were visually checked at 390 px and measured at
+320 px with the shared 16 px gutter and no horizontal overflow. Focused coverage asserts the concise
+empty/result, readiness and onboarding states; frontend lint, typecheck, production build and all 239
+tests across 39 files pass after the change.
+
+Stage release evidence (5 October 2026): GitHub Actions
+[run 37232887399](https://github.com/EduveraIITA/Eduvera/actions/runs/37232887399) completed both
+`Verify` and `Deploy to Railway` successfully for application commit `a86215b`. The guarded database
+step applied migrations `040_institution_activation_and_account_trust.sql` and
+`041_offline_assessments_and_results.sql` to the Stage Supabase database before the Railway release.
+The workflow then verified API readiness, mobile and staff SPAs, install icons, OpenAPI, Stage demo
+login and protected metrics against that exact release SHA. An independent post-deploy check returned
+`ready` with database and event dependencies healthy, `/releasez` identified environment `stage` and
+SHA `a86215bcb7147d6207ff41fc742891ee1b542aaf`, and `/principal/assessments` returned HTTP 200. This is
+Stage deployment evidence, not production approval or representative physical-device acceptance.
+
+Open boundaries: no online test runner, question bank, proctoring, auto-grading, public ranking,
+weighted aggregate, board-specific grade calculation, transcript/certificate or result analytics is
+claimed. Production evidence storage still requires object lifecycle, scanning, retention and legal
+review. Institutional grading/moderation SOP and representative-device acceptance remain mandatory.
+
+## WF-LOCAL-021: Configurable grading and immutable report cards
+
+Implemented locally on 5 October 2026. Detailed contract:
+[Configurable grading and report cards](CONFIGURABLE_GRADING_REPORT_CARDS.md).
+
+- Institution administrators create versioned term/class grading schemes with contiguous grade
+  bands, explicit absence treatment, optional subject pass thresholds and weighted subject
+  components. Components map only to published assessments from the same institution, term, class
+  and subject; their weights must total 100%. The architecture contains no school-board-specific
+  formula and remains usable by school, college and coaching capability packs.
+- Activation freezes the scheme. Generation calculates from the latest immutable assessment
+  publication, stores relational learner/subject/component/source snapshots and never substitutes an
+  unknown result for zero. Independent review can require a second administrator before publication.
+- Class-teacher remarks require both an effective class assignment and the new `reports.comment`
+  permission. Principal remarks, review and publication remain administrator-only. Learners and
+  linked guardians see only the latest published release for their own record.
+- A corrected assessment produces a new sequenced report batch with a reason; previous published
+  assessment and report releases remain intact. The family report identifies corrected releases and
+  supports a print-safe view without exposing drafts or rankings.
+- Migration `042_configurable_grading_and_report_cards.sql` adds eleven institution-scoped policy,
+  mapping, snapshot and audit tables. Browser database grants are revoked and all new tables have RLS
+  enabled as defence in depth behind the authenticated application service.
+
+Verified local evidence: all 42 migrations apply to clean PostgreSQL 17 and a repeat migration is a
+no-op. The repeat-safe demo seed creates one active scheme, one published batch and 25 learner
+reports; all eleven new tables report RLS enabled. The real-database lifecycle test covers assessment
+publication, 80% report calculation, self-review denial, independent review, publication, unrelated-
+learner denial, relationship-scoped family access and a corrected 90% second release while retaining
+release one. Backend lint/typecheck/build and all 262 tests across 33 files pass. Frontend
+lint/typecheck/production build and all 241 tests across 40 files pass; the desktop client typecheck
+and production build also pass.
+
+Stage release `548ee54a4752146a35b1501d00ab7fea5afd2dbe` passed the complete GitHub Actions
+[Stage workflow](https://github.com/EduveraIITA/Eduvera/actions/runs/37329333873) on 5 October 2026.
+That run reapplied the clean-build, lint, typecheck and test gates above, applied migration `042` to
+Stage Supabase, ran the repeat-safe report-card demo seed and bound the Railway release to the exact
+commit. Independent public checks returned ready database/event health and the same release SHA.
+The four principal, teacher, guardian and learner report-card routes returned HTTP 200. An
+authenticated principal demo smoke returned admin mode, one active scheme, one published batch,
+eight classes, nine subjects and one mapped source assessment. This is verified Stage deployment
+evidence, not production approval or representative physical-device acceptance. Open product
+boundaries include board/university policy packs, promotion decisions, transcripts, certificates,
+digital signatures, longitudinal analytics and institution-approved print/retention policy.
+
+### Family marksheet and learner discovery polish — 6 October 2026
+
+The published family result now leads with a mobile-first official marksheet rather than presenting
+the term aggregate as another generic card. It shows institution identity, learner/admission/class
+identity, overall outcome and grade, a compact subject table, school remarks and an immutable
+publication reference. Individual assessment releases remain available as a denser history beneath
+the marksheet. Printing removes portal chrome and the assessment history, while retaining the
+published record styling. No rank, percentile, signature or board-specific claim was added.
+
+The learner module catalogue now exposes the existing relationship-scoped `/student/results` route;
+the former omission made the capability undiscoverable even though authorization and routing were
+already present. The parent context also normalizes the API's `Class 7A` label so it no longer renders
+as `Class Class 7A`. Local migration `042` and the repeat-safe assessment/report demo seed were
+applied, after which an authenticated learner smoke returned one published assessment and one report
+with one subject. The full frontend gate passes: lint, typecheck, production build and 243 tests in
+41 files. The general 200-student seed regeneration was not claimed: its existing picnic-payment
+integrity assertion failed against this reused local database before the targeted repeat-safe demo
+seed completed.
+
+Stage workflow [37448393097](https://github.com/EduveraIITA/Eduvera/actions/runs/37448393097)
+then passed secret scanning, isolated backend integration tests, the complete mobile frontend gate,
+the desktop build, migration validation, repeat-safe demo-data repair and Railway deployment for
+application commit `63a40f247ed5cc53781a2c1911646066ac75ae77`. Independent public checks returned
+ready database/event dependencies and the same release SHA; both family result routes returned HTTP
+200. An authenticated learner smoke returned Aarav with one published assessment and one report
+containing one subject. Representative physical-device acceptance remains pending.
+
+### Searchable family marksheet gallery and child context — 6 October 2026
+
+The individual assessment history has been replaced by a horizontally swipeable document gallery
+for both learner and guardian portals. A compact dot navigator reports position and opens any card.
+Every published assessment now renders as an institution-branded marksheet
+with learner/class identity, explicit score or non-scored outcome, percentage, subject total,
+feedback, release sequence and immutable publication reference. Search covers assessment, subject,
+cycle, term and year; academic-year and record-type controls filter both assessment marksheets and
+term reports. In the combined view, an assessment that is an actual source of a published term or
+annual report is represented only by the official aggregate marksheet; its individual record remains
+available under Assessments. This relationship is driven by source assessment IDs returned by the
+family report API rather than subject-name inference. Each record can be printed or saved through an
+isolated print view. Term reports remain the visual reference: assessment documents now use the same
+learner identity, three-part result band, subject table, remarks and verification layout. Both
+document types inherit the active learner's accent without record-type color overrides.
+Their title headers stay intentionally simple and inherit the active learner tint without record-type
+color overrides or decorative raster artwork. The document now starts directly with a solid accent
+header titled `Term report` or `Assessment report`; institution branding is intentionally omitted from
+the document card. Publication status sits at the right edge of the same header to avoid wasting a
+separate row. The term/year and actual report or assessment name follow without repeating the type,
+preventing collision at every mobile width while keeping the shared document body unchanged.
+Learner identity and subject results are flat document sections rather than inset cards: identity
+fields use only structural dividers, and the subject header and rows extend to the marksheet edges.
+Draft results, ranks and signatures remain absent.
+
+The repeat-safe Cambridge demo seed now supplies three independent class tests, six subject-level
+annual examinations and one six-subject annual examination report. Report source links are retained,
+so class tests remain separate gallery cards while the six annual paper records are not repeated in
+the combined view. Re-running the seed does not create duplicate assessments or report releases.
+
+The shared parent shell now assigns stable, accessible accent families to the ordered learner list.
+A single learner retains the existing blue theme; with multiple learners the active profile changes
+the inherited parent-portal brand, feature gradient, buttons, selections, soft surfaces and focus
+cues. Profile portraits and the stacked identity-card layers retain distinct learner colors, while
+the institution crest and official document crest stay institution-blue. The shared shell now reads
+the authoritative `student_id` query context on generic parent routes such as More, preserves it in
+service links and back navigation, and can switch profiles there without falling back to the first
+learner. This is a presentation context only: relationship-scoped authorization and the
+`student_id` route context remain authoritative.
+
+Verified locally: the live family-results API returned `Term 1 · 2026-27` for the seeded English
+publication; frontend typecheck, lint and production build pass; the new gallery tests pass; all 47
+application-route tests pass; and the complete frontend suite passes 247 tests in 41 files. Backend
+typecheck, lint and production build pass. The backend non-isolated unit set passed 67 tests, while
+the repository-wide backend command still requires its documented disposable `DATABASE_URL` for
+six integration suites. Physical mobile review of the new gallery and multi-child palette remains
+pending.
+
+## WF-LOCAL-022: Controlled departure and transport coordination
+
+Implemented locally on 6 October 2026. Detailed contract:
+[Departure and transport coordination](DEPARTURE_AND_TRANSPORT_COORDINATION.md).
+
+- One dated, revisioned departure plan now coordinates guardian pickup, verified external
+  collectors, reviewed independent departure, school transport and family/external transport.
+  Purpose-specific collection grants are institution/learner/date scoped and revocable; revocation
+  moves affected current plans into exception instead of leaving a cached receiver usable.
+- Guardian app changes and staff-recorded phone, paper or in-person requests remain separately
+  attributed. Approval creates a superseding current plan. Non-bus handover requires an explicit
+  ready check followed by a factual execution record; bus drop uses the frozen rider roster and
+  writes the terminal transport-handover evidence.
+- School transport separates reusable routes/stops/learner assignments from dated trips and frozen
+  rosters. Only the assigned collector account can open boarding, depart, publish location, update
+  rider outcomes and close the trip. Closure is refused while any rider remains expected, boarded
+  or unresolved.
+- The guardian API returns the latest precise phone observation only while the selected learner is
+  boarded on an in-progress trip. It withholds the same trip coordinates from a linked sibling who
+  has not boarded and removes them immediately at that learner's drop. Map failure never blocks
+  roster or handover work.
+- Institution policy configures enabled arrangements, same-day cutoff, sample retention and stale-
+  location threshold. The web collector explicitly requests geolocation and a screen wake lock;
+  it labels foreground-only operation rather than claiming guaranteed background tracking.
+- Migration `043_departure_and_transport_coordination.sql`, authenticated APIs, principal, collector
+  and family mobile views, role permissions, navigation, audit/outbox events and a repeat-safe
+  Cambridge demo scenario are included.
+
+Verified local evidence: migration 043 applied successfully and a second migration run was a no-op;
+the demo seed is repeat-safe. Authenticated smokes returned the expected parent, assigned-collector
+and principal workspaces. A real-database privacy smoke passed boarded visibility, sibling isolation
+and immediate post-drop removal. Backend typecheck/lint/build and 18 focused tests pass. Frontend
+typecheck/lint/build and all 247 tests pass. Live local API and proxied preview health return OK.
+The repository-wide backend command still needs its documented disposable integration database for
+six suites. Physical-device permission, suspension, weak-network and real gate/bus operations remain
+release gates; native background location and transport-vendor feeds remain deliberate later slices.
+
+## WF-LOCAL-023: Transport duty calendar, roster preparation and mutual swaps
+
+Implemented locally on 6 October 2026 as the staffing and planning continuation of WF-LOCAL-022.
+
+- Effective-dated service patterns now define route, direction, weekdays, departure time, primary
+  collector and optional backup. A six-week-bounded generator prepares dated trips and rider
+  rosters from the learner route assignments effective on each service date.
+- Principal transport operations now show a mobile-responsive seven-day calendar with each trip,
+  collector acceptance state and rider count. Operations can prepare a week, refresh an unfrozen
+  planned roster and reassign primary/backup staff. Reassignment returns the duty to pending;
+  boarding stays blocked until the current assignee accepts.
+- Staff can decline a new duty, request one-way cover or request a mutual exchange with a
+  colleague's accepted planned trip. The colleague accepts or rejects first. School operations
+  separately approves or declines an accepted request. Approval locks and revision-checks the
+  affected trip(s) and applies an exchange atomically; active, frozen or stale trips are refused.
+- Migration `044_transport_duty_planning_and_swaps.sql` adds protected service-pattern and swap
+  records plus dated-trip acceptance/backup fields. Browser roles have no direct table grants;
+  backend permission checks, audits and outbox notifications remain the application boundary.
+
+Verified local evidence: migration 044 applied and a second migration run was a no-op. The
+repeat-safe Cambridge transport seed still completes. A real authenticated smoke created two
+dated rosters, captured both staff acceptances, captured the colleague's mutual-exchange acceptance,
+approved it as principal and verified both assignments swapped while remaining accepted; smoke
+records were removed. A separate recurring-pattern smoke generated one pending trip with its two-
+rider roster and was also cleaned up. Backend build/lint/typecheck and six transport migration
+contract tests pass; frontend typecheck/lint/production build pass. The full frontend regression
+passes all 247 tests in 41 files. Physical mobile and real transport-operations
+review remain the final local acceptance gates for this slice.
+
+### Restricted staff navigation correction — 6 October 2026
+
+- Teacher-portal tool cards, bottom navigation and direct route authorization now use one shared
+  permission map. A custom transport role with only `departure.collect` no longer sees or enters
+  assessment marking (`assessments.view`) or report remarks (`reports.comment`). Backend guards
+  remain authoritative for every request.
+- Restricted custom roles now retain a safe **Today** landing page instead of being forced to
+  **More** or into the teaching-day API, which requires `timetable.view`. The page exposes only
+  permission-backed operational links plus the staff member's own scoped responsibilities.
+- Route guards reject unauthorized module URLs before their lazy pages load or issue module API
+  requests. Default teaching roles retain the existing teaching-day home and navigation.
+
+Verified local evidence: frontend typecheck, lint and production build pass; the complete frontend
+regression passes 251 tests in 42 files, including restricted-role visibility, direct-route denial
+and scoped-home coverage. Local preview/API health returns OK. Physical mobile validation with the
+actual Bus Attendant account remains pending.
+
+### Role duty planning and access recommendations — 6 October 2026
+
+Historical implementation record. Its separate Duties and recommendation UI was superseded on
+7 October 2026 by **Staff setup & leave** and automatic access.
+
+- The earlier permission-enforcement proposal was reverted before release. Duty-to-access mapping
+  is advisory: schools may have temporary duties and intentional permission exceptions, and a duty
+  must never silently grant account access.
+- Migration `045_role_duty_planning.sql` adds a school-scoped role-duty relation and recommended
+  permission metadata to the controlled duty catalogue. Transport attendant is represented as a
+  first-class operational duty with `departure.collect` as its access recommendation.
+- The role editor now starts with **duties this role can perform**, derives explainable access
+  recommendations, and offers an explicit **Add recommended** action. Administrators retain final
+  control and can save with recommendation gaps.
+- Actual offered/active appointments and current transport trips are compared with the staff
+  member's custom-role duties. Mismatches are visible in **Roles & permissions** and **Staff
+  operations → Duties**, but do not block role changes, appointments or temporary cover.
+- Existing roles receive a conservative initial duty selection inferred from current permissions;
+  this is reviewable configuration rather than a claim that every inferred duty is correct.
+
+Verified local evidence: migration 045 applied and repeat-safe demo role/transport seeds complete.
+The Cambridge Bus Attendant role is initialized with only **Transport attendant**; its eight existing
+teaching/event appointments are reported as duty-list mismatches rather than permission failures.
+Backend typecheck, lint and production build pass; 75 non-database tests pass and 13 focused role/
+staff integration tests pass against an isolated database. Frontend typecheck, lint and production
+build pass; all 253 tests in 42 files pass, including duty-first recommendation and mismatch UI.
+Physical mobile review remains an acceptance gate.
+
+### Work-profile authorization redesign — 6 October 2026
+
+Historical implementation record. The role/work-profile eligibility layer described below was
+superseded on 7 October 2026 by Position → Work type → Assignment. Migrations `046`–`047` remain in
+the immutable migration history for deployed-schema compatibility, but current authorization no
+longer joins their profile or duty tables. See the current contract linked above.
+
+- Product decision: institution administrators describe work; the platform calculates access.
+  `WORK_PROFILE_ACCESS_ARCHITECTURE.md` is the authoritative vocabulary, invariant and migration
+  contract. Account type, work-profile eligibility, actual scoped responsibilities, internal
+  capability packs and dated access exceptions are distinct concepts.
+- The earlier duty-plus-manual-access editor is superseded. Atomic permission codes remain an
+  internal server enforcement contract and must not appear in the normal administrator workflow.
+- Migrations `046_work_profiles_and_calculated_access.sql` and
+  `047_work_profile_domain_alignment.sql` implement multiple profiles with one
+  presentation-only primary, a controlled capability catalogue, bounded migration continuity and
+  dated, reasoned access exceptions. The effective-access evaluator requires active membership,
+  profile eligibility and a live domain assignment, then leaves concrete resource and workflow
+  checks with the owning service.
+- Work-profile and exception APIs are tenant-scoped, revision checked and audited. Overlapping
+  exceptions for the same outcome are rejected. Assessment, event, transport, cover and protected-
+  care assignment now reject staff who lack matching profile eligibility. Removing
+  eligibility immediately removes derived access while leaving the responsibility visible for
+  administrator review. Realtime fee/event replay uses the same calculated finance authority.
+- The administrator UI now uses templates, plain-language responsibility selection, multiple
+  profile assignment, one primary profile, current-access explanations and a bounded temporary-
+  exception flow. Raw permission and module-access checklists were removed from role and member UI.
+- Auth projection, staff navigation and route guards consume calculated outcomes; backend guards
+  remain authoritative. Existing administrator authority and domain-level class, learner, event,
+  assessment, transport and case checks remain unchanged.
+- The repeat-safe Cambridge demo now gives all 17 active staff at least one profile and exactly one
+  primary profile. It includes seven meaningful profile types, Teaching profiles for 16 academic
+  staff, event profiles for five assigned event staff, Finance, School-office and protected-care
+  examples, and one dated exception for visible review. Migration continuity noise and superseded
+  demo roles are removed only from the reference institution. The full generator and companion
+  role/transport seeds complete successfully on repeated runs.
+
+Verified local evidence: a fresh isolated PostgreSQL database applied migrations 001–047 and loaded the
+complete demo seed. Backend typecheck, lint and production build pass; all 276 backend tests in 37
+files pass against the isolated database. Frontend typecheck, lint and production build pass; all
+251 frontend tests in 42 files pass. Physical mobile review of Work profiles, staff assignment and
+Current access remains the local acceptance gate. This slice is not yet claimed as deployed.
+
+## Invitation SMTP delivery — 4 October 2026
+
+User request: send company/admin and school-member invitations using the
+Pathyakram Gmail account. The supplied `gamil.com` address is treated as a typo
+for `gmail.com`; account verification and a new Google app password remain
+required for live activation. No supplied password is committed.
+
+A shared Nodemailer transport attempts email only after invitation transactions
+commit. TLS is mandatory (465 implicit TLS or 587 STARTTLS), with certificate
+validation and bounded connection/socket timeouts. Credentials and trusted join
+origin come from environment variables. All three invitation creation paths use
+this adapter. The message includes email-bound code, expiry and `/join` address;
+no code is placed in URLs or logged. Mobile and desktop receipts distinguish
+mail-server acceptance, unconfirmed delivery and manual sharing. Invitation
+expiry/revocation/acceptance and current-authority checks remain authoritative.
+
+Validation: five transport tests and seven onboarding UI tests pass. Backend
+and mobile typechecks, backend lint, backend build and both web production builds
+pass. The connected Railway account exposes DigiRobe and Petboarding only, so
+ThatCampus SMTP variables have not been configured and no live email has been sent.
+Durable queue retries, persisted delivery history, crash recovery and real mailbox
+confirmation remain outside this increment; create a replacement invitation for
+manual retry. See COMPANY_ONBOARDING.md for server activation settings.
+
+## Invitation email failure investigation — 5 October 2026
+
+A company-demo invitation to the user-requested `ise2016004@gmail.com` on
+live Stage release `669050f` returned `delivery: failed`. Inbox delivery was
+not confirmed. The prior blanket error hid the cause. Connected Railway access
+still does not expose the ThatCampus project, so the plan, variables and runtime
+logs cannot be inspected through that connector. Local Gmail SMTP is also
+unreachable from this workspace; that does not prove the live server's cause.
+
+Added allowlisted invitation failure categories and human-readable messages
+without disclosing raw provider errors. Added an optional Resend HTTPS transport
+for Railway plans which block SMTP; invitation and account-action emails share
+this transport. SMTP TLS validation and bounded timeouts remain. API requests
+have a fixed HTTPS destination, reject redirects and require a provider message
+ID before reporting acceptance. Production requires provider-specific credentials.
+
+Validation: 22 backend transport/configuration tests and 10 mobile onboarding
+tests pass; backend typecheck, lint and build, both web typechecks and production
+builds pass. Live Resend sending is blocked until a valid API key and allowed
+sender are configured. Live Gmail authentication remains unverified. This work
+does not claim email delivery is fixed merely because tests pass.
+
+## Dated transport assignments in staff profiles — 7 October 2026
+
+The four South Bengaluru entries in Kavita Mehta's staff profile are four distinct
+trip records, one for each 3:30 PM departure on 7–10 October, not duplicate role
+grants. The trip pattern prepares dated rosters in advance. The role-binding view
+uses the earlier trip creation date as the access-window start so staff can see and
+accept future work; that window was mistakenly presented in the profile as the
+journey's duration. Route-only labels compounded the confusion. Its generic
+`active` binding status also did not mean a pending collector had accepted a trip.
+
+The staff-assignment read projection now includes each trip's service date, departure
+time, direction, journey state and collector response. The profile and staff self-view
+show the actual dated journey; the administrator profile uses the date as the row
+heading and the route/time/direction beneath it. Pending, scheduled, in-progress,
+completed and cancelled labels reflect the transport record. Date search and
+per-trip accessible action labels distinguish journeys on the same route. The
+underlying trip records, advance-access window and authorization rules are unchanged.
+
+Verified: a fresh disposable PostgreSQL database applied migrations 001–052 and
+the eight staff-operations integration cases passed, including two distinct trip
+projections. All 264 frontend tests in 43 files, including the ten focused profile
+UI cases, pass; frontend/backend typecheck and
+lint and both production builds pass. A live local-preview browser smoke on the
+Cambridge demo showed four distinct dated journeys with their current responses,
+no browser error or horizontal overflow at 390 px; the broader profile smoke also
+passed at 320, 390, 768, 1024 and 1440 px. Physical-phone review remains open.
+
+## More navigation and actionable markers — 7 October 2026
+
+The parent, student, teacher and principal More pages now use one tool catalogue and offer
+the existing two-column grid or a compact settings-style list. The choice is stored per user;
+switching views does not change route access, role filtering, or the parent's selected-child
+links. The student launcher uses the same control and includes its existing destinations.
+
+A small red marker appears only when a supported current action exists. The home APIs expose
+`more_attention` derived from RSVP, guardian consent, event-payment/preparation, leave-signature,
+diary-acknowledgement and attendance-register action projections. A transport-only staff member
+uses the authorized collector journey response for pending trip acceptance or incoming duty swaps;
+the More page does not request the teaching home without `timetable.view`. Informational updates,
+upcoming events, guardian-only decisions in the student view and the bell's unread notification
+total do not create tool markers. Markers are
+deliberately non-numeric: some source projections group or cap actions, so a displayed number
+would imply a complete domain queue that the app does not yet provide. Other modules do not claim
+zero pending work when no marker is shown; the B5 action-inbox contract remains the path to
+complete cross-module counts.
+
+Verified locally: backend and frontend typechecks, lint and production builds pass; the two focused
+badge derivation tests pass; all 267 frontend tests in 43 files pass. A live browser smoke on the
+managed preview showed principal and parent grid/list pages, the parent's real pending Leave
+marker, and no horizontal overflow at 320, 390 or 430 px. The preview health endpoint returned
+OK and the existing ngrok tunnel remained active. Physical-phone/user review remains open; this
+increment has not been deployed to production.
+
+## Grouped More hierarchy across all portals — 7 October 2026
+
+User decision: apply the settings-style hierarchy to **every** institutional view,
+not only admin. Keep the app's theme and primary navigation. Group headings organize
+the same screen; they do not add a layer of navigation. The default is now a compact
+list, while an explicitly saved grid/list preference is retained per account.
+
+| View | Stable groups |
+| --- | --- |
+| Admin | People; Academics; Operations; Institute; Account |
+| Staff | My work; Schedule & activities; Communication & care; Administration (only when delegated); Staff services; Account |
+| Parent / student | Learning; Schedule & attendance; School life; Payments & policies; Account |
+
+Search indexes accessible destinations, familiar task synonyms and the admin's
+nested tasks, displaying each result's location in the hierarchy. Hidden staff
+modules are excluded before grouping/search; empty groups disappear. Parent links
+retain `student_id` in either layout and in search. Existing action-dot semantics
+remain unchanged: this navigation slice does not invent counts or widen access.
+
+Canonical homes and routes:
+
+- Students & guardians owns import, class promotion and family invitations.
+- Staff owns its directory, roles, assignments, leave and staff invitations.
+- A single invitation UI handles contextual entry from People/Staff/Account access,
+  preselects the account type, and returns to the originating module. The older
+  duplicate invitation creation/revocation UI in Administration was removed.
+- Institute settings is a short list leading to Academic setup, Account access,
+  Administrative history and Setup status. Its children have explicit back routes.
+  Completed onboarding is not displayed in More or ongoing academic setup. A
+  Finish setup shortcut appears only for a successfully loaded non-active institution.
+- Timetable & calendar owns the daily plan, weekly timetable and calendar, with
+  shared local navigation. The primary Timetable tab uses the same entry point.
+- Assessments and Report cards stay separate; search can open grading schemes
+  directly. Policies & governance has addressable profile/register tabs.
+- Account security remains findable under Account and is also accessible from the
+  shared profile menu. No additional account-management screen is introduced.
+
+This is navigation/presentation only: existing institutional permissions, protected
+care scope, audit writes, invitations and domain workflows retain their server checks.
+No database migration or reseeding is required. All route URLs remain compatible.
+
+Verified locally: all 286 frontend tests in 46 files passed, including hierarchy,
+permission filtering, selected-child search links, layout persistence, incomplete-only
+setup, contextual invitations and nested settings navigation. A subsequent focused
+report-workspace regression passed after correcting the grading deep link to load
+the scheme detail rather than a report batch. Frontend lint, typecheck and production
+build pass. Live Cambridge demo smoke covered all four More views in grid and list
+at 320, 390, 768, 1024 and 1440 px without horizontal overflow or runtime exceptions.
+Nested settings, invitations, grading, governance profile and planning routes opened
+successfully; a real task-search → staff invitation → back-to-Staff sequence passed.
+The managed preview health/readiness checks and existing ngrok tunnel are healthy.
+Physical-phone/user review remains open. No production deployment is included.
+
+
+### Institution directory — 7 October 2026
+
+The searchable local UDISE/AISHE directory is integrated into the company console.
+Migration 053 keeps master directory identities separate from school tenants,
+protects official source/code and tenant links with database uniqueness, and tracks
+Stage activation status. Creation and invitations use the existing CompanyService
+and email delivery path; university/standalone records use the existing college
+workspace. CSV upsert and explicit legacy mappings preserve stable identities.
+See ../INSTITUTION_DIRECTORY.md. Integrated Stage CI and deployed UI review are
+required before claiming this change live; no national dataset is committed.
+
+## Stage release verification — 7 October 2026
+
+The grouped More hierarchy, staff access/governance work and companion migrations
+were released to **Stage**, not production, at commit `bc22e550bad2dacd7199fc1922c35bb7eb582b4d`.
+[Stage workflow 37655645215](https://github.com/EduveraIITA/Eduvera/actions/runs/37655645215)
+passed secret scanning, backend build and integration tests, a fresh PostgreSQL 17
+migration/seed, all 286 mobile tests, the desktop build, existing Stage migrations,
+and Railway deployment. The Stage demo seed completed for roles, a two-rider
+transport trip, governance sources/offices/bodies/appointments/decision rules,
+and an Attendance reviewer scoped to Class 6A. The transport pattern seed now
+upserts by its stable demo ID so a later calendar date does not collide with an
+existing primary key. The Stage workflow's public smoke check passed both SPAs,
+API readiness, demo login, install icons, OpenAPI and protected metrics.
+
+Independent checks of `https://omnischool-stage.up.railway.app` returned HTTP 200
+for `/` and `/staff/`; `/readyz` reported database and events OK; `/releasez`
+reported the exact commit above and `environment: stage`. The local review preview
+also remained ready. Physical-phone/user review is still open, and this evidence
+does not assert a production release.
+
+
+### Principal intelligence dashboard — 7 October 2026
+
+Implemented on the principal home route using the existing blue/mint theme and
+shared navigation. The read-only, school-scoped insights endpoint aggregates
+attendance trends and completeness, engagement changes, latest published assessment
+results, follow-up ownership, upcoming teaching coverage, deadline clusters and
+fee ageing. Review windows, class filters, academic thresholds and source-record
+drill-downs are available. Existing daily operational workflows remain in place.
+See [metric definitions](PRINCIPAL_INSIGHTS.md). No migration or reseed is required.
+
+Verified locally: backend lint, typecheck and build; frontend lint, typecheck and
+production build; 8 focused backend tests (including integration on PGlite with all
+repository migrations applied); 18 focused frontend tests. Browser checks at 320,
+768, 1024 and 1440 px passed for overflow, filter requests, dialog fit, Escape
+dismissal and runtime errors using clearly synthetic API fixtures. This is not
+PostgreSQL 17 CI or live-data validation. Integrated Stage CI, deployed school-data
+checks and user UI review remain open. No merge or deployment is included.
+## Timetable and calendar simplification — 7 October 2026
+
+User decision: simplify the planning screens using a calm, content-first hierarchy.
+This supersedes the earlier large blue date board and stacked planning/view tabs,
+while retaining the established school header, bottom navigation, typeface and
+per-child accent. Blueprint sections 6–7 remain the basis: daily expectations and
+scoped work are primary, with a stable navigation model. The UI approach follows
+[Apple's toolbar guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars)
+and [layout hierarchy guidance](https://developer.apple.com/design/human-interface-guidelines/layout),
+adapted to the existing web components rather than a native Apple implementation.
+
+- Admin planning has two browsing destinations, **Timetable** and **Calendar**.
+  **Edit timetable** opens the existing weekly management workspace; it is no longer
+  a competing browsing tab plus a duplicate management button. Links retain the
+  selected school, date and class. Existing route URLs remain compatible.
+- All four timetable readers use one compact view picker and neutral date surface.
+  Day view shows a complete Monday–Sunday rail, selected-date text, a separate Today
+  marker and previous/next-week controls. Month and Year keep their drill-downs;
+  period navigation handles month ends and leap years without overflowing dates.
+- Admin daily change/revision and printing controls are in **Schedule actions**.
+  The published schedule appears earlier on mobile. Drafting, publication, coverage,
+  history and server authorization are unchanged; no new mutation is introduced.
+- Parent/student Day views use a vertical agenda with full subject names, times,
+  teacher, room, cancellation and supplied materials. Existing lesson details remain
+  accessible by tapping a row. Week view retains the comparative weekly grid.
+- The shared calendar uses a compact Month/Day picker, lighter date grid, explicit
+  today/selection semantics and an expandable **Calendar key**. Its role-specific
+  events, leave, attendance and school closure details remain unchanged.
+
+Verified locally: the 76-test timetable/calendar/navigation/day-plan/route run passed;
+the subsequent 17-test calendar/navigation/timetable/weekly-builder run passed.
+The new family agenda regression and five affected route tests passed after the
+agenda change. Frontend lint, typecheck and production build pass. Browser smoke
+covered admin, teacher, parent and student timetable/calendar at 320, 390, 768,
+1024 and 1440 CSS pixels with no horizontal page overflow or runtime exceptions.
+Month-to-Day selection, Today, calendar Day navigation, keyboard dismissal of
+schedule actions, family lesson details and return to the weekly grid were exercised.
+Local and ngrok readiness both report database and events OK. No database changes
+or reseeding are required. This slice has not been pushed or deployed to Stage. Physical-phone/user
+acceptance remains open; please review the live preview before further UI expansion.
+
+### Timetable navigation follow-up — 7 October 2026
+
+Latest user decisions supersede the Week browsing behavior above:
+
+- Retain the **Day / Month / Year** dropdown. Remove Week from the shared
+  timetable reader; Day already includes the seven-day rail. Existing `view=week`
+  links safely open Day. The separate admin weekly timetable editor is unchanged.
+- Day and Month are the compact and expanded forms of the same date selector.
+  The bottom toggle is **arrow-only**, with an accessible name, expanded state,
+  keyboard activation and a 44-pixel-high target. The month heading also toggles it.
+  No visible Expand/Collapse wording and **no swipe gesture**: ordinary touch
+  scrolling remains with the browser. This supersedes the initial gesture idea.
+- Selecting dates or another month preserves expanded Month and updates
+  the daily schedule beneath it. **Today selects today and collapses to Day**,
+  including when invoked from Year. URL state retains the view through reload/back.
+  Dates remain selectable while totals load or fail; unloaded totals are not
+  presented as free days.
+- Year shows only its overview in admin, teacher, parent and student timetables:
+  no daily periods, empty-day messages, notices or materials list. Opening a month
+  returns to the expanded Month selector. School/class/child context is retained.
+- During date fetches, keep the date selector and same-person/class context stable,
+  show a loading state instead of the previous day's work, and never reuse a
+  different child's placeholder data. Teachers can still change school in Year.
+- Selected dates share the same solid-accent circle and white number in compact
+  Day and expanded Month; Today uses the same accent outline in both. Shared theme
+  tokens retain each child's colour instead of a separate pale Month selection.
+
+Verified locally: 30 focused timetable/calendar/navigation/day-plan tests and seven
+affected route tests passed. Browser checks passed for all four roles: the three
+dropdown choices, expansion/collapse controls, no gesture-triggered mode change,
+Month persistence after selection and reload, Year hiding of daily content, and
+Year-to-Month drill-down. Day/Month/Year had no horizontal page overflow at 320,
+390, 768, 1024 and 1440 CSS pixels, and no runtime exceptions were observed.
+The final arrow-only control and delayed parent-date fetch were also checked in a
+mobile browser: the calendar stayed expanded and the old day's agenda was hidden
+during loading. Frontend lint, typecheck and production build pass. Local and ngrok
+readiness report database and events OK. These navigation changes alone need no database changes. Physical-phone
+user review remains open; this follow-up is not pushed or deployed.
+
+### Timetable editing repair — 7 October 2026
+
+- **Prepare changes:** reproduced a mobile Safari/WebKit event-order bug. Tapping
+  the menu action blurred the native disclosure with a null focus target, closing
+  it before its click could fire. The shared ScheduleActions wrapper now dismisses
+  on outside pointer interaction, actual keyboard focus departure or Escape, not
+  a null-target blur from a tap inside. Existing draft authorization and command
+  behavior remain unchanged.
+- **Edit timetable:** the route opened, but its API failed because the runtime
+  database role could not read `curriculum_subject_targets`. That table had retained
+  a different migration-account owner. Migration **053** aligns table and scope
+  validator ownership with `students`, following the existing direct-database
+  application boundary. RLS stays enabled; PUBLIC, anon and authenticated do not
+  gain table access. No timetable data is rewritten. The editor also now retains
+  the selected date/week from the daily view, with invalid/out-of-term fallback.
+- Applied only the reviewed 053 SQL transactionally to the local preview database
+  and a dedicated test clone. **No remote database or Stage changes were made.**
+  The ordinary migration runner is blocked locally by a pre-existing checksum
+  mismatch for migration **047**. Its source/history were not rewritten or bypassed
+  in the migration ledger; reconcile that drift before using the normal deployment
+  migration path. Do not treat this local repair as a clean deployment gate.
+
+Verified: all **44** focused frontend tests across timetable/navigation/calendar,
+day-plan API/editor and schedule-menu suites pass; lint, typecheck and production
+build pass. **21** backend day-plan integration and migration checks pass against
+the isolated database using the runtime role. Real mobile WebKit created a draft
+and displayed the editor against that clone; no draft was created in the user's
+review data. Chromium and WebKit opened the live weekly/period editor; WebKit also
+verified retained date context and Today collapsing from Year. The broad existing
+API test was attempted but stopped before timetable assertions on an unrelated
+fixed demo-count expectation (200 students versus the clone's 203); it is not
+claimed passing. Physical-phone acceptance and deployment remain open.
+
+### Separate timetable settings page — 8 October 2026
+
+User decision: the repeating-timetable editor is a settings destination, inspired
+by iPhone Settings, not another Timetable/Calendar browsing tab. This follows
+blueprint sections 3 and 6–7 while retaining the existing shared header, theme,
+navigation and authorization. Frontend UI engineering guidance informed the grouped
+rows, full-row tap targets, keyboard focus handling and progressive disclosure.
+
+- **Edit timetable** now opens a standalone page at the existing `/weekly` route.
+  Browsing tabs are absent during loading, errors and normal editing. Back retains
+  the selected class, school, date and browsing view.
+- Class and term use compact grouped settings rows. A weekday selector leads
+  directly to tappable period rows. Removed decorative totals, duplicate date/week
+  navigation, the class-card carousel and the always-visible success banner.
+- Existing add/edit/remove/copy operations remain intact. Real allocation conflicts
+  appear in the class picker, affected weekday and period; they are not hidden by
+  the simplified layout. Breaks no longer show meaningless unassigned-teacher text.
+- School dates and coverage targets are grouped settings entries. Coverage opens
+  as a focused subpage with its own title/back action; query-only page changes
+  reset scroll so the scope controls do not disappear behind the header.
+- Existing sheets now trap keyboard focus, support Escape (unless saving), and
+  restore focus on dismissal. Loading and retry states keep the editor's header
+  and back navigation instead of dropping the user onto an unframed error.
+
+**Scheduling scope, not a new temporal model:** the user pointed out that the
+screen appears limited to the current week. Inspection of the slot commands confirms
+that a slot is keyed by term and weekday, not by calendar week. The editor now
+explicitly says **Every week in this term** and shows its start/end dates. The
+existing daily-planning link remains available for date-specific changes. Changing
+the selected weekday does not create a future-effective timetable version.
+The follow-up choice is still open: a different pattern for one selected future
+week, a new repeating pattern effective from a future date, or both. Do not claim
+these future-scheduling semantics are implemented or simulate them with a date picker.
+
+Verification: 49 focused editor/navigation/calendar/day-plan tests and four affected
+route tests pass. After adding explicit term scope, the 22-test editor/navigation
+rerun also passes. Lint, typecheck and production build pass. Chromium and WebKit
+UI checks covered 320, 390, 768, 1024 and 1440 px: no horizontal overflow; period
+dialog opening, focus trapping/restoration, coverage navigation and scroll reset
+passed. WebKit also retained Month/class/date on return to the timetable; its
+navigation run emitted existing aborted auth-session/event-stream diagnostics, so
+this is not a claim of a clean browser-console audit. A separate Chromium check
+passed the delayed loading, failed API and successful retry sequence. Local and
+ngrok readiness report database and events OK. No new backend/schema/seed changes
+were made in this UI slice. Not pushed or deployed; the earlier migration-047 drift
+gate and physical-phone review remain open.
+
+## 8 October 2026 — Annual schedule preparation and dated publication
+
+Supersedes the preceding open future-scheduling choice: the user approved both
+future repeating arrangements and bounded temporary arrangements. Contract and
+research references: `ANNUAL_SCHEDULE_PLANNING.md`. Blueprint sections 3 and 6–8
+remain the primary domain reference; shared navigation/theme are preserved.
+
+Implemented standalone Schedule settings, next-year terms/class reuse into
+unpublished drafts, school-day timing generation, period editing/day copy,
+teaching allocation and existing closure/coverage controls. Publication uses
+explicit dates, revision checks, idempotency, active staff checks, class/teacher/
+room conflict checks, audit, transactional outbox and deduplicated notifications.
+Migration 054 adds immutable dated recurring versions and freezes legacy baseline
+identities at first publication. Closures and published daily changes retain
+precedence; temporary expiry restores the preceding pattern. Legacy weekly writes
+are blocked once a dated version exists. Teaching-access fallback uses effective
+dates. Calendar working-day indicators use actual effective schedules; assessment
+dates are projected without marks and scoped to permitted staff or learners.
+
+Verified: 29 backend integration tests (10 annual planning, 19 existing daily-plan)
+pass against an isolated full-schema database. Frontend full suite: 320 tests in
+50 files pass. Backend/frontend lint, typecheck and production builds passed.
+Chromium and WebKit settings checks passed at 320/390/768/1024/1440 px without
+horizontal overflow; real-database draft creation and discard passed in both.
+Local migration 054 applied transactionally; local and ngrok `/readyz` both report
+database/events OK. Demo schedules/enrollments were not replaced by test data.
+
+Boundaries: no automatic timetable solver, student rollover, published-version
+cancellation, or remote deployment is claimed. Starts must be after today; same-day
+changes remain Daily Plan. Existing migration-ledger drift at 047 still blocks a
+normal release until deliberately reconciled; historical checksums were not
+rewritten. Physical-phone acceptance remains requested. No push/deploy this turn.
+
+### Daily Plan entry correction — 8 October 2026
+
+The settings link previously returned to the timetable reader, leaving its edit
+action inside the overflow menu. It now opens explicit Daily Plan editing mode,
+retains class/date, sets Day view, and shows Prepare changes/Create revision as a
+primary action. Existing drafts still open in the editor; navigation alone never
+creates a draft. Past dates remain read-only. Back returns to Schedule settings.
+Five focused navigation/action tests passed, including context preservation,
+no write on entry, explicit preparation and historical-date protection. Production
+build passed. Chromium/WebKit mobile checks confirmed the actual link destination,
+visible preparation action and no horizontal overflow. Local readiness is healthy.
+No database change, push or remote deployment for this correction.
+
+### Discard proxy-error handling — 8 October 2026
+
+The reported discard dialog displayed an ngrok HTML document. Current local and
+public readiness checks pass; the original transient failure is not conclusively
+identified. Shared API handling now rejects HTML proxy responses (including HTTP
+200), displays a concise uncertainty/retry message, and preserves JSON domain
+errors. Ngrok-hosted API requests send the browser-warning bypass header. An HTML
+response cannot be mistaken for a successful command. Six regression tests,
+frontend build/typecheck and lint passed. A WebKit mobile check against an isolated
+database injected an HTML 502 on discard, verified the readable error, then retried
+against the actual backend: discard succeeded with the identical idempotency key.
+The user's live draft was not altered. No migration or remote deployment.
+
+### Simplified day editing — 8 October 2026
+
+User decision supersedes the separate Daily Plan entry mode above: remove the
+large Change this day panel. The ordinary Day schedule overflow menu now offers
+Edit day schedule (or Resume editing for an existing draft). The editor opens
+only after that action; opening the timetable does not create or open a draft.
+Schedule settings retains a plainly labelled View day schedule navigation link,
+not a required editing gateway. Date/class context and past-date safeguards remain.
+Five focused tests, production build/typecheck and lint pass. WebKit mobile testing
+against the isolated database verified menu → editor, reload → read-only schedule,
+Resume editing → discard. No live user draft was modified, no schema change or
+deployment. Uses the existing accessible overflow-menu pattern and shared theme.
+
+Menu polish: Edit day schedule/Resume editing now has a decorative 19px pencil
+icon matching Print. Both actions use equal horizontal padding and nonshrinking
+icons. Three focused tests and typecheck pass; local readiness remains healthy.
+
+## 8 October 2026 — Attendance presentation simplification
+
+Applied the user's timetable-style simplification to staff/admin workspaces and
+registers, plus parent/student attendance. Blueprint sections 6, 8, 10 and 12
+invariants retained: unsubmitted is not absence, gate observations remain separate,
+offline/reconciliation states remain explicit, correction/locking rules unchanged.
+
+- Shared compact attendance date control: native date entry, Previous/Next day,
+  Today and arrow-only month disclosure. Picking a date keeps the month expanded;
+  Today collapses it. Register date changes still use the unsaved-edit confirmation.
+- Removed the staff workspace gradient hero; kept compact factual totals, search
+  and status filters. Class cards form a flatter grouped list. Attendance desk
+  starts collapsed unless review cases/errors require attention; paper entry and
+  reconciliation remain available within it.
+- Register header is flatter with the shared date control. Removed redundant
+  principal-review prose; retained the explicit edit/correction action, attribution,
+  revision history, source handling, offline warnings and submission safeguards.
+- Parent calendar and subject records precede optional breakdown/arrival details.
+  Student subject attendance precedes optional class standings/absence simulation.
+  These secondary sections use disclosures, not deleted features. Family summaries
+  use existing surfaces and child accents with corrected text contrast. Source
+  order follows visual order for keyboard users. No data/permission/schema changes.
+
+Evidence: full frontend suite 331/331 passed; post-reordering focused tests 17/17
+passed. Build/typecheck and lint passed. WebKit checks covered principal, teacher,
+parent and student at 320/390/768/1024/1440 px with no horizontal overflow; expanded
+calendar and real register navigation checked. Local/ngrok readiness both healthy.
+Physical-phone review requested. No push or remote deployment this turn.
+
+### Attendance-first correction — 8 October 2026
+
+The user rejected copying timetable controls into attendance. This decision
+supersedes the expandable attendance calendar and workspace totals above.
+Staff/admin attendance is a daily register queue: one inline native date picker
+with adjacent-day navigation (Today only when viewing another day), followed by
+one status select with counts and optional search/attendance-desk tools. Removed
+the separate calendar card/expander, repeated totals, Registers heading and four
+filter chips. Registers now follow the controls directly. Existing filter logic,
+record states and marking/correction rules are unchanged.
+
+Desk cases retain a badge plus visible review notice; load failures retain an
+explicit notice, never an implied zero queue. Paper/reconciliation tools open
+from the desk button. Search opens with focus and closes/clears with Escape or
+its close button, returning focus to its trigger. The native date picker also
+simplifies individual registers while retaining unsaved-edit protection.
+
+Verified: 23 focused date/workspace/register tests, build/typecheck and lint pass.
+WebKit shows no horizontal overflow at 320/390/768/1024/1440 px. Real preview
+principal and teacher search/filter entry and principal desk opening verified;
+mobile screenshot confirms class records visible immediately below two control
+rows. Local and ngrok readiness healthy. No data/schema edits, push or deployment.
+Request phone validation of this revised hierarchy rather than claiming acceptance.
+
+### Shared date navigation — 8 October 2026
+
+Latest user decisions supersede the previous per-module picker treatments:
+
+- One shared date-navigation component, date grid and view selector now serve
+  timetable and Calendar across all four portals, plus admin/teacher attendance
+  workspaces and individual registers. Module-specific data and actions remain
+  separate; this does not add new attendance aggregates or permissions.
+- Tapping the top-left date/month/year uses the same native date input in each
+  module. It does **not** expand/collapse the inline calendar. Only the separate
+  arrow (or Day/Month selector) changes inline presentation. Timetable retains
+  its Year overview without a daily agenda. No swipe gestures were added.
+- Attendance remains one compact date row, with adjacent-day arrows and **no
+  inline expansion**. Timetable/Calendar use Monday-first seven-day strips and
+  week arrows; expanded month and year arrows move the displayed period. All
+  arrows have explicit accessible period labels.
+- Today is shown only when the selected school date differs from today. Returning
+  to today also collapses the timetable/calendar month view. Calendar updates
+  date and view atomically while retaining other URL context. Picking another
+  date does not collapse an already expanded month.
+- The same accent-filled circle marks selection; an outline marks unselected
+  today. Event/status dots and timetable totals remain domain-specific; indicator
+  space is reserved across a row to keep date numbers aligned. Month/year changes
+  clamp to valid dates; date arithmetic uses UTC calendar days, not device offsets.
+- Removed the repeated visible selected-date/Today line next to the expansion
+  arrow and tightened bottom spacing. A screen-reader announcement remains.
+  Touch targets, keyboard month-boundary navigation and visible focus are retained.
+- Schedule settings is an unboxed text link with its chevron and keyboard focus
+  outline. The actual destination and class/date context are unchanged.
+- Register date changes still go through the unsaved-work confirmation. Rejected
+  changes do not update the controlled date. No attendance commands, access rules,
+  schema changes, live-data edits or remote deployment are part of this change.
+
+Evidence: full frontend suite passed 339/339 before final minor styling/metadata
+polish. Focused shared-control checks cover native input changes vs expansion,
+Today visibility/collapse, guard rejection, leap years, month-end clamping,
+keyboard focus and calendar indicators. WebKit exercised date selection, month
+selection persistence and Today across principal/teacher/parent/student timetable
+and Calendar plus both staff attendance queues; no horizontal overflow at
+320/390/768/1024/1440 px. Local and ngrok readiness passed. Physical-phone native
+picker and visual acceptance remain requested; browser emulation is not that sign-off.
+
+Final polish verification: 19 focused date/navigation tests, production build,
+typecheck and lint passed. WebKit confirmed the Schedule settings link has zero
+border, transparent background and a retained 44px hit area on both routes;
+320/390px rechecks and local readiness passed after the final changes.
+
+### Timetable compact counts and monthly year overview — 8 October 2026
+
+User clarification: Year is an overview of monthly scheduled classes, **not** a
+grid of miniature calendars. The interim mini-calendar design was rejected and
+removed. Year now displays twelve tappable month totals with a restrained selected
+month accent, no date cells, bar chart, or daily agenda. Tapping a month retains
+the established Month-view destination. Counts retain the existing "periods"
+unit: these are scheduled lesson periods, not distinct class sections.
+
+The compact seven-day strip now shows the same per-date count as the expanded
+month (dash for a known free day). Missing or failed data is never presented as
+zero/free. The shared implementation serves all timetable portals and preserves
+child accent colours. Month totals without summary data read "Not loaded".
+
+Verified: 12 date/timetable component tests passed after the correction, including
+compact counts, missing data and the explicit absence of calendar dates in Year.
+Seven route-level timetable checks passed during this slice. WebKit verified the
+final monthly-total layout and month drill-down at 320/390/768/1024/1440 px with no
+horizontal overflow; all four portal count/navigation flows were also exercised.
+Phone visual acceptance remains open. No data, permission or schema changes.
+
+### Attendance paper/offline review clarity — 8 October 2026
+
+User feedback: the "Operational continuity / Evidence and reconciliation" panel
+did not explain its purpose and repeated headings, zero summaries and nested boxes.
+The panel is now named **Paper & offline entries**, with one short explanation,
+flat class/date review rows, and a collapsed **Enter a paper register** action.
+The empty state is a single "Nothing to review" line. Processing details no longer
+dominate the view: pending entries appear only when nonzero; applied/rejected
+totals are disclosed under their actual attendance date. Missing, loading and
+failed responses never imply a zero/clear queue.
+
+Scope was checked against the existing backend: open cases and pending/review
+counts span all dates, while processed totals are date-specific. Every case shows
+its own date; the toolbar uses the full review count rather than the loaded list
+(the server caps that list at 50). Review details retain the original server
+reason, recorder, observation time, source reference and current revision. Required
+notes, locked-register protection, revision checks and accept/reject command
+semantics remain intact. Busy actions cannot be duplicated or switched mid-save.
+
+Verification: 347 frontend tests passed before the final additional toolbar-count
+regression; the final focused panel/workspace set passes 16 tests. Production
+build/typecheck and lint passed. WebKit inspected the real empty/paper-entry flow
+and read-only mocked review/locked/error states; no overflow at
+320/390/768/1024/1440px, with 44px controls and keyboard focus verified. A navigation
+abort of the existing events stream produced an access-control console error;
+this is not represented as a clean console or a resolved event-stream issue.
+Local preview readiness is healthy. No attendance records, permissions or schema
+were changed; no push or deployment. Physical-phone visual validation is pending.
+
+### Public institution directory population — 8 October 2026
+
+Prepared a checksum-pinned, Stage-only import of the publicly licensed India Data
+Portal UDISE snapshot and an AISHE-derived public snapshot. Rows retain provenance,
+remain unverified, and cannot overwrite existing official identities or tenant
+links. Normalization rejects invalid identifiers and quarantines conflicting
+AISHE codes. Source files remain outside Git. The dedicated workflow verifies the
+loader against isolated PostgreSQL before using the existing Stage credentials;
+its summary artifact records actual accepted/rejected counts. Live counts and
+search verification must be taken from a successful run, not inferred from source
+row totals. See `docs/INSTITUTION_DIRECTORY.md` for attribution and snapshot dates.
+
+Stage import attempt `37671492107` failed with PostgreSQL `53100` (no space left
+on device) after validating all 1,440,856 rows. Its atomic transaction rolled back;
+these are prepared counts, not live directory coverage. The loader now respects
+per-statement limits with 5,000-row windows, verified by a late-window rollback
+test. Automatic imports are disabled: full import requires a manual workflow run
+after database storage is increased. Ordinary VACUUM is available for reclaiming
+dead tuples without removing live records; no tenant records are deleted.
+
+### Scheduling/attendance Stage integration — 8 October 2026
+
+Pulled Stage through `196e93a` and preserved its institution-directory work alongside
+the scheduling and attendance changes. The only merge conflict was the appended
+implementation record; both histories are retained. The three unrelated local
+duplicate files named with ` 2` remain untracked and are excluded from the release.
+
+Historical migration sources, including 047, are unchanged relative to the latest
+successfully deployed Stage revision. The earlier 047 checksum warning concerns
+the local preview ledger; it was not bypassed or rewritten. The two independently
+named 053 migrations are distinct immutable entries in the existing filename-keyed
+runner. New curriculum ownership and annual schedule migrations remain subject to
+fresh PostgreSQL 17 integration tests and normal Stage checksum enforcement.
+
+Merged backend typecheck/lint/build, mobile typecheck/lint/build and desktop
+typecheck/build passed locally. Deployment is pending the push-triggered Stage
+verification, migration and exact-release health gates; this entry does not claim
+that the new revision is already live. No full demo reset or national-directory
+import was requested or started.
+
+Release verified: [Stage run 37687825563](https://github.com/EduveraIITA/Eduvera/actions/runs/37687825563)
+passed all gates and deployed application revision
+`f77127bd1f7b83018be506a17b7183022646e391`. CI passed **317 backend tests in 45
+files** and **358 frontend tests in 55 files**, plus secret scanning, all builds,
+and fresh PostgreSQL 17 migration/seed verification. Stage then applied
+`053_timetable_curriculum_ownership.sql` and `054_annual_schedule_planning.sql`
+through the normal checksum-validating runner. Full reseeding was skipped.
+
+Independent public checks returned that exact SHA and `environment: stage`, with
+database/events ready. Authenticated WebKit mobile checks opened the new
+paper/offline attendance panel and paper-entry selector, navigated from timetable
+to Schedule settings, and loaded all eight class arrangements without alerts or
+horizontal overflow. The local preview also remained ready. This records a Stage
+release, not production approval or physical-device acceptance. The documentation-
+only evidence commit does not require redeploying the unchanged application.
+
+### 8 October 2026 — teacher class directory and individual class pages (local)
+
+User decision: keep the shared visual system but replace the large class hero
+and inline expansions with a settings-style directory and separate class pages.
+The follow-up explicitly requires lesson times and class activity on the list.
+
+- Directory rows show subjects, students, room, dated lesson times (including
+  cancellation), attendance state and a separate activity link. No false zero
+  counts or empty-state messages are used when loading fails.
+- `/teacher/classes/:classId` preserves date and section through reload/back.
+  Overview contains class facts, register/timetable links and lesson materials;
+  Students contains a searchable roster; Updates contains published notes,
+  private replies addressed to this teacher and recorded class notifications.
+- The new read-only class-updates endpoint uses the existing date-scoped
+  attendance workspace and `attendance.view` permission. It does not infer a
+  class from an arbitrary student's current enrolment. Replies are additionally
+  limited to diary items authored by the requesting teacher; another teacher's
+  private replies are excluded. Published notes are term-scoped.
+- Activity is explicitly **recent, last 14 days**, not an invented unread count.
+  Only actual notification rows use unread state and an explicit Mark as read
+  action. Opening a class does not mark anything read. Both daily-plan and
+  repeating-timetable notifications can map to a class. Unscoped notifications
+  are not guessed into a class. The latest 50 items per class are returned with
+  an explicit truncation message; these badges are not lifetime totals. Updates
+  refresh every minute and on focus. Notes/comments do not yet have individual
+  server-side read receipts; school-wide changes without class metadata remain
+  in the main notification centre.
+- Verified locally: frontend/backend typechecking and lint; production builds;
+  isolated PostgreSQL class-feed test covering assigned class, term, unpublished
+  notes, private recipient, read/unread state and empty scope. Real-data WebKit
+  directory/detail/roster/update screens loaded without alerts, preserved a
+  direct roster URL through reload, and had no horizontal overflow at widths
+  320/390/768/1024/1440. All **371 frontend tests in 56 files** passed.
+  Local `/readyz` returned database/events ready.
+
+This is local implementation, not a Stage deployment or physical-device signoff.
+User phone validation remains requested. The existing blueprint and shared
+header/navigation/theme are unchanged; no school data reset or migration is needed.
+
+Follow-up: Students now offers labelled gallery/list icon controls with pressed
+states and 44px targets. List remains the initial default; the chosen layout is
+remembered in this browser, with a safe fallback when storage is disabled.
+Gallery uses larger photos/initials and retains name, roll/admission number and
+attendance state. Search persists while switching layouts. Typecheck, lint and
+15 focused class tests passed; WebKit verified persistence after reload and no
+horizontal overflow at 320/768/1024/1440px. Preview remained ready. Local only.
+
+Gallery refinement requested immediately afterwards: restored the earlier compact
+portrait treatment rather than two large cards per row. Mobile shows four
+60px portraits per row, roll-number badges, names and text attendance labels with
+status rings; no individual card boxes or admission-number repetition. Admission
+numbers remain searchable and visible in list mode. List/toggle persistence is
+unchanged. Typecheck and all 15 focused tests passed; WebKit checked four columns
+at 320/390px and no overflow through 1440px. Local preview remains healthy; user
+visual approval and deployment are still pending.
+
+### Non-home navigation and compact-workspace pass — 8 October 2026 (local)
+
+User direction: retain the shared identity header and every portal home page;
+simplify non-home work, not merely recolour oversized banners. Before adding a
+screen, check that it has one page title, puts its main list/action immediately
+below essential controls, and has no introductory card repeating the page title.
+Counts belong beside the relevant list/tab; nonzero action counts must lead to
+the work. Use grouped rows and separate record pages. Preserve status meanings,
+permissions, confirmations and evidence; never hide operational exceptions to
+make a screen look cleaner.
+
+Implemented in this pass:
+- Route-scoped shared styling excludes principal, teacher, parent and student
+  home routes. Existing branding, marksheets and safety/map status treatments
+  remain intact. Default Back moves to the module's parent, preserving relevant
+  child/date context; explicit workflow back/cancel handlers retain precedence.
+- Assessments, grading schemes/report releases and published policies have
+  URL-addressable list/detail navigation rather than auto-opening a record
+  underneath its directory. Transport has request, roster, journey, pickup and
+  settings sections; forms return to their originating section.
+- Staff now begins with tabs and its searchable directory: no Staff Setup hero,
+  duplicate People/Staff directory headings or standalone invitation card.
+  Active count and Invite/Add share a compact toolbar. Leave badge includes
+  outstanding review and cover-gap counts with accessible detail. My Work and
+  My Leave summaries are compact rows, not hero cards.
+- Removed the duplicate family-fees child selector, kept the shared selector,
+  corrected teacher invitation guidance to avoid an inaccessible admin link,
+  simplified student leave labels and aligned Schedule settings naming.
+
+Verification: typecheck, lint and production build passed; the full frontend
+suite passed 388 tests in 58 files before the final Staff header refinement.
+Real-data WebKit checked revised screens in all four portals at 390px with no
+horizontal overflow or visible alerts; each home was outside the redesign scope.
+Assessment/report detail links survived reload and Back restored their lists;
+transport form Back restored settings. Staff, transport and report indices also
+had no horizontal overflow at 320/768/1440px.
+After the Staff refinement, all 32 focused staff/navigation tests and the
+production build passed. The mobile Staff screen has one heading and displays
+five complete staff rows within the 390×844 viewport. Local readiness reports
+database and events healthy.
+
+This is a substantial first pass, not a claim that every module, mutation,
+permission combination or physical-device interaction is signed off. Remaining
+acceptance includes user phone review of the simplified hierarchy and individual
+legacy-screen cleanup where needed. No Stage deployment or database migration
+was performed for this UX pass.
+
+### Remaining non-home screen review — 8 October 2026 (local)
+
+Continued after the user explicitly requested the remaining pages. Reviewed 59
+non-home routes in real-data mobile WebKit: principal (19), teacher (14), parent
+(12), student (14). These checks covered the index/form routes for attendance,
+timetable/calendar, students/import, administration, activation, fees, staff,
+messages, concerns, events/create, policies/governance, assessments, reports,
+transport, invitations, classes, leave, responsibilities, diary, eligibility,
+results and More. Existing compact screens were retained rather than redesigned
+without a need. Homes remain excluded from the secondary-screen styling.
+
+Additional implemented changes:
+- Event lists have filters and real pending-action context instead of summary
+  banners; event details/registers use compact metadata, a single page heading,
+  readable statuses and smaller readiness summaries. Consent and register
+  restrictions remain unchanged.
+- Student diary has one context line and entries instead of two summary cards.
+  Parent diary puts notes first in the default empty-packing case; day plan and
+  packing are a disclosure, automatically open when there are packing items.
+  No-action acknowledgement is a line, and an unavailable note form is omitted.
+- Student attendance removes duplicate name/title, decorative ring and repeated
+  buffer panel. Eligibility leads with the actual attendance result, with a
+  compact next-class/timetable action instead of an empty next-class card.
+- Removed the governance metric banner, retaining authority review counts and
+  the boundary between app access and institutional authority. Fee balances and
+  actions are compact; empty review queues/history no longer occupy large cards.
+- Removed duplicate timetable headings, parent leave sign-off banner, and the
+  redundant Apply Leave tab/context row. Student secondary routes share the
+  same bottom navigation; leave uses More, without changing the student home.
+- Account security links retain their originating More route and child context;
+  the return target is restricted to the four known More paths. Browser-tested
+  account return and diary disclosure opening/closing.
+
+Verification: all 389 frontend tests in 58 files passed; typecheck, lint and
+production build passed after the final component refinements. The 59-route
+mobile smoke audit had no horizontal overflow or visible error alerts. Eleven
+changed layouts were additionally checked at 320/768/1024/1440px, without
+horizontal overflow. Visual inspection caught and corrected light-on-light
+eligibility/transport text after removing their dark banners. Preview readiness
+reports database/events healthy.
+
+Correction after user review: the preceding 59-route pass was a smoke audit and
+selected visual cleanup, not completion of the requested all-screen overhaul.
+Many route entries were retained or only lightly changed. It did not establish
+that every record, modal, permission combination, assistive technology
+or physical-device interaction has been exercised. Business commands, financial
+verification, safeguarding warnings and authorisation were not relaxed for visual
+simplicity. Phone review remains requested; these changes are local, not deployed.
+
+### Structural gaps found after user review — 8 October 2026 (local)
+
+The user correctly identified untouched layouts. Do not use the count of routes
+loaded as a count of redesigned screens. The earlier user-facing coverage list
+combined substantial changes with minor heading/style changes and was too broad.
+
+This batch changes actual navigation/content structure:
+- Students & guardians: a searchable directory without a duplicate directory
+  heading; secondary actions under an overflow menu. Student, enrollment and
+  guardian-permission screens are mutually exclusive URL-addressable views.
+  Profile reload uses the authorized school/admission lookup and checks exact
+  student identity; it never substitutes another returned student. Back returns
+  permissions → student → directory.
+- Fees: records are the default. Reviews and payment settings have separate
+  views. Posting an invoice or recording payment opens a focused form, not a
+  panel elsewhere in the ledger. Student filter and selected invoice are in the
+  URL. Balance detail is optional while outstanding/refund totals remain visible.
+  Flattened invoices and removed repeated record headings; verification and
+  idempotency behavior remain in place.
+- Academic setup: removed the repeated page heading. Class promotion opens its
+  form immediately instead of requiring another disclosure click.
+
+These are local changes. The previous rollout has not been deployed, so a
+deployed app will still show the older screens. User has been asked which pages
+and environment they are looking at; no answer is required to apply these fixes.
+
+Verified for this batch: 396 frontend tests in 60 files passed, including new
+profile/enrollment/guardian-navigation and fee-form/review/settings tests.
+Typecheck, lint and production build passed. Real-data WebKit verified student
+and payment-form direct-link reloads, hierarchical Back, and the student actions
+menu. Six affected screens had no overflow or visible alerts at 320/768/1024/1440.
+The fee navigation preserves institution/student context. Local readiness is
+healthy; no deployment or database change was performed.
+
+### Focused remaining-workspace overhaul — 8 October 2026 (local)
+
+Continued at the user's request after the coverage correction above. The
+frontend UI skill informed content-first layouts, accessible controls and
+URL-backed navigation. This batch changes eight specific workflow groups;
+it does not use a route-smoke count as evidence of a universal redesign.
+
+- **Invitations (admin/delegated staff):** history and status filter first;
+  creating an invitation is a separate URL view. Contextual Invite staff/student
+  links still preselect the account type. Cancel returns to history; invitation
+  codes are not placed in the URL and the delivery/acceptance distinction remains.
+- **Student imports (admin/delegated staff):** compact history rows open a
+  review/receipt view. New import is separate from history and survives reload.
+  School selection resolves only against authorized memberships. Upload guidance,
+  explicit review/commit, account/permission boundaries and audit receipts remain.
+- **Setup status:** completed checks are collapsed. Active institutions still
+  see any current incomplete required check; active is not treated as proof that
+  every readiness check continues to pass. Removed the duplicate progress/success
+  banners without changing review/activation commands.
+- **Family fees (parent/student):** separate invoices, receipts and reviews;
+  opening an invoice replaces the directory. Direct links retain student context;
+  switching children clears the selected invoice. Students remain read-only.
+  Payment reporting retains amount bounds, idempotency, required confirmation and
+  explicit pending-verification language. Print is labelled for the current view.
+- **Restricted care (admin/staff):** case and intake pages replace scrolling
+  overlays, with URL state and Back to cases even after a load error. Team settings
+  are separate, with an optional add-member form. Open/reporting counts are inline,
+  both recipient-route states remain visible, and emergency/reporting warnings,
+  forced alternate routing and explicit per-case access are preserved.
+- **Event detail (admin/staff):** sessions, participants and fee reconciliation
+  are separate views. Metadata is compact; secondary event commands use an
+  accessible overflow menu. Session rows are flat. Existing consent distinctions,
+  coarse-only staff finance visibility, cancellation confirmation and manual
+  refund evidence remain. Empty reconciliation and unavailable finance states are
+  explicit; the read-only fee view does not invent a refund action.
+- **Policies/governance:** compact four-section navigation and decision-route
+  rows. A rule opens its full initiation/review/decision/implementation conditions
+  separately. Policy editors have URLs and return to the register. Publication
+  review now displays the exact draft text, audiences, dates and source note above
+  the existing review/override controls; editing rules and authority boundaries
+  are unchanged.
+- **Teacher leave:** requests and balances have separate views; Apply opens a
+  focused form with no balance/history stack behind it. Cancel/Back retains the
+  originating section. Request cards are flat; approval and withdrawal commands
+  are unchanged.
+
+Verification: all **408 frontend tests in 62 files passed**. New tests cover
+family fee navigation/read-only access/child switching, import navigation and
+school resolution, completed setup disclosure, invitation navigation, care error
+return, and decision-route navigation. Updated tests exercise the actual section
+selection before asserting existing consent, financial and leave safeguards.
+Typecheck, lint and production build passed. Real-data WebKit rendered 24 affected
+routes/views across four portals at 320/768/1024/1440px with no horizontal overflow,
+visible error alerts or page exceptions. Two additional teacher care URLs were
+correctly redirected by the demo account's permission gate; they are not counted
+as rendered care screens. Care layout was checked through the admin portal and
+its teacher variant through component tests, without expanding demo permissions.
+Student/parent invoice reload and Back,
+policy and decision-route reload, and event participant reload were also checked.
+All four home routes were confirmed outside the secondary-screen styling.
+
+No database reset, migration, permission expansion, push or deployment was done.
+The preview remains local; phone review of these workflows is still requested.
+These checks do not certify every modal, dataset, assistive technology or device.
+
+### Screenshot-led correction: remaining banners and directories — 8 October 2026 (local)
+
+The user's seven screenshots identified omissions in the preceding passes:
+assessment and report-card summaries, the separate message-report queue,
+the Messages toolbar, and the events **index** (the prior pass changed event
+details). Prior route smoke checks did not establish these screens were redesigned.
+This correction covers those five workflows and their shared portal variants;
+it is not a claim that every screen in the product is complete.
+
+- **Assessments, admin and teacher:** removed the blue metrics banner. A compact
+  status filter carries counts and persists in the URL; opening and returning
+  from an assessment preserves it. Each row retains subject, class, date and
+  explicit status. Admin creation uses a small New menu with both assessment and
+  cycle creation; an assessment still requires a cycle. No teacher creation
+  permission or result-publication rule was added.
+- **Report cards, admin and teacher:** removed the blue summary. Admins retain
+  Releases/Schemes navigation, with New scheme in the Schemes view. Teachers no
+  longer get a single-option Releases tab. Release status counts are filters,
+  and the selected filter survives detail navigation. Published reports, review
+  requirements and correction commands are unchanged.
+- **Messages, all four portals:** removed the repeated Conversations heading,
+  fixed the vertically stacked toolbar, and replaced ambiguous icons with one
+  named New message action plus an options menu for group creation/privacy.
+  Removed the duplicate floating compose button obscured by the bottom nav.
+  Conversations are one grouped list with unread counts and timestamps retained.
+- **Events index, admin and teacher:** replaced large individual event cards
+  and separate action/intro blocks with a filter, compact creation link and
+  full-row event links. Rows retain event time, venue and status and show their
+  own open-register count. Server pagination retains the selected filter.
+  Family event consent/participation screens are not changed by this index pass.
+- **Message reports:** replaced the horizontal incident strip and automatically
+  selected detail underneath it with an exclusive list/detail flow. A `report`
+  URL restores the requested record; missing or inaccessible records never
+  silently fall back to another report. The shell provides the detail title and
+  Back to the same report queue/status. Report content, reviewer restrictions,
+  required resolution notes and command payloads remain. Removed redundant
+  internal headings, hard-coded school branding, the unconfigured four-hour
+  target and canned note chips. Emergency guidance, confidential access and the
+  distinction between recorded closure and statutory compliance remain explicit.
+
+The frontend UI engineering skill guided content-first structure, semantic
+controls, readable rows and URL-backed navigation. Shared non-home styling also
+uses the actual border token so grouped rows have consistent separators.
+
+Verification: **420 frontend tests in 64 files passed**. New regression tests
+cover assessment filters and creation prerequisites, teacher report controls,
+event row links/pagination, and message-report list/detail, direct links, errors,
+staff assignment restrictions, required notes, modal variant and shell Back.
+Typecheck, lint and production build passed. Real-data WebKit checked the affected
+directories and shared Messages views at 320/768/1024/1440px; no horizontal
+overflow was observed. Phone renders were visually reviewed, not just loaded.
+The final Messages toolbar is 44px high at all four widths in all four portals;
+its options open by keyboard and privacy opens in each portal. Report detail
+also passed the four-width check. Assessment/release filter persistence and
+message-report reload/Back were verified in the browser. All four home routes
+remain outside secondary-screen styling. Both local and phone-preview readiness
+endpoints were healthy. No live report action, message send, database reset,
+permission expansion, push or deployment was performed. Phone review remains
+requested; these checks do not certify all devices or assistive technologies.
+
+### Flat assessment result register — 8 October 2026 (local)
+
+At the user's screenshot-specific request, removed the inset register frame,
+rounded inner corners and shaded summary header in admin and teacher assessment
+details. Results now use full-width dividers within the existing detail surface,
+plain roll numbers, a compact recorded count, and feedback below the score.
+An empty workflow-action container no longer adds a blank strip above results.
+The evidence-policy label is readable (for example, "Evidence not collected")
+instead of "none evidence". This focused use of the frontend UI skill changes no
+scoring, authorization, moderation or publication commands.
+
+Verification: all 10 assessment tests passed, including new admin/teacher
+read-only and editable-register regressions for unrecorded outcomes, marks and
+revision-checked saves. Typecheck, production build and lint passed. Real-data
+WebKit checked both portals at 320/768/1024/1440px: the register has no border or
+rounded frame, the header has no filled background, and no horizontal overflow
+was observed. The mobile render was visually reviewed. Local readiness remains
+healthy. No live marks were changed and nothing was pushed or deployed; phone
+validation of the updated register is requested.
+
+### Student attendance: scan-first summary and meaningful emphasis — 8 October 2026 (local)
+
+The user clarified that simplicity must not mean muting everything: highlight
+facts that help a person understand their position or decide what to do, not
+decorative banners. They confirmed the requested header is the **Attendance
+summary**, not the shared school header or the Timetable controls. This focused
+pass follows the blueprint's distinction between recorded facts, missing data
+and projections; it changes no attendance policy or authorization.
+
+- The summary leads with the overall percentage, an explicit above/near/below
+  minimum label and the required percentage. Term and attended-day count remain
+  visible; detailed totals are under Breakdown. An overall percentage no longer
+  asserts eligibility across all subjects.
+- Subject rows show name, attended/held classes, percentage and any threshold
+  warning. Removed repeated icons, progress bars and safe-buffer pills from the
+  collapsed list. One URL-backed subject filter replaces horizontal chips.
+- Opening a subject reveals a flat metric row with a prominent safe-buffer class
+  count and minimum percentage, followed by teacher, room and next class. The
+  adapter exposes the existing buffer calculation as a number, without parsing
+  display copy or changing its formula. Positive, zero and below-minimum states
+  retain explicit text as well as semantic colour; estimates are not leave
+  approval. Missing attendance never becomes a zero-percent or zero-buffer claim.
+- Leave, help, class standings and absence planning remain named options. The
+  planner requires recorded attendance. Class standings no longer opens from an
+  ambiguous percentage/leaderboard preview; closing it restores focus, including
+  Safari pointer activation. Home, shared school header and navigation are unchanged.
+
+The frontend UI engineering skill guided the content-first hierarchy, native
+disclosures, token-based colours, keyboard access and scoped responsive styles.
+Verification: **433 frontend tests across 64 files passed**; the final Safari
+focus adjustment also passed all 10 student attendance component tests. Regression
+coverage includes threshold states, missing records, numeric buffer values,
+subject filtering, expanded details, leave/standings and the planning stepper.
+Typecheck, production build and lint passed. Real-data WebKit checked the page at
+320/768/1024/1440px without horizontal overflow, and phone screenshots were
+visually reviewed. Subject expansion works by keyboard; filter reload, Breakdown,
+planning and modal return focus were checked in the browser. The attendance API
+returned 200 and in-app navigation produced no page errors. Both local and phone
+preview readiness were healthy. No live attendance was changed, and nothing was
+pushed or deployed. Phone review of the revised summary and expanded subject is
+still requested; these checks do not certify every device or assistive technology.
+
+### Screen simplification release preparation — 8 October 2026
+
+At the user's request to pull, push and deploy, pulled `origin/Stage`; it was
+already current at `eab627f`. The release includes the accumulated teacher class
+workspace, secondary-screen hierarchy/simplifications, flat assessment register
+and focused student attendance changes recorded above. The three unrelated
+untracked duplicate files named with ` 2` are excluded and left untouched.
+
+Backend typecheck, lint and build and desktop typecheck/build passed again.
+Mobile verification remains 433 passing tests, typecheck, lint and build as
+recorded above; CI will re-run verification from the committed source. No schema,
+migration, dependency lockfile or deployment-workflow change is included.
+The existing Stage pipeline must pass fresh isolated PostgreSQL integration
+tests before deploying, then verify the exact application revision and public
+readiness. Full demo reseeding and national-directory imports are not requested.
+Deployment confirmation will be recorded only after those gates succeed.
+
+The first Stage attempt, run `37780395749` for `2016c40`, correctly stopped before
+deployment: all 318 backend tests passed, but the frontend suite passed 432/433.
+The parent multi-child-card test timed out while switching was still busy. Its
+whole-page role lookup repeatedly evaluated both transition cards before the
+timer completed on CI. The test now waits for the observable switching control
+to become enabled, then scopes its unchanged identity assertions to the active
+card. All three child identities, both swipe directions and the final ID dialog
+remain checked; no home/runtime code or timeout limit is changed. The focused
+regression passed locally; the next Stage run must re-run the full suite.
+
+Release verified: [Stage run 37781716971](https://github.com/EduveraIITA/Eduvera/actions/runs/37781716971)
+passed and deployed application revision `616f3bee8da81b5b0c449eb8031ae4f170070031`.
+CI passed **318 backend tests in 46 files** and **433 frontend tests in 64 files**,
+secret scanning, typecheck/lint and mobile/backend/desktop builds. Normal Stage
+migration validation and exact-release public health checks passed. Full demo
+reseeding was skipped. No database reset or directory import was performed.
+
+Independent checks confirmed that exact SHA with `environment: stage` and
+database/events ready. Authenticated WebKit checks on the deployed application
+verified the eight-subject student attendance list, keyboard expansion, numeric
+safe-buffer display, filter persistence after reload and restored standings
+focus; the teacher's four-class directory, successful class-updates API, separate
+class route, gallery/list roster switching and Back; and the admin's published
+assessment register without a nested border/frame. These screens passed
+320/768/1024/1440px overflow checks and the phone renders were visually reviewed.
+In-app navigation produced no page errors. Local and phone-preview readiness
+also remained healthy. These checks do not claim every device or workflow is
+certified; user phone validation remains requested. The documentation-only
+evidence commit does not require another application deployment.
+
+### Role-specific Analytics: decision model and first academic slice — 8 October 2026 (local)
+
+The user requested Analytics for all four portals, then clarified the design:
+Apple Health-like compact overview charts may share one page; tapping a topic
+must open a separate focused detail page. Highlights must carry information, not
+decoration. Subject/class/institution aggregates must be deliberately placed,
+and the product must serve decisions rather than accumulating requested charts.
+Home screens, shared headers and bottom navigation remain unchanged.
+
+#### Research and design decisions
+
+- [Apple's chart guidance](https://developer.apple.com/design/human-interface-guidelines/charts)
+  prioritizes a clear message, prominent data, contextual labels and accessible
+  exploration. The implementation uses a compact overview followed by focused
+  pages, native controls, visible values and a table alternative for trends.
+  Lines show change, bars compare quantities, histograms show distributions and
+  doughnuts show parts of one total. No decorative or three-dimensional charts.
+- [IES instructional-data guidance](https://ies.ed.gov/ncee/wwc/practiceguide/12)
+  recommends an ongoing improvement cycle and helping students examine their
+  own data and goals. These are practice recommendations, not proof that a
+  dashboard alone improves outcomes. Each proposed insight needs a decision,
+  an authorized owner, source evidence and a next action.
+- [EEF attendance monitoring](https://educationendowmentfoundation.org.uk/education-evidence/leadership-and-planning/supporting-attendance/monitor-the-impact-of-approaches)
+  emphasizes intended outcomes, granular patterns hidden by headlines and
+  sustainable staff workload. Use existing records automatically; do not ask
+  staff to re-enter numbers for Analytics. Averages alone are insufficient.
+- [EEF feedback guidance](https://educationendowmentfoundation.org.uk/education-evidence/teaching-learning-toolkit/feedback)
+  emphasizes task/subject-specific information that learners can act upon.
+  [PARAKH's Holistic Progress Card](https://parakh.ncert.gov.in/index.php/hpc)
+  also goes beyond marks. The product therefore links to published feedback;
+  it must not invent competency, motivation or wellbeing scores from marks.
+- [UDISE+](https://www.udiseplus.gov.in/) covers students, teachers and institution
+  facilities. This supports a broader administrator planning lens, not just
+  examination averages. It is not a claim of UDISE integration or compliance.
+
+International guidance informs product design; it does not prescribe Indian
+attendance thresholds, grades or legal duties. Institution policy remains the
+source of those rules. No cross-institution benchmark data is imported.
+
+#### What each view should help its user decide (target, not a completion claim)
+
+| View | Decisions and useful analytics | Timing and next action |
+| --- | --- | --- |
+| Principal / administrator | Participation and data completeness; class/subject learning patterns and result distributions; assessment bottlenecks; planned teaching versus actual coverage; staffing/capacity; fee collection and review backlog where authorized | Daily exceptions belong in existing work queues; weekly trends support follow-up and cover planning; term summaries support resource and academic review. Open the corresponding register, assessment, coverage task or ledger. |
+| Teacher | Attendance patterns in assigned classes/subjects; recorded versus missing evidence; comparable assessment outcomes and published feedback; marking/review workload; assigned lessons and cover | Before lessons, review relevant evidence; weekly, plan support or reteaching; before reporting, finish marking/review. Open the owning class, register or assessment. No institution-wide access or teacher league table. |
+| Parent | One selected child's participation and published subject progress; teacher feedback; actual homework completion where recorded; outstanding school requests | Review weekly and after new results; respond to a request or discuss a specific issue with the teacher. Keep fees and logistics in their own detail areas, not mixed into academic scores. |
+| Student | Own attendance and subject progress; specific feedback; recorded task completion; progress against explicit learning goals if supported | Before study, choose a task/feedback item; periodically review personal progress. No peer ranking, sibling comparison, school finance or staff work queues. |
+
+The common path is **overview → topic → class/subject/period → source record or
+work queue**. Defaults come from the authenticated institution, assignments,
+selected child and active term. A user should choose only meaningful scope or
+period changes. An average never creates a decision or automatically assigns an
+intervention. Authorized people interpret evidence and record any action in its
+own workflow.
+
+#### Current implementation scope
+
+- More includes Analytics for principal, teacher, parent and student. Teacher
+  discoverability follows attendance/assessment access. Separate routes own
+  attendance, results and staff-only assessment progress; Back preserves filters.
+- A dedicated read-only analytics API checks active school/portal membership,
+  family relationships and same-resource staff permissions. Current and historical
+  attendance access are checked together. Query keys include user, school, portal,
+  learner, class and period. No schema or source-record mutation is introduced.
+- Overview cards show recorded attendance and its trend, a scoped published-score
+  average and short subject preview, plus assessment-stage composition for staff.
+  Detail pages expose class/subject comparisons, recorded-day composition,
+  score-band distribution and links to the existing workspaces.
+- Institution/class/assigned-work/personal averages are explicitly labelled.
+  Results use only the latest immutable publication, normalize marks to percent
+  and weight individual scored results equally. The total is not an unweighted
+  mean of class averages and is not an official term grade. Different tests and
+  sample sizes make these descriptive comparisons, not a fair ranking. Score
+  bands count results, not unique children or pass/fail judgements.
+- Attendance uses actual daily records; late counts as present, half day as half,
+  excused records are excluded and missing is not zero. Subject attendance is a
+  labelled projection from recorded days and the effective timetable, matching
+  existing half-day/checkout behavior. It is not separately observed lesson
+  attendance. Subject counts are lessons/student-lessons, not days/student-days.
+- Term/30-day/90-day windows are bounded by the term, school-local date and a
+  366-day maximum. Attendance/access events invalidate Analytics. Result updates
+  are fetched on refresh/re-entry/focus; a new result-specific live push contract
+  is not claimed. Charts have empty, loading, denied-access and error states.
+
+#### Remaining decision-support work (not implemented by this slice)
+
+1. **Completeness before stronger conclusions:** the follow-on institution KPI
+   slice below adds scheduled-register submission using current active rosters
+   and the effective schedule. Historical roster/schedule reconstruction and
+   verified-observation completeness remain open. Do not call the recorded-day
+   attendance percentage a completion rate. Assessment roster completion and
+   publication lag still need separate denominators.
+2. **Like-for-like learning progress:** add subject/cycle/assessment-kind filters,
+   repeated comparable assessment series and skill-level evidence where genuinely
+   captured. Do not claim mastery or causal teaching effectiveness from aggregate
+   marks. Feedback and homework analytics must distinguish sent/read/acknowledged
+   from completed or teacher-verified work.
+3. **Operations and resources:** add authorized read models for teaching minutes
+   versus cover, staffing gaps/capacity and workflow age. Scheduled is not taught;
+   assigning cover is not accepted cover. No productivity or behavioral score.
+4. **Finance and administration:** compute overdue aging and verified receipts
+   from the immutable ledger, separating pending claims, credits, reversals and
+   actual receipts. Confidential care remains purpose-restricted; never expose
+   narratives or infer an absence's cause. Cross-school analytics requires a
+   separately authorized scope and must not be inferred from an admin portal.
+5. **Action and review:** support explicit follow-up owners, review dates and
+   outcomes; evaluate change with its limitations rather than asserting that an
+   intervention caused an improvement. Thresholds require adopted policy, not
+   arbitrary red/green cutoffs or imported chronic-absence rules.
+
+These are the proposed engineering direction derived from the request and research,
+not claims that all institution analytics are complete. The frontend UI engineering
+skill guided readable chart hierarchy, semantic theme colours, native controls and
+accessible alternatives. Database guidance led to bounded batched read models and
+same-resource permission tests rather than client-side aggregation of private rosters.
+
+#### Verification and handoff
+
+- Full frontend regression: **456 tests in 65 files passed**. After the final
+  compact-toolbar/empty-state adjustment, all **19 Analytics component tests**
+  passed again. Frontend typecheck, lint and production build passed.
+- Backend: **14 focused tests passed** (five metric tests, seven PostgreSQL
+  Analytics integration tests and two existing assessment integration tests).
+  Typecheck, lint and build passed. Integration ran on an isolated schema-only
+  copy of an existing complete test database, not the preview/Stage data. This
+  does not certify a fresh migration chain; the initial fresh local PostgreSQL
+  14 attempt stopped on the existing migration 033 compatibility issue.
+- Tests cover tenant/persona/guardian isolation, effective-dated staff grants and
+  revocation, publication revisions, scored versus non-scored outcomes, weighted
+  institution/class totals, score bands, missing data, half days/checkout,
+  non-instructional dates, subject projections, URL filters and Back navigation.
+- Live WebKit opened Analytics through More in all four portals, followed the
+  topic pages and Back, changed periods/classes/children, switched class/subject
+  comparisons and used the trend-data disclosure by keyboard. API responses were
+  200, with no page errors. Overview and result-detail overflow checks passed at
+  320/768/1024/1440px, and phone renders were visually reviewed.
+- Preview testing exposed permission checks repeated per attendance row. The
+  queries now materialize distinct class/date and assessment scopes before those
+  checks, preserving the same authorization. In the synthetic preview, observed
+  teacher navigation-to-API time fell from about 43.6 seconds to 2.1 seconds;
+  this is local evidence, not a production performance guarantee.
+- Local and phone-preview readiness report database/events healthy. No real
+  attendance, marks, fees, roles or relationships were changed. No migration,
+  dependency, home-page or deployment change is included. Nothing was pushed or
+  deployed. User phone validation and wider operational Analytics remain open.
+
+### Institution aggregate KPIs — 8 October 2026 (local follow-on)
+
+The user requested more institution-specific aggregates on Analytics home. The
+principal/admin overview now adds two focused entry points, without changing the
+four portal home screens, theme or shared navigation:
+
+- **Institution snapshot:** enrolled students, active staff, classes with students
+  and average class size. Tapping opens `/principal/analytics/institution`, with
+  class-enrolment comparison bars, teaching/non-teaching staff composition and
+  students per teacher. Links lead to the existing student and staff directories.
+- **Register submission:** submitted or locked registers as a proportion of
+  scheduled class-days, with an unsubmitted count. Tapping opens
+  `/principal/analytics/registers`, with register-state composition and class
+  breakdowns. Each incomplete class links to its latest unsubmitted date's
+  actual register; the period/class filters and Analytics Back link are retained.
+
+#### Definitions and boundaries
+
+- Snapshot enrolment is the selected term's currently active records, effective
+  by the earlier of school-local today and term end. Future enrolments, other
+  years/terms and other institutions are excluded. An app account is not needed.
+  Populated classes have at least one such enrolment; mean class size excludes
+  empty classes, whose count and zero values remain visible in detail.
+- Staff means active staff profiles with a joining date no later than today;
+  onboarding, inactive and future joiners are excluded. Students per teacher
+  uses teaching headcount, including part-time staff, not FTE or teaching load.
+  It is not a regulatory staffing-ratio or room-capacity assessment. Missing
+  denominators produce a dash, never infinity or a made-up zero.
+- The snapshot is explicitly dated/current, not a period-change or intake-growth
+  metric. Period changes do not change its totals. It is hidden in class-filtered
+  overviews; its dedicated page has no misleading period/class controls.
+- Register expectations match `attendanceDayPolicy`: one class/date with active
+  enrolled students and a non-cancelled class or activity in the effective
+  published schedule. Multiple lessons do not create multiple registers.
+  Calendar closures, pre-enrolment dates, future dates and cancelled lessons
+  are excluded. Submitted and locked are distinct slices but both count toward
+  submission. Reopened drafts count as not submitted; no attendance mutation
+  occurs. Includes today, so **not submitted is not synonymous with overdue**.
+- This is a current-record projection, not a historical audit reconstruction.
+  Changing active enrolments or published schedules can change expectations for
+  previous dates. Enrolled classes without any scheduled days are called out
+  instead of treated as 100% complete. No schedule yields an unavailable rate.
+  Formal submission does not independently prove accuracy or verified attendance.
+- Only an active administrator in the principal portal receives these new read
+  models. Teacher/family responses return null, including an admin+guardian
+  acting in the parent portal. Tenant predicates apply throughout; no private
+  student rows, personnel details or new authority is exposed. The existing
+  event invalidation applies to attendance, timetable, access and people changes.
+  Staff profile changes without a broadcast refresh on normal query refresh,
+  re-entry after cache staleness or focus; no universal instant update is claimed.
+
+The frontend UI engineering skill guided the small numeric summary, semantic
+colours and separate accessible detail pages. Database guidance kept calculations
+in bounded, batched server queries using existing indexed relationships rather
+than fetching private rosters to the browser. No schema or dependency change.
+
+#### Verified evidence
+
+- **463 frontend tests in 65 files passed**, including 26 Analytics tests.
+  Frontend typecheck, lint and production build passed.
+- **17 focused backend tests passed**: ten Analytics PostgreSQL integration,
+  five metric and two assessment integration tests. Backend typecheck, lint and
+  build passed. Same isolated schema-only test database as the prior slice.
+- Added tests for school/portal isolation, account-optional headcounts, active
+  versus future/inactive staff and enrolment, null denominators, empty classes,
+  period-independent snapshots, class-scoped submission, duplicate lessons,
+  closures, date overrides/cancellations, activities and reopened registers.
+- Live WebKit verified both new detail routes, period-preserving Back, keyboard
+  disclosures, class filters, and opening the actual dated Class 6A attendance
+  register. New detail pages passed overflow checks at 320/768/1024/1440px and
+  phone screenshots were visually inspected. The final in-app navigation run
+  completed with no page errors. Earlier test-script hard reloads during pending
+  requests produced WebKit cancellation/access-control errors; replacing those
+  artificial reloads with actual app navigation resolved the test harness issue.
+- Local and ngrok phone-preview readiness both report database/events healthy.
+  Source records were not changed. Nothing pushed or deployed. Phone validation
+  remains requested; finance, FTE/workload, historical completeness and comparable
+  learning-progress analytics remain separate future work, not implemented claims.
+
+#### Analytics spacing follow-up — 8 October 2026 (local)
+
+The user reported chart captions touching the axis labels, with similar cramped
+supporting text elsewhere. Browser measurements confirmed a shared shell CSS
+specificity problem: paragraph resets reduced the intended chart-caption margin
+to **0px in principal, teacher and student**, versus 10px in parent.
+
+- Analytics paragraph spacing is now scoped above the shell reset, independent
+  of lazy stylesheet load order. Chart-to-note gaps are 16px; supporting copy
+  uses 8px above / 12px below, with 12px between explanatory paragraphs. Chart
+  legends have explicit top spacing. Final notes retain the card's own padding
+  without an extra trailing margin. Warning/positive text keeps semantic colour.
+- The change covers shared Analytics overview and topic components across all
+  four portals. Shell resets and home pages are unchanged. This is not a claim
+  that every unrelated application page has been audited for spacing.
+- Live WebKit measured **16px chart-to-caption gaps in all four portals** and
+  confirmed the supporting-copy margins survive each portal shell. Overview
+  and result pages passed 320/768/1024/1440px overflow checks; mobile overview
+  and attendance-detail screenshots were inspected. No page errors in that run.
+  All 26 Analytics component tests passed again after the CSS change.
+
+### Analytics Stage release preparation — 8 October 2026
+
+The user requested pull, push and deployment. Fetched Stage at `aa32218`, which
+contains the separately developed Principal Insights dashboard and its approved
+navigation. This release will preserve those changes alongside the role-specific
+Analytics pages, institution aggregates and chart-caption spacing correction.
+The three unrelated untracked duplicate files named with ` 2` are excluded.
+
+No migration, dependency or deployment-workflow edit, database reset, full demo
+reseed or national-directory import is requested. The normal Stage workflow must
+verify the integrated commit against fresh PostgreSQL 17, build all clients,
+deploy and confirm the exact release revision. Integration and deployment results
+will be recorded after verification; this preparation entry is not a success claim.
+
+Integration verification passed locally: **475 frontend tests in 67 files**, all
+frontend/backend typecheck, lint and builds, and desktop typecheck/build.
+**25 focused backend tests** passed on the isolated database, including both
+Analytics and Principal Insights. Browser checks retained principal/teacher
+Analytics navigation, scoped data, period/class filters and Back with no page
+errors. The merge retains both backend modules and both sets of event-cache
+invalidation rules. The existing Stage pipeline will re-run the full backend
+suite against a newly migrated/seeded isolated PostgreSQL 17 database.
+
+### Principal Insights navigation — 8 October 2026
+
+User-approved placement supersedes the initial all-on-Overview layout above.
+Overview now retains four summary cards, the action brief and a dated View all
+insights link. The principal-only `/principal/insights` route groups the full
+dashboard into Attendance & learning, Operations and Finance, with date, window,
+class and academic-review filters. Principal mobile tabs are Overview, Attendance,
+Insights and More. Timetable remains in More, the desktop sidebar and coverage
+links; teacher navigation is unchanged. The newest Stage planning/navigation
+changes were reconciled without removing either backend module or delivery record.
+
+Local verification: backend and frontend typecheck, lint and production builds
+passed. Browser checks using synthetic API fixtures passed at 320, 768, 1024 and
+1440 pixels: compact Overview, navigation to Insights, date/window persistence,
+deadline deep links, dialog Escape dismissal, active mobile tab and Timetable in
+More, with no horizontal overflow or page errors. Test and release status will be
+confirmed by the PR/Stage workflow; no national dataset import or reseed is part
+of this change. Please review the resulting UI on a physical phone after release.
+
+### Principal Insights reading note — 8 October 2026
+
+Removed the “How to read these insights” disclosure and its unused styles at
+the user’s request. Metric definitions remain in PRINCIPAL_INSIGHTS.md.
+Dashboard graphs, filters and source-record dialogs are unchanged.
+Frontend typecheck and diff whitespace checks passed.
+
+### Analytics Stage release verified — 8 October 2026
+
+Merged the newer Stage Principal Insights work with the role-specific Analytics
+release and pushed application commit `98aa6b897ab7d5a10cb8bcec0e4b3fa924565c89`.
+[Stage run 37798178025](https://github.com/EduveraIITA/Eduvera/actions/runs/37798178025)
+completed successfully, including deployment and public-release verification.
+
+- Fresh PostgreSQL 17 CI passed **341 backend tests in 50 files** and **475
+  frontend tests in 67 files**. Backend/frontend typecheck, lint and builds,
+  desktop typecheck/build and the repository secret scan passed.
+- Independent public checks confirmed the exact application SHA above from
+  `/releasez`, environment `stage`, and `/readyz` with database/events healthy at
+  `https://omnischool-stage.up.railway.app`. The workflow also verified the mobile
+  and desktop applications, demo access and protected metrics.
+- Deployed WebKit checks passed for student, parent, teacher and principal:
+  Analytics API responses, overview/topic separation, period and class filters,
+  parent learner context, source links, shell Back navigation and keyboard chart
+  disclosures. The institution and register detail pages, class-scope isolation
+  and opening the dated Class 6A attendance register were verified separately.
+- All four deployed portals measured **16px chart-to-caption spacing**, with
+  supporting-copy margins of 8px above / 12px below. Overview and detail layouts
+  passed overflow checks at 320/768/1024/1440px; representative phone screenshots
+  were visually inspected. No page errors in the final browser runs. These are
+  functional checks, not a performance/load-test claim.
+- Local and ngrok preview readiness remained healthy. No new migration, reset or
+  full demo reseed was introduced; the existing workflow's normal additive demo
+  examples ran. The three unrelated untracked duplicate files remain untouched.
+
+This verifies the Stage release, not a production rollout or physical-device
+acceptance. Please refresh and review the Analytics spacing on a phone.
+
+### Unified Insights and focused attendance review — 8 October 2026 (local)
+
+User direction supersedes the separate Analytics/Insights destinations above:
+keep the charts and useful operational signals in one calm, progressively disclosed
+experience. After reviewing the first local Attendance checks page, the user also
+requested a meaningful review workflow instead of prominent filters, large counts
+and explanatory copy before the students.
+
+- All four portals now use **Insights** at `/<portal>/insights`. Old Analytics
+  bookmarks redirect with query/hash context intact. More search still recognizes
+  “analytics”; existing permission/tool identifiers are unchanged. Home screens,
+  school headers, existing mobile tabs and domain permissions are unchanged.
+- Principal Insights combines a compact attention brief, current institution
+  snapshot, recorded trends/results and current operational summaries. Attendance,
+  results, assessment progress, institution, register submission, learning review,
+  follow-ups, coverage/deadlines and fees have focused topic pages. Analytics and
+  Principal Insights remain separate authorized read models, with independent
+  loading/error handling and shared cached requests for the operational summaries.
+- Reporting definitions are preserved: term/30/90-day trends are not silently
+  combined with 14/28/56-day review comparisons. Publication-dated learning review
+  stays distinct from assessment-dated result averages; current fees, follow-ups
+  and next-seven-day coverage retain their operational as-of context.
+- **Attendance review** now starts with students without an open follow-up. Flat
+  linked rows show class, current attendance and the decline; already-owned work
+  remains available. Class selection is visible; review-window/date controls are
+  behind one accessible control. Each student opens a separate page with the two
+  periods, relevant evidence and an existing-register or existing-follow-up action.
+  No automatic diagnosis, family contact or case creation was introduced. The
+  existing workflow still requires a saved eligible attendance record to create a
+  follow-up. Recording completeness is a separate page; missing records are never
+  treated as absences. Back links preserve class/window and the parent topic.
+- This follows the frontend UI engineering guidance through scoped semantic
+  colors, readable supporting-copy spacing, keyboard disclosures, text alternatives
+  for charts and existing shell/theme components. No new library, backend/API,
+  schema, authorization or home-page change is included.
+
+Verified locally after the final UI adjustment:
+
+- Frontend typecheck, lint and production build passed; **495 tests in 68 files
+  passed**, including **20 unified Insights tests** for role isolation, legacy
+  navigation, independent failures/retry, filters, student review, existing follow-up
+  routing, missing records, out-of-scope student IDs and context-preserving Back.
+- Live WebKit navigation passed in principal, teacher, parent and student portals.
+  Overview/results and principal operational/review detail pages passed horizontal
+  overflow checks at **320/768/1024/1440px**. Review filters and keyboard disclosure
+  were exercised; student and recording drill-downs returned to the review list.
+  Chart-caption gaps remain **16px** in all four portals; no page errors occurred.
+- Mobile screenshots of principal, teacher and parent overviews plus the new
+  attendance queue and student detail were visually inspected. The queue shows
+  multiple students in the first viewport without a large summary card.
+- Local preview and ngrok `/readyz` both returned ready with database/events OK.
+  No deployment, database reset or reseed was performed. Unrelated ` 2` duplicate
+  files remain untouched. Physical-phone UI acceptance is still requested; these
+  local checks do not establish a new Stage or production release.
+
+The current interaction and metric contract is [Principal insights](PRINCIPAL_INSIGHTS.md).
+
+### Unified Insights Stage release verified — 8 October 2026
+
+At the user's request, pulled `origin/Stage` (already current at `bcdf8bb`),
+committed the unified Insights and attendance-review work, and pushed application
+revision `36ddd7933ebaa5a9b4c8a6fee3c78ad9b6098efc` to Stage.
+[Stage run 37805815618](https://github.com/EduveraIITA/Eduvera/actions/runs/37805815618)
+completed successfully, including Railway deployment and public release verification.
+
+- Fresh PostgreSQL 17 CI passed **341 backend tests in 50 files** and **495 frontend
+  tests in 68 files**. The repository secret scan, backend/frontend typecheck,
+  lint/build and desktop typecheck/build passed. Local backend checks and desktop
+  build were also repeated before the push.
+- Independent public requests confirmed the exact application revision above from
+  `/releasez`, environment `stage`, and `/readyz` with database/events healthy at
+  `https://omnischool-stage.up.railway.app`. The existing release pipeline also
+  verified both applications, install icons, API schema, demo access and protected
+  metrics. Its optional full demo reseed was skipped; no new migration, database
+  reset or national-directory import was introduced.
+- Deployed WebKit checks passed in principal, teacher, parent and student portals:
+  one Insights destination, trend period persistence, old Analytics bookmark
+  redirects, result drill-downs and Back links. Principal attendance review,
+  student comparison, the actual dated class register, missing-records detail,
+  follow-ups, coverage, fees and learning-review navigation were exercised without
+  changing attendance, sending messages or creating follow-ups.
+  A separate live check selected an already-owned attendance review and opened
+  that student's authorized existing follow-up inbox successfully.
+- All four portal overview/results layouts and principal topic/review details
+  passed overflow checks at **320/768/1024/1440px**. Chart-caption gaps remain
+  **16px**. Keyboard review-rule disclosure and hidden/revealed period controls
+  worked. Deployed attendance queue/student-detail phone screenshots were visually
+  inspected; no page errors occurred in the final four-portal browser run.
+- Local and ngrok previews remained ready with database/events healthy. The three
+  unrelated untracked files named with ` 2` remain untouched and uncommitted.
+
+This records a verified Stage release, not a production rollout or physical-phone
+acceptance. The user should refresh Stage and review the new Attendance review flow.
+
+### Principal Overview: daily decisions, not stacked dashboards — 8 October 2026 (local)
+
+The user explicitly authorized simplifying the **principal home**, superseding the
+earlier exclusion of home screens for this portal only, and required retaining its
+blue top card. Teacher, parent and student homes remain unchanged. Blueprint v1.0
+sections 5–6 were reread: leadership should see exceptions, coverage and decisions,
+with the home answering what needs attention, what is happening and where to act.
+Apple's [layout](https://developer.apple.com/design/human-interface-guidelines/layout)
+and [color](https://developer.apple.com/design/human-interface-guidelines/color)
+guidance informed consistent spacing, scan-first hierarchy and meaningful emphasis;
+the established app theme, shared headers and navigation were retained.
+
+- The blue card now has one dated register-submission measure, a progress bar,
+  marked-student context and direct links to registers and the timetable. It no
+  longer repeats the same pending-register count in a nested spotlight, displays
+  a misleading zero-absence summary before recording starts, or declares all
+  operations clear from an empty action list. Today appears only off today's date.
+- A compact Needs attention list replaces the embedded analytics dashboard and
+  review brief. It links to current follow-ups, changed-assignment/schedule records,
+  unassigned teaching periods, recent attendance declines and the separate term
+  minimum list when those signals exist. Counts come from existing authorized
+  read models; they are not summed into a misleading unique-student total.
+  Institution-wide query scope ignores prior detail filters, retains the selected
+  date, and includes actor/school identity in the review query key. Current follow-up
+  and coverage scope is explained when viewing a different date. Failed/pending
+  review data never produces an all-clear message; Retry is available.
+- Coming up uses compact dated event links and preserves assigned-duty context.
+  Full class registers stay in Attendance; charts and institutional metrics stay
+  in Insights. No new metric, policy, permission, migration or domain write was added.
+- `/principal/attendance/thresholds` retains all returned below-minimum records,
+  their recorded-day evidence, policy threshold and dated class-register links.
+  The existing 20-record API limit is explicitly labelled when reached, not
+  presented as a complete institution count. This list is distinct from the
+  28-day decline review and still excludes students with fewer than 5 recorded days.
+- `/principal/followups` provides the existing authorized open/resolved conversation
+  workspace outside the home, with one page title. Old `#attendance-followups`
+  home links redirect there. Both new detail pages return to the dated Overview.
+  The home timetable shortcut also returns to Overview; entry from More retains
+  its original Back destination. Other portals retain the original inbox headings.
+
+Verified locally: **512 frontend tests in 69 files**, including **17 new home and
+detail tests**, plus frontend typecheck, lint, build and `git diff --check` passed.
+WebKit exercised date changes/Today, threshold list and its actual source register,
+follow-up Open/Resolved filters, dated Back links, keyboard activation, timetable,
+attendance review, event detail and legacy conversation anchors without domain
+mutations or page errors. Overview and new detail layouts passed overflow checks
+at **320/390/768/1024/1440px**; mobile and desktop screenshots were visually reviewed.
+The progress-caption gap is **10px** after correcting a shared paragraph-reset
+specificity conflict. Both local and ngrok `/readyz` returned database/events OK.
+
+This work is **local only**, not pushed or deployed. Physical-phone acceptance is
+requested through the running preview. The unrelated three untracked ` 2` duplicate
+files remain untouched. Existing threshold sample limits and analytics evidence
+limitations remain; this is a navigation/presentation change, not broader coverage
+of school decision-support domains.
+
+### Principal Overview: read-only snapshot and useful school summaries — 9 October 2026 (local)
+
+The user's review supersedes the previous home-card design: the blue card must be
+small and non-actionable, with more useful information in the space below. The
+established theme, shared header/navigation and all other portal homes are retained.
+Blueprint sections 5–6 and the existing Insights metric contracts were reread.
+
+- Replaced the large single-metric card, progress bar and action footer with a
+  two-column daily snapshot: students marked and registers submitted. The date
+  control, conditional Today button and Timetable link are outside the card.
+  Absence/late context appears only when there are marked records. The snapshot
+  contains no link, button, input or progress control and measures approximately
+  **102px high at a 390px viewport** with the current unmarked demo day.
+- Needs attention now also includes pending registers, deadline clashes and
+  submitted/moderated assessment decisions. Existing follow-up, coverage, decline,
+  minimum-attendance and saved-register exception routes are preserved. The first
+  four checks are visible; remaining checks use one keyboard-accessible disclosure.
+  The list does not sum unrelated counts or claim an all-clear before both read
+  models succeed.
+- Added School pulse below attention: a compact recorded-attendance trend, published
+  result average, next-seven-day teacher assignment coverage and current outstanding
+  fees. Each opens its existing focused Insights topic. Coming up remains a short
+  dated event list. Desktop uses two columns without stretching the left-hand gap.
+  Chart-caption spacing is explicitly **16px**.
+- Whole-school current-term analytics are separate from the selected daily date;
+  term end dates and operational dates are shown. Existing attendance denominators,
+  half-day treatment and missing-data gaps are retained. Published-result averages
+  are not official grades, assigned periods are not verified lesson delivery, and
+  fees due today are excluded from the overdue label. Missing samples show explicit
+  empty states, not invented zero/100% metrics. Independent request failures retain
+  the other summaries and provide retry. Fetching is separated into a shared hook,
+  using existing actor/school query keys, event invalidation and minute refreshes.
+
+Verified locally: **520 frontend tests in 70 files**, including **25 principal-home
+and detail tests**, plus frontend typecheck, lint, production build and whitespace
+checks. The first full run exposed two existing CalendarView tests whose broad
+date selector also matched Today after the real date rolled to 9 October. Their
+fixture clock is now fixed; assertions and calendar runtime behavior are unchanged.
+The complete suite then passed.
+
+WebKit rechecked **320/390/768/1024/1440px**, 200% home text without horizontal
+overflow, the non-interactive snapshot, measured spacing, all four School pulse
+destinations, date/Today behavior, keyboard register navigation, dated threshold
+list and source register, follow-up filters/Back, timetable/Back, event details and
+legacy anchors. Mobile/desktop screenshots were visually inspected; no page errors
+or domain writes occurred. Both local and ngrok readiness returned database/events
+OK. The implementation contract in `PRINCIPAL_INSIGHTS.md` is updated accordingly.
+
+This revision remains **local only**, not pushed or deployed. Physical-phone review
+is still requested through the running preview. No backend, migration, permission
+or notification changes were made; the three unrelated untracked duplicate files
+remain untouched.
+
+### Student and parent homes: preservation-first touch-up — 9 October 2026 (local)
+
+The user requested a light polish, explicitly retaining most of the existing homes.
+Blueprint sections 5–6 informed the status treatment and stable daily navigation.
+The new shared styles are scoped to `.family-home`; other screens and the shared
+shell are unchanged. This is not an information-architecture or workflow redesign.
+
+- Preserved the student/parent accent colors, identity cards and digital IDs,
+  parent child-card deck and switching, daily activity rail, all four summary
+  tiles, shortcuts, diary, packing checklist and existing drill-downs.
+- Applied consistent heading sizes, label/detail spacing, lighter borders and
+  shadows, and clearer activity metadata. Current-period and attention/status
+  colors remain meaningful. Removed the redundant diary eyebrow and shortened
+  parent shortcut labels without changing their destinations or child scope.
+- Renamed the mixed daily/term summary to **At a glance** and clarified **Classes
+  today**. Unrecorded student attendance now uses a neutral clock, not a confirmed
+  checkmark; verified attendance retains its positive status treatment. No metric
+  calculation, authorization, request, database or notification behavior changed.
+
+Verified locally: **524 frontend tests in 71 files**, frontend typecheck, lint,
+production build and whitespace checks. The suite includes four new family-home
+tests and 59 route, identity-card and activity regressions. An initial run caught
+an incorrect icon alias in a new test; the assertion was corrected and the complete
+suite rerun successfully. WebKit checked both portals at **320/390/768/1024/1440px**, including
+all four summary tiles, keyboard digital-ID activation/QR rendering/focus return,
+student checklist and schedule sheet, parent standings/homework, child switching,
+child-scoped event/leave links, and timetable navigation. No page errors or domain
+record writes occurred. Mobile and desktop screenshots were visually reviewed.
+At 200% home text, neither portal introduced horizontal page overflow at
+320/390/768/1440px; this is not a comprehensive accessibility certification.
+
+The existing local preview remains running; local and ngrok readiness returned
+database/events OK. This touch-up is **local only**, not pushed or deployed, and
+physical-phone review is requested. Prior principal-home work and unrelated
+untracked duplicate files are preserved.
+
+### Transport workflow hardening and map-first rides — 9 October 2026 (local)
+
+Read blueprint sections 5–6 and the departure/transport domain contract before
+implementation. The user moved the task from UI-only work to workflow hardening,
+then requested map-first staff/parent screens, a ride list instead of a dropdown,
+and a 30-minute operating window. The shared theme, role shells and home pages
+remain intact. `DEPARTURE_AND_TRANSPORT_COORDINATION.md` records the updated contract.
+
+- Staff use **My rides → dated ride**. Controls open 30 minutes before departure;
+  self-service duty changes close then. The backend enforces this in school time,
+  including invitation response and approval; urgent cover stays school-managed.
+- Active rides lead with their map, then route/vehicle/stop and actual milestones.
+  Planned rides have no empty map. Family/student coordinates are returned only
+  while their own learner is boarded on an in-progress, current-day ride.
+- Hardened lifecycle transitions, authority/link/current-role checks, transaction
+  ordering, optimistic concurrency, request withdrawal/duplicate protection,
+  bus-to-pickup reconciliation, overdue school reconciliation, real handover notes,
+  accepted duty and colleague-cover authorization, foreground GPS and retention.
+  Added departure/transport event refreshes without putting coordinates in events.
+- Local checks: **32 backend tests / 4 files**, including **14 isolated real-DB
+  scenarios**; backend typecheck/lint/build; **567 frontend tests / 77 files**,
+  frontend typecheck/lint/build and whitespace checks. This is not a claim that all
+  backend suites or fresh migrations passed.
+- Real HTTPS WebKit sessions verified staff ride list/detail, persisted map,
+  authenticated location upload, parent/student visibility and future-ride control
+  suppression, at 320/390/768/1024/1440px without horizontal overflow or page errors.
+  Mobile and desktop screenshots were inspected. Simulated browser geolocation
+  required correcting the test driver's timestamp unit, not changing production
+  timestamps. Phone/device/physical-handover acceptance remains outstanding.
+- User explicitly asked for an in-progress **database ride**, rejecting a static
+  preview. Removed that preview approach and created dedicated local test accounts,
+  a synthetic learner/guardian relationship, route/stop/assignment, an accepted
+  in-progress trip and next-day trip in **Transport Test School**. Existing journey
+  records were not changed. The active trip ID is
+  `3ddc436d-c9ce-4d14-b461-41ef3c8f297f`; its seeded sample location can be replaced
+  with the staff screen's actual device sharing. Credentials are provided privately
+  in the task response, not committed to this repository.
+
+The managed preview remains running. Local and HTTPS ngrok `/readyz` returned
+database/events OK. Nothing pushed or deployed. The isolated backend test database
+was a schema-only copy because local PostgreSQL 14 cannot run the existing PG15+
+migration 033; fresh PostgreSQL 17 validation is still required. The domain record
+also lists planning/exception acceptance gaps; this work is not described as fully
+production-ready. Prior unrelated work and untracked duplicate files are preserved.
+
+### Existing-login active demo ride correction — 9 October 2026, 02:00 school time
+
+The user rejected separate test logins and explicitly requested an already-active
+fake ride using the existing demo personas. In local `omnischool_node` only, the
+existing Cambridge `DEMO-SOUTH` trip
+`5ea993a2-388e-44b1-ac1d-3451462843c6` was seeded from its planned state to an
+in-progress review fixture dated **2026-10-09 at 02:00 Asia/Kolkata**. It retains
+Kavita as attendant and the existing Aarav/Ananya roster and guardian relationships.
+The fixture includes simulated boarding, ready plans, and a saved sample location;
+it does not assert a physical journey occurred. The prior trip/roster/plan snapshot
+is retained in a `trip.demo_fixture_activated` audit, with a coordinate-free refresh
+event. Older unfinished demo trips were not overwritten, and no application guard,
+permission, normal trip-start rule or UI code was changed for this seed.
+
+Collector/family service reads verified the current active ride and map under
+`kavita.staff` and `pooja.parent`; duty changes are unavailable on that active ride.
+The four previously created `ride.*.cb6726` test accounts/memberships were disabled
+and their test sessions revoked. Their records remain recoverable; no school,
+learner or journey history was deleted. The normal Teacher view and Parent view
+demo entries are the intended review path—no new credentials are required.
+
+### Transport friction reduction and expanded re-test — 9 October 2026
+
+- User decision: routine roster boarding, non-travel, arrival and handover are
+  one-tap actions, without obligatory notes or a second form. Concerns, exception
+  resolution and school reconciliation still require an explanation. Existing
+  transaction, authorization, revision, audit and physical-outcome checks remain.
+  Historical routine notes are collapsed; pending/error states prevent duplicate
+  actions and false success. Office pickup authority workflow is unchanged.
+- Accepted active rides automatically start foreground geolocation, including on
+  reopening the ride. Native browser permission remains necessary. Hidden pages
+  pause and returning pages resume; explicit pause/device denial requires a manual
+  retry. Completion/unmount clears the watcher. No background-tracking guarantee,
+  GPS-inferred handover or first-sample success claim was introduced.
+- Verified **579 frontend tests / 77 files**, build/typecheck/lint; **35 backend
+  tests / 4 files**, including **15 isolated real-DB scenarios**, typecheck/build/
+  lint. HTTPS WebKit with the existing staff account sent a location accepted with
+  HTTP 201 without clicking any sharing control; no page errors or overflow at
+  320/390/768/1440px. Device/physical-operation acceptance remains outstanding.
+- User requested a reset and chose boarding. In local `omnischool_node`, the same
+  trip `5ea993a2-388e-44b1-ac1d-3451462843c6` is now boarding at **02:20**, with
+  **12 existing demo students / six drop-off stops** on a one-off demo route.
+  New current plans supersede the previous two completed plans; old handovers and
+  audit history remain. Cleared 13 prior GPS samples for this exact trip. Added an
+  explicit demo reset before-snapshot audit and coordinate-free refresh event.
+  Existing logins, recurring routes/assignments and future trips are unchanged.
+- The user explicitly approved closing the older 6/7 October demo trips that
+  prevented departure. They were reconciled using the school service, with notes
+  identifying synthetic test outcomes and before-snapshot audits. No production
+  guard was bypassed for the next user-operated departure. No new users were made.
+  Full fixture IDs and stop list are in `DEPARTURE_AND_TRANSPORT_COORDINATION.md`.
+
+Local preview remains available; no push or production deployment was requested
+or performed in this increment. Preserve the earlier documented PG17 fresh-schema
+and physical-device/weak-network release gates.
+
+### Naggar location-focused, full-bus walking fixture — 9 October 2026
+
+- Latest user decision replaces the earlier immediate Bengaluru boarding test:
+  **40 existing demo students**, eight geotagged pickup/drop-off stops near Naggar
+  Castle, two dated rides at normal **08:00 / 16:00** school-local times. Controls
+  open at **07:30 / 15:30**; both rides remain planned/expected for user testing.
+  Morning ID `1712c7d2-224a-46e0-877c-7ac5bc36594b`; evening retains
+  `5ea993a2-388e-44b1-ac1d-3451462843c6`. Existing Kavita/Pooja/Aarav logins apply.
+- Aarav's morning and afternoon stop is beside Naggar Castle; the morning route
+  ends at a fictitious school meeting point and evening reverses it. The mapped
+  road stretch is 838.3 m one way (~1.68 km out-and-back), under the requested 5 km
+  walking limit. Detailed coordinates/source and road-access caveat are recorded
+  in `DEPARTURE_AND_TRANSPORT_COORDINATION.md`. No synthetic live GPS was added.
+- Stop focus is an optional staff roster view using fresh, sufficiently accurate
+  GPS with manual fallback. It shows pending students at a nearby stop, handles
+  morning school arrival separately, flags unresolved concerns elsewhere, preserves
+  All riders, and never auto-records boarding/handover. Added staff-only route-stop
+  projection and map pins without exposing other learners/stops through family API.
+  Preserved shared styling/navigation and made the stop chooser a 44 px control.
+- **593 frontend tests / 78 files**, typecheck/lint/build; **37 backend tests /
+  4 files**, including **17 isolated real-DB scenarios**, typecheck/lint/build.
+  Two 40-rider lifecycle tests verify both journey directions and per-child privacy.
+  Actual staff/parent HTTPS reads verified both scheduled fixtures. Browser-only
+  intercepted movement verified nearby five-rider focus, nine map pins, movement
+  changes and one-tap actions; no actual planned rider state was consumed by QA.
+  No browser errors/overflow at 320/390/768/1024/1440px; screenshots inspected.
+- Preview and HTTPS `/readyz` remain healthy. Real walking/GPS, background and weak-
+  network acceptance remain unverified. No production deployment or Git push.
+
+### Temporary HTTPS preview recovery — 9 October 2026, 02:49 IST
+
+- Supersedes the earlier HTTPS-health observation above: ngrok subsequently
+  returned HTTP 403 `ERR_NGROK_725` (monthly bandwidth exhausted). Local preview,
+  database and event service remained healthy. The user approved an alternative
+  temporary HTTPS link; no billing/account changes were made.
+- Installed official Homebrew `cloudflared` 2026.10.0 and started a task-scoped
+  launchd tunnel to the existing local preview, not a new app/database/login:
+  **https://route-homeless-trembl-titans.trycloudflare.com**. Managed job:
+  `gui/501/dev.eduvera.preview-https`; ignored local configuration/logs live in
+  `.runtime/dev.eduvera.preview-https.plist` and `.runtime/preview-https*.log`.
+  Its working directory is `/tmp`; it does not require access to source files.
+  The preliminary localhost.run and foreground Cloudflare trials were stopped.
+- Replacement HTTPS `/readyz` returned database/events OK. WebKit signed into
+  existing staff and parent demos and read both planned 08:00/16:00, 40-rider
+  fixtures. With SSE deliberately unavailable, the parent page still fetched
+  updated data on its existing 10-second interval (two requests observed).
+  Browser-only active-ride simulation verified automatic geolocation attempts,
+  nine map pins, nearby five-rider focus, one-tap boarding and focus after movement.
+  No actual ride/rider state was mutated by this QA; no browser errors or overflow
+  at 320/390/768/1024/1440px. New host is a secure browser context.
+- Cloudflare Quick Tunnels are temporary, have no uptime guarantee and explicitly
+  do not support SSE. Transport polling remains 10 seconds for families and
+  15 seconds for staff; instant cross-view notifications are not a release claim
+  on this preview. The host computer and app/tunnel must remain running; restarting
+  the tunnel can change its hostname. See transport record for operational notes.
+  Physical walking/GPS acceptance and production release gates remain open.
+
+### Shared demo assistant and full conversation — 9 October 2026
+
+- Explicit user decision: a centre **Chat** item joins the four primary mobile
+  destinations in principal, teacher, parent and student views. Existing staff
+  permission filtering remains; restricted accounts do not gain hidden modules.
+  Existing school Messages remain separate from assistant Chat. Shared branding,
+  home content, child themes and other navigation destinations are preserved.
+- Compact mode shows only the latest local reply above its composer, with a
+  short reply-change animation and a lightly blurred/dimmed, inert page behind
+  it. Escape, Close and the backdrop dismiss it. Topic links open the appropriate
+  authorized portal screen and preserve the selected parent child. No live
+  counts are fabricated and requested writes are not represented as completed.
+- Tapping the reply or its expand icon opens `/<portal>/assistant` with the
+  conversation history. **Full chat hides the bottom navigation**, places the
+  composer above the keyboard/safe area, and keeps the existing header Back.
+  Back restores the compact reply and five-item navigation. Desktop operations
+  retains its sidebar. Native transitions wait for the destination DOM to mount
+  before capturing the new surface; reduced-motion navigation skips animation,
+  and older browsers have a fade fallback.
+- Conversation memory is local to the mounted authenticated session, separated
+  by portal/child and reset by account/school changes or reload. New chat clears
+  the current thread. Voice is explicitly not connected. This is the requested
+  **UI demo**, not delivery of blueprint §18/F1: no model, retrieval, provider,
+  autonomous actions, persistent messages, database or transport-fixture writes.
+- Verification: full frontend suite **612 tests / 80 files** passed, followed by
+  **80 focused assistant/navigation/route tests / 5 files**, including 19 assistant
+  tests covering final transition timing, reduced motion, memory isolation and
+  redirect fallback. Typecheck, lint and
+  production build passed. WebKit exercised all four real demo portals on the
+  existing HTTPS preview: compact/full/Back, history, input, topic navigation,
+  bottom-bar removal/restoration, reduced motion, and 320/390/768/1024/1440px
+  layouts without horizontal overflow or page errors. No chat-initiated network
+  writes were observed. Instrumented native transitions verified actual
+  compact → full and full → compact snapshots; mobile screenshots inspected.
+- Local and HTTPS `/readyz` report database/events OK. Preview remains
+  **https://route-homeless-trembl-titans.trycloudflare.com**. No Git push or
+  production deployment in this increment. Physical-phone keyboard, safe-area
+  and perceived motion validation is still requested from the user.
+
+### HTTPS preview restored after host restart — 9 October 2026, 12:05 IST
+
+- The previous Cloudflare Quick Tunnel URL stopped resolving after its local
+  connector and preview services disappeared. The local preview on port 8000 was
+  stopped as well; its scratch runtime under `/tmp` had been cleared.
+- PostgreSQL 14 had a stale `postmaster.pid` naming PID 1125, now an unrelated
+  macOS process. No PostgreSQL process or listener was using the data directory.
+  Stopped the failed Homebrew service, moved that exact lock to
+  `postmaster.pid.stale-20261009-1203` for recovery, and restarted PostgreSQL.
+  `pg_isready` accepts connections and the existing `omnischool_node` database
+  opens outside recovery. No database records were reset.
+- Rebootstrapped the existing launchd preview and Cloudflare tunnel jobs. The
+  preview's ignored local plist now disables the exhausted ngrok child while
+  keeping the same local app, API and database. The replacement Cloudflare URL is
+  **https://procedure-brighton-bush-website.trycloudflare.com**. Both local and
+  HTTPS `/readyz` report database/events OK, HTTPS `/login` and `/teacher` return
+  200, and WebKit rendered the login screen without page errors.
+- This is still an accountless Cloudflare Quick Tunnel. Its hostname can change
+  when the tunnel is restarted, and it requires this machine and both launchd
+  jobs to remain running. No production deployment or Git push was performed.
+
+### Working cross-app agent with reviewed execution — 9 October 2026
+
+- User decision extends blueprint §18/F1 beyond its first read-only slice: the
+  assistant should answer and prepare actions across all four app views, using
+  installed local Ollama first and interchangeable providers. Safety/physical
+  authority remains human-only. Research, configuration, coverage, operational
+  limits and remaining release gates are in [SCHOOL_AGENT.md](SCHOOL_AGENT.md).
+- Replaced the wired dummy reply/session flow with authenticated, persistent,
+  owner/school/portal/child-scoped conversations. Preserved the existing five-tab
+  navigation, compact latest-reply overlay, blur/dim, transition and full-chat
+  bottom-bar removal. Added progress/cancel, history, source timestamps, explicit
+  action previews and app-owned verification links/receipts. No fake microphone,
+  scheduled execution or fabricated action success is exposed.
+- Implemented native Ollama, OpenAI Responses, Anthropic Messages, Gemini and
+  OpenAI-compatible provider adapters. The live default is installed `qwen3:8b`
+  on this Mac; no download or cloud inference was performed. Cloud adapters have
+  mocked protocol tests only and need live provider/model acceptance. Model keys
+  remain server-only; changing provider never silently enables remote fallback.
+- Capability catalogue has **133 entries: 47 reads, 76 reviewed writes, 10 human
+  handoffs**. Covers attendance, timetable/year planning, diary, learner/staff
+  leave, messages, notifications, events, assessments, report cards, insights,
+  records, fees and transport planning. The catalogue reuses guarded domain APIs
+  and validators, rather than letting the model execute URLs, SQL or code. These
+  counts are implementation coverage, not 133 individually verified workflows.
+  Complete parity with every app command, attachments/voice/printing, imports,
+  authority/policy/safety decisions and unattended multi-action execution are not
+  claimed. Physical boarding/handover/location controls stay with the person.
+- Every change waits for an immutable, expiring UI confirmation. Confirmation
+  reloads scope, verifies the source snapshot, atomically claims the action and
+  uses the original domain endpoint with a stable idempotency key. Stale state,
+  changed permissions and duplicate confirmations fail closed. Ambiguous writes
+  become uncertain, never automatically retried. Historical answers are checked
+  against current source access both for UI history and later model context;
+  narrower record sets cannot leak through old conversation memory.
+- Added migration **055_school_agent.sql**, four isolated agent tables and explicit
+  runtime-role grants. The normal migration runner hit a pre-existing **033
+  checksum mismatch**; additive 055 alone was applied and checksum-recorded in an
+  advisory-locked transaction. Earlier migration-history drift was not rewritten.
+  Existing development records and the user's transport fixtures were preserved.
+- Verified **37 backend tests / 3 files**, including **15 isolated real-DB
+  scenarios**, plus backend build/typecheck/lint. Covers confirmation/CSRF, replay,
+  source changes, rejection/expiry, ownership/child/portal boundaries, membership
+  revocation, historical access narrowing, unrestricted-tool rejection,
+  cross-user cancellation, worker lease recovery, uncertain-write no-replay,
+  attendance registration and existing staff AI grants. Full frontend suite:
+  **616 tests / 82 files**; focused
+  assistant/navigation/notification checks: **81 tests / 7 files**. Frontend
+  typecheck, targeted lint, production build and `git diff --check` passed.
+  The final copy-only refinement passed another **18 assistant tests / 4 files**
+  and build. Final public HTTPS WebKit checks loaded all four real demo portals
+  at 390px with no overflow or JavaScript errors; student/parent/principal
+  composers enabled after loading and teacher disabled with the role explanation.
+- Actual Ollama read examples returned student recorded attendance in **21.3 s**
+  and the teacher's dated classes in **13.2 s**. A **28.9 s** real-model notification
+  proposal waited for browser confirmation, changed only after Confirm and opened
+  the notification panel from its receipt. These isolated timings are not an SLO.
+  Reviewed writes and fixture mutations used `omnischool_agent_test_20261009`, not
+  the user's main data. WebKit checked all four portals at **320/390/1024px** without
+  overflow or JavaScript errors, and verified composer/nav visibility and the
+  student preview/receipt. Physical-phone keyboard/motion and user sign-off remain.
+- The main demo teacher's existing role does **not** grant `ai.use`. The agent
+  respects that boundary and explains it in the UI. Permission was enabled only
+  in the disposable test database for staff QA; enabling the real demo permission
+  awaits the user's response. Other app permissions and existing logins remain
+  unchanged.
+- Local and HTTPS `/readyz` report database/events OK. The preview remains
+  **https://procedure-brighton-bush-website.trycloudflare.com** and uses polling
+  because this Quick Tunnel does not support SSE. Host/preview/Ollama must stay
+  running. No Git push or production deployment in this increment.
+
+Production acceptance remains open: fresh PostgreSQL 17/migration-history and
+runtime-role/RLS validation, chosen cloud-provider data approval and live tests,
+adversarial/multilingual domain evaluations, bounded retention/deletion policy,
+load/latency/failure drills and user/device review. A local safe-action test does
+not establish universal model reliability or release readiness.
+
+### Agent follow-up and reviewed-attendance hardening — 9 October 2026
+
+- Investigated the user's actual Aarav conversation: identity lookup succeeded;
+  the presence follow-up had no successful read, no proposed action and no write.
+  The model confused an admission number with an internal UUID. Conversation
+  context previously kept prose without freshly authorized structured references,
+  substring routing confused "his"/"history" and presence/academic marks, and
+  only a whole-class attendance submission tool was available.
+- Rebuilt minimal record references from freshly reauthorized historical sources,
+  with exact unique name/admission aliases and fail-closed ambiguity. Whole-word
+  tool routing uses the current request plus prior authorized domains. The school
+  timezone supplies today's date. The app also binds revision numbers for **34
+  routine ID-based writes** from the exact affected record; nested marks/comment
+  revisions still require their separate domain acceptance. A generic notification
+  follow-up test verifies refreshed evidence, not just attendance-specific logic.
+- Added guarded student-attendance lookup and single-student observation commands,
+  reusing the existing attendance transaction and authorization/audit/event logic.
+  The app resolves the class, student, dated roster and register version. A unique
+  authorized match is mandatory; locked/stale/out-of-roster requests fail closed.
+  Corrections require the user's actual reason, and omitted notes are preserved.
+  Model-invented optional class filters/reasons no longer silently shape the change.
+- Product clarification for the user's individual-attendance request: recording
+  one learner preserves all other learner observations and **does not submit an
+  open class register**. A submitted register correction keeps its submitted state.
+  A separate class submission remains necessary. No attendance or security policy
+  was relaxed, no new migration was required, and physical transport observations
+  remain human-only. Catalogue now has **135 entries: 48 reads, 77 reviewed writes,
+  10 handoffs**; those counts are coverage, not universal workflow certification.
+- The confirmation shows student, class, date, previous/new status and actual
+  reason/notes rather than internal IDs. Confirm is still mandatory. Its receipt
+  opens the correct dated register filtered to that student; Clear search restores
+  the full roster. The established theme/navigation are preserved. Scroll targets
+  account for the fixed header, and composer/keyboard space is reserved so the
+  confirmation is not hidden. Failed tools and unverified completion claims have
+  bounded recovery plus metadata-only audit events; only receipts establish writes.
+- Verified **59 backend tests / 3 files**: 24 real-database integration scenarios,
+  25 contract checks and 10 mocked provider-protocol checks. Added cases cover
+  lookup → pronoun, ambiguity, draft/other-row/note preservation, correction reason,
+  idempotency, stale preview/version, locked/foreign roster and parent denial.
+  **15 selected legacy API/attendance tests** passed; 28 tests outside that selection
+  were skipped. Backend build/typecheck/targeted lint passed. The legacy full-roster
+  ranking test now derives the actual active roster size instead of assuming 25
+  after the user's transport fixtures added two learners; eligible cohort checks
+  are unchanged.
+- Full frontend suite **618 tests / 82 files** passed. The final chat-scroll change
+  passed **93 focused tests / 6 files**, typecheck, lint and production build.
+  Actual Ollama + WebKit verified preview → Confirm → correct student register →
+  full roster at **320/390/768/1024/1440px**, with no horizontal overflow or page
+  errors and no bottom navigation in full chat. Screenshots were visually checked;
+  physical-phone keyboard/motion and user validation remain open.
+- Repeatable real-`qwen3:8b` evaluation is in `backend/test/agent-live.eval.ts`.
+  The reported two-message request now creates a correct Aarav presence preview;
+  ambiguous "Sharma" asks for a choice instead of preparing the wrong learner.
+  An initial wider evaluation exposed invented Class 10 and a verb included in
+  the student's name; both were corrected before the passing run. A reviewed
+  Ananya correction was confirmed and database-verified in the isolated test DB.
+  The final live-model rerun also verified correction → reason question → user
+  explanation → preview → Confirm, preserving the user's exact reason. Its five
+  turns took 12.2, 12.3, 17.3, 16.3 and 13.5 seconds; these are samples, not an SLO.
+  All test mutations used **omnischool_agent_test_20261009**; main school attendance
+  and transport fixtures were preserved. The real demo teacher's `ai.use` grant
+  remains unchanged and awaits the user's approval.
+- This is verified local hardening, not closure of every release gate. Live cloud
+  providers, domain-by-domain/multilingual/adversarial evaluations, retention and
+  erasure policy, load/failure drills, PostgreSQL 17/RLS/runtime validation and the
+  pre-existing migration-033 tracking mismatch remain documented in
+  [SCHOOL_AGENT.md](SCHOOL_AGENT.md). No Git push or production deployment occurred.
+
+### Preview restored after the power cut — 9 October 2026
+
+- Rebootstrapped the existing local-preview and preview-HTTPS launchd jobs without
+  changing application permissions, data or logins. The replacement temporary URL
+  is **https://verde-too-independent-bargains.trycloudflare.com**; the earlier
+  `procedure-brighton-bush-website` URL is no longer current.
+- Public root and `/readyz` returned 200; local and public readiness report
+  database/events OK. Ollama's installed local model is available. Keep the Mac,
+  preview and Ollama running. This is still an accountless temporary Quick Tunnel
+  with polling (no SSE), not a permanent address or new reboot-persistent install.
+
+### Teacher quick feedback — 8 October 2026
+
+User-requested extension: principal administrators can publish a teacher/class feedback request
+for students or parents, choose 1–10 preset/custom parameters and a closing deadline, and close early.
+Migration `055_teacher_feedback.sql` stores campaigns, unique account responses and lifecycle audits.
+The separate Nest module validates current institution membership, current-term enrollment and guardian
+relationships, exact rating keys, deadlines and duplicate submissions. Submission and closure share
+a campaign row lock. Responses are confidential, not truly anonymous; identities remain stored to
+prevent duplicates, with no individual-response API or teacher results access.
+
+The React flow preserves existing shells/theme and adds More entries, a principal Insights link and
+pending home prompts. Low / Okay / High / Not sure ratings are collected with native radio controls.
+Private aggregate distributions unlock only on closed requests with at least five responses; each
+parameter independently requires five non-abstaining ratings. Signals suggest a supportive review
+(40% Low) or strength (70% High), not a staff performance verdict. No public teacher leaderboard.
+
+Verification: GitHub Actions run 37799328175 passed backend typecheck/lint/build,
+fresh isolated PostgreSQL migration and all backend tests, mobile typecheck/lint/build/tests,
+and desktop typecheck/build. All five feedback integration tests and four rating-rule tests
+passed. The scheduling integration test now creates its own subject rather than assuming
+an arbitrary school's fixtures. A separate local full frontend run had one navigation timeout
+(478/479 passed); the authoritative CI full run passed.
+
+Browser checks with synthetic API fixtures pass at 320/768/1024/1440 pixels for creation,
+private results and student submission; the parent route passes without browser errors.
+This documentation-only reconciliation retains the newer Analytics Stage release record.
+User visual acceptance and merging/deployment remain pending; no deployment is claimed.
+
+
+### Teacher feedback rating redesign — 8 October 2026
+
+User-requested visual refinement keeps all four rating options in one row, including 320px phones. Amber/blue/green/slate surfaces and labelled expression icons distinguish Low, Okay, High and Not sure. Selected choices use a solid surface; native radios retain keyboard operation and visible focus. Existing submission and confidentiality rules are unchanged. Frontend typecheck and all four feedback tests pass. Synthetic-fixture browser checks pass at 320/768/1024/1440px for principal creation/results and student submission, plus the parent route, with no overflow or page errors. Visual acceptance and deployment of this refinement are pending.
+
+
+### Teacher feedback segmented selector — 8 October 2026
+
+User refined the visual request with a segmented attendance-control reference. Ratings now share one compact rounded track with a colored active pill translating horizontally between Low, Okay, High and Not sure. Native radio tap and arrow-key behavior is retained, unanswered parameters remain unselected, and reduced-motion preferences disable transitions. Typecheck and all four existing feedback tests pass. Synthetic browser checks cover 320/768/1024/1440px, no overflow, submissions, and keyboard-driven pill movement left/right. Deployment and user acceptance of this refinement remain pending.
+
+
+### Compact feedback home prompt — 8 October 2026
+
+Confirmed the sliding selector release passed deployment and public revision verification in Actions run 37817363937. User requested a cleaner home prompt: replace the large blue multi-line appeal with one white linked row, small feedback icon, Teacher feedback title, pending request count and chevron. The shared student/parent prompt retains eligibility filtering. Typecheck passes; fixture-backed student home browser checks verify no link overflow and successful navigation at 320/768/1024/1440px. Mobile row visually inspected. This follow-up's deployment and user visual acceptance are pending.
+
+
+### Drag to change feedback rating — 8 October 2026
+
+The shared native-radio selector now supports horizontal pointer dragging, updates the selected rating across segments, clamps at either end, and preserves tap/keyboard behavior. Vertical touch scrolling remains available; pointer cancellation restores the original answer. Capture transfer from touch targets does not terminate the drag. Typecheck, focused lint and four existing feedback tests pass. Browser tests using Chromium mouse dragging left and CDP touch dragging right pass at 320/768/1024/1440px alongside submission and overflow checks. Physical iOS acceptance and deployment remain pending.
+
+### Teacher feedback results analytics — 8 October 2026
+
+Built the requested animated View results dashboard on Stage revision `633cb05` in
+an isolated branch. The [results contract](TEACHER_FEEDBACK_RESULTS.md) records the
+principal questions, denominators, comparable-history rules and UX boundaries.
+The existing theme, shell, feedback slider and confidentiality gates are preserved.
+
+Results now include a rating-mix donut, sortable expandable parameter distributions,
+strength/support summaries with practical suggestions, cumulative response activity
+and comparable closed-round history. Hidden parameters cannot contribute to summary
+ratings or trends. Historical comparisons require the same institution, teacher,
+class, audience and question set with five actual ratings on every parameter; no
+respondent identity is returned. Regular open requests expose collection activity only. Per the user’s follow-up,
+seeded Cambridge demo administrators can preview graphs after one response while
+open, with a visible demo label; other accounts retain five-response gates.
+No migration, new package or demonstration data write is required.
+
+Local frontend/backend typechecks and scoped lint passed. Five backend policy/rating
+unit tests and eleven frontend feedback tests passed. Chromium fixture checks passed
+at 320/768/1024/1440 pixels, including sort, native keyboard disclosure, historical
+table, locked state, reduced motion and no browser errors. Phone/tablet screenshots
+were visually inspected. The automatic approval review blocked publishing the branch because this turn did
+not explicitly authorize source publication. The local commit is retained; PostgreSQL
+integration verification in PR CI, Stage deployment and physical-phone acceptance
+remain pending. No shared database was accessed for tests.
+
+### Teacher feedback Stage release follow-up — 9 October 2026
+
+PR #12 passed its complete verification and was merged into Stage as `85004c9`.
+The release run 37826658055 passed all 353 backend tests but stopped on two existing
+CalendarView tests after the school-local date became 9 October: their unanchored
+date selector matched both the day cell and the Today shortcut. The test-only fix
+anchors the day query and freezes Date on that same collision day, leaving timers
+real. All five calendar tests and focused lint pass locally. No application code,
+assertion, test gate or shared data is removed; the corrected release must still
+pass the full pipeline before deployment can be claimed.
+
+### Agent, transport and home Stage release preparation — 9 October 2026
+
+- User requested pull, push and deployment. Fetched Stage at `abb16eb` and merged
+  its teacher-feedback flow, analytics and midnight-stable calendar tests with the
+  accumulated home, transport and reviewed-agent implementation. Preserved both
+  student Departure and Teacher feedback navigation. The three unrelated ` 2`
+  duplicate files remain excluded; no reset, force push or full Stage reseed.
+- The custom migration runner keys history by full filename, not numeric prefix;
+  `055_school_agent.sql` and `055_teacher_feedback.sql` therefore coexist without
+  renaming an already-applied migration. Added `056_school_agent_access.sql` to
+  enable RLS, revoke PUBLIC/anon/authenticated table access and assign the four
+  private agent tables to the established application owner. This follows the
+  existing guarded-backend model, not per-user database-role enforcement. The
+  Supabase CLI is not installed; the repository's established runner is retained.
+  Checked current [Supabase RLS guidance](https://supabase.com/docs/guides/database/postgres/row-level-security).
+- A fresh PostgreSQL 14 check stopped at existing migration 033's newer SQL syntax.
+  Restarted the existing container runtime and created a separate PostgreSQL 17
+  test instance, matching CI. All migrations, including both 055 files and 056,
+  applied successfully there. No existing 033 checksum was rewritten. Locally,
+  only verified additive feedback/access migrations were applied under the normal
+  advisory lock with checksums; existing app data was not reseeded.
+- Merge checks caught missing QueryClient context in the home test and an agent
+  regression fixture that incorrectly assumed today's attendance was empty. The
+  home test now supplies the real provider; the isolated agent fixture temporarily
+  removes/restores the one seeded observation, preserving SQL dates as JSON dates.
+  A repeated mutated test database produced unrelated roster-count failures, so
+  the complete release suite is rerun on a newly migrated/seeded disposable DB.
+- Mobile frontend **629 tests / 84 files** passed after those corrections. Backend,
+  frontend and desktop typechecks/builds and backend/frontend lint passed before
+  the final test-only corrections; final release checks are recorded below when
+  complete. Secret scanning found no leaks in the implementation commit range.
+- Railway Stage cannot reach the Mac's localhost Ollama service. This release does
+  not expose Ollama publicly, invent a cloud key, or silently switch providers.
+  Verify and report deployed model availability separately from app readiness.
+  The Cloudflare preview continues to use the local model. Deployment is not yet
+  claimed at this preparation step.
+
+Final local pre-push verification passed: **444 backend tests / 58 files** on a
+fresh PostgreSQL 17 schema with every isolated-integration flag enabled, and
+**629 frontend tests / 84 files**. All three builds/typechecks, backend/frontend
+lint and `git diff --check` passed; final fixture edits passed targeted lint and
+frontend typecheck again. Remote CI/deployment verification remains separate.
+
+### Agent, transport and home Stage release verified — 9 October 2026
+
+- Pushed merged application commit **f5c3d7162d7f20162d0ff03acaaf5ae79ddb05f4**
+  to `origin/Stage` without rewriting remote history. [Stage run 37918047922](https://github.com/EduveraIITA/Eduvera/actions/runs/37918047922)
+  completed successfully: Verify in 8m15s and Railway deployment in 4m49s.
+- CI confirmed **444 backend tests / 58 files** and **629 frontend tests / 84
+  files**, with fresh PostgreSQL 17 migrations, repository secret scanning,
+  typecheck/lint and all three application builds. Stage applied additive
+  `055_school_agent.sql` and `056_school_agent_access.sql`; the feedback migration
+  was already present. The full demo reseed step was skipped.
+- Independently verified `/releasez` returns that exact SHA with environment
+  `stage`, and `/readyz` returns database/events OK at
+  **https://omnischool-stage.up.railway.app**. Pipeline checks also verified both
+  SPAs, install icons, OpenAPI, student demo access and protected metrics.
+- Authenticated WebKit checks on the deployed application passed for principal,
+  teacher, parent and student: working demo login, five bottom destinations on
+  home, bottom navigation hidden in full chat, no overflow at 320/390/1024px, and
+  no JavaScript errors or server-500 responses. Checked the loaded conversation
+  state, not just its loading placeholder; principal screenshot visually inspected.
+  Authorized principal/parent/student history reads succeeded with the new table
+  protection. Teacher AI access still returns its existing deliberate role denial.
+- **Railway inference is not configured:** principal/parent/student status reports
+  `ollama`, `qwen3:8b`, `ready:false`. The UI visibly explains the unavailable local
+  model and disables input. No model credentials, public Ollama exposure or cloud
+  fallback were introduced. Enabling Stage inference requires an approved model
+  endpoint reachable from Railway; application deployment is not inference setup.
+- The existing **https://verde-too-independent-bargains.trycloudflare.com** preview
+  remains healthy. Its four-portal browser check passed, with local Ollama ready
+  for authorized accounts. The three unrelated duplicate files remain uncommitted.
+  The disposable PostgreSQL 17 test container was stopped, preserving its data.
+  This is a verified **Stage**, not production, release; physical-device/product
+  acceptance and the remaining agent release gates still apply.
+- CI emitted existing maintenance warnings about actions' Node 20 deprecation
+  and the upcoming ubuntu-latest image migration. Those did not fail this release;
+  no workflow-version change was mixed into this deployment.
+
+### Razorpay sandbox fee checkout — 9 October 2026
+
+Added a sandbox-only adapter to the existing family fee workflow; see
+[setup, behavior and release checks](RAZORPAY_SANDBOX.md). Durable provider orders,
+server signature and capture verification, raw-body webhook deduplication, bounded
+recovery polling, audit/outbox events and explicitly labelled test receipts extend
+the existing ledger. Balance changes preserve captured funds for school review.
+Live credentials and production-environment activation are rejected. Existing
+manual-payment review and student read-only access remain unchanged.
+
+Local backend/frontend typechecks and focused signature/UI tests are the first
+verification gate; isolated database integration runs in PR CI. Stage credentials
+and real sandbox browser checkout remain pending until the hosting service is
+accessible. No deployment or full gateway release gate is claimed by this entry.
+
+User override, 9 October 2026: temporary Razorpay test credential defaults are now
+server-side and restricted to Stage plus DEMO_MODE. Environment settings take
+precedence, including an explicit disable switch. This removes the new Railway
+variable requirement for the existing Stage demo deployment. No live credentials
+or production activation are enabled. Actual deployment/checkout remains unverified.
+### Google Cloud trial connection — 9 October 2026
+
+- User selected **ThatCampus (`eduera-511111`)** and authorised setup limited to the
+  **$300 trial**. No paid-account upgrade, GPU/Marketplace deployment or spending
+  beyond available trial credit is authorised. Keep the current deployment intact
+  until a separate Google Cloud deployment is verified.
+- Google Cloud CLI 588.0.0 is installed and user authentication is verified. The
+  local CLI now selects the user-specified project. Project billing reports enabled;
+  read-only inventories returned no Cloud Run services, Cloud SQL instances,
+  Artifact Registry repositories, storage buckets or Secret Manager secrets.
+- The linked billing account is not accessible to the authenticated user:
+  `gcloud billing accounts describe` returns permission denied. Trial status,
+  remaining credit and expiry have therefore **not** been verified. Request billing
+  viewer access or user-provided Billing overview evidence before provisioning
+  billable resources. Budget alerts alone are not a hard spending cap.
+- No cloud resources, IAM grants, secrets, databases or deployment pipelines were
+  created or changed by this setup. Uploads currently use local disk and background
+  event processing needs continuous execution; account for both in a hosting design.
+  This is connection/preflight evidence, not a deployed or production-ready service.
+
+### Google Cloud Stage automation in progress — 9 October 2026
+
+- The user subsequently authorised creating the required infrastructure against
+  their stated $300 trial credit and selected the deployed Stage data as the source.
+  The account still cannot independently verify billing credits; budget creation
+  failed validation. No successful budget setup or hard spending cap is claimed.
+- Concurrent team work was discovered after provisioning began. The team owns the
+  existing **`eduera-db`** PostgreSQL 17 micro instance and **`eduera/web`** image
+  repository in Mumbai. User explicitly chose those resources and requested
+  deletion of our duplicate **`eduvera-stage`** database. Its create operation is
+  still running; removing deletion protection returned 409 until creation finishes.
+  No team data has been modified.
+- Created branch/repository/workflow-restricted GitHub OIDC federation, a deploy
+  service account, separate runtime/migration identities, private upload bucket,
+  empty migration-secret containers and the `gcp-stage` GitHub environment.
+  The extra empty `eduvera-stage` image repository also exists; it is not the chosen
+  image destination. No Cloud Run application is deployed by this work yet.
+- Added the Google Cloud job to the Stage workflow without removing Railway.
+  Source-secret copying is an explicit separate dispatch, never an automatic
+  reseed. Release images are built on GitHub; deployment uses a migration job,
+  candidate checks and application traffic rollback. Secret values are excluded
+  from logs, artifacts and container contexts. Deployment is initially disabled.
+- Locally verified five deployment-contract tests, both workflows with actionlint
+  structural validation, full shell validation of the new reusable workflow, and
+  `git diff --check`. Existing Railway shellcheck warnings remain unchanged.
+  GitHub execution, database/file copying, cloud runtime and public verification
+  remain pending; see [Google Cloud Stage](../../deploy/gcp/README.md).
+
+### Google Cloud initial deployment and migration verified — 9 October 2026
+
+- User confirmed the $300 trial allowance, selected the deployed Stage database
+  as the source, then explicitly directed reuse of the team's **`eduera-db`** and
+  removal of our duplicate. Deleted the empty **`eduvera-stage` Cloud SQL instance**;
+  delete operation `f0cd4643-5a83-413a-b714-beb70000002f` completed. No team database
+  was deleted. The similarly named Cloud Run service is intentional and separate.
+- The Stage workflow is published in commit **ada5a011f1de6a716f24206001b8b5de4036e4fa**.
+  [Explicit bootstrap run 37928341516](https://github.com/EduveraIITA/Eduvera/actions/runs/37928341516)
+  verified GitHub OIDC and copied source configuration without exposing values.
+  Temporary per-secret write permissions were revoked after the successful copy.
+- Copied a consistent Supabase PostgreSQL 17.6 **public application schema** snapshot
+  to the new `omnischool` database inside **`eduera-db`**. Source Supabase-managed
+  schemas were not copied; public functions were checked for dependencies on them.
+  All **183 table row counts** matched, including **200 students and 64 migrations**.
+  Chat, leave and assessment attachment tables were empty. Kept the source encryption
+  key so copied restricted records remain decryptable. The original Stage database
+  was not altered or continuously replicated. Later source writes do not synchronize.
+- Cloud SQL backup **1791548387012** succeeded. Daily backups remain enabled;
+  deletion protection and encrypted-only connections were enabled. A private
+  local dump is retained under ignored `.runtime/gcp-migration/`, not in GitHub.
+- Deployed the tested amd64 image by the initial release SHA to
+  **https://eduvera-stage-367469594690.asia-south1.run.app**. Cloud Run uses one CPU,
+  1 GiB, one-instance service scaling, continuous CPU for the existing worker,
+  private mounted file storage and versioned Secret Manager references. The
+  migration job ran successfully using its separate Google service identity.
+  The existing database-owner runtime approach remains a documented production
+  security gate; separate Google identities do not imply non-owner database RLS.
+- The private file mount passed exclusive-write rejection, create/rename/read,
+  and cleanup checks in a temporary Cloud Run job. Public readiness, exact release,
+  both SPAs, icons, OpenAPI, demo mode and anonymous metrics rejection passed.
+  Authenticated WebKit checks passed all four portals at 320/390/1024px with no
+  page/server errors. **Cloud inference remains unavailable** (local Ollama);
+  no GPU, paid model or billing upgrade was introduced.
+- Created a project-only **INR 250 monthly early-usage alert**, before credits,
+  with 50/80/100 percent thresholds. Its currency is INR, not USD; it is not a hard
+  cap. Actual trial credit/expiry is still not independently visible to this login.
+- Enabled the Google Cloud deployment flag and selected Google Cloud as the Stage
+  release target. Railway remains available but future releases skip its deploy
+  job. Six local release-guard tests and the live runtime guard pass. The next
+  automatic candidate/migrate/promote cycle still requires final CI evidence.
+
+### Google Cloud automatic Stage deployment verified — 9 October 2026
+
+- [Stage push run 37930186905](https://github.com/EduveraIITA/Eduvera/actions/runs/37930186905)
+  completed **successfully** for release
+  **41c9aa537701a39fcd4ba635c0387b9468760578**. Secret scanning, deployment guards,
+  backend integration tests, mobile tests, lint/typechecks and both frontend builds
+  passed. The Google Cloud job used keyless GitHub authentication, pushed the image,
+  ran migration execution **eduvera-stage-migrate-rmpqw**, checked the candidate,
+  promoted it and removed its temporary verification tag. Railway was skipped.
+- Cloud Run revision **eduvera-stage-00002-wik** now serves 100% of traffic at
+  **https://eduvera-stage-367469594690.asia-south1.run.app**. Independently verified
+  its exact release SHA and readiness, then re-ran principal, teacher, parent and
+  student WebKit login/navigation checks at 320/390/1024px with no overflow,
+  JavaScript errors or HTTP 500s. These checks do not certify every domain workflow.
+- Confirmed **eduera-db is the only Cloud SQL instance** and the runtime connector
+  references it. Removed the unused empty `eduvera-stage` image repository; the
+  team's `eduera/web` remains. Disabled temporary source-connection secret versions,
+  revoked migration-bootstrap secret-write grants, deleted the completed one-off
+  file-check job, and stopped the local migration proxy. Private migration dump and
+  original source credentials remain recoverable. Railway and native local preview
+  readiness remain healthy; neither is continuously replicated with Google Cloud.
+- No paid model or GPU was added. Cloud Ollama inference remains unavailable and
+  visibly disabled. Trial budget alerts/deployment expiry are not spending caps;
+  production security and operational gates documented above remain open.
+- This evidence is recorded in a documentation-only `[skip ci]` follow-up; the
+  verified deployed application release remains the SHA above.
+
+### Private Stage accounts and bounded cloud AI — 9 October 2026 (in progress)
+
+- User decision: preserve four existing review personas, remove public shortcuts
+  and shared credentials, enable a low-cost Google model using trial credit with
+  abuse controls. No authorization to upgrade billing or use GPUs.
+- Verified on Cloud Run revision `eduvera-stage-00003-6kd`: `DEMO_MODE=false`,
+  private passwords for all four accounts login successfully; 413 other published
+  fixture-password hashes disabled, 15 old/probe sessions revoked. Profiles and
+  school records remain. Credentials are delivered only in a Git-ignored 0600
+  local file. Password rotation is independent of the pending code release.
+- Removed public persona shortcuts from mobile and desktop login, prohibited the
+  published password outside local demo mode, added durable per-identifier login
+  throttling, and restored unambiguous school membership for password sessions.
+- Added keyless Vertex adapter, approved Flash-Lite model restriction, per-account
+  request limits, durable pre-generation cost reservations (migration 057), input,
+  output and concurrency bounds, kill switch and review expiry. Existing domain
+  authorization, confirmation, stale-preview and audit protections remain.
+- Minimal Google runtime invocation role and Vertex API are provisioned; a small
+  synthetic model probe passed. App deployment/real portal evaluation are pending.
+  Pricing, trial limits and processing-region boundary are documented in
+  `deploy/gcp/README.md`. This is not a claim of zero abuse or production readiness.
+- An embedded SMTP fallback credential was removed; delivery is off. Provider-side
+  revocation of the historical app password remains an owner action. Separate old
+  Railway/local snapshots are not secured or synchronized by this database change.
+
+### Verified private accounts, Vertex AI and Railway retirement — 9 October 2026
+
+- Release `26dc964d192def75494e8fcbefba51fd6fb16853` passed Stage run
+  **37935688102**: 457 backend + 630 frontend tests, lint/typechecks/builds, secret
+  scan, additive migration and public/candidate checks. Two obsolete demo-button
+  assertions were updated; a pre-existing two-child route test now has a 30s
+  overall timeout for its unchanged bounded waits/assertions. No failing gate was
+  skipped. Final workflow-only cleanup is linted, not represented as a new app build.
+- Vertex model `gemini-3.1-flash-lite` is enabled through keyless runtime identity,
+  expiry **8 November 2026**, 10 requests/hour and 30/day per account, shared
+  conservative reservations of $0.50/day and $5/month. All runtime resource/model
+  guards were checked after configuration. Actual remaining trial credit is still
+  unavailable; these are application limits, not total cloud billing caps.
+- Live private sign-in, five-tab navigation, full-chat nav hiding and responsive
+  320/390/1024px checks passed for all four personas, with no page/server errors.
+  All four completed real authorized reads with verified sources. Principal
+  Aarav lookup → pronoun attendance preview was correct and explicitly rejected;
+  no attendance was changed. The model ledger recorded 9 calls and 109117 reserved
+  micro-USD. Teacher received only an audited, assigned-resources `ai.use` exception
+  through the same review window; no wider operational access was added.
+- User explicitly requested **keep Cloudflare for personal testing, remove
+  Railway**. Railway removal run **37936914773** deleted only the old Stage
+  application; public URL verified 404. Read-only run **37937246349** confirmed no
+  remaining service and retained volume metadata. External source database and
+  private migration snapshot are preserved. Removed Railway deployment/bootstrap
+  jobs, the GitHub Railway token and obsolete service/URL variables; Stage now
+  verifies then deploys only to Google Cloud.
+- Cloudflare and native preview remain healthy and retain their separate local
+  demo mode by the user's decision. The new private passwords apply to Google
+  Cloud, not those separate snapshots. Historical SMTP app-password revocation,
+  production security/retention/load gates and global model-region review remain
+  open; this release is not a claim of zero abuse or production certification.
+
+### Branded invitation email — 9 October 2026
+
+Razorpay merge compatibility: sandbox payments now use the non-production/test-key
+guard independently of demo login access. Google Cloud Stage retains `DEMO_MODE=false`
+and private authentication. Temporary owner-requested Stage test credentials remain
+overridable, and production activation is rejected. Focused configuration, provider,
+invitation-email and connection-policy tests passed (32 tests), as did focused ESLint.
+Deployment and real browser checkout remain separate verification steps.
+
+- Added an inline-styled blue/mint HTML invitation with a selectable single-use
+  code, invited email, UTC expiry, join button and existing-account instructions.
+  Plain text remains available. Both SMTP and Resend receive the HTML variant;
+  account-action messages retain their existing plain-text behavior.
+- Dynamic HTML values are escaped. Codes remain out of links; no remote images,
+  tracking pixels or scripts are included. The existing post-commit send, expiry,
+  authority checks and honest provider-acceptance/failure states are preserved.
+- Removed obsolete Railway-specific advice from transport connection errors.
+- GCP delivery still requires the runtime to reference the owner's new
+  `eduera-smtp-password` secret as `SMTP_PASSWORD`, and SMTP delivery enabled.
+  Creating the secret alone does not activate sending. No live inbox delivery
+  is claimed by this code change.
+- Local verification: backend typecheck, focused ESLint and all 10 invitation
+  tests passed, including SMTP/API HTML delivery, HTML escaping, secret-free links,
+  disabled sending and provider failure handling. `git diff --check` passed.
+
+### Invitation logo — 9 October 2026
+
+- Reused the app's existing `frontend/public/assets/edura-leaf-mark.png` in
+  the invitation header at 48px alongside the ThatCampus wordmark. The fixed image
+  URL uses the configured public origin, with no recipient/code/query parameters.
+  This supersedes the previous template's no-remote-image design at the user's
+  request. Text branding and the full invitation remain usable if images are blocked.
+- Verified the deployed static asset returns HTTP 200 with image/png. No new
+  image, third-party image host, tracking pixel or dependency was introduced.
+
+### Local agent SDK recovery, decision APIs and compact charts — 9 October 2026
+
+- Read blueprint §18 and the current agent/insights release contracts. User
+  explicitly requested established provider techniques, richer safe principal
+  analytics, local Gemini using the existing trial-credit project, and charts
+  above the mini-chat composer. Preserved the existing theme and navigation.
+- Replaced hand-written Gemini transport with official `@google/genai` 2.28.0 and
+  `google-auth-library` 11.2.0. Validated function calling, native thought-signature
+  retention and `p-retry` 7.1.0 bounded recovery keep app tools/confirmation separate
+  from model generation. Each attempted generation is budget-reserved; malformed
+  responses cannot dispatch partial commands. Permanent denials/refusals do not
+  retry. Code-only failure audits and specific safe errors replace opaque failures.
+- Added two authorized, read-only APIs/tools: principal learner/class/institution
+  attendance and published-result reports, and focused attendance/learning/
+  follow-up/coverage/deadline/fee-ageing reviews. Strict inputs, current institution
+  membership, ambiguous-name choices, minimal identity fields, parameterized SQL,
+  published snapshots and denominator definitions apply. Catalogue now contains
+  137 capabilities (50 reads, 77 reviewed writes, 10 human handoffs), not 137
+  individually certified workflows. Individual-source screens preserve learner,
+  class, period and subject/class comparison instead of opening school totals.
+- Chart presets become server-produced line/bar/donut data from authorized API
+  results; the model cannot supply values, HTML, code or arbitrary URLs. The latest
+  mini reply shows a compact four-bar preview; full chat has full source charts,
+  data tables, explanatory definitions and direct verification links. Missing data
+  stays missing, donuts use whole record partitions, and daily-derived subject
+  attendance is explicitly a projection. Historical charts share source revocation
+  checks with their answers. Source links remain outside the mini scroll region.
+- Verified ADC sign-in and quota project `eduera-511111`. Local preview uses the
+  same `gemini-3.1-flash-lite` Vertex model as Stage, no API key or billing upgrade.
+  Separate local reservations: $0.25/day, $1/month, 10 requests/hour, 30/day,
+  expiry 8 November. Added only migration 057 to local `omnischool_node` under
+  the advisory lock; existing migration checksum drift was not overwritten.
+  Trial credit can apply to eligible Vertex usage; remaining credit is unknown,
+  and per-database allowances are not a project-wide/hosting billing cap.
+- Verification: **471/471 backend tests** on a freshly migrated/CI-seeded disposable
+  PostgreSQL 17 database; **634/634 frontend tests**, then **77/77 focused frontend
+  tests** including a new learner-source regression. Typechecks, full lint and
+  builds passed. A first full run reused old fixtures and omitted CI demo mode;
+  its 11 failures were not waived—the complete clean run passed. No real local
+  ride/attendance data was reset by tests. Provider tests cover malformed calls,
+  output limits, 429, permanent errors, safety, cancellation, signature retention
+  and durable budget refusal; chart tests cover nulls, truncation and source routing.
+- Real opt-in Vertex evaluation through the full isolated API passed the final
+  four-turn greeting → learner bar chart → learner/class/school results →
+  attendance/coverage/follow-up review. An earlier sample omitted school scope and
+  chose the wrong chart; clearer schemas/tool guidance corrected the tested cases.
+  Total eval reservation 162073 micro-USD/12 generations; local browser chart
+  26928 micro-USD/2 generations. These are conservative reservations, not invoices.
+  Browser QA verified mini/full transitions, bottom-nav hiding, correct learner
+  source values and no overflow/composer clipping at 320/390/768/1024/1440px.
+  Native and Cloudflare readiness both returned 200.
+- **Deployed to Google Cloud Stage** at commit `5d1f452` by workflow
+  `37948358227` (attempt 2). Migration 058 completed and revision
+  `eduvera-stage-00024-jer` receives 100% traffic. Release identity, database/event
+  readiness, private-session mode and both web roots passed the automated gate;
+  independent `/releasez`, `/readyz` and root checks returned HTTP 200. The first
+  deployment attempt correctly preserved the previous serving revision when a
+  whitespace-prefixed SMTP secret binding prevented startup; the binding was
+  corrected to the existing `eduera-smtp-password` Secret Manager secret before
+  the successful retry. Historic Stage HTTP-200 failures did not retain the provider finish
+  reason, so their exact root cause is not claimed as proven. User/physical-device
+  review, broad adversarial/multilingual evaluation, load/latency, chat retention,
+  provider data approval and existing dependency/security advisories remain open.
+  No claim that every request or model is reliable, or that AI misuse is eliminated.
+
+### Per-user Pro features preview switch — 9 October 2026
+
+- Added Profile → Pro features across all four views. The switch is an opt-in
+  **preview preference**, initially off; it is not a paid entitlement or a
+  subscription claim. The earlier split between basic and advanced assistant
+  behavior was superseded by the user's explicit decision on 9 October: when
+  off, the assistant is entirely absent. Chat tabs, compact overlays and the full
+  assistant page are not rendered; direct assistant URLs return to the portal
+  home before requesting agent data. The server rejects every agent endpoint,
+  specialist attendance AI and pending-action decisions. Disabling the preference
+  atomically cancels running requests and rejects pending confirmations; a later
+  re-enable cannot revive an old proposal. Normal school workflows and
+  person-to-person Messages remain available.
+- Additive migration `058_user_pro_features.sql` stores the preference per user.
+  Existing `ai.use`, photo attendance and role/record permissions remain
+  mandatory when Pro is on. Historical agent answers based on now-hidden tools
+  are masked while Pro is off. Account changes are audited; toggling does not
+  create a billing entitlement. A future plan gate must be evaluated server-side
+  **in addition** to this preference, not replaced by it.
+- Verified after merging current `Stage`, on a freshly migrated and seeded
+  disposable PostgreSQL 17 database: backend **337 passed, 153 intentional
+  skips**; frontend **640 passed**. Tests include
+  off-state tool filtering, direct attendance-AI denial, pending-action
+  confirmation denial and the profile toggle. Both builds and both linters
+  passed. Verification also hardened day-plan and attendance-follow-up response
+  timestamps against bounded five-second application/database clock skew while
+  continuing to reject materially future or pre-publication observations. A
+  first backend run against reused fixtures had dashboard count mismatches;
+  clean reseed resolved them. Migration 058 was applied to local
+  `omnischool_node` and Google Cloud Stage under their migration advisory locks.
+  Local backend and
+  Cloudflare health returned HTTP 200; an authenticated local demo preference
+  read returned `enabled:false`. Stage workflow `37948358227` deployed revision
+  `eduvera-stage-00024-jer`; release/readiness/root checks returned HTTP 200 and
+  the service reports 100% traffic on that revision. User/device visual acceptance
+  is not yet claimed; ask for UI validation before release.
+- The full-off revision passed **27/27 agent integration tests** on the isolated
+  `omnischool_agent_test_20261009` database and **63/63 focused frontend route,
+  navigation and profile tests**. Focused frontend/backend lint, backend build and backend
+  typecheck passed. The dirty shared workspace's frontend typecheck was obstructed
+  by pre-existing untracked duplicate `* 2.tsx` test files; a clean detached
+  worktree containing this exact patch passed full frontend typecheck, production
+  build and lint. No deployment or physical-device UI acceptance is claimed yet.
+
+### Concise, accessible assistant results — 9 October 2026
+
+- Re-read blueprint §18 and applied the user's explicit content-first direction
+  without changing shared navigation or the established portal theme. The result
+  treatment follows Apple HIG chart/layout guidance: answer first, direct labels,
+  restrained semantic color, short scanning paths and progressive disclosure for
+  supporting detail. Visible `Assistant`/provider labels and generic footer copy
+  were removed; screen-reader response labels remain.
+- Added semantic Markdown rendering through pinned `react-markdown` 10.1.0 with
+  raw HTML, model-authored links, images and tables disabled. Headings, lists,
+  emphasis, quotes and code now use a consistent hierarchy; list markers and key
+  values use the existing portal accent. Pre-render normalization removes stray
+  punctuation and chart boilerplate. If prose merely repeats verified chart rows,
+  the UI replaces it with a short deterministic finding from the authorized chart
+  data; meaningful model analysis is preserved.
+- Reworked bar results into a flat, compact chart with direct subject/value labels
+  and thin comparison lines. Full chat shows up to eight rows; the mini result
+  shows four and an explicit remaining count. Scope and period stay visible, while
+  the data table, method and projection caveats move under `Data and method`.
+  Evidence links and freshness remain available once, without duplicating the
+  chart source in a second source block. Null values remain `Not recorded`.
+- Tightened the provider instruction to lead with the requested answer, omit
+  greetings/request restatement/chart narration/closing offers, limit chart prose
+  to two findings and avoid Markdown tables, links and hash headings. Chart values
+  continue to be server-produced from authorized APIs; the model cannot invent
+  visual data or arbitrary destinations.
+- Verification: focused assistant UI **19/19 tests**, chart unit **3/3 tests** and
+  agent integration **27/27 tests** passed. A clean detached worktree containing
+  the exact patch passed frontend typecheck, production build, lint and the full
+  **645/645 test** suite; backend typecheck, build and lint passed. Production
+  dependency audit reported zero vulnerabilities. Browser QA at 390×844 verified
+  full and mini density, composer clearance, progressive detail and screen-reader
+  labels. Local, Cloudflare and backend readiness were rechecked separately.
+  No Stage deployment or physical-device visual acceptance is claimed in this task.
+
+### Focused assistant action approval — 9 October 2026
+
+- Re-read blueprint §18 before changing the approval surface. The existing
+  immutable preview, expiry, permission revalidation, deterministic execution and
+  receipt behavior are unchanged. Mini chat still cannot confirm a write. It only
+  opens the complete review, preserving an explicit human decision before the
+  server is asked to execute anything.
+- Replaced the neutral full-chat action block with one focused approval surface.
+  Pending actions use the established warning tokens, state `Review required`,
+  name the affected person or record, show the exact effect and state plainly that
+  nothing has changed. Individual attendance now presents current and proposed
+  values as a direct before/after comparison. Supporting facts stay flat and
+  scannable; success, uncertainty and failure use their existing semantic colors.
+- When a proposal is pending, mini chat replaces the ordinary answer/source stack
+  with a compact amber approval banner directly above the composer. It shows the
+  action, affected target and expiry, while keeping Confirm unavailable. The entire
+  review link retains the smooth full-chat transition and return state. Close,
+  keyboard focus, screen-reader labels and reduced-motion behavior remain intact.
+- Verification: focused assistant **20/20 tests** passed. A clean detached
+  worktree containing the exact patch passed frontend typecheck, production build,
+  lint and the full **646/646 test** suite; production dependency audit reported
+  zero vulnerabilities. Real principal proposals verified the full review at
+  320/390/768/1024/1440px and the mini approval at 320/390px, with no horizontal
+  overflow or JavaScript errors. Both QA proposals were dismissed after review;
+  no attendance record was changed. Local and Cloudflare health were rechecked.
+  Stage deployment and physical-device visual acceptance remain open.
+
+### Local AI test allowance — 9 October 2026
+
+- Increased only the personal local/Cloudflare preview's durable Vertex allowance
+  from **$0.25/day to $1/day** so the current demo can be tested more extensively.
+  The separate **$1/month** reservation ceiling, 10 requests/hour and 30 requests/day
+  per-account limits, trial expiry, approved Flash-Lite model, Pro-feature gate and
+  all authorization/confirmation controls remain unchanged. This application
+  allowance is conservative pre-call reservation accounting, not a Google Cloud
+  invoice or hard billing cap.
+- Before the change, the local ledger contained 18 reservations totaling 245,423
+  micro-USD for the current UTC day/month. Existing reservations were preserved;
+  no usage was reset or deleted. The parsed runtime policy now reports 1,000,000
+  daily micro-USD, 1,000,000 monthly micro-USD, 10 requests/hour and 30/day. The
+  managed preview was restarted; local and Cloudflare `/readyz` both returned
+  HTTP 200 with database and event storage healthy.
+
+### Contract-driven agent autonomy, prompt and memory hardening — 9 October 2026
+
+- Re-read blueprint §18 and recorded the user's explicit refinement: the platform
+  should govern effects according to risk, not make the model ask permission for
+  every useful operation. The blueprint's same-API authorization, tenant scope,
+  auditability, deterministic validation and human-only physical/safety boundaries
+  remain intact. Autonomous reasoning/reads are unrestricted within the user's
+  granted catalogue. Only the reciprocal homework complete/reopen flags are now
+  classified as monitored low-impact effects; all 75 other record-changing tools
+  remain reviewed until their domain invariants and reversal semantics earn a
+  narrower classification.
+- Added one versioned machine-readable capability contract shared by tool
+  descriptions, `find_tools`, the status API, execution policy, persisted action
+  state, receipts and UI presentation. It declares domain, inputs, required prior
+  read, effect class, control, outcome, presentation and reversal. Concise labels
+  are separate from detailed model guidance; this prevents instructions such as
+  “never invent missing statuses” from appearing as an approval title.
+- Split the growing system prompt into stable role/authorization rules, current
+  time/scope, intent policy, dynamically selected domain skills and a concise
+  response contract. The model receives at most the relevant tool subset, can
+  discover more via the permission-filtered manifest, and treats every retrieved
+  record as untrusted data. The app continues to own tenant/child scope, IDs,
+  revisions, idempotency, chart values, links, execution and receipts.
+- Removed special retry-command behavior. Natural user turns remain ordered context;
+  app-owned outcome messages explicitly distinguish proposed, dismissed, expired,
+  stale, failed, uncertain and succeeded effects. Rejected model tool arguments are
+  not reintroduced. Deterministic attendance validation uses the newest explicit
+  user-authored learner/status and cannot widen a learner correction into a class
+  register.
+- Added provider-aware context sizing and durable LLM compaction at **30%**. Oldest
+  turns become a bounded goals/preferences/corrections/outcomes summary; recent
+  turns remain verbatim. The summary excludes identifiers, tool arguments and
+  school-record facts and is always labelled non-evidence/non-authority, so a fresh
+  authorized API read remains mandatory. Summary cursor, prompt/contract versions
+  and success/failure are auditable. Additive migration
+  `059_agent_effect_contract.sql` persists these policy and memory fields without
+  reclassifying historical actions.
+- Research used official Vertex function-calling/thought-signature and Agent Engine
+  evaluation guidance, Google ADK trace/golden-set evaluation, LangGraph durable
+  execution/selective tool review, MCP's current consent/audit direction and
+  pgvector's filtered similarity model. Decision: retain the official Google SDK,
+  Zod/JSON Schema contracts and PostgreSQL state now. Evaluate ADK/LangGraph on the
+  same golden multi-turn traces before adopting either; do not add pgvector until
+  there is an approved unstructured corpus, and do not use MCP to bypass internal
+  APIs or authorization.
+- Verified so far: backend typecheck/build and full backend lint; **29/29
+  capability/prompt/memory contract tests**; **22/22 mocked provider-protocol
+  tests**; **31/31 isolated real-database agent integration tests**; and **17/17
+  focused assistant UI tests** with focused frontend lint.
+  The latter cover natural continuation after a dismissed proposal, absence of
+  rejected tool arguments, learner-versus-class containment, stale/uncertain
+  effects, preservation of all natural turns below the 30% threshold, compaction
+  above it with non-authoritative memory, and one monitored homework
+  completion with a fresh-source check and audit receipt. The shared workspace's
+  full frontend typecheck is still obstructed by pre-existing untracked duplicate
+  `* 2.tsx` tests with missing matcher augmentation; those files were preserved.
+  Live Vertex, preview/browser and deployment checks remain separate and are not
+  yet claimed by this increment.
+- A subsequent real-Vertex, read-only local smoke test passed three principal
+  turns: today's attendance-recording gaps, the natural follow-up “Which class
+  should I check first?”, and an independent two-bullet check after prompt version
+  `2026-10-09.layered-v3` moved compacted memory out of system-role authority.
+  Each turn refreshed the authorized `class_registers` source, returned concise
+  evidence-linked output and created no action. The test threads were archived; no
+  attendance or other school record changed. Local and Cloudflare readiness returned
+  HTTP 200; the public agent status reports configured model ready and capability
+  contract `2026-10-09.2`. This is a two-turn observation, not a model-wide SLO or
+  adversarial certification. Review URL:
+  `https://verde-too-independent-bargains.trycloudflare.com`.
+
+### Bounded long-term user memory — 10 October 2026
+
+- Re-read blueprint §18 and separated two different kinds of memory. Existing
+  thread compaction preserves short-term task continuity after 30% of the model
+  context; new long-term memory stores only an explicitly stated durable
+  communication preference, recurring app workflow preference or self-described
+  app familiarity. It does not store transcript excerpts or school-record facts.
+- Selected structured PostgreSQL over pgvector/managed Memory Bank for this release.
+  The active set is intentionally small enough to send in full after exact
+  owner/school/portal filtering, so relational storage gives deterministic
+  upsert/delete, user inspection, auditability, local-Ollama portability and no
+  embedding spend or approximate filtered-recall failure. Introduce vectors only
+  for a separately approved larger corpus with tenant-filter recall and poisoning
+  evaluations; never use vectors as the source of attendance, marks, fees or action
+  state.
+- Added migration `060_agent_user_memory.sql`, the versioned
+  `manage_user_memory` contract and authenticated list/delete/clear APIs. The
+  default limits are 1,200 estimated tokens total, 32 items, 96 estimated tokens
+  per item and 365-day expiry. Same-topic corrections revise the row; deterministic
+  priority/recency eviction and a periodic expiry sweep enforce bounded storage.
+  The Profile surface explains the boundary, reports budget use, forgets one item
+  and uses a two-step clear-all action. Inspection/deletion remains available when
+  Pro AI is off.
+- Long-term writes require an exact evidence quote from the current user message.
+  Schema and server validation reject model/assistant/tool-derived text, one-off
+  inference, credentials, contacts, identifiers, URLs, exact locations, sensitive
+  traits, health/safeguarding data, school records, permission text and prompt/tool
+  injection. Audit events retain only operation counts/categories and contract
+  version, not memory content. Memory is labelled untrusted personalization data
+  in every prompt and cannot supply identity proof, authorization, action intent,
+  tool arguments or record evidence.
+- The model now receives minimal live account context: display name, effective
+  account role, portal, institution and selected learner. Contact fields are
+  excluded. This context can make conversation natural but never broadens the
+  capability catalogue or replaces fresh authorization and record reads.
+- Verified against the reset isolated `omnischool_agent_test_20261009` database:
+  **32/32 integration**, **30/30 contract**, **22/22 provider**, and **1/1 storage**
+  tests passed (**85/85 total**). The database scenario covers model-mediated
+  remember, cross-thread reuse, exact owner retrieval, account context without
+  email, user deletion and audit evidence. Profile UI **2/2** passed; focused
+  frontend/backend lint and backend typecheck/build pass. The local PostgreSQL 14
+  instance cannot replay historical migration 033's newer syntax from a blank
+  database, so this disposable test was rebuilt from the already-migrated local
+  schema and data; no working database records were changed. The full frontend
+  build remains blocked by preserved pre-existing untracked duplicate `* 2.tsx`
+  test files with missing matcher augmentation. No deployment, browser/device
+  acceptance or live-provider memory certification is claimed.
+
+### Role-aware assistant conversation — 10 October 2026
+
+- Re-read blueprint sections 6 and 18 and corrected a contradictory response rule
+  that prohibited greetings. Identity and effective role now shape the conversation
+  without being announced. The assistant uses the signed-in person's preferred
+  first name for one concise opening greeting, never says “you are currently logged
+  in as…”, and does not repeat a greeting in later turns. Direct identity questions
+  use the live app context rather than a school-record lookup.
+- Added portal-specific response priorities without changing authorization or tool
+  availability: principal answers lead with decisions, exceptions, institution
+  impact and next steps; staff answers lead with assigned work, class/learner
+  context, timing and the next practical step. Parent/student language stays scoped
+  and plain. Simple answers use one or two sentences and ordinary answers target
+  fewer than 80 words unless detail is requested.
+- Versioned the layered prompt as `2026-10-10.layered-v5` and added contract
+  assertions for opening/continuing turns, preferred-name context, role focus and
+  prohibited bureaucratic phrasing. Backend typecheck/build and focused lint pass;
+  focused verification passes **30/30 prompt/capability contracts**, **22/22 provider
+  protocol tests**, **32/32 isolated agent integration tests** and **1/1 storage test**.
+- A paid read-only Vertex run on a separately cloned synthetic test database passed
+  five connected principal turns and one separately authorized staff opening. The
+  verified responses included **“Hello, Meera. What can I help with?”**, **“Your
+  name is Meera Kapoor.”**, and **“Hello, Kavita. What can I help with?”**. Later
+  principal responses did not re-greet and retained app-owned sources. Nine model
+  calls reserved 127,041 micro-USD under the isolated test allowance; this is not
+  an invoice or general model-quality certification. The temporary staff test grant
+  and database were deleted. No Stage deployment or physical-device acceptance is
+  claimed.
+
+### Authenticated four-profile development switcher — 10 October 2026
+
+- Added a temporary account Profile surface for the four Cambridge review identities:
+  student, parent, teacher and principal. A valid password sign-in remains mandatory;
+  public `demo-session` authentication remains disabled on managed Stage. After one of
+  those four identities signs in, the login flow opens Profile and shows the four
+  already-seeded identities with the active identity clearly marked.
+- Switching is a CSRF-protected authenticated command, not a client-side role override.
+  The server accepts only the four fixed roles, confirms the current and target accounts
+  are the seeded review identities, creates a new server session, revokes the previous
+  session, changes to the target's Cambridge membership and records
+  `auth.demo_profile.switched` without credentials in audit metadata. Other users receive
+  a concealed 404 and cannot enumerate or use the switcher.
+- `DEMO_PROFILE_SWITCHER_ENABLED` defaults off and is hard-disabled when
+  `DEPLOYMENT_ENVIRONMENT=production`. The Google Cloud Stage release command explicitly
+  enables the switcher on its no-traffic candidate revision; this does not weaken the
+  existing `DEMO_MODE=false` release assertion. Removing that one Stage flag disables the
+  temporary surface without changing accounts or data.
+- Verified locally with backend typecheck/build, focused frontend lint and **3/3** Profile
+  UI tests, **1/1** real PostgreSQL auth/session integration test, and **7/7** Google Cloud
+  release-contract tests. The database test proves anonymous denial, four-profile listing,
+  CSRF rejection, session rotation, target identity restoration, audit evidence and
+  exclusion of the company persona. Workflow `37984688625` then passed the complete clean
+  PostgreSQL/backend, **674/674** frontend, desktop and release-contract gates and promoted
+  Cloud Run revision `eduvera-stage-00057-hew` to 100% traffic. An authenticated Stage check
+  listed exactly four profiles and rotated a principal session to staff. Physical-device
+  acceptance remains open.
+
+### Generic action-following agent contract — 10 October 2026
+
+- Replaced the layered instruction stack with one concise operating prompt plus only the
+  relevant domain skill and audience response guidance. The prompt now describes the
+  general contract: use an available app tool for the requested job, read current records,
+  ask only for a genuinely missing real-world detail, and let the application enforce
+  authorization, scope, validation, confirmation and receipts. It contains no learner-,
+  phrase- or screenshot-specific workaround.
+- Clear action requests now use the catalogue's highest-ranked authorized write tool as a
+  provider-level required tool on the first model turn. Vertex/Gemini, OpenAI Responses,
+  OpenAI-compatible chat and Anthropic each receive their native constrained tool-choice
+  form. Only one write can be required; schemas and server-side preparation still reject
+  missing or invented values, and consequential effects still stop at the existing review
+  screen. Ordinary questions retain normal model choice.
+- Short explicit continuations such as “you can”, “go ahead” and “proceed” inherit only the
+  latest user-authored goal containing an app domain or action. Model text, tool arguments,
+  dismissed proposals and record payloads never create action authority. This fixes the
+  general multi-turn failure where the model forgot the actionable goal and responded with
+  a refusal, without hard-coding a retry phrase or a particular attendance scenario.
+- The design follows provider guidance to keep role/goals/style in a compact system
+  instruction and expose clear, predictable function schemas; deterministic application
+  code remains responsible for effects. Verified with backend typecheck/build, **31/31**
+  capability/prompt contracts, **24/24** multi-provider protocol tests and **32/32**
+  isolated real-database agent integration tests, including a natural “You can” continuation
+  after a dismissed proposal. The same Stage workflow deployed the contract. A real Vertex
+  request using ordinary possessive wording prepared `record_student_attendance` for Aarav
+  Sharma; the review was dismissed and a fresh read confirmed that the record stayed
+  unchanged. Local/Cloudflare repeated the same no-write flow, and both public readiness
+  checks report healthy database and event storage. Broader live-device and adversarial
+  model evaluation remain open; this smoke test is not a general reliability claim.
+
+### Family fees clarity and receipt printing — 9 October 2026
+
+User-requested cleanup preserves the shared parent/student shell and blue semantic
+palette. Fee descriptions now lead compact rows, balances align on the right,
+and status labels and readable due dates replace reference-first scanning.
+References remain available in rows, details and printouts. Verified receipts
+open a student-scoped detail route with an individual print action. Statement,
+invoice, receipt register and review print actions use a dedicated print document
+with school/student identity and full references; payment controls and navigation
+are excluded. Razorpay test receipts retain explicit sandbox labeling. No payment
+or verification rules change, and student views remain read-only.
+
+Validation: 18 focused frontend tests pass, covering receipt navigation, selected
+receipt-only print content, unavailable receipt isolation, invoice printing,
+child switching, review confirmation and existing mocked gateway flows. Browser
+print dialog/device printing and live gateway completion are separate acceptance
+checks; no real payment was made. Build/lint and Stage verification are recorded
+in the associated PR; user visual acceptance remains pending.
+
+
+### Invitation email actions — 9 October 2026
+
+School invitation creation now explicitly says **Send invitation email**. Pending
+and expired school/company invitations offer **Resend invitation email**. Resend
+retains recipient, role, target records and source; rotates the stored token hash;
+renews the 72-hour expiry; records an audit action; and sends after commit.
+School locks serialize resend with acceptance/revocation. Accepted or revoked
+invitations cannot be resent; delegated inviters cannot resend company or admin
+invitations. A one-minute cooldown limits accidental repeats. Receipts distinguish
+provider acceptance, failure and manual delivery. UI/transport and TypeScript
+checks pass locally; database integration cases are included for CI. Live inbox
+delivery remains unverified.
+
+
+### Numeric invitation codes and embedded email logo — 9 October 2026
+
+User-requested correction: new school, staff-profile and company invitations use
+cryptographically generated six-digit codes (including leading zeros), expire in
+30 minutes, and retain existing single-use, recipient and authority checks.
+Numeric hashes use an email-bound HMAC with the stable cookie secret; previously
+issued long-code hashes remain compatible until their original expiry. Five
+acceptance attempts per recipient per 15 minutes are committed separately from
+acceptance so failed guesses cannot roll back the limit. Resend replaces the code.
+The established ThatCampus logo is embedded as an inline PNG attachment with a CID
+reference in SMTP and HTTPS provider emails; it no longer needs a remote image
+request. Focused checks cover MIME metadata, code scoping and legacy digests;
+database CI covers guess limits. Live deployment/email verification follows CI.
+
+### Razorpay wallet recovery, payment status and emailed PDFs — 9 October 2026
+
+The observed Stage headers enforce same-origin opener isolation and self-only
+form posting. Enabled Razorpay now uses popup-compatible opener isolation and
+allows form posts only to self and the exact Razorpay API origin. This addresses
+a likely wallet popup failure; user-device completion is not yet verified.
+Invoice status persists across visits and refreshes while visible. Verified failed
+and pending attempts are distinct from captured and school-review payments.
+Parents can download an authorized PDF from invoice status or receipt detail.
+
+Migration 059 adds a transactional, deduplicated email queue. A post-commit worker
+uses ThatCampus's existing configured sender, verifies the initiating guardian still
+has access and a verified email, and attaches a branded PDF only for allocated
+capture. Other states get accurate status templates. Provider acceptance is not
+claimed as inbox delivery. Ambiguous sending is recorded without automatic resend;
+payment remains committed even when email fails. Old receipts are not backfilled.
+The embedded receipt font and its license are packaged in the runtime image.
+
+Local verification: backend typecheck/build, focused lint, 18 provider/template/PDF
+tests and 30 fee frontend tests passed. The sample PDF was rendered and visually
+checked. Additional isolated-database tests cover duplicate enqueue, recipient
+eligibility, PDF authorization and ambiguous sends; CI remains required. Live
+wallet completion and actual email inbox receipt are separate acceptance checks.
+### Compact invitation confirmation — 9 October 2026
+
+User correction replaces the separate "Invitation ready" receipt with a compact
+confirmation on the invitation list. Successful provider acceptance shows an
+animated mint checkmark, "Invitation sent", and the recipient email. The shared
+company receipt uses the same presentation. Tokens, join URLs, expiry text and
+copy actions are no longer rendered. Failed or unavailable email delivery shows
+an explicit alert and points to settings/resend; it never uses the success
+animation. Sending still uses the existing API and does not claim inbox delivery.
+The confirmation can be dismissed with the keyboard, uses a live status region,
+and disables animation for reduced-motion preferences.
+
+Local verification: 15 onboarding tests passed, including success, failed resend,
+unavailable email, hidden tokens, return to the list and dismissal; frontend
+TypeScript/production build and lint passed. A component preview was prepared,
+but its local server did not remain reachable. Browser visual verification is
+pending because the local Chromium download is unavailable. CI, deployment and user visual acceptance
+must be verified separately; no live email was sent by this UI change.
+
+### Reference-led invitation email — 9 October 2026
+
+The supplied email reference now guides the invitation template: white rounded
+card, original embedded ThatCampus logo, navy heading, neutral code panel with
+single-use label, readable UTC expiry including time, violet full-width join
+button, fallback join link and quiet privacy footer. Responsive overrides reduce
+padding on small screens; presentation tables and inline styles retain email
+client fallbacks. The code remains contiguous and selectable so copying preserves
+leading zeros. No non-functional clipboard button or invented Help/Privacy links
+are added. The existing logo attachment, plain-text alternative, escaped values
+and code-free links are unchanged. No invitation TTL or acceptance behavior changes.
+
+Verification: 11 focused email tests and backend production build pass locally.
+These tests use mocked transports; no live email was sent. Real inbox/client
+visual verification and deployment remain pending. This change and the compact
+confirmation above remain local until the user authorizes publishing to GitHub.
+
+### Invitation link prefill and transparent logo — 9 October 2026
+
+User correction: Accept Invitation now centers its label without an offset arrow.
+Both email links and the plain-text alternative carry the invited email and code
+in the URL fragment. The join form reads valid details, preserves leading zeros,
+and removes the fragment with history replacement. Opening a link never consumes
+an invitation: acceptance still requires the existing explicit form submission,
+CSRF, password/account checks, expiry and single-use validation. Invalid or older
+bare links retain manual entry. Email copy now describes the code as a backup.
+This explicitly supersedes the earlier code-free-link decision at the user's
+request; fragments are not included in HTTP requests/referrer headers.
+
+The embedded logo now reuses the existing transparent RGBA brand PNG verbatim,
+instead of the opaque RGB app icon, preserving the original artwork for dark
+email backgrounds. Local verification: 11 email tests and 20 onboarding tests,
+both production builds and targeted lint pass. Tests cover fragment encoding,
+leading zeros, plus-address email, no acceptance on open, history cleanup,
+invalid-link fallback, expired-invitation errors and logo alpha metadata.
+Real email-client rendering and Stage deployment are separate verification gates.
+
+
+### Invitation email copy cleanup — 9 October 2026
+
+User correction centers the numeric invitation code with inline text alignment
+and an HTML alignment fallback. Removes the invited-email/current-password
+paragraph from HTML and the corresponding lines from the plain-text alternative.
+A 24px gap separates expiry and the accept button. Link prefill, original
+transparent logo, expiry and acceptance rules remain intact. The existing email
+transport/escaping tests are used for verification; release status follows CI.
+
+### Reference-led family finance screens — 9 October 2026
+
+User supplied a two-screen reference for fee overview and invoice statement.
+Implemented a total/paid/overdue summary, invoice status filter, segmented tabs,
+compact icon rows and an enquiry entry point using existing school ledger data.
+Pay balance opens unpaid invoice selection: the existing checkout is scoped to
+one invoice, not an unsupported multi-invoice charge. Invoice statements show
+original charge, actual credits, linked verified receipts, outstanding/refund
+balance, copy reference, print and refresh controls. No office hours, verification
+claims or sample monetary values from the image are introduced as live data.
+Shared portal navigation, receipt printing and payment authorization remain intact.
+
+Validation: 21 focused fee/review/gateway tests pass including filter replacement,
+enquiry navigation and statement refresh without payment submission; focused lint
+passes. Production build and Stage release follow CI. Visual acceptance against
+the user's reference and physical iPad printing remain user acceptance checks.
+
+
+### Invitation sent popup — 9 October 2026
+
+User correction moves successful invitation confirmation from an inline list card
+to a centered native modal dialog above the app. The existing mint checkmark
+animates within a compact card with recipient email and a close control. It closes
+after four seconds or immediately via close/Escape. Native dialog behavior supplies
+the modal backdrop and focus containment; opening locks page scroll, cleanup restores
+scroll/focus and cancels the timer, and reduced-motion preferences disable animations.
+Failed/manual delivery remains a persistent inline alert; the popup is shown only
+for provider-accepted email. Invitation records and delivery APIs are unchanged.
+
+Local verification: 22 focused onboarding/popup tests pass, including timer cleanup,
+callback refresh without restarting the deadline, manual dismissal, focus restoration,
+hidden codes and persistent failure states. Frontend production build and targeted
+TypeScript-aware lint pass. Real-device visual review and deployment remain separate
+gates; no live invitation email was sent for these tests.
+
+### Background invitation delivery and translucent confirmation — 10 October 2026
+
+User correction removes the dark backdrop and changes the invitation popup to a
+translucent, blurred theme surface (opaque fallback for reduced transparency).
+Pending mail shows a dismissible sending state; only provider acceptance starts
+the success animation and four-second dismissal. Workspace polling exposes queued,
+sending, accepted, failed, unconfirmed and cancelled delivery without exposing codes.
+Delivery job IDs prevent a stale pre-resend success from confirming the new attempt.
+
+Migration 060 adds a durable PostgreSQL invitation queue. School/company create and
+resend transactions enqueue atomically and return without waiting for SMTP/HTTPS.
+The existing always-allocated Stage CPU runs a one-second worker; atomic SKIP LOCKED
+claims prevent duplicate concurrent processing. Codes are AES-GCM encrypted with a
+domain-separated key derived from the configured application secret, bound to the
+invitation ID, and erased on completion/cancellation. Revoked, expired, accepted or
+rotated invitations are skipped. Interrupted/ambiguous sends are marked unconfirmed
+without automatic resending; the authorized sender can check and resend manually.
+Pending jobs survive process restarts. No new infrastructure or credentials required.
+
+Invitation/payment HTML now references a public, versioned PNG endpoint serving the
+same original transparent logo, rather than attaching it as a CID MIME part. Real
+payment PDF attachments remain unchanged. The logo URL contains no user identifiers.
+Remote-image blocking may hide the image in some clients; the text brand remains.
+Already-sent messages and their Gmail attachment chips cannot be changed retroactively.
+
+Local evidence: 30 focused frontend tests and 17 backend email/asset/crypto/PDF tests
+pass; frontend production build and backend build/typecheck pass. Ten new disposable
+PostgreSQL integration cases cover transaction rollback, concurrent workers, slow
+providers, invalidated invitations, interrupted attempts and sanitized failures.
+They require the isolated CI database (no local PostgreSQL available). Full CI,
+Stage deployment, and real-device/email-client visual review remain separate gates.
+No live invitation or payment emails were sent while testing.
+
+### Conversation-first agent and API-owned controls — 10 October 2026
+
+User clarification: the assistant is a school conversation partner that can act,
+not a single-command form. Read blueprint §18 before this change. Stage audit of
+the reported thread showed an English regex replaced the learner with the literal
+`his attendence to`, followed by Vertex HTTP 400. There was no authorization-denied
+API result in that thread. A separate protocol audit found that discovery returned
+a root array where Gemini requires an object-valued function response.
+
+This supersedes the earlier “Generic action-following agent contract” implementation:
+remove forced highest-ranked writes, phrase-specific continuation detection, and
+English-regex rewriting/gating of learner/date/status arguments. Topic retrieval
+uses the latest user topic for domain-less follow-ups, while the model receives the
+conversation and chooses whether to discuss, read, clarify or act. All authorized
+operations remain discoverable. The concise v7 prompt and tool descriptions explain
+outcomes, not a repeated list of approval prohibitions. API access, fresh-read binding,
+revisions, idempotency, immutable review, confirmation, Pro-off checks and audit remain
+server-owned. Correction reasons/notes must still come from actual user messages.
+
+Gemini function results now wrap root arrays/primitives in an object and discovery
+returns a named `tools` array. Error results distinguish invalid input, missing data,
+state conflict, real access denial and service failure. Added a staff-only, existing-
+API-backed `student_fees` read for scoped conversational follow-ups and a verification
+link to that learner's fee view. No provider switch, extra infrastructure or new
+database migration is introduced.
+
+Research: [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
+and [Google function calling](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/tools/function-calling)
+support clear function contracts, application-owned execution and native tool-result
+history. Retain the official Google SDK and native signatures; adding an orchestration
+library would not itself fix corrupt arguments or invalid provider payloads.
+
+Cross-domain evaluation also caught incorrect paise-to-rupee interpretation. Fee
+tools now provide application-formatted INR amounts and computed outstanding totals;
+the unmodified integer ledger remains the audited source. Missing values remain unknown.
+
+Verified locally: backend build/typecheck/focused lint, **70 unit/protocol/chart/money
+tests** and **32 integration tests** pass. All tracked migrations applied successfully
+to a fresh isolated PostgreSQL 17 cluster. A paid real-Gemini conversation verified
+lookup, pronoun/date handling, missing-reason clarification, review dismissal, intervening
+discussion, resumption, confirmed one-student update, recovery from historical false
+refusal, and switching to that learner's fees. The final fee answer correctly reported
+INR 11,500.00, not 1,150,000; no provider recovery occurred. One earlier local harness
+run overlapped suites against the same actor and was discarded; the integration suite
+was rerun sequentially and passed. No Stage school record was changed by these tests.
+Google release evidence follows CI; these checks do not certify every model response.
+
+First release attempt passed 540/542 backend tests, including the agent suite, but
+stopped on two existing campus-event tests whose fixed demo picnic date had passed.
+The isolated suite now shifts that fixture and its sessions into the future and
+restores their original timestamps afterward. All 15 event tests pass locally;
+production consent/history and register-lock rules are unchanged. Full CI is rerun.
+
+Release verified: [Stage run 38019566819](https://github.com/EduveraIITA/Eduvera/actions/runs/38019566819)
+passed **542 backend tests and 674 mobile tests**, backend/mobile typecheck/lint/build,
+desktop typecheck/build, migration and candidate/public checks. Release
+`ecd86c05013a430be97e654329346fac2d6232a8` serves 100% of Stage traffic on
+`eduvera-stage-00060-zom`. Public `/releasez` matches and `/readyz` reports database
+and events ready. Authenticated Vertex `gemini-3.1-flash-lite` reports ready.
+A deployed read-only three-turn smoke verified student lookup, general study-support
+discussion without an action, and return to the student's class in conversational
+context (thread `5786451a-a5d5-4013-9a7c-593ccf82626d`). No school record was changed.
+Local port 8000 and the existing Cloudflare preview both pass readiness checks.
+Stopped the temporary isolated PostgreSQL cluster and read-only Cloud SQL proxy;
+the user's preview and tunnel remain available.
+
+### Chat navigation belongs to the header — 10 October 2026
+
+User correction: conversation history and new-chat are navigation controls, not
+conversation content. The full assistant page removes both rows from the transcript
+and places two icon-only, 40-pixel controls in the shared Chat title bar across
+principal, teacher, parent and student portals. Accessible labels and native focus
+remain; the history icon opens a bounded translucent conversation menu, while the
+compose icon starts a new chat. No agent, database or permission behavior changed.
+
+### Personal HTTPS preview restarted — 13 October 2026
+
+The previous Cloudflare quick tunnel and local preview were no longer registered
+after the host stopped. Both task-scoped launchd jobs are running again. The current
+preview is **https://nevada-senior-coding-enabled.trycloudflare.com**; public `/login`
+returns 200 and `/readyz` reports database and events ready. The older ngrok endpoint
+still returns `ERR_NGROK_3200`, so it was not reused.
+
+The demo-profile APIs were then checked through the live preview with all four saved
+review logins: every login returned 200, advertised the switcher and listed exactly
+four profiles. The missing screen was a frontend redirect-order bug: a protected
+route's `next=` parameter won over the temporary review profile destination. Demo
+identities now always see Profile first after password login; ordinary accounts still
+honour `next=`. This changes navigation only, not authentication or authorization.
+
+### Cross-portal attention and exact-item navigation — 13 October 2026 (local)
+
+The parent, teacher and principal portals now use one authorized server projection
+for attention rather than unrelated page counters. It distinguishes unread/new,
+action-required and exception signals without collapsing them: opening an item clears
+only its unread state, while an outstanding response or operational exception remains.
+The notification bell remains a separate delivery feed. Parent projections are scoped
+to the selected child and school; staff projections retain the existing role and
+delegated-permission checks.
+
+The shared projection covers notices and unread conversations plus the actionable
+work already owned by attendance registers/follow-ups/reconciliation, diary
+acknowledgements, student and staff leave, event responses/checklists/payments/duties,
+teacher-feedback requests, report-card review, protected-care cases, responsibility
+and cover offers/gaps, transport duties/swaps/departure changes, fee and payment
+review, policy acknowledgement/review, assessment work/moderation and safeguarding
+reports. The canonical Requests queues are not arbitrarily truncated. More shows one
+quiet descendant indicator, each affected module shows the strongest relevant state,
+and Requests orders work as Urgent, Next and Later. Every row carries a stable URL to
+the owning record rather than ending at a generic dashboard.
+
+Destination pages consume those record identifiers and open, scroll to or focus the
+specific item. This includes follow-ups, registers, notice recipient state, diary,
+leave, events, feedback, report batches, care cases, assignments and cover, transport,
+fees, policies, assessments, attendance reconciliation and student concerns. A new
+principal student-leave review route supplies the previously missing exact decision
+surface. Shared school events invalidate both Requests and attention so an open queue
+cannot drift after a mutation.
+
+The exact-link audit now covers every emitted destination family, including later
+revisions and historical records. It corrected deep links for diary dates, event
+RSVP/consent/payment/checklist sections, notice exceptions, follow-ups outside the
+first page, attendance-reconciliation cases outside the first 50 rows, completed
+journey reconciliation and decided staff workflows. Bottom navigation shows the same
+owning-module state for Attendance, Timetable/Calendar, Diary, Messages and
+Safeguarding where those modules are directly reachable; More remains an aggregate,
+not a competing counter. Projection queries and exact-focus APIs do not impose UI
+page caps. If an attention query, child scope or exact target cannot be authorized and
+loaded, the interface shows a compact unavailable/retry state instead of a false
+all-clear and does not acknowledge the linked notification.
+
+Notice attention is revision-aware. Publishing, cancelling, opening and responding
+update the recipient projection and its linked bell notification; a cancellation or
+later notice revision becomes new even if the recipient opened an earlier revision.
+Delivery failure and overdue response remain exception/action signals. Migrations
+062–079 add revision/audit support, authorized realtime delivery, current-scope replay
+checks, cross-portal cancellation and exact safeguarding/departure/staff workflow
+links. The frozen audiences are narrow and replay re-checks current assignment,
+enrolment, guardian, active-profile and administrator authority so stale relationships
+cannot retain access. All 18 migration files have matching local ledger checksums and
+are applied to the local development database; migration 079 also passed against an
+isolated clone before that clone was removed. The repository still has unrelated
+pre-existing clean-replay blockers in older migrations, so a fresh full migration
+replay remains a release gate.
+
+Duplicate outcomes are suppressed at projection time: staff response rows replace
+their pending assignment/cover rows, and an event-owned invoice replaces the generic
+fee obligation for the same payment. A resolved source remains reachable for audit,
+but current authorization and the exact source revision must match before its delivery
+is acknowledged. Staff and transport producers emit typed, revisioned links rather
+than generic module alerts.
+
+Local verification includes backend typecheck/lint/build and **187 focused backend
+unit/contract/migration tests**; the complete frontend suite passes with **845 tests
+across 118 files**; canonical frontend source typecheck and lint pass; and a production
+Vite build succeeds. The repository-wide TypeScript wrapper still includes unrelated
+untracked duplicate `* 2.tsx` test files whose matcher declarations conflict, so that
+wrapper remains red while the canonical source check is green. Earlier authenticated
+read-only parent/teacher/principal API smoke checks passed. Full release CI, Stage
+deployment and physical phone validation of the complete drill-down chain remain
+acceptance gates; this section does not claim those gates have passed.
+
+### Staff-cover deadline and automatic fallback — 13 October 2026 (local)
+
+Approved staff leave no longer leaves past cover tasks indefinitely in the live queue.
+Migration 080 adds a school-scoped, revisioned cover policy with a bounded deadline and
+typed fallback choices: independent study, physical activity, library period, merged
+class or cancelled period. A school may optionally name an active staff profile as the
+responsible fallback contact. The principal can edit these settings under Staff →
+Settings, and the same capability is exposed through the reviewed agent tool contract.
+
+The application reconciles deadlines both in a background worker and before returning
+the staff workspace. Pending tasks are claimed with row locks. An enabled policy records
+`fallback_applied`, the exact policy revision and any named supervisor; this is explicitly
+an administrative fallback decision, not proof that the activity was delivered. Without
+an enabled policy, a period found after it ends is closed as `expired_unconfirmed` in the
+audit trail. Resolved and past tasks never reappear in the live cover queue, and historical
+cleanup does not create new unread notification badges. The approved leave record instead
+summarises the recorded decision (`covered`, or the named fallback) alongside its counts.
+
+The Cambridge review school now uses a 30-minute Independent study fallback. Its six
+7–8 October historical gaps retain their original unconfirmed audit entries and now also
+carry the explicit `Independent study` fallback decision requested for the demo. Migration
+081 records that transition, preserves the audit chain and marks the superseded unread
+alerts read. No historical classroom delivery was asserted. The policy can be changed to
+Games / physical activity or another supported fallback in the UI.
+
+Verified locally: migrations 080–081 executed transactionally and their ledger checksums
+match; backend typecheck/lint/build pass; 398 non-database backend tests and all 37
+agent-contract tests pass; the staff workflow passes 10/10 API/database integration
+tests on a disposable clone; the complete frontend suite passes 848/848 tests across
+118 files; canonical frontend source typecheck/lint and the production Vite build pass.
+The all-backend convenience command also selected 12 integration suites without the
+required disposable-database environment, and those suites correctly refused to run;
+this is not represented as a full integration pass. Stage deployment and physical
+mobile review remain release gates.
+
+### Staff leave queue hierarchy refinement — 13 October 2026 (local)
+
+The principal Staff → Leave workspace now treats submitted leave as the decision
+queue and decided leave as history. Only submitted requests render as expanded action
+cards. Approved, rejected and withdrawn requests render as compact, keyboard-accessible
+disclosures and expand on demand; an exact deep link opens the targeted decided record.
+The queue header has one heading (`Leave requests`) and its count refers only to pending
+work. The coverage panel likewise has one heading (`Leave coverage`); its open count and
+empty state communicate operational status without a second headline. An explicit
+responsive layout gap separates the leave inbox and coverage panels on mobile.
+
+Verified locally: the focused Staff Operations component suite passes 17/17,
+the complete frontend suite passes 848/848 across 118 files, canonical source
+typecheck and focused lint pass, and the production Vite build succeeds. Physical
+phone review remains required before treating the spacing as accepted.
+
+### Attendance attention provenance — 13 October 2026 (local)
+
+The Attendance navigation indicator and the register workspace now consume the
+same authorized attention projection. The workspace gives the signal one compact
+plain-language explanation, exposes a **Needs attention** filter, orders affected
+registers first and places one small, tone-matched marker beside each exact affected
+class. Routine cards do not acquire decorative dots. Exceptions remain red, action
+required remains amber and new information remains blue; text status remains the
+authoritative cue so meaning never depends on colour alone.
+
+Attention is deliberately narrower than the daily plan. An unsubmitted register is
+ordinary planned work until the institution's configured attendance submission
+cutoff; only then does it enter Requests/Attention. Saved schedule or assignment
+mismatches remain immediate exceptions. Reconciliation and follow-up items that do
+not belong to a visible class card are counted once in the compact summary and retain
+their exact workflow link rather than being copied onto unrelated cards.
+
+Submitting, locking, reopening or reconciling attendance invalidates the shared
+attention projection immediately and is also propagated through the transactional
+school event. Because the projection is recomputed from current register/review state,
+resolving the last underlying item removes its card marker, module indicator and
+aggregate More indicator; merely opening the page does not clear operational work.
+
+Verified locally: backend typecheck/build and focused Requests/Attention suites pass
+**97/97**; frontend Attendance/attention-navigation suites pass **22/22**, and the
+complete frontend suite passes **850/850 across 118 files**. Focused frontend/backend
+lint, canonical frontend source typecheck and the production Vite build pass. The
+repository-wide frontend wrapper remains blocked only by the already documented
+untracked duplicate `* 2.tsx` test files. Both local and Cloudflare readiness report
+database and events healthy. Physical phone validation of the hierarchy and density
+remains required.
+
+### Attendance submission transport repair — 13 October 2026 (local)
+
+The continuity client now preserves the complete server-issued roster proof when it
+submits a class register. `roster_captured_at` and `snapshot_token` were assembled by
+the route but omitted from the HTTP body, causing the backend schema to reject every
+otherwise complete register before the command reached attendance domain logic. The
+client-side contract now also refuses to send unless all five continuity fields are
+present: observation time, roster fingerprint, capture time, expiry and snapshot token.
+
+A focused transport regression test asserts the exact signed request body. The API and
+register component tests pass **17/17**, the complete frontend suite passes **851/851**
+across 118 files, focused lint passes and the Vite production build succeeds. The existing backend continuity integration case already exercises the
+same complete contract; a fresh isolated replay was attempted but the repository's
+current migration chain stops after migration 032 on an unrelated SQL syntax error, so
+that replay is not represented as passing in this evidence.
+
+### Navigation and Back contract — 13 October 2026 (local, not deployed)
+
+The shared portal app bars now distinguish navigation history from transient view state.
+Opening a record, editor or workflow remains a semantic drill-down and adds a history entry;
+changing a date, tab, filter, selected child or other in-page view replaces the current entry.
+Back first returns to the observed same-portal semantic predecessor. A direct link, reload or
+missing predecessor instead replaces the current route with the role-specific canonical parent,
+so fallback navigation cannot create a list/detail/list loop or cross into another portal.
+
+Requests and notifications attach a validated, same-portal return location to exact-item links.
+The title bar uses that provenance when present and rejects external, protocol-relative and
+cross-role targets. Canonical parents are role aware: principal Insights and timetable,
+teacher timetable, parent timetable and student Copilot no longer inherit a generic hierarchy.
+Account Profile/Security and Operating rules retain their actual origin chain rather than always
+returning to a fixed More page.
+
+Selected-child changes preserve harmless list context but remove record, revision, workflow and
+attention identifiers that belong to the previous learner. Notices and Events carry their current
+list view through detail, editor and event-register routes. Attendance uses the shared Back path
+while retaining its unsaved-change confirmation; cancelling that confirmation leaves the user on
+the register. Loading and unavailable states in the corrected restricted-care flow retain the same
+portal shell and safe Back destination.
+
+Focused local suites were run separately as the work landed: **17/17** provenance,
+Requests and notification checks; **83/83** student-context checks; **88/88** URL-state checks;
+and a later **143/143** shared navigation, account, attention, notices, events, restricted-care,
+assistant and attendance regression. Query-backed invitation, leave, people, import, fee and
+governance close/success behavior passed **65/65** focused checks. The reusable unsaved-work guard
+and its day-plan/attendance integrations passed **44/44** focused checks. These sets overlap and are
+not presented as a combined regression count. Focused lint, a canonical-source TypeScript check
+(excluding the already documented duplicate scratch files), the production Vite build, and local
+plus Cloudflare readiness pass. Full repository regression, physical phone/edge-swipe validation
+and any Stage or cloud deployment remain open; this section records local implementation only.
+
+### Leave-cover operating-rule presentation — 13 October 2026 (local, not deployed)
+
+The administrator's Leave cover rule now uses one grouped settings surface instead of
+nesting a second bordered form inside a generic staff panel. The page has one heading,
+one concise explanation, an accessible platform-style switch, four clearly named rule
+rows and one primary save action. Secondary explanation is reduced to a single neutral
+note; it no longer competes with the controls or creates another visual section.
+
+The existing operating-rule API, revision check, authorization and audit behavior are
+unchanged. A successful refresh remounts the editor at the returned policy revision so
+the switch and other uncontrolled inputs cannot display stale values after a save.
+
+Verified locally: the focused Operating rules, navigation and Staff Operations suites
+pass **21/21**, focused lint passes and the production Vite bundle succeeds. The canonical
+TypeScript build remains blocked by the already documented untracked duplicate
+`* 2.tsx` test files; no Stage deployment was requested. Physical phone review remains
+required before treating the new spacing as accepted.
+
+## Configurable attendance models — 14 October 2026 (local, not deployed)
+
+The attendance foundation now separates three concerns that were previously conflated:
+
+1. **Academic register scope** is configured as one class register per day, one register per
+   scheduled subject/session, or no academic register.
+2. **Campus presence** is independently configured as unused, entry only, or entry and exit.
+   A gate or biometric event never silently becomes evidence for every subject lesson.
+3. **Evidence channels** are configured independently for academic and campus attendance.
+   Academic channels include staff roll call, learner QR, camera-assisted review, registered
+   biometric-device assertions and paper/offline capture. Campus channels include staff entry,
+   QR, camera-assisted and biometric-device assertions.
+
+This implements the blueprint's capability-profile direction rather than choosing a permanent
+institution-type shortcut. The research basis includes the Ministry of Education's ordinary
+student roll-call model and mobile/offline implementation, the Government BACALS example of
+twice-daily biometric presence, UGC/college rules that measure lecture/tutorial/practical
+attendance, and institution examples that record attendance after each lecture or separately by
+subject. The privacy boundary follows the DPDP child-data consent requirements; Aadhaar biometric
+storage or matching is deliberately not part of this implementation.
+
+`086_configurable_attendance_models.sql` adds institution operating-rule fields, timetable-linked
+session registers, per-learner entries, idempotent submissions, immutable revisions, evidence,
+short-lived hashed QR challenges and an audit journal. Scheduled-subject mode materializes one
+register from each effective published class period and snapshots the subject, period, room and
+scheduled teacher. The Attendance list uses the subject as its primary label with class, period and
+teacher context. The existing daily tables remain intact for institutions choosing daily mode and
+for historical records.
+
+`087_attendance_session_lifecycle.sql` brings subject registers under the same configurable
+finalization contract as daily registers. Automatic mode is processed by the shared leased
+background worker; principal-review mode exposes authorized finalize and reasoned-reopen commands.
+Both paths preserve the acting user, timestamp, policy revision and audit event. Session submission
+stores its idempotent response inside the same database transaction, and an automatically accepted
+learner QR assertion creates an immutable entry revision rather than only changing the current row.
+Principals can inspect that change history from the existing register review surface.
+
+Full-roster session submission rechecks active membership, exact scheduled/explicit attendance
+authority and the current roster inside the write transaction. It applies optimistic revision and
+idempotency checks, records changes and their reasons, snapshots automatic-finalization settings,
+and recomputes subject-attendance totals from submitted/final session facts. Learner QR check-in
+uses a short-lived random token stored only as a SHA-256 hash, verifies current enrollment and the
+institution's configured before/after window, and either records presence or creates pending
+evidence according to the configured resolution rule. Existing staff decisions are never silently
+overwritten by learner QR.
+
+Verified locally: migrations 086–087 were applied directly because the repository's migration runner
+still stops on the previously documented checksum drift in applied migration 047. Backend build
+and focused lint plus all **23 operating-rule tests** pass; the rollback-only database checks exercised a 25-learner
+subject-register submission and automatic QR self check-in without retaining test changes.
+Disposable local records also verified manual finalize/reopen and leased automatic finalization,
+including lifecycle state, revision, source and lock timestamp; those records and their audits were
+removed after verification.
+Focused operating-rule, attendance-list and register UI coverage passes **32/32**. The local
+workspace returns **40** scheduled-subject registers for 14 October and a 25-learner Hindi session
+for Class 6A. The principal's scheduled-session workspace now presents that volume as a compact
+register navigator rather than forty full cards: search is persistently available, periods and
+classes are alternate grouping dimensions, one relevant group is disclosed at a time, and each
+row retains subject, class/period, teacher, completion and exact-register navigation. Attention is
+placed only on its exact session when the attention link carries `session_id`; daily-register
+attention remains class scoped. Teacher and daily-register presentation is unchanged.
+
+Future-date navigator summaries now follow the register's authoritative `date_open` state. A future
+collection is labelled `Upcoming`; its groups report scheduled sessions and its rows report roster size,
+so zero completed submissions cannot be mistaken for submitted attendance. Submission and marked-count
+language appears only after the selected date is open.
+
+Open-date summaries are action-oriented rather than denominator-oriented: the collection and each
+group report the remaining `Pending` count, and untouched subject rows use the same `Pending` label.
+`Submitted` is reserved for collections, groups and rows that contain completed submissions, removing
+the previous `0/8 submitted` versus `Not submitted` wording conflict.
+
+The focused workspace suite passes **15/15**, the seven attendance regression files pass **60/60**,
+and focused lint passes. Responsive browser review at
+390 × 844 confirms the 40-register period and class views remain within the viewport, with one
+expanded group and compact rows. The complete frontend TypeScript/build wrapper remains blocked
+only by the already documented duplicate `AgentChart.test 2.tsx` and
+`AccountProfilePage.test 2.tsx` files; the unrelated `WorkflowRules.test.tsx` lint issue also remains.
+Physical iPhone review remains required.
+
+Not yet represented as complete: camera/biometric provider onboarding, signed device identities,
+provider-health monitoring, campus entry/exit writes, and the staff evidence-review screen. The
+database/API contracts reserve these evidence types, but no hardware observation is accepted as a
+fact until those adapters and release checks exist.
+
+### Gemini-assisted camera attendance — 14 October 2026 (Stage pilot deployed and verified)
+
+The user explicitly requested a Stage camera-attendance pilot after the blueprint baseline had kept
+biometric provider onboarding out of scope. This is a material, Stage-only deviation: reference face
+embeddings and encrypted thumbnails are processed for an authorized demo class, and a labelled
+comparison sheet is sent to Vertex AI. It must not be represented as a production child-biometric
+rollout. Production use still needs the institution's documented purpose, appropriate guardian/data
+authority, retention/deletion procedure, provider review and a non-biometric path.
+
+The implemented workflow is deliberately assistive rather than authoritative. OpenCV YuNet/SFace
+detects and embeds faces locally inside the private inference service; Vertex
+`gemini-3.1-flash-lite` receives one labelled comparison sheet and returns schema-constrained match
+proposals. The model cannot mark absence, submit/finalize a register or override an existing staff
+decision. Every learner remains visible in the ordinary register and every proposal must be reviewed
+before the existing audited submission command accepts it. Model/provider failure falls back to the
+manual/embedding register instead of blocking attendance.
+
+Scheduled-subject registers now carry their exact session ID through setup, reference enrollment,
+analysis, review and submission. Accepted camera evidence is attached to the immutable subject
+submission and student-entry revisions; unmatched or manually changed rows retain staff-roll-call
+provenance. The sidecar uses keyless Vertex credentials, encrypted Cloud SQL fields for templates and
+analysis results, shared-secret authenticated private endpoints, one concurrent CPU worker, seven-day
+analysis retention and non-refundable request reservations capped at 60/day and 1,000/31 days. No
+GPU is provisioned. The Stage pipeline builds and deploys the sidecar separately, runs migrations
+first, verifies its public health-only endpoint, then injects only its URL and Secret Manager token
+into the main candidate revision.
+
+The user-supplied group image contains 14 detectable adults. The user approved an identity-preserving
+headshot contact sheet; its 14 portraits are assigned to the first 14 Class 7A demo learners while the
+remaining 11 learners exercise manual review. A live local Vertex smoke used those approved portraits
+against the original group image and returned 14 detections and 14 reviewed-present proposals from
+`gemini-3.1-flash-lite`. This is a fixture connectivity/contract result, not an accuracy, fairness,
+liveness or production-readiness claim. Sidecar tests pass **15/15**, focused attendance UI tests pass
+**32/32**, focused backend photo/operating-rule tests pass **24/24**, backend build/typecheck, focused
+frontend lint, seed generation and eight release-contract tests pass. Stage deployment, authenticated
+profile enrollment and physical-phone acceptance remained pending at that checkpoint.
+
+Stage release rehearsal exposed that Cloud Run reserves the standard `Authorization` header even on
+an otherwise public health endpoint. The inference contract now uses the dedicated
+the existing internal inference-token header so the Secret Manager credential reaches the application unchanged;
+the public surface remains limited to `/api/health`. This correction passed the 15 sidecar tests and
+backend typecheck. The first Stage enrollment then exposed a PostgreSQL-only nullable-parameter
+ambiguity in the provider roster query; the durable store now uses separate filtered and unfiltered
+queries instead of passing an untyped `NULL` parameter.
+
+Stage run [38462793920](https://github.com/EduveraIITA/Eduvera/actions/runs/38462793920)
+passed the complete backend, isolated-PostgreSQL, mobile (**926 tests**) and desktop gates and deployed
+release `75133ddd36d7269fe1015a00441160f2e33bd8ff`. The sidecar query correction was then built as the
+immutable image digest `sha256:ee450f5d2043d1468fb1379b528d3c0cfbbcdae878c9b841ee56c8746c98a231`
+and promoted to the bounded `eduvera-stage-photo` service. The internal token was rotated to a
+newline-free Secret Manager version after the original provisioning command was found to have stored
+its trailing newline; both services are pinned to the same corrected version.
+
+An authenticated principal Stage check enrolled the 14 user-approved Class 7A portraits and analyzed
+the original group fixture with Vertex `gemini-3.1-flash-lite`: 14 faces were detected, 13 learners
+were proposed present and 12 of the 25-learner roster remained for review (the 11 without reference
+profiles plus one uncertain enrolled learner). The analysis was saved as a seven-day review draft;
+**no attendance was submitted or finalized**. This verifies the live workflow and safety boundary,
+not identity accuracy, liveness, fairness or production readiness. Physical-phone visual acceptance
+remains required.
+
+### Attendance follow-up interaction refresh — 14 October 2026 (local)
+
+The principal follow-up destination now follows the established single-heading and progressive-
+disclosure rules. The page-level app bar remains the only title. Open/Resolved is a compact native-
+style segmented control, and each conversation is a separate touch-sized task card with the student,
+attendance date, responsible owner, plain-language state and one restrained overdue cue. The full
+question and response controls remain available only after the user opens the exact card, removing
+internal fixture prose and competing status pills from the scanning view without changing the
+follow-up contract, authority checks or resolution workflow. Loading, empty, error and selected-
+attention states remain explicit; reduced-motion and keyboard focus treatment are preserved.
+
+Focused coordination tests pass **8/8**, focused lint passes, and isolated TypeScript validation of
+the changed component graph passes. The complete frontend TypeScript wrapper remains blocked by the
+previously documented untracked duplicate `AgentChart.test 2.tsx` and
+`AccountProfilePage.test 2.tsx` files, which were not modified. Physical-phone visual acceptance and
+Stage deployment remain pending at this checkpoint.
+
+The first Stage run reached the full mobile route suite and exposed two existing timing-sensitive
+assertions under shared CI load: the parent More attention link used the query library's one-second
+default, while the two month/year timetable cases inherited the suite's 15-second ceiling. Their
+behavior was already correct and the focused cases passed locally; the tests now use explicit bounded
+waits appropriate to those asynchronous screens. The affected route cases pass **3/3** locally.
+
+Stage run [38510889856](https://github.com/EduveraIITA/Eduvera/actions/runs/38510889856)
+then passed the complete backend, isolated-PostgreSQL, mobile and desktop gates. Google Cloud promoted
+revision `eduvera-stage-00081-fuw` and verified commit
+`43dda491b526647b2bc629776f831d5b78c4adce` on the public service. Physical-phone visual acceptance
+of the refreshed follow-up list remains required.
+
+### Provider-neutral assistant channels — 14 October 2026 (Telegram live on Stage)
+
+The assistant can now use a verified external messaging transport without creating a
+second agent or bypassing the application's controls. Migration
+`091_agent_messaging_channels.sql` adds private, backend-owned connection, one-use
+link, idempotent webhook-queue and metadata-only delivery tables. Telegram is the
+first adapter behind a provider registry; WhatsApp is an explicit adapter seam rather
+than a second hard-coded conversation path.
+
+A signed-in Pro user starts a short-lived connection from Profile. Telegram's private
+`/start` update consumes the token once, links one Telegram user to one current
+ThatCampus owner/provider pair and creates a normal owner/school/portal/child-scoped
+agent thread. Raw link tokens are hashed before persistence, webhook requests require
+Telegram's secret header, duplicate provider updates are ignored and completed
+transport text is erased. The existing agent service revalidates the active account,
+school membership, selected child, role permissions, Pro preference, tool catalogue,
+per-user allowance, model budget and pending-action state on every turn. External
+channels do not receive direct write authority: reviewed actions link back to the
+exact in-app conversation for the existing preview/revalidation/confirmation flow.
+
+The shared profile surface lists configured connections and supports disconnect. It
+is hidden with the rest of Pro AI when the Pro preference is off. Deep links select
+the exact channel thread in the existing Assistant UI. The transport worker uses the
+same leased PostgreSQL and continuously allocated single-instance Stage runtime
+assumptions already enforced for background events; when no provider is configured,
+the worker does not poll the database.
+
+Verified locally: backend typecheck/build and focused provider/delegation tests pass;
+the frontend connection tests and production build pass; the nine-table agent storage
+isolation check passes against a disposable loopback schema clone. Migration 091 was
+applied to the local development database only. A clean-database rehearsal still stops
+on the pre-existing SQL error after migration 032, and the ordinary local runner still
+stops on the pre-existing checksum drift in applied migration 047; neither historical
+migration was changed.
+
+The existing Telegram bot's token and webhook verification secret are
+held only in Google Secret Manager and are exposed to the capped Stage runtime through
+secret references; the release contract fails closed if either value becomes plaintext
+or automatic verified webhook registration is disabled. Stage workflow
+[38540126927](https://github.com/EduveraIITA/Eduvera/actions/runs/38540126927)
+passed the full repository secret scan, backend, isolated PostgreSQL, mobile and desktop
+gates, then migrated, smoke-tested and promoted commit
+`321bc2526e442ca747497980dfc6cedc47f244fa` as revision
+`eduvera-stage-00087-xew`. Public release and readiness checks report that commit with
+database/events ready. Telegram `getMe` verifies the bot, `getWebhookInfo` reports the
+canonical `/api/v1/agent/channels/telegram/webhook` URL, zero pending updates, no last
+error and message-only delivery, and the live revision logs confirm successful webhook
+registration. The service remains one CPU / 1 GiB, min/max one, with CPU always allocated;
+no additional always-on service was added. A real user still needs to complete the
+Profile connection and private-chat round trip as physical-device acceptance. A future
+WhatsApp adapter requires its own Meta account, webhook verification, policy review and
+template/24-hour-window handling while retaining this same application-owned identity
+and action contract.
+
+### Provider-independent calendar export and subscription — 14 October 2026 (Google Cloud Stage)
+
+Users can now take the role-aware ThatCampus calendar into an installed calendar application
+without granting Google, Microsoft or Apple API access. An authenticated export returns a
+standards-based `.ics` snapshot for the selected portal/child. A separate private
+subscription URL provides a continuously refreshed, read-only projection for calendar
+applications that support web calendar subscriptions. ThatCampus remains the source of truth;
+external calendar applications receive no command path back into attendance, assessments,
+events or school configuration.
+
+Migration `092_calendar_subscriptions.sql` stores one active subscription per
+owner/school/portal/child scope. The 256-bit bearer token is returned only when created;
+only its SHA-256 digest and a six-character display hint are retained. Replacing or
+disconnecting immediately revokes the previous feed. Every fetch revalidates the active
+account, school membership, portal and guardian/student relationship before producing a
+feed. The projection includes non-instructional school dates, the learner's or teacher's
+effective timetable (including published dated changes), visible campus events and
+permission-scoped assessments. Principal feeds deliberately omit every classroom period
+to avoid turning the leadership calendar into thousands of low-value entries. Event
+descriptions are minimized and direct the user back to ThatCampus for current details.
+
+Profile now exposes Calendar sync independently of the AI Pro toggle. It supports
+one-year snapshot export, subscription creation, one-time open/copy actions, last-fetch
+health, confirmed link replacement and confirmed disconnect. The implementation uses
+stable iCalendar UIDs, revisions, explicit cancellation, exclusive all-day end dates,
+UTF-8-safe line folding, UTC event times and the school's IANA timezone metadata.
+
+Verified locally: backend build/typecheck and focused lint pass; iCalendar format tests
+pass **2/2**; Profile/calendar interaction tests pass **6/6**; the complete frontend suite
+passes **930/930** and the Vite production build passes. All runnable backend unit tests
+pass (**432 passed, 184 skipped**); the remaining integration files correctly refuse to run
+without the repository's isolated `DATABASE_URL`. The complete frontend TypeScript wrapper
+remains blocked by the previously documented untracked duplicate test files and was not
+represented as passing locally. Migration 092 has also been applied to the local development
+database.
+
+Stage workflow [38550372652](https://github.com/EduveraIITA/Eduvera/actions/runs/38550372652)
+passed the repository secret scan, deployment-contract checks, clean PostgreSQL migration,
+backend integration suite, complete mobile checks and desktop build. The migration execution
+completed successfully, the no-traffic candidate passed its checks, and commit
+`436889dac5119b31b8d8b03a1b840f3c02f1ddde` was promoted as Cloud Run revision
+`eduvera-stage-00091-jog` with 100% traffic. Independent public `/releasez` and `/readyz`
+checks report that exact commit with database/events ready. Installed-calendar/physical-phone
+acceptance remains open because a real calendar client must consume the private subscription.
+
+### ThatCampus product identity and domain transition — 14 October 2026 (historical checkpoint)
+
+This section records the pre-release checkpoint. The later release entries below
+supersede its pending gates with verified Stage and public-domain evidence.
+
+The approved customer-facing product identity is **ThatCampus**, the canonical domain is
+`thatcampus.com`, and the tagline is **“Not just any campus. That campus.”** Mobile, desktop,
+browser/PWA metadata, authentication and onboarding copy, transactional email, receipts,
+calendar exports, assistant language, documentation and package display names now use the
+new identity in the working tree. The complete two-line lockup extracted from the approved supplied
+artwork replaces the prior product mark, with separate opaque light- and dark-background versions,
+beside each institution's own crest; school identity, navigation and the established interface
+theme remain unchanged.
+
+Compatibility identifiers that are not shown to customers have deliberately not been renamed:
+the existing Google Cloud project, Cloud Run services, Artifact Registry, Cloud SQL resources,
+GitHub repository, database columns, signed-token labels, telemetry keys, legacy email asset URL
+and stable iCalendar UIDs continue to use their deployed identifiers. Renaming those values is a
+separate infrastructure/data migration, not a visual rebrand. The old invitation image route is
+retained only for messages that have already been sent; new messages and receipts use the
+ThatCampus mark.
+
+A repository-wide public-surface audit now covers the mobile and desktop source trees, browser
+metadata, backend-generated customer messages and the photo-attendance service. It corrected the
+remaining institution-onboarding message and added an automated regression check that rejects the
+retired OmniSchool/Eduvera/Eduera/Edura/Edera/Educera names in customer-facing source. The guard
+also asserts the approved name and tagline remain on authentication, install-manifest and invitation
+surfaces. Explicitly allowlisted legacy inference headers and already-sent email asset URLs remain
+unchanged as compatibility contracts; database/resource names, stable calendar UIDs, storage keys,
+event channels and deployed infrastructure identifiers are likewise not presentation branding.
+
+Google Search Console ownership of `thatcampus.com` is verified for the deployment account and
+the verification TXT record resolves publicly. Direct Cloud Run domain mapping was attempted and
+correctly rejected by Google because the current Mumbai region (`asia-south1`) is not supported by
+the preview mapping product. The user selected **Cloudflare Free** as the public edge. A versioned
+Worker now proxies the apex to the existing Mumbai Cloud Run service, redirects `www` to the apex,
+preserves paths, queries, request bodies and streaming responses, rewrites only origin redirects,
+and rejects unknown hosts. Release checks accept the custom domain only when explicitly requested.
+
+The Cloudflare Free account is authenticated through Wrangler with only user/background access,
+Workers route/script write and zone read scopes. The `thatcampus.com` zone has been created and its
+six public records were independently compared with Cloudflare's import: two parked apex A records,
+the `www` and `_domainconnect` aliases, Google verification TXT and DMARC TXT are preserved. The
+tested Worker is uploaded as `thatcampus-edge` (version
+`bb8f5238-7ebf-4f10-9394-648bbce0032f`) and its non-destructive zone routes are deployed for
+`thatcampus.com/*` and `www.thatcampus.com/*`; zone routes were chosen after custom-domain setup
+correctly refused to replace the imported apex records.
+
+The registrar owner replaced the GoDaddy delegation with `diana.ns.cloudflare.com` and
+`elijah.ns.cloudflare.com`; ICANN Registry RDAP reports that exact delegation and records the
+change at 15:11:29 UTC. Cloudflare activated the zone shortly afterwards. Its authoritative server
+and the `1.1.1.1` resolver return the live Cloudflare edge addresses, while `8.8.8.8` and the local
+resolver were still returning the previously cached GoDaddy parking addresses at the activation
+checkpoint. This is resolver propagation, not an application or Worker failure.
+
+Bypassing the stale local resolver verifies the live edge end to end: HTTPS `/` returns the app with
+HTTP 200 through Cloudflare, `/readyz` returns HTTP 200 from the Cloud Run origin, and HTTPS `www`
+returns the intended 308 redirect to `https://thatcampus.com/`. The public domain is therefore live,
+although individual devices may temporarily see the old GoDaddy site until their recursive DNS
+cache expires. API, deep-link, Assistant streaming, file-upload, Telegram-webhook and calendar-link
+release checks remain open; only after those pass should Cloud Run canonical URL/origin settings
+and the webhook be switched.
+
+Verified locally at this checkpoint: backend TypeScript build, mobile Vite production build,
+desktop TypeScript/Vite build, deployment-contract tests (**10/10**), Cloudflare edge tests
+(**5/5**), focused backend email, receipt, calendar and assistant-channel tests (**24/24**) and the
+public-brand regression guard (**3/3**) pass. Mobile route, account-profile and onboarding checks
+pass **87/87** when run as focused suites. The complete mobile TypeScript/build wrapper remains
+blocked only by the already documented untracked duplicate `* 2.tsx` test files; the production
+Vite build itself succeeds. Stage deployment and physical-device brand acceptance remain pending.
+## Gate & Safety — 14 October 2026
+
+User-directed first release: a non-technical gatekeeper workspace at `/gate`, with
+three large actions (Scan QR, Find Student, Visitor Entry), account-and-institution
+scoped Hindi/English preference, and explicit identity confirmation. New
+`gate.manage` (Manage In & Out) is institution scoped and excluded from default
+teaching permissions. Admins can provision a non-teaching gatekeeper with a random
+initial password and one direct Gatekeeper assignment; no teaching, finance,
+collection-authority management or approval permission is granted.
+
+Opaque QR passes store only hashes. Student passes identify entry; single-use
+15-minute pickup passes require today's current ready departure plan. Confirmation
+rechecks the school, plan and current collector authority under the existing
+school departure lock, then atomically records the handover, completes the plan,
+consumes the pass, saves the gate observation and queues guardian notifications.
+Gate movement never writes classroom attendance. Visitor requests require admin
+approval before entry; approved visitors have QR passes with ordered check-in and
+checkout. Admin QR generation and visitor approvals are available under
+Principal → More → Gate & Safety; guardians can display their own pickup QR in
+Transport & departure. Other collectors need an office-issued pass.
+
+Verified locally: all 93 numbered migrations (including duplicate-numbered
+existing migrations) applied to a disposable PostgreSQL WASM database with pg_trgm;
+seven database lifecycle/authorization tests and five QR/movement rule tests pass.
+Frontend gate, More grouping and permission-scoped navigation tests pass. Backend
+and frontend typechecks, builds and lint pass. Native PostgreSQL CI passed all 793 backend tests, including the seven gate
+lifecycle tests, and all 934 mobile tests; desktop typecheck/build passed.
+Physical phone camera and accessibility review remain pending. Offline release, staff movement,
+vehicle/bus gate scans, historical corrections and configurable gate policy are
+outside this first release; no release is authorized from cached offline data.
+
+Stage release evidence: PR [#27](https://github.com/EduveraIITA/Eduvera/pull/27)
+merged as `a58155193a8658b14704b1e549c0988870d9ffa1`. Stage workflow
+[38569760911](https://github.com/EduveraIITA/Eduvera/actions/runs/38569760911)
+passed verification and Google Cloud deployment. The migration job completed,
+candidate revision `eduvera-stage-00094-xid` passed checks, and public release
+verification confirmed that exact SHA. Live gatekeeper account creation and
+signed-in UI review were not performed: automatic approval review rejected the
+principal browser sign-in needed for privileged account provisioning. The account
+creation workflow is implemented and covered by the native database tests;
+explicit principal sign-in authorization is needed to complete the live review.
+
+## ThatCampus public website — 14 October 2026
+
+The user's explicit marketing brief adds a separate React/Vite/TypeScript website
+in `marketing/`, with runtime-configurable existing Eduera Login, prerendered SEO
+pages and labelled illustrative product previews. This is a sales enquiry flow,
+not the institution pre-admission pipeline. PostgreSQL migration 094 adds enquiries,
+shared rate buckets and notification outbox. Existing company operators review
+enquiries in /company; school membership does not grant company access. Email uses
+the existing backend transport and an explicitly configured MARKETING_NOTIFY_TO.
+Local marketing TypeScript, lint, build and seven HTTP/security tests pass. Real
+PostgreSQL/browser CI, backend checks, Cloud Run public verification and DNS/HTTPS
+remain release gates until their actual workflow evidence is recorded. Payments
+are disclosed as sandbox; university suitability is not advertised as implemented.
+See [deployment and verification](../marketing/DEPLOYMENT.md) for the separate
+service workflow and the remaining account/domain prerequisites. Existing app
+authentication and dashboards are preserved.
+
+
+## Direct Stage gatekeeper entry — 14 October 2026
+
+The user approved the review gatekeeper and explicitly requested direct database
+creation after declining browser authentication. The bounded private-job route,
+its schema-job execution exception, least-privilege checks and encrypted delivery
+are recorded in [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md). Local
+contracts and actual SQL/encryption validation pass; live creation is pending
+execution of the authorized maintenance marker.
+## Branded public routing and Stage release — 14 October 2026
+
+`thatcampus.com` now fronts the separately deployed marketing service and
+`app.thatcampus.com` fronts the school application through the checked-in
+Cloudflare Worker contract in `deploy/cloudflare/`. The homepage login contract,
+marketing runtime fallback and Stage deployment verifier use the branded app URL.
+The Worker preserves `Origin` for API authorization while removing it only from
+static app asset origin fetches, preventing Cloud Run CORS handling from blocking
+the browser bundle. Seven Worker contract tests pass and the live homepage-to-login
+flow was browser-verified. The existing Stage workflow remains the single push
+gate: every successful `Stage` push builds, verifies and promotes both Cloud Run
+services, which the stable Cloudflare routes expose without a per-release edge
+deployment.
+
+## Stitch marketing homepage — 14 October 2026
+
+The uploaded blue/indigo platform-1 Stitch design is implemented in marketing/: centred hero, operating dashboard, feature cards, five stakeholder cards, desktop/mobile preview and the existing persistent demo form. Original transparent brand.png and local SVG icons are used throughout; no emojis or Tailwind CDN. Typecheck, lint, eight server tests and production build pass. Chromium checks passed at 320, 360, 768, 1024 and 1440px for overflow, logo, navigation, dashboard controls and legal routes. Real PostgreSQL form verification and live release are pending Stage CI.
+
+
+### Gatekeeper direct Stage account retry — 14 October 2026
+
+The live private database job successfully verified `gatekeeper.review` with only institution-scoped `gate.manage` after full Stage Verify checks. Workflow 38609626549 / execution `eduvera-stage-migrate-g7qrk` completed the account operation but failed afterward because Cloud Logging denied encrypted-result retrieval. Credential delivery is pending; do not claim it complete or reset an existing password. Runtime origin and maintenance queue corrections are in PRs #32 and #33. Full evidence and the precise blocker are in [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md).
+
+## Last Stitch variant selected — 14 October 2026
+
+User correction: use the last uploaded UI variant, `thatcampus_education_management_platform_2`, superseding platform_1. Marketing now follows its monochrome centred hero, italic Connected headline, three-column feature cards, institution solutions, horizontal role selector, sample dashboard and dark sales banner. The no-emoji rule is retained and the replacement logo is supplied by the shared full-mark asset described below. Typecheck, lint, eight server tests, production build and five-viewport local browser checks pass. Live release and PostgreSQL CI verification are pending.
+
+The shared visual identity now uses the exact user-supplied full ThatCampus mark
+through a cache-busted asset on the marketing header, previews, application school
+header, authentication surface, browser favicon and install metadata. The prior
+Eduvera leaf is no longer referenced by rendered product branding. Marketing and
+application production builds, focused UI tests and desktop browser screenshots
+were verified before release.
+
+Verified last-template release: Stage run 38614406544 succeeded and public thatcampus.com/readyz reports 1588213bc8f1bec52ed9e8cf730328d2087a0471. Public HTML confirms the platform_2 centred hero, feature cards, horizontal role selector and zero emoji characters. Website CI 38613892400 passed five viewports and real PostgreSQL enquiry persistence. The shared backend suite passed after making the lead-time test fixture remain on its service date near midnight; production transport authorization was not changed.
+## Principal timetable experience experiment — 15 October 2026
+
+User decision: preserve the established timetable and calendar while the unified,
+Teams-inspired timeline is evaluated. The current experience remains the default;
+the new interface must not silently replace a proven operational workflow.
+
+- Added **More → Account → Experimental settings** for principals. The timetable
+  choice is stored per signed-in user on the current device and is labelled as an
+  interface experiment, not an institution operating rule or school policy.
+- **Current** retains the existing principal timetable and calendar routes without
+  changing their data, navigation or authoring behavior. **Timeline** uses the
+  shared schedule data in a proportional day/week canvas with a current-time line,
+  positional class and event blocks, free-time planning, month navigation, and the
+  existing authorized draft/publication commands.
+- The preference controls both `/principal/timetable` and `/principal/calendar` so
+  the two destinations cannot present contradictory experiences. Calendar context
+  and attention deep-link parameters survive the experimental redirect. Switching
+  back changes only the interface; timetable records are not copied or rewritten.
+- Kept the experiment principal-only. Teacher, parent and student timetable/calendar
+  experiences are unchanged.
+
+Verified locally: frontend typecheck and zero-warning lint pass; production build
+passes; 38 focused planner, experiment and More tests pass; 100 tests pass when the
+affected application-route suite is included. Stage deployment and physical-phone
+acceptance remain open at this point.
+
+## Gate permission in role editor — 15 October 2026
+
+Fixed the institution-context API allowlist omitting `gate.manage`. Migration 093
+already allowed it in PostgreSQL and the permission catalogue already registered
+**Gate & Safety → Manage In & Out**, but the API's context list hid it from the
+role editor and rejected saves/assignments containing it. The API now matches the
+database contract. Institution roles can contain gate access alone or combine it
+with other explicitly selected institution actions, then be assigned to existing
+staff through the ordinary role-assignment flow. No new account is required.
+Other contexts still reject gate access; default teaching access does not gain
+it, and it does not imply departure-management or collection authority.
+
+The new policy test reproduced the defect (two assertions failed before the
+fix); all six assertions pass after it. All 18 staff UI tests pass, including
+selecting the Gatekeeper template, seeing the checked action, toggling it and
+saving exactly `gate.manage`. Backend typecheck and lint pass locally. Added a
+native PostgreSQL HTTP regression for role options, custom-role creation,
+assignment to an existing account, gate endpoint authorization, audit evidence
+and immediate revocation. All 819 backend tests (including that regression) and
+949 mobile tests passed in trusted Stage workflow
+[38696887998](https://github.com/EduveraIITA/Eduvera/actions/runs/38696887998), along
+with the desktop build. PR [#35](https://github.com/EduveraIITA/Eduvera/pull/35)
+merged as `75cadec48984db444f752818893432c7b1e9502b`. The public branded app's
+`/releasez` returned that exact SHA after promotion; `/readyz` reported ready with
+both database and events OK. Signed-in tablet/phone confirmation of the updated
+checkbox remains a user acceptance check; automated role editor and HTTP
+assignment/revocation coverage passed.
+
+## Product-led public website — 15 October 2026
+
+User decision supersedes the prior public Stitch variant: use the real product,
+Apple-inspired clarity, generous space and restrained screenshot tilt/parallax.
+Implemented six real synthetic-demo captures, a four-workflow gallery, image
+enlargement, full timetable preview, role-specific storytelling, the exact brand
+mark/tagline, responsive dark/reduced-motion handling and the existing persistent
+enquiry form. No authenticated-app routes or operational data were changed.
+
+Read the blueprint product-positioning and attendance/calendar/AI boundaries
+before writing copy. Experimental timeline and sandbox payment limitations are
+disclosed rather than marketed as unconditional capabilities. Legacy brand names
+in visible website/legal copy are replaced with ThatCampus.
+
+Local evidence: typecheck/lint/build, ten HTTP/security/deployment tests, real
+isolated-PostgreSQL enquiry/outbox browser verification, and six desktop/mobile/
+dark visual variants. Full screenshot provenance, refresh scripts and acceptance
+scope are in `docs/marketing/PRODUCT_STORY.md`. Stage deployment, live verification
+and owner physical-phone acceptance are pending at this checkpoint.
+
+Release evidence: website CI `38697763717` and Stage deployment `38697763736`
+passed. Public website and app release endpoints both report
+`11077883d2b9bfd63ce641d5ee37d6b67a65defc`. Live desktop/mobile browser checks
+passed for the new content, image delivery, layout, gallery/modal, Login and form
+configuration. The owner approved the visual direction. Isolated form persistence
+is verified; no test lead was sent to production. Physical-device review remains
+open. See `docs/marketing/PRODUCT_STORY.md` for audit scores and the nonblocking
+Cloudflare analytics/CSP warning, which was not bypassed.
+
+## 15 October 2026 — transparent ThatCampus branding
+
+Replaced the opaque app and marketing logo references with transparent PNG/WebP assets; removed white logo containers. Invitations, payment emails, account emails and PDF receipts share the ThatCampus mark. Email asset v2 avoids immutable-cache reuse; the legacy endpoint remains available for previously delivered emails. Validation and release evidence are recorded in the change commit.
+
+## 15 October 2026 — Stitch surroundings with preserved product showcases
+
+Latest explicit owner brief supersedes the Apple-inspired surrounding marketing
+layout: follow `stitch_thatcampus_education_saas_website (1).zip`, use Plus Jakarta
+Sans and retain every live product screenshot and demonstration unchanged. This
+applies only to the public website. Existing app and authentication are outside scope.
+
+Implemented the Stitch hero, capability cards, school/college/university suitability
+sections, four role benefits, contact treatment and navy footer. Existing showcase
+functions, animation timings, stylesheet and screenshot files are protected by a
+baseline hash regression. No screenshots were captured from the application.
+
+Local typecheck, lint, production build and 11 HTTP/configuration/preservation tests
+pass. Browser checks and production release evidence will be recorded in
+`docs/marketing/STITCH_RELEASE.md`; do not infer deployment from this implementation
+record. A website-only mode in the existing trusted Google Cloud workflow retains
+website configuration, tests a no-traffic candidate, promotes only thatcampus-web,
+and rolls back website traffic if final verification fails. It never deploys or
+updates eduvera-stage, its database migrations, domain or DNS.
+
+## Gate access setup belongs in Roles & permissions — 15 October 2026
+
+Explicit owner decision: gate access is configured in the ordinary role and
+permission workflow, not through a separate gatekeeper-account form. Removed that
+form, its generated-password display and its account-creation action from Gate &
+Safety. Replaced it with links to central Roles and the People directory. Named
+the central role panel **Roles & permissions**. The institution-scoped
+**Manage In & Out** action remains assignable through built-in or custom roles to
+existing active staff; no duplicate account is required. Existing accounts,
+assignments and backend administrative compatibility operations are unchanged.
+QR issuance, visitor approvals and the permission-scoped Hindi/English guard
+workspace stay in their existing modules.
+
+Added gate-admin coverage for role/profile destinations, no account form or
+password UI, keyboard navigation, student QR issuance, visitor approvals and
+non-admin denial. All 27 focused tests, frontend typecheck, lint and production
+build passed locally. The local preview served the current build; its referenced
+gate-admin chunk contains the central role/profile links and no account/password
+form. Trusted Stage workflow [38712551172](https://github.com/EduveraIITA/Eduvera/actions/runs/38712551172)
+passed all 819 backend and 954 mobile tests plus the desktop build, then completed
+Google Cloud deployment successfully. PR [#38](https://github.com/EduveraIITA/Eduvera/pull/38)
+merged as `2b0090da73d23377e2796ac16bb40466455dc318`. Revision
+`eduvera-stage-00136-xam` was promoted; the trusted deployer verified that exact
+release, readiness, database/events, both app bundles and public origin at
+09:42:51 UTC. An independent Python request from the editing environment received
+HTTP 403; public release evidence is the successful trusted workflow's checks,
+not that blocked request. Signed-in physical-device review remains user acceptance.
+
+## Product demonstrations and sales narrative — 15 October 2026
+
+Latest owner decision: learn Stripe's product storytelling and motion detail,
+without copying its brand. Replace generic feature cards with relevant real app
+demonstrations that help school leaders understand the product and request a demo.
+The main public website now leads through attendance, timetable and family
+workflows, role-specific perspectives and configurable operating rules. Original
+screen assets/showcase functions remain protected and available in an expandable
+gallery. The school application, domain routing and production school records are
+outside this slice.
+
+Latest owner decision rejects the subsequent sand-particle/cropped-screen
+experiment and restores the previously reviewed walkthrough-based preview.
+The active version uses three actual synthetic-app recordings, spring ribbon/grid/
+orbit backgrounds, individual/global playback controls, reduced-motion/data-saving
+fallbacks, offscreen suspension, accessible expanded video and streamed MP4 ranges.
+Do not reintroduce the rejected composition without a new owner decision.
+The existing authorized enquiry persistence/outbox and legal consent remain intact.
+Experimental timetable, sandbox payments and institution-fit limitations remain
+visible. No fabricated proof, metrics or customers are introduced.
+
+The original walkthrough version passed local typecheck/lint/build, nineteen unit
+tests, six visual variants and the isolated PostgreSQL enquiry regression. The
+restoration passes those checks again; all six media assets byte-match their
+backups and local preview readiness is healthy. Details, research, screenshot
+preservation, capture provenance, verified final checks and remaining gates are in
+[MOTION_STORY.md](../marketing/MOTION_STORY.md). Website-only Stage promotion and
+owner physical-device acceptance remain pending at this implementation checkpoint.
+The capture found a separate parent timetable mixed-child heading; it is recorded
+in [MOTION_CAPTURE.md](../marketing/MOTION_CAPTURE.md), not presented as fixed.
+
+## Public, read-only product exploration — 15 October 2026
+
+Latest owner decision: prospective users may explore a working four-role ThatCampus
+demo without creating an account or supplying personal information. The public
+website also carries short, truthful ThatCampus AI demonstrations and the personal
+demo form asks for one contact route only: email or phone.
+
+The implementation adds a dedicated `/demo` role chooser for principal, teacher,
+parent and student. Public-demo sessions are distinct, expire after 30 minutes and
+are rate-limited by anonymised client bucket and globally. A server-side guard
+permits reads and profile switching but rejects every other state-changing request;
+the application keeps a visible **Sample data · read-only** banner. The feature is
+enabled only on the isolated Stage deployment, and production startup rejects an
+enabled public-demo configuration. Standard authenticated sessions and the private
+development demo route are unchanged. The Stage data set must remain synthetic;
+this control does not authorize publishing real school data.
+
+The marketing enquiry now accepts exactly one field containing a valid email address
+or phone number, while preserving the existing enquiry audit/outbox workflow and
+concise consent notice. Two compact AI motion stories use a purpose-built synthetic
+app screen: the assistant identifies an attendance task, answers a contextual
+follow-up, names its source and prepares a reminder for human review. They are
+illustrative product media, not claimed as live model recordings. Future replacement
+with captured live AI interactions requires the same synthetic-data review.
+
+Verified locally: frontend, backend and marketing typechecks pass; the marketing
+production build and all 19 marketing HTTP/configuration tests pass; the public-demo
+guard has focused read/write/control-path coverage. The dedicated website workflow
+then passed five viewport/browser checks, navigation, JavaScript-error detection,
+and isolated PostgreSQL enquiry persistence in run 38729379402. Full Stage run
+38729379496 passed the backend integration suite, mobile typecheck/lint/build/tests
+and desktop build, but correctly stopped before migration or traffic promotion when
+the pre-deployment runtime assertion encountered the last Stage revision, which
+predated the public-demo gate (while already carrying the authenticated profile
+switcher). The release guard now permits only the two known private-demo predecessor
+states; an explicit public-demo false or any other partial configuration still fails
+closed, and the candidate must still pass the release
+smoke checks before promotion. Trusted Stage promotion and physical-device review
+remain release gates and must not be inferred from this implementation record.
+
+## Stage CI execution optimization — 15 October 2026
+
+Baseline observed in Actions run 38732120179: Verify took about 10 minutes;
+mobile install/check/build/test took 6m06s, backend integration 2m13s, backend
+install/check/build 51s, and desktop 14s. Deployment subsequently failed, so
+these timings are not evidence of a successful release.
+
+The optimization branch runs security/deployment contracts, backend verification,
+client builds and three disjoint Vitest mobile shards concurrently. The existing
+`Verify` check aggregates every job and fails closed on failure, cancellation or
+skipping; both release paths still depend on it. Backend integration remains
+serial against its disposable database. All existing test files are retained.
+CI reuses the backend build before Vitest; local `npm test` still builds first.
+Client and marketing builds already typecheck, so separate duplicate typechecks
+are removed. npm caches use each package's lockfile instead of a repository-wide
+key. Docker Buildx uses separately scoped GitHub layer caches for application,
+photo service and marketing images; authentication remains after image builds.
+Cloud migration, candidate checks, promotion and release serialization remain.
+
+Validation: actionlint passed for all three edited workflows; 14 GCP contracts
+and 5 Matrix configuration tests passed locally; the aggregate gate was checked
+against success, failure, cancellation and skipped results. Mobile shard 1 passed all 300 tests. Shard 3 passed 351 tests and failed two
+campus-event attendance tests; both failures reproduce with the original unsharded
+command. A family-home timeout in shard 2 passes on isolated rerun; that full
+shard did not finish locally and was stopped. Hosted CI validation is still required. Failures are not waived. Actual hosted speedup and
+warm Docker cache behavior require subsequent Actions runs. More parallel runners
+can increase total runner minutes even while reducing elapsed time.
+
+## Public search discovery foundation — 15 October 2026
+
+Latest owner decision: make the public ThatCampus website understandable and
+discoverable through Google Search and recommendation systems. Search work must
+not become a keyword dump or invent customers, rankings, certifications, pricing
+or production capabilities. The existing visual system, public demo distinction
+and product-availability disclosures remain authoritative.
+
+The first implementation slice adds five substantial, server-rendered solution
+pages for school management, attendance, timetable/calendar, parent communication
+and the access-aware school assistant. Each page has one clear intent, a unique
+title and description, visible explanatory copy, a real product screen or the
+approved illustrative AI videos, direct demo/walkthrough routes, related-workflow
+links and a single canonical slashless URL. The homepage and footer now provide
+crawlable links to every solution; the public demo, personal walkthrough and
+school login remain three distinct destinations.
+
+Prerendering now emits page-specific canonical, Open Graph, Twitter and language
+metadata plus truthful Schema.org Organization, WebSite, SoftwareApplication,
+WebPage and BreadcrumbList data. The AI page also exposes two VideoObject records
+whose titles, descriptions, thumbnails, durations and MP4 URLs match the visible
+media. The XML sitemap lists all canonical pages and both videos; robots continues
+to exclude only API routes. `llms.txt` provides a concise, caveated product map for
+systems that voluntarily consume it, without claiming it is a ranking signal.
+Only the canonical Cloudflare hosts are indexable; Cloud Run previews retain the
+existing `X-Robots-Tag: noindex` protection.
+
+Verified in the isolated worktree: marketing lint and production build pass; all
+eight public HTML documents are prerendered with one H1, unique metadata and JSON-LD;
+focused deployment/server tests pass, including canonical-host indexing, solution
+routes and trailing-slash redirects. The Stage workflow has separately been
+parallelised and cached by PR #40; this slice must rebase onto that work and must
+not restore the former serial test path. Remaining external gates are trusted Stage
+deployment, Rich Results/URL Inspection checks, Google Search Console ownership and
+sitemap submission, followed by measurement of impressions, queries and qualified
+demo visits. No search ranking is promised or represented as achieved.
+
+## New gate.demo user, not Kavita — 15 October 2026
+
+Latest owner instruction supersedes assigning gate access to `kavita.staff`:
+create a separate new user. Added a fixed-target private maintenance operation for
+`gate.demo`, with an active non-teaching profile and exactly `gate.manage` through
+the Gatekeeper role in Cambridge (`cis`). No existing user, password or assignment
+is updated. Account and role binding are transactional, audited and emit an access
+update. Re-running against an existing username fails without resetting it.
+
+Initial credentials are generated and encrypted by the trusted runner so delivery
+does not depend on the unavailable Cloud Logging read permission. The database job
+receives only a salted scrypt hash, not the plaintext password. The operation uses
+the existing approved private job with per-execution arguments; persisted job
+configuration and IAM remain unchanged. Public-demo session restrictions remain.
+Details: [GATEKEEPER_PROVISIONING.md](GATEKEEPER_PROVISIONING.md).
+
+All 19 deployment/maintenance contract tests and backend typecheck/lint pass locally.
+Added a native PostgreSQL regression for account creation, credential compatibility,
+gate-only scope, refusal to overwrite, outbox evidence and unchanged Kavita data.
+Hosted verification, live account creation and private credential delivery remain
+pending; no database change has been made at this implementation checkpoint.
+
+<!-- Verified gate.demo follow-through: 15 October 2026 -->
+
+### New gate.demo account — verified live
+
+PR #43 merged as `8a6a8547fb284414e1207267e5cca4a0d847471e`. All 827 backend
+tests, mobile shards, client builds and deployment contracts passed. Stage run
+`38743814034` completed the account-only private job `eduvera-stage-migrate-kfzd4`
+at 13:38:50 UTC on 15 October 2026. It created the separate `gate.demo` user in
+Cambridge with only institution-scoped `gate.manage`, an active non-teaching
+profile and Gatekeeper role. Kavita and all existing account credentials were
+unchanged; persisted migration configuration was unchanged. The encrypted
+credential was recovered privately and delivered as `Gate_Demo_Credentials.txt`.
+No password/private key is committed. Regular credential login is required;
+public-demo personas and read-only authority are unchanged. See
+`GATEKEEPER_PROVISIONING.md` for the fixed-target operation and success evidence.
+
+### Search-engine registration and change notification — 15 October 2026
+
+Google Search Console domain ownership was automatically verified through the
+existing DNS record. Google accepted the canonical sitemap and reported eight
+discovered pages and two discovered videos. The homepage was already indexed;
+its refreshed release plus the five primary solution pages were individually
+submitted to Google's priority crawl queue. Submission is discovery evidence,
+not a guarantee of indexing or ranking.
+
+The public website now also hosts a non-secret IndexNow verification key and the
+tested deployment paths send the eight canonical public URLs to the shared
+IndexNow endpoint after successful promotion. Search notification is deliberately
+best-effort and cannot roll back an otherwise healthy release when an external
+search endpoint is unavailable. Stage run `38749486599` deployed commit
+`d2dbd4ff9db7b683dcb24e1f5f807c9c4616ec93`, passed every existing parallel test
+and build gate, verified the public ownership assets, and received HTTP 202 from
+IndexNow for all eight canonical URLs. Its deployment verifier now tolerates the
+brief Cloud Run propagation interval after traffic promotion instead of rolling
+back a healthy revision because the stable URL still serves the previous release.
+
+Bing ownership was then verified independently with the live root XML file, so
+Bing received no ongoing Google Search Console access. Bing Webmaster Tools
+accepted `https://thatcampus.com/sitemap.xml` on 15 October 2026 and showed one
+known sitemap, zero errors and zero warnings while crawl processing began.
+Submission and notification are discovery evidence, not guarantees of indexing
+or ranking.
+
+## Invitation account flow — 15 October 2026
+
+User decision: accepting a valid email invitation verifies that email; subsequent login
+opens the assigned home. Staff with no permissions see account/institution information
+and instructions to ask their administrator for a role. Server authorization is unchanged.
+Password reset retains its existing expiring single-use token flow and uses the invitation
+email layout. Email branding uses only the original logo with a white contrast surface
+for dark inboxes. Migration 096 repairs previously accepted invitations only when the
+current account existed at acceptance. Local verification and release evidence follow.
+
+Verification: backend build passed; 13 email/transport tests passed, including reset
+layout/link handling. Frontend auth/permission tests passed (10 total after adding the
+no-permission landing regression). PostgreSQL acceptance regression added for the
+isolated CI suite; no local disposable PostgreSQL available. Inbox-client rendering
+still needs user validation on the affected email app after release.
+
+## Gate home theme, staff tab and bounded search — 15 October 2026
+
+Owner requested the gate workspace match the shared app theme, be the gatekeeper
+home, and appear as a new bottom button for authorized staff. Implemented branded
+gate-only home with shared color/spacing/card tokens, Hindi/English controls,
+primary QR action and compact search/visitor actions. `/teacher` redirects gate-only
+staff to `/gate`; mixed staff keep their home and gain a permission-gated
+`/teacher/gate` In & Out tab in both mobile navigation and sidebar. Scoped staff
+home also exposes the gate tool. Existing accounts and assignments are untouched.
+
+Search now debounces at 250 ms, cancels obsolete requests, handles loading/error/
+empty results, and uses a bounded lightweight school-roster query instead of
+loading gate history and collector data for all matches. Migration 097 adds
+name/admission substring indexes. Selecting a result reloads current student
+detail; transactional QR/current-authority checks remain the source of truth.
+Companion contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local typecheck, lint
+and frontend production build pass; focused UI tests cover the changed behavior.
+Native PostgreSQL CI passed; Stage run `38752498133` deployed merge
+`3079cff948d60962aed03e63b533459b344bb091` successfully, with 829 backend and
+961 frontend tests passing. Migration execution `eduvera-stage-migrate-62mqr`
+completed; app revision `eduvera-stage-00160-pux` passed candidate and exact public
+release/readiness checks after promotion. The separate website release succeeded.
+The headless browser successfully checked the actual local app with synthetic API
+fixtures at 320/768/1024/1440 px for gate-only and mixed staff: no overflow/page
+errors, home redirect, active bottom tab, search and fresh detail, and identity
+confirmation safeguards. Phone/tablet renders were visually inspected. The
+regular browser launcher failed on a Unix socket; headless QA did not require it.
+A local public HTTP recheck returned 403, so live confirmation relies on the
+trusted release verifier. Owner device review remains requested.
+
+### Mobile sign-in layout — 15 October 2026
+
+User superseded the powered-by ribbon proposal: prioritize the demo's mobile login
+layout without any attribution, and only suggest placement after sign-in. Added
+mobile-only centered original ThatCampus logo, Welcome back heading, campus subtitle,
+larger inputs and primary action. Existing email/username authentication, MFA,
+password reset, invitation and signup links remain functional. No unconnected
+social-provider buttons were added. Logged-in shells remain unchanged. Proposed
+future attribution location: Profile/About, pending the user's choice.
+
+Verification: frontend production build, AuthPages lint and existing AuthPages
+sign-in regression test passed. Deployment and user visual acceptance remain open.
+
+## Gate one-click entry and visitor approvals — 15 October 2026
+
+Owner explicitly requested one-click student entry after search, themed visitor
+entry/pending lists and a MyGate-style approval popup after login. Search now
+includes the latest direction for only its bounded shortlist. Mark entry attests
+identity after the visible instruction and sends a stable movement command UUID
+without a detail fetch; current server authority/state checks still apply. This
+owner decision changes entry only; exit identity/pickup QR safeguards remain.
+
+Visitor creation uses a stable request UUID; migration 098 adds idempotency,
+revision and expiry. Selected active staff/admin hosts can approve their own
+pending requests without gate.manage, while school admins retain fallback
+authority. Other staff/gate operators cannot approve another host's request.
+Revision checks and row locks reject stale decisions; expired requests cannot be
+admitted. Audit, outbox and durable notifications are atomic with each change.
+Current relationship checks protect event replay and notification reads. The
+authenticated shell presents Approve/Decline/Review later, invalidates queues on
+live events and refreshes on focus/poll fallback. This is in-app notification,
+not OS/background push. Gate lists immediately reflect returned entry/exit state.
+No account or permission assignments changed. Contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md).
+
+Local typechecks/lint, production frontend build, 49 focused UI tests and real
+headless browser fixture workflows passed, including responsive 320/768/1024/1440
+px layouts with no overflow/page errors. Native integration coverage was added
+for publisher delivery, retries, revocation, school isolation, expiry and racing
+decisions. Hosted CI and deployed verification passed as recorded below. Owner device
+review remains requested after release. Concurrent mobile sign-in changes from
+PR #48 were preserved.
+
+
+### Desktop/tablet floating-window login — 15 October 2026
+
+User selected the second preview in the latest set (05, Floating window) and requested implementation and push. Above 650px, login uses a pale blue canvas with decorative rays, a white card with blue top accent and a floating original-logo tab. The old marketing sidebar is hidden. Phone layout, authentication behavior and non-login auth pages remain unchanged. No powered-by ribbon or unsupported social providers were added.
+
+Verification: frontend production build and existing AuthPages regression test passed locally; diff whitespace check passed. Browser visual verification was blocked by the environment's process-singleton socket permission. The workspace disconnected before push, so the CSS patch was reconstructed via GitHub; remote CI and user device review remain pending. Pushed for review, not deployed.
+
+
+Release verification: PR #50 passed hosted CI run `38764776642` (832 backend
+and 971 frontend tests, both client builds and security/deployment contracts).
+Merge `585fc55c45f55460528fa894c6629c7fe51bf1f8` deployed successfully in Stage
+run `38765399927`. Private migration `eduvera-stage-migrate-d65b2` completed at
+16:08:56 UTC. App revision `eduvera-stage-00166-hop` passed candidate checks and
+was promoted; the trusted release verifier confirmed the exact public SHA,
+Stage environment, readiness and both apps at 16:09:59 UTC. The separate website
+release succeeded; IndexNow accepted eight canonical URLs at 16:11:08 UTC.
+No existing account or permission assignments changed. Owner device review and
+a real host/guard visitor-request walkthrough remain requested. Local fixture QA
+and native isolated database tests do not represent that live account walkthrough.
+
+### Shared ThatCampus page loader — 15 October 2026
+
+The user-supplied animated ThatCampus SVG now replaces the legacy synthetic mark
+for full-page route loading. One accessible shared component covers lazy route
+transitions, authentication restoration, live school-record loading, operations
+workspaces and ThatCampus AI startup. It announces contextual status text, keeps
+the artwork decorative for assistive technology and presents a static branded
+fallback when the device requests reduced motion. Contextual section-level
+skeletons and local progress indicators remain unchanged.
+
+Verification on current Stage: focused ESLint passed; the loader component test
+passed; TypeScript and the production Vite build passed. Deployment evidence is
+Stage workflow `38770723509` passed all frontend, mobile, backend, security and
+deployment gates for application commit
+`80cd39400010a9af0284ec628b6c6f41b22f2b73`. Google Cloud candidate verification,
+promotion and the separate website deployment completed successfully. Independent
+public checks returned HTTP 200 for `https://app.thatcampus.com/login` and the new
+SVG asset; `/releasez` reported that exact Stage SHA and `/readyz` reported ready
+database and event dependencies. The marketing apex intentionally does not serve
+application routes. Physical-phone visual acceptance remains requested.
+
+## Home-only guest approvals and subtle decision feedback — 15 October 2026
+
+Owner requested approvals only on home after login, with notification access and
+no departure from home after close/approve/reject. VisitorApprovalCenter now uses
+the existing authDestination contract, suppresses cached popups and approval
+polling on non-home routes, and routes valid visitor notification links to home.
+All dismissal/decision paths clear the request marker and notification return
+state without returning to the originating tool. Existing host authority, current
+revision checks, expiry and durable notification behavior remain unchanged.
+
+After server-confirmed approval/rejection, a restrained themed check/cross
+animation announces the saved decision and dismisses after 1.2 seconds or Done.
+Errors never show the success state. Modal focus and reduced-motion support are
+retained. Contract: [GATE_WORKSPACE.md](GATE_WORKSPACE.md). Local production build,
+typecheck, focused lint and 24 approval/notification tests passed. Actual local
+headless browser fixture checks passed home-only behavior, notification links,
+close/decisions remaining home, both animations and reduced motion, plus layouts
+at 320/768/1024/1440 px without overflow or page errors. These are not live account
+checks. Hosted CI and deployment passed as recorded below; owner-device review remains pending.
+
+
+Home-only approval release verification: PR #52 passed CI run `38774800786`
+with 832 backend and 986 frontend tests, both client builds and deployment/security
+contracts. Merge `45ddb3e53fc53e15063e93f89543bfefcbbc0586` deployed successfully
+in Stage run `38775411724`. Migration/guard execution `eduvera-stage-migrate-9b75h`
+completed at 17:20:34 UTC (no new schema migration in this UI change). App revision
+`eduvera-stage-00175-nip` passed candidate checks, promotion and exact public SHA,
+environment, readiness and both-app verification at 17:21:38 UTC. The website
+release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
+review preview returned HTTP 200. Owner device/live-account review remains open;
+local synthetic browser fixtures do not establish that acceptance.
+
+
+## Google sign-in — 15 October 2026
+
+User authorized Google sign-in and supplied the public OAuth web Client ID. Both React clients
+use the official Google Identity Services button and POST its ID token through the existing
+same-origin CSRF convention. The backend uses google-auth-library to verify signature, issuer,
+audience and expiry, plus a signed browser cookie and expiring, single-use database nonce.
+Google subject is the durable identity key. First linking accepts only verified Gmail or Google
+Workspace email, preserves existing roles and memberships, and revokes pre-link sessions.
+Third-party non-Workspace email must use password login. Disabled accounts remain blocked.
+New Google accounts have no school membership or operational grants; ordinary onboarding applies.
+Both Google and password sign-in use the same MFA challenge/session boundary; desktop now
+supports that existing MFA challenge too. No Google client secret or API scopes are used.
+
+The Stage release sets GOOGLE_CLIENT_ID explicitly; other environments default to disabled.
+Required authorized origin: https://app.thatcampus.com (identified in the current deployment
+configuration and communicated to the user), plus the existing direct Stage origin when used.
+The marketing origins alone do not authorize the app subdomain. OAuth origin setup and an
+interactive real-account Google login remain user acceptance gates.
+
+Local evidence: both frontend production builds passed, backend typecheck and focused lint
+passed after the new test additions; 10 signed-token/identity rejection tests, 3 Google button
+tests and 8 existing frontend auth regressions passed. New isolated PostgreSQL cases cover linking, no automatic membership, replay,
+disabled accounts, changed email, conflicting identity and MFA; CI verification and deployment
+are pending. No real-user Google login has been claimed.
+
+Publishing status: the user explicitly approved pushing, CI and Stage deployment on 15 October
+2026 after the initial automatic approval review requested publication authorization. Hosted CI
+and Stage verification are pending. PostgreSQL integration tests were skipped locally because
+no isolated PostgreSQL server is available.
+
+### Compact post-login attribution — 15 October 2026
+
+User approved a smaller Powered by ThatCampus pill after login and removal of the ThatCampus logo from authenticated headers. Added a shared compact 190px ribbon to operations/web sidebars and the parent, student and operations Home content footer on mobile. The separate desktop client also includes it in the sidebar. The school crest/name remain in headers; auth branding remains unchanged. The Home footer scrolls with content and does not overlay bottom navigation.
+
+Validation: both frontend production builds and targeted ESLint passed; git diff whitespace check passed. Existing route branding assertions updated. Local Vitest runs stalled before reporting results (including a single-worker retry), but all hosted PR checks subsequently passed, including all three frontend test shards, backend, both builds and security/deployment contracts. Owner visual acceptance remains pending. This record does not claim deployment or pixel verification.
+
+### Subtle attribution reflection — 15 October 2026
+
+Owner approved a soft reflection and blue glow on the compact post-login ribbon in both clients. Identical CSS adds a brief sweep every nine seconds, behind the stationary text and logo, clipped to the pill with a non-interactive decorative pseudo-element. Animation only runs with prefers-reduced-motion: no-preference; reduced-motion users retain the static ribbon. No size, placement or auth changes. Prior compact-ribbon release d44652ea211389001f986fb551319adaf99b4443 passed Stage application promotion and public verification in run 38778851119. Animation change awaits hosted build checks and deployment; local execution is unavailable, so no visual acceptance is claimed.
+
+### Stronger ribbon animation — 15 October 2026
+
+Owner requested a more visible reflection and glow on both web/app ribbons. Increased the sweep frequency from nine to four seconds, starting immediately, with a wider white/cyan/lilac reflection and stronger smoothly breathing blue/violet halo and border. Text/logo remain stationary above the effect. Reduced-motion fallback, pill dimensions and placements remain intact. Previous reflection release fd7ae93aa721329ba209b9cac32e876b1b3e7502 passed all Stage checks and application public verification in run 38781089465. This CSS adjustment awaits hosted validation/deployment; local execution and visual review are unavailable.
+
+## Google sign-in release verification — 15 October 2026
+
+PR #56 passed hosted CI run 38781597027, including all 846 backend tests and the four new
+isolated PostgreSQL Google-linking/MFA cases. Merge e7322a95279b8206de9fd4fde876d84de2c636a3
+passed Stage run 38782143819, including migration, candidate checks, promotion, public-service
+verification and the separate website deployment. Independent live checks returned the exact
+merge SHA at /releasez, ready database/events at /readyz and enabled Google configuration with
+the supplied Client ID and a nonce. Live browser inspection confirmed Continue with Google on
+/login and /staff/login.
+
+Outstanding configuration: the live Google button reports '[GSI_LOGGER]: The given origin is not
+allowed for the given client ID.' The owner must add https://app.thatcampus.com to this OAuth
+client's Authorized JavaScript origins and save. This is an observed external configuration
+blocker, not a completed real-account sign-in. Real Google login and owner-device acceptance
+remain pending that change. No client secret is needed or stored.
+
+## Light-blue campus login reference — 16 October 2026
+
+Owner supplied a visible Stitch login screenshot after ZIP access failed. Recreated its centered pale login card, blue/cyan background, framed header/footer and floating feature badges in both app and desktop sign-in. The owner's latest correction explicitly retains the reference-style ThatCampus name and blue graduation-cap icon in the header and centered cap icon above Welcome back. This supersedes the earlier instruction to omit the logo. Authenticated Home and Powered by ribbons are unchanged.
+
+Existing password login, Google credentials/nonce flow, MFA, errors, invitation, registration and reset routes are retained. Google is first, using its official rendered button. Help Center opens real account guidance. Decorative badges describe actual portal capabilities rather than invent uptime, response speed, library hours or compliance. The unsupported remember-device checkbox is omitted. Responsive rules retain the login at phone widths and remove peripheral badges where space is limited.
+
+Updated existing login branding/title expectations. Local execution and browser inspection are unavailable; hosted builds/tests and public release verification remain required. Screenshot matching and device acceptance are not claimed as tested.
+
+## Original ThatCampus logo on login — 16 October 2026
+
+Owner clarified that login must use the same original stacked ThatCampus logo as Home, supplying the navy/blue wordmark reference. Both login clients now reuse /assets/thatcampus-logo.png (the existing Home attribution asset) in the header and above Welcome back, replacing the generic graduation-cap icons and separate typed wordmark. Uses object-fit: contain and responsive dimensions; retains the latest Threads background, authentication flows and other concurrent changes. Hosted build/release checks are pending; no visual device acceptance is claimed.
+
+## Compact route regression suite — 15 October 2026
+
+Follow-up to PR #40: all hosted checks passed and release 2de06c11cad265560b79883767564a97ae37715a
+was successfully deployed in Actions run 38735993491. PR verification took about
+3m37s versus the earlier roughly 10-minute sequential baseline. The remaining
+mobile hotspot was App.routes.test.tsx (62 cases, about 169s in the merged run).
+
+Consolidate this suite to 54 cases by removing duplicate full-App mounts, keeping
+observable assertions in the interaction tests that already exercise each route:
+
+- Four heading-only smoke cases move to existing parent home/attendance and
+  student home/attendance workflows. Other smoke routes remain.
+- Two parent standings cases move into the existing home-card and attendance
+  score workflows. Aggregate-card, whole-home-card and score triggers all remain,
+  including row count, selected-child highlighting and list visibility checks.
+- The default home metrics case shares the homework/attendance interaction mount.
+  Alternate homework counts move to the alternate-metrics case, retaining count,
+  trend direction and missing-baseline assertions.
+- The child-menu case owns selection and identity data; the four-child deck case
+  owns swipe behavior. Eight repeated deck transitions become four: an interior
+  move and wraparound in each direction. The two swipes after menu selection remain
+  because they cover synchronization of menu selection and deck position. Two-child switching, delayed loading,
+  header selection, and permission/authorization regressions remain separate.
+
+No skips, timeout increases, application-code changes or backend/security test
+removals are introduced. Hosted run 38738727147 passed every check, including
+all 54 route cases. That file took 198s versus 169s in the prior run, so the
+compaction alone does not establish a speedup. A local full run hit two 15s
+timeouts (combined standings and unchanged avatar switching). The combined
+standings case now uses click dispatch and dialog-scoped close lookup, matching
+its route-outcome purpose, instead of costly pointer simulation. Its isolated
+local run passed in 9.25s versus 16.52s before that adjustment; no timeout was
+increased. Lint passed. Historical hosted validation passed in run 38739608845; a fresh run
+is required after reconciling this branch with current Stage.
+
+Reconciliation checkpoint (15 October 2026): preserved current Stage branding,
+login, assistant and release work. The compacted tests retain core assertions with
+fewer repeated swipe permutations. Fresh hosted validation is pending.
+
+Coverage review retained the distinct menu-selection-to-swipe regression, rather
+than treating it as a duplicate of the isolated deck test. No skipped cases or
+increased timeouts were introduced.
+
+### 2026-10-15 — Parallel release image preparation
+
+The measured PR #40 release took 12m42s overall versus 15m56s before it;
+verification improved, but serial image building/cache exports increased the
+release job to 8m59s. Image preparation now uses three independent matrix runners
+for application, photo attendance and marketing, each authenticating after its
+build and uploading its SHA-tagged image. The deployment job requires the entire
+matrix to succeed, repeats the target/window guard, and retains migration,
+candidate health, promotion and public verification. Disabled deployment still
+only prepares application/photo images; website-only and provision paths remain
+separate. Existing release concurrency and environment protections remain.
+
+Photo model download/checksum layers precede application source, marketing build
+copies only its production inputs, and mobile test files already excluded by its
+production tsconfig no longer invalidate the application image cache. No tests
+were removed. A path-filtered PR workflow builds all three Dockerfiles without
+publishing or cloud credentials when container configuration changes.
+
+Local evidence: workflow actionlint and all 14 GCP deployment contract tests pass.
+Docker is unavailable locally; hosted container validation is required before
+merging. The new end-to-end deployment duration is not yet measured; parallel
+builds target the serial image bottleneck, not runtime verification safeguards.
+
+Reconciliation and fresh-runner repair (15 October 2026): this branch includes the
+current Stage work and PR #41's compacted tests, retaining menu-to-swipe integration
+coverage. The split deployment runner resolves both immutable image digests from
+Artifact Registry instead of inspecting images on another runner. Lookup accepts
+only the two approved repositories, full commit tags and valid SHA-256 digests;
+missing images or denied registry reads fail before migration. All 13 release
+contract tests and syntax checks pass locally, including three new regressions.
+Fresh hosted checks and deployment timing are pending; old runs do not validate
+this reconciled head. No security/runtime guards or provisioning paths were removed.
+
+## Parent Home fee and identity truth correction — 16 October 2026
+
+Parent Home no longer returns or renders the static `All Cleared` demo assertion.
+Its fee summary is now a read-only projection over the selected student's posted
+invoices, accepted payments, event credits and recorded refunds. Applicable records
+are invoices due within the active enrollment term plus unresolved carried balances
+up to that term's end. The response identifies the fee ledger as its source, carries
+the school-local `as_of` date and keeps no applicable invoice data as **Not
+configured**, distinct from **No balance due** on one or more posted invoices.
+Outstanding, overdue, refund-due and mixed balances remain distinct integer-paise
+states. Pending family payment claims remain in Fees & receipts and do not reduce the
+Home balance before school verification.
+
+The authenticated parent shell no longer imports a fixture learner or fabricates the
+Cambridge school name while linked-student or membership context is absent. It uses a
+route-provided or authorized accessible student, otherwise shows a neutral
+loading/unavailable context and does not form a fixture student scope for attention or
+the assistant. Static parent demo data remains explicitly labelled as demo data and is
+not a live-route default.
+
+Local focused evidence: 3 backend fee-state tests, 15 frontend adapter/shell tests and
+the parent Home fee-card route regression passed. Backend source typecheck and focused
+lint passed; a frontend source typecheck excluding the already-recorded duplicate
+`* 2.tsx`/`* 3.tsx` test artifacts and focused lint passed. A read-only isolated API
+integration assertion now compares Home aggregates with the family fee endpoint, but
+that PostgreSQL integration case was not run locally. Hosted CI, deployment and owner
+device review are not claimed.
+
+Remaining finance modelling gap: existing fee invoices do not carry an explicit term
+or normalized obligation/line-item identity, so the Home projection must use the
+documented due-date and carried-balance rule. Adding explicit obligation-to-term
+ownership should replace that compatibility rule in the authoritative finance-domain
+contract; no inference from invoice description/reference was introduced here.
+
+## Attendance command and evidence convergence — 16 October 2026 (local branch)
+
+Scheduled-session attendance now retains its accepted domain decision and its Campus
+Model command outcome in the same transaction. A complete staff submission records a
+typed `attendance.register.submit` command against the attendance-register entity,
+including the source and resulting register revisions, the exact register event,
+safe session context and the effective institution Operating-rule revision. Automatic
+student QR acceptance does the same through
+`attendance.self_check_in.accept_automatically`; the QR evidence and audit record also
+snapshot the configured self-check mode and time-window values that authorized the
+decision. This does not make QR evidence a room-presence assertion.
+
+Staff-review QR mode now has an explicit evidence decision instead of leaving pending
+observations without an operator path. Pending evidence is returned inside the same
+subject register. An authorized recorder must provide a verification note and an
+expected register revision, then accept or reject it through an idempotent endpoint.
+Acceptance writes the current register row, immutable attendance revision, student and
+register events, accepted observation and typed model command atomically. Rejection
+preserves the evidence and transitions its model observation without changing the
+register. The evidence metadata retains the decision idempotency binding and applicable
+Operating-rule revisions. The register UI prevents evidence decisions while local
+attendance edits are unsaved, avoiding an invisible overwrite or parallel workflow.
+
+Local evidence: backend source typecheck passed; the focused attendance-model suite
+passed **5/5**; the focused register/query frontend suites passed **18/18** and the
+register suite with the new QR-review interaction passed **17/17**; the Vite production
+bundle and a source typecheck limited to the changed frontend dependency graph passed.
+The repository-wide frontend TypeScript command remains blocked by pre-existing,
+untracked duplicate `* 2.tsx`/`* 3.tsx` test artifacts with missing DOM matcher types;
+those shared artifacts were not deleted or changed. No push, deployment, live database
+walkthrough or device acceptance is claimed.
+
+Remaining attendance coordination gates: overdue and exception events still use the
+legacy broad outbox audience rather than a configured next-agent selector; automatic
+finalization still needs a typed model outcome; older attendance facts need an explicit
+historical backfill policy. These stay separate from the now-complete staff/QR evidence
+decision path and must not be presented as delivered.
+
+## Examination-day operations and model convergence — 16 October 2026 (local branch)
+
+The offline assessment domain now covers the operational period between planning a
+physical exam and opening its result register. Exams, practicals and vivas require a
+canonical campus space and offered invigilator at creation. An institution-level,
+revisioned Operating rule controls readiness and attendance windows, required accepted
+invigilators, attendance completeness at completion, and manual versus automatic entry
+to marking. Invigilator response, room capacity, frozen roster, start, factual candidate
+attendance, incident handling, completion and cancellation are tenant-scoped,
+revision-guarded, audited and emitted through the existing event boundary.
+
+Migration `117_examination_day_operations.sql` owns the new policy and operational
+records. Composite unique keys and foreign keys keep the assessment/sitting/candidate/
+learner chain internally consistent. Physical assessments cannot schedule without a
+sitting or open marking before completion. Both manual and automatic marking derive
+their result rows from the same frozen roster. Invigilator fallback access requires an
+active institution membership and active account; operational viewers do not receive
+result or publication data.
+
+Material examination operations are connected through the appropriate Core contract:
+sitting state and evidence changes use accepted-change commands, while invigilation
+assignment and response use typed coordination messages. Draft/readiness state remains
+authoritative in Assessments. The model records the scheduled-in relationship to the
+canonical space, lifecycle actions, attendance completeness and incident state while
+keeping planned expectation, factual evidence and academic outcome distinct. Campus
+View consumes current, revision-matched examination expectations; the standard calendar
+and assessment workspace remain the operator interfaces. The frontend reuses the class
+attendance row interaction for candidate attendance and adds a focused exam-day panel,
+invigilation response, incident log and a dedicated Examination day Operating-rules
+screen without introducing a separate navigation system.
+
+Verified local evidence: backend typecheck and scoped lint pass; a fresh isolated
+PostgreSQL schema passes the assessment/examination suites 11/11, including six asserted
+model commands and a cross-sitting integrity rejection; focused model bridge, Campus
+View and realtime/event suites pass 20 tests outside the isolated database runner. Six
+focused frontend suites pass 24/24 with scoped lint and diff whitespace checks. This
+record does not claim deployment or owner-device acceptance.
+
+### Examination effective-timetable readiness — 17 October 2026 (local branch)
+
+The next assessment slice closes the canonical timetable/resource acceptance gate.
+Migration `118_effective_schedule_canonical_spaces.sql` adds
+`effective_school_schedule_v4`, an additive wrapper over the established v3 effective
+schedule. It resolves the already-selected source occurrence to its canonical
+`campus_spaces` identity without changing published-timetable, dated-plan, closure or
+staff-substitution precedence.
+
+`ExamOperationsService` now produces one domain-native readiness projection covering
+cycle/future time, effective enrolment, room availability/capacity, accepted invigilator
+minimums, other exam reservations, effective class periods, canonical room occupancy
+and accepted invigilators' teaching commitments. Assessment detail and the dedicated
+readiness route expose the same explanation to authorized administrators and assigned
+invigilators. The existing Exam day panel lists concrete blockers and disables the
+Schedule action; the schedule command re-evaluates the projection under the existing
+institution-scoped advisory lock before freezing candidates. Accepted schedule audit
+evidence retains the readiness time and timetable-contract version. The same workspace
+also provides the correction path: before scheduling, administrators can revise the
+time, duration, canonical room and invigilators with optimistic concurrency and domain
+audit evidence. A changed time or room resets selected invigilator confirmations and
+requires acceptance of the revised duty rather than reusing stale consent.
+
+Verified local evidence: backend source typecheck and focused lint pass; a fresh
+disposable PostgreSQL schema applied migrations through 118 and the focused
+examination, Model Bridge and Campus View suites pass 15/15. The integration case
+asserts simultaneous class, room and invigilator timetable blockers, server-side
+schedule rejection, an administrator correction, reset/re-acceptance of the material
+duty change and a clear re-evaluation. Focused assessment frontend suites pass 16/16
+with source typecheck and lint. Migration
+118 is applied to the local development database. No push, deployment or owner-device
+acceptance is claimed.
+
+### Examination invigilation coordination — 17 October 2026 (local branch)
+
+Migration `119_assessment_invigilation_model_coordination.sql` and
+`AssessmentInvigilationOfferBridgeService` connect each offered assignment revision to
+one typed `assessment.invigilation.offered` outbox event, the exact approved behaviour
+and subscription, the accepted Model event/reaction, and one durable operational Offer
+addressed to the explicitly selected human agent. Assessments remains authoritative
+for assignment and response state; the bridge uses only the Coordination Runtime port
+and does not write Model Core tables directly.
+
+The normal invigilator response command now requires an actor-generated command ID,
+rechecks membership, assignment revision, exact message recipient, capability,
+deadline and expiry, and records the Assessment mutation, response outbox event,
+correlated Core outcome, immutable binding closure and actor-scoped replay receipt in
+one transaction. An identical retry returns its retained result; changed work under
+the same command ID conflicts. Material changes to time, room or selected staff cancel
+an open Offer before resetting responsibility and publish the replacement only after
+the new arrangements are authoritative. Requests remains a domain projection of the
+same assignment status, not a second acceptance workflow.
+
+There is no runtime fallback recipient or automatic acceptance. A guarded Cambridge
+seed provides an explicit route and response capability only for development, local
+and test environments. The development runner may answer only an Offer addressed to
+its authenticated account through the normal staff endpoint; it cannot impersonate
+another fixture staff member. Past physical-examination times are rejected before
+room or invigilator coordination, and the sitting projection exposes the exact offered
+username needed by that development boundary.
+
+Verified local evidence for this bridge is kept separate from the earlier readiness
+counts: backend source typecheck passes; 95 focused bridge, configuration, attention
+and fixture-seed checks pass; five database-backed assessment integration tests pass
+against the isolated `omnischool_test_exam_readiness_20261017` database after applying
+migration 119; 21 focused Assessment and Requests frontend checks pass; and 20 Campus
+Lab action, session, model, runtime and safety checks pass. Migration 119, the guarded
+Cambridge coordination seed and the explicit 40-seat classroom fixture are applied to
+the local development database. The local preview and existing Cloudflare quick tunnel
+both return HTTP 200; Campus Lab reports `paused` before the effective 09:00 school
+start, so no off-hours acceptance is claimed. The repository-wide migration runner is
+still blocked by pre-existing checksum drift in applied migration 047; migration 119
+was applied locally as one transaction and recorded with its verified checksum without
+rewriting that historical record. No push, deployment or owner-device acceptance is
+claimed.
+
+Remaining acceptance gates: add configured reminder rounds, expiry processing and
+escalation/fallback workers on top of the retained first Offer; define a multi-room/split-
+cohort model; and complete representative administrator/invigilator mobile validation.
+These are not implemented behavior in this slice.
+
+## Attendance completion and exception coordination — 17 October 2026 (local branch)
+
+Attendance completion now follows the configured academic model instead of producing
+one broad, hard-coded alert. Migration
+`120_attendance_completion_coordination.sql` adds institution-owned first-reminder and
+administrator-escalation delays. Administrators edit both values alongside the existing
+attendance deadline, session window and finalization policy in **Operating rules →
+Attendance**. Validation requires escalation to occur after the first reminder. The
+scheduled-session deadline is the effective period end plus the configured close window;
+the daily-class deadline remains the institution's daily submission cutoff.
+
+The leased attendance scan materializes effective subject registers and emits one typed
+overdue event only after the configured reminder delay. A scheduled-session reminder is
+addressed only to its effective scheduled teacher. A daily-class reminder first uses an
+explicit current `attendance.record` class owner; only when none exists may one unique
+effective teacher be used. An ambiguous or missing owner fails closed instead of notifying
+every teacher or administrator. Principals do not receive the teacher reminder. Their
+Requests projection adds the unresolved register only after the configured escalation
+delay. Daily-class and scheduled-session Requests are mutually exclusive, and every
+materialized subject item deep-links through the canonical `session_id` attendance path.
+
+For institutions with an approved behaviour, each overdue domain event passes through
+the Coordination Runtime as an `attendance_completion` Task addressed to the selected
+human agent. The runtime retains the source outbox event, Operating-rule revision,
+correlation, recipient capability and exact action path. A later authoritative
+`submitted` or `locked` register state cancels the still-open Task as satisfied; Requests
+disappears from the same domain state rather than running a second workflow. Missing,
+overlapping or unauthorized behaviour remains a visible fail-closed coordination
+exception. The guarded Cambridge development seed installs the explicit behaviour, two
+event subscriptions and `attendance_completion:complete` capabilities for linked active
+staff agents only in development/local/test with both demo opt-ins.
+
+Automatic finalization now records a typed accepted Model Core command/outcome for daily
+and subject registers, retaining the exact register revision, snapshotted finalization
+rule and emitted locked event. The submitting human remains the accepted-change actor
+while `attendance_register_auto_finalize` is retained as executor metadata; a first-class
+software-agent executor identity is still an open core-contract refinement and is not
+claimed here.
+
+Verified local evidence: the refreshed shared branch matched local `HEAD` before this
+work; backend typecheck, scoped lint and production build pass; 49 focused backend
+Operating-rules, Requests, event, convergence and guarded-seed checks pass; 22 focused
+attendance/Operating-rules frontend checks, scoped lint and the production Vite build
+pass. Migration 120 was applied transactionally and checksum-recorded in the local
+database without changing the known historical migration-047 checksum drift. The
+explicit Cambridge seed resolved 17 linked staff agents, one approved behaviour and two
+subscriptions. The live principal Requests API projected eight currently escalated
+subject registers with exact session links while the current demo teacher correctly had
+no assigned overdue register. The local `/readyz` reports database/events ready and the
+existing Cloudflare preview returns HTTP 200.
+
+Remaining gates: the principal escalation is currently an authorized administrator
+Requests queue, not a single dated officeholder/team-agent assignment; team membership
+and claim semantics remain intentionally outside the public coordination contract.
+Historical pre-Core attendance events still need an explicit backfill policy. Physical
+owner-device validation of the new rule fields, teacher reminder and principal escalation
+remains open. No push or production deployment is claimed.
+
+## Campus View operational KPI cockpit — 17 October 2026 (local branch)
+
+Campus View now has a read-only operational KPI contract and panel without turning the
+Model Core into an analytics store. `CAMPUS_VIEW_OPERATIONAL_KPIS.md` defines the first
+versioned catalogue of 30 measures across teaching and attendance, movement and people,
+spaces, coordination and data health. Each measure declares its source, grain, scope,
+unit, numerator/denominator where applicable, evidence class and safe interpretation.
+Expected, recorded, accepted and unknown states remain distinct; unavailable evidence is
+returned as unavailable or partial rather than as zero, simulated rehearsal activity is
+excluded, and the overview has no opaque campus-health score or staff ranking.
+
+The authorized Campus View query endpoint serves six pages (`overview`, `teaching`,
+`movement`, `spaces`, `coordination`, `data_health`) and five windows (`today`, `7d`,
+`30d`, `90d`, `1y`). Today uses 15-minute buckets, seven- and 30-day views use hourly
+buckets, and 90-day and one-year views use daily buckets. Ratio rollups retain numerator
+and denominator instead of averaging percentages. Due attendance uses effective schedule
+requirements, the configured close-after deadline and explicit missing-register unknowns;
+unsupported attendance modes fail closed. Teacher assignment accepts only active human
+agents. Planned space use unions each canonical bookable leaf's scheduled intervals over
+the effective daily instructional envelope so double bookings and nights do not distort
+the rate. The overview combines four headline values, an evidence-safe attendance
+composition, recorded gate-flow bars and an objective bottleneck table with links back to
+the owning domain workspace. The mobile Campus View exposes the dashboard as a fourth
+bottom action and an independent sheet, so a slow KPI request cannot block or blank the
+live map. All charts have textual summaries and semantic data tables.
+
+Verified local evidence: backend typecheck and scoped lint pass; 22 focused backend KPI
+and Campus View checks pass; 36 focused frontend Campus View checks pass with scoped KPI
+lint. Authenticated end-to-end calls against the Cambridge development school returned
+the complete 30-definition catalogue, six pages, seven overview measures, four current
+headline projections, completed/outstanding/unknown due-register composition, explicit
+`available`/`partial` evidence states and one current bottleneck. The 30-day Teaching
+request returned hourly series in 404 ms, and the one-year Spaces request returned six
+measures and 2,190 daily series points in 1.14 seconds. The Overview completed in 48 ms.
+The local preview `/readyz` and the existing Cloudflare Campus View URL both return HTTP
+200.
+
+Remaining gates: complete owner-device review of the KPI sheet, page navigation, chart
+legibility and bottleneck deep links; measure query latency again as the retained history
+grows before adding cache tables or indexes; and add only those later metrics whose
+domain evidence and interpretation contracts are approved. The repository-wide frontend
+typecheck remains blocked by unrelated pre-existing duplicate `*test 2.tsx` and
+`*test 3.tsx` files, so it is not claimed here. No push or production deployment is
+claimed.
+
+## Isolated Campus View scenarios — 17 October 2026 (local branch)
+
+The first Model Core what-if foundation is implemented under
+`backend/src/campus-model-core/scenarios/`. It provides the shared immutable execution
+contracts, distinct real-human/delegate/scenario-persona identities, virtual clock,
+seeded deterministic randomness, sink-only message/evidence facilities, production
+side-effect denial, baseline/alternative comparison, optional policy-backed Monte
+Carlo ranges and a bounded transient run store. The campus-specific repository,
+executor and HTTP surface remain in `campus-scenarios`; future domains must register
+against the shared foundation rather than fork its semantics.
+
+An active institution administrator can discover future scheduled teacher and active
+bookable-space targets, then model one unavailable target over its real per-date
+scheduled span for a 7, 14 or 30 day horizon. The snapshot is captured in one read-only
+repeatable-read transaction from the effective schedule, canonical spaces and
+capacities, active enrolments, human-agent identity mappings, configuration hashes and
+privacy-minimized aggregate coverage evidence. The same transaction resolves any
+requested institution-owned behaviour version. The client can select only its ID;
+unreviewed probabilities, hashes, calibration claims, sample counts and random seeds
+are not accepted.
+
+The deterministic run reports schedule, uncovered/unplaced sessions, teacher/space
+conflicts, capacity and disrupted learner places. Missing agent mappings and missing
+room capacity remain explicit unknown/partial evidence. A reviewed historical cohort
+policy may add P10/P50/P90 response ranges, but a modelled positive response never
+invents a substitute or alternative room and never closes the operational disruption.
+Attendance outcomes, physical movement, transport, finance, assessments and eligible
+candidate allocation are returned as unsupported.
+
+Runs are copy-on-write, process-local, institution-scoped and expire after 30 minutes;
+they never write operational/Core tables, send production messages or call connectors.
+Session/execution/result-size limits, one active run per institution, a global runner
+cap, oldest-result eviction, authorization-first target caching/in-flight deduplication
+and route-specific rate limits bound resource use. The API supports target discovery,
+create, retrieve and explicit discard. Campus View exposes it separately from Live
+performance as **Plan & what-if**, uses only verified effective session windows, labels
+deterministic results as point estimates and reserves P50/P10–P90 language for
+calibrated ensembles.
+
+Verified local evidence: backend source typecheck and focused lint pass; **15/15**
+focused scenario-runtime, campus-adapter and route-limit tests pass; the read-only
+repeatable-read snapshot query was probed against local PostgreSQL; and **42/42**
+focused Campus View frontend tests plus scoped lint pass. The repository-wide frontend
+typecheck remains blocked only by the pre-existing duplicate `* 2.tsx` test files, with
+no Campus View errors. The restarted local `/readyz` and existing Cloudflare Campus
+View URL both return HTTP 200; owner-device workflow acceptance is still open at this
+checkpoint. No push or production deployment is claimed.
+
+Remaining gates: replace process-local storage with a shared encrypted ephemeral store
+before multi-instance production use; add the general authority resolver/domain
+executor registry; provide reviewed Operating-rule administration and backtesting for
+forecast policies; connect eligible substitute/space allocation; add further
+evidence-backed interventions; and implement a separately authorized
+scenario-to-domain-draft hand-off. Direct apply-to-live remains prohibited.
+
+### Scenario catalogue and mobile workspace repair — 17 October 2026 (local branch)
+
+Owner-device review exposed a real integration gap: Cambridge had a valid future
+effective timetable, but the scenario catalogue returned no selectable targets. The
+repository was still joining the identity column retired by the person-stable human
+agent migration, while legacy timetable periods had no explicit canonical space even
+though every class had a dated home-space placement. Target discovery and run-time
+target resolution now use active, effective `thatcampus` account endpoints linked to
+person-stable human agents. Explicit scheduled spaces win; the dated class home space
+is the fallback. No label, email or phone matching was introduced.
+
+The Cambridge development dataset now resolves **16 teacher targets and 8 bookable
+space targets**, each with verified future session windows. The Campus performance
+dialog is full device height on phones with safe-area handling and independent content
+scrolling. Planning options now have distinct loading, retryable error and empty-plan
+states instead of presenting an unexplained disabled form. Focused verification passes:
+backend typecheck/scoped lint and **16/16** scenario tests; frontend scoped lint and
+**14/14** planner/KPI-panel tests. Mobile owner validation remains open; no push or
+production deployment is claimed.
+
+## Loader visual update — 16 October 2026
+
+User-approved four-arm ThatCampus loader uses alternating logo blues, a fixed center gap, and a trailing arm that shrinks toward white. The final requested speed is a 2.667-second cycle. Shared route loading and inline loading indicators across authentication, activation, chat, notifications, onboarding, planner, attendance, leave and student submissions use this asset. Existing labels, control sizes, loading conditions and reduced-motion fallback remain. TypeScript and the shared loader test passed; production rollout is not yet verified.
+
+## Campus digital-twin Stage release reconciliation — 17 October 2026
+
+At the user's request, the previously verified Stage head `59879d7` fast-forwarded
+`main`. The digital-twin branch then committed its reviewed working tree while
+excluding the known untracked numbered duplicate artifacts, merged Stage's login,
+logo, loader and public-website changes, and fast-forwarded `Stage` to `f22ec2b`.
+No force push or live database edit was used.
+
+[Stage run 39018988945](https://github.com/EduveraIITA/Eduvera/actions/runs/39018988945)
+correctly stopped before deployment. It found a new historical fingerprint for the
+existing mocked Telegram credential fixture, a CI call that bypassed the guarded
+governance-seed wrapper, two stale Institute setup navigation assertions, one raw
+date input outside the shared bounded component and a realtime assertion that had
+not counted the three new Campus Model/Campus View dependent invalidations. The
+release corrections retain the exact-fingerprint secret-scan policy, switch CI to
+the approved npm seed wrappers, hide administrator-only access/rule/readiness links
+from delegated office staff, adopt `TemporalInput`, and assert all eight intended
+realtime invalidations. Focused evidence after repair: 19/19 frontend regressions,
+15/15 guarded-seed checks and 26/26 deployment-contract checks pass. A fresh Stage
+run must still pass the complete clean-checkout matrix, migration, candidate checks
+and public revision verification before this release is called deployed.
+
+[Stage run 39019345150](https://github.com/EduveraIITA/Eduvera/actions/runs/39019345150)
+then cleared the frontend build, desktop build, secret scan, deployment contracts and
+all three client test shards, but again stopped before deployment when the complete
+backend suite exposed integration fixtures that predated current digital-twin
+invariants. The repair keeps the digital-twin implementation authoritative: inactive
+enrolments now carry their required lifecycle evidence; attendance fixtures grant a
+dated class responsibility instead of inferring authority from a timetable row; the
+report-card fixture no longer models a roomless physical exam; accepted legacy cover
+uses the reviewed schedule identity; and manual cover acceptance retains its exact
+manual-task authority receipt. The authoritative leave-review link remains the shared
+`/work/staff-leave` action surface. Remaining visible `Edura`/`Eduera` copy was replaced
+with ThatCampus, the approved light-background mark and install icons are used, and the
+approved tagline is present on login, install and invitation identity surfaces.
+
+Release-candidate evidence on 17 October 2026: backend typecheck and zero-warning lint
+pass; 17/17 focused temporal, attention and public-brand tests pass; 53/53 previously
+failing database assertions pass against an isolated PostgreSQL 17 database; and the
+complete backend suite passes **147 files / 1107 tests**. This is local candidate
+evidence only. A new Stage run must still pass the clean-checkout matrix and complete
+Google Cloud/public revision verification before the digital-twin release is called
+published.
+
+[Stage run 39020260985](https://github.com/EduveraIITA/Eduvera/actions/runs/39020260985)
+cleared the complete clean-checkout verification matrix: security/deployment
+contracts, frontend and desktop builds, all three client test shards, **147 backend
+files / 1107 tests**, and all three release-image builds. Promotion stopped before a
+candidate revision was created because the long-lived Stage database keeps
+`pgcrypto` in its dedicated `extensions` schema while the historical baseline and
+fresh verification databases install it in `public`. Migration 104 now establishes
+the extension and normalizes its schema before creating temporal digital-twin lineage
+evidence, rather than relying on environmental history. A replacement Stage run must
+still pass migration, candidate and public-revision verification before publication
+is claimed.
+
+[Stage run 39021148594](https://github.com/EduveraIITA/Eduvera/actions/runs/39021148594)
+then passed the complete verification matrix, migration execution, photo-service
+deployment and zero-traffic candidate creation for `da8e7b2`. Its final smoke check
+correctly failed closed because the verifier still expected the retired
+`OmniSchool · Staff` document title even though the reviewed Stage branding serves
+`ThatCampus · Staff`. The verifier and its success-path contract now use the current
+brand. Promotion/public revision verification remains required before publication is
+claimed.
+
+## Repository authority reconciliation — 17 October 2026
+
+The owner requested that subsequent work use the new committed digital-twin direction.
+The active integration head inspected was `Stage` at `e1086b3`; `main` at `59879d7`
+still contained the v1-era root instructions. Root `AGENTS.md` on Stage already used
+Blueprint v2 and its normative companions. It now also names the integration-branch
+check, repository-wide scope and current contract index to prevent sessions from
+silently using an older default-branch document.
+
+Corrected two live entry-point conflicts: README still named the v1 PDF as the primary
+baseline, and the enrollment lifecycle header still named it as current authority.
+Root design/architecture/functionality/flow proposals now explicitly defer to v2;
+the annual-planning delivered-scope paragraph now reflects the already accepted
+14 October canonical calendar editor rather than the superseded separate editor.
+Historical release evidence remains unchanged.
+
+The contract index records how the requested teaching-preference workflow must
+integrate with current identity/coordination ports, canonical spaces, owned work,
+existing schedule drafts, temporal publication and coverage reconciliation. This is
+an implementation direction, not a delivered teacher-preference feature. The early
+unconnected solver/schema scratch work has not been registered, migrated or shipped.
+
+## Development simulator retention and published DT inventory — 17 October 2026
+
+Owner clarification supersedes any interpretation that synthetic development code is
+disposable before launch cleanup. At integration commit `bc4ea2b`, Git contains the
+complete `devtools/campus-simulator` runner and Cambridge behaviour fixture, guarded
+Cambridge seed, development Campus Lab frontend adapters, permanent Campus View,
+Campus Model Core, coordination runtime and isolated scenario foundation. The tracked
+core/Campus View/scenario/Campus Lab inventory contains 84 files; the simulator source
+and broad digital-twin implementation are not confined to an unpushed checkout.
+
+[Stage run 39021823505](https://github.com/EduveraIITA/Eduvera/actions/runs/39021823505)
+passed the complete clean-checkout verification matrix, migrations, both release-image
+builds, photo-service verification, zero-traffic candidate verification, public
+promotion, branded app/staff smoke checks and website deployment for `bc4ea2b`.
+This establishes that the current broad digital-twin and scenario product code is
+published on Stage. It does **not** establish that the separate wall-clock Campus Lab
+actor process is running there: its reviewed implementation still requires loopback,
+private demo authentication and all external connectors disabled, and the Stage release
+contract currently excludes that local process. A dedicated Cambridge-only hosted
+development/showcase contract is an open deployment slice. Until then, contributors
+must preserve, test and push the full runner rather than deleting it or representing
+source retention as hosted execution.
+
+Real-market cleanup is deferred. It may begin only after an explicit owner instruction
+to clean for real market release, and must distinguish the removable development actor
+harness/fixture from permanent product capabilities such as Model Core coordination,
+Campus View and isolated what-if analysis.
+
+The owner also requested an explicit administrator control rather than an always-on
+local runner. Experimental settings now exposes **Activate simulation / Stop
+simulation** beside current Cambridge status. The authenticated same-origin
+development proxy is the only caller of the loopback control endpoint; the existing
+ephemeral proxy key is required. Stopping clears timers and projects zero simulated
+actors/actions without changing timetable or domain data. Activation reconnects or
+refreshes Cambridge and resumes from the real current instant, still respecting the
+instructional calendar and school-hours gate and never replaying missed actions.
+
+## Hosted Cambridge Campus Lab for Stage testing — 17 October 2026
+
+The owner authorized simulated Cambridge users on the actual Stage platform during
+active feature development, with the additional requirement that stopping the harness
+must not reserve paid simulator compute. The implementation keeps the runner separate
+from the application as `eduvera-stage-simulator`, with no database access, zero
+minimum instances, one maximum instance and request-time CPU. Its durable start/stop
+state lives in a Stage-only application table. Once stopped, the admin client stops
+polling and Cloud Run can scale the simulator to zero; there is no simulator scheduler
+or always-on instance. Activated execution advances through bounded admin-client
+pulses, so it is intentionally a live testing aid rather than an unattended daemon
+when nobody is using Stage.
+
+The runner calls the canonical app through normal domain APIs. A rotated Secret
+Manager service credential maps each request only to an exact active
+`@example.test` user in synthetic school code `cis`; commands remain attributed,
+authorized and audited as that Cambridge person. A second rotated key protects runner
+status/control. The browser receives neither secret. The same-origin app proxy rechecks
+active Cambridge admin membership, while the existing public-demo mutation guard
+continues to block start/stop writes.
+
+Stage's web image includes only the build-gated Campus Lab adapter; the simulator is
+built as its own image and the default customer build keeps the adapter disabled.
+Local verification currently includes backend TypeScript build and focused lint,
+26/26 simulator tests, 19/19 release/deployment-boundary tests and focused frontend
+lint. The full local frontend build remains blocked only by pre-existing untracked
+numbered duplicate test artifacts, which were not modified. Clean-checkout Stage CI,
+deployment and authenticated mobile validation remain open evidence gates.
+
+### One-hour Cambridge timetable replay — 17 October 2026
+
+The owner superseded the earlier real-duration development clock so frontend behavior
+can be observed economically during active development. Campus Lab now reads the
+current instructional date's actual `effective_school_schedule`, retains every real
+slot ID and school-local start/end value, and maps the complete first-to-last-slot
+window proportionally onto one fixture-configured 3,600-second run. The timetable is not
+rewritten in PostgreSQL: normal timetable panels keep the authoritative Cambridge
+version while their shared rehearsal marker, active periods, Campus View expectations
+and configured actor actions advance from the same accelerated status projection.
+
+Action timing is configured as a bounded ratio within a named real timetable phase,
+so a timetable change cannot leave an accelerated run waiting for an obsolete fixed
+offset. Holidays, closures and days without an effective schedule still fail closed.
+This earlier single-run constraint has now been superseded by the four-mode rolling
+clock contract recorded below. Stopping remains durable and lets the separate hosted
+service scale to zero. Focused simulator verification covers the configured bounds,
+source schedule identity, accelerated campus time, phase advancement and bounded
+action due instants. Stage deployment and owner mobile acceptance remain open.
+
+### Cambridge configured-attendance convergence — 17 October 2026 (local correction)
+
+Owner validation exposed that a Campus Lab receipt saying “Demo teacher submitted
+Class 6A attendance” did not change the principal's scheduled subject register. The
+receipt described a real write, but the runner had called the separate `daily_class`
+API while Cambridge's effective Operating rule and principal workspace use
+`scheduled_session`. Both attendance models remain valid product capabilities; the
+simulator selected the wrong one.
+
+Cambridge behaviour v6 now reads the effective attendance mode first. For
+`scheduled_session`, it resolves an open register from the normal attendance-model
+workspace, constrains it to a real `schedule_slot_id` in the active published period,
+starts a hosted fixture session for that register's exact assigned teacher, and
+submits `/attendance-model/sessions/:sessionId/submit`. For `daily_class`, it retains
+the daily register flow; for `none`, it records a visible no-action receipt. The
+existing owning-domain transaction retains roster validation, revision/idempotency,
+authorization, immutable evidence, Model Core command/outcome and outbox invalidation.
+Before emitting a successful Campus Lab receipt, the runner re-reads the principal's
+authoritative workspace and requires the identical session to be submitted/final with
+marked and roster counts equal to the submitted payload. A mismatch becomes a visible
+issue receipt. No cache copying or compensating synchronization was added.
+
+A Stage rehearsal also exposed a startup retry storm: the simulator fetched the full
+principal timetable projection merely to discover the school-local date, hit its
+bounded HTTP timeout while the server continued the expensive work, and retried every
+five seconds. Startup and refresh now obtain the current date from the configured
+institution timezone and read the narrower effective day-plan contract directly.
+Booting is single-flight with a bounded retry interval, and activation returns a
+connecting snapshot immediately instead of holding the operator request open. This
+keeps simulator control responsive and prevents overlapping abandoned timetable reads.
+
+Local verification: Campus Lab model/action tests pass **20/20**, including scheduled,
+daily-class and disabled-mode routing; backend TypeScript typecheck passes; and the
+focused attendance-model convergence suite passes **5/5**. Stage deployment and a
+fresh one-hour-run mobile validation remain open evidence gates.
+
+### Configurable rehearsal clock and projection postconditions — 17 October 2026 (local)
+
+Campus Lab now supports exactly four administrator-selected clock modes: **real
+time**, **60 seconds per school day** for engineering checks, **15 minutes per school
+day** for focused workflow review and **60 minutes per school day** for owner
+observation. Accelerated modes advance through the effective schedule one campus date
+at a time, skip dates with no effective instructional slots, cover a rolling 30-day
+calendar window and then rotate to its first date. Real-time mode follows the current
+school-local date and clock without this rotation. The selection is a stage-development
+harness setting, persisted separately from campus Operating rules. Changing it
+restarts only the transient synthetic run; it does not rewrite timetable slots, domain
+records or model configuration. The runtime, local proxy, hosted control API,
+protected control table and Experimental settings UI share the same closed clock-mode
+set. Non-admin Cambridge test-campus members may read the
+status projection for their header and rehearsal-aware views, but only an active
+Cambridge administrator can change the control.
+
+While the harness is enabled, the shared principal/teacher, parent and student headers
+show a compact, explicitly labelled **SIM** date/time derived from the projected
+school-local instant and timezone. It is hidden when the harness is disabled; real
+device time is never relabelled as simulated time.
+
+**Superseded product/UI interpretation:** the later owner decision in
+**authoritative Live/transient Simulation separation** removes this Campus Lab header
+projection from normal Live shells. Clock modes remain Campus Lab harness controls;
+the product shows virtual time only when the same application is bound to an actual
+isolated Simulation fork.
+
+Material synthetic actions now prove their user-facing postcondition before recording
+success: attendance re-reads the exact teacher/principal register, messages re-read the
+teacher conversation, notice publication/acknowledgement re-read principal notice
+detail, and invigilation re-reads the assessment assignment. A stale rejected exam
+offer is surfaced once and no longer prevents a later valid offer from reacting.
+Same-day family acknowledgement is repeat-safe.
+
+Local evidence: focused simulator model/runtime/action tests pass **30/30**, the
+localhost status/control test passes **1/1**, focused control/clock UI tests pass
+**5/5**, backend TypeScript build passes, and the production frontend bundle builds.
+A complete 60-second Saturday run used the real published timetable, recorded a
+teacher message and submitted Class 7A Hindi attendance through the assigned teacher.
+The normal principal attendance workspace independently returned that exact session as
+`locked`, **27/27 marked**, submitted by Neelam Mishra. Saturday has no configured
+Period-4 lunch break, so notice publish/acknowledgement actions correctly remained
+ineligible rather than being forced outside their configured phase. Stage migration,
+deployment and owner mobile acceptance remain open gates.
+
+The one-minute live rollover was subsequently observed crossing from Saturday
+17 October to Monday 19 October, skipping Sunday because it had no effective
+instructional schedule. The projected clock changed to Monday and the next teacher
+attendance action converged through the normal attendance domain before its recorded
+receipt appeared. A regression test now ensures that a requested simulated
+`school_date` takes precedence over the day-plan service's real wall-clock `today`;
+otherwise each completed day could incorrectly restart the activation date. A second
+guard fails visibly if an entire configured window contains no effective school day,
+instead of cycling indefinitely.
+
+## Authoritative Live state and transient Simulation fork — owner correction, 17 October 2026
+
+The owner clarified the permanent product architecture after the accelerated Campus
+Lab work above. This decision supersedes the earlier implication that a Campus Lab
+clock should become a normal application header/date or that changing a Live query
+date creates a simulation experience.
+
+ThatCampus has one authoritative Live campus environment. An authorized user can
+temporarily fork its digital-twin state into an isolated Simulation environment:
+
+1. **Live** is the authoritative environment used by onboarded institutions. It uses
+   real institution time, stable production agents, domain APIs, observations,
+   commands, channels and accepted evidence.
+2. **Simulation** is a transient product environment available to every institution. An
+   authorized administrator forks a privacy-minimized point-in-time Live digital-twin
+   snapshot into a run/namespace with a virtual clock, run-local counterparts for
+   eligible human/team/device/integration/software agents, copied effective
+   configuration and rules, deterministic scenario adapters and sink-only effects.
+
+Simulation requires no duplicate institution setup and is not a second permanent
+platform. Missing human-response behavior
+is explicit unknown/unsupported unless an approved versioned scenario policy models
+the relevant cohort; the behaviour-neutral core does not invent defaults. Scenario
+events, messages, evidence, KPIs, caches, credentials and connectors never enter
+Live. A future reviewed scenario result may prepare a new Live draft only after fresh
+authority, rule, revision and domain-invariant checks. A fork expires or is discarded;
+it is never merged back into Live.
+
+The environment binding is application-wide, but the product UI is unchanged. The
+administrator continues to use the same routes, navigation and domain modules; only a
+compact top **Live** or **Simulation** marker, with virtual time in Simulation,
+distinguishes the context. Today, timetable, attendance, Messages, Requests, Campus
+View, notifications, KPIs and every other enabled module must resolve through their
+normal domain contracts against the same server-authoritative run namespace and
+virtual clock. A date, URL or caller-controlled header cannot select the backing
+environment. Switching environment clears or partitions client caches and realtime
+subscriptions before the same screen renders.
+
+During development, a domain without a scenario adapter fails closed with **Not
+modelled in this run**. It may not query Live using a simulated date, blend Live
+attention with scenario rows or write into a Live browser cache. This is an open
+implementation gap, not the intended product experience: release acceptance requires
+snapshot/read/action/projection parity for every module enabled for that institution.
+Simulation actions must apply the same domain invariants to copy-on-write scenario
+state so a change is visible across the whole simulated app and nowhere in Live.
+
+**Superseded Campus Lab interpretation:** Campus Lab no longer mutates Cambridge Live
+or overlays a Live header. The owner selected the two-world method above. Its actors
+now operate as run-local counterparts in a server-confirmed isolated Simulation fork;
+the whole familiar application shows that fork through the standard **Simulation**
+marker, and stopping discards it before the session resumes Live.
+
+Cambridge attendance behavior is configured as an `each_lesson` teacher reaction
+rather than a central list of hard-coded periods. The effective timetable and
+attendance Operating rule create each obligation; at the configured point in every
+published lesson, every eligible assigned synthetic teacher uses their own fixture
+identity to submit their own open subject register through the normal attendance
+command. The runner then verifies all submitted registers in the principal workspace
+and reports partial failures instead of treating one representative register as
+completion of an entire period.
+
+Local remediation and delivery state:
+
+- Live Attendance/Home date substitution and global Live-shell `SIM` badges have
+  been removed locally; the simulator-exclusion guard passes **3/3**.
+- Campus Lab no longer wraps the root application or replaces normal timetable and
+  Campus View routes. Its provider/overlay is scoped to `/principal/campus-lab`, with
+  Experimental settings retaining scoped status/control access. Focused route tests
+  pass **62/62**.
+- The existing isolated engine already provides snapshot hashing, deterministic
+  virtual clock/randomness, run namespace, sink-only message/evidence and structural
+  production-side-effect denial.
+- Scenario identity materialization now accepts every Model Core agent kind
+  (`human`, `team`, `device`, `integration`, `software`), creates distinct run-local
+  counterparts and rejects malformed or duplicate mappings. The focused scenario and
+  runtime suite passes **20/20**.
+- A foundational discriminated execution-context seam now models Live as the sole
+  persistent `authoritative_real` environment and Simulation as a coverage-gated
+  `transient_virtual_fork`. It selects the same typed domain/projection contracts over
+  either an authoritative Live unit of work with production effects or an isolated
+  copy-on-write unit of work with sink-only effects. Runtime validation rejects mixed
+  fields, namespace/run mismatches, malformed clocks/expiry and production-capability
+  leakage; its focused suite passes **8/8** and the backend build passes. The
+  authenticated request/session resolver is now wired as described below; the
+  complete concrete domain-adapter registry is still not wired.
+- A provider-neutral external-effect boundary now declares reviewed categories for
+  operational-message delivery, notifications, connectors, files, external compute,
+  webhooks and realtime publication. Live selects separately registered production
+  ports; Simulation requires an immutable, complete sink-only set bound to the exact
+  scenario/run namespace and never falls through to Live. The current process-local
+  sink records deterministic, idempotent receipts and can be discarded with the run;
+  mismatched namespaces, changed-payload retries and incomplete sink coverage fail
+  closed. Focused execution-environment/effect/scenario tests pass **28/28** and the
+  backend build/scoped lint pass. Existing email, Telegram, Matrix, payment, upload,
+  AI and other provider call sites are not yet migrated to this router, so this is a
+  tested contract seam—not evidence that whole-application effects are isolated.
+- The isolated data-plane readiness gate now requires runtime
+  `ExecutionEffectCoverage` from the effect boundary in addition to the declarative
+  application coverage manifest. The receipt must be for the exact Simulation run
+  namespace, report every reviewed effect kind through a configured sink, contain no
+  missing kind, be `ready`, and prove production ports are unreachable. Missing,
+  blocked, cross-run or production-reachable effect coverage is rejected before the
+  isolated database driver is initialized; application-manifest claims alone cannot
+  activate a run. A complete router-produced sink set plus complete module coverage
+  is covered by the focused execution data-plane/effect suite (**23/23**), and the
+  backend build/scoped lint pass. This remains a process-local readiness seam: the
+  current aggregate KPI scenario has no complete application data plane and remains
+  non-enterable, while real provider call-site migration and shared ephemeral driver
+  provisioning remain open.
+- An injectable `EXECUTION_CLOCK_PORT` is now globally wired through the database
+  integration module and reads only the server-owned `ExecutionDataPlaneScope`.
+  Scoped Live requests use their real environment clock; scoped Simulation requests
+  use the selected run's read-only virtual clock; unscoped Live control-plane work
+  uses an injected system wall clock. Institution-local date/time conversion requires
+  the owning domain's authoritative institution ID and validated IANA timezone, and a
+  cross-institution read fails closed. No date, request header, URL or query value can
+  select an environment through this port. Focused clock, environment and data-plane
+  tests pass **21/21**; backend build and scoped lint pass.
+
+  This is a clock-adoption seam, not whole-application virtual-time parity. A broad
+  static inventory still finds **309** direct application wall-clock constructions
+  (`Date.now()` / zero-argument `new Date()`) across **55** backend source files and
+  **668** PostgreSQL clock expressions (`now()`, `clock_timestamp()` or
+  `CURRENT_TIMESTAMP`) across **83** backend source files. The inventory includes
+  infrastructure and development utilities, so each owning domain must classify its
+  call sites; nevertheless, any Simulation-sensitive decision/projection must replace
+  application reads with the injected clock and pass its instant explicitly into SQL.
+  PostgreSQL wall-clock functions are not made virtual merely by routing a query to an
+  isolated data plane. Until that adoption and domain tests are complete, ordinary
+  module dates, deadlines and temporal predicates cannot be claimed Simulation-safe.
+- The authorized school-event SSE boundary now binds every connection to the exact
+  execution environment already resolved from the authenticated server session. Live
+  broker events dispatch only to `live:<institution>` clients; Simulation publishing,
+  replay and authorization queries run only inside the matching
   `ExecutionDataPlaneScope` and isolated outbox. Simulation cursor IDs include an
   opaque run-namespace fingerprint, while a foreign, legacy or caller-supplied cursor
   can only request a full refresh and cannot select an environment. Active session
