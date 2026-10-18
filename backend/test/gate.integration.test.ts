@@ -126,4 +126,37 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   await service.visitorAction(guard,school,visitor.id,'out');
   await expect(service.scan(guard,school,{qr:pass.qr})).rejects.toThrow(/already used/);
  });
+ it('limits recent activity to the school’s local day and includes active approvals and both visitor movements',async()=>{
+  const oldTimezone=(await query('SELECT timezone FROM schools WHERE id=$1',[school])).timezone;
+  await query("UPDATE schools SET timezone='Pacific/Kiritimati' WHERE id=$1",[school]);
+  const ids:string[]=[];
+  try{
+   const bounds=await query("SELECT date_trunc('day',now() AT TIME ZONE timezone) AT TIME ZONE timezone start FROM schools WHERE id=$1",[school]);
+   const start=new Date(bounds.start).getTime();
+   async function add(name:string,state:string,created:number,decided:number|null=null,entered:number|null=null,exited:number|null=null,targetSchool=school){
+    const row=await query(`INSERT INTO gate_visitors(school_id,name,phone,purpose,host_user_id,recorded_by,state,created_at,expires_at,decided_at,checked_in_at,checked_out_at)
+     VALUES($1,$2,'9876543210','Test',$3,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,[targetSchool,name,admin.id,state,new Date(created),new Date(start+172800000),decided===null?null:new Date(decided),entered===null?null:new Date(entered),exited===null?null:new Date(exited)]);
+    ids.push(row.id);return row.id;
+   }
+   const pending=await add('Pending today','pending',start+1);
+   const approved=await add('Approved today','approved',start-1000,start+2);
+   const moved=await add('Entered and exited today','out',start-1000,null,start+3,start+4);
+   const yesterday=await add('Yesterday','out',start-3000,null,start-2000,start-1000);
+   const tomorrow=await add('Tomorrow','pending',start+86400001);
+   const denied=await add('Denied','denied',start+5,start+6);
+   const other=await add('Other school','pending',start+7,null,null,null,otherSchool);
+   const activity=(await service.workspace(guard,school)).activity;
+   expect(activity).toEqual(expect.arrayContaining([
+    expect.objectContaining({person_id:pending,status:'pending',direction:null}),
+    expect.objectContaining({person_id:approved,status:'approved',direction:null}),
+    expect.objectContaining({person_id:moved,status:'in',direction:'in'}),
+    expect.objectContaining({person_id:moved,status:'out',direction:'out'})]));
+   expect(activity.some(row=>[yesterday,tomorrow,denied,other].includes(row.person_id))).toBe(false);
+   expect(activity.every(row=>new Date(row.occurred_at).getTime()>=start)).toBe(true);
+  }finally{
+   await query('DELETE FROM gate_visitors WHERE id=ANY($1::uuid[])',[ids]);
+   await query('UPDATE schools SET timezone=$2 WHERE id=$1',[school,oldTimezone]);
+  }
+ });
+
 });
