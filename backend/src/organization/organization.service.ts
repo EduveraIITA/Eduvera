@@ -95,14 +95,14 @@ export class OrganizationService {
       const event = await tx.insertInto("event_outbox").values({ school_id: schoolId, event_type: "organization.structure.updated", aggregate_type: "organization_structure", aggregate_id: schoolId,
         audience_user_ids: audience.map(member => member.user_id), payload: { revision, node_count: input.nodes.length, refresh: ["organization"] },
         idempotency_key: `organization:${schoolId}:${revision}` }).returning("id").executeTakeFirstOrThrow();
-      const journal = await this.journal.recordAcceptedEvent(tx, { school_id: schoolId, source_outbox_event_id: event.id, event_type: "organization.structure.updated",
+      await this.journal.recordAcceptedEvent(tx, { school_id: schoolId, source_outbox_event_id: event.id, event_type: "organization.structure.updated",
         subject: { ...target, source_revision: revision }, context: null, actor_user_id: user.id, audience_user_ids: [], occurred_at: now, effective_from: now, effective_until: null,
         source_domain: "organization", source_record_id: schoolId, source_revision: revision, correlation_id: input.request_id, causation_event_id: null,
         idempotency_key: `organization:${schoolId}:${revision}`, payload: { node_count: input.nodes.length, changes_access: false } });
       await sql`INSERT INTO organization_structure_revisions(school_id,revision,actor_user_id,request_id,request_hash,nodes,command_id,event_id)
         VALUES(${schoolId}::uuid,${revision},${user.id}::uuid,${input.request_id}::uuid,${requestHash},${JSON.stringify(input.nodes)}::jsonb,${command.command_id}::uuid,${event.id}::uuid)`.execute(tx);
       await this.commands.completeDomainCommand(tx, { school_id: schoolId, command_id: command.command_id, terminal_state: "accepted", code: "organization_structure_saved",
-        explanation: "Reporting structure saved. Access permissions and governance appointments are unchanged.", resulting_revision: revision, domain_event_id: journal.event_id,
+        explanation: "Reporting structure saved. Access permissions and governance appointments are unchanged.", resulting_revision: revision, domain_event_id: event.id,
         metadata: { node_count: input.nodes.length }, completed_at: now });
       return { revision, nodes: input.nodes, replayed: false };
     });
