@@ -37,6 +37,22 @@ Migrations 100–102 therefore still require the normal isolated-database CI run
 Physical-phone review of Gate, Organization and the Assistant response treatment is
 also still required. No push, database migration or deployment is claimed here.
 
+### Stage deployment gate repair — 18 October 2026
+
+The Main-based current-system integration was pushed to `Stage` at `996372b`, but
+the first promotion run was correctly blocked before deployment. The repository
+secret scan rediscovered the already-reviewed synthetic Telegram token fixture at
+its reconciled-history fingerprint, and the agent attendance integration suite used
+the wall-clock date on a non-instructional day. The repair adds only the exact
+reviewed fingerprint to `.gitleaksignore` and restores the instructional-date test
+fixture; it does not weaken a scanner rule or alter production attendance behavior.
+
+Verified locally with PostgreSQL 17: all 102 migrations apply through organization
+hierarchy, all Stage seed commands complete, and the previously failing agent
+integration file passes 32/32 tests. Backend typecheck, lint and production build
+also pass. Cloud promotion remains contingent on the complete Stage workflow and
+live release verification; local evidence is not a deployment claim.
+
 This is the implementation record, not a claim that the entire blueprint is complete.
 The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
 scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,

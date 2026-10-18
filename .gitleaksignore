@@ -2,6 +2,8 @@
 # Exact historical fingerprints only; do not exclude whole test files or rules.
 # agent-channels: alphabet/number fixture used only with mocked HTTP at school.example.
 321bc2526e442ca747497980dfc6cedc47f244fa:backend/test/agent-channels.test.ts:generic-api-key:9
+# Same reviewed fixture after the current-system branch was reconciled with Stage.
+d19c461b7e328fdb5b55f81f3ca8d52735cc4c65:backend/test/agent-channels.test.ts:generic-api-key:9
 # agent-channels: synthetic /start token repeated in the parser assertion.
 321bc2526e442ca747497980dfc6cedc47f244fa:backend/test/agent-channels.test.ts:generic-api-key:16
 # Conversation evaluation: named local-test cookie secret, loopback server,
