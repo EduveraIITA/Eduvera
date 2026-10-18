@@ -9226,3 +9226,44 @@ rolled back because the existing Cloudflare proxy rewrites Location: / to the eq
 absolute branded root URL. Compare the resolved same-origin root URL in the smoke check;
 retain 308, reject other origins/paths/query strings, and cover both origin and edge forms
 in deployment contract tests. No application routing or authority change is needed.
+
+## 18 October 2026 — organization hierarchy implementation
+
+Owner requested the desktop/mobile organization hierarchy reference. Added the
+administrator Organization workspace under More → Institute, preserving the shared
+shell. It supports pastel connected hierarchy cards, list/outline, department and
+people search, zoom/fit, desktop reparenting, keyboard/mobile parent selection,
+details/member/report tabs, staff heads/membership, local Undo and explicit Save.
+Empty institutions remain empty rather than receiving invented sample staff.
+
+The Organization domain owns descriptive reporting nodes, not permissions or legal
+appointments. Migration 135 retains school-scoped canonical nodes/member FKs,
+aggregate revisions and audit snapshots. Current admin membership is locked and
+rechecked, staff references are tenant-validated, cycles/depth/size are bounded,
+and saves traverse the existing command gateway and accepted-event journal with
+atomic domain/outbox/outcome evidence. Exact retries are idempotent; conflicting
+saves retain the local draft. Realtime delivery rechecks current admin authority.
+See `ORGANIZATION_STRUCTURE_ARCHITECTURE.md` for the ownership and release boundary.
+
+Local evidence: 8 new domain tests and 9 new UI/protocol tests pass; the focused
+UI/navigation/protocol suite and 15 domain/gateway tests passed. Backend and frontend compilation and focused
+lint pass. Chromium fixture checks at 320/390/768/1024/1440px found no horizontal
+page overflow or runtime exceptions; mobile detail editing and Save were exercised.
+Isolated PGlite checks executed the new migration and verified composite staff FKs,
+deferred reporting parents, atomic replacement/rollback and RLS (not a substitute
+for the full production PostgreSQL migration chain).
+
+Release gaps: full backend run passed 835 tests and skipped 227, with 17 integration
+files unable to initialize because no disposable DATABASE_URL is configured here.
+Added a gated real PostgreSQL/model-gateway suite for saves, replay, revision races
+and revoked authorization; it remains to be run in CI. Two existing campus-event
+frontend tests fail under the session's UTC timezone and all 39 campus-event tests
+pass under Asia/Kolkata. No unrelated test behavior was changed. No push, deployment
+or live verification is claimed by this checkpoint. Owner visual acceptance remains.
+
+The full local frontend run completed with 1,153 passes and four failures: the two
+timezone-dependent event tests above and two existing parent route interaction
+timeouts. These are not represented as a passing full regression gate.
+Both parent route tests passed on targeted rerun (24.69s); the complete suite was
+not rerun to replace the recorded initial result. Production builds pass, with
+the existing Vite large-chunk advisory unchanged.

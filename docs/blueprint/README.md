@@ -40,6 +40,7 @@ simulation mini-app or fall back to Live beneath a Simulation marker.
 | Current delivery evidence and limitations | `IMPLEMENTATION_PLAN.md` |
 | Campus spaces and dated placements | `INSTITUTION_CAMPUS_REPLICA.md` |
 | Roles, assignments and purpose-specific authority | `WORK_PROFILE_ACCESS_ARCHITECTURE.md`, `INSTITUTE_GOVERNANCE_AUTHORITY_ARCHITECTURE.md` |
+| Descriptive organization structure and reporting lines | `ORGANIZATION_STRUCTURE_ARCHITECTURE.md` |
 | Institution-owned automatic behaviour | `OPERATING_RULES.md`, plus the Model Core and operating-experience contracts |
 | Timetable and coverage | `ANNUAL_SCHEDULE_PLANNING.md`, `STAFF_RESPONSIBILITIES_AND_COVERAGE.md` |
 | Authoritative Live state, transient Simulation forks, actor counterparts, projections and forecasts | `CAMPUS_SCENARIO_SIMULATION.md` |
