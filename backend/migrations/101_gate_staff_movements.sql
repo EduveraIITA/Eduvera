@@ -5,7 +5,7 @@
 CREATE UNIQUE INDEX IF NOT EXISTS staff_profiles_school_id_id_key
   ON staff_profiles(school_id,id);
 
-CREATE TABLE gate_staff_events (
+CREATE TABLE IF NOT EXISTS gate_staff_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
   staff_profile_id uuid NOT NULL,
@@ -19,9 +19,9 @@ CREATE TABLE gate_staff_events (
     REFERENCES staff_profiles(school_id,id) ON DELETE CASCADE
 );
 
-CREATE INDEX gate_staff_school_time_idx
+CREATE INDEX IF NOT EXISTS gate_staff_school_time_idx
   ON gate_staff_events(school_id,occurred_at DESC,id DESC);
-CREATE INDEX gate_staff_profile_time_idx
+CREATE INDEX IF NOT EXISTS gate_staff_profile_time_idx
   ON gate_staff_events(school_id,staff_profile_id,occurred_at DESC,id DESC);
 
 DO $$ DECLARE owner_name text;

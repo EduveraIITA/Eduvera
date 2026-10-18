@@ -3,13 +3,13 @@
 CREATE UNIQUE INDEX IF NOT EXISTS staff_profiles_school_id_id_key
   ON staff_profiles(school_id, id);
 
-CREATE TABLE organization_structures (
+CREATE TABLE IF NOT EXISTS organization_structures (
   school_id uuid PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
   revision integer NOT NULL DEFAULT 0 CHECK (revision >= 0),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE organization_nodes (
+CREATE TABLE IF NOT EXISTS organization_nodes (
   school_id uuid NOT NULL REFERENCES organization_structures(school_id) ON DELETE CASCADE,
   id uuid NOT NULL,
   parent_id uuid,
@@ -28,10 +28,10 @@ CREATE TABLE organization_nodes (
     REFERENCES staff_profiles(school_id, id)
 );
 
-CREATE INDEX organization_nodes_school_parent_order_idx
+CREATE INDEX IF NOT EXISTS organization_nodes_school_parent_order_idx
   ON organization_nodes(school_id, parent_id, sort_order);
 
-CREATE TABLE organization_node_members (
+CREATE TABLE IF NOT EXISTS organization_node_members (
   school_id uuid NOT NULL,
   node_id uuid NOT NULL,
   staff_id uuid NOT NULL,
@@ -42,12 +42,12 @@ CREATE TABLE organization_node_members (
     REFERENCES staff_profiles(school_id, id)
 );
 
-CREATE INDEX organization_node_members_staff_idx
+CREATE INDEX IF NOT EXISTS organization_node_members_staff_idx
   ON organization_node_members(school_id, staff_id);
 
 -- The whole aggregate is retained for conflict resolution and audit review.
 -- event_id intentionally has no FK because delivered outbox rows may be pruned.
-CREATE TABLE organization_structure_revisions (
+CREATE TABLE IF NOT EXISTS organization_structure_revisions (
   school_id uuid NOT NULL REFERENCES organization_structures(school_id) ON DELETE CASCADE,
   revision integer NOT NULL CHECK (revision > 0),
   actor_user_id uuid NOT NULL REFERENCES users(id),
@@ -59,6 +59,22 @@ CREATE TABLE organization_structure_revisions (
   PRIMARY KEY (school_id, revision),
   UNIQUE (school_id, actor_user_id, request_id)
 );
+
+-- Stage previously carried the same aggregate with a Digital Twin command link.
+-- Keep that historical value when present, but do not require new current-system
+-- revisions to manufacture a model-core command that this branch does not own.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'organization_structure_revisions'
+      AND column_name = 'command_id'
+  ) THEN
+    ALTER TABLE organization_structure_revisions
+      ALTER COLUMN command_id DROP NOT NULL;
+  END IF;
+END $$;
 
 ALTER TABLE organization_structures ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_nodes ENABLE ROW LEVEL SECURITY;

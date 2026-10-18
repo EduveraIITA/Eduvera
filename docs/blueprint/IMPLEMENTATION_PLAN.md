@@ -53,6 +53,15 @@ integration file passes 32/32 tests. Backend typecheck, lint and production buil
 also pass. Cloud promotion remains contingent on the complete Stage workflow and
 live release verification; local evidence is not a deployment claim.
 
+The subsequent cloud migration exposed a filename-history collision: the previous
+Stage line had already applied visitor photos, staff movements and organization
+hierarchy as migrations 122, 136 and 135, while Main numbers the equivalent current-
+system contracts 100–102. Those migrations now converge on existing columns,
+constraints, tables and indexes. A historical Digital Twin `command_id` on retained
+organization revision rows remains intact but becomes optional for new current-system
+revisions. PostgreSQL 17 verification covers both a clean installation and a
+reconstructed prior-Stage upgrade applying all three current migrations.
+
 This is the implementation record, not a claim that the entire blueprint is complete.
 The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
 scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,
