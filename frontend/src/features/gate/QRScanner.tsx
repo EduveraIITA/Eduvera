@@ -93,7 +93,7 @@ export default function QRScanner({ onScan, hindi }: { onScan: (qr: string) => v
     {scanError ? <p className="gate-error" role="alert">{scanError}</p> : null}
     <div className="gate-scan-controls">
       {hasTorch ? <button type="button" onClick={() => void toggleTorch()} aria-pressed={torch}>{torch ? <FlashlightOff size={17}/> : <Flashlight size={17}/>}<span>{torch ? (hindi ? 'फ़्लैशलाइट बंद करें' : 'Turn flashlight off') : (hindi ? 'फ़्लैशलाइट' : 'Flashlight')}</span></button> : null}
-      <input ref={file} className="gate-file-input" type="file" accept="image/*" hidden aria-label={hindi ? 'गैलरी से QR तस्वीर चुनें' : 'Choose a QR photo from gallery'} onChange={event => { const selected = event.currentTarget.files?.[0]; if (selected) void scanImage(selected); event.currentTarget.value = ''; }}/>
+      <input ref={file} className="gate-file-input" type="file" accept="image/*" hidden style={{ display: 'none' }} tabIndex={-1} aria-label={hindi ? 'गैलरी से QR तस्वीर चुनें' : 'Choose a QR photo from gallery'} onChange={event => { const selected = event.currentTarget.files?.[0]; if (selected) void scanImage(selected); event.currentTarget.value = ''; }}/>
       <button type="button" onClick={() => file.current?.click()}><Images size={17}/><span>{hindi ? 'गैलरी' : 'Gallery'}</span></button>
     </div>
   </div>;

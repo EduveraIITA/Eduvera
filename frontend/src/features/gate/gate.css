@@ -76,8 +76,8 @@
 .gate-list small { display: block; margin-top: 6px; color: var(--edura-ink-muted); font-size: 11px; }
 .gate-list img, .gate-result-avatar { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; object-fit: cover; }
 .gate-result-avatar { display: grid; place-items: center; color: var(--edura-brand); background: var(--edura-brand-soft); font-weight: 700; }
-.gate-camera { width:100%; min-width:0; box-sizing:border-box; text-align: center; }
-.gate-camera video { display:block; width:100%; max-width:100%; max-height:480px; border-radius:var(--edura-radius-control); aspect-ratio:4/3; object-fit:cover; background:var(--edura-ink); }
+.gate-camera { width:100%; max-width:100%; min-width:0; box-sizing:border-box; overflow:hidden; contain:inline-size; text-align:center; }
+.gate-camera video { position:absolute; inset:0; display:block; width:100%; max-width:100%; min-width:0; height:100%; max-height:none; border-radius:inherit; object-fit:cover; background:var(--edura-ink); }
 .gate-camera p { font-size: 13px; }
 .gate-qr img { display: block; width: 240px; height: 240px; max-width: 100%; margin: auto; }
 .gate-admin-section { border-top: 1px solid var(--edura-border); margin-top: 32px; padding-top: 24px; }
@@ -166,12 +166,12 @@
 .gate-category input:checked + span { color:white; border-color:var(--edura-brand); background:var(--edura-brand); }
 .gate-category input:focus-visible + span { outline:3px solid var(--edura-brand-bright); outline-offset:3px; }
 .gate-form textarea { width:100%; min-width:0; resize:vertical; padding:12px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-control); color:var(--edura-ink); background:var(--edura-surface); font:inherit; }
-.gate-scan-panel { display:grid; min-width:0; gap:20px; }
-.gate-scan-panel > *,.gate-section-heading > div { min-width:0; }
+.gate-scan-panel { display:grid; width:100%; max-width:680px; min-width:0; overflow:hidden; gap:20px; }
+.gate-scan-panel > *,.gate-section-heading,.gate-section-heading > div { width:100%; max-width:100%; min-width:0; }
 .gate-section-heading h2 { margin:0; }
 .gate-section-heading p { overflow-wrap:anywhere; }
 .gate-shell .gate-manual-search { display:flex; align-items:center; justify-content:center; gap:10px; color:var(--edura-brand); font-size:13px; }
-.gate-viewfinder { position:relative; width:100%; min-width:0; max-width:480px; margin:auto; }
+.gate-viewfinder { position:relative; width:100%; max-width:480px; min-width:0; aspect-ratio:4/3; margin:auto; contain:size layout paint; }
 .gate-scan-frame { position:absolute; inset:16%; border:3px solid var(--edura-brand-bright); border-radius:24px; box-shadow:0 0 0 999px #0003; overflow:hidden; }
 .gate-viewfinder { overflow:hidden; border-radius:var(--edura-radius-control); }
 .gate-scan-frame span { position:absolute; left:8%; right:8%; top:10%; height:2px; background:var(--edura-brand-bright); box-shadow:0 0 12px var(--edura-brand-bright); animation:gate-scan-line 2.2s ease-in-out infinite alternate; }
@@ -255,7 +255,7 @@
 .gate-shell button:disabled { opacity:.45; cursor:not-allowed; }
 .gate-visitor-result { text-align:center; }
 .gate-scan-controls { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:12px; }
-.gate-file-input[hidden] { display:none; }
+.gate-file-input,.gate-file-input[hidden] { display:none !important; width:0 !important; height:0 !important; min-height:0 !important; }
 .gate-scan-controls button { display:flex; align-items:center; gap:8px; min-height:44px; padding:0 16px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-pill); color:var(--edura-ink); background:var(--edura-surface); font:inherit; font-size:12px; font-weight:700; }
 .gate-result-mark { display:grid; place-items:center; width:62px; height:62px; margin:4px auto 14px; border-radius:50%; color:var(--edura-brand); background:var(--edura-brand-soft); }
 .gate-result-mark.is-success { color:var(--edura-positive); background:var(--edura-positive-soft); }
@@ -280,6 +280,7 @@
  .gate-manual-panel,.gate-scan-panel,.gate-person-detail,.gate-visitor-result { box-sizing:border-box; padding:16px; }
  .gate-scan-panel { gap:16px; margin-top:4px; }
  .gate-camera { padding:12px; }
+ .gate-viewfinder { max-width:100%; aspect-ratio:1/1; }
  .gate-camera-state { margin-bottom:4px; }
  .gate-camera-state + p { margin-top:0; }
  .gate-scan-frame { inset:12%; border-radius:18px; }

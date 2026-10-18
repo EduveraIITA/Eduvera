@@ -13,6 +13,8 @@ describe('QRScanner', () => {
 
     const input = screen.getByLabelText('Choose a QR photo from gallery');
     expect(input).toHaveAttribute('hidden');
+    expect(input).toHaveStyle({ display: 'none' });
+    expect(input).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('button', { name: 'Gallery' })).toBeInTheDocument();
   });
 });

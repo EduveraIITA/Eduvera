@@ -7030,3 +7030,16 @@ this reconciled head. No security/runtime guards or provisioning paths were remo
 ## Loader visual update — 16 October 2026
 
 User-approved four-arm ThatCampus loader uses alternating logo blues, a fixed center gap, and a trailing arm that shrinks toward white. The final requested speed is a 2.667-second cycle. Shared route loading and inline loading indicators across authentication, activation, chat, notifications, onboarding, planner, attendance, leave and student submissions use this asset. Existing labels, control sizes, loading conditions and reduced-motion fallback remain. TypeScript and the shared loader test passed; production rollout is not yet verified.
+
+## Gate scanner mobile containment — 18 October 2026
+
+Physical-iPhone evidence showed that ordinary percentage width constraints did not
+contain the active camera stream: Safari continued to use the video element's
+intrinsic camera dimensions during layout. The scanner now gives the viewfinder an
+explicit responsive aspect ratio and paints the video absolutely inside a
+size/layout/paint containment boundary. The scan panel, card and heading all have
+explicit shrinkable width boundaries. The gallery upload remains available only
+through its labelled action; its native input is hidden through the HTML attribute,
+inline style and scoped high-specificity fallback. Focused gate tests (13), frontend
+lint and the production build pass. Same-state physical-phone confirmation remains
+the visual acceptance gate.

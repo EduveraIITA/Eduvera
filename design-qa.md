@@ -29,9 +29,16 @@ blocked until an authenticated mobile session loads the deployed scanner.
 
 ## Findings and comparison history
 
-- P0 resolved in code: intrinsic-width overflow in the scanner grid, card, camera,
-  viewfinder and video surfaces.
-- P1 resolved in code: exposed native file input duplicated the Gallery action.
+- P0 first correction was insufficient on physical iPhone Safari: the deployed
+  bundle contained the width constraints, but the active camera's replaced-element
+  dimensions still expanded the viewfinder. The video is now absolutely contained
+  by a size/layout/paint-contained responsive viewfinder, so camera resolution can
+  no longer participate in page layout.
+- P1 first correction was insufficient in the reported phone state: the deployed
+  bundle contained the `hidden` attribute, but the native file control remained
+  visible. The control now has an inline `display:none`, a high-specificity CSS
+  fallback, zero dimensions and is removed from keyboard order; Gallery remains the
+  sole visible trigger.
 - P2 resolved in code: narrow-screen controls could not wrap and scan-frame radius/
   inset were sized for the wider layout.
 - Remaining gate: deployed physical-phone visual confirmation at the source state.
