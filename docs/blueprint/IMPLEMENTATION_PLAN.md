@@ -62,6 +62,24 @@ organization revision rows remains intact but becomes optional for new current-s
 revisions. PostgreSQL 17 verification covers both a clean installation and a
 reconstructed prior-Stage upgrade applying all three current migrations.
 
+Stage run `39142872935` then passed the secret scan, backend integration suite,
+all three mobile-test shards, application/desktop builds, image publication,
+cloud migration, candidate verification, traffic promotion and public checks.
+Release `142bfa6f360fb6228aaee5dae5ea8e648d460c88` was verified at
+`app.thatcampus.com/releasez`; both the application and public website returned
+HTTP 200 after rollout.
+
+### Gate QR scanner mobile containment — 18 October 2026
+
+Physical-phone evidence showed the QR camera card retaining an intrinsic desktop
+width, clipping its viewfinder, instructions and controls beyond the viewport. The
+scanner panel, camera surface, heading copy and viewfinder now explicitly allow grid
+shrinkage and occupy at most their available width. The camera video is a block-level,
+width-bounded surface; scan controls wrap on narrow screens. The native file input is
+also hidden at the element contract, leaving the intentional Gallery action as the
+only upload affordance. Focused Gate tests, frontend lint and production build pass;
+physical-phone validation remains required after the next Stage rollout.
+
 This is the implementation record, not a claim that the entire blueprint is complete.
 The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
 scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,
