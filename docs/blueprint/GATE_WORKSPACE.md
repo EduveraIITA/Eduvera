@@ -157,3 +157,14 @@ environment, readiness and both-app verification at 17:21:38 UTC. The website
 release also succeeded; IndexNow accepted eight URLs at 17:22:53 UTC. The local
 review preview returned HTTP 200. Owner device/live-account review remains open;
 local synthetic browser fixtures do not establish that acceptance.
+
+
+## Today-only gate activity — 18 October 2026
+
+Owner direction: Recent Activity shows only the current calendar day in the
+institution’s configured timezone. Active pending and approved visitor requests
+use their request/decision timestamps; recorded visitor entries and exits appear
+separately alongside student and staff movements. Expired/denied requests are not
+shown as actionable approvals. The compact preview keeps the latest five items,
+with Pending approval, Approved, In and Out badges. Historical records and the
+authorized visitor workflow are retained. Deployment verification is pending.

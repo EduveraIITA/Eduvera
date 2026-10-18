@@ -17,7 +17,7 @@ import { validateVisitorPhoto, type VisitorPhotoUpload } from './visitor-photo.j
 type Db=DatabaseService|Transaction<Database>;
 interface Person {id:string;name:string;avatar_url:string;admission_number:string;class_label:string;direction:string|null;plan_id:string|null;plan_revision:number|null;plan_state:string|null;mode:string|null;authority_id:string|null;collector_name:string|null;collector_photo:string|null}
 interface GateStaff {id:string;name:string;avatar_url:string;staff_code:string;designation:string;department:string;direction:'in'|'out'|null;last_movement_at:Date|null;revision:number}
-interface GateActivity {id:string;kind:'student'|'staff'|'visitor';person_id:string;name:string;avatar_url:string|null;detail:string;direction:'in'|'out';occurred_at:Date;state:string|null}
+interface GateActivity {id:string;kind:'student'|'staff'|'visitor';person_id:string;name:string;avatar_url:string|null;detail:string;direction:'in'|'out'|null;status:'pending'|'approved'|'in'|'out';occurred_at:Date;state:string|null}
 interface Pass {id:string;student_id:string;plan_id:string|null;kind:'student'|'pickup';expires_at:Date;used_at:Date|null;revoked_at:Date|null}
 interface VisitorRecord {id:string;school_id:string;name:string;phone:string;purpose:string;host_user_id:string|null;photo_key:string|null;photo_type:string|null;photo_hash:string|null;category:string;recorded_by:string;decided_by:string|null;state:string;revision:number;request_id:string|null;created_at:Date;expires_at:Date;decided_at:Date|null;checked_in_at:Date|null;checked_out_at:Date|null;host_name?:string;school_name?:string}
 function visitorView(v:VisitorRecord) {
@@ -180,7 +180,11 @@ export class GateService {
    ORDER BY v.created_at DESC,v.id DESC LIMIT 100`.execute(this.db)).rows;
   const hosts=await this.db.selectFrom('school_memberships as m').innerJoin('users as u','u.id','m.user_id').select(['u.id','u.first_name','u.last_name']).where('m.school_id','=',school).where('m.is_active','=',true).where('u.is_active','=',true).where('m.role','in',['admin','staff']).execute();
   const office=await this.db.selectFrom('school_contacts').select(['name','phone']).where('school_id','=',school).where('phone','!=','').orderBy('priority').executeTakeFirst();
-  const activity=(await sql<GateActivity>`WITH rows AS (
+  const activity=(await sql<GateActivity>`WITH day_bounds AS (
+    SELECT date_trunc('day',now() AT TIME ZONE timezone) AT TIME ZONE timezone starts_at,
+      (date_trunc('day',now() AT TIME ZONE timezone)+interval '1 day') AT TIME ZONE timezone ends_at
+    FROM schools WHERE id=${school}::uuid
+  ), rows AS (
     SELECT 'student'::text kind,event.id::text id,student.id::text person_id,concat(person.first_name,' ',person.last_name) name,
       COALESCE(NULLIF(student.avatar_url,''),person.avatar_url) avatar_url,COALESCE(class.grade||' '||class.section,'Student') detail,
       event.direction,event.occurred_at,NULL::text state
@@ -196,11 +200,21 @@ export class GateService {
     FROM gate_staff_events event JOIN staff_profiles profile ON profile.id=event.staff_profile_id AND profile.school_id=event.school_id
     LEFT JOIN users account ON account.id=profile.user_id WHERE event.school_id=${school}::uuid
     UNION ALL
-    SELECT 'visitor',visitor.id::text,visitor.id::text,visitor.name,NULL::text,visitor.category,
-      CASE WHEN visitor.checked_out_at IS NOT NULL THEN 'out' ELSE 'in' END,
-      COALESCE(visitor.checked_out_at,visitor.checked_in_at),visitor.state
-    FROM gate_visitors visitor WHERE visitor.school_id=${school}::uuid AND visitor.checked_in_at IS NOT NULL
-  ) SELECT * FROM rows ORDER BY occurred_at DESC,id DESC LIMIT 12`.execute(this.db)).rows;
+    SELECT 'visitor',visitor.id::text||':'||activity.status,visitor.id::text,visitor.name,
+      CASE WHEN visitor.photo_key IS NOT NULL THEN '/api/v1/gate/schools/'||visitor.school_id||'/visitors/'||visitor.id||'/photo/' ELSE NULL END,
+      visitor.category,CASE WHEN activity.status IN ('in','out') THEN activity.status ELSE NULL END,
+      activity.occurred_at,activity.status
+    FROM gate_visitors visitor CROSS JOIN LATERAL (
+      SELECT 'pending'::text status,visitor.created_at occurred_at
+        WHERE visitor.state='pending' AND visitor.expires_at>now()
+      UNION ALL SELECT 'approved',visitor.decided_at
+        WHERE visitor.state='approved' AND visitor.expires_at>now()
+      UNION ALL SELECT 'in',visitor.checked_in_at WHERE visitor.checked_in_at IS NOT NULL
+      UNION ALL SELECT 'out',visitor.checked_out_at WHERE visitor.checked_out_at IS NOT NULL
+    ) activity WHERE visitor.school_id=${school}::uuid
+  ) SELECT rows.*,COALESCE(direction,state) status FROM rows CROSS JOIN day_bounds
+    WHERE occurred_at>=starts_at AND occurred_at<ends_at AND occurred_at<=now()
+    ORDER BY occurred_at DESC,id DESC LIMIT 12`.execute(this.db)).rows;
   return {office:office??null,visitors:visitors.map(visitorView),hosts:hosts.map(h=>({id:h.id,name:`${h.first_name} ${h.last_name}`})),pending:visitors.filter(v=>v.state==='pending').length,activity};
  }
  async issuePass(user:AuthUser,school:string,body:unknown) {

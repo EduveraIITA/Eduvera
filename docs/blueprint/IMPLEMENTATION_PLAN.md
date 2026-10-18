@@ -7073,3 +7073,14 @@ through its labelled action; its native input is hidden through the HTML attribu
 inline style and scoped high-specificity fallback. Focused gate tests (13), frontend
 lint and the production build pass. Same-state physical-phone confirmation remains
 the visual acceptance gate.
+
+
+## Today-only gate activity — 18 October 2026
+
+Owner direction: Recent Activity shows only the current calendar day in the
+institution’s configured timezone. Active pending and approved visitor requests
+use their request/decision timestamps; recorded visitor entries and exits appear
+separately alongside student and staff movements. Expired/denied requests are not
+shown as actionable approvals. The compact preview keeps the latest five items,
+with Pending approval, Approved, In and Out badges. Historical records and the
+authorized visitor workflow are retained. Deployment verification is pending.

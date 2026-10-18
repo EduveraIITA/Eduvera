@@ -286,3 +286,6 @@
  .gate-scan-frame { inset:12%; border-radius:18px; }
  .gate-scan-controls button { flex:1 1 132px; justify-content:center; }
 }
+
+.gate-activity-direction.is-pending { color:var(--edura-ink-muted); background:var(--edura-surface-muted,var(--edura-brand-soft)); }
+.gate-activity-direction.is-approved { color:var(--edura-brand); background:var(--edura-brand-soft); }
