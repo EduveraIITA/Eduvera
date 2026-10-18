@@ -1,4 +1,5 @@
 import { GateModule } from "./gate/gate.module.js";
+import { OrganizationModule } from "./organization/organization.module.js";
 import { TeacherFeedbackModule } from "./teacher-feedback/teacher-feedback.module.js";
 import { OperatingRulesModule } from "./operating-rules/operating-rules.module.js";
 import { InvitationEmailWorker } from "./common/invitation-queue.js";
@@ -50,6 +51,7 @@ import { OperatingDayModule } from "./operating-day/operating-day.module.js";
 @Module({
   imports: [
     GateModule,
+    OrganizationModule,
     OperatingRulesModule,
     TeacherFeedbackModule,
     AnalyticsModule,

@@ -33,6 +33,7 @@ const RESTRICTED_CARE_EVENT_TYPES = [
 ] as const;
 
 export const SCHOOL_EVENT_TYPES = [
+  "organization.structure.updated",
   "gate.visitor.updated",
   "departure.updated",
   "transport.updated",
@@ -70,6 +71,7 @@ export const SCHOOL_EVENT_TYPES = [
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
 
 export const REFRESH_TARGETS = [
+  "organization",
   "gate",
   "departure",
   "staff.access",
@@ -156,6 +158,7 @@ function eventDefaults<T extends readonly SchoolEventType[]>(
 }
 
 const defaultsByType = {
+  "organization.structure.updated": ["organization"],
   "gate.visitor.updated": ["gate", "notifications"],
   "departure.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "transport.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
@@ -398,6 +401,7 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "teacher.leave": return [{ queryKey: ["staff-operations"] }];
     case "gate": return [{ queryKey: ["gate"] }, { queryKey: ["gate-admin"] }, { queryKey: ["gate-approvals"] }];
     case "governance": return [{ queryKey: ["governance"] }];
+    case "organization": return [{ queryKey: ["organization"] }];
     case "restricted-care": return [{ queryKey: ["restricted-care"] }];
     case "institution-activation": return [{ queryKey: ["institution-activation"] }];
     case "assessments": return [{ queryKey: ["assessments"] }, { queryKey: ["assessment-detail"] }];
