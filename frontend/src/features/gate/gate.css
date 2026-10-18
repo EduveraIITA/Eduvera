@@ -211,7 +211,7 @@
 .gate-home-content .gate-action-arrow { display:none; }
 .gate-home-content .gate-action--scan { background:linear-gradient(130deg,var(--edura-brand),var(--edura-brand-bright)); color:white; border-color:transparent; }
 .gate-home-content .gate-action--scan .gate-action-icon { color:white; background:#ffffff22; }
-.gate-recent,.gate-logs { margin-top:26px; padding:18px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); background:var(--edura-surface); box-shadow:var(--edura-shadow-card); }
+.gate-recent { margin-top:26px; padding:18px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-card); background:var(--edura-surface); box-shadow:var(--edura-shadow-card); }
 .gate-recent > header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
 .gate-recent h2 { margin:0; font-size:16px; }
 .gate-recent > header button { display:flex; align-items:center; gap:4px; border:0; color:var(--edura-brand); background:transparent; font:inherit; font-size:12px; font-weight:700; }
@@ -254,8 +254,6 @@
 .gate-visitor-result { text-align:center; }
 .gate-scan-controls { display:flex; justify-content:center; gap:10px; margin-top:12px; }
 .gate-scan-controls button { display:flex; align-items:center; gap:8px; min-height:44px; padding:0 16px; border:1px solid var(--edura-border); border-radius:var(--edura-radius-pill); color:var(--edura-ink); background:var(--edura-surface); font:inherit; font-size:12px; font-weight:700; }
-.gate-visitor-log { margin-top:24px; }
-.gate-visitor-log h3 { margin:0 0 12px; font-size:15px; }
 .gate-result-mark { display:grid; place-items:center; width:62px; height:62px; margin:4px auto 14px; border-radius:50%; color:var(--edura-brand); background:var(--edura-brand-soft); }
 .gate-result-mark.is-success { color:var(--edura-positive); background:var(--edura-positive-soft); }
 .gate-visitor-result h2 { margin:0; font-size:19px; }

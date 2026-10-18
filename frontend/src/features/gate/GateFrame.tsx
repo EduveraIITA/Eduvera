@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ClipboardCheck, Clock3, Home, LogOut, MoreHorizontal } from 'lucide-react';
+import { ClipboardCheck, Home, LogOut, MoreHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { OperationsShell } from '../../pages/operations/OperationsShell';
 import { SchoolBrand } from '../school/SchoolBrand';
@@ -7,7 +7,7 @@ import type { SchoolMembership } from '../auth/AuthContext';
 import { useAuth } from '../auth/AuthContext';
 import { isGateOnlyMember } from '../auth/staffAccess';
 
-type GateSection = 'home' | 'approvals' | 'logs';
+type GateSection = 'home' | 'approvals';
 export function GateFrame({ member, hindi, children, languageControl, activeSection = 'home', approvalCount = 0, onSectionChange }: { member: SchoolMembership; hindi: boolean; children: ReactNode; languageControl?: ReactNode; activeSection?: GateSection; approvalCount?: number; onSectionChange?: (section: GateSection) => void }) {
   const auth = useAuth();
   if (!isGateOnlyMember(member)) return <OperationsShell portal={member.role === 'admin' ? 'principal' : 'teacher'} active="gate" pageTitleTrailing={languageControl} title={hindi ? 'प्रवेश और निकास' : 'In & Out'} schoolName={member.school_name}>{children}</OperationsShell>;
@@ -20,7 +20,6 @@ export function GateFrame({ member, hindi, children, languageControl, activeSect
     <nav className="gate-bottom-nav" aria-label={hindi ? 'मुख्य नेविगेशन' : 'Main navigation'}>
       <button className={activeSection === 'home' ? 'is-active' : ''} aria-current={activeSection === 'home' ? 'page' : undefined} onClick={() => onSectionChange?.('home')}><Home/><span>{hindi ? 'होम' : 'Home'}</span></button>
       <button className={activeSection === 'approvals' ? 'is-active' : ''} aria-current={activeSection === 'approvals' ? 'page' : undefined} onClick={() => onSectionChange?.('approvals')}><span className="gate-nav-icon"><ClipboardCheck/>{approvalCount > 0 ? <small>{approvalCount}</small> : null}</span><span>{hindi ? 'अनुमतियाँ' : 'Approvals'}</span></button>
-      <button className={activeSection === 'logs' ? 'is-active' : ''} aria-current={activeSection === 'logs' ? 'page' : undefined} onClick={() => onSectionChange?.('logs')}><Clock3/><span>{hindi ? 'लॉग' : 'Logs'}</span></button>
       <Link to="/teacher/more"><MoreHorizontal/><span>{hindi ? 'और' : 'More'}</span></Link>
     </nav>
   </div>;
