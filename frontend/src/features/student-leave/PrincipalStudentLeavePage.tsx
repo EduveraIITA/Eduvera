@@ -26,7 +26,7 @@ export default function PrincipalStudentLeavePage() {
     staleTime: 15_000,
     refetchOnMount: "always",
   });
-  const selectedId = requestedId ?? queueQuery.data?.results[0]?.id;
+  const selectedId = requestedId;
   const detailQuery = useQuery({
     queryKey: ["school", "principal", "student-leave", "request", selectedId ?? "none"],
     queryFn: () => getLeaveRequest(selectedId!),
@@ -85,9 +85,9 @@ export default function PrincipalStudentLeavePage() {
     <OperationsShell
       portal="principal"
       active="more"
-      title="Student leave"
+      title={requestedId ? "Leave request" : "Student leave"}
       schoolName={membership?.school_name}
-      backTo="/principal/requests"
+      backTo={requestedId ? "/principal/student-leave" : "/principal/requests"}
     >
       {content}
     </OperationsShell>

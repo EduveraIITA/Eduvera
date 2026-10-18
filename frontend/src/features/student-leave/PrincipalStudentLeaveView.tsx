@@ -50,6 +50,13 @@ function formatRange(request: ApiLeaveRequest) {
     : `${formatDate(request.starts_on)} - ${formatDate(request.ends_on)}`;
 }
 
+function queueDate(request: ApiLeaveRequest) {
+  const format = (value: string) => new Intl.DateTimeFormat("en-IN", {
+    day: "numeric", month: "short", timeZone: schoolTimezone,
+  }).format(new Date(`${value}T12:00:00+05:30`));
+  return request.starts_on === request.ends_on ? format(request.starts_on) : `${format(request.starts_on)} – ${format(request.ends_on)}`;
+}
+
 function fileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -77,29 +84,30 @@ function LeaveQueue({ queue, selectedId, pending }: { queue: ApiLeaveRequest[]; 
       <header>
         <div>
           <h2 id="student-leave-queue-heading">Awaiting decision</h2>
-          <p>Guardian-authorised requests ready for school review.</p>
+          <p>Confirmed by a guardian. Ready for review.</p>
         </div>
         <strong aria-label={pending ? "Loading requests" : `${queue.length} ${queue.length === 1 ? "request" : "requests"}`}>{pending ? "…" : queue.length}</strong>
       </header>
       {pending ? <p className="student-leave-queue__empty" role="status">Loading requests…</p> : queue.length ? (
-        <div className="student-leave-queue__rows">
+        <ul className="student-leave-queue__rows">
           {queue.map((request) => (
+            <li key={request.id}>
             <Link
-              key={request.id}
               className={request.id === selectedId ? "is-selected" : undefined}
               to={`/principal/student-leave?request=${encodeURIComponent(request.id)}`}
               aria-current={request.id === selectedId ? "true" : undefined}
             >
-              <span className="student-leave-queue__avatar" aria-hidden="true">{initials(request)}</span>
+              {request.student?.avatar_url ? <img className="student-leave-queue__avatar" src={request.student.avatar_url} alt="" /> : <span className="student-leave-queue__avatar" aria-hidden="true">{initials(request)}</span>}
               <span className="student-leave-queue__copy">
                 <strong>{studentName(request)}</strong>
-                <small>{request.class_name || request.student?.class_name || request.student?.admission_number || request.category_label}</small>
-                <span>{formatRange(request)} · {request.duration_days} {request.duration_days === 1 ? "day" : "days"}</span>
+                <small>{request.class_name || request.student?.class_name || request.student?.admission_number || "Student"} · {request.category_label}</small>
               </span>
+              <span className="student-leave-queue__date"><span aria-label={formatRange(request)}>{queueDate(request)}</span><small>{request.duration_days} {request.duration_days === 1 ? "day" : "days"}</small></span>
               <ChevronRight size={18} aria-hidden="true" />
             </Link>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : <p className="student-leave-queue__empty"><Check size={18} aria-hidden="true" />No requests need a school decision.</p>}
     </section>
   );
@@ -186,7 +194,7 @@ function LeaveDetail({ request, requestedId, busy, error, onDecide }: {
   useEffect(() => {
     if (!requestedId || requestedId !== request.id) return;
     detailRef.current?.focus({ preventScroll: true });
-    detailRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    detailRef.current?.scrollIntoView?.({ behavior: "auto", block: "start" });
   }, [request.id, requestedId]);
 
   return (
@@ -226,10 +234,10 @@ function LeaveDetail({ request, requestedId, busy, error, onDecide }: {
 
 export function PrincipalStudentLeaveView({ queue, selected, requestedId, busy = false, error, queuePending = false, queueUnavailable = false, onDecide }: PrincipalStudentLeaveViewProps) {
   return (
-    <div className="principal-student-leave-page">
+    <div className={`principal-student-leave-page${requestedId ? " principal-student-leave-page--detail" : ""}`}>
       <LeaveQueue queue={queue} selectedId={selected?.id} pending={queuePending} />
       {queueUnavailable ? <p className="student-leave-queue-warning" role="status">The decision queue could not refresh. The opened request is still available below.</p> : null}
-      {selected ? <LeaveDetail request={selected} requestedId={requestedId} busy={busy} error={error} onDecide={onDecide} /> : requestedId ? <section className="student-leave-not-found" role="status"><FileText size={22} /><h2>Request not available</h2><p>It may be outside your school scope or no longer exist.</p><Link to="/principal/student-leave">Open the current queue</Link></section> : null}
+      {selected ? <LeaveDetail request={selected} requestedId={requestedId} busy={busy} error={error} onDecide={onDecide} /> : requestedId ? <section className="student-leave-not-found" role="status"><FileText size={22} /><h2>Request not available</h2><p>It may be outside your school scope or no longer exist.</p><Link to="/principal/student-leave">Open the current queue</Link></section> : <section className="student-leave-placeholder"><FileText size={28} aria-hidden="true" /><h2>{queue.length ? "Select a request" : "You’re all caught up"}</h2><p>{queue.length ? "Review leave dates, the reason and guardian approval in one place." : "Requests ready for your decision will appear here."}</p></section>}
     </div>
   );
 }

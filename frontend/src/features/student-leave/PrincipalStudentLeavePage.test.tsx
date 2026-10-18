@@ -67,6 +67,26 @@ afterEach(() => {
 });
 
 describe("PrincipalStudentLeavePage", () => {
+  it("opens the queue without automatically selecting or fetching the first request", async () => {
+    renderRoute("/principal/student-leave");
+    expect(await screen.findByRole("link", { name: /Aarav Sharma/ })).toBeVisible();
+    expect(getLeaveRequest).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Approve leave" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Student leave" })).toBeVisible();
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("link", { name: /Aarav Sharma/ }));
+    expect(await screen.findByRole("heading", { name: "Leave request" })).toBeVisible();
+    await waitFor(() => expect(getLeaveRequest).toHaveBeenCalledWith("request-1"));
+  });
+
+  it("keeps the empty queue free of decision controls", async () => {
+    vi.mocked(getSchoolLeaveRequests).mockResolvedValue({ results: [] });
+    renderRoute("/principal/student-leave");
+    expect(await screen.findByText("No requests need a school decision.")).toBeVisible();
+    expect(getLeaveRequest).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Approve leave" })).not.toBeInTheDocument();
+  });
+
   it("opens the exact request from attention navigation while retaining the pending queue", async () => {
     renderRoute();
     expect(await screen.findByRole("heading", { name: "Rohan Verma" })).toBeVisible();

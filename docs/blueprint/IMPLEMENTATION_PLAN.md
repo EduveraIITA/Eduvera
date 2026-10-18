@@ -110,6 +110,20 @@ gate host authorization, database deadline configuration, stalled fetch/body,
 caller cancellation and unchanged long-running write behavior. Cloud CI and release
 verification remain required before claiming this change is deployed.
 
+### Student leave mobile review refinement — 18 October 2026
+
+The principal leave workspace now starts with an unselected decision queue rather
+than fetching a first request and stacking its detail below the entire list. An
+explicit request URL opens the detail; on mobile it replaces the queue and the
+shared back control returns to the queue. Desktop retains a side-by-side layout
+with a quiet selection prompt. Grouped rows use inset separators, circular
+initials/photos, compact date/duration metadata and no heavy blue selection rail.
+Existing semantic theme tokens, shared header/navigation, guardian checks,
+attachments, history, approval impact and reasoned rejection remain intact.
+Focused tests cover queue-first navigation, empty queues, exact deep links and
+both decision paths. Physical-phone visual review remains pending; this checkpoint
+does not claim a deployment or completed visual acceptance.
+
 This is the implementation record, not a claim that the entire blueprint is complete.
 The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
 scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,
