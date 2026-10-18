@@ -58,14 +58,37 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     if (csrfToken) headers.set("X-CSRFToken", decodeURIComponent(csrfToken));
   }
 
-  const response = await fetch(path, {
-    ...init,
-    headers,
-    credentials: "same-origin",
-  });
+  // Bound reads, including body download, so an interrupted connection cannot
+  // leave a route loading forever. Writes retain their existing semantics:
+  // aborting a save does not prove it was not committed by the server.
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) forwardAbort();
+  else init.signal?.addEventListener("abort", forwardAbort, { once: true });
+  let timedOut = false;
+  const timer = ["GET", "HEAD"].includes(method) ? setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 20_000) : undefined;
+  let response: Response;
+  let raw: string;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers,
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
+    raw = await response.text();
+  } catch (error) {
+    if (timedOut) throw new ApiError("The school service is taking too long to respond. Please try again.", 408);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener("abort", forwardAbort);
+  }
 
   const contentType = response.headers.get("content-type") ?? "";
-  const raw = await response.text();
   // Proxies can return HTML even with status 200. Never treat that as a saved
   // command, nor display a proxy's entire document inside an error dialog.
   if (contentType.includes("text/html") || /^\s*(?:<!doctype\s+html|<html\b)/i.test(raw)) {

@@ -15,6 +15,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   EVENT_DATABASE_URL: z.string().min(1).optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   EVENT_BROKER_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
   EVENT_WORKER_INTERVAL_MS: z.coerce.number().int().min(100).max(30000).default(500),
   EVENT_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),

@@ -80,6 +80,36 @@ also hidden at the element contract, leaving the intentional Gallery action as t
 only upload affordance. Focused Gate tests, frontend lint and production build pass;
 physical-phone validation remains required after the next Stage rollout.
 
+### Post-login latency and notification containment — 18 October 2026
+
+Live incident diagnostics found seven notification SELECTs running for 14–49
+minutes, API pool acquisition timeouts, and principal-home requests taking 37–65
+seconds. Only those stalled notification reads were cancelled; no records were
+deleted. A bounded reproduction isolated the legacy notification visibility SQL
+fallback. Migration 103 dispatches its source-specific authorization branches in
+PL/pgSQL before planning their queries, preserving current recipient/account,
+membership, guardian, source-state and safeguarding checks and branch precedence.
+It does not cache access grants, bypass authorization or remove notifications.
+
+A rollback-only benchmark against the hosted database returned four recipients'
+visibility counts in 51–178 ms with the proposed function; the previous predicate
+exceeded a three-second deadline for one of those recipients. This measures SQL
+checks, not whole-app loading or a general concurrency capacity guarantee.
+
+API pool statements now have a configurable 15-second server-side deadline
+(`DATABASE_STATEMENT_TIMEOUT_MS`); migration/seed connections are unaffected.
+Client GET/HEAD calls have a 20-second deadline including response-body download,
+with a clear retryable-by-user error instead of an indefinite loader. The existing
+query policy does not automatically retry that timeout; writes keep their existing
+semantics so a delayed save is not misrepresented as cancelled. No cloud tier,
+instance count or pool size was increased.
+
+Focused regression coverage includes 1,000 legacy personal notifications under a
+bounded query deadline, missing-source/foreign-recipient/inactive-account refusal,
+gate host authorization, database deadline configuration, stalled fetch/body,
+caller cancellation and unchanged long-running write behavior. Cloud CI and release
+verification remain required before claiming this change is deployed.
+
 This is the implementation record, not a claim that the entire blueprint is complete.
 The blueprint's companion 40-item backlog, six workflow contracts, schemas and 36 acceptance
 scenarios were referenced in the PDF but were not attached. IDs below are local traceability IDs,

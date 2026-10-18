@@ -24,6 +24,9 @@ export class DatabaseService extends Kysely<Database> implements OnApplicationSh
       max: settings.DATABASE_POOL_MAX,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
+      // Server-side cancellation releases the connection even after an HTTP
+      // client disconnects. Migration/seed pools intentionally remain separate.
+      statement_timeout: settings.DATABASE_STATEMENT_TIMEOUT_MS,
       application_name: "omnischool_node_api",
     });
     super({ dialect: new PostgresDialect({ pool }) });
