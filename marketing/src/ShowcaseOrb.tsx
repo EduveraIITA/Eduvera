@@ -32,10 +32,10 @@ export function ShowcaseOrb({ paused = false, dark = false }: { paused?: boolean
   }, []);
   const isDark = dark || systemDark;
   return <div ref={container} className="showcase-orb" aria-hidden="true">
-    {near && <Orb colors={isDark ? ['#4269e8', '#6c9cff', '#252f82'] : ['#244fd0', '#5c8ee5', '#4b4cba']}
-      backgroundColor={isDark ? '#14243a' : '#f8fafc'} size={1.05} glow={1}
-      bleed={0.65} wobble={0.5} highlight={0.9} trail={0.6} speed={0.35}
+    {near && <Orb colors={isDark ? ['#4f7cff', '#8bc4ff', '#5145cd'] : ['#315deb', '#75adff', '#6558db']}
+      backgroundColor={isDark ? '#14243a' : '#f8fafc'} size={1.05} glow={2.2}
+      bleed={0.85} wobble={0.5} highlight={1.5} trail={0.8} speed={0.35}
       hoverIntensity={0} rotateOnHover={false} followCursor={false} clickPulse={false}
-      intro={false} opacity={isDark ? 0.9 : 0.65} paused={paused || !!reduce} dpr={mobile ? 1 : 1.25} />}
+      intro={false} opacity={isDark ? 1 : 0.9} paused={paused || !!reduce} dpr={mobile ? 1 : 1.25} />}
   </div>;
 }
