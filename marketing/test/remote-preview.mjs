@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 const [origin,login]=process.argv.slice(2);
 assert(new URL(origin).hostname.endsWith('.run.app'));
-await mkdir('screenshots',{recursive:true});const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
+await mkdir('screenshots',{recursive:true});
+const executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const browser=await chromium.launch({executablePath,channel:executablePath?undefined:'chrome'});
 try{
  for(const width of [1440,768,390,320]){
   const page=await browser.newPage({viewport:{width,height:1000},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
