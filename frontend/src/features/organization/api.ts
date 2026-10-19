@@ -28,6 +28,8 @@ export interface OrganizationWorkspace {
   nodes: OrganizationNode[];
   staff: StaffPerson[];
   can_edit: boolean;
+  generated?: boolean;
+  default_notice?: string;
 }
 
 export const personName = (person: StaffPerson) =>
@@ -73,4 +75,24 @@ export function moveNode(
 ): OrganizationNode[] {
   if (parentId && descendants(nodes, id).has(parentId)) return nodes;
   return nodes.map((node) => node.id === id ? { ...node, parent_id: parentId } : node);
+}
+
+export type DropPosition = 'before' | 'inside' | 'after' | 'root';
+export function rearrangeNode(nodes: OrganizationNode[], id: string, targetId: string | null, position: DropPosition): OrganizationNode[] {
+  const source = nodes.find(node => node.id === id);
+  const target = nodes.find(node => node.id === targetId);
+  if (!source || id === targetId || (position !== 'root' && !target)) return nodes;
+  const parentId = position === 'root' ? null : position === 'inside' ? target!.id : target!.parent_id;
+  if (parentId && descendants(nodes,id).has(parentId)) return nodes;
+  const next = nodes.filter(node => node.id !== id);
+  const moved = { ...source, parent_id: parentId };
+  const index = target ? next.findIndex(node => node.id === target.id) : next.length;
+  next.splice(position === 'before' ? index : position === 'after' ? index + 1 : next.length,0,moved);
+  // Match the server's reporting-depth limit before changing the draft.
+  if (next.some(node => {
+    let depth = 1; let parent = node.parent_id;
+    while (parent) { depth++; if (depth > 12) return true; parent = next.find(candidate => candidate.id === parent)?.parent_id ?? null; }
+    return false;
+  })) return nodes;
+  return JSON.stringify(next) === JSON.stringify(nodes) ? nodes : next;
 }

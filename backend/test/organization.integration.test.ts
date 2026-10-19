@@ -78,6 +78,20 @@ suite("organization structure against disposable PostgreSQL", () => {
     await pool?.end();
   });
 
+  it("builds an unsaved stable first chart from current institution roles and active assignments", async () => {
+    const roleId=(await pool.query<{id:string}>("INSERT INTO school_custom_roles(school_id,name,description,created_by) VALUES($1,'Principal','School leadership',$2) RETURNING id",[schoolId,user.id])).rows[0]!.id;
+    await pool.query("INSERT INTO school_custom_role_assignments(school_id,user_id,role_id,assigned_by,valid_from) VALUES($1,$2,$3,$2,CURRENT_DATE-1)",[schoolId,user.id,roleId]);
+    const first=await organization.workspace(user,schoolId);
+    expect(first).toMatchObject({revision:0,generated:true});
+    expect(first.nodes).toEqual(expect.arrayContaining([expect.objectContaining({name:'Principal',member_ids:[staffId]})]));
+    expect((await organization.workspace(user,schoolId)).nodes).toEqual(first.nodes);
+    expect((await pool.query('SELECT count(*)::int count FROM organization_structures WHERE school_id=$1',[schoolId])).rows[0].count).toBe(0);
+    await pool.query("UPDATE school_custom_role_assignments SET valid_from=CURRENT_DATE-2,valid_until=CURRENT_DATE-1 WHERE role_id=$1",[roleId]);
+    const expired=await organization.workspace(user,schoolId);
+    expect(expired.nodes.find(node=>node.name==='Principal')?.member_ids).toEqual([]);
+    expect(expired.nodes.find(node=>node.name==='Administrators')?.member_ids).toEqual([staffId]);
+  });
+
   it("saves and replays with an immutable revision, audit record and event", async () => {
     expect((await organization.workspace(user, schoolId)).revision).toBe(0);
     const input = { expected_revision: 0, request_id: requestId, nodes: nodes() };
@@ -95,7 +109,9 @@ suite("organization structure against disposable PostgreSQL", () => {
       event_type: "organization.structure.updated",
       action: "organization.structure.saved",
     }]);
-    expect((await organization.workspace(user, schoolId)).nodes).toHaveLength(2);
+    const saved=await organization.workspace(user,schoolId);
+    expect(saved.nodes).toHaveLength(2);
+    expect(saved.generated).toBe(false);
   });
 
   it("serializes concurrent editors and retains only one next revision", async () => {
@@ -110,4 +126,9 @@ suite("organization structure against disposable PostgreSQL", () => {
     expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
     expect((await organization.workspace(user, schoolId)).revision).toBe(2);
   });
+  it("preserves an intentionally empty saved chart",async()=>{
+    await organization.save(user,schoolId,{expected_revision:2,request_id:randomUUID(),nodes:[]});
+    expect(await organization.workspace(user,schoolId)).toMatchObject({revision:3,nodes:[],generated:false});
+  });
+
 });

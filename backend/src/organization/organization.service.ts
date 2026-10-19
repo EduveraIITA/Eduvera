@@ -16,6 +16,8 @@ import {
   type OrganizationNode,
 } from "./organization.contracts.js";
 
+import { initialOrganization, type OrganizationRole } from "./organization.defaults.js";
+
 interface OrganizationStaff {
   id: string;
   first_name: string;
@@ -80,7 +82,43 @@ export class OrganizationService {
         WHERE profile.school_id=${schoolId}::uuid
         ORDER BY profile.status,profile.first_name,profile.last_name
       `.execute(transaction)).rows;
-      return { revision: structure?.revision ?? 0, nodes, staff, can_edit: true };
+      const generated = !structure && nodes.length === 0;
+      let defaultNotice: string | undefined;
+      if (generated) {
+        const school = await transaction.selectFrom('schools').select('name').where('id','=',schoolId).executeTakeFirstOrThrow();
+        const roles = (await sql<OrganizationRole>`
+          WITH eligible AS (
+            SELECT profile.id,profile.user_id,COALESCE(membership.role,'staff') role
+            FROM staff_profiles profile
+            LEFT JOIN school_memberships membership ON membership.school_id=profile.school_id AND membership.user_id=profile.user_id
+            LEFT JOIN users account ON account.id=profile.user_id
+            WHERE profile.school_id=${schoolId}::uuid AND profile.status='active'
+              AND (profile.user_id IS NULL OR (membership.is_active AND account.is_active AND membership.role IN ('admin','staff')))
+          ), assignments AS (
+            SELECT assignment.role_id,eligible.id staff_id FROM school_custom_role_assignments assignment
+            JOIN eligible ON eligible.user_id=assignment.user_id
+            JOIN schools school ON school.id=assignment.school_id
+            WHERE assignment.school_id=${schoolId}::uuid
+              AND assignment.valid_from<=(now() AT TIME ZONE school.timezone)::date
+              AND (assignment.valid_until IS NULL OR assignment.valid_until>=(now() AT TIME ZONE school.timezone)::date)
+          )
+          SELECT role.id::text,role.name,role.description,
+            ARRAY(SELECT staff_id FROM assignments WHERE role_id=role.id ORDER BY staff_id) member_ids
+          FROM school_custom_roles role WHERE role.school_id=${schoolId}::uuid
+          UNION ALL
+          SELECT base.role,CASE WHEN base.role='admin' THEN 'Administrators' ELSE 'Staff' END,''::text,
+            ARRAY(SELECT eligible.id FROM eligible WHERE eligible.role=base.role
+              AND NOT EXISTS(SELECT 1 FROM assignments WHERE staff_id=eligible.id) ORDER BY eligible.id)
+          FROM (SELECT DISTINCT role FROM eligible WHERE NOT EXISTS(SELECT 1 FROM assignments WHERE staff_id=eligible.id)) base
+          ORDER BY name,id
+        `.execute(transaction)).rows;
+        // Do not silently omit roles when the existing editor capacity is exceeded.
+        if (roles.length < 250 && roles.every(role => role.member_ids.length <= 500)) {
+          return { revision: 0, nodes: initialOrganization(schoolId, school.name, roles), staff, can_edit: true, generated: true };
+        }
+        defaultNotice = 'Your roles exceed the chart capacity (249 roles and 500 people per role). Start with a smaller chart using Add.';
+      }
+      return { revision: structure?.revision ?? 0, nodes, staff, can_edit: true, generated: false, default_notice: defaultNotice };
     });
   }
 

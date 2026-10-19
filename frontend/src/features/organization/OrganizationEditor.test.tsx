@@ -5,6 +5,7 @@ import { resolveSchoolEvent } from "../school/schoolEventProtocol";
 import {
   descendants,
   moveNode,
+  rearrangeNode,
   type OrganizationNode,
   type OrganizationWorkspace,
 } from "./api";
@@ -87,7 +88,7 @@ describe("organization workspace", () => {
     mount();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Academics" } });
     expect(screen.getByRole("button", { name: /^Principal Led by/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Academics/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Academics/ })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "missing" } });
     expect(screen.getByText("No matching nodes")).toBeInTheDocument();
   });
@@ -118,7 +119,7 @@ describe("organization workspace", () => {
       .mockImplementationOnce((_: string, body: { nodes: OrganizationNode[] }) =>
         Promise.resolve({ nodes: body.nodes, revision: 2, replayed: true }));
     mount();
-    fireEvent.click(screen.getByRole("button", { name: /Academics/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Academics/ }));
     fireEvent.change(screen.getByLabelText("Node name"), { target: { value: "Learning" } });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -132,7 +133,7 @@ describe("organization workspace", () => {
   it("preserves a draft on revision conflict", async () => {
     saveOrganization.mockRejectedValue(new ApiError("Changed by another administrator", 409));
     mount();
-    fireEvent.click(screen.getByRole("button", { name: /Academics/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Academics/ }));
     fireEvent.change(screen.getByLabelText("Node name"), { target: { value: "Learning" } });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -157,5 +158,53 @@ describe("organization workspace", () => {
       payload: { refresh: ["organization"] },
     }), "organization.structure.updated", "admin");
     expect(resolution.invalidations).toContainEqual({ queryKey: ["organization"] });
+  });
+});
+
+
+describe('role default charts and rearranging',()=>{
+  it('lets the first role chart be saved immediately',async()=>{
+    saveOrganization.mockResolvedValue({revision:1,nodes:data.nodes});
+    mount({...data,revision:0,generated:true});
+    fireEvent.click(screen.getByRole('button',{name:'Save',exact:true}));
+    await waitFor(()=>expect(saveOrganization).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({expected_revision:0,nodes:data.nodes})));
+  });
+  it('reparents, reorders and rejects cycles',()=>{
+    const third={...data.nodes[1]!,id:'b572d92c-3646-4a6f-ac22-6383824d5392',name:'Office'};
+    const nodes=[...data.nodes,third];
+    expect(rearrangeNode(nodes,third.id,data.nodes[1]!.id,'before').map(node=>node.name)).toEqual(['Principal','Office','Academics']);
+    const nested=rearrangeNode(nodes,third.id,data.nodes[1]!.id,'inside');
+    expect(nested.find(node=>node.id===third.id)?.parent_id).toBe(data.nodes[1]!.id);
+    expect(rearrangeNode(nested,data.nodes[0]!.id,third.id,'inside')).toBe(nested);
+    expect(rearrangeNode(nodes,third.id,null,'root').find(node=>node.id===third.id)?.parent_id).toBeNull();
+  });
+  it('supports keyboard rearranging, undo and saving the changed reporting line',async()=>{
+    mount();
+    fireEvent.keyDown(screen.getByRole('button',{name:'Move Academics'}),{key:'ArrowLeft'});
+    expect(screen.getByRole('button',{name:'Save',exact:true})).toBeEnabled();
+    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    expect(screen.getByRole('button',{name:'Save',exact:true})).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole('button',{name:'Move Academics'}),{key:'ArrowLeft'});
+    saveOrganization.mockResolvedValue({revision:2,nodes:rearrangeNode(data.nodes,data.nodes[1]!.id,null,'root')});
+    fireEvent.click(screen.getByRole('button',{name:'Save',exact:true}));
+    await waitFor(()=>expect(saveOrganization).toHaveBeenCalled());
+    const payload=saveOrganization.mock.calls[0]![1] as {nodes:OrganizationNode[]};
+    expect(payload.nodes.find(node=>node.name==='Academics')?.parent_id).toBeNull();
+  });
+  it('moves a node through a touch or mouse pointer drag to the top level',()=>{
+    mount();
+    const handle=screen.getByRole('button',{name:'Move Academics'});
+    Object.defineProperty(handle,'setPointerCapture',{value:vi.fn(),configurable:true});
+    const drop=screen.getByText('Drop here for top level');
+    Object.defineProperty(document,'elementFromPoint',{value:()=>drop,configurable:true});
+    for(const [type,x] of [['pointerdown',100],['pointermove',130],['pointerup',130]] as const){
+      fireEvent(handle,Object.assign(new Event(type,{bubbles:true}),{pointerId:1,isPrimary:true,button:0,clientX:x,clientY:150}));
+    }
+    expect(screen.getByRole('button',{name:'Save',exact:true})).toBeEnabled();
+    expect(screen.getByText('Reporting line updated. Save to keep your changes.')).toBeVisible();
+  });
+  it('disables moving when the workspace is read only',()=>{
+    mount({...data,can_edit:false});
+    expect(screen.getByRole('button',{name:'Move Academics'})).toBeDisabled();
   });
 });

@@ -9,9 +9,12 @@ import {
 import { useState, type CSSProperties } from "react";
 import {
   personName,
+  type DropPosition,
   type OrganizationNode,
   type StaffPerson,
 } from "./api";
+
+import { OrganizationMoveHandle, type DropTarget } from "./OrganizationMoveHandle";
 
 const nodeIcons = {
   leadership: Network,
@@ -52,6 +55,8 @@ interface OrganizationTreeProps {
   mode: "hierarchy" | "list";
   filtering: boolean;
   onSelect: (id: string) => void;
+  editable: boolean;
+  onMove: (id:string,target:string|null,position:DropPosition)=>void;
 }
 
 export function OrganizationTree({
@@ -62,7 +67,11 @@ export function OrganizationTree({
   mode,
   filtering,
   onSelect,
+  editable,
+  onMove,
 }: OrganizationTreeProps) {
+  const [dragging,setDragging] = useState<string|null>(null);
+  const [drop,setDrop] = useState<DropTarget|null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   const renderLevel = (parentId: string | null, depth: number) => {
@@ -82,7 +91,14 @@ export function OrganizationTree({
         );
         const folded = !filtering && collapsed.has(node.id);
         return <li key={node.id} className="organization-tree__branch" style={{ "--org-depth": depth } as CSSProperties}>
-          <div className="organization-tree__row">
+          <div data-org-node={node.id} className={`organization-tree__row${dragging===node.id?' is-dragging':''}${drop?.id===node.id?' is-drop-'+drop.position:''}`}>
+            <OrganizationMoveHandle node={node} nodes={nodes} disabled={!editable || filtering}
+              onDetails={()=>onSelect(node.id)}
+              onPreview={(id,target)=>{setDragging(id);setDrop(target);}}
+              onMove={(id,target,position)=>{
+                onMove(id,target,position);
+                if(target && position==='inside')setCollapsed(previous=>{const next=new Set(previous);next.delete(target);return next;});
+              }}/>
             <button
               type="button"
               className={`organization-node is-${node.tone}${selected === node.id ? " is-selected" : ""}`}
@@ -117,6 +133,9 @@ export function OrganizationTree({
   };
 
   return <div className={`organization-tree organization-tree--${mode}`}>
+    <p id="organization-drag-help" className="organization-drag-help">Drag the grip to move a role. Use arrow keys to reorder or change its level; Enter opens details.{filtering?' Clear search to drag.':''}</p>
+    {editable ? <div data-org-drop-root className={`organization-root-drop${drop?.position==='root'?' is-active':''}`}>Drop here for top level</div> : null}
+    <span className="organization-move-announcement" role="status">{dragging && drop ? drop.position==='root'?'Move to top level':`Move ${drop.position==='inside'?'under':drop.position} ${nodes.find(node=>node.id===drop.id)?.name??''}`:''}</span>
     {renderLevel(null, 0)}
   </div>;
 }
