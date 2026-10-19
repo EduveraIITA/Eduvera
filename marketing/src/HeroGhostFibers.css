@@ -1,0 +1,17 @@
+/* Background stays behind the existing copy, product captures and links. */
+.campus-hero { position: relative; isolation: isolate; }
+.hero-ghost-fibers {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: .5;
+  mask-image: linear-gradient(90deg, #0003, #0008 38%, #000 65%), linear-gradient(#000, #000 80%, transparent);
+  mask-composite: intersect;
+}
+.hero-ghost-fibers > .ghost-fibers-container { position: absolute; inset: 0; }
+@media (prefers-color-scheme: dark) { .hero-ghost-fibers { opacity: .6; } }
+@media (max-width: 650px) {
+  .hero-ghost-fibers { opacity: .35; mask-image: linear-gradient(transparent, #0004 30%, #000 65%, transparent); mask-composite: add; }
+}

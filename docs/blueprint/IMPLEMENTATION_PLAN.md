@@ -7115,3 +7115,20 @@ Cycles and over-depth moves are rejected; Undo and explicit Save retain the
 existing revision conflict, audit and outbox contracts. No role permissions or
 formal appointments change. This extends the currently deployed organization
 domain without Digital Twin dependencies. Local/hosted verification is pending.
+
+## Marketing hero Ghost Fibers — 19 October 2026
+
+Owner approved the Ghost Fibers direction for www.thatcampus.com, specifically
+its marketing hero background. The existing hero copy, actual product captures,
+links and layout are retained. React Bits Ghost Fibers (JavaScript + CSS variant,
+upstream license retained under marketing/licenses) replaces the hero's flow
+backdrop. Fine blue/indigo strands use a low-opacity directional mask; system
+dark mode changes the palette. Mobile uses fewer threads and a lower pixel ratio.
+The existing Pause motion control and reduced-motion preference pause the fibers;
+the upstream renderer suspends animation offscreen and in hidden documents. A
+static hero surface remains when WebGL2 is unavailable. This does not modify the
+application sign-in background or add Digital Twin dependencies.
+
+Local verification: marketing lint, production build (including prerendering),
+and all 22 marketing tests pass. Browser verification and hosted release evidence
+are tracked with the owning PR; deployment must not be inferred from this record.
