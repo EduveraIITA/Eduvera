@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../lib/api";
 import {
   personName,
+  rearrangeNode,
   saveOrganization,
   type OrganizationNode,
   type OrganizationWorkspace,
@@ -24,7 +25,7 @@ export function OrganizationEditor({
   onReload,
 }: OrganizationEditorProps) {
   const [nodes, setNodes] = useState(data.nodes);
-  const [saved, setSaved] = useState(data.nodes);
+  const [saved, setSaved] = useState<OrganizationNode[]>(data.generated ? [] : data.nodes);
   const [revision, setRevision] = useState(data.revision);
   const [history, setHistory] = useState<OrganizationNode[][]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -153,7 +154,7 @@ export function OrganizationEditor({
       <div>
         <span>Institution structure</span>
         <h2>Make reporting lines easy to understand</h2>
-        <p>Connect leadership, departments, teams and positions to people already in Staff.</p>
+        <p>Drag roles to rearrange reporting lines. Drop above or below a role to change its order.</p>
       </div>
       <div className="organization-intro__actions">
         <button type="button" className="organization-secondary-button" disabled={!history.length || busy} onClick={() => {
@@ -167,6 +168,7 @@ export function OrganizationEditor({
       </div>
     </section>
 
+    {data.generated && revision === 0 ? <p className="organization-boundary">Your first chart is based on current roles and active staff. Arrange it, then save.</p> : null}
     <p className="organization-boundary"><strong>Descriptive only.</strong> Changing this view never changes app permissions, governance authority or formal appointments.</p>
     <div className="organization-status" aria-live="polite">
       {notice || (dirty ? "Unsaved changes" : `All changes saved · revision ${revision}`)}
@@ -193,7 +195,7 @@ export function OrganizationEditor({
         {!nodes.length ? <div className="organization-empty">
           <span><Network size={32} /></span>
           <h3>Start with one clear reporting line</h3>
-          <p>Add leadership first. Departments, teams, positions and staff can be connected progressively.</p>
+          <p>{data.default_notice ?? "Add leadership first. Departments, teams, positions and staff can be connected progressively."}</p>
           <button type="button" className="organization-primary-button" disabled={!editable} onClick={() => add(null)}><Plus size={18} />Add your first node</button>
         </div> : !visible.size ? <div className="organization-empty">
           <span><Search size={29} /></span>
@@ -208,6 +210,13 @@ export function OrganizationEditor({
           mode={mode}
           filtering={Boolean(search.trim())}
           onSelect={setSelected}
+          editable={editable}
+          onMove={(id,target,position) => {
+            const next = rearrangeNode(nodes,id,target,position);
+            if (next === nodes) { setNotice('That move is not available. Choose a different reporting line.'); return; }
+            change(next);
+            setNotice('Reporting line updated. Save to keep your changes.');
+          }}
         />}
       </div>
     </section>

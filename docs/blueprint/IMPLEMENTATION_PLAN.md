@@ -7098,3 +7098,20 @@ separately alongside student and staff movements. Expired/denied requests are no
 shown as actionable approvals. The compact preview keeps the latest five items,
 with Pending approval, Approved, In and Out badges. Historical records and the
 authorized visitor workflow are retained. Deployment verification is pending.
+
+
+## Role-based first organization chart — 19 October 2026
+
+The current organization workspace now offers a first draft from the institution’s
+configured roles and current active staff assignments. Roles are peers below the
+institution until an administrator arranges reporting lines; permission grants do
+not imply reporting authority. Multi-role staff appear in each applicable role.
+Expired/future assignments and inactive staff/accounts are excluded. Existing
+saved charts, including intentionally empty charts, are never regenerated.
+
+Mouse/touch grip dragging supports nesting, sibling order and top-level moves.
+Arrow keys and the existing reporting-parent editor offer keyboard alternatives.
+Cycles and over-depth moves are rejected; Undo and explicit Save retain the
+existing revision conflict, audit and outbox contracts. No role permissions or
+formal appointments change. This extends the currently deployed organization
+domain without Digital Twin dependencies. Local/hosted verification is pending.
