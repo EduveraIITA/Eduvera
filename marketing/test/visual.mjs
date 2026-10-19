@@ -11,6 +11,8 @@ await new Promise(r=>server.listen(8081,'127.0.0.1',r));
 const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
 await mkdir('screenshots',{recursive:true});
 const names=['attendance','timetable','family','ai-context','ai-sources'];
+const labels={'attendance':'attendance walkthrough','timetable':'timetable walkthrough','family':'family walkthrough','ai-context':'ai attendance walkthrough','ai-sources':'ai review walkthrough'};
+const filmControl=(page,name,action)=>page.locator(`.demo-${name}`).getByRole('button',{name:`${action} ${labels[name]}`,exact:true});
 const inlineVideo=name=>`.demo-${name} .demo-device video`;
 async function visibleFilm(page,name) {
  await page.locator(inlineVideo(name)).scrollIntoViewIfNeeded();
@@ -21,7 +23,10 @@ async function waitForPlayback(page,name,playing) {
  await page.waitForFunction(({selector,playing})=>{
   const video=document.querySelector(selector);
   return video && (playing ? !video.paused && video.currentTime>0 : video.paused);
- },{selector:inlineVideo(name),playing});
+ },{selector:inlineVideo(name),playing}).catch(async error=>{
+  const state=await page.locator(inlineVideo(name)).evaluate(video=>({paused:video.paused,time:video.currentTime,ready:video.readyState,error:video.error?.message,box:video.getBoundingClientRect().toJSON()}));
+  throw new Error(`${name}: expected playing=${playing}; ${JSON.stringify(state)}`,{cause:error});
+ });
 }
 try{
  for(const [name,width,height,colorScheme,reducedMotion] of [
@@ -40,9 +45,9 @@ try{
    await waitForPlayback(page,demo,reducedMotion!=='reduce');
    if(reducedMotion==='reduce') {
     // System reduced motion suppresses autoplay; explicit playback still works.
-    await page.getByRole('button',{name:`Play ${demo} walkthrough`,exact:true}).click();
+    await filmControl(page,demo,'Play').click();
     await waitForPlayback(page,demo,true);
-    await page.getByRole('button',{name:`Pause ${demo} walkthrough`,exact:true}).click();
+    await filmControl(page,demo,'Pause').click();
     await waitForPlayback(page,demo,false);
    }
    await page.screenshot({path:`screenshots/${name}-${demo}-film.png`});
@@ -53,10 +58,11 @@ try{
    assert.equal(await page.getByRole('button',{name:'Resume motion',exact:true}).getAttribute('aria-pressed'),'true');
    for(const demo of names) {
     await visibleFilm(page,demo);await waitForPlayback(page,demo,false);
-    assert(!(await page.getByRole('button',{name:`Play ${demo} walkthrough`,exact:true}).isEnabled()),`${demo}: manual playback bypassed global pause`);
+    assert(!(await filmControl(page,demo,'Play').isEnabled()),`${demo}: manual playback bypassed global pause`);
    }
-   assert(await page.locator('.demo-device video').evaluateAll(videos=>videos.length===3&&videos.every(video=>video.paused)));
+   assert(await page.locator('.demo-device video').evaluateAll((videos,count)=>videos.length===count&&videos.every(video=>video.paused),names.length));
    await page.getByRole('button',{name:'Resume motion',exact:true}).click();
+   await visibleFilm(page,'family');
    await waitForPlayback(page,'family',true);
   }
   await visibleFilm(page,'attendance');

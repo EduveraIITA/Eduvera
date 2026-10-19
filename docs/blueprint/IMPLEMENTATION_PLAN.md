@@ -7132,3 +7132,17 @@ application sign-in background or add Digital Twin dependencies.
 Local verification: marketing lint, production build (including prerendering),
 and all 22 marketing tests pass. Browser verification and hosted release evidence
 are tracked with the owning PR; deployment must not be inferred from this record.
+
+
+### Website visual release check repair — 19 October 2026
+
+The Ghost Fibers website release reached the existing full visual smoke check
+but stopped before image build/promotion on a walkthrough playback wait. Local
+reproduction additionally exposed stale AI video control labels, a three-video
+count despite five current films, and a resume assertion targeting an offscreen
+film. The check now uses each existing accessible control label, asserts all five
+films remain paused globally, and scrolls the resumed film into view. Playback
+timeouts include the actual media state. No playback assertion is removed or
+relaxed; the application video behavior and media assets are unchanged. Local
+full visual checks pass desktop, mobile, small mobile, tablet, dark desktop and
+dark mobile. Hosted release verification remains pending as this is recorded.
