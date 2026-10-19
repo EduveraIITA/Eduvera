@@ -25,7 +25,7 @@ const screens = {
 } as const;
 type ScreenKey = keyof typeof screens;
 type OpenScreen = (key:ScreenKey)=>void;
-function Brand(){return <a className="brand" href="/" aria-label="ThatCampus home"><img src="/thatcampus-logo-small.webp" width="112" height="56" alt=""/></a>}
+function Brand(){return <a className="brand" href="/" aria-label="ThatCampus home"><picture><source media="(prefers-color-scheme: dark)" srcSet="/thatcampus-logo-dark-small.webp"/><img src="/thatcampus-logo-small.webp" width="112" height="56" alt=""/></picture></a>}
 function ScreenImage({name,priority=false,full=false}:{name:ScreenKey;priority?:boolean;full?:boolean}) {
  const screen = screens[name];
  const wide = name==='insights'||name==='planner';
