@@ -7146,3 +7146,15 @@ timeouts include the actual media state. No playback assertion is removed or
 relaxed; the application video behavior and media assets are unchanged. Local
 full visual checks pass desktop, mobile, small mobile, tablet, dark desktop and
 dark mobile. Hosted release verification remains pending as this is recorded.
+
+
+### Website visual browser codec correction — 19 October 2026
+
+Hosted playback diagnostics show the standalone Playwright Chromium binary
+rejects the preserved attendance MP4 with DEMUXER_ERROR_NO_SUPPORTED_STREAMS
+(readyState 0, paused, time 0). The website-only job now installs Google Chrome
+and the visual check launches its Chrome channel, which includes the H.264
+codec required by the unchanged product films. An explicit local executable
+path remains supported. No playback or media-error assertion is skipped.
+All six full visual layouts passed locally with a codec-capable Chromium.
+Hosted Chrome verification and candidate promotion remain required.

@@ -196,7 +196,7 @@ jobs:
           npm run lint
           npm test
           npm run build
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chrome
           node test/visual.mjs
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Build website image with layer cache

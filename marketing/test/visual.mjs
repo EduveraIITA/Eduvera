@@ -8,7 +8,9 @@ import {createHandler,settings} from '../server.mjs';
 // by browser.mjs against its isolated PostgreSQL database.
 const server=createServer(createHandler({db:{query:async()=>({rows:[]})},config:settings({})}));
 await new Promise(r=>server.listen(8081,'127.0.0.1',r));
-const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
+// The preserved H.264 product films need Chrome's proprietary media codecs.
+const executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const browser=await chromium.launch({executablePath,channel:executablePath?undefined:'chrome'});
 await mkdir('screenshots',{recursive:true});
 const names=['attendance','timetable','family','ai-context','ai-sources'];
 const labels={'attendance':'attendance walkthrough','timetable':'timetable walkthrough','family':'family walkthrough','ai-context':'ai attendance walkthrough','ai-sources':'ai review walkthrough'};
