@@ -7182,3 +7182,17 @@ The preceding Ghost Fibers release c3206e5a3879541112bb88bb546f986ed692b482
 was verified live via public /readyz and hero markup. Actions run 39295253847
 passed all checks, all six full website visual layouts, candidate browser checks,
 and website-only promotion to revision thatcampus-web-00232-gup.
+
+
+## Flowing showcase lines — 20 October 2026
+
+Owner replaced the circular Orb direction with the supplied flowing-line reference,
+retaining the bright blue/indigo glow across attendance, timetable, family and AI.
+ShowcaseLines draws thin animated strands and travelling highlights on Canvas 2D.
+The hero Ghost Fibers, content, films, screenshots and layouts remain unchanged.
+The shared Pause motion and reduced-motion preference freeze the animation;
+offscreen and hidden-tab rendering stops. Mobile uses fewer strands and capped DPR.
+Local production build, lint and all 23 marketing tests pass. Browser checks pass
+at 320, 390, 768, 1024 and 1440 pixels, including light/dark layouts, changing
+animation frames, pause controls, no page errors and no horizontal overflow.
+Hosted release checks and public promotion remain required.
