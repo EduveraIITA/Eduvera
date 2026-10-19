@@ -7158,3 +7158,27 @@ codec required by the unchanged product films. An explicit local executable
 path remains supported. No playback or media-error assertion is skipped.
 All six full visual layouts passed locally with a codec-capable Chromium.
 Hosted Chrome verification and candidate promotion remain required.
+
+## Consistent Orb showcase backgrounds — 19 October 2026
+
+Owner selected the Orb preview for all four marketing showcase backgrounds:
+attendance, timetable, family communication and the shared AI walkthrough area.
+A shared React Bits Orb component replaces the previous flow/grid/orbit backdrops
+in the first three scenes and adds one background behind the two AI films.
+The hero keeps Ghost Fibers; the original screenshots, recorded films, content,
+layout, playback controls and feature cards remain unchanged. Orb colors follow
+the blue/indigo theme with system light/dark palettes; the AI scene stays dark.
+Background canvases initialize near the viewport and stop animating offscreen or
+in hidden tabs. Global Pause motion and reduced motion produce a static frame;
+mobile rendering uses a lower pixel ratio. Upstream license is retained.
+
+Verification: marketing lint, production build/prerender and all 23 marketing
+tests pass locally. Actual Chromium layout review covered 1440px light/dark,
+390px light and 320px dark, including all four canvases, pause control and no
+horizontal overflow or browser errors. Mobile glow sizing was adjusted after
+review. Hosted verification and deployment remain release gates.
+
+The preceding Ghost Fibers release c3206e5a3879541112bb88bb546f986ed692b482
+was verified live via public /readyz and hero markup. Actions run 39295253847
+passed all checks, all six full website visual layouts, candidate browser checks,
+and website-only promotion to revision thatcampus-web-00232-gup.

@@ -1,0 +1,19 @@
+.showcase-orb {
+  position: absolute;
+  width: min(125%, 720px);
+  aspect-ratio: 1;
+  left: 54%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  mask-image: radial-gradient(circle, #000 42%, transparent 72%);
+}
+.showcase-orb > .orb-container { position: absolute; inset: 0; }
+.ai-film-grid { position: relative; isolation: isolate; }
+.ai-film-grid > .showcase-orb { width: 135%; max-width: 760px; }
+@media (max-width: 650px) {
+  .showcase-orb { width: 112%; left: 50%; }
+  .ai-film-grid > .showcase-orb { width: 135%; }
+}

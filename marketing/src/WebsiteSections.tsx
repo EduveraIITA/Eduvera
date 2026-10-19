@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowsOut, CalendarBlank, CaretDown, Check, ChatsCircle, ClipboardText, Pause, Play, ShieldCheck, SlidersHorizontal, Sparkle, UsersThree } from '@phosphor-icons/react';
 import { motion, useReducedMotion } from 'motion/react';
-import { PhysicsBackdrop } from './PhysicsBackdrop';
+import { ShowcaseOrb } from './ShowcaseOrb';
 
 type DemoName = 'attendance' | 'timetable' | 'family' | 'ai-context' | 'ai-sources';
 const demos = {
@@ -90,19 +90,19 @@ export function Capabilities({paused}:{paused:boolean}) {
     <div className="story-grid">
       <motion.article className="feature-scene attendance-scene" {...reveal}>
         <div className="scene-copy"><ClipboardText size={26} aria-hidden="true"/><h3>Know exactly<br/>where to act.</h3><p>Start with the whole school. Choose a class. Reach the register that needs attention.</p><ol className="workflow-steps"><li><span>Find the priority</span><small>Registers grouped by class or period</small></li><li><span>See the detail</span><small>Submission status at the source</small></li><li><span>Follow through</span><small>Open the register and its recorded decisions</small></li></ol><a className="text-link" href="#features">Explore attendance <ArrowRight size={18}/></a></div>
-        <div className="scene-stage"><PhysicsBackdrop variant="flow" paused={paused}/><DemoFilm name="attendance" paused={paused}/></div>
+        <div className="scene-stage"><ShowcaseOrb paused={paused}/><DemoFilm name="attendance" paused={paused}/></div>
       </motion.article>
       <motion.article className="feature-scene timetable-scene" {...reveal}>
         <div className="scene-copy"><CalendarBlank size={26} aria-hidden="true"/><h3>A place for<br/>every lesson.</h3><p>See classes in the context of the day. Move between the detail and the whole week.</p></div>
-        <div className="scene-stage"><PhysicsBackdrop variant="grid" paused={paused}/><DemoFilm name="timetable" paused={paused}/></div>
+        <div className="scene-stage"><ShowcaseOrb paused={paused}/><DemoFilm name="timetable" paused={paused}/></div>
         <p className="scene-footnote">Timeline view available in Experimental settings.</p>
       </motion.article>
       <motion.article className="feature-scene family-scene" {...reveal}>
         <div className="scene-copy"><ChatsCircle size={26} aria-hidden="true"/><h3>Bring families<br/>into the picture.</h3><p>Attendance, lessons and requests in a view built around their child.</p></div>
-        <div className="scene-stage"><PhysicsBackdrop variant="orbit" paused={paused}/><DemoFilm name="family" paused={paused}/></div>
+        <div className="scene-stage"><ShowcaseOrb paused={paused}/><DemoFilm name="family" paused={paused}/></div>
       </motion.article>
     </div>
-    <div className="ai-film-section"><div className="ai-film-copy"><span className="eyebrow">ThatCampus AI</span><h3>Ask in context.<br/><span>Keep people in control.</span></h3><p>See a connected attendance workflow: the assistant finds the next overdue register, names who needs a follow-up and prepares a reminder without sending it.</p><ul><li><Check size={17}/> Answers grounded in school records</li><li><Check size={17}/> Source checks stay visible</li><li><Check size={17}/> Proposed changes still require review</li></ul></div><div className="ai-film-grid"><DemoFilm name="ai-context" paused={paused}/><DemoFilm name="ai-sources" paused={paused}/></div></div>
+    <div className="ai-film-section"><div className="ai-film-copy"><span className="eyebrow">ThatCampus AI</span><h3>Ask in context.<br/><span>Keep people in control.</span></h3><p>See a connected attendance workflow: the assistant finds the next overdue register, names who needs a follow-up and prepares a reminder without sending it.</p><ul><li><Check size={17}/> Answers grounded in school records</li><li><Check size={17}/> Source checks stay visible</li><li><Check size={17}/> Proposed changes still require review</li></ul></div><div className="ai-film-grid"><ShowcaseOrb paused={paused} dark/><DemoFilm name="ai-context" paused={paused}/><DemoFilm name="ai-sources" paused={paused}/></div></div>
     <p className="demo-provenance">App walkthroughs use synthetic school data. The AI examples are illustrative product interactions; the public demo does not run a model. Play, pause or enlarge any walkthrough.</p>
   </section>;
 }
