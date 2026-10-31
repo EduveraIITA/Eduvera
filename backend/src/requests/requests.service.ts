@@ -93,6 +93,96 @@ interface StaffActionRow {
   priority?: RequestPriority | null;
 }
 
+/**
+ * Raw counts only screen impossible candidates: off-schedule marks cannot prove
+ * a decline. The final score/completeness still uses every instructional date.
+ * Planned v2 owns those dates; effective scheduling only adds staffing/cover.
+ */
+export function attendanceDeclineWorkQuery(schoolId: string, timezone: string) {
+  return sql<StaffActionRow>`
+  WITH clock AS (SELECT (now() AT TIME ZONE ${timezone})::date AS today),
+  current_cohort AS MATERIALIZED (
+    SELECT student.id,concat_ws(' ',person.first_name,person.last_name) AS student_name,
+      enrollment.class_section_id,enrollment.term_id,enrollment.enrolled_on,
+      concat('Class ',section.grade,section.section) AS class_name
+    FROM students student
+    JOIN school_people person ON person.id=student.person_id
+    JOIN LATERAL (
+      SELECT current_enrollment.class_section_id,current_enrollment.term_id,current_enrollment.enrolled_on
+      FROM enrollments current_enrollment CROSS JOIN clock
+      JOIN academic_terms term ON term.id=current_enrollment.term_id AND term.school_id=${schoolId}::uuid
+      WHERE current_enrollment.student_id=student.id AND current_enrollment.is_active
+        AND current_enrollment.enrolled_on<=clock.today AND clock.today BETWEEN term.starts_on AND term.ends_on
+      ORDER BY current_enrollment.enrolled_on DESC,current_enrollment.id DESC LIMIT 1
+    ) enrollment ON true
+    JOIN class_sections section ON section.id=enrollment.class_section_id AND section.school_id=student.school_id
+    WHERE student.school_id=${schoolId}::uuid
+  ), recorded_days AS MATERIALIZED (
+    SELECT cohort.id AS student_id,record.id AS record_id,record.date,record.status
+    FROM current_cohort cohort
+    JOIN attendance_records record ON record.student_id=cohort.id AND record.class_section_id=cohort.class_section_id
+    CROSS JOIN clock
+    WHERE record.date BETWEEN GREATEST(clock.today-55,cohort.enrolled_on) AND clock.today
+  ), cohort AS MATERIALIZED (
+    SELECT candidate.* FROM current_cohort candidate
+    JOIN (
+      SELECT record.student_id FROM recorded_days record CROSS JOIN clock
+      GROUP BY record.student_id
+      HAVING count(record.record_id) FILTER(WHERE record.date>=clock.today-27 AND record.status<>'excused')>=5
+        AND count(record.record_id) FILTER(WHERE record.date<clock.today-27 AND record.status<>'excused')>=5
+    ) eligible ON eligible.student_id=candidate.id
+    WHERE NOT EXISTS(SELECT 1 FROM attendance_followups followup
+      WHERE followup.school_id=${schoolId}::uuid AND followup.student_id=candidate.id AND followup.state<>'resolved')
+  ), instructional_clock AS MATERIALIZED (
+    SELECT clock.today FROM clock WHERE EXISTS(SELECT 1 FROM cohort)
+  ), instructional_days AS MATERIALIZED (
+    SELECT DISTINCT day::date AS date,schedule.class_section_id,schedule.term_id
+    FROM instructional_clock clock
+    CROSS JOIN LATERAL generate_series(clock.today-55,clock.today,interval '1 day') day
+    CROSS JOIN LATERAL planned_school_schedule_v2(${schoolId}::uuid,day::date) schedule
+    WHERE schedule.slot_type IN ('class','activity') AND NOT schedule.cancelled
+      AND EXISTS(SELECT 1 FROM cohort
+        WHERE cohort.class_section_id=schedule.class_section_id AND cohort.term_id=schedule.term_id)
+  ), observations AS MATERIALIZED (
+    SELECT cohort.*,days.date,record.record_id,record.status,
+      CASE WHEN record.status IN ('present','late') THEN 1.0
+        WHEN record.status='half_day' THEN 0.5 ELSE 0 END AS points
+    FROM cohort
+    JOIN instructional_days days ON days.class_section_id=cohort.class_section_id
+      AND days.term_id=cohort.term_id AND days.date>=cohort.enrolled_on
+    LEFT JOIN recorded_days record ON record.student_id=cohort.id AND record.date=days.date
+  ), stats AS (
+    SELECT observations.id,observations.student_name,observations.class_section_id,observations.class_name,clock.today,
+      count(*) FILTER(WHERE observations.date>=clock.today-27)::int AS current_expected,
+      count(record_id) FILTER(WHERE observations.date>=clock.today-27)::int AS current_recorded,
+      count(record_id) FILTER(WHERE observations.date>=clock.today-27 AND status<>'excused')::int AS current_scored,
+      COALESCE(sum(points) FILTER(WHERE observations.date>=clock.today-27),0)::numeric AS current_points,
+      count(*) FILTER(WHERE observations.date<clock.today-27)::int AS previous_expected,
+      count(record_id) FILTER(WHERE observations.date<clock.today-27)::int AS previous_recorded,
+      count(record_id) FILTER(WHERE observations.date<clock.today-27 AND status<>'excused')::int AS previous_scored,
+      COALESCE(sum(points) FILTER(WHERE observations.date<clock.today-27),0)::numeric AS previous_points
+    FROM observations CROSS JOIN clock
+    GROUP BY observations.id,observations.student_name,observations.class_section_id,observations.class_name,clock.today
+  )
+  SELECT stats.id,stats.class_section_id AS target_id,
+    concat('Attendance check-in · ',stats.student_name)::text AS title,
+    concat(to_char(stats.previous_points*100/stats.previous_scored,'FM990.0'),'% → ',
+      to_char(stats.current_points*100/stats.current_scored,'FM990.0'),'% · 28-day comparison')::text AS detail,
+    'No open follow-up'::text AS status_label,NULL::timestamptz AS due_at,
+    stats.today AS occurs_at,NULL::timestamptz AS created_at,false AS urgent,
+    stats.class_name::text AS subject_label,'normal'::text AS priority
+  FROM stats
+  WHERE stats.current_scored>=5 AND stats.previous_scored>=5
+    AND stats.current_expected>0 AND stats.previous_expected>0
+    AND stats.current_recorded::numeric/stats.current_expected>=0.8
+    AND stats.previous_recorded::numeric/stats.previous_expected>=0.8
+    AND stats.previous_points*100/stats.previous_scored-stats.current_points*100/stats.current_scored>=10
+    AND NOT EXISTS(SELECT 1 FROM attendance_followups followup
+      WHERE followup.school_id=${schoolId}::uuid AND followup.student_id=stats.id AND followup.state<>'resolved')
+  ORDER BY (stats.current_points*100/stats.current_scored-stats.previous_points*100/stats.previous_scored),stats.student_name,stats.id
+  `;
+}
+
 interface EventActionRow {
   event_id: string;
   title: string;
@@ -1596,69 +1686,7 @@ export class RequestsService {
         WHERE assessment.school_id=${scope.school_id}::uuid AND assessment.status='moderated'
         ORDER BY assessment.moderated_at,assessment.id
       `.execute(this.db)),
-      this.projectionReads.run(() => sql<StaffActionRow>`
-        WITH clock AS (SELECT (now() AT TIME ZONE ${scope.timezone})::date AS today),
-        cohort AS MATERIALIZED (
-          SELECT student.id,concat_ws(' ',person.first_name,person.last_name) AS student_name,
-            enrollment.class_section_id,enrollment.term_id,enrollment.enrolled_on,
-            concat('Class ',section.grade,section.section) AS class_name
-          FROM students student
-          JOIN school_people person ON person.id=student.person_id
-          JOIN LATERAL (
-            SELECT current_enrollment.class_section_id,current_enrollment.term_id,current_enrollment.enrolled_on
-            FROM enrollments current_enrollment CROSS JOIN clock
-            JOIN academic_terms term ON term.id=current_enrollment.term_id AND term.school_id=${scope.school_id}::uuid
-            WHERE current_enrollment.student_id=student.id AND current_enrollment.is_active
-              AND current_enrollment.enrolled_on<=clock.today AND clock.today BETWEEN term.starts_on AND term.ends_on
-            ORDER BY current_enrollment.enrolled_on DESC,current_enrollment.id DESC LIMIT 1
-          ) enrollment ON true
-          JOIN class_sections section ON section.id=enrollment.class_section_id AND section.school_id=student.school_id
-          WHERE student.school_id=${scope.school_id}::uuid
-        ), instructional_days AS MATERIALIZED (
-          SELECT DISTINCT day::date AS date,schedule.class_section_id,schedule.term_id
-          FROM clock
-          CROSS JOIN LATERAL generate_series(clock.today-55,clock.today,interval '1 day') day
-          CROSS JOIN LATERAL effective_school_schedule(${scope.school_id}::uuid,day::date) schedule
-          WHERE schedule.slot_type IN ('class','activity') AND NOT schedule.cancelled
-        ), observations AS MATERIALIZED (
-          SELECT cohort.*,days.date,record.id AS record_id,record.status,
-            CASE WHEN record.status IN ('present','late') THEN 1.0
-              WHEN record.status='half_day' THEN 0.5 ELSE 0 END AS points
-          FROM cohort
-          JOIN instructional_days days ON days.class_section_id=cohort.class_section_id
-            AND days.term_id=cohort.term_id AND days.date>=cohort.enrolled_on
-          LEFT JOIN attendance_records record ON record.student_id=cohort.id
-            AND record.class_section_id=cohort.class_section_id AND record.date=days.date
-        ), stats AS (
-          SELECT observations.id,observations.student_name,observations.class_section_id,observations.class_name,clock.today,
-            count(*) FILTER(WHERE observations.date>=clock.today-27)::int AS current_expected,
-            count(record_id) FILTER(WHERE observations.date>=clock.today-27)::int AS current_recorded,
-            count(record_id) FILTER(WHERE observations.date>=clock.today-27 AND status<>'excused')::int AS current_scored,
-            COALESCE(sum(points) FILTER(WHERE observations.date>=clock.today-27),0)::numeric AS current_points,
-            count(*) FILTER(WHERE observations.date<clock.today-27)::int AS previous_expected,
-            count(record_id) FILTER(WHERE observations.date<clock.today-27)::int AS previous_recorded,
-            count(record_id) FILTER(WHERE observations.date<clock.today-27 AND status<>'excused')::int AS previous_scored,
-            COALESCE(sum(points) FILTER(WHERE observations.date<clock.today-27),0)::numeric AS previous_points
-          FROM observations CROSS JOIN clock
-          GROUP BY observations.id,observations.student_name,observations.class_section_id,observations.class_name,clock.today
-        )
-        SELECT stats.id,stats.class_section_id AS target_id,
-          concat('Attendance check-in · ',stats.student_name)::text AS title,
-          concat(to_char(stats.previous_points*100/stats.previous_scored,'FM990.0'),'% → ',
-            to_char(stats.current_points*100/stats.current_scored,'FM990.0'),'% · 28-day comparison')::text AS detail,
-          'No open follow-up'::text AS status_label,NULL::timestamptz AS due_at,
-          stats.today AS occurs_at,NULL::timestamptz AS created_at,false AS urgent,
-          stats.class_name::text AS subject_label,'normal'::text AS priority
-        FROM stats
-        WHERE stats.current_scored>=5 AND stats.previous_scored>=5
-          AND stats.current_expected>0 AND stats.previous_expected>0
-          AND stats.current_recorded::numeric/stats.current_expected>=0.8
-          AND stats.previous_recorded::numeric/stats.previous_expected>=0.8
-          AND stats.previous_points*100/stats.previous_scored-stats.current_points*100/stats.current_scored>=10
-          AND NOT EXISTS(SELECT 1 FROM attendance_followups followup
-            WHERE followup.school_id=${scope.school_id}::uuid AND followup.student_id=stats.id AND followup.state<>'resolved')
-        ORDER BY (stats.current_points*100/stats.current_scored-stats.previous_points*100/stats.previous_scored),stats.student_name,stats.id
-      `.execute(this.db)),
+      this.projectionReads.run(() => attendanceDeclineWorkQuery(scope.school_id, scope.timezone).execute(this.db)),
       this.projectionReads.run(() => this.peopleImportItems(user, scope, "principal")),
     ]);
     const operational = await this.principalOperationalItems(scope);

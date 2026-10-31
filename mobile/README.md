@@ -277,7 +277,7 @@ expiration; a local development installation may need renewal. The current
 temporary HTTPS review backend also requires the Mac's API and tunnel to remain
 running. This local installation does not change the store-release gates.
 
-Current [physical-device evidence](../docs/VERIFICATION.md#native) covers native
+Earlier Mac-tunnel [physical-device evidence](../docs/VERIFICATION.md#native) covers native
 login, campus/floor/room/resource exploration and recorded resource availability.
 The final installed replacement passed strict signing, Expo ABI and unchanged682-source
 checks, launched with its session retained, and shows larger/readable floor views
@@ -289,6 +289,16 @@ static form was inspected, but its secure-keyboard capture is redacted; lower-fi
 layout is not accepted from it. Reset has mounted tests only. Fullscreen
 destination/report handoff, broader mutations and sustained performance remain open.
 
+### app2 cloud origin and installed updates
+
+The production origin is `https://app2.thatcampus.com`; operations/rollback use the [DT runbook](../deploy/dt/README.md). Actions run 41184964729 completed successfully and release 9487168 is live with [candidate/public smoke](../artifacts/app2-cloud-deployment/ci-212/digital-twin-release-41184964729-1/release.json). Conformance212 deployment passed; the213 performance preparation remains unpromoted. Public release/ready/assets/auth-boundary checks do not establish authenticated device workflows or performance.
+
+Permanent-origin native Release build 2 was [installed](../artifacts/app2-cloud-deployment/ios-install.json). The [bundle-origin](../artifacts/app2-cloud-deployment/ios-origin.json) and [ABI](../artifacts/app2-cloud-deployment/ios-abi.json) checks pass; app2 is embedded and the tunnel is absent. A fresh authenticated physical tour remains unaccepted; the public browser workspace still timed out while loading. The earlier hardware checks above belong to the Mac-tunnel Release.
+
+Build Release with `EXPO_PUBLIC_API_URL=https://app2.thatcampus.com` and `EXPO_NO_DOTENV=1`. Stored-session restoration accepts only this binary's normalized configured origin. Replacing a tunnel build forgets the old credential locally and starts at sign-in; it never forwards it to app2, revokes it on the old server or changes the password. Development retains its explicit server override.
+
+The installed Release needs the cloud API without Metro or a running Mac tunnel. No Expo Updates delivery is configured, so native JavaScript/UI changes require a rebuilt/reinstalled binary; backend/web releases are independent. Simulation restore continuation 22wz4, shared SQL/workspace performance and a separate-SQL approval decision remain open. Personal Team provisioning expires seven days after issuance; hosting does not renew signing. Apple Support now shows a case confirmation; paid membership/App Store Connect/TestFlight remain unconfirmed.
+
 ### TestFlight
 
 TestFlight requires an active paid Apple Developer Program membership and an
@@ -296,10 +306,11 @@ App Store Connect app record matching the bundle identifier. The local Apple
 Development installation above and EAS `preview` ad-hoc distribution do not provide
 TestFlight delivery.
 
-The current owner-account enrollment still reports **Unable to Continue**. Its
-Apple Support message remains an unsent draft; no paid membership, App Store
-Connect app or TestFlight upload is confirmed. See the
-[enrollment checkpoint](../artifacts/iphone-login-testflight-20261031/status.json).
+Owner-account enrollment remains unresolved after **Unable to Continue**. The
+existing Apple Support tab now shows a case confirmation; no paid membership,
+App Store Connect app or TestFlight upload is confirmed. The earlier
+[enrollment checkpoint](../artifacts/iphone-login-testflight-20261031/status.json)
+retains the prior draft state as historical evidence.
 
 Use the existing Xcode workspace; no EAS project or Git operation is required.
 From `mobile/`, replace the origin and paid-team placeholder:

@@ -38,6 +38,7 @@ interface PeriodRow {
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => isoDate(new Date(Date.parse(date) + days * 86400000));
 const PAGE_SIZE = 25;
+const OCCURRENCE_READ_BATCH_SIZE = 500;
 interface ActivityCommandContext { prepared: PreparedDomainCommand | null; savepoint: boolean }
 interface ActivityRefusalEnvelope { activity_command_refusal: { status_code: number; response: string | object } }
 
@@ -687,7 +688,7 @@ export class ActivityPlanningService {
     const receipts=[];
     for(let start=0;start<ordered.length;start+=31){
       const selected=ordered.slice(start,start+31);
-      const occurrences=await Promise.all(selected.map(item=>this.getOccurrence(row.school_id,item.id,db)));
+      const occurrences=await this.getOccurrences(row.school_id,selected.map(item=>item.id),db);
       receipts.push(await this.project(db,actor,row,occurrences,selected[0]!.projection_date,selected.at(-1)!.projection_date,correlation,change));
     }
     return receipts;
@@ -725,7 +726,7 @@ export class ActivityPlanningService {
     const work = async (db: PlanningDb) => {
       const occurrences = await this.engine.expand(db, schoolId, from, until, undefined, query);
       await this.engine.retain(db, occurrences);
-      const retained = await Promise.all(occurrences.map(occurrence => this.getOccurrence(schoolId, occurrence.id, db)));
+      const retained = await this.getOccurrences(schoolId, occurrences.map(occurrence => occurrence.id), db);
       for (const versionId of new Set(retained.filter(occurrence => occurrence.source === 'activity' && occurrence.state === 'expected').map(occurrence => occurrence.plan_version_id!))) {
         const row = await this.row(db, schoolId, versionId);
         if (row.state !== 'published') continue;
@@ -741,16 +742,43 @@ export class ActivityPlanningService {
   }
   async listOccurrencesForAttendance(schoolId: string, from: string, until: string) { return this.ensureOccurrences(schoolId, from, until); }
   async getOccurrence(schoolId: string, id: string, transaction?: PlanningDb): Promise<ActivityOccurrence> {
+    return (await this.getOccurrences(schoolId, [id], transaction))[0]!;
+  }
+
+  /** Read immutable retained rosters, not today's people/group membership. */
+  private async getOccurrences(schoolId: string, ids: readonly string[], transaction?: PlanningDb): Promise<ActivityOccurrence[]> {
     const db = transaction ?? this.db;
-    const row = (await sql<Omit<ActivityOccurrence, 'participants'> & { starts_at: Date | string; ends_at: Date | string }>`SELECT occurrence.*,occurrence.local_date::text,space.name AS space_label,
-      (SELECT person_id FROM schedule_activity_occurrence_recorders WHERE occurrence_id=occurrence.id AND action='record' LIMIT 1) AS recorder_person_id,
-      (SELECT person_id FROM schedule_activity_occurrence_recorders WHERE occurrence_id=occurrence.id AND action='review' LIMIT 1) AS reviewer_person_id
-      FROM schedule_activity_occurrences occurrence LEFT JOIN campus_spaces space ON space.id=occurrence.space_id AND space.school_id=occurrence.school_id
-      WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.id=${id}::uuid`.execute(db)).rows[0];
-    if (!row) throw new NotFoundException('The planned occurrence is not available in this institution. Open its date in Timetable first.');
-    const participants = (await sql<ActivityOccurrence['participants'][number]>`SELECT person_id,label,participation_role,source_kind,source_ref,source_revision,person_revision,requirement,attendance_expected
-      FROM schedule_activity_occurrence_people WHERE school_id=${schoolId}::uuid AND occurrence_id=${id}::uuid ORDER BY label,person_id`.execute(db)).rows;
-    return { ...row, starts_at: new Date(row.starts_at).toISOString(), ends_at: new Date(row.ends_at).toISOString(), participants };
+    const result: ActivityOccurrence[] = [];
+    // A transaction has one connection: Promise.all of two reads per occurrence
+    // only queues round trips. Bound each pair of indexed reads instead; retain
+    // the caller's occurrence order and PostgreSQL's participant label ordering.
+    for (let offset = 0; offset < ids.length; offset += OCCURRENCE_READ_BATCH_SIZE) {
+      const selected = ids.slice(offset, offset + OCCURRENCE_READ_BATCH_SIZE);
+      const uniqueIds = [...new Set(selected.map(id => id.toLowerCase()))];
+      const rows = (await sql<Omit<ActivityOccurrence, 'participants'> & { starts_at: Date | string; ends_at: Date | string }>`SELECT occurrence.*,occurrence.local_date::text,space.name AS space_label,
+        (SELECT person_id FROM schedule_activity_occurrence_recorders WHERE occurrence_id=occurrence.id AND action='record' LIMIT 1) AS recorder_person_id,
+        (SELECT person_id FROM schedule_activity_occurrence_recorders WHERE occurrence_id=occurrence.id AND action='review' LIMIT 1) AS reviewer_person_id
+        FROM schedule_activity_occurrences occurrence LEFT JOIN campus_spaces space ON space.id=occurrence.space_id AND space.school_id=occurrence.school_id
+        WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.id=ANY(${uniqueIds}::uuid[])`.execute(db)).rows;
+      const byId = new Map(rows.map(row => [row.id, row]));
+      if (uniqueIds.some(id => !byId.has(id)))
+        throw new NotFoundException('The planned occurrence is not available in this institution. Open its date in Timetable first.');
+      const people = (await sql<ActivityOccurrence['participants'][number] & { occurrence_id: string }>`SELECT occurrence_id,person_id,label,participation_role,source_kind,source_ref,source_revision,person_revision,requirement,attendance_expected
+        FROM schedule_activity_occurrence_people WHERE school_id=${schoolId}::uuid AND occurrence_id=ANY(${uniqueIds}::uuid[])
+        ORDER BY occurrence_id,label,person_id`.execute(db)).rows;
+      const participants = new Map<string, ActivityOccurrence['participants']>();
+      for (const { occurrence_id, ...person } of people) {
+        const roster = participants.get(occurrence_id) ?? [];
+        roster.push(person);
+        participants.set(occurrence_id, roster);
+      }
+      for (const id of selected) {
+        const row = byId.get(id.toLowerCase())!;
+        result.push({ ...row, starts_at: new Date(row.starts_at).toISOString(), ends_at: new Date(row.ends_at).toISOString(),
+          participants: [...(participants.get(row.id) ?? [])] });
+      }
+    }
+    return result;
   }
   async listOccurrences(user: AuthUser, schoolId: string, query: unknown) {
     const manager = await this.manager(this.db, user, schoolId, false);

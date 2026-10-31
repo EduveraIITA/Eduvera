@@ -291,7 +291,7 @@ must not be promoted into current instructions.
 
 ## Simulation
 
-Latest activated source: **release209/schema280**, fingerprint
+Latest normal Mac activation: **release209/schema280**, fingerprint
 `sha256:9d26530bb392241b87758aa195c387216b2ac8bf79277f58d18e81e66b2d2e9e`. The
 [reviewed stage](../artifacts/native-web-ui-20261029/profile-polish/visit-campus209-reviewed-stage.json),
 [before](../artifacts/native-web-ui-20261029/profile-polish/visit-campus209-before.json),
@@ -406,6 +406,22 @@ session to Live before guarded terminal-world cleanup.
 
 <a id="native"></a>
 
+## Isolated app2 deployment
+
+`https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, new Live/Simulation databases on shared PostgreSQL17 and private persistent files. Old ERP and maintained Mac development remain separate targets. Operations, one-attempt migration and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).
+
+GitHub Actions run 41184964729 completed successfully and release `9487168d421b4fe26c5b03f9d8176aa3f599c386` is live at app2. The [full conformance 212 release receipt](../artifacts/app2-cloud-deployment/ci-212/digital-twin-release-41184964729-1/release.json) binds its digest/revision, single migration execution, candidate smoke before/after migration and public release/ready/Expo/deep-link/JS/WASM/auth-boundary smoke. These checks do not establish authenticated workflow or performance acceptance.
+
+Forward migration 281 fixes migration 270's PL/pgSQL local `source_id` collision during role changes. The [fresh disposable PostgreSQL receipt](../artifacts/app2-cloud-deployment/role-source-forward-migration-receipt.json) records 5/6 before, 6/6 after and 42/42 full checks with zero skips, strict conformance 212 and a temporary compiled application. Function identity, owner, privileges, SECURITY INVOKER, search path and 15 triggers are preserved. Ordinary `SimulationWorldService.open` refuses an old 211 capture with 409 `simulation_snapshot_incompatible` while old snapshot/world/rows/functions remain unchanged. Owned databases/build/private fixture were cleaned up; there is no automatic captured-world migration.
+
+The conformance212 deployment succeeded after correcting only the disposable visitor fixture origin; [CI verification](../artifacts/app2-cloud-deployment/ci-212-verify.log) records519 fast tests,40 source/auth checks and42 PostgreSQL cases passed. Performance preparation213 is independently reviewed and locally verified, with9 attendance and48 activity cases; its expanded CI requires at least99 database cases and zero skipped/todo tests. The source changes preserve full56-day scoring, authority, retained rosters and selected-world execution. Deployment and authenticated cloud timing remain pending. [Independent review](../artifacts/app2-cloud-deployment/performance-independent-review.json), [attendance](../artifacts/app2-cloud-deployment/attendance-query-optimization-receipt.json), [hydration](../artifacts/occurrence-hydration-20261031/validation.json).
+
+The [Core identity-port review](../artifacts/app2-cloud-deployment/core-identity-independent-review.json) passes 44 focused checks; the full fast suite passes 519/519. [Whole-scope lint](../artifacts/app2-cloud-deployment/core-boundary-lint-gate.log) accepts 58 unchanged existing errors against 66 exact reviewed baseline entries, with 8 resolved errors and no new errors/warnings; `accepted-existing-debt` is not clean ordinary lint. [Mobile tests](../artifacts/app2-cloud-deployment/mobile-tests-final.log) pass 1822/1822. [Narrow source acceptance](../artifacts/iphone-network-recovery-20261031/narrow-source-acceptance.json) preserves 49 unrelated errors and 29 unfinished groups; parity/retirement remain open.
+
+Permanent-origin native Release build 2 is [installed](../artifacts/app2-cloud-deployment/ios-install.json), with app2-origin/ABI checks passing and no embedded tunnel. No authenticated physical tour is accepted yet; the public browser workspace still timed out while loading. The native restore policy forgets only a saved credential for another origin and never sends it to app2 or resets a password. Earlier physical checks below belong to the Mac-tunnel build.
+
+**Still open:** incomplete Simulation restoration after failed bounded continuation `thatcampus-dt-initial-restore-22wz4`; ordinary attachment access after the passing [bounded file probe](../artifacts/app2-cloud-deployment/file-storage-verification.json); authenticated browser/phone workflows and performance. Current guards use pool 4 per pool/one service instance, while [shared SQL samples](../artifacts/app2-cloud-deployment/shared-database-capacity.json) show 100% memory utilization. Separate DT SQL approval remains pending and must not be inferred. Apple Support now shows a case confirmation; paid enrollment/TestFlight and wider distribution remain unconfirmed.
+
 ## Native app
 
 Live development is active at the maintained
@@ -450,10 +466,9 @@ authenticates successfully; that temporary probe session was immediately revoked
 This confirms the public native auth path separately from the bounded physical
 sign-in evidence above. The owner chose Individual Apple Developer enrollment;
 the official Mac app now immediately reports “Unable to Continue” and directs
-the account to Apple Developer Support. A support message is prepared in the
-owner's browser and explicitly left unsent at the owner's request. No identity
-document, agreement or payment was submitted by the agent. No paid team, App
-Store Connect app or TestFlight upload has been confirmed. The
+the account to Apple Developer Support. The existing Support tab now shows a
+case confirmation. This does not establish a paid team, App Store Connect app
+or TestFlight upload; none has been confirmed. The
 [TestFlight runbook](../mobile/README.md#testflight) preserves the local archive
 workflow and actual SQLCipher encryption review.
 

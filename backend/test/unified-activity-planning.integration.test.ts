@@ -25,7 +25,10 @@ import { institutionLocalDate } from '../src/institution-activation/progressive-
 const enabled = process.env.TEST_DATABASE_ISOLATED === 'true';
 types.setTypeParser(1082, value => value);
 const pool = new Pool({ connectionString: enabled ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : 'postgresql://invalid.invalid/unused', max: 3 });
-const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
+let measuredQueries: string[] | null = null;
+const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }), log: event => {
+  if (measuredQueries && event.level === 'query') measuredQueries.push(event.query.sql);
+} });
 const applicationDb = db as DatabaseService;
 const core = new CampusModelCoreService(applicationDb);
 const provisioner = new ProgressiveWorkspaceProvisioner(core);
@@ -394,6 +397,50 @@ describe.skipIf(!enabled)('unified planning real PostgreSQL and Digital Twin coo
       .rejects.toThrow();
     expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM campus_model_events WHERE school_id=${schoolId}::uuid
       AND event_type='timetable.occurrences_materialized' AND source_record_id=${draft.id}`.execute(db)).rows[0]!.count).toBe(1);
+  }, 60000);
+
+  it('hydrates a retained horizon in bounded reads without changing its roster, appointments or core replay', async () => {
+    const { schoolId, user, person, participant, tomorrow } = await fixture();
+    const second = (await db.insertInto('school_people').values({ school_id: schoolId, first_name: 'Aster', last_name: 'Participant' })
+      .returning('id').executeTakeFirstOrThrow()).id;
+    const draft = await service.create(request(user), schoolId, { idempotency_key: randomUUID(), title: 'Retained training', purpose: 'training',
+      timezone: 'Asia/Kolkata', starts_on: tomorrow, recurrence: 'weekly', weekdays: [1, 2, 3, 4, 5, 6, 7], starts_at: '11:00', ends_at: '12:00',
+      person_ids: [participant, second], attendance_mode: 'roll_call', recorder_person_id: person, reviewer_person_id: person });
+    await service.publish(request(user), schoolId, draft.id, { idempotency_key: randomUUID(), expected_revision: 1 });
+    const retained = await service.ensureOccurrences(schoolId, tomorrow, addDays(tomorrow, 8), undefined, { source: 'activity' });
+    expect(retained).toHaveLength(9);
+    expect(retained.every(occurrence => occurrence.recorder_person_id === person && occurrence.reviewer_person_id === person)).toBe(true);
+    const coreState = async () => (await sql`SELECT occurrence.* FROM campus_model_schedule_occurrences occurrence
+      WHERE occurrence.school_id=${schoolId}::uuid ORDER BY occurrence.id`.execute(db)).rows;
+    const before = await coreState();
+    const hydrationReads = (queries: string[]) => queries.filter(query => /SELECT\s+occurrence\.\*/i.test(query)
+      || /SELECT\s+(?:occurrence_id,\s*)?person_id,label,participation_role[\s\S]+FROM\s+schedule_activity_occurrence_people/i.test(query)).length;
+    // The old horizon path called this same two-read accessor once per occurrence.
+    measuredQueries = [];
+    let individually;
+    let singleReads: number;
+    try {
+      individually = await Promise.all(retained.map(occurrence => service.getOccurrence(schoolId, occurrence.id)));
+      singleReads = hydrationReads(measuredQueries);
+    } finally { measuredQueries = null; }
+    expect(singleReads!).toBe(18);
+    await db.updateTable('school_people').set({ first_name: 'Changed after publication', revision: 2 }).where('id', '=', second).execute();
+    await db.updateTable('users').set({ is_active: false }).where('id', '=', user.id).execute();
+    const extension = vi.spyOn(core, 'extendPlanOccurrences');
+    measuredQueries = [];
+    let repeated;
+    let batchReads: number;
+    try {
+      repeated = await service.ensureOccurrences(schoolId, tomorrow, addDays(tomorrow, 8), undefined, { source: 'activity' });
+      batchReads = hydrationReads(measuredQueries);
+      expect(extension).toHaveBeenCalledOnce();
+    } finally { measuredQueries = null; extension.mockRestore(); }
+    expect(repeated).toEqual(individually!);
+    expect(repeated!.every(occurrence => occurrence.participants.map(person => person.label).join('|') === 'Aster Participant|No-account Participant')).toBe(true);
+    expect(await coreState()).toEqual(before);
+    expect(batchReads!).toBe(2);
+    expect(await service.getOccurrence(schoolId, retained[0]!.id.toUpperCase())).toEqual(retained[0]);
+    await expect(service.getOccurrence(randomUUID(), retained[0]!.id)).rejects.toThrow('not available in this institution');
   }, 60000);
 
   it('routes the original academic editor through the gateway and the shared cross-purpose conflict engine', async () => {
