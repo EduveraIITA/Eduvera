@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 214 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 215 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -614,6 +614,12 @@ export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
     proves: "A real selected COW worker checkpoint extends only its published neutral activity horizon, retains its captured participant roster and source-neutral current-policy finalization, and leaves academic expansion available through its owning adapter. Live and a sibling retain their occurrence, register and roster state. This is bounded native/COW evidence, not a claim that all academic work is disabled or the entire worker catalogue has parity." },
   { id: "safety:notification-bell-current-visibility", kind: "real_postgres", test_file: "backend/test/notification-bell.integration.test.ts",
     proves: "The native bell executes one statement through the existing selected-world database executor and preserves the canonical current-source predicate, exact global unread count, timestamp-tied keyset pagination, read history and empty-page count. Real PostgreSQL parity checks retain old records and enforce current account, campus, guardian, calendar and assigned-work-only scope. This query optimization adds no cross-request cache, data cutoff or new Simulation capture capability." },
+  { id: "safety:teaching-source-scope", kind: "real_postgres", test_file: "backend/test/teaching-session-source-scope.integration.test.ts",
+    proves: "Teaching composition retains canonical academic identity and current access while expanding only its consumed native activity sources through the caller's transaction. Real PostgreSQL and COW checks exercise a run-local native lesson, authority revocation, unchanged academic rosters and unchanged Live/sibling sources; no new Simulation capture capability or universal latency guarantee is claimed." },
+  { id: "safety:pool-admission-recovery", kind: "real_postgres", test_file: "backend/test/database-pool-telemetry.integration.test.ts",
+    proves: "With four actual PostgreSQL clients held, a fifth checkout produces the genuine FIFO admission timeout, preserves the original error identity and public Promise/callback semantics, records only numeric bounded pool evidence and recovers after explicit client release. Instrumentation adds no timer, pool capacity, routing, admission policy or connection timeout." },
+  { id: "safety:pool-admission-api-response", kind: "unit_boundary", test_file: "backend/test/database-unavailable-response.test.ts",
+    proves: "Actual Fastify hook and exception-filter responses classify only identity-marked pool acquisition failures, preserve a canonical503 envelope and request correlation without private error details, stop pre-controller actions and distinguish explicit read retry from unconfirmed writes. Unknown same-message errors remain ordinary failures; no action is automatically replayed." },
   { id: "safety:started-recurring-plan-history", kind: "real_postgres", test_file: "backend/test/activity-plan-started-revision.integration.test.ts",
     proves: "Preparing or publishing a dated replacement cannot cancel a recurring occurrence that has already started or create a retroactive replacement; its retained source, Core temporal projection and accepted register remain unchanged, a tomorrow change and valid later-today changes work, and separate first-use creation may still start now. This is owning-service PostgreSQL evidence, not a new HTTP or COW capability claim." },
   { id: "safety:person-account-state", kind: "real_postgres", test_file: "backend/test/participation-account-state.integration.test.ts",

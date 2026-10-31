@@ -84,7 +84,10 @@ export class TeachingSessionContextService {
     });
     // Scheduling remains the sole occurrence materializer. Historical activity
     // versions retain their own IDs and are never moved to replacement plans.
-    const native = await this.planning.ensureOccurrences(school.id, date, date, db === this.db ? undefined : db);
+    // Academic sources above already come from the effective schedule owner.
+    // Only materialize the native activity sources consumed by this composition;
+    // opening a lesson must not expand every academic roster for that day.
+    const native = await this.planning.ensureOccurrences(school.id, date, date, db === this.db ? undefined : db, { source: "activity" });
     for (const occurrence of native.filter(item => item.source === "activity" && item.purpose === "teaching" && item.local_date === date)) {
       const lead = occurrence.participants.find(item => item.participation_role === "lead");
       const evidence = { occurrence_id: occurrence.id, plan_version_id: occurrence.plan_version_id, source_ref: occurrence.source_ref,

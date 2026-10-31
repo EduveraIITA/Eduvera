@@ -9,6 +9,21 @@ import type { FastifyReply } from "fastify";
 import { ZodError } from "zod";
 import type { RequestWithContext } from "./request.js";
 import { SimulationCapacityException } from "../simulation/simulation-resource-policy.js";
+import { isDatabasePoolAcquisitionFailure } from "../database/pool-telemetry.js";
+
+/** Reads may be retried explicitly. A write may have committed before a later
+ * refresh failed, so never imply that its effects are absent or replay it. */
+export function sendDatabaseUnavailable(request: Pick<RequestWithContext, "method" | "requestId">, reply: FastifyReply): FastifyReply {
+  const read = ["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
+  if (read) reply.header("Retry-After", "2");
+  return reply.status(HttpStatus.SERVICE_UNAVAILABLE).send({ error: {
+    status: HttpStatus.SERVICE_UNAVAILABLE,
+    code: "service_unavailable",
+    detail: read ? "Campus service is temporarily busy. Please try again shortly."
+      : "Campus service is temporarily busy. This action could not be confirmed. Check its status before trying again.",
+    request_id: request.requestId,
+  } });
+}
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
@@ -16,6 +31,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const context = host.switchToHttp();
     const request = context.getRequest<RequestWithContext>();
     const reply = context.getResponse<FastifyReply>();
+    if (isDatabasePoolAcquisitionFailure(exception)) {
+      request.log.error({ err: exception, requestId: request.requestId }, "Database connection unavailable");
+      void sendDatabaseUnavailable(request, reply);
+      return;
+    }
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = "internal_error";
     let detail = "The request could not be completed.";

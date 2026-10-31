@@ -1,4 +1,4 @@
-import { Injectable, OnApplicationShutdown, Optional,type OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnApplicationShutdown, Optional,type OnModuleInit } from "@nestjs/common";
 import { Kysely } from "kysely";
 import { Pool, types as pgTypes } from "pg";
 import { config } from "../config.js";
@@ -10,11 +10,13 @@ import {
 import { ExecutionRoutingPostgresDialect } from "./execution-routing-postgres.dialect.js";
 import type { Database } from "./types.js";
 import { DatabaseQueryMetrics } from "./query-metrics.js";
+import { DatabasePoolTelemetry, type DatabasePoolSnapshot } from "./pool-telemetry.js";
 
 @Injectable()
 export class DatabaseService extends Kysely<Database> implements OnApplicationShutdown,OnModuleInit {
   private readonly pool: Pool;
   private readonly queries: DatabaseQueryMetrics;
+  private readonly poolTelemetry: DatabasePoolTelemetry;
 
   constructor(
     @Optional() scope?: ExecutionDataPlaneScope,
@@ -41,9 +43,18 @@ export class DatabaseService extends Kysely<Database> implements OnApplicationSh
     const executionScope = scope ?? new ExecutionDataPlaneScope();
     const dataPlaneRegistry = registry ?? new ExecutionDataPlaneRegistry();
     const queries=new DatabaseQueryMetrics();
+    const logger = new Logger(DatabaseService.name);
+    const poolTelemetry = new DatabasePoolTelemetry(pool, {
+      onAcquisitionFailure: snapshot => logger.warn({ event: "database_pool_acquisition_failed", ...snapshot }),
+    });
     super({
       dialect: new ExecutionRoutingPostgresDialect(
-        { pool },
+        // Kysely's structural adapter uses Promise acquisition. The original pg
+        // Pool and its Promise/callback overloads remain untouched.
+        { pool: {
+          connect: () => poolTelemetry.observeAcquisition(() => pool.connect()),
+          end: () => pool.end(),
+        } },
         executionScope,
         dataPlaneRegistry,
       ),
@@ -51,6 +62,7 @@ export class DatabaseService extends Kysely<Database> implements OnApplicationSh
     });
     this.pool = pool;
     this.queries=queries;
+    this.poolTelemetry=poolTelemetry;
   }
 
   async onApplicationShutdown(): Promise<void> {
@@ -65,5 +77,6 @@ export class DatabaseService extends Kysely<Database> implements OnApplicationSh
   async ping(): Promise<void> {
     await this.pool.query("SELECT 1");
   }
-  prometheusMetrics():string{return this.queries.prometheus();}
+  poolSnapshot(): DatabasePoolSnapshot { return this.poolTelemetry.snapshot(); }
+  prometheusMetrics():string{return this.queries.prometheus()+this.poolTelemetry.prometheus();}
 }

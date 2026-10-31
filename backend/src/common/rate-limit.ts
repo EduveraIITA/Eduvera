@@ -3,6 +3,9 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { sql } from "kysely";
 import type { DatabaseService } from "../database/database.service.js";
 import { config } from "../config.js";
+import { isDatabasePoolAcquisitionFailure } from "../database/pool-telemetry.js";
+import { sendDatabaseUnavailable } from "./errors.js";
+import type { RequestWithContext } from "./request.js";
 
 // Single-process buckets. Zero round trips; not shared across instances.
 const memoryBuckets = new Map<string, { hits: number; expiresAt: number }>();
@@ -69,7 +72,8 @@ export function rateLimitHook(db: DatabaseService) {
     if (config().rateLimitStore === "memory") {
       bucket = memoryHit(bucketKey, windowMs);
     } else {
-      const result = await sql<{ hits: number; expires_at: Date }>`
+      try {
+        const result = await sql<{ hits: number; expires_at: Date }>`
         INSERT INTO api_rate_limit_buckets(bucket_key, hits, expires_at)
         VALUES (${bucketKey}, 1, ${expiresAt})
         ON CONFLICT(bucket_key) DO UPDATE SET
@@ -77,7 +81,15 @@ export function rateLimitHook(db: DatabaseService) {
           expires_at = CASE WHEN api_rate_limit_buckets.expires_at <= now() THEN excluded.expires_at ELSE api_rate_limit_buckets.expires_at END
         RETURNING hits, expires_at
       `.execute(db);
-      bucket = result.rows[0]!;
+        bucket = result.rows[0]!;
+      } catch (error) {
+        if (!isDatabasePoolAcquisitionFailure(error)) throw error;
+        // Fastify's onRequest hook runs before Nest's exception filter. Keep
+        // this failure in the same canonical API envelope as controller reads.
+        request.log.error({ err: error, requestId: (request as RequestWithContext).requestId }, "Rate-limit connection unavailable");
+        await sendDatabaseUnavailable(request as RequestWithContext, reply);
+        return;
+      }
     }
     reply.header("X-RateLimit-Limit", limit);
     reply.header("X-RateLimit-Remaining", Math.max(0, limit - bucket.hits));
@@ -87,9 +99,16 @@ export function rateLimitHook(db: DatabaseService) {
       await reply.status(429).send({
         error: { status: 429, code: "rate_limited", detail: "Too many requests. Please retry shortly.", request_id: (request as any).requestId ?? "" },
       });
+      return;
     }
     if (config().rateLimitStore === "postgres" && Math.random() < 0.01) {
-      await db.deleteFrom("api_rate_limit_buckets").where("expires_at", "<", new Date(Date.now() - 3_600_000)).execute();
+      try {
+        await db.deleteFrom("api_rate_limit_buckets").where("expires_at", "<", new Date(Date.now() - 3_600_000)).execute();
+      } catch (error) {
+        if (!isDatabasePoolAcquisitionFailure(error)) throw error;
+        request.log.error({ err: error, requestId: (request as RequestWithContext).requestId }, "Rate-limit cleanup connection unavailable");
+        await sendDatabaseUnavailable(request as RequestWithContext, reply);
+      }
     }
   };
 }
